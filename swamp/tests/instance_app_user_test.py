@@ -70,8 +70,6 @@ STAND_IN = textwrap.dedent('''\
             units[unit][0] = 'inactive' if args[0] == 'stop' else 'active'
         with open(f'{root}/units.json', 'w') as file:
             json.dump(units, file)
-    elif name == 'pgrep':
-        sys.exit(1)
     ''')
 
 OLD_UNIT = textwrap.dedent('''\
@@ -111,7 +109,7 @@ class Container:
                 (self.root / 'etc/systemd/system' / unit).chmod(0o640)
         (self.root / 'stand_in.py').write_text(STAND_IN)
         # Each stand-in is a small shell script that runs the shared program with its own name.
-        for name in ('usermod', 'groupmod', 'groupdel', 'systemctl', 'pkill', 'pgrep', 'chown'):
+        for name in ('usermod', 'groupmod', 'groupdel', 'systemctl', 'chown'):
             (self.root / 'bin' / name).write_text(f'#!/bin/sh\nexec {sys.executable} -I {self.root}/stand_in.py {name} "$@"\n')
             (self.root / 'bin' / name).chmod(0o755)
 
@@ -177,7 +175,6 @@ class RenameTest(unittest.TestCase):
         stop = ['systemctl', 'stop', '--', 'orbit-frankenphp.service', 'orbit-process-5.service', 'orbit-schedule-9.timer']
         self.assertEqual(calls[1], stop)
         self.assertLess(calls.index(stop), names.index(['usermod', '--login']))
-        self.assertLess(names.index(['pkill', '--uid']), names.index(['usermod', '--login']))
         self.assertIn(['usermod', '--login', 'web', '--home', '/home/web', '--move-home', 'orbit'], calls)
         self.assertIn(['groupmod', '--new-name', 'web', 'work'], calls)
         self.assertIn(['usermod', '--gid', 'web', 'web'], calls)
@@ -215,9 +212,8 @@ class RenameTest(unittest.TestCase):
         self.assertEqual((container.root / 'etc/passwd').read_text(), NEW_PASSWD)
         self.assertEqual((container.root / 'etc/group').read_text(), SWAPPED_GROUP)
         self.assertEqual(container.unit('orbit-frankenphp.service'), NEW_UNIT)
-        names = [call[0] for call in container.calls()]
-        # Nothing runs as uid 1000 any more and the user has its name: no stop, no kill, no second rename.
-        self.assertNotIn('pkill', names)
+        # Nothing runs as uid 1000 any more and the user has its name: no stop and no second rename.
+        self.assertNotIn(['systemctl', 'stop'], [call[:2] for call in container.calls()])
         self.assertNotIn(['usermod', '--login'], [call[:2] for call in container.calls()])
         self.assertEqual(container.calls()[-1],
                          ['systemctl', 'start', '--', 'orbit-frankenphp.service', 'orbit-process-5.service', 'orbit-schedule-9.timer'])

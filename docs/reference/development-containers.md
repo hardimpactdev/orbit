@@ -544,11 +544,10 @@ Root renames an older container in the `start` phase, which every start, wake an
 A container that has the user `web`, no group `work` or 1000 and no unit file that names `orbit` skips it. Otherwise root runs these steps:
 
 1. Stop each unit whose file or drop-in under `/etc/systemd/system` names the old user, group or home. The boot started them under the old name.
-2. End what uid 1000 still runs, such as a Schedule's run: `usermod` refuses to rename a user with processes. It asks first and kills after ten seconds.
-3. `usermod -l web -d /home/web -m orbit`.
-4. `groupmod -n web work`, then `usermod -g web web`.
-5. Give each entry with gid 1000 in the workspace and in `/home/web` the group `web`, without following a link. Then remove the group 1000.
-6. Write `User=web`, `Group=web` and `/home/web` in those unit files for the old values. Then reload systemd and start again each unit that step 1 stopped and each enabled one.
+2. `usermod -l web -d /home/web -m orbit`. It refuses a user that still runs a process and names it; the next start renames again.
+3. `groupmod -n web work`, then `usermod -g web web`.
+4. Give each entry with gid 1000 in the workspace and in `/home/web` the group `web`, without following a link. Then remove the group 1000.
+5. Write `User=web`, `Group=web` and `/home/web` in those unit files for the old values. Then reload systemd and start again each unit that step 1 stopped and each enabled one.
 
 `usermod -l` also renames `orbit` in the member list of `work`, so a renamed container lists `web` in its own group beside `agent`. The program is `swamp/ansible/instance_app_user.py`.
 

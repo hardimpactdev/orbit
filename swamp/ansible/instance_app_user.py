@@ -6,8 +6,8 @@ An older image made the user `orbit` (uid 1000) with the group `orbit` (gid 1000
 
 Each step checks its own result first, so a run that stopped half way finishes at the next one, and a renamed container changes nothing:
 
-1. Stop each unit whose file under /etc/systemd/system names the old user, group or home, and its timer; then end what uid 1000 still
-   runs, as `usermod` refuses to rename a user with processes.
+1. Stop each unit whose file under /etc/systemd/system names the old user, group or home, and its timer. Those are what uid 1000 runs:
+   `usermod` refuses to rename a user with a process, and names it.
 2. `usermod -l web -d /home/web -m orbit`, `groupmod -n web work`, `usermod -g web web`.
 3. Give each entry with gid 1000 in the workspace and in /home/web the group `web`, without following a link, then remove the group 1000.
 4. Write `User=web`, `Group=web` and `/home/web` in those unit files, reload systemd and start again each unit that step 1 stopped,
@@ -21,7 +21,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 
 USER, GROUP, HOME = 'web', 'web', '/home/web'
 OLD_USER, OLD_GROUP, OLD_HOME = 'orbit', 'work', '/home/orbit'
@@ -86,16 +85,6 @@ def states(units):
     return found
 
 
-def end_processes():
-    """What uid 1000 still runs outside those units, such as a Schedule's run: asked to end, then killed after ten seconds."""
-    run('pkill', '--uid', str(UID), check=False)
-    for _ in range(20):
-        if run('pgrep', '--uid', str(UID), check=False).returncode != 0:
-            return
-        time.sleep(0.5)
-    run('pkill', '--signal', 'KILL', '--uid', str(UID), check=False)
-
-
 def main(workspace, root='/'):
     root = root.rstrip('/') + '/'
     users, groups, units = entries(root, 'passwd'), entries(root, 'group'), unit_files(root)
@@ -118,7 +107,7 @@ def main(workspace, root='/'):
         run('systemctl', 'stop', '--', *stopped)
         steps.append('stop')
     if old_user:
-        end_processes()
+        # `usermod` refuses a user that still runs a process; it names it, and the next start renames again.
         run('usermod', '--login', USER, '--home', HOME, '--move-home', OLD_USER)
         steps.append('user')
     if old_group:
