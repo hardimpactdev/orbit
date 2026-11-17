@@ -100,6 +100,8 @@ function fixture() {
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
   Deno.copyFileSync(new URL("instance_workspace_owner.py", root), `${folder}/instance_workspace_owner.py`);
+  Deno.mkdirSync(`${folder}/files`, { recursive: true });
+  Deno.copyFileSync(new URL("files/instance-app-user.sh", root), `${folder}/files/instance-app-user.sh`);
   // The power helper that resumes a Frozen container and discards a Stopped one's plan (_support/power_helper.ts).
   installPowerHelper(folder, folder);
   // The composed proxy environment goes into the container through instance_node_services.py `proxy`; the fake keeps its value.
@@ -785,8 +787,9 @@ Deno.test({
   },
 });
 
-// The rename of the app user (the block "Name the app user web" of tasks/instance-container-phase.yml, ADR 0268 second amendment). An older image made `orbit` (uid 1000) in its
-// group `orbit` (gid 1000) and the group `work` (gid 2760); the start renames both to `web` before any other command in the container.
+// The rename of the app user (root's swap file, ansible/files/instance-app-user.sh, ADR 0268 second amendment), which the fixture runs as
+// the container would. An older image made `orbit` (uid 1000) in its group `orbit` (gid 1000) and the group `work` (gid 2760); the start
+// renames both to `web` before any other command in the container.
 const IMAGE_PASSWD = "root:x:0:0:root:/root:/bin/bash\nagent:x:2750:2750::/home/agent:/bin/bash\nweb:x:1000:2760::/home/web:/bin/bash\n";
 const OLDER_PASSWD = IMAGE_PASSWD.replace("web:x:1000:2760::/home/web", "orbit:x:1000:1000::/home/orbit");
 const OLDER_GROUP = "root:x:0:\nagent:x:2750:\norbit:x:1000:\nwork:x:2760:agent,orbit\n";
@@ -864,12 +867,59 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a Process write on a running container of an older image names the app user web first; a process outside the units refuses it by name",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      f.container.processes = [worker, paused];
+      f.write();
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const root = olderContainer(f);
+      // A shell of uid 1000 outside every unit: `usermod` would refuse the rename, so the file refuses first and changes nothing.
+      const held = f.state();
+      held.app_processes = ["orbit-frankenphp.service 17 frankenphp run", "session-3.scope 4242 php artisan tinker"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(held));
+      const refused = f.run("process", { ORBIT_PROCESS_ACTION: "start" });
+      assert(!refused.ok);
+      assertStringIncludes(refused.output, "uid 1000 runs processes outside the units that name orbit");
+      assertStringIncludes(refused.output, "4242 session-3.scope php artisan tinker");
+      assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), OLDER_PASSWD);
+      assertEquals(f.state().accounts, undefined);
+
+      delete held.app_processes;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(held));
+      const result = f.run("processes", { ORBIT_PROCESS_ENVIRONMENTS: environments });
+      assert(result.ok, result.output);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), IMAGE_PASSWD);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/group`), RENAMED_GROUP);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/${worker.name}`), worker.content);
+      // The rename comes before the phase writes or starts the Process's unit as web.
+      const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line).join(" "));
+      const renamed = calls.findIndex((call) => call.includes("usermod --login web"));
+      const written = calls.findIndex((call) => call.includes(`/etc/systemd/system/${worker.name}`));
+      assert(renamed >= 0 && renamed < written, calls.join("\n"));
+
+      // The `process` tag alone renames too: a container made older again renames before its unit starts.
+      olderContainer(f);
+      const started = f.run("process", { ORBIT_PROCESS_ACTION: "start" });
+      assert(started.ok, started.output);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), IMAGE_PASSWD);
+      assert(f.state().systemctl.some((call: string[]) => call.join(" ") === `enable --now --no-block -- ${worker.name}`));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a start finishes a rename that stopped after the user: the group, the files of gid 1000 and the units that failed under orbit",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      assert(f.run("container").ok);
+      const made = f.run("container");
+      assert(made.ok, made.output);
       // The user is renamed and moved, but `work` and the group 1000 are left, and the units still name `orbit`: they failed at boot.
       const root = olderContainer(f, IMAGE_PASSWD.replace("web:x:1000:2760", "web:x:1000:1000"), OLDER_GROUP.replace("agent,orbit", "agent,web"), "web");
       const state = f.state();

@@ -1,5 +1,13 @@
 ---
 # Only this named container changes. The serving checkout is mounted read-only for pre-quiesce resolution.
+# The node-store and node-runtime phases run alone on a running container, so root names the app user web first, as the container
+# phase does after its start (files/instance-app-user.sh); within that phase it already ran.
+- name: Name the app user web
+  when: phase in ['node-store', 'node-runtime']
+  ansible.builtin.command: { argv: "{{ as_root + ['sh', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-app-user.sh'), 'orbit-app-user'] }}" }
+  register: app_user_name
+  changed_when: app_user_name.stdout == 'renamed'
+
 - name: Read the installed Node-store helper
   when: phase != 'seed'
   ansible.builtin.command:

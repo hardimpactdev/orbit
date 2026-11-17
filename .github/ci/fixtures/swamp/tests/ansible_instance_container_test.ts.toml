@@ -14,6 +14,7 @@ cases = [
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a start renames an older container's orbit and work to web before its units run as web again; a second start changes nothing",
   "a start finishes a rename that stopped after the user: the group, the files of gid 1000 and the units that failed under orbit",
+  "a Process write on a running container of an older image names the app user web first; a process outside the units refuses it by name",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes",
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
@@ -107,12 +108,12 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 8086
+cost = 8156
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # Every registered case has its own slice; startup is added separately.
-slices = 104
+slices = 105
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -135,6 +136,7 @@ inputs = [
   "swamp/ansible/tasks/address-node.yml",
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/files/instance-app-user.sh",
   "swamp/ansible/tasks/instance-fleet.yml",
   "swamp/ansible/tasks/instance-proof-checkout.yml",
   "swamp/ansible/tasks/instance-network-nic-check.yml",
@@ -161,6 +163,7 @@ inputs = [
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 89 # hosted run 43787856522: 77.3s x 1.15, rounded up
 "a start renames an older container's orbit and work to web before its units run as web again; a second start changes nothing" = 45 # estimate: 22 s locally x 2
 "a start finishes a rename that stopped after the user: the group, the files of gid 1000 and the units that failed under orbit" = 45 # estimate: 18-29 s locally, as the case above
+"a Process write on a running container of an older image names the app user web first; a process outside the units refuses it by name" = 70 # estimate: 33 s locally x 2
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 89 # hosted run 43787856522: 76.8s x 1.15, rounded up
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 91 # hosted run 43787856522: 78.5s x 1.15, rounded up
   "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing, a drifted web configuration alone restarts PHP, and a changed value replaces its environment file" = 101 # ESTIMATE (hosted run 43787856522): 87.5s from 76.7s measured plus the rotation's 6.7 of 90.9 local play seconds of the new-seed case (146.6s), x 1.15, rounded up
@@ -264,3 +267,4 @@ inputs = [
 "swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/tasks/instance-container-*.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/instance_nested.py" = ["nested fleet start gate: kernel-modules"]
+"swamp/ansible/files/instance-app-user.sh" = ["a start renames an older container's orbit and work to web before its units run as web again; a second start changes nothing", "a start finishes a rename that stopped after the user: the group, the files of gid 1000 and the units that failed under orbit", "a Process write on a running container of an older image names the app user web first; a process outside the units refuses it by name"]

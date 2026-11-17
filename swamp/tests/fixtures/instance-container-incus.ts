@@ -399,6 +399,35 @@ if (family === "list") {
     save();
     Deno.exit(0);
   }
+  // Root's swap file (ansible/files/instance-app-user.sh) runs here as in the container: its account, unit and unit-file calls come
+  // back to this stand-in through `incus exec`, and every other tool it uses runs as it is.
+  if (command[0] === "sh" && command[1] === "-c" && command[3] === "orbit-app-user") {
+    const bin = `${folder}/app-user-bin`;
+    // The stand-in runs its own `grep` and `sed` from the plain PATH, so a routed call never finds these shims again.
+    const back = 'PATH=$APP_USER_PATH exec incus --project "$APP_USER_PROJECT" exec "$APP_USER_NAME" --';
+    Deno.mkdirSync(bin, { recursive: true });
+    for (const tool of ["getent", "usermod", "groupmod", "groupdel", "chown", "systemctl", "ps"]) {
+      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n${back} ${tool} "$@"\n`, { mode: 0o755 });
+    }
+    // Only the search of the unit files and their rewrite act on the container; the text filters on the script's own output do not.
+    for (const [tool, flag] of [["grep", "-rlE"], ["sed", "--in-place"]]) {
+      Deno.writeTextFileSync(`${bin}/${tool}`, `#!/bin/sh\n[ "$1" = ${flag} ] && ${back} ${tool} "$@"\nPATH=$APP_USER_PATH exec ${tool} "$@"\n`, { mode: 0o755 });
+    }
+    save();
+    const done = new Deno.Command("sh", {
+      args: command.slice(1),
+      env: { PATH: `${bin}:${Deno.env.get("PATH")}`, APP_USER_PATH: Deno.env.get("PATH")!, APP_USER_PROJECT: project ?? "default", APP_USER_NAME: name },
+    }).outputSync();
+    Deno.stdout.writeSync(done.stdout);
+    Deno.stderr.writeSync(done.stderr);
+    Deno.exit(done.code);
+  }
+  // The processes of uid 1000 by unit, as `ps -u 1000 -o unit=,pid=,args=` lists them: a test names those outside a unit in
+  // `app_processes`.
+  if (command[0] === "ps") {
+    for (const line of state.app_processes ?? []) console.log(line);
+    Deno.exit(0);
+  }
   // The container's accounts are its own /etc/passwd and /etc/group, which these stand-ins read and change as the shadow tools do; a
   // test writes an older container's. `chown --from` regroups files that the test user may not give away: it is recorded, never run.
   if (["getent", "usermod", "groupmod", "groupdel"].includes(command[0]) || (command[0] === "chown" && command.some((word) => word.startsWith("--from=")))) {
