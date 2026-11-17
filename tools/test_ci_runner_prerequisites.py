@@ -50,6 +50,9 @@ if mode == 'partial' and operation == 'update':
     sys.exit(100 if 'APT::Update::Error-Mode=any' in args else 0)
 if mode == 'fail' or (mode == 'install-fail' and operation == 'install'):
     sys.exit(100)
+if mode == 'restart-hooks' and operation == 'install' and os.environ.get('NEEDRESTART_SUSPEND') != '1':
+    # The disposable runner must not spend its bounded install restarting unrelated services.
+    sys.exit(100)
 if operation == 'install' and mode != 'no-tools':
     for name in (['valkey-server', 'valkey-cli'] if args[-1] == 'valkey-server' else ['nft']):
         path = pathlib.Path(os.environ['FIXTURE_BIN']) / name
@@ -107,6 +110,12 @@ if operation == 'install' and mode != 'no-tools':
         result = self.run_helper()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Verified nftables', result.stdout)
+
+    def test_disposable_runner_install_suspends_unrelated_service_restart_hooks(self):
+        result = self.run_helper('valkey-server', primary='restart-hooks', fallback='restart-hooks')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([(c['mirror'], c['operation']) for c in self.apt],
+                         [('primary', 'update'), ('primary', 'install')])
 
     def test_update_and_install_failures_try_the_known_fallback(self):
         for mode in ('fail', 'partial', 'install-fail'):
