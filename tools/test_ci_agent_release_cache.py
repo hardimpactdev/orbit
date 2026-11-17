@@ -135,14 +135,14 @@ class AgentReleaseCacheTest(unittest.TestCase):
                     import json, os, sys
                     from pathlib import Path
                     assert sys.argv[1:4] == ['build', '--locked', '--release']
-                    assert sys.argv[4] == '--target' and len(sys.argv) == 6
-                    target = sys.argv[5]
+                    assert sys.argv[4] == '--target' and sys.argv[6] == '-p' and len(sys.argv) == 8
+                    target, package = sys.argv[5], sys.argv[7]
                     build = Path('target') / target / 'release'
                     with open(os.environ['CARGO_CALLS'], 'a') as log:
-                        log.write(json.dumps({'target': target, 'warm': (build / 'dependency').exists()}) + '\\n')
+                        log.write(json.dumps({'target': target, 'package': package, 'warm': (build / 'dependency').exists()}) + '\\n')
                     build.mkdir(parents=True, exist_ok=True)
                     (build / 'dependency').write_text('compiled dependency')
-                    (build / 'orbit-agent').write_text(Path('checkout-source').read_text() + target)
+                    (build / package).write_text(Path('checkout-source').read_text() + target)
                     '''))
                 cargo.chmod(0o755)
                 step = next(step for step in job.split('      - ') if 'run: scripts/build-delivery ' in step)
@@ -163,7 +163,12 @@ class AgentReleaseCacheTest(unittest.TestCase):
                     delivery = temp / 'agent-delivery'
                     manifest = json.loads((delivery / 'manifest.json').read_text())
                     self.assertEqual(manifest['commit'], source)
-                    self.assertEqual(set(manifest['artifacts']), set(expected[name].values()))
+                    # A Linux delivery also carries the executor (ADR 0266).
+                    executor = {'executor-linux-x86_64'} if name == 'agent-linux' else set()
+                    self.assertEqual(set(manifest['artifacts']), set(expected[name].values()) | executor)
+                    if executor:
+                        self.assertEqual((delivery / 'orbit-executor-linux-x86_64').read_text(),
+                                         'current checkout bytes' + 'x86_64-unknown-linux-musl')
                     for target, platform in expected[name].items():
                         artifact = manifest['artifacts'][platform]
                         binary = delivery / artifact['path']
@@ -179,7 +184,9 @@ class AgentReleaseCacheTest(unittest.TestCase):
                         shutil.rmtree(agent / 'target')
                         shutil.rmtree(delivery)
                         shutil.copytree(saved, build_paths[0])
-                records = [json.loads(line) for line in calls.read_text().splitlines()]
+                every = [json.loads(line) for line in calls.read_text().splitlines()]
+                self.assertEqual({r['package'] for r in every}, {'orbit-agent'} | ({'orbit-executor'} if name == 'agent-linux' else set()))
+                records = [r for r in every if r['package'] == 'orbit-agent']
                 self.assertEqual([r['target'] for r in records], list(expected[name]) * 2)
                 self.assertEqual([r['warm'] for r in records],
                                  [False] * len(expected[name]) + [True] * len(expected[name]))

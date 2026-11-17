@@ -43,7 +43,7 @@ Deno.test("generated converge vars preserve shell arguments, scalar strings and 
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-async function localPlay(vars: Record<string, unknown>, tasks: unknown[], unchanged = true) {
+async function localPlay(vars: Record<string, unknown>, tasks: unknown[], unchanged = true, read?: (output: string) => void) {
     const folder = await Deno.makeTempDir();
     try {
         const path = `${folder}/play.json`;
@@ -57,6 +57,7 @@ async function localPlay(vars: Record<string, unknown>, tasks: unknown[], unchan
         const output = new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr);
         assertEquals(result.code, 0, output);
         if (unchanged) assertMatch(output, /changed=0\s/);
+        read?.(output);
     } finally { await Deno.remove(folder, { recursive: true }); }
 }
 
@@ -523,4 +524,35 @@ Deno.test("a converge writes the units of the Node's roles and reloads systemd o
         // A Node without these roles writes nothing.
         await localPlay({ intent: { role_units: [] } }, [write, load]);
     } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the base converge installs the executor only from its intent, after the agent, refusing an unplanned release first", async () => {
+    const base = (parse(await Deno.readTextFile(taskPath("node-converge-base"))) as Array<Record<string, unknown>>);
+    const names = base.map((task) => task.name);
+    const install = base.find((task) => task.name === "Install the executor on a Node whose roles need it")!;
+    assertEquals([install.when, install["ansible.builtin.include_tasks"]], ["intent.executor | default(None) != None", "node-executor.yml"]);
+    assertEquals(names.indexOf("Start the agent and restart only for managed changes") < names.indexOf(install.name as string), true);
+
+    const steps = parse(await Deno.readTextFile(taskPath("node-executor"))) as Array<Record<string, unknown>>;
+    // Rollout: a skip reason in the intent is recorded in the run and installs nothing; without one the install is required.
+    assertEquals([steps[0].when, (steps[0]["ansible.builtin.debug"] as Record<string, string>).msg],
+        ["intent.executor.skip != None", "executor install skipped: {{ intent.executor.skip }}"]);
+    assertEquals(steps[1].when, "intent.executor.skip == None");
+    const tasks = steps[1].block as Array<Record<string, unknown>>;
+    assertEquals(tasks[0]["ansible.builtin.assert"], { that: ["intent.executor.plan_error == None"], fail_msg: "{{ intent.executor.plan_error }}", quiet: true });
+    const replace = tasks.find((task) => task.name === "Reconcile the pinned executor binary")!;
+    assertEquals((replace.vars as Record<string, Record<string, string>>).converge_replacement.sha256, "{{ intent.executor.sha256 }}");
+    const sudoers = tasks.find((task) => task.name === "Allow the Node user the one relay command")!["ansible.builtin.copy"] as Record<string, string>;
+    assertEquals([sudoers.mode, sudoers.validate], ["0440", "/usr/sbin/visudo -cf %s"]);
+    const files = (tasks.find((task) => task.name === "Reconcile the executor's keys, Node id, allowlist and unit")!.loop as Array<{ path: string }>).map((file) => file.path);
+    assertEquals(files, ["/etc/orbit/executor/gateway.pub", "/etc/orbit/executor/node", "/etc/orbit/executor/enabled", "/etc/systemd/system/orbit-executor.service"]);
+});
+
+Deno.test("a converge before the executor's rollout records why it skips the install and changes nothing", async () => {
+    const steps = parse(await Deno.readTextFile(taskPath("node-executor"))) as Array<Record<string, unknown>>;
+    // The static import of the shared replacement cannot resolve from a temporary play; the skipped block runs none of it.
+    const install = { ...steps[1], block: (steps[1].block as Array<Record<string, unknown>>).filter((task) => !task["ansible.builtin.import_tasks"]) };
+    let output = "";
+    await localPlay({ intent: { executor: { skip: "executor.release_missing", plan_error: null } } }, [steps[0], install], true, (text) => output = text);
+    assertMatch(output, /executor install skipped: executor\.release_missing/);
 });

@@ -1,0 +1,23 @@
+[package]
+name = "orbit-executor"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+description = "The Orbit executor: runs Gateway-signed orders for fast Node actions (ADR 0266, ADR 0267)"
+
+[[bin]]
+name = "orbit-executor"
+path = "src/main.rs"
+
+[dependencies]
+orbit-executor-core = { path = "../executor-core" }
+
+[dev-dependencies]
+base64 = "0.22"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+rustix = { version = "1", features = ["fs", "process"] }
+serde_json = "1"
+tempfile = "3"
+
+[lints]
+workspace = true

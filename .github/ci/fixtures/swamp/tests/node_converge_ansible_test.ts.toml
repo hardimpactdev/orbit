@@ -30,6 +30,8 @@ cases = [
   "with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds",
   "the roles phase records each container without Chromium's trust store for the result, and an empty list without an Instance host",
   "a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing",
+  "the base converge installs the executor only from its intent, after the agent, refusing an unplanned release first",
+  "a converge before the executor's rollout records why it skips the install and changes nothing",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
 cost = 85 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s
@@ -46,6 +48,7 @@ inputs = [
   "swamp/ansible/swamp-worker-renewal.yml",
   "swamp/ansible/tasks/node-converge-base.yml",
   "swamp/ansible/tasks/node-converge-role.yml",
+  "swamp/ansible/tasks/node-executor.yml",
   "swamp/ansible/tasks/node-kernel-policy.yml",
   "swamp/ansible/tasks/node-role-runtime.yml",
   "swamp/ansible/tasks/node-update-policy.yml",

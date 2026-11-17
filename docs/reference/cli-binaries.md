@@ -50,6 +50,7 @@ Each new release has one CLI binary per supported platform, a checksum file, and
 | `orbit-0.N.0-linux-x86_64` | Linux x86_64 | Hosted `ubuntu-26.04` | The same runner |
 | `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `ubuntu-26.04` | Hosted `macos-26` |
 | `orbit-agent-linux-x86_64` | Agent for Linux x86_64, in an agent release only | Hosted `ubuntu-26.04` | |
+| `orbit-executor-linux-x86_64` | The [executor](/reference/executor) for Linux x86_64, manifest key `executor-linux-x86_64`, in an agent release only | Hosted `ubuntu-26.04` | |
 | `orbit-agent-macos-aarch64`, `orbit-agent-macos-x86_64` | Agents for macOS, in an agent release only | Hosted `macos-15` | |
 | `manifest.json` | The agent delivery manifest, with each agent's URL in this release, in an agent release only | | |
 | `SHA256SUMS` | Checksums of every binary above | | |
