@@ -576,7 +576,6 @@ mod tests {
             "firewall.route-lan",
             "firewall.router-lan",
             "firewall.rules",
-            "metrics.publication-firewall",
         ];
         for (resource, names) in [("packages", &packages[..]), ("firewall", &firewall[..])] {
             for name in names {

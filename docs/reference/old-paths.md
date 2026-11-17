@@ -26,7 +26,6 @@ Each row names what must replace the path and the evidence that permits its remo
 | `TaskVmAptCache`, `TaskVmModelRoute`, `TaskVmNestedFleet` and `RecipeImageBuilds` | Container cache, model route, nested-fleet layout and recipe owners | Move live shared behavior to its owning container namespace and remove VM-only branches without removing container callers |
 | Null VM contract fields and egress archive reads | A coordinated contract cleanup | Update Gateway, SDK, CLI, web and frozen agent contracts together. `vm_power` is always null; `task_vm_id` is null and `task_vm_guest` false. Stored `task_group_egress` rows are not container observations |
 | Reserved `10.44.0.128/25` and its model-guard allowance | Container forwarders on registered Nodes | Confirm no peer needs the range; remove the reservation and obsolete allowance together, not the container model guard |
-| Uncalled VM actions and disabled egress observation in `apps/agent/**` | An observer-only agent | Remove unused commands, exclusive tests and contract entries together; retain live container primitives |
 
 ## The task VM proof run
 
