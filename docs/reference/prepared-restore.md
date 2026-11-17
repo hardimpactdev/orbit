@@ -61,8 +61,8 @@ A field that is missing, unknown or out of range makes the helper refuse with `i
 | `schema_version` | all | `1` |
 | `command`, `instance_id`, `operation_id` | all | Echo of the call; `operation_id` is `null` for `discard` and `capabilities` |
 | `outcome` | all | One closed value per command; see the list below the table |
-| `error_code` | all | `null`, or `instance.container_freeze_failed` (`prepare`), `instance.container_start_failed` (`restore` could not resume) or `instance.power_helper_failed`. A missing container or another incarnation is `outcome: missing`, which the caller maps to its existing error |
-| `state_before`, `state_after` | `prepare`, `restore`, `residual` | `running`, `frozen`, `stopped` or `missing`, as Incus reported them |
+| `error_code` | all | `null`, or `instance.container_freeze_failed` (`prepare`), `instance.container_start_failed` (`restore` could not resume), `instance.container_frozen_unmanaged` (see [A freeze that Incus lost](#a-freeze-that-incus-lost)) or `instance.power_helper_failed`. A missing container or another incarnation is `outcome: missing`, which the caller maps to its existing error |
+| `state_before`, `state_after` | `prepare`, `restore`, `residual` | `running`, `frozen`, `stopped` or `missing`. Incus's word, except where the helper read the kernel: a container that the kernel holds frozen is `frozen`, whatever Incus says |
 | `swap_subtree` | `prepare`, `restore` | Inner cgroups that this sleep opened, or that this resume closed |
 | `prepared_restore` | `prepare`, `restore`, `residual` | The [result object](#results). `prepare` returns it without the residual fields when it froze the container, and with them when it found the container frozen; `residual` returns it with them |
 | `seconds` | `prepare`, `restore` | `{pause, capture, publish, reclaim}` or `{load, restore, resume, close}`, each in seconds; a step that did not run is absent |
@@ -296,11 +296,16 @@ Incus reads a container's state only from its liblxc monitor. On 17 November 202
 - `restore` writes 0 to `cgroup.freeze` and waits for `frozen 0` in `cgroup.events`, at most 5 s. It makes no memory syscall and no Incus call: Incus refuses to unfreeze a container that it thinks runs.
 - The result then has `kernel_frozen: true`, and the plan counts as stale.
 - After its own `incus resume`, `restore` checks the kernel too. liblxc marks the container running before it writes the thaw.
-- A thaw that does not come within 5 s fails `instance.container_frozen_unmanaged`. The sleep's files stay for the next wake.
-- `prepare` never freezes such a container again.
+
+A thaw can fail to come. The helper then fails clearly and keeps what the next wake needs:
+
+- A thaw that does not come within 5 s fails `instance.container_frozen_unmanaged`, with `state_after: frozen`.
+- A thaw without an Incus call that fails keeps the plan, `sleep.json` and `limits.json` for the next wake.
+- After its own resume, the helper has already removed the plan. A failed thaw then keeps only `sleep.json` and `limits.json`.
+- `prepare` never freezes such a container again: it fails `instance.container_frozen_unmanaged`.
 - Every `incus exec` that a wake runs has a bound from the Node, so a container that does not answer ends that step, not the run.
 
-The read of the boot units, the library-cache check and the CA check have 10 s each. Each read of a running unit and each T3 try have 5 s. A nested fleet's Club key read has 10 s, and its write has 30 s.
+The read of the boot units, the library-cache check and the CA check have 10 s each. Each read of a running unit and each T3 try have 5 s. A nested fleet's Club key read has 10 s, and its write has 30 s. Every other exec as root in the `start` phase, on each path of a wake (the resume, a container already running, the boot of a `Stopped` one, the stop and boot after a silent resume), has 60 s: twice the slowest of them. That includes the hosts-file read of the private names and the restart after changed PHP settings.
 
 A copy of a sleeping default needs no wake: the clone reads only the default's snapshot list and copies one seed snapshot. It never reads the live container's state, execs into it or changes it.
 

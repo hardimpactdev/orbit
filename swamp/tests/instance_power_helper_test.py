@@ -698,7 +698,10 @@ class KernelFreezeTest(Fixture):
         self.prepare(operation=21)
         self.freeze_files(True)
         result = self.restore(operation=22)
-        self.assertEqual((result["outcome"], result["error_code"]), ("failed", power.UNMANAGED))
+        self.assertEqual((result["outcome"], result["error_code"], result["state_after"]), ("failed", power.UNMANAGED, "frozen"))
+        # The plan went before the resume; the sleep's record and its swap limits stay for the next wake.
+        base = os.path.join(self.state, "instances", str(ID))
+        self.assertEqual([os.path.exists(os.path.join(base, f)) for f in ("plan", "sleep.json", "limits.json")], [False, True, True])
 
     def test_a_cgroup_without_freeze_files_keeps_incus_word(self):
         self.prepare()
