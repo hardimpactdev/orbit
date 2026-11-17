@@ -12,9 +12,9 @@ unit_ceiling_seconds = 180
 slice_seconds = 60
 slice_startup_seconds = 6
 pr_shards = 18
-# At most eighteen planned fixture jobs per run. Eight active runners enforce the CPU concurrency bound.
+# Maximum planned fixture jobs across both classes, independent of available runner slots.
 runner_shards = 18
-# Spread admitted work across two waves of the eight active runners; admission may still need eighteen jobs.
+# Extra spreading target, not a wave count. Retain jobs needed for admission up to runner_shards.
 spread_shards = 16
 # Tool-dependent shards keep a separate per-class limit and also count against runner_shards.
 self_hosted_shards = 8
@@ -46,6 +46,11 @@ capacity_gap = [
   "swamp/tests/ansible_instance_host_acl_test.ts",
   "swamp/tests/ansible_wireguard_hub_lan_rules_test.py",
 ]
+
+[runner-pool]
+# Observed shared pool for pressure reports: ci-sabre-1..5 and ci-shark-1..5, measured in main CI on 2026-11-17.
+# This is not online inventory or a reservation. See implementation-loop.md#shared-fixture-capacity.
+slots = 10
 
 [fixtures]
 default = ["swamp/tests/ansible_inputs_test.py"]
