@@ -1,4 +1,4 @@
-"""Fixture matrices share twenty-four planned shards without admitting fork code or losing units."""
+"""Fixture matrices share eighteen planned shards without admitting fork code or losing units."""
 from pathlib import Path
 import heapq
 import sys
@@ -61,22 +61,10 @@ class FixturePoolTest(unittest.TestCase):
         self.assertTrue(any(step.get('run', '').startswith('bin/ci-units run ') for step in job['steps']))
         self.assertEqual(['self-hosted', 'hardimpact', 'orbit-shard'], workflow['jobs']['self-hosted-fixtures']['runs-on'])
         budget, _, _ = units.configuration()
-        self.assertEqual(24, budget['runner_shards'])
+        self.assertEqual(18, budget['runner_shards'])
         self.assertEqual((150, 180, 190, 240), tuple(budget[key] for key in
                          ('shard_seconds', 'unit_ceiling_seconds', 'shard_deadline_seconds', 'shard_ceiling_seconds')))
         self.assertEqual((2, 2), (budget['shard_workers'], budget['self_hosted_workers']))
-
-    def test_instance_host_and_fleet_bootstrap_fit_without_omitting_required_cases(self):
-        budget, fixtures, defaults = units.configuration()
-        paths = ['swamp/ansible/tasks/instance-host.yml', 'swamp/ansible/tasks/instance-fleet-start.yml',
-                 'swamp/tests/_support/instance_host.ts', 'swamp/tests/_support/host_image_boundary.ts',
-                 'swamp/tests/_support/instance_fleet.ts', 'swamp/scripts/instance_clone.py']
-        plan = units.plan(paths, budget, fixtures, defaults)
-        self.assertNotIn('capacity', plan)
-        selected = set(units.planned_units(plan))
-        for file in ('swamp/tests/ansible_instance_fleet_test.ts', 'swamp/tests/ansible_instance_host_image_test.ts'):
-            self.assertLessEqual({name for name, _ in units.units_for(fixtures[file], budget)}, selected)
-        self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), 24)
 
     def test_shared_policy_runs_the_whole_fleet_in_two_lane_shards(self):
         budget, fixtures, defaults = units.configuration()

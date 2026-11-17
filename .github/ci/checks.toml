@@ -11,10 +11,10 @@ shard_workers = 2
 unit_ceiling_seconds = 180
 slice_seconds = 60
 slice_startup_seconds = 6
-pr_shards = 24
-# At most twenty-four planned fixture jobs per run. Eight active runners enforce the CPU concurrency bound.
-runner_shards = 24
-# Spread admitted work across two waves of the eight active runners; admission may still need three waves.
+pr_shards = 18
+# At most eighteen planned fixture jobs per run. Eight active runners enforce the CPU concurrency bound.
+runner_shards = 18
+# Spread admitted work across two waves of the eight active runners; admission may still need eighteen jobs.
 spread_shards = 16
 # Tool-dependent shards keep a separate per-class limit and also count against runner_shards.
 self_hosted_shards = 8
