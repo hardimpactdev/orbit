@@ -5,7 +5,7 @@ description: "How to install, run, and check the web app, the Node agent, and th
 
 # Bun and Rust projects
 
-Four of Orbit's nine projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the five PHP projects and the process that every change follows.
+Four of Orbit's eight projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the four PHP projects and the process that every change follows.
 
 | Project | Path | Tooling | Purpose |
 | --- | --- | --- | --- |
@@ -45,7 +45,7 @@ bun install
 bun run demo
 ```
 
-`bun run demo` serves the app against an in-memory fixture fleet, so it needs no Gateway. `bun run dev` serves it against the Gateway in your CLI profile instead. That machine must be a WireGuard peer of the fleet. The [web app README](https://github.com/hardimpactdev/orbit/blob/main/apps/web/README.md) describes both modes, the layout of the source, and how to run the app against a disposable topology.
+`bun run demo` serves the app against an in-memory fixture fleet, so it needs no Gateway. `bun run dev` serves it against the Gateway in your CLI profile instead. That machine must be a WireGuard peer of the fleet. The [web app README](https://github.com/hardimpactdev/orbit/blob/main/apps/web/README.md) describes both modes and the layout of the source. Use the [task copy and its nested fleet](/reference/tasks#build-a-feature-in-one-copy) for end-to-end checks.
 
 Run the checks before you submit a change:
 

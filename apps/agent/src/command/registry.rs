@@ -243,7 +243,6 @@ fn registry() -> &'static Registry {
             hooks: Vec::new(),
             services: Vec::new(),
         };
-        registry.service::<crate::commands::task_topology::Worker>();
         registry.service::<crate::commands::node_worker::Check>();
         registry.service::<crate::commands::plausible::Plausible>();
         orbit_documents_agent::register(&mut registry);

@@ -1,16 +1,13 @@
 ---
 title: "Reduce Incus VM costs on ZFS"
 description: "Measured findings on topology disk size, dependency-copy writes, and VM memory, with the limits that failed."
-covers:
-  - apps/e2e/config/e2e.php
-  - apps/e2e/app/E2E/IncusHost.php
 ---
 
 # Reduce Incus VM costs on ZFS
 
 ## Problem
 
-An [Incus topology](/reference/incus-topologies) is a Gateway, an operator, and the declared workload VMs, nested in the group's task VM. Disk copies are cheap, but prepared image contents, new writes in each guest, and each VM's memory allocation still cost resources. These findings say which savings are real and which settings break.
+These measurements used a Gateway, an operator, and workload VMs nested in a task VM. That manual harness is removed; new proofs use the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). The measurements below describe that VM setup, not the memory budget of the nested container fleet.
 
 ## Cause
 
@@ -43,4 +40,4 @@ The measurements also found two production-scan bugs. After SSH starts in the pr
 
 ## Verification
 
-Use the [Incus proof workflow](/reference/incus-topologies#commands) to repeat a measurement. Record guest filesystem allocation, ZFS `used` and `referenced`, clone `origin`, configured memory, guest memory pressure, kernel out-of-memory events, and the readiness result. Let a ZFS transaction commit before you read its accounting. Keep file-content and write-isolation checks apart from copy timing.
+For new measurements, use the [task copy's nested fleet](/reference/tasks#build-a-feature-in-one-copy). Record guest filesystem allocation, ZFS `used` and `referenced`, clone `origin`, configured memory, guest memory pressure, kernel out-of-memory events, and the readiness result. Let a ZFS transaction commit before you read its accounting. Keep file-content and write-isolation checks apart from copy timing; do not treat the VM measurements above as a container baseline.

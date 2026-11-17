@@ -54,7 +54,7 @@ The owner decided on 2026-11-16 to build Q2.
 - **Security model.** A container holds no production-grade secrets, only dev-scoped keys. That is the rule for anything Orbit or a Project puts into a container.
 - **Reason.** Convenience: the agent installs a package or fixes a system file itself and never needs outside help.
 - **Trade-off.** Root in a container can read that Instance's `.env` and its per-copy model key, and can change the container's own firewall, which holds the model-route rule of [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder). So that rule no longer keeps `agent`'s own processes apart; it still keeps `orbit` and the app off the model route while nobody uses root to change it. The container wall stays the boundary: the container is unprivileged, with an isolated ID map, and root in it is no user on the Node.
-- **Existing sudo use stays.** The task check's `sudo -n systemd-run`, `bin/e2e-topology-host-setup` and `reconcile-firewall.py` work as before.
+- **Existing sudo use stays.** The task check's `sudo -n systemd-run` and `reconcile-firewall.py` work as before.
 
 ## Rejected alternatives
 
