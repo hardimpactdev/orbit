@@ -9,6 +9,24 @@ export const hasAnsible =
 const root = new URL("../../ansible/", import.meta.url);
 export const GiB = 1073741824;
 
+/** Render the swap template with the image's own constant expression, using its referenced PHP constants. */
+export function appAccountSwap(): string {
+    const source = Deno.readTextFileSync(new URL("../../../apps/gateway/app/Domain/Instances/InstanceImage.php", import.meta.url));
+    const expression = source.match(/public const string NestedAppGuard = (.*);/)![1];
+    const files: Record<string, string> = {
+        NestedFleetLayout: "Instances/NestedFleetLayout.php",
+        InstanceHostIntent: "Instances/InstanceHostIntent.php",
+    };
+    const guard = [...expression.matchAll(/'([^']*)'|(\w+)::(\w+)/g)].map((match) => {
+        if (match[1] !== undefined) return match[1];
+        const php = Deno.readTextFileSync(new URL(`../../../apps/gateway/app/Domain/${files[match[2]]}`, import.meta.url));
+        const value = php.match(new RegExp(`public const (?:string|int) ${match[3]} = (?:'([^']*)'|(\\d+));`));
+        assert(value, `Missing image constant ${match[2]}::${match[3]}`);
+        return value[1] ?? value[2];
+    }).join("");
+    return Deno.readTextFileSync(new URL("../../ansible/files/instance-app-user.sh", import.meta.url)).replaceAll("@nested-app-guard@", guard);
+}
+
 type Task = Record<string, unknown>;
 
 /**
@@ -275,8 +293,10 @@ function gatewayImage() {
     );
     const values: Record<string, string> = {
         agent: "2750",
-        orbit: "1000",
-        work: "2760",
+        // The normal image: the stock `www-data` group, and no accounts of the nested-fleet image's own.
+        group: "www-data",
+        accounts: "",
+        home: "/var/www",
         workspace: "/srv/workspace",
         vite: "/var/lib/orbit/vite-plus-home",
         sharedVite: "/opt/orbit-runtime/current/vite-plus-home",

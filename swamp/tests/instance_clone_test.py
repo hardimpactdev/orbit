@@ -2060,7 +2060,7 @@ class T3PhaseTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00"}), "")
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
 
-        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": fetched_mirror(self), "branch": "proof", "php": None,
+        container = {"name": "instance-proof", "project": "orbit-instances", "workspace_ids": {"group": 33, "writer": 33}, "mirror": fetched_mirror(self), "branch": "proof", "php": None,
                      **({} if clone is None else {"clone": clone})}
         self.calls = calls
         output, error = io.StringIO(), io.StringIO()
@@ -2235,7 +2235,7 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
 
         # A fetched branch is in the Node's mirror; a new branch at the seed's commit has no mirror.
-        container = {"name": "instance-proof", "project": "orbit-instances", "branch": "proof", "php": None,
+        container = {"name": "instance-proof", "project": "orbit-instances", "workspace_ids": {"group": 33, "writer": 33}, "branch": "proof", "php": None,
                      "mirror": fetched_mirror(self) if mirror else "/nowhere/mirror", "clone": {"seed_commit": "c" * 40}}
         self.calls = calls
         output, error = io.StringIO(), io.StringIO()

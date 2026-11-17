@@ -17,6 +17,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
@@ -1340,7 +1341,7 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
                 '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true, InstanceContainer::T3BootDropIn => true,
                 InstanceContainer::ServerDropIn => true]);
             expect(array_column($actual['clone']['boot_files'], 'path'))
-                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
+                ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/sudoers.d/orbit-agent', InstanceImage::AppUserSwap, '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                     '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh',
                     // The presented machine name that T3's first start reads (InstanceMachineName::bootFile).
                     '/etc/machine-info']);
@@ -1411,6 +1412,11 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
     // The CLI-only PHP ini came after main, right after `php`; a Project without PHP has none (InstanceContainer::phpCliIni).
     $php = array_search('php', array_keys($expected), true) + 1;
     $expected = [...array_slice($expected, 0, $php, true), 'php_cli_ini' => null, ...array_slice($expected, $php, null, true)];
+    // The workspace's ids came with the app account `www-data`, right after the `.env` path (ADR 0268, second amendment): a nested-fleet
+    // container keeps `work` and `orbit` for its inner fleet.
+    $file = array_search('environment_file', array_keys($expected), true) + 1;
+    $ids = $runtime->incus_project === InstancePlacement::NestedProject ? ['group' => 2760, 'writer' => 1000] : ['group' => 33, 'writer' => 33];
+    $expected = [...array_slice($expected, 0, $file, true), 'workspace_ids' => $ids, 'app_account' => InstanceImage::appAccount(), ...array_slice($expected, $file, null, true)];
 
     return $expected;
 }
