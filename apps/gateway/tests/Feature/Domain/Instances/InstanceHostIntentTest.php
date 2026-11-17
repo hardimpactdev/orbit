@@ -470,7 +470,9 @@ describe('the shared folders', function (): void {
     ]);
 
     it('states facts only: the users, the workspace, the Instance file, agent\'s sudo and no internet', function (string $note): void {
-        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`orbit`', '`/srv/workspace`', '`/etc/orbit/instance`', '`agent` has passwordless sudo', '`orbit` has no sudo.', 'no direct internet')
+        expect(InstanceNotes::all()[$note])->toContain('`agent`', '`www-data`', '`/srv/workspace`', '`/etc/orbit/instance`', '`agent` has passwordless sudo', '`www-data` has no sudo.', 'no direct internet')
+            // ADR 0268, second amendment: the app account is the stock `www-data` and `orbit` is no container user.
+            ->and(InstanceNotes::all()[$note])->not->toContain('run as `orbit`', 'group `work`')
             ->and(InstanceNotes::all()[$note])->not->toContain('There is no sudo.')
             // The pinned static PHP build and Composer are in the runtime folder, and the note says where.
             ->and(InstanceNotes::all()[$note])->toContain('Composer', '`/opt/orbit-runtime/current/php/<version>/bin`', '`php` and `frankenphp`', '`php` on `PATH`', 'so `composer` works')
