@@ -27,6 +27,12 @@ final readonly class ProofSettings
         return max(1, Config::integer('proof.copy_memory'));
     }
 
+    /** The warm proof copies that the pool keeps across all CI Nodes; 0 turns the pool off (ProofWarmPool). */
+    public function warmCopies(): int
+    {
+        return max(0, Config::integer('proof.warm_copies'));
+    }
+
     public function repository(): GitHubRepository
     {
         return GitHubRepository::fromOrigin('https://github.com/'.Config::string('proof.repository'))
