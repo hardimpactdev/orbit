@@ -264,7 +264,7 @@ The plan job reads the checks table once. Selected jobs start after it; unselect
 
 Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. Commits added only to main after a pull request branches do not select checks for that pull request. For an ordinary main push, the previous main commit is the merge base, so selection covers the pushed changes.
 
-Fixture selection ignores a changed YAML input when its parsed nodes match at both revisions. Comments and presentation do not select fixtures; scalar contents and tags, sequence order and mapping order still do. YAML files still select fixtures when added or deleted, or when parsing finds invalid syntax, duplicate keys or unsupported tags. Build and proof selection still see every changed path.
+Fixture selection skips YAML comment edits when it can verify that the syntax stays the same and the mapping keys are unambiguous strings. It compares the original syntax outside comments, including scalar spelling and quotes. Added and deleted files, invalid YAML, duplicate keys and uncertain comparisons select fixtures. Build and proof selection still see every changed path.
 
 Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a pull request selects a proof while `ORBIT_PROOF_ENABLED` is `true`; then it retains the proof's 275-minute wait budget. CI proof keeps its own 275-minute exception.
 

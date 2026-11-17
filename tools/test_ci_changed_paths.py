@@ -66,16 +66,38 @@ class ChangedPathsTest(unittest.TestCase):
         fixtures = self.cli('ci-units', 'plan', '--base', self.fork, '--head', 'main')
         self.assertTrue(fixtures['shards'])
 
-    def test_yaml_presentation_only_changes_skip_fixtures_not_build_checks(self):
+    def test_yaml_comment_only_changes_skip_fixtures_and_keep_build_checks(self):
         path = 'swamp/ansible/tasks/instance-fleet.yml'
         self.commit(path, '- name: Read fleet\n  command: "incus list"\n')
         base = self.git('rev-parse', 'HEAD')
-        self.commit(path, '# Explain the fleet\n- name: Read fleet # a comment\n  command: incus list\n')
+        self.commit(path, '# Explain the fleet\n- name: Read fleet # a comment\n  command: "incus list"\n')
         fixtures = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
         self.assertEqual([], fixtures['shards'])
         self.assertEqual([], fixtures['self_hosted_shards'])
         result = self.cli('ci-build-plan', '--base', base, '--head', 'HEAD')
         self.assertTrue(result['swamp_checks']['tests'])
+
+    def test_yaml_scalar_and_key_ambiguity_selects_the_workflow_fixture(self):
+        path = 'swamp/workflows/workflow-operation-instance-complete.yaml'
+        fixture = 'swamp/tests/instance_complete_workflow_test.ts'
+        source = (ROOT / path).read_text()
+        marker = '  properties:\n'
+        self.assertIn(marker, source)
+        changes = [
+            ('"1000": {}\n    "1e3": {}', '"1000": {}\n    1e3: {}'),
+            ('example: "2e4"', 'example: 2e4'),
+            ('"1000": {}\n    1e3: {}', '"1000": {}\n    1e3: {} # duplicate for Deno'),
+            ('"true": {}\n    True: {}', '"true": {}\n    True: {} # duplicate for Deno'),
+            ('"1": {}\n    1: {}', '"1": {}\n    1: {} # duplicate for Deno'),
+        ]
+        for before, after in changes:
+            with self.subTest(before=before, after=after):
+                self.commit(path, source.replace(marker, f'{marker}    {before}\n', 1))
+                base = self.git('rev-parse', 'HEAD')
+                self.commit(path, source.replace(marker, f'{marker}    {after}\n', 1))
+                plan = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
+                units = [unit for shard in plan['shards'] for unit in shard['units']]
+                self.assertIn(fixture, [unit.split('#', 1)[0] for unit in units])
 
     def test_yaml_meaning_changes_and_uncertain_comparisons_keep_fixtures(self):
         path = 'swamp/ansible/tasks/instance-fleet.yml'
@@ -83,6 +105,7 @@ class ChangedPathsTest(unittest.TestCase):
             ('command: incus list\n', 'command: incus stop\n'),
             ('value: 1\n', 'value: true\n'),
             ('value: "1"\n', 'value: 1\n'),
+            ('value: "incus list # literal"\n', 'value: "incus info # literal"\n'),
             ('value: |\n  # kept in the command\n', 'value: |\n  # changed command\n'),
             ('- first\n- second\n', '- second\n- first\n'),
             ('first: 1\nsecond: 2\n', 'second: 2\nfirst: 1\n'),

@@ -195,40 +195,61 @@ def inventory_changes(base, head):
 
 
 def fixture_inputs(paths, base, head):
-    """Ignore YAML presentation-only edits, but retain any input we cannot compare safely."""
+    """Ignore comment-only YAML edits when both revisions can be compared safely."""
     import yaml
 
-    class UniqueLoader(yaml.SafeLoader):
-        def construct_mapping(self, node, deep=False):
-            keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
-            if len(set(keys)) != len(keys):
-                raise ValueError('Duplicate YAML key')
-            return super().construct_mapping(node, deep=deep)
+    plain_key = re.compile(r'[A-Za-z_][A-Za-z0-9_.-]*')
+    quoted_key = re.compile(r'[ -~]*')
+    comments = re.compile(r'^[ \t]*#[^\r\n]*(?:\r?\n|$)|[ \t]+#[^\r\n]*', re.MULTILINE)
 
-    def nodes(node):
-        if node is None:
-            return None
-        if node.tag not in yaml.SafeLoader.yaml_constructors:
-            raise ValueError('Unsupported YAML tag')
-        if isinstance(node, yaml.ScalarNode):
-            return node.tag, node.value
-        if isinstance(node, yaml.SequenceNode):
-            return node.tag, tuple(nodes(value) for value in node.value)
-        pairs = tuple((nodes(key), nodes(value)) for key, value in node.value)
-        # Do not collapse mappings to dicts: Ansible can consume their insertion order.
-        return node.tag, pairs
+    def uncommented(source):
+        class UniqueLoader(yaml.SafeLoader):
+            def construct_mapping(self, node, deep=False):
+                keys = set()
+                for key, _ in node.value:
+                    # Deno turns resolved keys into strings. Require literal string keys in both parsers,
+                    # since PyYAML can see a string where Deno sees a number (for example, 1e3).
+                    if not isinstance(key, yaml.ScalarNode) or key.tag != 'tag:yaml.org,2002:str':
+                        raise ValueError('Ambiguous YAML key')
+                    spelling = source[key.start_mark.index:key.end_mark.index]
+                    if key.style is None:
+                        literal = plain_key.fullmatch(spelling)
+                    else:
+                        literal = (key.style in ("'", '"') and quoted_key.fullmatch(key.value)
+                                   and spelling == f'{key.style}{key.value}{key.style}')
+                    if not literal or key.value in keys:
+                        raise ValueError('Ambiguous or duplicate YAML key')
+                    keys.add(key.value)
+                return super().construct_mapping(node, deep=deep)
+
+        # PyYAML and Deno differ on which Unicode characters end a line.
+        if any(char in source for char in '\x85\u2028\u2029'):
+            raise ValueError('Ambiguous YAML line break')
+        parts = []
+        end = 0
+        for token in yaml.scan(source):
+            if isinstance(token, (yaml.AliasToken, yaml.TagToken, yaml.DirectiveToken)):
+                raise ValueError('Ambiguous YAML syntax')
+            start, stop = token.start_mark.index, token.end_mark.index
+            if start == stop and not isinstance(token, yaml.StreamEndToken):
+                continue
+            # Strip comments only in gaps between tokens. Preserve scalar spelling and layout,
+            # including any text that looks like a comment inside a quoted or block scalar.
+            for comment in comments.finditer(source, end, start):
+                parts.append(source[end:comment.start()])
+                end = comment.end()
+            parts.append(source[end:stop])
+            end = stop
+        yaml.load(source, Loader=UniqueLoader)
+        return ''.join(parts)
 
     def unchanged(path):
         if Path(path).suffix.lower() not in ('.yaml', '.yml'):
             return False
         try:
-            values = []
-            for ref in (base, head):
-                text = subprocess.check_output(['git', 'show', f'{ref}:{path}'], stderr=subprocess.DEVNULL, timeout=60)
-                # Validate constructors too: composing alone accepts e.g. an invalid !!int.
-                yaml.load(text, Loader=UniqueLoader)
-                values.append(nodes(yaml.compose(text, Loader=yaml.SafeLoader)))
-            return values[0] == values[1]
+            before, after = (subprocess.check_output(['git', 'show', f'{ref}:{path}'], stderr=subprocess.DEVNULL,
+                                                     timeout=60).decode('utf-8') for ref in (base, head))
+            return uncommented(before) == uncommented(after)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, yaml.YAMLError, ValueError, TypeError, RecursionError):
             return False
 
