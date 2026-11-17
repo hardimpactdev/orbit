@@ -58,9 +58,11 @@ final readonly class OperationKinds
 
     public const string ConnLaunch = 'conn.launch';
 
+    public const string ConnLaunchInspect = 'conn.launch_inspect';
+
     public const string ConnLaunchDispatch = 'conn.launch_dispatch';
 
-    public const array PrivateConnKinds = [self::ConnLaunch, self::ConnLaunchDispatch];
+    public const array PrivateConnKinds = [self::ConnLaunch, self::ConnLaunchInspect, self::ConnLaunchDispatch];
 
     public const string ProofVerify = 'proof.verify';
 
