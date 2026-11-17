@@ -45,6 +45,9 @@ final readonly class RunTaskMergeRoundAction
 
     public const string ConflictCode = 'tasks.publish_conflict';
 
+    /** The step a tick starts after each step of the round; '' is P itself. */
+    private const array NextStep = ['' => 'sync', 'sync' => 'turn', 'turn' => 'check', 'check' => 'review', 'review' => 'publish'];
+
     /** Codes that say "not now": the next tick reads the group again. */
     private const array QuietCodes = ['operation.target_busy', 'tasks.copy_turn_unended'];
 
@@ -103,6 +106,11 @@ final readonly class RunTaskMergeRoundAction
         }
         $step = $last === null ? null : substr((string) $last->idempotency_key, strlen($prefix));
         $subtask = Task::query()->where('parent_id', $group->id)->findOrFail($c0->task_id);
+        // Only a done-check publish reopens its completed subtask, and completes it again; any other P runs on its subtask as it is.
+        if (! self::donePublish($publish) && $subtask->status === TaskStatus::Completed) {
+            return $this->stop($group, $publish, self::NextStep[$step ?? ''] ?? (string) $step, null, "cannot run: subtask {$subtask->id} is completed, "
+                ."and publish Operation {$publish->id} was no done-check publish, so the round does not reopen it");
+        }
 
         return match ($step) {
             null => $this->start($group, $publish, 'sync', OperationKinds::TasksSync, fn (): Operation => $this->sync->execute($group, self::Caller, (string) Str::uuid())),
@@ -120,7 +128,7 @@ final readonly class RunTaskMergeRoundAction
         if ($sync->status !== OperationStatus::Succeeded) {
             return $this->stop($group, $publish, 'sync', $sync, 'failed');
         }
-        if ($subtask->status === TaskStatus::Completed) {
+        if (self::donePublish($publish) && $subtask->status === TaskStatus::Completed) {
             // The reopen of `task:update --status=running` (docs/reference/tasks.md#reopen-the-last-subtask): a turn runs only on an open subtask.
             try {
                 $this->update->execute($group, $subtask, new UpdateTaskData(null, null, null, status: TaskStatus::Running));
@@ -179,7 +187,7 @@ final readonly class RunTaskMergeRoundAction
             ->where('input->check', $c1->id)->exists()) {
             return self::result($group, $publish, 'publish', 'yielded', null);
         }
-        $done = is_array($publish->input['pull_request'] ?? null);
+        $done = self::donePublish($publish);
         if ($done && $subtask->refresh()->status !== TaskStatus::Completed) {
             try {
                 $this->update->execute($group, $subtask, new UpdateTaskData(null, null, null, status: TaskStatus::Completed));
@@ -231,6 +239,12 @@ final readonly class RunTaskMergeRoundAction
             .'Conflicting paths: '.self::paths($publish).'.');
 
         return self::result($group, $publish, $step, 'stopped', null, $operation?->id);
+    }
+
+    /** P published the done check: its input carries the pull request text, as the automatic publish, a release and a named done check send it. */
+    private static function donePublish(Operation $publish): bool
+    {
+        return is_array($publish->input['pull_request'] ?? null);
     }
 
     private static function turnDone(Operation $turn): bool

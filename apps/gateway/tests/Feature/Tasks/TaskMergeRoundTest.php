@@ -306,6 +306,28 @@ it('f. merges an open subtask whose push-only publish conflicted, and pushes C1 
         ->and(Activity::query()->where('description', 'subtask reopened')->exists())->toBeFalse();
 });
 
+it('f. stops and asks, without a reopen, when the subtask of a push-only publish is completed', function (bool $synced): void {
+    [$world, $publish] = mergeRoundWorld(done: false);
+    if ($synced) {
+        mergeRoundTick();
+        mergeRoundSynced($world->group, $publish);
+    }
+    $world->subtask->refresh()->update(['status' => TaskStatus::Completed]);
+    $count = mergeRoundOperations($world->group);
+
+    $results = mergeRoundTick();
+
+    $group = $world->group->refresh();
+    expect($results)->toBe([['group' => $group->id, 'publish' => $publish->id, 'step' => $synced ? 'turn' : 'sync', 'result' => 'stopped', 'code' => null, 'operation' => null]])
+        ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->assistance_reason)->toContain("subtask {$world->subtask->id} is completed, and publish Operation {$publish->id} was no done-check publish")
+        ->and($group->assistance_reason)->toContain('app/Order.php, tests/ci-units.json and 2 more')
+        ->and($world->subtask->refresh()->status)->toBe(TaskStatus::Completed)
+        ->and(Activity::query()->where('description', 'subtask reopened')->exists())->toBeFalse()
+        ->and(mergeRoundOperations($group))->toBe($count)
+        ->and(mergeRoundTick())->toBe([]);
+})->with(['before the sync' => [false], 'after the sync' => [true]]);
+
 describe('g. a stop', function (): void {
     it('asks a person once, with the step, the Operation and the paths, and starts no next step', function (string $at, Closure $break, string $what): void {
         [$world, $publish] = mergeRoundWorld();

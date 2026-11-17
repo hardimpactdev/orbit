@@ -420,7 +420,7 @@ From the group's Operations after P, the tick starts at most one step per group,
 | After P | The tick starts |
 | --- | --- |
 | Nothing | [`task:sync`](#bring-main-into-a-copy) |
-| The sync succeeded | An implementer turn on the subtask of P's check, which continues its thread. A `completed` subtask is [reopened](#reopen-the-last-subtask) first |
+| The sync succeeded | An implementer turn on the subtask of P's check, which continues its thread. After a done-check publish, a `completed` subtask is [reopened](#reopen-the-last-subtask) first |
 | The turn ended `done` | A handoff check of that subtask: C1 |
 | C1 passed | A reviewer turn on C1, which continues the reviewer thread |
 | The reviewer turn ended `done` and sent its [pull request text](#the-reviewers-pull-request-text) on C1 | The publish of C1, as P was published |
@@ -435,7 +435,9 @@ The turn's prompt names the conflicting paths from P's result and the default he
 
 The reviewer turn reviews only the merge's own change. For each merge commit in `git log --merges <C0 commit>..<C1 commit>`, where C0 is P's check, it reads `git show --remerge-diff <merge>`: the difference between the reviewed head merged with main and the resolved tree. It judges that against the original brief and nothing else of the branch. Its approval is the text it sends, as for every reviewer turn: it keeps the earlier text, or updates it when the merge changes what the text says. A reviewer that does not approve sends nothing and lists the defects.
 
-P was a done-check publish when its input carries a pull request text: the automatic publish, a release, or a named done check. Then the tick completes the subtask again and publishes C1 as the done check. The normal [done rule](#when-the-work-is-done) holds: the reviewer turn reviewed exactly C1, and the subtask completed after it. Any other P was a push of a named check: the subtask stays as it is, and the tick pushes C1 with `--check` only. The round adds no state and no column. Each step is keyed `merge-round:<group>:<P>:<step>`, with the steps `sync`, `turn`, `check`, `review` and `publish`, so a repeat tick starts nothing twice.
+P was a done-check publish when its input carries a pull request text: the automatic publish, a release, or a named done check. Only such a P reopens its subtask, and then the tick completes it again and publishes C1 as the done check. The normal [done rule](#when-the-work-is-done) holds: the reviewer turn reviewed exactly C1, and the subtask completed after it.
+
+Any other P was a push of a named check: the round runs on its subtask as it is, and the tick pushes C1 with `--check` only. When that subtask is completed, the round does not reopen it: it stops and asks. The round adds no state and no column. Each step is keyed `merge-round:<group>:<P>:<step>`, with the steps `sync`, `turn`, `check`, `review` and `publish`, so a repeat tick starts nothing twice.
 
 The round stops, and the tick requests assistance on the group once, when any of these happens:
 
@@ -443,6 +445,7 @@ The round stops, and the tick requests assistance on the group once, when any of
 - the turn fails or asks;
 - the check fails;
 - the reviewer turn fails, asks or sends no text;
+- the subtask is completed, and P was no done-check publish;
 - Orbit refuses to start a step for any reason but a busy group;
 - a publish of a check that the round made fails with `tasks.publish_conflict` again.
 
