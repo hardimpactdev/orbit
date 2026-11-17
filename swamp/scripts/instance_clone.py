@@ -995,8 +995,14 @@ def main():
                 raise RuntimeError("instance.container_network_unsafe")
             check_timer.__exit__()
             with timed("idmap"):
-                if unshift_clone_rootfs(container, read, run):
-                    changes.append("idmap")
+                try:
+                    if unshift_clone_rootfs(container, read, run):
+                        changes.append("idmap")
+                except Exception:
+                    # chown can clear modes/caps before their restore fails. The new
+                    # ownership cannot tell a retry what was lost; copy the seed again.
+                    run(project + ["delete", name, "--force"], check=False)
+                    raise
             with timed("start"):
                 if read["status"] != "Running":
                     change(project + ["start", name])

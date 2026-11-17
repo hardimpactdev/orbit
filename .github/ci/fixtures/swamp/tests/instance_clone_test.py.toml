@@ -1,5 +1,6 @@
 order = 830
 cases = [
+  "test_a_failed_idmap_metadata_restore_deletes_the_copy_and_retry_copies_the_seed_again",
   "test_a_copy_with_a_stripped_idmap_unshifts_its_rootfs_before_start",
   "test_a_stripped_idmap_on_another_pool_driver_refuses_before_start",
   "test_a_clone_with_no_missing_idmap_never_opens_its_pool",
@@ -139,6 +140,7 @@ inputs = [
 
 # Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate.
 [case_costs]
+"test_a_failed_idmap_metadata_restore_deletes_the_copy_and_retry_copies_the_seed_again" = 1 # local injected chmod/capability failures and fresh retries: 0.2 s
   "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file" = 1
   "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name" = 1
   "test_a_copy_from_a_seed_snapshot_that_records_size_0_sets_the_intents_size_before_the_container_and_starts" = 1 # estimate: local run of 0.15s x 2, rounded up; not a CI measurement

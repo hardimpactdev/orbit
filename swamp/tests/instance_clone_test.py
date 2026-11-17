@@ -386,6 +386,12 @@ class CloneTest(unittest.TestCase):
                 if argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if argv[3:4] == ["delete"]:
+                    self.assertEqual(argv[4:], [container["name"], "--force"])
+                    read = None
+                    if root.exists():
+                        shutil.rmtree(root)
+                    return subprocess.CompletedProcess(argv, 0, "", "")
                 if argv[3:5] == ["file", "push"] and argv[-1] in (container["name"] + "/etc/hosts", container["name"] + "/etc/hostname"):
                     files[argv[-1][len(container["name"]):]] = kwargs.get("input")
                 if argv[3:4] == ["start"] and before_start:
@@ -571,6 +577,67 @@ class CloneTest(unittest.TestCase):
         pool = next(i for i, call in enumerate(calls) if call[:2] == ["incus", "query"] and "/storage-pools/" in call[2])
         start = next(i for i, call in enumerate(calls) if call[3:4] == ["start"])
         self.assertLess(pool, start)
+
+    def test_a_failed_idmap_metadata_restore_deletes_the_copy_and_retry_copies_the_seed_again(self):
+        real_lstat, real_chmod = os.lstat, os.chmod
+        for fault in ("chmod", "setxattr"):
+            with self.subTest(fault=fault):
+                owners, attrs, chowns = {}, {}, []
+                fail = True
+
+                def lstat(path, **kwargs):
+                    held = real_lstat(path, **kwargs)
+                    if str(path).endswith("/rootfs/program"):
+                        if str(path) not in owners:
+                            # Every fresh seed copy has shifted owners and intact privileged metadata.
+                            owners[str(path)] = (131072, 131072)
+                            real_chmod(path, 0o6755)
+                            attrs[str(path)] = struct.pack("<6I", 0x03000001, 1, 2, 3, 4, 131072)
+                        held = list(real_lstat(path, **kwargs))
+                        held[4:6] = owners[str(path)]
+                        return os.stat_result(held)
+                    return held
+
+                def chown(path, uid, gid):
+                    chowns.append(str(path))
+                    owners[str(path)] = (uid, gid)
+                    real_chmod(path, 0o755)
+                    attrs.pop(str(path), None)
+
+                def chmod(path, mode, **kwargs):
+                    if fail and fault == "chmod" and str(path).endswith("/rootfs/program"):
+                        raise OSError(errno.EIO, "injected mode restore failure")
+                    real_chmod(path, mode, **kwargs)
+
+                def getxattr(path, name, **_):
+                    if name == "security.capability" and str(path) in attrs:
+                        return attrs[str(path)]
+                    raise OSError(errno.ENODATA, "missing")
+
+                def setxattr(path, name, value, **_):
+                    if fail and fault == "setxattr":
+                        raise OSError(errno.EIO, "injected capability restore failure")
+                    attrs[str(path)] = value
+
+                def starting(root):
+                    path = root / "program"
+                    self.assertEqual(owners[str(path)], (0, 0))
+                    self.assertEqual(stat.S_IMODE(real_lstat(path).st_mode), 0o6755)
+                    self.assertEqual(struct.unpack_from("<I", attrs[str(path)], 20)[0], 0)
+
+                with patch("os.lstat", lstat), patch("os.lchown", chown), patch("os.chmod", chmod), patch("os.getxattr", getxattr), patch("os.setxattr", setxattr):
+                    calls, read, error = self.clone(rootfs={"program": "seed program"}, overrides={"fixture_source_idmap": IdmapTest.MAP})
+                    self.assertEqual(error, "instance.clone_idmap_unshift_failed\n")
+                    self.assertEqual(len(chowns), 1, "Fail after ownership changed and privileged metadata was lost")
+                    self.assertIn(["incus", "--project", "orbit-instances", "delete", "instance-7", "--force"], calls)
+                    self.assertIsNone(read)
+                    self.assertFalse(any(call[3:4] == ["start"] for call in calls))
+                    fail = False
+                    retried, _, error = self.clone(existing=read, rootfs={"program": "seed program"},
+                                                   overrides={"fixture_source_idmap": IdmapTest.MAP}, before_start=starting)
+                    self.assertEqual(error, "")
+                    self.assertTrue(any(call[3:6] == ["copy", "instance-1/seed-abc", "instance-7"] for call in retried))
+                    self.assertEqual(len(chowns), 2)
 
     def test_a_stripped_idmap_on_another_pool_driver_refuses_before_start(self):
         calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": "zfs"})
