@@ -2172,7 +2172,9 @@ The clone probe writes only `security.idmap.isolated=true`, so its guard admits 
 
 The root disk's `size` is the one device key that may be larger than the intent's, as [The root disk](#the-root-disk) explains. Any other form than `<n>GiB` is refused. The host converge's clone probe inherits the shared profile's root disk, which names no size. For the probe, the guard admits only a root without a size.
 
-After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it. A start writes two keys this way, `boot.autostart` and `limits.memory.swap`, and Incus applies each without a restart. Orbit owns both: the start writes the intent's value over an absent key or a different value, and does not refuse it. The guard keeps refusing every other key and device that differs.
+After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it. A start writes two keys this way, `boot.autostart` and `limits.memory.swap`, and Incus applies each without a restart.
+
+Orbit owns both keys: the start writes the intent's value over an absent key or a different value, and does not refuse it. The guard keeps refusing every other key and device that differs.
 
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
 
