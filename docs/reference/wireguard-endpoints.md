@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Domain/WireGuard/{WireGuardEndpoint,HubEndpoint,LanAddress}.php
   - apps/gateway/app/Infrastructure/WireGuard/{VpnConfigurationRepository,WireGuardServerConfigRenderer,NativeWireGuardPeerConverger}.php
   - apps/gateway/app/Console/Commands/BootstrapGatewayCommand.php
-  - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeNetworkProjection,NodeWireGuardInput,NodeWireGuardHubInput}.php
+  - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeWireGuardInput,NodeWireGuardHubInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
   - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
   - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-peers,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers,node-converge-hub-filter-absent}.yml

@@ -8,7 +8,7 @@ covers:
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
-  - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/{Support/{LinuxHost,TestToolchain,LocalShellSshExecutor,WithCommittedSqliteDatabase}.php,Feature/Database/SchemaBaselineTest.php}}
+  - apps/gateway/{database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php,tests/Support/TestToolchain.php}
   - apps/docs/**
   - .github/{dependabot,workflows/ci,workflows/dependency-audit}.yml
 ---
