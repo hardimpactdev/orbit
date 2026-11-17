@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
+use App\Domain\Tasks\TaskStatus;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
@@ -153,6 +154,20 @@ it('keeps a refused admission on the group with its code, keeps the copy, and do
         ->and($group->status)->toBe(TaskGroupStatus::Running)
         ->and($group->taskable_id)->toBe($world->instance->id)
         ->and(Instance::query()->find($world->instance->id)?->task_workspace_owner_id)->toBe($group->id);
+});
+
+it('refuses the tick\'s publish of the done check it read with tasks.not_done once a todo subtask was added', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    $publication = TaskDonePublication::for($world->group, $world->check);
+    Task::query()->create(['parent_id' => $world->group->id, 'position' => 2, 'title' => 'Add the header row', 'brief' => 'Add it.', 'status' => TaskStatus::Todo]);
+
+    expect(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), $publication, RunTaskPublishWhenDoneAction::Caller, null,
+        doneCheck: $world->check->id, byItself: true))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('tasks.not_done');
+        });
+    expect(whenDonePublishes($world->group))->toBe(0);
 });
 
 it('tries again for a new done check and clears the refusal once a publish is admitted', function (): void {

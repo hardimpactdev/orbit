@@ -41,8 +41,9 @@ final readonly class StartTaskPublishAction
             $doneCheck = $check->id;
         } elseif (TaskInstanceWorkspace::forGroup($group->loadMissing('taskable', 'project')) !== null) {
             // A named check that is the group's done check is a publish of the done check, whoever wrote the text: the Operation records it.
+            // A done check that the caller read, such as the tick's, stays: the admission reads it again under the lock and refuses `tasks.not_done`.
             $done = $this->done->check($group, republish: $group->pr_url !== null);
-            $doneCheck = $done !== null && $done->id === $input->check ? $done->id : null;
+            $doneCheck ??= $done !== null && $done->id === $input->check ? $done->id : null;
             if ($input->pull_request === null && $group->pr_url === null) {
                 // A named check without a text opens the pull request when it is the reviewed done check, as the release does; any other check only pushes, and the Operation says why.
                 $withheld = TaskDonePublication::withheld($group, $input->check, $done);

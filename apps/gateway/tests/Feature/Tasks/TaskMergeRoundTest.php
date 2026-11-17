@@ -403,6 +403,21 @@ it('g. asks once for P: a person who resolves the request without acting ends th
         ->and(mergeRoundOperations($group))->toBe($count);
 });
 
+it('g. stops and asks when its publish of C1 is refused because a todo subtask was added after the approval', function (): void {
+    [$world, $publish] = mergeRoundWorld();
+    [, $c1] = mergeRoundDrive($world->group, $publish, 'review');
+    mergeRoundReviewed($world->group, $publish, $c1 ?? throw new LogicException('No C1.'));
+    Task::query()->create(['parent_id' => $world->group->id, 'position' => 2, 'title' => 'Add the header row', 'brief' => 'Add it.', 'status' => TaskStatus::Todo]);
+
+    $results = mergeRoundTick();
+
+    $group = $world->group->refresh();
+    expect($results[0])->toMatchArray(['step' => 'publish', 'result' => 'stopped'])
+        ->and(Operation::query()->where('kind', OperationKinds::TasksPublish)->where('input->check', $c1->id)->exists())->toBeFalse()
+        ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->assistance_reason)->toContain('the publish step was refused with tasks.not_done');
+});
+
 describe('g. a stop', function (): void {
     it('asks a person once, with the step, the Operation and the paths, and starts no next step', function (string $at, Closure $break, string $what): void {
         [$world, $publish] = mergeRoundWorld();
