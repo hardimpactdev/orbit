@@ -29,7 +29,10 @@
     as_owner: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/agent', container.name,
           '--', 'runuser', '-u', 'agent', '--'] }}
-    as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
+    # In the start phase every exec as root has its bound from the Node, whatever path the wake takes: 60 s, twice the slowest one
+    # (the Club key's write and the proxy environment, 30 s each), so a container that does not answer ends the step with exit 124,
+    # never the run's 240 s bound. The tighter bounds of single execs stay. The private names and the PHP restart handler use it too.
+    as_root: "{{ (['timeout', '60'] if phase == 'start' else []) + ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
     # A clone's T3 and its agents run as `agent`, which alone reaches T3's port in the container.
     as_agent: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
@@ -90,11 +93,30 @@
   ansible.builtin.stat: { path: "{{ intent.marker }}", get_checksum: false }
   register: wake_marker
 
+# Incus reads a container's state from its liblxc monitor, which can lose a freeze: on 2026-11-17 Instance 2454 read Running while
+# the kernel held its cgroup frozen, so the wake skipped the resume and its first exec hung until the run's 240 s bound. A start
+# therefore reads the kernel's own freeze of a container that Incus calls Running, before any exec into it. A frozen one goes to the
+# power helper like a Frozen one: the helper thaws it within its bound or fails `instance.container_frozen_unmanaged` at once.
+- name: Read the kernel's freeze of a running container
+  tags: [start]
+  when: phase == 'start' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Running'
+  ansible.builtin.command:
+    argv:
+      - cat
+      - "/sys/fs/cgroup/lxc.payload.{{ container.project }}_{{ container.name }}/cgroup.freeze"
+      - "/sys/fs/cgroup/lxc.payload.{{ container.project }}_{{ container.name }}/cgroup.events"
+  register: start_kernel
+  changed_when: false
+  failed_when: false
+
 - name: Note the container's state before the start
   tags: [start]
   when: phase == 'start'
   ansible.builtin.set_fact:
-    start_found: "{{ (container_read.stdout | from_json).status if container_read.rc == 0 else 'Missing' }}"
+    start_found: >-
+      {{ 'Frozen' if start_kernel is not skipped and start_kernel.rc | default(1) == 0
+                     and (start_kernel.stdout_lines[0] | default('') == '1' or 'frozen 1' in start_kernel.stdout_lines)
+         else (container_read.stdout | from_json).status if container_read.rc == 0 else 'Missing' }}
     # Only a nested-fleet container's intent has `allowed_devices`, as the Gateway places it in the nested Incus project.
     start_nested: "{{ container.allowed_devices is defined }}"
 
@@ -1298,24 +1320,26 @@
 # a link in its wants folder), and FrankenPHP. A definition that is new since the last deployment has its record in the intent but
 # no unit file yet; a Process that was stopped and is now set to run has its file but is disabled. The `processes` phase installs,
 # enables and starts both (enable --now) and waits for them.
+# Bounded from the Node, as every exec a wake runs: an exec into a container that does not answer ends instead of holding the run.
 - name: Read the Process units that start at boot
   tags: [start]
   when: phase == 'start'
   ansible.builtin.command:
     argv: >-
-      {{ as_root + ['find', '/etc/systemd/system/multi-user.target.wants', '-mindepth', '1', '-maxdepth', '1',
+      {{ ['timeout', '10'] + as_root + ['find', '/etc/systemd/system/multi-user.target.wants', '-mindepth', '1', '-maxdepth', '1',
                     '-name', 'orbit-process-*.service'] }}
   register: boot_units_read
   changed_when: false
   failed_when: boot_units_read.rc != 0 and 'No such file' not in boot_units_read.stderr
 
 # PHP settings and any try-restart job above precede this check. Job= must be empty as well as ActiveState=active: a queued
-# restart can still report active before systemd stops the former process. Each read and the phase itself have their own bound.
+# restart can still report active before systemd stops the former process. Each read and the phase itself have their own bound;
+# the read's is from the Node, as every exec a wake runs, so it also ends an exec that a container does not answer.
 - name: Wait for each running unit
   tags: [processes, start]
   when: phase in ['processes', 'start']
   ansible.builtin.command:
-    argv: "{{ as_root + ['timeout', '5', 'systemctl', 'show', '--property=ActiveState', '--property=Job', '--', item] }}"
+    argv: "{{ ['timeout', '5'] + as_root + ['systemctl', 'show', '--property=ActiveState', '--property=Job', '--', item] }}"
   loop: >-
     {{ units | difference(container.processes | default([]) | map(attribute='name') | list)
        if phase == 'processes' and intent.migrate is defined

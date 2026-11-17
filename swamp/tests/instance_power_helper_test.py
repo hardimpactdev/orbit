@@ -617,6 +617,101 @@ class RestoreTest(Fixture):
             self.restore(intent=False)
 
 
+class KernelFreezeTest(Fixture):
+    """Incus reads a container's state from its liblxc monitor, which can lose a freeze: on 2026-11-17 Instance 2454 read Running while
+    the kernel held its cgroup frozen, so the wake skipped the resume and its first exec hung until the run's bound. The helper reads
+    the kernel's own freeze and thaws such a container within its bound, or fails `instance.container_frozen_unmanaged` at once."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, power, "THAW_SECONDS", power.THAW_SECONDS)
+        power.THAW_SECONDS = 0.3
+
+    def freeze_files(self, frozen):
+        self.write(os.path.join(self.container, "cgroup.freeze"), "1\n" if frozen else "0\n")
+        self.write(os.path.join(self.container, "cgroup.events"), f"populated 1\nfrozen {1 if frozen else 0}\n")
+
+    def lose_the_freeze(self):
+        """A sleep froze the container; then Incus's view went back to running while the kernel kept it frozen."""
+        self.prepare()
+        self.incus.status = "running"
+        self.freeze_files(True)
+
+    def thaws(self, delay=0.05):
+        """The kernel: once the helper wrote 0 to cgroup.freeze, `cgroup.events` says `frozen 0` after `delay`."""
+        def watch():
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if power.read_value(os.path.join(self.container, "cgroup.freeze")) == "0":
+                    time.sleep(delay)
+                    self.write(os.path.join(self.container, "cgroup.events"), "populated 1\nfrozen 0\n")
+                    return
+                time.sleep(0.005)
+        thread = threading.Thread(target=watch)
+        thread.start()
+        self.addCleanup(thread.join)
+
+    def test_a_container_incus_calls_running_but_the_kernel_holds_frozen_is_thawed_without_incus_or_memory_calls(self):
+        self.lose_the_freeze()
+        self.thaws()
+        result = self.restore()
+        self.assertEqual((result["outcome"], result["state_before"], result["state_after"]), ("resumed", "running", "running"))
+        self.assertTrue(result["kernel_frozen"])
+        self.assertEqual(result["prepared_restore"], {"version": 1, "status": "skipped", "reason": "plan_stale"})
+        self.assertFalse(power.kernel_frozen(self.host, RELATIVE))
+        self.assertEqual(self.incus.actions, ["freeze"], "no Incus call: Incus refuses to unfreeze a container it calls running")
+        self.assertEqual(self.kernel.calls, [])
+        # The resume closes the swap the sleep opened and drops its files, as any resume does.
+        for path in ("", "init.scope", "app/worker"):
+            self.assertEqual(power.read_value(os.path.join(self.container, path, "memory.swap.max")), "0")
+        self.assertEqual(sorted(os.listdir(os.path.join(self.state, "instances", str(ID)))), ["target.json"])
+
+    def test_a_container_that_stays_frozen_fails_clearly_within_the_bound_and_keeps_its_sleep(self):
+        self.lose_the_freeze()
+        started = time.monotonic()
+        result = self.restore()
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual((result["outcome"], result["error_code"], result["state_after"]), ("failed", power.UNMANAGED, "frozen"))
+        self.assertEqual(power.read_value(os.path.join(self.container, "memory.swap.max")), "max", "the sleep's swap stays open")
+        self.assertTrue(os.path.exists(os.path.join(self.state, "instances", str(ID), "sleep.json")))
+        # A later wake, once the kernel thaws, resumes it.
+        self.thaws()
+        self.assertEqual(self.restore()["outcome"], "resumed")
+
+    def test_a_sleep_never_freezes_a_container_the_kernel_already_holds_frozen(self):
+        self.lose_the_freeze()
+        result = power.prepare(self.host, ID, 13, self.intent(13))
+        self.assertEqual((result["outcome"], result["error_code"], result["state_after"]), ("failed", power.UNMANAGED, "frozen"))
+        self.assertEqual(self.incus.actions, ["freeze"])
+        with open(os.path.join(self.state, "instances", str(ID), "sleep.json")) as handle:
+            self.assertEqual(json.load(handle)["sleep_operation_id"], 11, "the first sleep's record stays for the wake")
+
+    def test_a_resume_waits_for_a_thaw_the_kernel_has_not_made_yet_and_fails_one_that_never_comes(self):
+        self.prepare()
+        # Incus's unfreeze marks the container running at once; the kernel still holds it frozen.
+        self.freeze_files(True)
+        self.thaws(delay=0.1)
+        result = self.restore()
+        self.assertEqual(result["outcome"], "resumed")
+        self.assertEqual(self.incus.actions, ["freeze", "unfreeze"])
+        self.assertFalse(power.kernel_frozen(self.host, RELATIVE))
+        self.prepare(operation=21)
+        self.freeze_files(True)
+        result = self.restore(operation=22)
+        self.assertEqual((result["outcome"], result["error_code"], result["state_after"]), ("failed", power.UNMANAGED, "frozen"))
+        # The plan went before the resume; the sleep's record and its swap limits stay for the next wake.
+        base = os.path.join(self.state, "instances", str(ID))
+        self.assertEqual([os.path.exists(os.path.join(base, f)) for f in ("plan", "sleep.json", "limits.json")], [False, True, True])
+
+    def test_a_cgroup_without_freeze_files_keeps_incus_word(self):
+        self.prepare()
+        self.incus.status = "running"
+        self.assertFalse(power.kernel_frozen(self.host, RELATIVE))
+        self.assertEqual(self.restore()["outcome"], "already_running")
+        self.freeze_files(False)
+        self.assertEqual(self.restore()["outcome"], "already_running")
+
+
 class PlanValidationTest(Fixture):
     def setUp(self):
         super().setUp()

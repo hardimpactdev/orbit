@@ -91,7 +91,7 @@ function fixture() {
     Deno.readTextFileSync(new URL("tasks/instance-container-phase.yml", root)),
   ) as Task[]).map((task) => transform(structuredClone(task)));
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
-    stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
+    stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`).replaceAll("/sys/fs/cgroup/", `${folder}/cgroup/`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
     "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
@@ -1665,7 +1665,7 @@ Deno.test({
 /** The wake of each state a sleeping container can be in; the cgroup files live in the fixture. */
 function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | "Running",
   options: { marker?: boolean; web?: number[]; silent?: boolean; nested?: boolean; inner?: Record<string, string>; opened?: string[]; intent?: Record<string, unknown>;
-    outcomes?: string; workerResumed?: boolean } = {}) {
+    outcomes?: string; workerResumed?: boolean; kernelFrozen?: boolean; thawFails?: boolean } = {}) {
   if (options.nested) {
     f.container.project = "orbit-instances-nested";
     f.write();
@@ -1678,11 +1678,15 @@ function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | 
   state.containers["instance-7"].status = status;
   if (options.silent) state.containers["instance-7"].silent_until_boot = true;
   // The sleep's plan and the cgroups it opened, as the helper fixture keeps them: "" is the container's own cgroup.
-  Object.assign(state, { plan: true, opened: ["", ...(options.opened ?? [])], helper: options.workerResumed ? { worker_resumed: true } : {} });
+  Object.assign(state, { plan: true, opened: ["", ...(options.opened ?? [])], helper: options.workerResumed ? { worker_resumed: true } : {},
+    thaw_fails: options.thawFails ?? false });
   Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
   const cgroup = `${f.folder}/cgroup/lxc.payload.${f.container.project}_instance-7`;
   Deno.mkdirSync(cgroup, { recursive: true });
   Deno.writeTextFileSync(`${cgroup}/memory.swap.max`, "max");
+  // The kernel's own freeze of the container, which Incus may no longer report (2454 on 2026-11-17).
+  Deno.writeTextFileSync(`${cgroup}/cgroup.freeze`, options.kernelFrozen ? "1\n" : "0\n");
+  Deno.writeTextFileSync(`${cgroup}/cgroup.events`, `populated 1\nfrozen ${options.kernelFrozen ? 1 : 0}\n`);
   // The inner cgroups as the sleep left them.
   for (const [path, value] of Object.entries(options.inner ?? {})) {
     Deno.mkdirSync(`${cgroup}/${path.split("/").slice(0, -1).join("/")}`, { recursive: true });
@@ -1696,6 +1700,7 @@ function wakeFrom(f: ReturnType<typeof fixture>, status: "Frozen" | "Stopped" | 
   const families = Deno.readTextFileSync(`${f.folder}/calls`).split("\n").slice(calls - 1).filter(Boolean)
     .map((line) => (JSON.parse(line) as string[]).filter((arg, i, all) => arg !== "--project" && all[i - 1] !== "--project")[0]);
   return { run, sleeping, families, swap: Deno.readTextFileSync(`${cgroup}/memory.swap.max`), status: f.state().containers["instance-7"].status as string,
+    freeze: Deno.readTextFileSync(`${cgroup}/cgroup.freeze`).trim(),
     inner: Object.fromEntries(Object.keys(options.inner ?? {}).map((path) => [path, Deno.readTextFileSync(`${cgroup}/${path}`)])),
     helper: helperCalls(f.folder).slice(helperBefore).map((call) => call[0]), plan: f.state().plan as boolean,
     intent: (() => { try { return JSON.parse(Deno.readTextFileSync(`${f.folder}/helper-intent.json`)); } catch { return null; } })() };
@@ -1902,6 +1907,38 @@ Deno.test({
       assertEquals(silent.status, "Running");
       assert(!silent.families.includes("stop") && !silent.families.includes("start"), silent.families.join(","));
       assert(silent.sleeping.present());
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a wake of a container that Incus calls Running but the kernel holds frozen thaws it through the helper, or fails clearly before any exec",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      // 2454 on 2026-11-17: Incus said RUNNING, cgroup.freeze was 1; the wake skipped the resume and its first exec hung for 240 s.
+      const thawed = wakeFrom(f, "Running", { nested: true, kernelFrozen: true, inner: { "lxc.payload.nested-app-dev/memory.swap.max": "max" },
+        opened: ["lxc.payload.nested-app-dev"] });
+      assert(thawed.run.ok, thawed.run.output);
+      assertEquals([thawed.helper, thawed.freeze, thawed.swap, thawed.inner["lxc.payload.nested-app-dev/memory.swap.max"]], [["restore"], "0", "0", "0"]);
+      assert(!thawed.families.includes("stop") && !thawed.families.includes("start"), thawed.families.join(","));
+      assert(!thawed.sleeping.present());
+      assertEquals([f.result().wake, f.result().prepared_restore], ["resumed", { version: 1, status: "skipped", reason: "plan_stale" }]);
+
+      const stuck = wakeFrom(f, "Running", { nested: true, kernelFrozen: true, thawFails: true });
+      assert(!stuck.run.ok, stuck.run.output);
+      assertEquals(f.result().error_code, "instance.container_frozen_unmanaged");
+      assertEquals([stuck.helper, stuck.freeze], [["restore"], "1"]);
+      assert(!stuck.families.includes("exec"), stuck.families.join(","));
+      assert(stuck.sleeping.present());
+
+      // A Running container that the kernel does not hold frozen is verified as before: no helper call.
+      const running = wakeFrom(f, "Running", { nested: true });
+      assert(running.run.ok, running.run.output);
+      assertEquals([running.helper, f.result().wake], [[], "already_running"]);
     } finally {
       f.cleanup();
     }

@@ -3,8 +3,8 @@
  * the helper's contract says, on the Incus fixture's state.json and the fixture's cgroup files, so the sleep phase's own steps run for
  * real. The helper's engine has its own tests (instance_power_helper_test.py). `helper` in state.json scripts what the fixture does:
  * `busy` calls answer with systemd's UnitExists refusal first, `crash` names a command that ends with exit code 70, `worker_resumed`
- * makes a restore find the container that the fast worker resumed meanwhile, `pause_fails`
- * comes from the Incus fixture. Each call is one JSON line in `helper-calls`, beside the Incus fixture's `calls`.
+ * makes a restore find the container that the fast worker resumed meanwhile, `thaw_fails` keeps a container frozen that the kernel
+ * holds frozen while Incus calls it running (its `cgroup.freeze` is 1), `pause_fails` comes from the Incus fixture. Each call is one JSON line in `helper-calls`, beside the Incus fixture's `calls`.
  */
 const folder = Deno.env.get("HOST_FIXTURE")!;
 const file = `${folder}/state.json`;
@@ -37,6 +37,8 @@ const cgroup = `${folder}/cgroup/lxc.payload.${project}_instance-${instance}`;
 const container = state.containers?.[`instance-${instance}`];
 const status = container ? String(container.status).toLowerCase() : "missing";
 const out = (body: Record<string, unknown>) => console.log(JSON.stringify({ schema_version: 1, command: command[0], instance_id: instance, error_code: null, ...body }));
+/** The kernel's own freeze of the container's cgroup: 1 while a freeze holds it, whatever the Incus fixture says. */
+const kernelFrozen = () => { try { return Deno.readTextFileSync(`${cgroup}/cgroup.freeze`).trim() === "1"; } catch { return false; } };
 const walk = (path: string, relative = ""): string[] =>
     [relative, ...[...Deno.readDirSync(path)].filter((entry) => entry.isDirectory).flatMap((entry) => walk(`${path}/${entry.name}`, relative === "" ? entry.name : `${relative}/${entry.name}`))];
 
@@ -47,6 +49,8 @@ if (command[0] === "prepare") {
             prepared_restore: state.sleep?.prepared_restore ?? { version: 1, status: "skipped", reason: "no_plan" } });
     } else if (status === "stopped") {
         out({ outcome: "stopped", state_before: "stopped", state_after: "stopped", swap_subtree: [], prepared_restore: { version: 1, status: "not_applicable" } });
+    } else if (kernelFrozen()) {
+        out({ outcome: "failed", error_code: "instance.container_frozen_unmanaged", state_before: "running", state_after: "frozen", swap_subtree: [] });
     } else {
         const zero = walk(cgroup).filter((path) => { try { return Deno.readTextFileSync(`${cgroup}/${path}/memory.swap.max`).trim() === "0"; } catch { return false; } });
         for (const path of zero) Deno.writeTextFileSync(`${cgroup}/${path}/memory.swap.max`, "max");
@@ -85,6 +89,21 @@ if (command[0] === "prepare") {
 } else if (command[0] === "restore") {
     if (status === "missing") {
         out({ outcome: "missing", state_before: "missing", state_after: "missing", swap_subtree: [], prepared_restore: null });
+    } else if (status === "running" && kernelFrozen()) {
+        // Incus lost the freeze: the helper thaws the cgroup itself, or fails clearly with the container frozen.
+        if (state.thaw_fails) {
+            out({ outcome: "failed", error_code: "instance.container_frozen_unmanaged", state_before: "running", state_after: "frozen",
+                swap_subtree: [], kernel_frozen: true });
+        } else {
+            Deno.writeTextFileSync(`${cgroup}/cgroup.freeze`, "0");
+            for (const path of state.opened ?? []) { try { Deno.writeTextFileSync(`${cgroup}/${path}/memory.swap.max`, "0"); } catch { /* gone */ } }
+            state.plan = false;
+            state.opened = [];
+            delete state.sleep;
+            save();
+            out({ outcome: "resumed", state_before: "running", state_after: "running", swap_subtree: [], kernel_frozen: true,
+                prepared_restore: { version: 1, status: "skipped", reason: "plan_stale" }, seconds: { resume: 0.01, close: 0.001 } });
+        }
     } else if (status !== "frozen") {
         if (status === "stopped") {
             state.plan = false;
