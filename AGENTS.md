@@ -12,7 +12,7 @@ Before you build on something, check [old paths](docs/reference/old-paths.md): i
 
 ## Build a feature end to end first
 
-Build and prove a feature end to end inside one Orbit container before any PR opens: a task copy, with its nested fleet when the feature touches the fleet. Work live there until the real end result works, log your hand changes, then codify it in one PR and prove it once. A release or a live window is the final proof of a working feature, never the way to find bugs. A test the copy cannot give gets its own experiment container, never a shared seed. The rule and its reason: [Build a feature in one copy](docs/reference/tasks.md#build-a-feature-in-one-copy).
+Build and prove every feature end to end in one Orbit container, a task copy with its nested fleet when the feature touches the fleet, before any PR opens. Then ship it in one PR. A release or a live window only confirms a working feature. See [Build a feature in one copy](docs/reference/tasks.md#build-a-feature-in-one-copy).
 
 ## Quality bar
 

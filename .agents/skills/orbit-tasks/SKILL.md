@@ -12,7 +12,7 @@ The Gateway Tasks engine is generic. This file is Orbit's repository policy for 
 Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour is agreed. The ADRs and documentation on the group's branch are the contract that every subtask implements.
 
 - Build and prove the whole feature in the group's copy before its pull request: [Build a feature in one copy](../../../docs/reference/tasks.md#build-a-feature-in-one-copy).
-- Plan at most five subtasks. A feature that needs more becomes several groups, and each group's pull request merges before the next group starts.
+- Plan at most five subtasks. When a feature needs more, ask the operator before you split it into groups. Never split it into groups whose pull requests each wait for a release to find the next problem.
 - Give each subtask one goal that one implementation session can finish and verify, with at most five deliverables. Split a subtask when its acceptance would likely need another session.
 - Prefer a narrow vertical slice that a reviewer can verify end to end. Put a prefactoring step first. For a wide refactor, add the new form, move the callers, then remove the old form.
 - Keep CI, release, and deployment work apart from product code.

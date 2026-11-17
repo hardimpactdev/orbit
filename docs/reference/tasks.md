@@ -1063,7 +1063,7 @@ Build and prove a feature end to end inside one task copy before any pull reques
 
 1. Work live in the copy. Change it, run it and fix the next layer until the real end result works there.
 2. Log each change you make by hand.
-3. Codify all of it in one pull request and prove it once. A reviewer may ask you to split it.
+3. Codify all of it in one pull request and prove it once. Only a reviewer's request splits it.
 
 The end result is the real one: an app container serves a page, or a create, deploy or wake succeeds.
 
@@ -1071,7 +1071,7 @@ Never split a feature into pull requests that each wait for a release or a live 
 
 A test that the copy cannot give, such as another idmap or a host setting, gets its own experiment container, never a shared seed.
 
-The owner set this rule on 2026-11-17. Nested fleet work had taken 18 hours through 3 live windows; a hand build in one experiment container then finished it in about one hour. The [copy rules](#run-an-external-turn) carry it to every turn as one line.
+Nested fleet work once took 18 hours through 3 live windows; a hand build in one experiment container then finished it in about one hour. The [copy rules](#run-an-external-turn) carry it to every turn as one line.
 
 ### Bring main into a copy
 
