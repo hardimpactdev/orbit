@@ -45,6 +45,7 @@ it('records a retained rollback without a migration even when an uncertain hando
 })->with([
     ['succeeded', null, 'verified'],
     ['failed', 'Hand over the release', 'paused'],
+    ['failed', 'Release unused candidate', 'paused'],
 ]);
 
 it('records a failed check that the run switched back from as switched back', function (): void {

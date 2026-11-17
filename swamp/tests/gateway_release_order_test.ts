@@ -63,6 +63,8 @@ Deno.test("the sealed web build precedes clone; sleep can start in parallel with
   assertEquals(clone.dependsOn, [{ step: "Install the web build", condition: { type: "succeeded" } }]);
   assertEquals(release.find((step) => step.name === "Sleep preparation")?.dependsOn,
     [{ step: clone.name, condition: { type: "always" } }]);
+  assert(release.find((step) => step.name === "Migrate")?.dependsOn?.some(
+    (edge) => edge.step === "Sleep preparation" && edge.condition.type === "succeeded"));
   assert(release.find((step) => step.name === "Snapshot the database")?.dependsOn?.some((edge) => edge.step === clone.name));
 });
 

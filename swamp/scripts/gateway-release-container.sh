@@ -102,6 +102,12 @@ stop_background() {
 }
 restore_switch() {
   [[ -f $journal/operation && $(cat "$journal/operation") == "$operation" ]] || fail 'there is no matching switch to reverse'
+  local previous
+  previous=$(cat "$journal/machine")
+  if [[ $previous != host ]]; then
+    ctl resume gateway "${previous#gateway-}" "$operation" >&2
+    run_on "$previous" systemctl start orbit-gateway-web.service
+  fi
   if [[ -f $journal/inventory ]]; then
     install -o orbit -g orbit -m 0600 "$journal/inventory" "$inventory.restore"
     mv -fT "$inventory.restore" "$inventory"
@@ -112,8 +118,6 @@ restore_switch() {
     /usr/local/libexec/orbit-gateway-site host >&2
     rm -f -- "$inventory" "$upstream"
   fi
-  local previous
-  previous=$(cat "$journal/machine")
   stop_background "$candidate"
   horizon=$(cat "$journal/horizon" 2>/dev/null || :)
   if [[ -n $horizon ]]; then
@@ -356,6 +360,8 @@ case "$action" in
       "${incus_cli[@]}" config set "$prev" boot.autostart=false
       # A graceful unit stop waits for the FrankenPHP workers and their in-flight requests.
       enter "$prev" systemctl restart orbit-gateway-web.service
+      previous_sha=$(owned_sha "$prev")
+      bash <(src bin/gateway-release-check) "$previous_sha" "$(ctl address gateway "${prev#gateway-}")"
       ctl retire gateway "${prev#gateway-}" "$operation"
     fi
     cp "$journal/operation" "$journal/last-operation"

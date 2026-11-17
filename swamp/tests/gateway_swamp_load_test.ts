@@ -132,7 +132,7 @@ async function git(folder: string, ...args: string[]) {
 }
 
 /** Runs the checkout script from a clone at the newer of two commits, toward `target`. */
-async function runCheckout(target: "older" | "newer" | "back", force: boolean) {
+async function runCheckout(target: "older" | "newer" | "back", force: boolean, offline = false) {
     const folder = await Deno.makeTempDir();
     const origin = `${folder}/origin`;
     await Deno.mkdir(origin);
@@ -143,6 +143,7 @@ async function runCheckout(target: "older" | "newer" | "back", force: boolean) {
     const newer = await git(origin, "rev-parse", "HEAD");
     await git(folder, "clone", "--quiet", origin, "checkout");
     const checkoutPath = `${folder}/checkout`;
+    if (offline) await git(checkoutPath, "remote", "set-url", "origin", `${folder}/absent`);
     if (target === "newer") {
         await git(checkoutPath, "checkout", "--quiet", "--detach", older);
     }
@@ -157,6 +158,7 @@ async function runCheckout(target: "older" | "newer" | "back", force: boolean) {
         env: {
             RELEASE_SHA: sha,
             FORCE: String(force),
+            RETAINED: String(offline),
             PATH: Deno.env.get("PATH")!,
         },
         stdout: "piped",
@@ -220,5 +222,11 @@ Deno.test("the checkout reads the release commit and the force flag from the loa
     assertEquals(checkout.task.inputs.env, {
         RELEASE_SHA: "${{ inputs.intent.sha }}",
         FORCE: "${{ string(inputs.intent.force) }}",
+        RETAINED: "${{ string(has(inputs.intent.retained) && inputs.intent.retained) }}",
     });
+});
+
+Deno.test("retained rollback checks out the sealed commit with an unavailable origin", async () => {
+    const result = await runCheckout("back", true, true);
+    assertEquals(result.code, 0);
 });

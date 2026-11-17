@@ -40,14 +40,15 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         'Build the release' => ['prepare', 'gateway.release_prepare_failed', false],
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Clone the prepared release' => ['prepare', 'gateway.release_clone_failed', false],
-        'Park the preparation container' => ['prepare', 'gateway.release_preparer_sleep_failed', false],
+        'Sleep preparation' => ['prepare', 'gateway.release_preparer_sleep_failed', false],
         'Snapshot the database' => ['snapshot', 'gateway.release_snapshot_failed', false],
         'Migrate' => ['migrate', 'gateway.release_migrate_failed', true],
         'Check the migration' => ['migrate', 'gateway.release_migrate_failed', true],
         'Wait for active Operations' => ['idle', 'gateway.release_idle_check_failed', true],
-        'Check the release candidate' => ['ready', 'gateway.release_candidate_unhealthy', true],
+        'Check the candidate' => ['ready', 'gateway.release_candidate_unhealthy', true],
         'Load Swamp on Node 209' => ['swamp', 'gateway.release_swamp_load_failed', true],
         'Hand over the release' => ['handoff', 'gateway.release_handoff_failed', true],
+        'Release unused candidate' => ['cleanup', 'gateway.release_candidate_cleanup_failed', true],
     ];
 
     /** The Swamp Node's Ansible collections were installed from another requirements.yml than the release's; the release goes on. */

@@ -253,7 +253,7 @@ jobs:
   - name: Migrate
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Snapshot the database, condition: {type: succeeded}}]
+    dependsOn: [{step: Snapshot the database, condition: {type: succeeded}}, {step: Sleep preparation, condition: {type: succeeded}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -347,6 +347,7 @@ jobs:
         intent:
           sha: ${{ inputs.intent.sha }}
           force: ${{ inputs.intent.force }}
+          retained: ${{ has(inputs.intent.retained) && inputs.intent.retained }}
           grants:
             grants/orbit-gateway.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[0] }}'
             grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'
