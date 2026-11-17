@@ -2469,6 +2469,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | `limits.memory`: 4 GiB, 5 GiB and 2 GiB | `nested-gateway`, `nested-app-dev`, `nested-app-prod` | `nested-app-dev` hosts the fleet's Instances; see [Instance host in the fleet](#instance-host-in-the-fleet) |
 | The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/95orbit-nested-egress`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
 | The marker `/etc/orbit/instance-fleet` | `nested-gateway` | The nested Gateway names no task VM package cache for its Nodes. See below the table |
+| `/etc/gitconfig` with `safe.directory` for the checkout, `/home/orbit/orbit` | All three | `agent` owns the checkout, so Git as `orbit` stops with "dubious ownership" without it. The outer container's `/etc/gitconfig` does the same for `/srv/workspace` |
 | The size files: `APT::Keep-Downloaded-Packages "false";` in `/etc/apt/apt.conf.d/91orbit-nested-package-files`, and `SystemMaxUse=64M` in `/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf` | All three | Every nested root disk is in every copy. See below the table |
 | `security.nesting=true` and a memory limit | All three | Docker runs in them |
 | `boot.autostart=true` | All three | They start with the outer container, also after a restore of its seed. With `false`, the start still starts them, and the refresh writes `true` |
