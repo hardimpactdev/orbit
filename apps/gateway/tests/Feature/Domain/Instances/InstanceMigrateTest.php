@@ -41,6 +41,7 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\InstanceMigration\MigrateSchedules;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
@@ -76,7 +77,6 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Http\Requests\ProjectDefinitions\ProcessDefinitionRequest;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -135,7 +135,7 @@ beforeEach(function (): void {
     ]));
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public bool $ready = true;
 
@@ -688,14 +688,14 @@ describe('migration without a default seed', function (): void {
         migrateCheckout($project, $node);
         $feature = migrateCheckout($project, $node, 'feature');
         app(ExtensionStore::class)->set('conn', $conn);
-        app(TaskVmModelRoute::class)->ready = $ready;
+        app(ContainerModelRoute::class)->ready = $ready;
         $expected = $ready ? ['ready' => true] : ['ready' => false, 'error_code' => 'ai_router.disabled', 'message' => 'The model router has no guard.'];
 
         $operation = migrateStart($feature);
 
         expect($operation->input['model_route'])->toBe($expected)
             ->and($feature->runtime()->exists())->toBeTrue();
-        app(TaskVmModelRoute::class)->ready = ! $ready;
+        app(ContainerModelRoute::class)->ready = ! $ready;
         $operation = migrateEnd($operation, 'succeeded', ['ready' => true, 'moved' => true, 'restored' => false,
             'commit' => str_repeat('e', 40), 't3' => migrateServer($feature)]);
 

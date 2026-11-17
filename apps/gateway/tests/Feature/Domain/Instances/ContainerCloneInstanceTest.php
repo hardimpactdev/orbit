@@ -13,6 +13,7 @@ use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\CloneStage;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
@@ -37,7 +38,6 @@ use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
@@ -79,7 +79,7 @@ beforeEach(function (): void {
     ]));
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     app(ExtensionStore::class)->set('conn', true);
-    app()->instance(TaskVmModelRoute::class, new class implements TaskVmModelRoute
+    app()->instance(ContainerModelRoute::class, new class implements ContainerModelRoute
     {
         public bool $ready = true;
 
@@ -765,7 +765,7 @@ describe('the clone\'s create result', function (): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
         app(ExtensionStore::class)->set('conn', $conn);
-        app(TaskVmModelRoute::class)->ready = $ready;
+        app(ContainerModelRoute::class)->ready = $ready;
         $expected = $ready ? ['ready' => true] : ['ready' => false, 'error_code' => 'ai_router.disabled', 'message' => 'The model router has no guard.'];
 
         $operation = containerCreate($default->project, $node, 'feature');
@@ -774,7 +774,7 @@ describe('the clone\'s create result', function (): void {
         $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
         vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
         // The receipt reports admission, even if the router changes while the run is in flight.
-        app(TaskVmModelRoute::class)->ready = ! $ready;
+        app(ContainerModelRoute::class)->ready = ! $ready;
         app(DevelopmentInstanceCreateProjection::class)->apply($operation, cloneSucceeded($operation));
 
         expect($operation->refresh()->result['model_route'])->toBe($expected)

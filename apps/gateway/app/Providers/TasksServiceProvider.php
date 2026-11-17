@@ -9,6 +9,7 @@ use App\Console\Commands\TaskCopySettleCommand;
 use App\Console\Commands\TaskMergeRoundCommand;
 use App\Console\Commands\TaskPublishWhenDoneCommand;
 use App\Console\Commands\TaskPullRequestGateCommand;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
@@ -23,7 +24,6 @@ use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestCheckOutput;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
@@ -67,17 +67,17 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         return 'Runs planned work with coding agents and delivers it as a pull request.';
     }
 
-    /** Agents in task-copy containers reach models through the Node model forwarder and the ai-router guard. */
+    /** Task containers reach models through the ai-router guard and their Node's forwarder. */
     #[\Override]
     public function dependencies(): array
     {
         return ['ai-router'];
     }
 
-    /** Task-copy containers hold the Node model forwarder origin and a placeholder key, so Tasks enables only with a ready router guard. */
+    /** Tasks requires the model guard before containers can use their placeholder key. */
     public function enable(): void
     {
-        $this->app->make(TaskVmModelRoute::class)->assertReady();
+        $this->app->make(ContainerModelRoute::class)->assertReady();
         $this->app->make(TaskBroadcasts::class)->extensionChanged(true);
     }
 

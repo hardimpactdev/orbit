@@ -1068,7 +1068,7 @@ Until a snapshot is proved and recorded, each refresh discards any unpromoted ba
 
 The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
-The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs.
+Release recipe selection now belongs to `MachineSoftware\CurrentRecipe::currentRecipe()`. It reads the `recipe.json` of the release the Gateway serves for container and Instance-host intents; it builds no VM image. The recipe identity does not name the Orbit agent.
 
 The base was identified by the recipe identity that its refresh converged to, recorded on its build row, which went with the table `task_vm_image_builds` ([old paths](/reference/old-paths#the-task-vm-tables)). Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
 
@@ -1150,7 +1150,7 @@ No task workspace command runs over SSH. The SSH task workspace path and its ref
 
 There is nothing to configure. `config/task_vms.php`, `TaskVmSettings` and every `ORBIT_TASK_VMS_*` variable are removed, with `ORBIT_PI_PORT` and `ORBIT_SWAMP_PROOF_CLUB_API_KEY`. The `gateway` role's convergence removes them from the Gateway's environment file ([Gateway environment](/reference/gateway-environment)).
 
-Containers reach models through the Node model forwarder and the router guard. Core uses `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()` and `key()`. The [ai-router extension](/reference/ai-router) binds it. The key exists before setup. Core records readiness when creating a clone or migrating an Instance that runs T3. An unavailable route does not refuse either operation. Conn device threads still require it. See [Model access](/reference/development-containers#model-access).
+Containers reach models through the Node model forwarder and the router guard. Core uses `App\Domain\Instances\ContainerModelRoute`: `assertReady()`, `origin()` and `key()`. The [ai-router extension](/reference/ai-router) binds it. The key exists before setup. Core records readiness when creating a clone or migrating an Instance that runs T3. An unavailable route does not refuse either operation. Conn device threads still require it. See [Model access](/reference/development-containers#model-access).
 
 The `tasks` extension depends on `ai-router`, and enabling `tasks` calls `assertReady()`, which refuses with `ai_router.disabled` (409) until the ai-router is set up and has its Node. `ai-router:destroy` refuses only while `tasks` is enabled. See [Teardown](/reference/ai-router#teardown).
 

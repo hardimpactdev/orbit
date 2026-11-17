@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\AiRouter\Infrastructure;
 
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Node;
 use Orbit\Extensions\AiRouter\Domain\AiRouterSecrets;
 use Orbit\Extensions\AiRouter\Domain\AiRouterState;
 use Orbit\Extensions\AiRouter\Domain\AiRouterTaskGuard;
 
-/** The model route of containers: the Node model forwarder reaches the ai-router guard with one fixed placeholder key. */
-final readonly class AiRouterTaskVmModelRoute implements TaskVmModelRoute
+/** The guarded model route and placeholder key used by Instance containers through their Node's forwarder. */
+final readonly class AiRouterContainerModelRoute implements ContainerModelRoute
 {
     public function __construct(
         private AiRouterState $state,
@@ -30,7 +30,7 @@ final readonly class AiRouterTaskVmModelRoute implements TaskVmModelRoute
         return $this->guard->origin($this->node());
     }
 
-    /** The key exists before setup: containers keep it while the router is off, and redaction must still recognize it. */
+    /** Redaction needs the placeholder even while the extension or guard is unavailable. */
     public function key(): string
     {
         return $this->secrets->task();
@@ -42,11 +42,11 @@ final readonly class AiRouterTaskVmModelRoute implements TaskVmModelRoute
         $node = $this->state->enabled() ? $this->guard->node() : null;
         if ($node === null) {
             throw new ResourceOperationException('ai_router.disabled',
-                'Set up the ai-router extension with ai-router:setup first. Containers reach models through its guard.', 409);
+                'Set up the ai-router extension with ai-router:setup first. Instance containers reach models through its guard.', 409);
         }
         if (! $this->guard->applied($node)) {
             throw new ResourceOperationException('ai_router.guard_missing',
-                'Apply the router guard with ai-router:task-guard first. Containers reach models through the Node model forwarder and this guard.', 409);
+                'Apply the model guard with ai-router:task-guard first. Instance containers reach models only through it.', 409);
         }
 
         return $node;

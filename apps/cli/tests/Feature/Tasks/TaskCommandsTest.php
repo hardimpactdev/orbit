@@ -935,30 +935,21 @@ final class TaskPromptsTerminal extends Terminal
     }
 }
 
-it('shows observed power and capacity wait in human and JSON output', function (bool $json, ?string $power): void {
+it('shows capacity wait in human and JSON output without a VM power label', function (bool $json): void {
     $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/task-show/default')), true, flags: JSON_THROW_ON_ERROR);
-    $fixture['body']['data']['vm_power'] = $power;
-    $fixture['body']['data']['capacity_wait_reason'] = 'The local VM budget is full.';
+    $fixture['body']['data']['capacity_wait_reason'] = 'The container host is full.';
     MockClient::global([ShowTaskRequest::class => MockResponse::make($fixture['body'])]);
 
     expect(Artisan::call('task:show', ['task' => '1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
     $output = Artisan::output();
     if ($json) {
         $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-        expect($data['vm_power'] ?? null)->toBe($power)
-            ->and($data['capacity_wait_reason'])->toBe('The local VM budget is full.');
-        if ($power === null) {
-            expect($data)->not->toHaveKey('vm_power');
-        }
+        expect($data['capacity_wait_reason'])->toBe('The container host is full.');
     } else {
-        expect($output)->toContain('Waiting for capacity', 'The local VM budget is full.');
-        if ($power !== null) {
-            expect($output)->toContain('VM power', $power);
-        } else {
-            expect($output)->not->toContain('VM power');
-        }
+        expect($output)->toContain('Waiting for capacity', 'The container host is full.')
+            ->not->toContain('VM power');
     }
-})->with([false, true])->with(['running', 'stopped', 'destroyed', null]);
+})->with([false, true]);
 
 it('sends explicit preview updates without changing review status', function (bool $preview): void {
     $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/task-show/default')), true, flags: JSON_THROW_ON_ERROR);

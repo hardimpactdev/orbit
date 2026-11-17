@@ -580,7 +580,7 @@ class CiPolicyTest(unittest.TestCase):
 
 
 class CiLimitTest(unittest.TestCase):
-    """Each Pest part uses the per-test limit of its CI job, read from ci.yml, and the check names CI's unit cap."""
+    """Pest uses CI's override or its enforced project default, and the check names that effective cap."""
 
     def argv(self, project):
         calls = []
@@ -589,7 +589,6 @@ class CiLimitTest(unittest.TestCase):
         return calls[0]
 
     def test_the_gateway_pest_part_uses_cis_five_second_limit(self):
-        # Checks 2510-2512, 2522, 2523: phpunit.xml's 2 s failed tests on a loaded Beast that CI's 5 s passes.
         self.assertEqual(check['ci_time_limit']('gateway-tests'), 5)
         self.assertIn('--default-time-limit=5', self.argv('apps/gateway'))
 
@@ -599,13 +598,19 @@ class CiLimitTest(unittest.TestCase):
                 block = check['ci_job'](job)
                 ci = [flag for line in block.splitlines() if 'vendor/bin/pest' in line or 'composer test' in line
                       for flag in line.split() if flag.startswith('--default-time-limit=')]
+                if project == 'apps/gateway':
+                    self.assertEqual(ci, [])
+                    ci = ['--default-time-limit=5']
+                elif project == 'apps/cli':
+                    self.assertEqual(ci, [])
+                    ci = ['--default-time-limit=2']
                 self.assertEqual([flag for flag in self.argv(project) if flag.startswith('--default-time-limit=')], ci)
 
     def test_the_limit_is_read_from_the_workflow(self):
         workflow = Path(tempfile.mkdtemp(prefix='task-check-ci-')) / 'ci.yml'
         self.addCleanup(shutil.rmtree, workflow.parent, ignore_errors=True)
         workflow.write_text((ROOT / '.github/workflows/ci.yml').read_text().replace(
-            'vendor/bin/pest --parallel --processes=4 --default-time-limit=5 ', 'vendor/bin/pest --parallel --processes=4 --default-time-limit=7 '))
+            'vendor/bin/pest --parallel --processes=4 ', 'vendor/bin/pest --parallel --processes=4 --default-time-limit=7 '))
         with patch.dict(check['ci_time_limit'].__globals__, {'CI_WORKFLOW': workflow}):
             self.assertIn('--default-time-limit=7', self.argv('apps/gateway'))
             self.assertNotIn('--default-time-limit=7', self.argv('apps/cli'))
@@ -623,9 +628,10 @@ class CiLimitTest(unittest.TestCase):
         self.assertEqual(self.deliverable_limit('./apps/gateway/'), 'ci-time-limit: 5\n')
 
     def test_a_project_ci_passes_no_limit_to_and_a_non_pest_directory_answer_none(self):
-        for directory in ('apps/cli', 'packages/php-sdk', '.', 'swamp', 'apps/gateway-other'):
+        for directory in ('packages/php-sdk', '.', 'swamp', 'apps/gateway-other'):
             with self.subTest(directory=directory):
                 self.assertEqual(self.deliverable_limit(directory), 'ci-time-limit: none\n')
+        self.assertEqual(self.deliverable_limit('apps/cli'), 'ci-time-limit: 2\n')
 
     def test_a_directory_outside_the_checkout_is_refused_not_answered_with_no_limit(self):
         for directory in ('/srv/workspace/apps/gateway', '../apps/gateway', 'apps/../../x'):
@@ -637,9 +643,21 @@ class CiLimitTest(unittest.TestCase):
     def test_the_deliverable_limit_is_read_from_the_workflow(self):
         workflow = Path(tempfile.mkdtemp(prefix='task-check-ci-')) / 'ci.yml'
         self.addCleanup(shutil.rmtree, workflow.parent, ignore_errors=True)
-        workflow.write_text((ROOT / '.github/workflows/ci.yml').read_text().replace('--default-time-limit=5', '--default-time-limit=7'))
+        workflow.write_text((ROOT / '.github/workflows/ci.yml').read_text().replace(
+            'vendor/bin/pest --parallel --processes=4 ', 'vendor/bin/pest --parallel --processes=4 --default-time-limit=7 '))
         with patch.dict(check['ci_time_limit'].__globals__, {'CI_WORKFLOW': workflow}):
             self.assertEqual(self.deliverable_limit('apps/gateway'), 'ci-time-limit: 7\n')
+
+    def test_the_project_default_is_read_without_a_workflow_override(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            project = Path(scratch) / 'apps/gateway'
+            project.mkdir(parents=True)
+            config = project / 'phpunit.xml'
+            config.write_text('<phpunit enforceTimeLimit="true" defaultTimeLimit="9"/>')
+            with patch.dict(check['ci_time_limit'].__globals__, {'ROOT': Path(scratch)}):
+                self.assertEqual(check['ci_time_limit']('gateway-tests'), 9)
+                config.write_text('<phpunit enforceTimeLimit="false" defaultTimeLimit="9"/>')
+                self.assertIsNone(check['ci_time_limit']('gateway-tests'))
 
     def test_the_limit_lookup_runs_no_check(self):
         started = time.monotonic()
@@ -652,7 +670,7 @@ class CiLimitTest(unittest.TestCase):
         budget = tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())['budget']
         caps = check['ci_caps']()
         self.assertIn(f"declares at most {budget['shard_seconds']}s and is stopped at {budget['unit_ceiling_seconds']}s", caps)
-        self.assertIn('apps/gateway 5s in CI', caps)
+        self.assertIn('apps/gateway 5s', caps)
 
 
 if __name__ == '__main__':

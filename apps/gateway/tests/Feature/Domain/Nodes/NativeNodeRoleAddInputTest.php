@@ -48,7 +48,7 @@ it('retains dedicated status pools when the same Node also publishes shared PHP 
     Http::assertNothingSent();
 });
 
-it('names the package cache of the task VM for a Node of a nested fleet and for its exporter, and none for any other Node', function (string $host, ?string $proxy, bool $instanceFleet = false): void {
+it('uses Node apt settings for role prerequisites and exporters regardless of the nested subnet or fleet marker', function (string $host, bool $instanceFleet = false): void {
     Http::preventStrayRequests();
     $marker = tempnam(sys_get_temp_dir(), 'orbit-instance-fleet-');
     if ($instanceFleet) {
@@ -75,12 +75,12 @@ it('names the package cache of the task VM for a Node of a nested fleet and for 
     unlink($marker);
 
     expect($intent)->toHaveKey('apt_proxy')
-        ->and($intent['apt_proxy'])->toBe($proxy)
-        ->and($intent['exporters'][0]['apt_proxy'])->toBe($proxy);
+        ->and($intent['apt_proxy'])->toBeNull()
+        ->and($intent['exporters'][0]['apt_proxy'])->toBeNull();
 })->with([
-    'a nested app-dev Node of a task VM' => ['10.232.2.12', 'http://10.232.2.1:3142'],
+    'a nested address without a fleet marker' => ['10.232.2.12'],
     // The play then removes the cache file; apt reads the egress proxy from the fleet's own file.
-    'a nested app-dev Node of an Instance fleet' => ['10.232.2.12', null, true],
-    'a Node on the network of its host' => ['10.251.78.178', null],
-    'a Node with a public address' => ['85.9.211.193', null],
+    'a nested app-dev Node of an Instance fleet' => ['10.232.2.12', true],
+    'a Node on the network of its host' => ['10.251.78.178'],
+    'a Node with a public address' => ['85.9.211.193'],
 ]);

@@ -7,6 +7,7 @@ namespace App\Domain\InstanceMigration;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
@@ -23,7 +24,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\DatabaseConnection;
@@ -73,7 +73,7 @@ final readonly class InstanceMigrateProjection implements DirectOperationProject
         $publication = ($input['route_publication'] ?? null) === null ? null : ValidatedData::object($input['route_publication']);
         // Swamp evaluates the agent step's inputs for a default too, so every run has the copy; only an Instance with T3 holds a key.
         $model = ($container['clone'] ?? null) === null ? "# The default Instance runs no agent.\n"
-            : app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key());
+            : app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(ContainerModelRoute::class)->key());
 
         $plans = ValidatedData::object($input['migrate'])['schedules'] ?? [];
         if (! is_array($plans) || ! array_is_list($plans)) {

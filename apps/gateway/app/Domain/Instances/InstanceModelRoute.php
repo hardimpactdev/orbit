@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 
 /** The model route at admission: a container can run T3 before its Node forwarder has a ready router guard. */
 final readonly class InstanceModelRoute
@@ -14,7 +13,7 @@ final readonly class InstanceModelRoute
     public function status(): array
     {
         try {
-            app(TaskVmModelRoute::class)->assertReady();
+            app(ContainerModelRoute::class)->assertReady();
         } catch (ResourceOperationException $error) {
             return ['ready' => false, 'error_code' => $error->errorCode, 'message' => $error->getMessage()];
         }

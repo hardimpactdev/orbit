@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -40,7 +40,7 @@ function routeWorld(): Node
 
 it('gives the Node model forwarder the guard origin and containers one fixed placeholder key', function (): void {
     routeWorld();
-    $route = app(TaskVmModelRoute::class);
+    $route = app(ContainerModelRoute::class);
     $secrets = app(AiRouterSecrets::class);
 
     $route->assertReady();
@@ -53,17 +53,17 @@ it('refuses the route until a run applied the guard', function (): void {
     $services = routeNode('services', '10.44.0.3');
     app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
 
-    expect(fn () => app(TaskVmModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:task-guard');
+    expect(fn () => app(ContainerModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:task-guard');
     appliedTaskGuard($services);
-    app(TaskVmModelRoute::class)->assertReady();
+    app(ContainerModelRoute::class)->assertReady();
     app(AiRouterState::class)->disable();
-    expect(fn () => app(TaskVmModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:setup');
+    expect(fn () => app(ContainerModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:setup');
 });
 
 it('refuses the route while the ai-router is off', function (): void {
-    $route = app(TaskVmModelRoute::class);
+    $route = app(ContainerModelRoute::class);
 
-    expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'Set up the ai-router extension with ai-router:setup first. Containers reach models through its guard.')
+    expect(fn () => $route->assertReady())->toThrow(ResourceOperationException::class, 'Set up the ai-router extension with ai-router:setup first. Instance containers reach models through its guard.')
         ->and($route->key())->toBe(app(AiRouterSecrets::class)->task())
         ->and(fn () => $route->origin())->toThrow(ResourceOperationException::class);
 });

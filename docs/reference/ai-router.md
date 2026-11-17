@@ -363,11 +363,11 @@ orbit ai-router:destroy
 
 Teardown removes the collector Process and the previous Python source files, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.
 
-Teardown refuses with HTTP 409 `extension.required` and changes nothing while the `tasks` extension is enabled. Tasks depends on `ai-router`, because Pi on a task VM reaches models only through the task VM guard of this router. `error.details.required_by` is `tasks`. A task VM holds no key of its own that the router must revoke: every task VM holds the same placeholder key, which only the guard accepts, so a teardown strands no key.
+Teardown refuses with HTTP 409 `extension.required` and changes nothing while the `tasks` extension is enabled. Tasks depends on `ai-router`, because its containers reach models through this router's guard. `error.details.required_by` is `tasks`. Containers share a placeholder key that only the guard accepts; teardown needs no per-container key revocation.
 
-`extension:enable tasks` refuses with `ai_router.disabled` (409) while the ai-router is not set up: before the first setup or after a teardown. A task start writes the guard origin and the fixed key into the VM, so Tasks must not start without a guard. A task start checks the same thing and refuses with `ai_router.disabled`.
+`extension:enable tasks` refuses with `ai_router.disabled` (409) while the ai-router is not set up: before the first setup or after a teardown. Tasks enablement and Conn device-thread cloneable checks require a ready model guard. Core clone creation and migration of an Instance with T3 instead record `model_route` readiness in their result; an unavailable route does not refuse either operation.
 
-Task VM code reaches the model router only through the core interface `App\Domain\TaskVms\TaskVmModelRoute`. This extension binds it to `AiRouterTaskVmModelRoute`, which returns the guard origin and the fixed task key, and never the management key or the anchor key. See [Configure task VMs](/reference/compute-drivers#configure-task-vms).
+Container code uses the core interface `App\Domain\Instances\ContainerModelRoute`. This extension binds it to `AiRouterContainerModelRoute`, which returns the guard origin and the fixed placeholder key, never the management or anchor key. Containers reach the guard through their Node's [model forwarder](/reference/development-containers#model-access).
 
 ## Errors
 
