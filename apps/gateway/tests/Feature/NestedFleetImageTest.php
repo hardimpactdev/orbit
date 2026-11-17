@@ -29,17 +29,15 @@ function nestedImageIncus(): array
     return app(CurrentRecipe::class)->currentRecipe()->incus('amd64') ?? throw new RuntimeException('The recipe holds no Incus packages.');
 }
 
-it('keeps the normal image definition byte-identical to the one before the nested-fleet variant', function (): void {
+it('pins the normal image definition and its complete digest', function (): void {
     $normal = InstanceImage::for('10.253.0.1');
 
-    // Captured at 2a-local 7b9e25ba02, again when the image gained the files every container needs (InstanceImage::shared), again
-    // when its finish ran `update-ca-certificates` for the Orbit root CA, and again when it gained `agent`'s NSS store for Chromium
-    // (`browser_trust`, with the module's version), again when it gained `sudo` and `agent`'s grant (ADR 0268, amendment), which
-    // moved it from orbit-instance-bb2dec7d7d42, and again when the app account became the stock `www-data` (ADR 0268, second amendment),
-    // which moved it from orbit-instance-e7621201a4f3. The alias is a digest of the rest of the definition, and the second value of the whole of it.
-    expect($normal['alias'])->toBe('orbit-instance-89a1010b15e0')
+    // The app-account script belongs to both definitions. Its repair of an older nested firewall's global reset changes both
+    // aliases, including the normal image's, from orbit-instance-89a1010b15e0 and orbit-instance-nested-2321a5d7292b.
+    // The release must announce both new aliases; only an approved Node converge builds them.
+    expect($normal['alias'])->toBe('orbit-instance-0139a556d054')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('8592622ce549911260ecac8c496a254ff5cfc4bdbc7e98d641e84cca692e918c');
+        ->toBe('c5d726411700c432544c5b89fc7da24297d0cce9964fa80df445c3b145e8987b');
 });
 
 it('names the runtime folder\'s trust module in agent\'s NSS store of both images, so Chromium trusts the Orbit root CA', function (): void {
@@ -65,11 +63,9 @@ it('names the runtime folder\'s trust module in agent\'s NSS store of both image
         ->and($normal['browser_trust']['library'])->toBe($part?->trustModule['library'] ?? null);
 });
 
-it('keeps the nested image definition of the image built on Beast, so no converge is needed for it', function (): void {
-    // The alias of the nested image since the app account became the stock `www-data` (ADR 0268, second amendment); Beast held
-    // orbit-instance-nested-27a0fc94aee0 before, and orbit-instance-nested-6388773554e6 before `agent`'s grant. A change of the
-    // definition gives a new alias, which only a converge builds; change this value only with a planned converge.
-    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-2321a5d7292b');
+it('pins the nested image definition for a planned Node converge', function (): void {
+    // The script repair is also in the nested image. This pins the definition a later approved Node converge must build.
+    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-0ef94d86a37f');
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {
