@@ -1,0 +1,47 @@
+order = 75
+cases = [
+  "a T3 with an open turn gets its drop-in and reload but no restart, stays on the Node's list as deferred, and restarts once when idle",
+  "an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store; once they settle it restarts once",
+]
+file = "swamp/tests/ansible_instance_host_t3_restart_test.ts"
+self_hosted = true
+cost = 130
+slices = 2
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/_support/host_task_scope.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-host-t3-incus.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+# Local runs in this copy: 40-72 s and 23-25 s, rounded up; estimates pending managed-pool receipts.
+[case_costs]
+"a T3 with an open turn gets its drop-in and reload but no restart, stays on the Node's list as deferred, and restarts once when idle" = 80
+"an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store; once they settle it restarts once" = 50
