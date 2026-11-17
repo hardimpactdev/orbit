@@ -6,9 +6,9 @@
 [budget]
 # The declared seconds one unit may fill. A lane that holds several units is shorter: see [runner-pool].
 shard_seconds = 150
-# Counted from the job's first step, not from the start of the units: the job's own limit is shard_ceiling_seconds,
-# and a pool job needs 14 seconds at most after its last unit (17 November 2026, 999 jobs).
-shard_deadline_seconds = 222
+# Counted from the job's first step, not from the start of the units. A pool job spent 14.5 seconds at most before that
+# step and 14 at most after its units (17 November 2026, 1,003 jobs), so the named cut stays inside shard_ceiling_seconds.
+shard_deadline_seconds = 210
 shard_ceiling_seconds = 240
 shard_workers = 2
 unit_ceiling_seconds = 180

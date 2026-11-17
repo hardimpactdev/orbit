@@ -68,7 +68,7 @@ class FixturePoolTest(unittest.TestCase):
         self.assertEqual(10, table['runner-pool']['slots'])
         self.assertEqual((20, 20, 10), (budget['runner_shards'], budget['pr_shards'], budget['self_hosted_shards']))
         self.assertEqual(16, budget['spread_shards'])
-        self.assertEqual((150, 180, 222, 240), tuple(budget[key] for key in
+        self.assertEqual((150, 180, 210, 240), tuple(budget[key] for key in
                          ('shard_seconds', 'unit_ceiling_seconds', 'shard_deadline_seconds', 'shard_ceiling_seconds')))
         self.assertEqual((2, 2), (budget['shard_workers'], budget['self_hosted_workers']))
         # The deadline counts from the job's first step. Without that step it would count from the units' start

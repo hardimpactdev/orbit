@@ -443,7 +443,7 @@ class TableTest(unittest.TestCase):
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
         self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []},
-                         {**BUDGET, 'shard_workers': 2, 'shard_deadline_seconds': 222, 'lane_seconds': 130, 'pr_shards': 20, 'runner_shards': 20, 'self_hosted_shards': 10, 'spread_shards': 16})
+                         {**BUDGET, 'shard_workers': 2, 'shard_deadline_seconds': 210, 'lane_seconds': 130, 'pr_shards': 20, 'runner_shards': 20, 'self_hosted_shards': 10, 'spread_shards': 16})
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])
