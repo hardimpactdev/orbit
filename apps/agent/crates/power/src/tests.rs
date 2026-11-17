@@ -542,7 +542,18 @@ fn web(status: u16) -> u16 {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
             let mut request = [0; 256];
-            let _ = std::io::Read::read(&mut stream, &mut request);
+            // HTTP headers can arrive in several TCP reads. Closing with unread request bytes resets the connection,
+            // which can discard our response and make otherwise unrelated wake tests fail under parallel scheduling.
+            let mut received = 0;
+            while received < request.len() && !request[..received].ends_with(b"\r\n\r\n") {
+                match std::io::Read::read(&mut stream, &mut request[received..]) {
+                    Ok(0) | Err(_) => break,
+                    Ok(bytes) => received += bytes,
+                }
+            }
+            if !request[..received].ends_with(b"\r\n\r\n") {
+                continue;
+            }
             let _ = write!(stream, "HTTP/1.1 {status} X\r\nContent-Length: 0\r\n\r\n");
         }
     });

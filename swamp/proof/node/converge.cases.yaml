@@ -199,8 +199,10 @@ cases:
     # All 30 Python captures skipped/placement_unproven: timings do not cover the same work; not like for like.
     # Three real clones woke done at 238.297/402.372/484.466 ms; zero failed pages (burst.json).
     # SIGKILL during a delayed read recovered Operation 447: HTTP 200 after 2352.641 ms;
-    # restored 92311 pages, zero failures, signed repeat done/repeat=true (4.774 ms), one open/done/seen record.
-    # 64 audited measured/recovery Operations succeeded and have one done record each.
+    # restored 92311 pages, zero failures, signed repeat done/repeat=true (4.774 ms).
+    # Fresh Gateway/Node audit: Operations 380-439, 443-445 and 447 all succeeded;
+    # exactly one journal completion each, all outcomes done, matching action/target/outcome, zero mismatches.
+    # journal-audit.json holds each completion and counts; compaction removed expired open/seen records.
     # Manual existing-helper proof; shared fleet-reset runner, converge and production flows not rerun.
     fails_today: CI proof remains disabled; its fresh fleet does not create the real T3/Vite clone fixture. Live swap-backed manual proof returned done for all single, burst and recovered wakes.
     setup:

@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 4 and 5 have swap-backed clone measurements.** Thirty Rust sleeps, thirty Python sleeps, thirty Rust wakes, a three-clone wake burst and SIGKILL recovery ran on the nested fleet. Every measured Rust wake answered with `partial`; Python skipped plan capture on this nested host. The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) evidence records these limits. Production commands keep their existing paths until the later cutover slices.
+> **Slices 4 and 5 have swap-backed clone measurements.** Thirty Rust sleeps, thirty Python sleeps, thirty Rust wakes, a three-clone wake burst and SIGKILL recovery ran on the nested fleet. In run 2, every Rust wake returned `done` with zero failed pages; Python skipped plan capture on this nested host. The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) evidence records the results and limits. Production commands keep their existing paths until the later cutover slices.
 
 ## Where it runs
 
@@ -295,7 +295,7 @@ Percentiles use nearest rank. Both totals cover the Node's sleep work through fi
 
 Python skipped plan capture as `placement_unproven` in all 30 samples. Its timings do not cover the same work as Rust and are not a like-for-like comparison. The nested fleet also cannot use remote `process_madvise`; the wake section explains this limit.
 
-Raw samples, per-sleep RAM and swap, syscall timing, durable Operation records and the journal audit are under `.orbit-artifacts/5753/live-proof-5768/run-2/`, principally `rust-samples.jsonl`, `python-samples.jsonl`, `samples.csv` and `summary.json`. All 64 audited measured/recovery Operations succeeded and have one done journal record: 60 single sleep/wakes, three burst wakes and one recovered wake.
+Raw samples, per-sleep RAM and swap, syscall timing, durable Operation records and the journal audit are under `.orbit-artifacts/5753/live-proof-5768/run-2/`. `rust-samples.jsonl`, `python-samples.jsonl`, `samples.csv` and `summary.json` hold the measurements. `durable-operations.json` and `journal-audit.json` were fetched from the nested Gateway and Node for Operations 380–439, 443–445 and 447: 60 single sleep/wakes, three burst wakes and one recovered wake. All 64 Operations succeeded, each with exactly one journal completion whose outcome is `done`, matching the Gateway's action, target and outcome; no mismatches were found. Journal compaction has removed their expired open/seen records.
 
 This was manual live proof through the existing proof helper; the shared fleet-reset runner, converge install and production command paths were not rerun. CI proof remains disabled and its fresh fleet has no real T3/Vite clone fixture. Doctor reported healthy with seven checks and zero drift, but its Instance/Process families checked zero items; direct process, plan, cgroup and HTTP assertions supply that evidence.
 
@@ -364,6 +364,8 @@ The Rust tests cover the identity checks, pool order, the cut at the bound, resi
 | Incus unfreeze API, included above | 9.471 ms | 18.734 ms | 19.041 ms |
 | Gateway publish through the waiting result | 164.158 ms | 520.478 ms | 535.378 ms |
 
+Wakes 1–4 (432–518 ms) were the first wakes after the executor was installed, and restore took most of their time; the data does not separate storage latency from scheduling.
+
 The unfreeze measurement sums the local API's state-change request and operation wait, from socket connect to close. It excludes the surrounding identity/state reads and kernel-thaw polling. Wake samples used `strace` on connect, send and close calls; their totals include its overhead. The app check is the executor's direct Node-to-container request, not a visit through Caddy or the future Gateway fast path.
 
 **Unreadable-page diagnosis.** A frozen-clone diagnostic found 39 unreadable guard markers in 16 readable anonymous mappings: systemd-journald 2, T3 16, rsyslogd 2, Python 1, polkitd 5, T3's resource monitor 1 and Vite's Node process 12. Every failure had pagemap bits 58 and 62 set and returned `EFAULT`. These were lightweight guards inside `rw-p` mappings with `VmFlags: gu`, rather than PROT_NONE reservations or VM_IO/PFNMAP mappings. Capture already excluded mappings without read permission; it now also excludes the guard markers while retaining their readable neighbors. Exact mapping bounds and failed page addresses, without memory contents, are in `diagnostic-mappings.json` and `diagnostic-guard-bits.json` under `run-2`.
@@ -382,4 +384,4 @@ All three answered HTTP 200 and returned `done`. Restore time includes waiting b
 
 **SIGKILL recovery passed.** The first restore syscall was delayed by 1 s for fault injection. The executor was killed while Instance 4 was frozen, with its plan intact and swap open. systemd restarted it, and startup replayed open Operation 447. The recovered wake read 92,311 pages with zero failures. The app answered HTTP 200 after 2,352.641 ms from the kill; its cgroup thawed, swap returned to `0`, and the plan and marker were removed.
 
-The first waiter timed out. A fresh signed order for the same Operation returned `done` with `repeat: true` in 4.774 ms, and the Operation succeeded. Its journal has one open, one done and one seen record. Raw evidence is in `burst.json`, `crash-node.jsonl`, `crash-gateway.jsonl` and `crash-recovery-journal.txt` beside the sleep samples.
+The first waiter timed out. A fresh signed order for the same Operation returned `done` with `repeat: true` in 4.774 ms, and the Operation succeeded. The current journal audit retains exactly one completion for Operation 447, with outcome `done`. Raw evidence is in `burst.json`, `crash-node.jsonl`, `crash-gateway.jsonl` and `crash-recovery-journal.txt` beside the sleep samples.
