@@ -5,7 +5,6 @@ change those copies as the real ones would and record each call, so each case re
 older container, one already renamed, and ones that a run left half way.
 """
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -116,7 +115,7 @@ class Container:
     def run(self):
         env = {'PATH': f'{self.root}/bin:/usr/bin:/bin', 'ROOT': str(self.root)}
         done = subprocess.run([sys.executable, '-I', '-c', PROGRAM, '/srv/workspace', str(self.root)], capture_output=True, text=True,
-                              env=env, timeout=60)
+                              env=env, timeout=60, check=False)
         if done.returncode != 0:
             raise AssertionError(done.stderr)
         return json.loads(done.stdout)
