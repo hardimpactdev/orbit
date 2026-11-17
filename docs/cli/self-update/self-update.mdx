@@ -64,5 +64,5 @@ A failure before the steps start, such as `gateway.profile_missing`, `gateway.un
 | `self_update.candidate_invalid` | The downloaded binary does not start here or reports another version. Nothing changed. |
 | `self_update.download_failed` | `curl` could not download an asset. Nothing changed. |
 | `self_update.not_writable` | The command may not write to the directory of the binary. Run it with `sudo`. |
-| `self_update.install_failed` | The new binary could not be put in place. The old binary is still there. |
+| `self_update.install_failed` | The command could not install or select the release. The JSON result reports what `orbit` selects after the failure. |
 | `self_update.release_mismatch` | The Gateway names a download that is not the Orbit release asset this CLI builds. Nothing was downloaded. |

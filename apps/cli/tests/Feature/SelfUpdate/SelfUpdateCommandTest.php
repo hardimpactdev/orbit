@@ -322,6 +322,50 @@ describe('self-update CLI step', function (): void {
         'versioned binary' => true,
     ]);
 
+    it('keeps the existing selection link during a same-version repair', function (): void {
+        config()->set('app.version', '0.4681.0');
+        $link = $this->machine.'/bin/orbit';
+        $target = $this->machine.'/bin/orbit-0.4681.0';
+        rename($link, $target);
+        symlink($target, $link);
+        MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
+        fake_self_update_processes($this);
+
+        $step = self_update_step(run_self_update(), 'cli');
+
+        expect($step['outcome'])->toBe('updated')
+            ->and(readlink($link))->toBe($target)
+            ->and($step['after'])->toBe(['version' => '0.4681.0', 'sha256' => hash_file('sha256', $link)])
+            ->and(hash_file('sha256', $link))->toBe(SELF_UPDATE_RELEASE_SHA)
+            ->and($this->host->exitedWith)->toBe(0);
+    });
+
+    it('reports what orbit selects when the link switch fails', function (bool $linked): void {
+        $link = $this->machine.'/bin/orbit';
+        if ($linked) {
+            rename($link, $link.'-0.4600.0');
+            symlink('orbit-0.4600.0', $link);
+        }
+        MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
+        fake_self_update_processes($this, onDownload: static function (string $key) use ($link): void {
+            if ($key === 'cli-v0.4681.0/orbit-0.4681.0-linux-x86_64') {
+                unlink($link);
+                mkdir($link);
+            }
+        });
+
+        $step = self_update_step(run_self_update(exitCode: 1), 'cli');
+
+        expect($step['error']['code'])->toBe('self_update.install_failed')
+            ->and($step['before'])->toBe(['version' => '0.4600.0', 'sha256' => hash('sha256', SELF_UPDATE_OLD_BINARY)])
+            ->and($step['after'])->toBe(['version' => null, 'sha256' => null])
+            ->and(is_dir($link))->toBeTrue()
+            ->and(hash_file('sha256', $link.'-0.4681.0'))->toBe(SELF_UPDATE_RELEASE_SHA);
+    })->with([
+        'plain binary' => false,
+        'versioned binary' => true,
+    ]);
+
     it('leaves a source checkout and a PHAR alone', function (RunningBinaryKind $kind, string $reason): void {
         $this->host->kind = $kind;
         MockClient::global(gateway_fixture_mock('gateway/self-update/available'));

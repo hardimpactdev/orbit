@@ -107,11 +107,23 @@ final readonly class SelfUpdater
                 $this->installer->keep($running, dirname($link).'/'.$previous);
             }
 
-            $this->installer->link($link, basename($target), 'self_update');
-            $replacedRunningBinary = $replacedRunningBinary || $link === $running;
+            if (realpath($link) !== $target) {
+                $this->installer->link($link, basename($target), 'self_update');
+                $replacedRunningBinary = $replacedRunningBinary || $link === $running;
+            }
+
             $this->prune(dirname($link), [basename($target), $previous]);
         } catch (SelfUpdateFailure $failure) {
-            return new SelfUpdateStep('cli', SelfUpdateOutcome::Failed, $link, $before, $before, failure: $failure, replacedRunningBinary: $replacedRunningBinary);
+            clearstatcache(true);
+            $digest = $this->sha256($link);
+            $selectedVersion = match ($digest) {
+                null => null,
+                $before->sha256 => $before->version,
+                $after->sha256 => $after->version,
+                default => null,
+            };
+
+            return new SelfUpdateStep('cli', SelfUpdateOutcome::Failed, $link, $before, new InstalledVersion($selectedVersion, $digest), failure: $failure, replacedRunningBinary: $replacedRunningBinary);
         }
 
         return new SelfUpdateStep('cli', SelfUpdateOutcome::Updated, $link, $before, $after, replacedRunningBinary: $replacedRunningBinary);
@@ -246,7 +258,7 @@ final readonly class SelfUpdater
             return null;
         }
 
-        $digest = hash_file('sha256', $path);
+        $digest = @hash_file('sha256', $path);
 
         return is_string($digest) ? $digest : null;
     }
