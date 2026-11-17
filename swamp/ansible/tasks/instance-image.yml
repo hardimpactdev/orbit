@@ -186,7 +186,8 @@
     # the normal image has no such group.
     # Nor an image with the wrong accounts (ADR 0268, second amendment): the app account is the stock `www-data`, uid and gid 33, with
     # `agent` in its group. The normal image has no user `orbit` and no group `work` or gid 1000; the nested-fleet image keeps `orbit`
-    # (uid 1000) and `work` (gid 2760) for its inner fleet (InstanceHostIntent::OrbitUid and WorkGid).
+    # (uid 1000) and `work` (gid 2760) for its inner fleet (InstanceHostIntent::OrbitUid and WorkGid), and `www-data` is in `work`, the
+    # workspace's group there.
     # visudo is judged by its exit code alone: visudo-rs ignores -q and prints "parsed OK" on stdout for a clean file.
     - name: Read the accounts and the sudo paths of the image
       ansible.builtin.command:
@@ -205,7 +206,8 @@
         image_nested_audit: >-
           getent group incus-admin | grep -qx 'incus-admin:[^:]*:[0-9]*:agent' || echo incus-admin:unexpected;
           [ "$(id -u orbit 2>/dev/null)" = 1000 ] || echo orbit:ids;
-          [ "$(getent group work | cut -d: -f3)" = 2760 ] || echo work:gid; true
+          [ "$(getent group work | cut -d: -f3)" = 2760 ] || echo work:gid;
+          id -nG www-data | tr ' ' '\n' | grep -qx work || echo www-data:work; true
         image_normal_audit: >-
           getent group incus-admin >/dev/null && echo incus-admin:unexpected;
           getent passwd orbit >/dev/null && echo user:orbit;

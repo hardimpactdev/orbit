@@ -605,7 +605,7 @@ const auditVars = (() => {
 const nestedAudit = auditVars.image_audit + auditVars.image_nested_audit;
 const normalAudit = auditVars.image_audit + auditVars.image_normal_audit;
 /** A nested-fleet image's own accounts: `orbit` (1000) and `work` (2760) beside `www-data`. */
-const nested = { users: "agent orbit www-data", groups: "agent orbit work www-data", orbit: "1000", work: "2760" };
+const nested = { users: "agent orbit www-data", groups: "agent orbit work www-data", orbit: "1000", work: "2760", appGroups: "www-data work" };
 
 // The image's accounts: `app` is `www-data`'s `uid:gid` or "" when it is missing; `orbit` is `orbit`'s uid; `users` and `groups` are the
 // names that `getent` finds, and `work` is the gid it prints for the group `work`.
@@ -620,6 +620,7 @@ const runAudit = (audit: string, {
     groups = "agent www-data",
     orbit = "",
     work = "",
+    appGroups = "www-data",
 } = {}) => {
     const folder = Deno.makeTempDirSync();
     try {
@@ -635,7 +636,7 @@ const runAudit = (audit: string, {
                 `case " $([ "$1" = passwd ] && echo '${users}' || echo '${groups}') " in *" $2 "*) exit 0;; esac; exit 2`,
             id: `case "$1 $2" in "-u www-data") [ -n '${app}' ] && echo '${app.split(":")[0]}';; ` +
                 `"-g www-data") [ -n '${app}' ] && echo '${app.split(":")[1] ?? ""}';; "-u orbit") [ -n '${orbit}' ] && echo '${orbit}';; ` +
-                `"-nG agent") echo '${agentGroups}';; *) exit 1;; esac`,
+                `"-nG agent") echo '${agentGroups}';; "-nG www-data") echo '${appGroups}';; *) exit 1;; esac`,
             runuser: webSudo ? "true" : '[ "$2" = agent ]',
             visudo,
         };
@@ -681,6 +682,8 @@ Deno.test({
         assertEquals(runAudit(nestedAudit, nested), "");
         assertEquals(runAudit(nestedAudit, { ...nested, orbit: "", work: "" }), "orbit:ids\nwork:gid\n");
         assertEquals(runAudit(nestedAudit, { ...nested, agentGroups: "agent work incus-admin" }), "agent:group\n");
+        // There `www-data` is in `work`, the workspace's group, so the app opens the workspace.
+        assertEquals(runAudit(nestedAudit, { ...nested, appGroups: "www-data" }), "www-data:work\n");
     },
 });
 

@@ -19,10 +19,11 @@ old_units() {
 }
 
 # A nested-fleet container (the image's AppArmor marker, InstanceImage::nestedFiles) keeps `orbit` (1000) and `work` (2760) with
-# their files and ACLs: its inner guests are Nodes whose `orbit` the ID map puts on those numbers over the shared checkout. Only
-# `agent` joins www-data there.
+# their files and ACLs: its inner guests are Nodes whose `orbit` the ID map puts on those numbers over the shared checkout. There
+# `agent` joins www-data, and www-data joins `work`, the workspace's group, so the app opens the workspace.
 if [ -e /etc/orbit/apparmor-off ]; then
   id -nG agent | tr ' ' '\n' | grep -qx www-data || usermod -a -G www-data agent
+  id -nG www-data | tr ' ' '\n' | grep -qx work || usermod -a -G work www-data
   echo "orbit-app-user: nested-fleet container keeps orbit"; exit 0
 fi
 

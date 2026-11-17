@@ -16,7 +16,7 @@ cases = [
   "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing",
   "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it",
   "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit",
-  "a nested-fleet container keeps orbit, work and their files for its inner fleet; only agent joins www-data",
+  "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes",
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
@@ -166,7 +166,7 @@ inputs = [
 "a start moves an older container's orbit and work to www-data before its units run again; a second start changes nothing" = 45 # estimate: 22 s locally x 2
 "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing" = 95 # estimate: 47 s locally x 2, rounded up
 "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit" = 45 # estimate: 18-29 s locally, as the case above
-"a nested-fleet container keeps orbit, work and their files for its inner fleet; only agent joins www-data" = 40 # estimate: 17 s locally x 2, rounded up
+"a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work" = 40 # estimate: 17 s locally x 2, rounded up
 "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it" = 70 # estimate: 33 s locally x 2
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 89 # hosted run 43787856522: 76.8s x 1.15, rounded up
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 91 # hosted run 43787856522: 78.5s x 1.15, rounded up
@@ -271,4 +271,4 @@ inputs = [
 "swamp/ansible/tasks/instance-fleet.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/tasks/instance-container-*.yml" = ["a nested-fleet default dispatches each fleet tag and preserves drift and room refusals", "a failed nested-fleet refresh names its phase and prevents the finish seed", "nested-fleet failures retain Doctor, command, restore and reset diagnostics", "a nested-fleet default retakes its seed at the same commit and refuses a Club key on its disk"]
 "swamp/ansible/instance_nested.py" = ["nested fleet start gate: kernel-modules"]
-"swamp/ansible/files/instance-app-user.sh" = ["a start moves an older container's orbit and work to www-data before its units run again; a second start changes nothing", "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit", "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it", "a nested-fleet container keeps orbit, work and their files for its inner fleet; only agent joins www-data", "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing"]
+"swamp/ansible/files/instance-app-user.sh" = ["a start moves an older container's orbit and work to www-data before its units run again; a second start changes nothing", "a start finishes a move that stopped after the user: the group work, the unit files and the units that failed under orbit", "a Process write on a running container of an older image moves its app account to www-data first; a stray uid 1000 process refuses it", "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work", "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing"]

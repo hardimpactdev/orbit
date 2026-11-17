@@ -245,7 +245,8 @@ final readonly class InstanceImage
     /**
      * The normal image keeps the stock `www-data` (uid and gid 33) as the app account and gives the workspace to `agent` and that group.
      * The nested-fleet image keeps `orbit` (uid 1000) and `work` (gid 2760) for its inner fleet, which the ID map puts on those numbers
-     * over the shared checkout; `agent` is in `www-data` there too (ADR 0268, second amendment).
+     * over the shared checkout. `agent` is in `www-data` there too, and `www-data` is in `work`, so the app opens the workspace
+     * (ADR 0268, second amendment).
      */
     private static function prepare(bool $nested): string
     {
@@ -262,6 +263,7 @@ final readonly class InstanceImage
             groupadd --gid {$work} work
             usermod --append --groups work agent
             usermod --append --groups work orbit
+            usermod --append --groups work www-data
             passwd --lock orbit
             chmod 0750 /home/orbit
 

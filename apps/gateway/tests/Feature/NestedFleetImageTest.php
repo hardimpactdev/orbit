@@ -37,9 +37,9 @@ it('keeps the normal image definition byte-identical to the one before the neste
     // (`browser_trust`, with the module's version), again when it gained `sudo` and `agent`'s grant (ADR 0268, amendment), which
     // moved it from orbit-instance-bb2dec7d7d42, and again when the app account became the stock `www-data` (ADR 0268, second amendment),
     // which moved it from orbit-instance-e7621201a4f3. The alias is a digest of the rest of the definition, and the second value of the whole of it.
-    expect($normal['alias'])->toBe('orbit-instance-d4a4f6f5f9b4')
+    expect($normal['alias'])->toBe('orbit-instance-7554fb8f6c3a')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('dc3305de47a000ac3c1424eb85ef252e9b8ee1feed6ee82932f7ba89a003adc3');
+        ->toBe('d27574b4d0c589054c7219fb37ac1899ee4a76d1b5fdb00205cbdc41362d13e1');
 });
 
 it('names the runtime folder\'s trust module in agent\'s NSS store of both images, so Chromium trusts the Orbit root CA', function (): void {
@@ -69,7 +69,7 @@ it('keeps the nested image definition of the image built on Beast, so no converg
     // The alias of the nested image since the app account became the stock `www-data` (ADR 0268, second amendment); Beast held
     // orbit-instance-nested-27a0fc94aee0 before, and orbit-instance-nested-6388773554e6 before `agent`'s grant. A change of the
     // definition gives a new alias, which only a converge builds; change this value only with a planned converge.
-    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-57fbcfc2dbc8');
+    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-79629694a0e1');
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {
@@ -104,6 +104,8 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
         // The inner fleet keeps `orbit` (1000) and `work` (2760), which the ID map gives its guests' `orbit`; `agent` is in both groups.
         ->and($nested['prepare'])->toContain("groupadd --gid 1000 orbit\nuseradd --uid 1000 --gid orbit --create-home --shell /bin/bash orbit\n",
             "groupadd --gid 2760 work\nusermod --append --groups work agent\n", "usermod --append --groups www-data agent\n",
+            // The app account `www-data` opens the workspace through `work` there.
+            "usermod --append --groups work www-data\n",
             'setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- /srv/workspace', "usermod --append --groups incus-admin agent\n")
         ->and($files)->not->toHaveKey('/etc/sysctl.d/90-orbit-no-userns.conf')
         ->and($files['/etc/subuid'])->toBe(['path' => '/etc/subuid', 'content' => "root:1000000:100000000\nroot:1000:1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'])

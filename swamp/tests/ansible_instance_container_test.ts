@@ -984,7 +984,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a nested-fleet container keeps orbit, work and their files for its inner fleet; only agent joins www-data",
+  name: "a nested-fleet container keeps orbit, work and their files for its inner fleet; agent joins www-data and www-data joins work",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -997,8 +997,10 @@ Deno.test({
       const result = f.run("start");
       assert(result.ok, result.output);
       assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), OLDER_PASSWD);
-      assertEquals(Deno.readTextFileSync(`${root}/etc/group`), OLDER_GROUP.replace("www-data:x:33:", "www-data:x:33:agent"));
-      assertEquals(f.state().accounts, [["usermod", "-a", "-G", "www-data", "agent"]]);
+      // `agent` joins www-data, and www-data joins `work`, the workspace's group there, so the app's units and `as_app` open it.
+      assertEquals(Deno.readTextFileSync(`${root}/etc/group`),
+        OLDER_GROUP.replace("www-data:x:33:", "www-data:x:33:agent").replace("work:x:2760:agent,orbit", "work:x:2760:agent,orbit,www-data"));
+      assertEquals(f.state().accounts, [["usermod", "-a", "-G", "www-data", "agent"], ["usermod", "-a", "-G", "work", "www-data"]]);
       assertEquals(f.state().handover, undefined);
       assertEquals(f.state().acl_2760, true);
       assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), OLDER_UNIT);
