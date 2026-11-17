@@ -440,3 +440,25 @@ The shape policy allows `fcntl.flock` only on a fixed list of host lock paths, a
 ### One helper for every caller
 
 The fast wake, the run, deploy, start and destroy must agree on identity checks and swap limits. One program keeps one rule.
+
+## Executor sleep (ADR 0266 slice 4)
+
+The Rust `power` family implements whole-container sleep through signed orders on durable proof Operations. Production sleep and wake still use the Python helper until slices 7/8. The executor records every non-`max` swap limit across the cgroup subtree before opening it. It freezes through the Incus local API and scans every process in parallel, including T3 and Vite.
+
+The plan records readable pages present or swapped (pagemap bit 63 or bit 62), excluding bit 58 guard markers inside readable mappings, so a partial wake cannot shrink the next plan. Both the limits record and plan publish atomically with fsync. After reclaim settles, or two seconds pass, the executor applies the same 32 MiB residual anonymous rule and writes the asleep marker. Nested-fleet containers resume and fail when swap cannot take their memory; other containers stop. That stop keeps today's clean-stop allowance of 30 s, as `incus stop --timeout 30` does; the executor waits up to 35 s for the Incus operation. Its freeze and unfreeze keep 5 s each.
+
+The Rust plan and limits record live separately under `/var/lib/orbit/executor/power` while the production Python flow remains in place. Crash recovery repeats an open sleep and preserves a valid published plan. Discard removes both records after a stop, destroy or a deployment that boots fresh. The executor refuses a running container whose kernel cgroup is frozen, preserving recovery state for the thaw described above.
+
+The swap-backed nested proof ran 30 Rust sleeps and 30 Python sleeps on the same real clone with T3 and Vite. Rust sleep p50/p95/max was 452.304/543.592/551.332 ms, including reclaim at 398.938/492.065/494.284 ms. Python was 509.563/5,644.503/5,822.532 ms, but all 30 samples skipped plan capture as `placement_unproven`; its timings do not cover the same work and are not a like-for-like comparison. Every sleep used swap. The clone's own swap limit opened from `0` to `max` for sleep and returned to `0` after wake; no clone Incus swap setting was needed. [Executor: Rust sleep and discard](/reference/executor#rust-sleep-and-discard) records timing scopes, RAM and swap for every sleep, raw samples and proof limits.
+
+## Executor wake (ADR 0266 slice 5)
+
+The Rust `power` family also implements the wake, again only through signed orders on durable proof Operations; production wakes keep the Python helper until slices 6 to 8. It keeps three rules of the helper: identity before any memory syscall, restore before the unfreeze, and a restore as a hint.
+
+Before any memory syscall it checks the boot id, the cgroup inode, the Incus incarnation and every process's start time through a pidfd. It reads back the recorded pages that are not resident now, through the Node's one restore pool, with `process_madvise(MADV_WILLNEED)` and `process_vm_readv`, within 2 s. A short memory read skips and counts the failed page, then continues through the item.
+
+Remote `process_madvise` returns `EPERM` in the nested fleet because Linux 7.0 requires `CAP_SYS_NICE` in the initial user namespace; these measurements use memory reads without the WILLNEED head start. Then it unfreezes through the Incus local API, closes exactly the recorded swap limits, checks readiness with the rule above and removes the asleep marker.
+
+Two things differ from the helper. Because the plan also holds swapped pages, a wake restores memory that was in swap before the sleep too. And the executor never thaws a cgroup itself: a freeze that Incus lost fails `instance.container_frozen_unmanaged`, where the helper writes `cgroup.freeze`. [Executor: Rust wake](/reference/executor#rust-wake) has the steps and results.
+
+Thirty Rust wakes returned `done` with zero failed pages and reached the app at p50/p95/max 147.840/494.080/517.545 ms; restore was 122.675/417.062/478.530 ms and the Incus unfreeze API portion 9.471/18.734/19.041 ms. Each wake read 91,932–92,180 nonresident pages. Three simultaneous clone wakes returned `done` in 238.297/402.372/484.466 ms. SIGKILL during restore recovered through the journal with zero failed pages, HTTP 200 after 2,352.641 ms and a signed repeat returning `done`. [Executor: Rust wake](/reference/executor#rust-wake) owns measurement details and remaining CI fixture limits.

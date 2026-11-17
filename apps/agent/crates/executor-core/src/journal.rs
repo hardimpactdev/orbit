@@ -51,6 +51,12 @@ pub struct DoneKey {
 pub enum Outcome {
     /// The action finished.
     Done,
+    /// The action finished, but part of its work was cut short: a wake whose container runs again without every recorded
+    /// page restored.
+    Partial {
+        /// Why the work was cut short.
+        code: String,
+    },
     /// The action failed with a stable code.
     Failed {
         /// The failure's code.

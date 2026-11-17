@@ -676,7 +676,7 @@ Earlier Gateways published the annotator server in `/opt/orbit/annotator` and ke
 
 ### Executor at a converge
 
-The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, service and the relay's sudo rule, and restarts the executor only when one of them changed.
+The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed.
 
 ### Kernel policy
 
@@ -932,6 +932,10 @@ After the credentials are placed, release the Gateway and load Swamp, then conve
 Watch `orbit-swamp-worker-renewal.service`, workers a/b/c and serve. Require all three connected before a drain, two workers/eight configured slots accepting throughout it, and the renewed instance accepting before another round. Keep long work and queued follow-on operations active across renewals. At the old eight-hour boundary, require no code 4002 or write-then-drop failure. All three workers remain enabled and running between successful rounds.
 
 The workers run as that account and read the files themselves. The role sets the folders to `0750` and the files to `0640`, with `chown` and `chmod` in two steps, before it writes the worker unit. The next converge repairs a Node whose tokens were placed as `root` `0600`. Nothing reads them first: without them, the worker start fails with `swamp.worker_unit_failed`. The other runtime codes are `swamp.ssh_identity_failed`, `swamp.serve_unit_failed` and `swamp.runtime_check_failed`, at the failed step `runtime`. `node:role:remove` refuses the `swamp` role with `validation.failed`, because serve on its Node runs that removal.
+
+The swamp role bounds host artefacts separately from [native datastore retention](/reference/operations#swamp-datastore-watch). Each worker removes only its downloaded bundle folder before connecting, after the previous process has drained; its machine identity and token files stay. Normal sequential renewal bounds this cache without interrupting dispatches. Role convergence keeps the selected and previous binary, plus any older binary a process still maps. It removes only version folders owned by the role. An unknown or missing previous binary keeps older versions until a valid switch records it.
+
+An hourly `orbit-swamp-housekeeping.timer` rotates and vacuums archived journals to 256 MiB, cleans apt downloads, and runs native Git garbage collection on serve's checkout as its account. Git keeps reachable commits, including the previous release, and uses its normal two-week grace for unreachable objects. It locks its own maintenance. The pass starts no Swamp service and changes no datastore, vault, enrollment or run data. Old manual migration archives need an explicit owner check; they are not a recurring store.
 
 The role also installs the Node's `node-proxy` key as the SSH identity `/etc/orbit/swamp-role-worker/ssh-identity` (`0440`, the serve account's group). An operator bootstraps the first swamp Node, because no worker holds the key before that. The role serves no site itself: `swamp.orbit` is a private custom proxy Route on its Node, with upstream `http://127.0.0.1:9418` ([ADR 0243](/decisions/0243-serve-swamp-through-a-swamp-role)). AI router publication does the same on its Node. [Caddy configuration](/reference/caddy-configuration) describes how the Gateway builds each Node's Caddyfile.
 

@@ -5,6 +5,14 @@ sources: [gateway]
 baseline: [operations]
 uncovered:
   main: "The proof fleet lacks Instance containers. Pest covers admission, the projection of power_state and the Caddy rule; real-Ansible fixtures cover the wake's start with the marker, the web wait and the T3 wait; the live proof runs on a fixture clone."
+  "executor:swap-backed-proof": "Subtask 5768 run 2 ran 30 signed wakes of real T3/Vite clone 4: all done, zero failed pages. Node-to-HTTP-200 p50/p95/max ms: 147.840/494.080/517.545; restore 122.675/417.062/478.530; Incus unfreeze API 9.471/18.734/19.041. Pages read per wake: 91932..92180, p50/p95/max 92127/92177/92180. Three real clones woke done in 238.297/402.372/484.466 ms with zero failures. SIGKILL recovered Operation 447, read 92311 pages with zero failures; HTTP 200 after 2352.641 ms, signed repeat done in 4.774 ms. Evidence: .orbit-artifacts/5753/live-proof-5768/run-2/summary.json, samples.csv, burst.json and crash-*.jsonl. The executor path remains separate from this production command; CI lacks the clone fixture and the fleet-reset runner was not rerun."
+  # Gateway publish-to-result p50/p95/max: 164.158/520.478/535.378 ms; Node timing excludes transport.
+  # Incus cost sums PUT/unfreeze + operation wait connect-to-close; state reads and thaw polling are separate.
+  # Wake totals include strace overhead. Every wake restored swap.max=0 and removed the marker.
+  # Failed pages were Linux guard markers (bits 58+62) in readable VMAs, excluded at capture.
+  # Short reads now continue after each failed page and count failures. Post-fix diagnostic: zero failed pages.
+  # Linux 7.0 remote process_madvise needs CAP_SYS_NICE in init_user_ns: nested EPERM, no WILLNEED head start.
+  # Crash injection delayed the first restore read by 1 s. One open/done/seen record; repeat=true.
   failed: "A wake that fails before the app answers keeps power_state; one whose T3 stays silent records running; Pest covers both projections."
 cases:
   - id: invalid-id

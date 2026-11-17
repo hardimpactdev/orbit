@@ -22,16 +22,109 @@ const ENABLED_PATH: &str = "/etc/orbit/executor/enabled";
 const NODE_PATH: &str = "/etc/orbit/executor/node";
 const JOURNAL_PATH: &str = "/var/lib/orbit/executor/journal";
 const RELAY_USER: &str = "orbit-executor-relay";
+/// The restore pool's size, which the role writes (ADR 0266: one pool per Node, sized by the swap device, floor 16).
+const POOL_PATH: &str = "/etc/orbit/executor/restore-threads";
+/// The wake failures the Gateway can act on; any other error reports `instance.container_start_failed`.
+const WAKE_CODES: [&str; 4] = [
+    "instance.container_frozen_unmanaged",
+    "instance.container_stopped",
+    "instance.container_start_failed",
+    "instance.web_unready",
+];
 
 /// Joins the action families to the core. Every action is matched here, so a new one fails the build until
 /// its family runs it.
 #[derive(Debug)]
-struct Families;
+struct Families(orbit_executor_power::Power);
 
 impl Run for Families {
+    fn target_exists(&self, action: Action, target: &orbit_executor_core::ids::TargetId) -> bool {
+        // A discard after destroy must still be possible when Incus no longer has the container.
+        if action == Action::Discard {
+            return target
+                .as_str()
+                .parse::<u64>()
+                .is_ok_and(|n| n > 0 && n.to_string() == target.as_str());
+        }
+        self.0.target_exists(target.as_str())
+    }
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
+            Action::Sleep => {
+                let started = std::time::Instant::now();
+                match self
+                    .0
+                    .sleep(order.target().as_str(), order.operation().as_str())
+                {
+                    Ok(receipt) => {
+                        // This includes receipt and marker fsync, which cannot time their own publication.
+                        log(&format!(
+                            "power sleep {} completed: total_us={} reclaim_us={}",
+                            order.operation(),
+                            started.elapsed().as_micros(),
+                            receipt.reclaim_us
+                        ));
+                        Outcome::Done
+                    }
+                    Err(error) => {
+                        log(&format!("power sleep failed: {error}"));
+                        Outcome::Failed {
+                            code: match error.to_string().as_str() {
+                                code @ ("instance.container_frozen_unmanaged"
+                                | orbit_executor_power::READERS_BUSY) => code,
+                                _ => "instance.container_freeze_failed",
+                            }
+                            .to_owned(),
+                        }
+                    }
+                }
+            }
+            Action::Wake => {
+                let started = std::time::Instant::now();
+                match self.0.wake(order.target().as_str()) {
+                    Ok(receipt) => {
+                        log(&format!(
+                            "power wake {} {}: total_us={} restore_us={} pages_read={} pages_failed={}",
+                            order.operation(),
+                            receipt.restore,
+                            started.elapsed().as_micros(),
+                            receipt.restore_us,
+                            receipt.pages_read,
+                            receipt.pages_failed
+                        ));
+                        match receipt.reason {
+                            // The container runs again either way; `partial` says its memory did not all come back first.
+                            Some(reason) => Outcome::Partial {
+                                code: format!("instance.restore_{reason}"),
+                            },
+                            None => Outcome::Done,
+                        }
+                    }
+                    Err(error) => {
+                        log(&format!("power wake failed: {error}"));
+                        let code = error.to_string();
+                        Outcome::Failed {
+                            code: if WAKE_CODES.contains(&code.as_str()) {
+                                code
+                            } else {
+                                "instance.container_start_failed".to_owned()
+                            },
+                        }
+                    }
+                }
+            }
+            Action::Discard => match self.0.discard(order.target().as_str()) {
+                Ok(()) => Outcome::Done,
+                Err(error) => Outcome::Failed {
+                    code: if error.to_string() == orbit_executor_power::READERS_BUSY {
+                        orbit_executor_power::READERS_BUSY
+                    } else {
+                        "instance.power_discard_failed"
+                    }
+                    .to_owned(),
+                },
+            },
         }
     }
 }
@@ -107,8 +200,14 @@ fn serve() -> Result<(), String> {
         node,
     });
 
+    let threads: usize = read(POOL_PATH)?
+        .trim()
+        .parse()
+        .map_err(|error| format!("{POOL_PATH}: {error}"))?;
+    let power = orbit_executor_power::Power::new(threads)
+        .map_err(|error| format!("{POOL_PATH}: {error}"))?;
     let journal = Path::new(JOURNAL_PATH);
-    let (executor, recovered) = Executor::start(journal, Families, server::now_ms, log)
+    let (executor, recovered) = Executor::start(journal, Families(power), server::now_ms, log)
         .map_err(|error| error.to_string())?;
     for done in &recovered {
         log(&format!(

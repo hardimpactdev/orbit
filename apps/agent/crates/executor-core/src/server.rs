@@ -253,7 +253,9 @@ fn answer<R: Run>(
         enabled: &settings.enabled,
         node: &settings.node,
     };
-    let line = match order::check(&wire, &checks, now) {
+    let line = match order::check_with_target(&wire, &checks, now, |action, target| {
+        executor.target_exists(action, target)
+    }) {
         Err(refusal) => {
             log(&format!(
                 "refused order from {caller:?}: {}",

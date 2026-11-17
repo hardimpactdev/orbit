@@ -1,0 +1,73 @@
+---
+- name: Remember the previous selected Swamp binary
+  ansible.builtin.file:
+    path: "{{ rt.swamp.binary.path | dirname | dirname }}/previous"
+    src: "{{ swamp_previous_binary }}"
+    state: link
+    force: true
+    follow: false
+  vars:
+    swamp_previous_binary: >-
+      {{ swamp_executable.stat.lnk_source if swamp_executable.stat.islnk | default(false)
+      else swamp_replaced.path ~ '/swamp' }}
+  when:
+    - swamp_executable.stat.exists
+    - swamp_executable.stat.islnk | default(false) or swamp_replaced.path is defined
+    - swamp_previous_binary != rt.swamp.binary.path
+- name: Read the previous selected Swamp binary
+  ansible.builtin.stat:
+    path: "{{ rt.swamp.binary.path | dirname | dirname }}/previous"
+    follow: false
+  register: swamp_previous
+- name: Check that the previous Swamp executable still exists
+  ansible.builtin.stat:
+    path: "{{ rt.swamp.binary.path | dirname | dirname }}/previous"
+    follow: true
+  register: swamp_previous_target
+# Ansible has no module for process-mapped executable versions. Read only paths,
+# never process arguments or environments, before its file module removes them.
+- name: Read Swamp binary folders still used by processes
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json
+        import os
+        import pathlib
+        import sys
+        root = pathlib.Path(sys.argv[1]).resolve()
+        used = set()
+        for proc in pathlib.Path('/proc').iterdir():
+            if not proc.name.isdigit():
+                continue
+            try:
+                paths = [os.readlink(proc / 'exe')]
+                paths += [line.split(maxsplit=5)[-1] for line in (proc / 'maps').read_text().splitlines()]
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            for path in paths:
+                if path.startswith(str(root) + '/'):
+                    used.add(str(root / pathlib.Path(path).relative_to(root).parts[0]))
+        print(json.dumps(sorted(used)))
+      - "{{ rt.swamp.binary.path | dirname | dirname }}"
+  register: swamp_binary_used
+  changed_when: false
+- name: Find role-owned Swamp binary versions
+  ansible.builtin.find:
+    paths: "{{ rt.swamp.binary.path | dirname | dirname }}"
+    file_type: directory
+    patterns: '^(20[0-9]{6}\.[0-9]{6}\.0-sha\.[0-9a-f]+|replaced-[a-zA-Z0-9_-]+)$'
+    use_regex: true
+    follow: false
+  register: swamp_binary_versions
+- name: Remove unused older Swamp binaries
+  ansible.builtin.file: { path: "{{ item.path }}", state: absent }
+  loop: "{{ swamp_binary_versions.files }}"
+  loop_control: { label: "{{ item.path | basename }}" }
+  when:
+    - swamp_previous.stat.islnk | default(false)
+    - swamp_previous_target.stat.isreg | default(false)
+    - item.path != rt.swamp.binary.path | dirname
+    - item.path != swamp_previous.stat.lnk_source | dirname
+    - item.path not in (swamp_binary_used.stdout | from_json)

@@ -22,7 +22,8 @@ it('pins the binary digest, the keys, the Node id and the role allowlist for app
         'sha256' => str_repeat('a', 64),
         'url' => 'https://example.test/orbit-executor-linux-x86_64',
         'node' => "7\n",
-        'enabled' => "proof\n",
+        'enabled' => "power\nproof\n",
+        'restore_threads' => "32\n",
         'gateway_keys' => "k1\nk2\n",
         'sudoers' => "orbit ALL=(orbit-executor-relay) NOPASSWD: /usr/local/libexec/orbit-executor relay\n",
     ]);

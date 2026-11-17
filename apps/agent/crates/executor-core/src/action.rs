@@ -18,6 +18,12 @@ use serde::{Deserialize, Serialize};
 pub enum Action {
     /// Does nothing and reports `done`. Its target is the Node itself.
     ProofNoop,
+    /// Hibernate the entire Instance container.
+    Sleep,
+    /// Restore and resume a sleeping Instance container.
+    Wake,
+    /// Drop a stopped or replaced Instance's prepared state.
+    Discard,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -26,6 +32,8 @@ pub enum Action {
 pub enum TargetKind {
     /// The target is this Node: its id must equal the Node's id.
     Node,
+    /// An Instance in the local Incus.
+    Instance,
 }
 
 impl Action {
@@ -33,6 +41,7 @@ impl Action {
     pub fn family(self) -> Family {
         match self {
             Self::ProofNoop => Family::Proof,
+            Self::Sleep | Self::Wake | Self::Discard => Family::Power,
         }
     }
 
@@ -40,6 +49,7 @@ impl Action {
     pub fn target_kind(self) -> TargetKind {
         match self {
             Self::ProofNoop => TargetKind::Node,
+            Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
         }
     }
 
@@ -47,6 +57,9 @@ impl Action {
     pub fn name(self) -> &'static str {
         match self {
             Self::ProofNoop => "proof.noop",
+            Self::Sleep => "sleep",
+            Self::Wake => "wake",
+            Self::Discard => "discard",
         }
     }
 }
@@ -62,6 +75,9 @@ impl FromStr for Action {
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
         match raw {
             "proof.noop" => Ok(Self::ProofNoop),
+            "sleep" => Ok(Self::Sleep),
+            "wake" => Ok(Self::Wake),
+            "discard" => Ok(Self::Discard),
             _ => Err(UnknownActionError),
         }
     }
@@ -93,6 +109,8 @@ impl fmt::Display for Action {
 pub enum Family {
     /// The no-op proof action.
     Proof,
+    /// Whole-container sleep, wake and discard.
+    Power,
 }
 
 /// The family name is unknown to this executor.
@@ -107,6 +125,7 @@ impl Family {
     fn parse(raw: &str) -> Option<Self> {
         match raw {
             "proof" => Some(Self::Proof),
+            "power" => Some(Self::Power),
             _ => None,
         }
     }
@@ -149,8 +168,12 @@ mod tests {
     #[test]
     fn only_allowlisted_names_parse() {
         assert_eq!("proof.noop".parse(), Ok(Action::ProofNoop));
-        assert_eq!("sleep".parse::<Action>(), Err(UnknownActionError));
+        assert_eq!("sleep".parse::<Action>(), Ok(Action::Sleep));
+        assert_eq!("wake".parse::<Action>(), Ok(Action::Wake));
+        assert_eq!(Action::Wake.family(), Family::Power);
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
+        // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
+        assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));
     }
 
     #[test]
@@ -163,7 +186,7 @@ mod tests {
     #[test]
     fn enabled_file_refuses_an_unknown_family() {
         assert_eq!(
-            Enabled::parse("proof\npower\n"),
+            Enabled::parse("proof\nunknown\n"),
             Err(UnknownFamilyError { line: 2 })
         );
     }

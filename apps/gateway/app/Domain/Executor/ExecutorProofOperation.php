@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitResult;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use Closure;
@@ -18,10 +19,10 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * The proof-only Operation kind `executor.proof` (docs/reference/executor.md#the-proof-operation, ADR 0266 slice 3). Each one is a
- * durable Operation row on its Node, so the listener records its result like any other (D7). It sends the no-op `proof.noop` as
- * `executor-order` and waits for the result with {@see ExecutorResultWait}, the waiting request's path (D5). It starts no Swamp run
- * and changes nothing on the Node.
+ * The proof-only Operation kinds `executor.proof` and `executor.power_proof` (docs/reference/executor.md, ADR 0266 slices 3/4). Each is a
+ * durable Operation row on its Node, so the listener records its result like any other (D7). It sends `proof.noop`, or sleep, wake or discard on an Instance, as
+ * `executor-order` and waits for the result with {@see ExecutorResultWait}, the waiting request's path (D5). It starts no Swamp run.
+ * The no-op changes nothing; the power proof hibernates the whole target.
  *
  * No route, CLI command, job or schedule names this kind: only the proof support on a nested Gateway
  * (`tools/swamp-proof-guest/executor-order.php`, run as that Gateway's managed user) calls this class.
@@ -50,13 +51,16 @@ final readonly class ExecutorProofOperation
      * @param  Closure(Closure(): Operation): T  $body
      * @return T
      */
-    public function run(Node $node, Closure $body): mixed
+    public function run(Node $node, Closure $body, ?Instance $instance = null, string $action = self::Action): mixed
     {
+        if ($instance !== null && (! in_array($action, ['sleep', 'wake', 'discard'], true) || $instance->node_id !== $node->id)) {
+            throw new InvalidArgumentException('Power proof needs a sleep, wake or discard target on its Node.');
+        }
         $started = [];
 
         try {
-            return $body(function () use ($node, &$started): Operation {
-                return $started[] = $this->start($node);
+            return $body(function () use ($node, $instance, $action, &$started): Operation {
+                return $started[] = $this->start($node, $instance, $action);
             });
         } catch (Throwable $exception) {
             foreach ($started as $operation) {
@@ -69,11 +73,11 @@ final readonly class ExecutorProofOperation
         }
     }
 
-    /** Records a running `executor.proof` Operation on the Node; its target is the Node too, the target of `proof.noop`. Only {@see self::run} calls it. */
-    private function start(Node $node): Operation
+    /** Records a running proof Operation on its Node or Instance target. Only {@see self::run} calls it. */
+    private function start(Node $node, ?Instance $instance, string $action): Operation
     {
-        $operation = $this->operations->create(OperationKinds::ExecutorProof, 'node', $node->id, $node->id,
-            ['action' => self::Action], self::TriggeredBy, (string) Str::uuid());
+        $operation = $this->operations->create($instance === null ? OperationKinds::ExecutorProof : OperationKinds::ExecutorPowerProof, $instance === null ? 'node' : 'instance', $instance === null ? $node->id : $instance->id, $node->id,
+            ['action' => $instance === null ? self::Action : $action], self::TriggeredBy, (string) Str::uuid());
         $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now()]);
 
         return $operation;
@@ -87,10 +91,14 @@ final readonly class ExecutorProofOperation
      */
     public function send(Operation $operation, ExecutorOrderSigner $signer): SignedExecutorOrder
     {
-        if ($operation->kind !== OperationKinds::ExecutorProof || $operation->status->terminal()) {
-            throw new InvalidArgumentException('Only an open executor.proof Operation sends a proof order.');
+        if (! in_array($operation->kind, [OperationKinds::ExecutorProof, OperationKinds::ExecutorPowerProof], true) || $operation->status->terminal()) {
+            throw new InvalidArgumentException('Only an open executor proof Operation sends a proof order.');
         }
-        $order = $signer->sign($operation, self::Action, (string) ExecutorOrderSigner::nodeOf($operation));
+        $action = $operation->input['action'] ?? self::Action;
+        if (! is_string($action)) {
+            throw new InvalidArgumentException('An executor proof Operation needs a string action.');
+        }
+        $order = $signer->sign($operation, $action, (string) $operation->target_id);
         $this->publisher->publish($operation, $order);
 
         return $order;
@@ -102,10 +110,13 @@ final readonly class ExecutorProofOperation
         return $this->wait->wait($operation->id, $boundSeconds);
     }
 
-    /** Closes the Operation: succeeded on a `done` result, failed with `executor.proof_<status>` otherwise. */
+    /**
+     * Closes the Operation: succeeded on a `done` result, or a `partial` one (a wake whose container runs again before its whole
+     * restore), which it also stores as the result; failed with `executor.proof_<status>` otherwise.
+     */
     public function finish(Operation $operation, ExecutorWaitResult $result): void
     {
-        $this->operations->change($operation, $result->status === ExecutorWaitStatus::Done
+        $this->operations->change($operation, in_array($result->status, [ExecutorWaitStatus::Done, ExecutorWaitStatus::Partial], true)
             ? ['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => $result->line]
             : ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'executor.proof_'.$result->status->value]);
     }

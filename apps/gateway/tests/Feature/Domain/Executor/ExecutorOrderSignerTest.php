@@ -70,7 +70,7 @@ it('refuses an unknown action and a target outside the executor form', function 
 
     expect(fn () => (new ExecutorOrderSigner($secret))->sign(executor_operation(), $action, $target))->toThrow(InvalidArgumentException::class);
 })->with([
-    'unknown action' => ['sleep', '7'],
+    'unknown action' => ['hibernate', '7'],
     'bad character' => ['proof.noop', '7 8'],
     'empty target' => ['proof.noop', ''],
     'over 128 bytes' => ['proof.noop', str_repeat('a', 129)],
@@ -104,3 +104,11 @@ it('reads its key from the Gateway config and refuses a missing or malformed one
     config(['orbit.executor.signing_key' => base64_encode('short')]);
     expect(fn () => ExecutorOrderSigner::fromConfig())->toThrow(RuntimeException::class);
 });
+
+it('signs sleep and discard on Instance targets', function (string $action): void {
+    [$secret, $public] = executor_test_keypair();
+    $order = (new ExecutorOrderSigner($secret))->sign(executor_operation(), $action, '23');
+    [$payload, $bytes, $signature] = executor_split($order->wire);
+    expect($payload)->toMatchArray(['action' => $action, 'target' => '23'])
+        ->and(sodium_crypto_sign_verify_detached($signature, $bytes, $public))->toBeTrue();
+})->with(['sleep', 'wake', 'discard']);

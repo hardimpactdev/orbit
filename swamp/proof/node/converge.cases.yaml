@@ -25,13 +25,9 @@ uncovered:
   "path:cleanup": "Need private-run-file existence checks and cleanup/interruption fault injection to prove run-owned files are removed after work stops, completed changes remain and incomplete cleanup preserves the original failure. Current convergence has no private Ansible run directory or cleanup step."
   "admission:recorded-only": "Need request-time contact tracing to prove admission uses recorded state and never contacts the Node before starting the Operation, including with missing or stale agent facts. A missing agent report is not an additional eligibility refusal."
 
-waits:
-  idmap: "A converge with the app-dev role runs nested-app-dev's roles phase, which builds the Instance host's stock image. That needs the default's 2,000,000 ID map; below it the phase fails with too few uid/gid. The owner schedules the ID map window; until then the plan skips these cases."
-
 cases:
   - id: default-scope
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: One default converge is the main path; a full repeat runs every phase and changes nothing within 120 seconds; a keyed retry creates no Operation.
     stages:
@@ -71,7 +67,6 @@ cases:
 
   - id: selected-roles
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, selected-roles, succeeded]
     summary: A recorded role can be selected with the base without adding a role.
     act:
@@ -80,7 +75,6 @@ cases:
 
   - id: executor-installed
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: A converge of an app-dev Node installs the pinned executor and leaves its plain service running (ADR 0266 slice 1).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and the Gateway pins a key, the converge skips the install with its reason.
@@ -93,7 +87,6 @@ cases:
 
   - id: executor-relay-noop
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: With the proof key pinned, a converge installs the executor, and a signed proof.noop order through the relay runs once; a replay and a repeat return its result.
     fails_today: Until the pinned delivery carries executor-linux-x86_64, the converge skips the install with executor.release_missing.
@@ -109,7 +102,6 @@ cases:
 
   - id: executor-caller-refusals
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: The executor refuses another user at the socket, and root outside the observer's unit and the relay user running another program with no reply and a logged code.
     fails_today: Until the pinned delivery carries executor-linux-x86_64, the converge skips the install with executor.release_missing.
@@ -126,7 +118,6 @@ cases:
 
   - id: executor-order-security
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: Orders published as executor-order reach the executor only through the observer's pass-through; a bad signature, a changed action or target, an expired, replayed, unknown-action or wrong-Node order is refused and logged with its own code (ADR 0266 slice 2).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no order reaches the executor.
@@ -146,7 +137,6 @@ cases:
 
   - id: executor-websocket-burst
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: 50 signed proof.noop orders published one after another over the observer's WebSocket each get a done result; the latency from the Gateway's publish to the executor's result is saved as evidence (ADR 0266 slice 2).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no order reaches the executor.
@@ -160,7 +150,6 @@ cases:
 
   - id: executor-round-trip
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: 50 executor.proof Operations, one after another, each publish a signed proof.noop as executor-order and get a done result in a waiting request through the listener and Valkey; each result is recorded on its Operation, each action runs once, and the latency from publish to the waiting request is saved as p50, p95 and max (ADR 0266 slice 3).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no result reaches the waiting request.
@@ -174,7 +163,6 @@ cases:
 
   - id: executor-lost-result
     batch: fresh-fleet
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: An executor.proof Operation whose first result is recorded but whose hand-off to Valkey is dropped leaves a new waiting request with a timeout; a new signed order with a new nonce for the same Operation is answered as a repeat with the first result, which reaches the waiting request, and the executor's journal shows one run (ADR 0266 slice 3).
     fails_today: Until the pinned delivery carries executor-linux-x86_64 and an observer release with the executor-order pass-through, the converge skips the install with executor.release_missing and no result reaches the waiting request.
@@ -183,6 +171,44 @@ cases:
     act:
       - cli: {run: [node:converge, "${app-dev.id}"], expect: {exit: 0, status: succeeded, steps: {name: Check the Node, count: 1}}}
       - executor_lost_result: {on: app-dev, operation: proof-lost-result}
+    expect:
+      - service: {on: app-dev, name: orbit-executor.service, state: active}
+
+  - id: executor-whole-container-sleep
+    batch: fresh-fleet
+    exclusive: true
+    covers: []
+    summary: A signed sleep of the real executor-sleep-clone with T3 and Vite records a durable power proof Operation, a complete whole-container plan, swap limits and the asleep marker.
+    # Live evidence, subtask 5768 run 2: .orbit-artifacts/5753/live-proof-5768/run-2/summary.json,
+    # samples.csv, rust-samples.jsonl, python-samples.jsonl, durable-operations.json and journal-audit.json.
+    # Fixed executor SHA-256 6c133c9cdf3d719b802791f23b7b46674548736d9cf6e06b2f671aafa985ce50.
+    # Clone 4 runs T3 0.1.7 + Vite 7.2.2 (port 8080). Every plan includes all 15 subtree processes.
+    # 30 signed sleep/wake pairs: every Operation succeeded, every wake done, every failed-page count 0.
+    # Sleep p50/p95/max ms: 452.304/543.592/551.332; reclaim 398.938/492.065/494.284.
+    # RAM after each sleep: 14544896..16154624 bytes; swap 378744832..379793408, nonzero every time.
+    # Swap limits open 0 -> max -> 0. Every sample's RAM/swap and pages read are in samples.csv.
+    # Wake to HTTP 200 p50/p95/max ms: 147.840/494.080/517.545; restore 122.675/417.062/478.530.
+    # Incus PUT/unfreeze + wait: 9.471/18.734/19.041 ms (connect-to-close; strace overhead included).
+    # Pages read per wake: 91932..92180, p50/p95/max 92127/92177/92180; zero failed pages.
+    # Diagnosis: 39 lightweight guards inside 16 readable anonymous VMAs set pagemap bits 58 and 62.
+    # Capture excludes guard markers; short reads skip/count failed pages and continue the item.
+    # Linux 7.0 remote process_madvise checks CAP_SYS_NICE in the initial user namespace: nested EPERM.
+    # Post-fix diagnostic: 129 EPERM hints, 129 successful readv batches, zero failures, done.
+    # Same-clone Python sleep: 509.563/5644.503/5822.532 ms; reclaim 293/500/511.
+    # Python RAM: 14553088..14766080 bytes; swap 380137472..381841408.
+    # All 30 Python captures skipped/placement_unproven: timings do not cover the same work; not like for like.
+    # Three real clones woke done at 238.297/402.372/484.466 ms; zero failed pages (burst.json).
+    # SIGKILL during a delayed read recovered Operation 447: HTTP 200 after 2352.641 ms;
+    # restored 92311 pages, zero failures, signed repeat done/repeat=true (4.774 ms).
+    # Fresh Gateway/Node audit: Operations 380-439, 443-445 and 447 all succeeded;
+    # exactly one journal completion each, all outcomes done, matching action/target/outcome, zero mismatches.
+    # journal-audit.json holds each completion and counts; compaction removed expired open/seen records.
+    # Manual existing-helper proof; shared fleet-reset runner, converge and production flows not rerun.
+    fails_today: CI proof remains disabled; its fresh fleet does not create the real T3/Vite clone fixture. Live swap-backed manual proof returned done for all single, burst and recovered wakes.
+    setup:
+      - executor_key: {}
+    act:
+      - executor_power: {on: app-dev, instance: executor-sleep-clone, operation: whole-container-sleep}
     expect:
       - service: {on: app-dev, name: orbit-executor.service, state: active}
 
@@ -282,7 +308,6 @@ cases:
 
   - id: gateway-authority-without-target-grant
     batch: no-grant
-    waits: idmap
     covers: [main, admitted, succeeded]
     summary: A caller granted Gateway access can converge the target without a direct target grant.
     setup:
