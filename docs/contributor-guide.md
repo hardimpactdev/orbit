@@ -29,6 +29,12 @@ bin/bootstrap
 
 `bin/bootstrap` installs the four Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
 
+Repeat runs skip installs whose manifests, lock files, local package-manager settings and tool version match the last successful install and whose dependency output still exists. Cargo checks its cached crates offline before reusing a fetch. Composer installs stay serial because they share a download cache. Bootstrap rebuilds the Gateway API and Docs outputs only when their source fingerprint changes or an output is missing. Failed work is retried on the next run.
+
+Remove the project's `vendor/.orbit-bootstrap-*` records to force its install and generation again; Bun records live in `node_modules`, and Cargo records in `target`.
+
+The default still runs every Composer project's tests and quality checks, including when all installs and generators are current. Use `--skip-checks` to omit those checks. `--dependencies-only` also omits the Gateway key; it still installs dependencies, builds changed outputs and configures the Git hook. A Project default must finish setup before its seed is taken: [task copies inherit that seed and run no baseline setup](/reference/task-instance-workspace#check-phases).
+
 Bootstrap also installs the repository's Git hooks through local `core.hooksPath`, including with `--dependencies-only`. The pre-push hook runs `bin/docs-impact --gate --base origin/main` and refuses a push when it fails. Fetch `origin/main` before preparing a push. Commit the impacted documentation and resolve the gate's findings before pushing again.
 
 ## 1. Check the architecture
@@ -104,7 +110,9 @@ The context index, OpenAPI, MCP catalogue, web API types, and Mintlify configura
 
 `bin/docs-flows` writes the [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md) that command pages place to `docs/flows-data.js`, and `docs/flow.js` draws each one where its page places it. A Gateway Composer install builds OpenAPI and the MCP catalogue through `bin/build-api`, including the release preparation install. This needs PHP, Composer, Python 3, and the complete repository sources. The Gateway serves the built MCP manifest from its release directory. Web checks and builds generate their TypeScript types from that OpenAPI document.
 
-Run `bin/build-api` after API changes. Root `composer check` builds OpenAPI, then the MCP catalogue, then the documentation before its read-only docs-impact gate. A reused checkout therefore checks fresh ignored outputs on its first handoff. A failed generator stops the check. A direct docs-impact run still rejects outputs that are stale. Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
+Run `bin/build-api` after API changes. Root `composer check` calls that same owner once to build OpenAPI and the MCP catalogue, then builds the documentation before its read-only docs-impact gate. It passes `--prepared-api` to `bin/review-check` so the selected contract lane validates fixtures without generating the API again. A standalone review check still builds the API when its contract lane is selected. A reused checkout therefore checks fresh ignored outputs on its first handoff. A failed generator stops the check. A direct docs-impact run still rejects outputs that are stale.
+
+Run `composer docs-build` before documentation checks. CI runs these generation steps before the checks that consume the outputs. A fresh local web checkout needs `composer install --working-dir=apps/gateway` before `bun run build` in `apps/web`.
 
 ### Parallel command families
 

@@ -55,11 +55,11 @@ bun run test
 bun run build
 ```
 
-`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. `bun run test` runs those two stages in order to avoid competing browser workloads on smaller development machines. CI currently builds the web app without its unit or browser tests.
+`bun run check` formats, lints, and type-checks. `bun run test` runs the unit tests in Node, the real verification daemon tests, and the browser tests in headless Chromium. `bun run test:unit` runs the Node and verification projects; `bun run test:browser` runs the Chromium project. `bun run test` runs those two stages in order to avoid competing browser workloads on smaller development machines. CI runs both stages in that order before building the web app.
 
 Vitest enables file parallelism and uses `maxWorkers: "100%"` within each stage. The daemon verification files own separate temporary sessions; the browser-protocol checks use no daemon. They run alongside each other in the unit/verification stage.
 
-Install the browsers once with `bunx playwright install webkit chromium`; For local headless tests, Playwright's `--only-shell` option avoids downloading full Chromium.
+Install the locked browsers and their system libraries once with `bunx playwright install --with-deps --only-shell webkit chromium`, as CI does. Run it after installing the frozen lockfile, and again when Playwright changes. The app tests use Chromium at 1280 by 800 with the `en-GB` locale and UTC timezone; verification tests also use WebKit and the device descriptors in [Web verification](/reference/web-verification#options). The app loads its JetBrains Mono font from its locked dependency, not a system font. Screen snapshots are text, not pixels.
 
 [Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
 
@@ -107,6 +107,6 @@ bun run dev
 
 ## CI
 
-The Web job builds selected web changes and every main commit. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select it. `Required checks` expects it to succeed when it is selected. [CI](/reference/implementation-loop#ci) lists the checks. Gateway Pest, web unit tests and desktop checks remain paused.
+The Web job runs unit, verification and browser tests before building selected web changes and every PR. Main can reuse the verified PR tree; otherwise it runs the Web job. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select it. `Required checks` expects it to succeed when it is selected. [CI](/reference/implementation-loop#ci) lists the checks. Desktop checks remain paused.
 
 The agent lockfile also covers compiled extension crates under `apps/gateway/extensions/*/agent/`. Run tests and Clippy through `scripts/check-crates` from `apps/agent` to include the local path dependencies composed by its Cargo manifest. Delivery identity and CI selection include their sources.

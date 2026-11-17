@@ -7,7 +7,6 @@ import os
 import subprocess
 from pathlib import Path
 import tempfile
-import textwrap
 import unittest
 from unittest.mock import Mock, patch
 
@@ -54,10 +53,8 @@ class DeliveryGateTest(unittest.TestCase):
         self.assertEqual(api.call_count, 2)
 
     def run_gate(self, needs):
-        block = CI.split('  delivery:\n', 1)[1].split('\n  main-required:', 1)[0]
-        code = textwrap.dedent(block.split("          python3 - <<'PYTHON'\n", 1)[1].split('          PYTHON', 1)[0])
-        with patch.dict(os.environ, NEEDS=json.dumps(needs), PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
-            exec(code, {})
+        with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
+            delivery.validate(needs)
 
     def test_main_and_pr_require_the_same_jobs_without_waiting_for_report_or_fullset(self):
         self.assertEqual(set(JOBS['delivery']['needs']), set(JOBS['required']['needs']))
@@ -79,11 +76,9 @@ class DeliveryGateTest(unittest.TestCase):
         self.assertEqual(JOBS['main-required']['name'], "${{ github.ref == 'refs/heads/main' && 'Required checks' || 'Main required checks' }}")
         self.run_gate(needs_for())
 
-    def test_every_selected_job_including_fixtures_must_pass(self):
-        for job in JOBS['delivery']['needs']:
+    def test_selection_and_release_jobs_must_pass(self):
+        for job in ('changes', 'gateway-release'):
             for state in ('failure', 'cancelled', 'skipped', 'pending'):
-                if job == 'self-hosted-fixtures' and state == 'skipped':
-                    continue  # Main runs no self-hosted fixture.
                 needs = needs_for()
                 needs[job]['result'] = state
                 with self.subTest(job=job, state=state), self.assertRaises(SystemExit):
@@ -139,22 +134,170 @@ class DeliveryGateTest(unittest.TestCase):
         self.assertEqual(job['timeout-minutes'], 2)
 
     def test_only_explicit_false_permits_skips_and_selections_are_complete_booleans(self):
-        for job in ('cli', 'gateway-tests', 'cli-tests', 'sdk-tests', 'gateway-static', 'api-reference'):
-            for value in (False, None, 'false', 0):
-                needs = needs_for()
-                needs[job]['result'] = 'skipped'
-                selections = json.loads(needs['changes']['outputs']['jobs'])
-                if value is None:
-                    selections.pop(job)
-                else:
-                    selections[job] = value
-                needs['changes']['outputs']['jobs'] = json.dumps(selections)
-                with self.subTest(job=job, selection=value):
-                    if value is False:
-                        self.run_gate(needs)
+        for job in json.loads(needs_for()['changes']['outputs']['jobs']):
+            for value in (True, False, None, 'false', 0):
+                for result in ('success', 'skipped', 'failure', 'cancelled', 'pending'):
+                    needs = needs_for()
+                    needs[job]['result'] = result
+                    selections = json.loads(needs['changes']['outputs']['jobs'])
+                    if value is None:
+                        selections.pop(job)
                     else:
-                        with self.assertRaises(SystemExit):
+                        selections[job] = value
+                    needs['changes']['outputs']['jobs'] = json.dumps(selections)
+                    with self.subTest(job=job, selection=value, result=result):
+                        if type(value) is bool and (result == 'success' or value is False and result == 'skipped'):
                             self.run_gate(needs)
+                        else:
+                            with self.assertRaises(SystemExit):
+                                self.run_gate(needs)
+        needs = needs_for()
+        selections = json.loads(needs['changes']['outputs']['jobs']) | {'unexpected-job': True}
+        needs['changes']['outputs']['jobs'] = json.dumps(selections)
+        with self.assertRaisesRegex(SystemExit, 'Incomplete build selections'):
+            self.run_gate(needs)
+
+    def test_self_hosted_units_require_a_branch_run_and_success(self):
+        shards = [{'name': '01', 'units': ['swamp/tests/frankenphp_proxy_test.ts']}]
+        for mode in ('fork', 'run', 'none'):
+            for selected in ([], shards):
+                for result in ('success', 'skipped', 'failure', 'cancelled', 'pending'):
+                    needs = needs_for()
+                    needs['changes']['outputs']['self_hosted_shards'] = json.dumps(selected)
+                    needs['self-hosted-fixtures']['result'] = result
+                    with self.subTest(mode=mode, selected=selected, result=result), \
+                            patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES=mode):
+                        if mode == 'fork' and selected:
+                            with self.assertRaisesRegex(SystemExit, "run only on Orbit's runners.*frankenphp_proxy_test.ts.*push the branch"):
+                                delivery.validate(needs)
+                        elif mode == 'run' and result != 'success' and not (not selected and result == 'skipped'):
+                            with self.assertRaisesRegex(SystemExit, 'Required self-hosted fixtures failed'):
+                                delivery.validate(needs)
+                        elif mode != 'run' and result != 'skipped':
+                            with self.assertRaisesRegex(SystemExit, 'Unexpected self-hosted fixture state'):
+                                delivery.validate(needs)
+                        else:
+                            delivery.validate(needs)
+
+
+class WorkflowGateTest(unittest.TestCase):
+    def test_both_wrappers_pass_needs_to_the_shared_validator(self):
+        for name in ('required', 'delivery'):
+            job = JOBS[name]
+            step = next(step for step in job['steps'] if 'NEEDS' in step.get('env', {}))
+            code = step['run'].split("python3 - <<'PYTHON'\n", 1)[1].rsplit('PYTHON', 1)[0]
+            needs = needs_for(name)
+            with self.subTest(wrapper=name), patch.dict(os.environ, NEEDS=json.dumps(needs)), \
+                    patch('runpy.run_path', return_value={'validate': Mock()}) as load:
+                exec(code, {})
+                load.assert_called_once_with('bin/ci-delivery')
+                load.return_value['validate'].assert_called_once_with(needs)
+            self.assertEqual(step['env']['NEEDS'], '${{ toJSON(needs) }}')
+            self.assertIn('PROOF_REQUIRED', step['env'])
+            self.assertIn('SELF_HOSTED_FIXTURES', step['env'])
+
+
+class ProofGateTest(unittest.TestCase):
+    def run_required(self, *, proof_required=False, fork=False, results=None, statuses=None, snapshots=None):
+        needs = needs_for()
+        rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1}
+                for name in ('CI proof', 'CI proof eligibility')}
+        rows['CI proof eligibility']['steps'] = []
+        for name, result in (results or {}).items():
+            if name in needs:
+                needs[name]['result'] = result
+            else:
+                rows[name].update(status='in_progress' if result == 'pending' else 'completed', conclusion=result)
+        snapshots = iter(snapshots or [list(rows.values())])
+        def api(argv, **options):
+            if '/statuses?' in argv[-1]:
+                return json.dumps([statuses or []]).encode()
+            self.assertEqual(argv[-1], 'repos/hardimpactdev/orbit/actions/runs/123/jobs?filter=all&per_page=100')
+            self.assertIn('--paginate', argv)
+            return json.dumps([{'jobs': next(snapshots)}]).encode()
+        result = None
+        with patch.dict(os.environ, PROOF_REQUIRED=str(proof_required).lower(), FORK_PROOF=str(fork).lower(),
+                        SELF_HOSTED_FIXTURES='fork' if fork else 'run', CI_RUN_ID='123', PROOF_SHA='a' * 40,
+                        GH_REPO=REPO, PROOF_RUN_URL_PREFIX=f'https://github.com/{REPO}/actions/runs/'), \
+                patch.object(delivery.subprocess, 'check_output', side_effect=api) as github, \
+                patch.object(delivery.time, 'sleep') as sleep:
+            try:
+                delivery.validate(needs)
+            except SystemExit as error:
+                result = error.code
+        return result, github, sleep
+
+    def test_an_unselected_proof_needs_no_api_wait_and_a_selected_one_always_gates(self):
+        for result in ('pending', 'failure', 'cancelled', 'skipped'):
+            error, github, sleep = self.run_required(results={'CI proof': result})
+            self.assertIsNone(error)
+            github.assert_not_called()
+            sleep.assert_not_called()
+        for result in ('success', 'failure', 'cancelled', 'skipped'):
+            error, _, _ = self.run_required(proof_required=True, results={'CI proof': result})
+            self.assertEqual(error is None, result == 'success', error)
+
+    def test_default_waits_for_jobs_missing_from_the_first_api_response(self):
+        rows = [{'name': 'CI proof', 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1}]
+        error, github, sleep = self.run_required(proof_required=True, snapshots=[[], rows])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 2)
+        sleep.assert_called_once_with(15)
+
+    def test_rerun_waits_for_the_newest_proof_attempt(self):
+        old = {'name': 'CI proof', 'status': 'completed', 'conclusion': 'failure', 'id': 2, 'run_attempt': 1}
+        new = {**old, 'status': 'in_progress', 'conclusion': None, 'id': 3, 'run_attempt': 2}
+        done = {**new, 'status': 'completed', 'conclusion': 'success'}
+        error, github, sleep = self.run_required(proof_required=True, snapshots=[[new, old], [done, old]])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 2)
+        sleep.assert_called_once_with(15)
+        error, _, sleep = self.run_required(proof_required=True, snapshots=[[done]])
+        self.assertIsNone(error)
+        sleep.assert_not_called()
+
+    def test_fork_gate_requires_the_trusted_outside_proof_status(self):
+        good = {'context': 'Orbit outside proof', 'state': 'success', 'creator': {'login': 'github-actions[bot]'},
+                'target_url': 'https://github.com/hardimpactdev/orbit/actions/runs/123'}
+        for statuses, passed in (([], False), ([good], True), ([{**good, 'state': 'pending'}, good], False),
+                                 ([{**good, 'creator': {'login': 'contributor'}}], False)):
+            error, _, _ = self.run_required(proof_required=True, fork=True, statuses=statuses)
+            self.assertEqual(error is None, passed, error)
+
+    def test_intentionally_ineligible_proof_skips_without_waiting_when_blocking(self):
+        rows = [{'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success',
+                 'id': 1, 'run_attempt': 1, 'steps': [{'name': 'Skip ineligible proof', 'conclusion': 'success'}]},
+                {'name': 'CI proof', 'status': 'completed', 'conclusion': 'skipped', 'id': 2, 'run_attempt': 1}]
+        error, github, sleep = self.run_required(proof_required=True, snapshots=[rows])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 1)
+        sleep.assert_not_called()
+
+    def test_failed_eligibility_and_unexpected_skip_fail_closed_without_waiting(self):
+        for result in ('failure', 'cancelled', 'skipped'):
+            error, _, sleep = self.run_required(proof_required=True, results={'CI proof eligibility': result, 'CI proof': 'skipped'})
+            self.assertEqual(error, f'Proof eligibility failed: {result}')
+            sleep.assert_not_called()
+        error, _, sleep = self.run_required(proof_required=True, results={'CI proof': 'skipped'})
+        self.assertIn('without ineligible metadata evidence', error)
+        sleep.assert_not_called()
+
+    def test_missing_or_stale_eligibility_evidence_fails_closed(self):
+        proof = {'name': 'CI proof', 'status': 'completed', 'conclusion': 'skipped', 'id': 2, 'run_attempt': 2}
+        eligibility = {'name': 'CI proof eligibility', 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1,
+                       'steps': [{'name': 'Skip ineligible proof', 'conclusion': 'success'}]}
+        error, _, sleep = self.run_required(proof_required=True, snapshots=[[proof, eligibility]])
+        self.assertIn('same attempt', error)
+        sleep.assert_not_called()
+        with patch.object(delivery.time, 'monotonic', side_effect=[0, 0, 61]):
+            error, _, sleep = self.run_required(proof_required=True, snapshots=[[proof]])
+        self.assertEqual(error, 'Missing proof eligibility evidence')
+        sleep.assert_not_called()
+        eligibility['run_attempt'] = 2
+        error, github, sleep = self.run_required(proof_required=True, snapshots=[[proof], [proof, eligibility]])
+        self.assertIsNone(error)
+        self.assertEqual(github.call_count, 2)
+        sleep.assert_called_once_with(15)
 
 
 class EvidenceTest(unittest.TestCase):

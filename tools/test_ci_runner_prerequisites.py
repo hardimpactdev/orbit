@@ -3,11 +3,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, call, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / 'bin/ci-runner-prerequisites'
@@ -31,14 +33,10 @@ import json, os, sys
 with open(os.environ['FIXTURE_LOG'], 'a') as log:
     log.write(json.dumps({'sudo': sys.argv[1:]}) + '\\n')
 assert sys.argv[1] == '-n'
-# Record production budgets above, but scale only the mock's guard deadlines.
-# The real 10s+20s stall bound was measured separately; ordinary CI stays fast.
-if sys.argv[2:4] == ['python3', '-']:
-    sys.argv[4] = {'10': '1', '20': '2'}[sys.argv[4]]
 os.execvp(sys.argv[2], sys.argv[2:])
 ''')
         self.command('apt-get', '''
-import json, os, pathlib, signal, sys, time
+import json, os, pathlib, sys
 args = sys.argv[1:]
 source = pathlib.Path(next(a.split('=', 1)[1] for a in args if a.startswith('Dir::Etc::sourcelist=')))
 mirror = 'fallback' if 'https://mirrors.edge.kernel.org/' in source.read_text() else 'primary'
@@ -47,11 +45,6 @@ with open(os.environ['FIXTURE_LOG'], 'a') as log:
     log.write(json.dumps({'mirror': mirror, 'operation': operation, 'args': args,
                          'source': source.read_text()}) + '\\n')
 mode = os.environ.get('FIXTURE_' + mirror.upper(), 'ok')
-if mode == 'install-hang' and operation == 'update':
-    time.sleep(0.1)
-if mode == 'hang' or (mode == 'install-hang' and operation == 'install'):
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    time.sleep(60)
 if mode == 'partial' and operation == 'update':
     # Apt normally returns 0 for partial updates unless strict error mode is set.
     sys.exit(100 if 'APT::Update::Error-Mode=any' in args else 0)
@@ -126,6 +119,8 @@ if operation == 'install' and mode != 'no-tools':
                 self.assertEqual(primary, ['update', 'install'] if mode == 'install-fail' else ['update'])
                 self.assertEqual([(c['mirror'], c['operation']) for c in self.apt][-2:],
                                  [('fallback', 'update'), ('fallback', 'install')])
+                deadlines = [c['sudo'][:4] for c in self.calls if c.get('sudo', [None, None])[1] == 'python3']
+                self.assertEqual(deadlines, [['-n', 'python3', '-', '10'], ['-n', 'python3', '-', '20']])
                 self.assertIn('https://mirrors.edge.kernel.org/ubuntu', self.apt[-1]['source'])
                 self.assertIn('[signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg]', self.apt[-1]['source'])
                 # Partial primary indexes cannot satisfy fallback's update or install.
@@ -144,35 +139,6 @@ if operation == 'install' and mode != 'no-tools':
                 if mode == 'partial':
                     self.assertEqual([c['operation'] for c in self.apt], ['update', 'update'])
 
-    def test_real_deadlines_bound_two_stalled_mirrors(self):
-        result = self.run_helper(primary='hang', fallback='hang')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('after both Ubuntu mirrors', result.stderr)
-        self.assertEqual([(c['mirror'], c['operation']) for c in self.apt],
-                         [('primary', 'update'), ('fallback', 'update')])
-        deadlines = [c['sudo'][:4] for c in self.calls if c.get('sudo', [None, None])[1] == 'python3']
-        self.assertEqual(deadlines, [['-n', 'python3', '-', '10'], ['-n', 'python3', '-', '20']])
-        self.assertGreaterEqual(self.elapsed, 3)
-        self.assertLess(self.elapsed, 6)
-        print(f'both mirrors stalled, real process guard: {self.elapsed:.3f}s (scaled 3s test budget plus process overhead)')
-
-    def test_stalled_primary_still_reaches_a_working_fallback(self):
-        for mode in ('hang', 'install-hang'):
-            with self.subTest(mode=mode):
-                (self.bin / 'nft').unlink(missing_ok=True)
-                self.log.unlink(missing_ok=True)
-                result = self.run_helper(primary=mode)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                primary = [('primary', 'update')]
-                if mode == 'install-hang':
-                    primary.append(('primary', 'install'))
-                self.assertEqual([(c['mirror'], c['operation']) for c in self.apt],
-                                 primary + [('fallback', 'update'), ('fallback', 'install')])
-                # The delayed update and stalled install share the same primary budget.
-                self.assertGreaterEqual(self.elapsed, 1)
-                self.assertLess(self.elapsed, 4)
-                print(f'primary {mode}, mocked fallback: {self.elapsed:.3f}s')
-
     def test_workflow_keeps_both_kernel_cases(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
         gateway = source.split('  gateway-static:\n', 1)[1].split('\n  gateway-tests:\n', 1)[0]
@@ -186,11 +152,56 @@ if operation == 'install' and mode != 'no-tools':
             self.assertIn(f"vendor/bin/pest --default-time-limit=5 --group privileged {path} --filter 'on a real kernel'", gateway)
         self.assertEqual(gateway.count("ORBIT_REAL_KERNEL_TESTS: '1'"), 2)
 
-    def test_the_acl_prerequisites_of_the_removed_pi_job_are_refused(self):
-        result = self.run_helper('acl')
+    def test_an_unknown_prerequisite_is_refused_without_running_commands(self):
+        result = self.run_helper('unknown')
         self.assertEqual(result.returncode, 2)
         self.assertIn('Usage: ci-runner-prerequisites {nftables}', result.stderr)
         self.assertEqual(self.calls, [])
+
+
+class MirrorDeadlineTest(unittest.TestCase):
+    # Execute the shipped guard with a controlled clock and process boundary. The shell tests above
+    # own fallback on a nonzero guard exit; no test needs to wait for the mirror budgets to expire.
+    guard = HELPER.read_text().split("<<'PYTHON'\n", 1)[1].split('\nPYTHON', 1)[0]
+
+    def test_update_and_install_share_each_mirrors_deadline(self):
+        for budget in (10, 20):
+            with self.subTest(budget=budget):
+                child = Mock(pid=123)
+                child.wait.return_value = 0
+                with patch.object(sys, 'argv', ['-', str(budget), 'nftables', '-o', 'fixture']), \
+                        patch('time.monotonic', side_effect=[100, 100, 104]), \
+                        patch('subprocess.Popen', return_value=child) as start:
+                    exec(self.guard, {})
+                self.assertEqual(start.call_args_list, [
+                    call(['apt-get', '-o', 'fixture', 'update'], start_new_session=True),
+                    call(['apt-get', '-o', 'fixture', 'install', '--no-install-recommends', '--yes', 'nftables'],
+                         start_new_session=True)])
+                self.assertEqual(child.wait.call_args_list, [call(timeout=budget), call(timeout=budget - 4)])
+
+    def test_a_stalled_update_or_install_kills_and_reaps_its_group(self):
+        for operation in ('update', 'install'):
+            with self.subTest(operation=operation):
+                child = Mock(pid=123)
+                child.wait.side_effect = ([0] if operation == 'install' else []) + [subprocess.TimeoutExpired('apt-get', 10), 0]
+                with patch.object(sys, 'argv', ['-', '10', 'nftables']), \
+                        patch('time.monotonic', side_effect=[100, 100, 104]), \
+                        patch('subprocess.Popen', return_value=child), patch('os.killpg') as kill, \
+                        self.assertRaises(SystemExit) as stopped:
+                    exec(self.guard, {})
+                self.assertEqual(stopped.exception.code, 124)
+                kill.assert_called_once_with(123, signal.SIGKILL)
+                self.assertEqual(child.wait.call_args_list[-1], call())
+
+    def test_an_expired_budget_never_starts_install(self):
+        child = Mock()
+        child.wait.return_value = 0
+        with patch.object(sys, 'argv', ['-', '10', 'nftables']), \
+                patch('time.monotonic', side_effect=[100, 100, 110]), \
+                patch('subprocess.Popen', return_value=child) as start, self.assertRaises(SystemExit) as stopped:
+            exec(self.guard, {})
+        self.assertEqual(stopped.exception.code, 124)
+        self.assertEqual(start.call_count, 1)
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,13 +18,18 @@ it('prepares ignored API outputs before the read-only Project gate', function (b
         ], JSON_THROW_ON_ERROR));
         file_put_contents($root.'/openapi', 'old');
         file_put_contents($root.'/mcp', 'stale');
+        copy(dirname(__DIR__, 4).'/bin/build-api', $root.'/bin/build-api');
+        chmod($root.'/bin/build-api', 0755);
         $programs = [
-            'docs-openapi' => "file_put_contents('openapi', 'fresh');",
-            'mcp-tools' => $failGenerator ? 'exit(7);' : "file_put_contents('mcp', file_get_contents('openapi'));",
+            'docs-openapi' => "file_put_contents('generations', 'openapi\\n', FILE_APPEND); file_put_contents('openapi', 'fresh');",
+            'mcp-tools' => $failGenerator ? 'exit(7);' : "file_put_contents('generations', 'mcp\\n', FILE_APPEND); file_put_contents('mcp', file_get_contents('openapi'));",
             'docs-navigation' => '',
             'docs-flows' => '',
             'review-check' => <<<'PHP'
 file_put_contents('gate-ran', 'yes');
+if (! in_array('--prepared-api', $argv, true)) {
+    exit(8);
+}
 exit(file_get_contents('openapi') === 'fresh' && file_get_contents('mcp') === 'fresh' ? 0 : 1);
 PHP,
         ];
@@ -44,7 +49,8 @@ PHP,
         } else {
             expect($check->getExitCode())->toBe(0, $check->getErrorOutput())
                 ->and(file_get_contents($root.'/gate-ran'))->toBe('yes')
-                ->and(file_get_contents($root.'/mcp'))->toBe('fresh');
+                ->and(file_get_contents($root.'/mcp'))->toBe('fresh')
+                ->and(file_get_contents($root.'/generations'))->toBe('openapi\nmcp\n');
         }
     } finally {
         new Filesystem()->deleteDirectory($root);

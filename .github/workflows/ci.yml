@@ -470,7 +470,7 @@ jobs:
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['web']) != 'false' }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 2
+    timeout-minutes: 3
     defaults:
       run:
         working-directory: apps/web
@@ -497,6 +497,12 @@ jobs:
         working-directory: .
         run: composer install --working-dir=apps/gateway --no-dev --no-interaction --prefer-dist
       - run: bun install --frozen-lockfile
+      - name: Install test browsers and system libraries
+        run: bunx playwright install --with-deps --only-shell webkit chromium
+      - name: Unit and verification tests
+        run: bun run test:unit
+      - name: Browser tests
+        run: bun run test:browser
       - name: Build
         run: bun run build && test -s dist/index.html && test -s dist/version.json
       - name: Record web build attempt
@@ -931,6 +937,13 @@ jobs:
           runpy.run_path('bin/ci-delivery')['validate'](needs)
           PYTHON
 
+      - name: Report fixture queue pressure
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 bin/ci-queue
+
       - name: Record tested PR tree and release artifact
         if: github.event_name == 'pull_request'
         env:
@@ -992,6 +1005,12 @@ jobs:
             echo "::error::Main delivery checks did not pass: $DELIVERY_RESULT"
             exit 1
           fi
+      - name: Report fixture queue pressure
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 bin/ci-queue
       - name: Verify main CI delivery for the Gateway and link fixture report
         env:
           GH_TOKEN: ${{ github.token }}
