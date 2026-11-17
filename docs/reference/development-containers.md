@@ -2286,7 +2286,7 @@ On this volume a [reset](#reset) of a copy's fleet, which a proof runs before ea
 
 Every Instance without `inner_volume`, the first nested-fleet default before its conversion and its copies included, keeps today's shape: no step makes, snapshots, copies or checks a volume for it.
 
-`TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
+`NestedFleetLayout` in `apps/gateway/app/Domain/Instances/NestedFleetLayout.php` holds the fleet's addresses, MACs, default memory limits, subnets and checkout path. This page names none of them twice.
 
 In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The inner Incus does not read them, because the image has no `newuidmap`. It takes its range from its own map instead: base 1,000,000, size the outer size minus 1,000,000 ([The ID map size](#the-id-map-size)).
 
@@ -3206,7 +3206,7 @@ A restore of `base` reverts devices and configuration keys. So the rules must be
 
 Readiness is the proof's own check, from the container over `wg-nested`: every nested container runs, Doctor of the nested Gateway is healthy within a bounded wait, the three agents are online and the Gateway knows the operator with its key. A failure names the nested container or the check. A failed Doctor wait names what its last poll got: the HTTP status and the first 300 characters of the body, or curl's error when no response came.
 
-The start gives `wg-nested` the nested Gateway's resolver, `10.45.0.1`, and the routing domains `~nested-dev` and `~nested-prod`, the TLDs of the fleet's `app-dev` and `app-prod` Nodes, with `resolvectl dns` and `resolvectl domain`. So the operator in the container reaches a site of the fleet by name, such as `https://webtest.nested-dev`. It never routes `~orbit` there: the container keeps its own `gateway.orbit`. The start reads the link first and sets only what differs, so a second start changes nothing. The settings do not outlive the tunnel; the next start sets them again. `TaskVmNestedFleet` holds the addresses and TLDs; the intent carries them in `intent.fleet.operator`.
+The start gives `wg-nested` the nested Gateway's resolver, `10.45.0.1`, and the routing domains `~nested-dev` and `~nested-prod`, the TLDs of the fleet's `app-dev` and `app-prod` Nodes, with `resolvectl dns` and `resolvectl domain`. So the operator in the container reaches a site of the fleet by name, such as `https://webtest.nested-dev`. It never routes `~orbit` there: the container keeps its own `gateway.orbit`. The start reads the link first and sets only what differs, so a second start changes nothing. The settings do not outlive the tunnel; the next start sets them again. `NestedFleetLayout` holds the addresses and TLDs; the intent carries them in `intent.fleet.operator`.
 
 A read right after a start waits for what the nested container sets up at boot, at most 60 s, and accepts only a ready value. The start takes the nested Gateway's hub key only when it is a WireGuard key: `wg-quick` makes the interface before it sets the key, and in between `wg show orbit public-key` prints `(none)` with exit 0. With no key in time, the start fails with "the nested Gateway's WireGuard key was not ready after 60 s" and sets no peer.
 

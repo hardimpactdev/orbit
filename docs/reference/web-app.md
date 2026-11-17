@@ -32,7 +32,7 @@ The generated API schema includes `GET /api/v1/tasks/{task}/agents/{session}` an
 
 The generated Node settings schema has no `task_vms` member and the Node schema no `image_refresh_hold`: both are removed ([Node settings](/reference/node-settings)).
 
-The task group schema includes nullable `vm_power`: `running`, `stopped`, or `destroyed`, separately from task status. The Gateway always reports `null`. The Tasks page keeps its status-based grouping and detail view when power is present, null, or omitted. [VM power](/reference/compute-drivers#vm-power) defines the state mapping.
+The task group schema retains nullable `vm_power`, but the Gateway always reports `null`. The Tasks page groups and displays tasks by status, not VM power. The [old-paths ledger](/reference/old-paths) defines the coordinated contract change required to remove the field.
 
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
 

@@ -2,7 +2,6 @@
 title: "Old paths"
 description: "Retained transition code, its replacement and the evidence needed before removal."
 covers:
-  - apps/gateway/app/Infrastructure/TaskVms/RecipeImageBuilds.php
   - apps/gateway/database/migrations/2027_03_03_000000_drop_task_vm_tables.php
 ---
 
@@ -21,9 +20,11 @@ Each row names what must replace the path and the evidence that permits its remo
 | `GatewayRuntimeFiles::RetiredSettings`: `ORBIT_TASK_VMS_*`, `ORBIT_PI_PORT`, `ORBIT_SWAMP_PROOF_CLUB_API_KEY`, `ORBIT_SWAMP_DIRECT_WRITERS` | Gateway-role convergence removes these keys from `shared/gateway.env` | Key-name inventory shows none on any Gateway; never copy their values into evidence |
 | `swamp/ansible/tasks/node-converge-hub-filter-absent.yml` | Hub convergence removes the task VM filter | No vpn Node holds `orbit-task-vms-hub.service`, `/etc/orbit/task-vms/hub.nft`, nft table `inet orbit_task_vms` or UFW comments beginning `orbit:task-vm-` |
 | Checkout Instances, their PHP-FPM pools, [`instance:migrate`](/cli/instance/migrate), `instance.migrate`, `operation-instance-migrate` and `instance-migrate.yml` | [Container-only Instance admission](/reference/development-containers#the-build-list) and migration of existing checkouts | Stop new checkout admission first; then inventory every app-dev Node and confirm the last checkout has moved |
-| `TaskVmAptCache`, `TaskVmModelRoute`, `TaskVmNestedFleet` and `RecipeImageBuilds` | Container cache, model route, nested-fleet layout and recipe owners | Move live shared behavior to its owning container namespace and remove VM-only branches without removing container callers |
-| Null VM contract fields and egress archive reads | A coordinated contract cleanup | Update Gateway, SDK, CLI, web and frozen agent contracts together. `vm_power` is always null; `task_vm_id` is null and `task_vm_guest` false. Stored `task_group_egress` rows are not container observations |
+| Null VM contract fields | A coordinated contract cleanup | Remove `vm_power`, `task_vm_id` and `task_vm_guest` together from Gateway schemas, SDK DTOs and fixtures, CLI, web and frozen agent contracts; pass their contract checks |
+| Egress archive reads | Container observations | Inventory confirms no stored `task_group_egress` rows need the archive readers |
 | Reserved `10.44.0.128/25` and its model-guard allowance | Container forwarders on registered Nodes | Confirm no peer needs the range; remove the reservation and obsolete allowance together, not the container model guard |
+
+Current responses keep `vm_power` and `task_vm_id` null and `task_vm_guest` false. Consumers must not use them to infer workspace state. Operations from the removed runtime keep their recorded results. Stored `task_group_egress` rows are not container observations.
 
 ## The task VM proof run
 
@@ -61,7 +62,7 @@ The migration `2027_03_03_000000_drop_task_vm_tables` drops `task_vms`, `task_vm
 
 ### The guest agent chain
 
-The guest agent runner and its Incus transport are removed. Node transports remain; container execution goes through the recorded host Node. The retained shared helpers are listed in the ledger.
+The guest agent runner and its Incus transport are removed. Node transports remain; container execution goes through the recorded host Node. Shared layout and model routing belong to Instances, and release recipe selection belongs to MachineSoftware. The task VM package cache and its Gateway selector are removed; nested containers keep their own egress proxy settings.
 
 ### The unreachable Swamp VM paths
 

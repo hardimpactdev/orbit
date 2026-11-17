@@ -10,21 +10,21 @@ use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceNotes;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNestedFleet;
 use App\Infrastructure\Firewall\NodeFirewallDesiredRules;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\MachineSoftware\ArtifactPin;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\FolderPin;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
 use App\Infrastructure\MachineSoftware\StaticPhpBuild;
 use App\Infrastructure\MachineSoftware\VitePlusHome;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\Operation;
@@ -76,14 +76,14 @@ describe('the container branch of the app-dev converge', function (): void {
         file_put_contents($environment = $marker.'-environment', "HTTPS_PROXY=\"http://10.253.0.1:3128\"\n");
         config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
         $real = instanceHostNode();
-        $fleet = instanceHostNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
+        $fleet = instanceHostNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
         config(['instances.container_nodes' => [$real->id, $fleet->id]]);
         app(InstanceHostIntent::class)->prepare($real);
         app(InstanceHostIntent::class)->prepare($fleet);
         $intent = static fn (Node $node): array => array_diff_key(app(InstanceHostIntent::class)->for($node->refresh()), ['bridge_admitted_at' => true]);
         [$realBefore, $fleetBefore] = [$intent($real), $intent($fleet)];
         touch($marker);
-        $folders = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $folders = app(CurrentRecipe::class)->currentRecipe()->instances;
         try {
             expect($intent($real))->toBe($realBefore)
                 ->and($realBefore)->not->toHaveKey('fleet_node')
@@ -110,7 +110,7 @@ describe('the container branch of the app-dev converge', function (): void {
         file_put_contents($environment = $marker.'-environment', "PATH=\"/usr/bin\"\n");
         config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
         $real = instanceHostNode();
-        $fleet = instanceHostNode('app-dev', TaskVmNestedFleet::Layout['app-dev']['address']);
+        $fleet = instanceHostNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
         config(['instances.container_nodes' => [$real->id, $fleet->id]]);
         app(InstanceHostIntent::class)->prepare($real);
         app(InstanceHostIntent::class)->prepare($fleet);
@@ -128,7 +128,7 @@ describe('the container branch of the app-dev converge', function (): void {
 
     // docs/reference/development-containers.md#shared-folders: an unshifted folder says so, and is another version of the same content.
     it('marks each folder plan of unshifted mounts with shift false, under another version, and leaves the idmapped plans as they were', function (): void {
-        $folders = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $folders = app(CurrentRecipe::class)->currentRecipe()->instances;
         $shifted = InstanceFolderPlan::for($folders);
         $unshifted = InstanceFolderPlan::for($folders, false);
         foreach (['runtime', 'agent'] as $name) {
@@ -160,7 +160,7 @@ describe('the container branch of the app-dev converge', function (): void {
     it('names the project, pool, image and folders of a prepared Node', function (): void {
         $node = instanceHostNode();
         config(['instances.container_nodes' => [$node->id]]);
-        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        $recipe = app(CurrentRecipe::class)->currentRecipe();
         app(InstanceHostIntent::class)->prepare($node);
 
         $intent = app(InstanceHostIntent::class)->for($node);
@@ -286,7 +286,7 @@ describe('the Instance image', function (): void {
     });
 
     it('installs each published static PHP build as php/<version>, checked against its extensions, and no unpublished one', function (): void {
-        $recipe = app(RecipeImageBuilds::class)->currentRecipe()->instances;
+        $recipe = app(CurrentRecipe::class)->currentRecipe()->instances;
         $build = $recipe->php['8.5'];
         $published = new StaticPhpBuild('8.5', $build->phpVersion, $build->frankenphp, $build->extensions, $build->cliExtensions, $build->build, $build->url,
             new ArtifactPin($build->url, 'sha256', str_repeat('d', 64), $build->phpVersion));
@@ -338,7 +338,7 @@ describe('the Instance image', function (): void {
             ->and(array_column($shared, 'mode', 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf' => '0644', '/etc/fonts/fonts.conf' => '0644', '/etc/gitconfig' => '0644', '/etc/sudoers.d/orbit-agent' => '0440'])
             ->and($image['finish'])->toContain(['rm', '-f', '/etc/ld.so.cache'])
             ->and(array_key_last($image['finish']))->toBe(array_search(['rm', '-f', '/etc/ld.so.cache'], $image['finish'], true))
-            ->and(InstanceImage::for('10.253.0.1', app(RecipeImageBuilds::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());
+            ->and(InstanceImage::for('10.253.0.1', app(CurrentRecipe::class)->currentRecipe()->incus('amd64'))['files'])->toContain(...InstanceImage::shared());
     });
 
     it('gives Vite+ a shared writable home for package managers while linking the pinned runtime', function (): void {
@@ -414,7 +414,7 @@ describe('the shared folders', function (): void {
     });
 
     it('installs the recipe\'s runtime and agent programs from their pinned artifacts', function (): void {
-        $plan = InstanceFolderPlan::for(app(RecipeImageBuilds::class)->currentRecipe()->instances);
+        $plan = InstanceFolderPlan::for(app(CurrentRecipe::class)->currentRecipe()->instances);
         $programs = static fn (array $folder): array => array_merge(...array_map(static fn (array $part): array => $part['bin'], $folder['parts']));
 
         $archives = array_column($plan['runtime']['parts'], 'archive', 'name');
@@ -432,7 +432,7 @@ describe('the shared folders', function (): void {
     });
 
     it('builds one Vite+ home from the recipe\'s vp release, runtime lock and Node, at a path named by what goes into it', function (): void {
-        $recipe = app(RecipeImageBuilds::class)->currentRecipe();
+        $recipe = app(CurrentRecipe::class)->currentRecipe();
         $plan = InstanceFolderPlan::for($recipe->instances)['runtime'];
         $vitePlus = $plan['vite_plus'];
 

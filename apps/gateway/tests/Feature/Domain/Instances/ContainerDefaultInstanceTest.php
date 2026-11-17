@@ -29,7 +29,7 @@ use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
-use App\Infrastructure\TaskVms\RecipeImageBuilds;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -65,7 +65,7 @@ describe('the first default Instance of a Project on a build-list Node', functio
 
         $instance = Instance::query()->findOrFail($operation->target_id);
         $runtime = InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail();
-        $plan = InstanceFolderPlan::for(app(RecipeImageBuilds::class)->currentRecipe()->instances ?? throw new LogicException('The recipe has no Instance folders.'));
+        $plan = InstanceFolderPlan::for(app(CurrentRecipe::class)->currentRecipe()->instances ?? throw new LogicException('The recipe has no Instance folders.'));
         expect($instance->name)->toBe('default')
             ->and($instance->checkout_path)->toBe("/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-{$instance->id}/rootfs/srv/workspace")
             ->and($runtime->only(['incus_project', 'container_name', 'bridge_address', 't3_port', 'runtime_version', 'agent_version', 'clone_source_instance_id', 'seed_commit']))
