@@ -1,8 +1,12 @@
 //! The one restore pool of a Node (ADR 0266). Its threads are its own, so order checks never wait behind a restore. Jobs queue in
-//! arrival order, and a job leaves the front only when every one of its items has finished: in a burst the first wake finishes in
-//! about the time of a single wake, and no item of the next target starts before then.
+//! arrival order, and a job leaves the front only when every one of its items has finished, or when it is stalled: in a burst the
+//! first wake finishes in about the time of a single wake, and no item of the next target starts before then.
 //!
-//! Lock order: the queue, then a job's progress. Item work runs under neither.
+//! A stalled job's items may still run after it left the queue and its restore returned. Each such worker is replaced, so the pool
+//! keeps its configured number of working threads, up to [`THREAD_CAP`] times that size in all. When its syscall returns, a stalled
+//! worker exits if the pool is at size again, and rejoins otherwise.
+//!
+//! Lock order: the queue, then a job's progress, then the thread counts. Item work runs under none of them.
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -49,6 +53,18 @@ impl Readers {
     }
 }
 
+/// The pool never holds more than this many times its configured size in threads, stalled ones included. Past it, a new stall
+/// spawns no replacement: other targets get the working threads that remain.
+pub(crate) const THREAD_CAP: usize = 2;
+
+#[expect(
+    clippy::print_stderr,
+    reason = "systemd sends the executor's standard error to its journal; the pool has no other log"
+)]
+fn log(line: &str) {
+    eprintln!("{line}");
+}
+
 /// The least and most threads the role may ask for. Swap-in waits on the device, so the floor is not the CPU count.
 pub const MIN_THREADS: usize = 16;
 /// See [`MIN_THREADS`].
@@ -69,6 +85,8 @@ struct Job {
     deadline: Instant,
     pages: AtomicU64,
     cancelled: AtomicBool,
+    /// Set under the progress lock when the restore gave up on the items still running; their workers are replaced.
+    stalled: AtomicBool,
     progress: Mutex<Progress>,
     all: Condvar,
 }
@@ -78,12 +96,81 @@ impl Job {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct Threads {
+    /// Every live worker, stalled ones included.
+    total: usize,
+    /// Workers inside an item of a stalled job.
+    stalled: usize,
+}
+
 #[derive(Default)]
 struct Shared {
     queue: Mutex<VecDeque<Arc<Job>>>,
     work: Condvar,
+    /// The configured number of working threads.
+    size: usize,
+    threads: Mutex<Threads>,
 }
 impl Shared {
+    /// Start one worker. A failed spawn is logged, and the pool runs with what it has.
+    fn spawn(shared: &Arc<Shared>) {
+        let worker = Arc::clone(shared);
+        shared
+            .threads
+            .lock()
+            .expect("restore threads lock poisoned")
+            .total += 1;
+        if let Err(error) = std::thread::Builder::new()
+            .name("restore".to_owned())
+            .spawn(move || work(&worker))
+        {
+            shared
+                .threads
+                .lock()
+                .expect("restore threads lock poisoned")
+                .total -= 1;
+            log(&format!("restore pool: a worker did not start: {error}"));
+        }
+    }
+
+    /// `count` workers are now stalled: start replacements until the working threads are back at size, within the cap.
+    fn replace(shared: &Arc<Shared>, count: usize) {
+        let missing = {
+            let mut threads = shared
+                .threads
+                .lock()
+                .expect("restore threads lock poisoned");
+            threads.stalled += count;
+            let working = threads.total - threads.stalled;
+            let room = (shared.size * THREAD_CAP).saturating_sub(threads.total);
+            let wanted = shared.size.saturating_sub(working);
+            if wanted > room {
+                log(&format!(
+                    "restore pool: {} workers stalled; at its cap of {} threads it serves with {} working",
+                    threads.stalled,
+                    shared.size * THREAD_CAP,
+                    working + room
+                ));
+            }
+            wanted.min(room)
+        };
+        for _ in 0..missing {
+            Self::spawn(shared);
+        }
+    }
+
+    /// A stalled worker's syscall returned. True when it should exit, because the pool has its working threads without it.
+    fn returned(&self) -> bool {
+        let mut threads = self.threads.lock().expect("restore threads lock poisoned");
+        threads.stalled -= 1;
+        let leave = threads.total - threads.stalled > self.size;
+        if leave {
+            threads.total -= 1;
+        }
+        leave
+    }
+
     /// Take a finished job off the queue and wake everyone waiting on it or on the next job.
     fn retire(&self, queue: &mut VecDeque<Arc<Job>>, job: &Arc<Job>) {
         queue.retain(|queued| !Arc::ptr_eq(queued, job));
@@ -92,7 +179,7 @@ impl Shared {
     }
 }
 
-/// The restore pool: fixed threads that live as long as the executor. A clone shares the same threads and queue.
+/// The restore pool: threads that live as long as the executor, replaced while stalled. A clone shares the same threads and queue.
 #[derive(Clone)]
 pub(crate) struct Pool {
     shared: Arc<Shared>,
@@ -106,7 +193,8 @@ impl std::fmt::Debug for Pool {
     }
 }
 
-/// How one target's restore ended. It returns only when none of its items runs any more.
+/// How one target's restore ended. Unless it is `stalled`, none of its items runs any more; a stalled restore's items may still
+/// be inside their read-only syscalls, counted by the target's readers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Restored {
     pub pages: u64,
@@ -115,14 +203,24 @@ pub(crate) struct Restored {
 }
 
 impl Pool {
+    /// Live workers and stalled workers.
+    #[cfg(test)]
+    fn threads(&self) -> (usize, usize) {
+        let threads = self
+            .shared
+            .threads
+            .lock()
+            .expect("restore threads lock poisoned");
+        (threads.total, threads.stalled)
+    }
+
     pub(crate) fn new(threads: usize) -> Self {
-        let shared = Arc::new(Shared::default());
-        for index in 0..threads {
-            let shared = Arc::clone(&shared);
-            std::thread::Builder::new()
-                .name(format!("restore-{index}"))
-                .spawn(move || work(&shared))
-                .expect("a restore thread must start: the executor cannot wake without its pool");
+        let shared = Arc::new(Shared {
+            size: threads,
+            ..Shared::default()
+        });
+        for _ in 0..threads {
+            Shared::spawn(&shared);
         }
         Self { shared, threads }
     }
@@ -153,6 +251,7 @@ impl Pool {
             deadline,
             pages: AtomicU64::new(0),
             cancelled: AtomicBool::new(false),
+            stalled: AtomicBool::new(false),
             progress: Mutex::new(Progress::default()),
             all: Condvar::new(),
         });
@@ -169,13 +268,20 @@ impl Pool {
             if let Some(end) = grace {
                 if now >= end {
                     drop(progress);
-                    // Stalled: the job leaves the queue unfinished. Its workers finish it when their syscalls return.
+                    // Stalled: the job leaves the queue unfinished. Its workers finish it when their syscalls return, and are
+                    // replaced meanwhile, so other targets keep the pool's working threads.
                     let mut queue = self
                         .shared
                         .queue
                         .lock()
                         .expect("restore queue lock poisoned");
+                    let progress = job.progress.lock().expect("restore job lock poisoned");
+                    job.stalled.store(true, Ordering::Relaxed);
+                    let running = progress.next - progress.finished;
+                    drop(progress);
                     self.shared.retire(&mut queue, &job);
+                    drop(queue);
+                    Shared::replace(&self.shared, running);
                     return Restored {
                         pages: job.pages.load(Ordering::Relaxed),
                         shortfall: Some("stalled"),
@@ -227,7 +333,7 @@ impl Pool {
     }
 }
 
-fn work(shared: &Shared) {
+fn work(shared: &Arc<Shared>) {
     loop {
         let (job, index) = {
             let mut queue = shared.queue.lock().expect("restore queue lock poisoned");
@@ -263,9 +369,17 @@ fn work(shared: &Shared) {
         if let Some(reason) = shortfall {
             progress.shortfall.get_or_insert(reason);
         }
+        // Read under the progress lock: the restore counted this worker as stalled exactly when it marked the job before now.
+        let was_stalled = job.stalled.load(Ordering::Relaxed);
         if job.done(&progress) {
             drop(progress);
             shared.retire(&mut queue, &job);
+        } else {
+            drop(progress);
+        }
+        drop(queue);
+        if was_stalled && shared.returned() {
+            return;
         }
     }
 }
@@ -557,5 +671,128 @@ mod tests {
                 shortfall: None
             }
         );
+    }
+
+    type Gate = Arc<(Mutex<bool>, Condvar)>;
+
+    /// `count` items that each say they entered and block on one shared gate, as reads stuck on one pager.
+    fn stalling(count: usize) -> (Vec<Item>, Gate, mpsc::Receiver<()>) {
+        let gate = Arc::new((Mutex::new(false), Condvar::new()));
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let items = (0..count)
+            .map(|_| gated(&gate, entered_tx.clone(), None))
+            .collect();
+        (items, gate, entered_rx)
+    }
+    /// Stall `count` items of one new target on `pool` and return once its restore reported `stalled`.
+    fn stall(pool: &Arc<Pool>, count: usize) -> (Gate, Arc<Readers>) {
+        let (items, gate, entered) = stalling(count);
+        let readers = Arc::new(Readers::default());
+        let restore = {
+            let pool = Arc::clone(pool);
+            let readers = Arc::clone(&readers);
+            std::thread::spawn(move || {
+                pool.restore(items, Instant::now() + Duration::from_millis(50), &readers)
+            })
+        };
+        for _ in 0..count {
+            entered
+                .recv_timeout(Duration::from_secs(2))
+                .expect("every stalled item entered");
+        }
+        assert_eq!(
+            restore.join().expect("stalled restore").shortfall,
+            Some("stalled")
+        );
+        assert_eq!(readers.active(), count);
+        (gate, readers)
+    }
+    /// Wait until the pool's thread counts settle at `expected`.
+    fn settles(pool: &Pool, expected: (usize, usize)) -> bool {
+        let end = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < end {
+            if pool.threads() == expected {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
+    }
+
+    /// Re-review 5767 (3): one target that stalls every worker must not take the pool from other targets.
+    #[test]
+    fn other_targets_must_restore_when_a_target_stalls_every_worker() {
+        let threads = MIN_THREADS;
+        let pool = Arc::new(Pool::new(threads));
+        let (gate, readers) = stall(&pool, threads);
+        assert_eq!(
+            pool.threads(),
+            (2 * threads, threads),
+            "every stalled worker was replaced"
+        );
+        let other = restore(
+            &pool,
+            vec![Box::new(|_| (1, None))],
+            Instant::now() + Duration::from_millis(500),
+        );
+        open(&gate);
+        assert!(
+            readers.wait_idle(Duration::from_secs(1)),
+            "all reader counts return to zero after release"
+        );
+        assert_eq!(
+            (other.pages, other.shortfall),
+            (1, None),
+            "an unrelated target restores while the first target's workers stay stalled"
+        );
+    }
+
+    #[test]
+    fn stalled_workers_exit_on_return_and_the_pool_stays_at_size() {
+        let pool = Arc::new(Pool::new(2));
+        let (gate, readers) = stall(&pool, 2);
+        assert_eq!(pool.threads(), (4, 2));
+        open(&gate);
+        assert!(readers.wait_idle(Duration::from_secs(1)));
+        assert!(
+            settles(&pool, (2, 0)),
+            "stalled workers left: {:?}",
+            pool.threads()
+        );
+        let after = restore(
+            &pool,
+            vec![Box::new(|_| (1, None)), Box::new(|_| (1, None))],
+            Instant::now() + Duration::from_secs(1),
+        );
+        assert_eq!((after.pages, after.shortfall), (2, None));
+        assert_eq!(pool.threads(), (2, 0));
+    }
+
+    #[test]
+    fn the_thread_cap_holds_under_repeated_stalls() {
+        let pool = Arc::new(Pool::new(2));
+        let (first_gate, first) = stall(&pool, 2);
+        assert_eq!(pool.threads(), (4, 2));
+        // A second stall of one worker spawns nothing past the cap; one working thread remains for other targets.
+        let (second_gate, second) = stall(&pool, 1);
+        assert_eq!(
+            pool.threads(),
+            (4, 3),
+            "the cap of {} threads holds",
+            2 * THREAD_CAP
+        );
+        let other = restore(
+            &pool,
+            vec![Box::new(|_| (1, None))],
+            Instant::now() + Duration::from_millis(500),
+        );
+        assert_eq!((other.pages, other.shortfall), (1, None));
+        open(&second_gate);
+        assert!(second.wait_idle(Duration::from_secs(1)));
+        // Below size without it, the returned worker rejoins instead of exiting.
+        assert!(settles(&pool, (4, 2)), "{:?}", pool.threads());
+        open(&first_gate);
+        assert!(first.wait_idle(Duration::from_secs(1)));
+        assert!(settles(&pool, (2, 0)), "{:?}", pool.threads());
     }
 }
