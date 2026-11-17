@@ -931,6 +931,13 @@ jobs:
           runpy.run_path('bin/ci-delivery')['validate'](needs)
           PYTHON
 
+      - name: Report fixture queue pressure
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 bin/ci-queue
+
       - name: Record tested PR tree and release artifact
         if: github.event_name == 'pull_request'
         env:
@@ -992,6 +999,12 @@ jobs:
             echo "::error::Main delivery checks did not pass: $DELIVERY_RESULT"
             exit 1
           fi
+      - name: Report fixture queue pressure
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 bin/ci-queue
       - name: Verify main CI delivery for the Gateway and link fixture report
         env:
           GH_TOKEN: ${{ github.token }}
