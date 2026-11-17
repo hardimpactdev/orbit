@@ -1,160 +1,32 @@
 ---
 name: developing-commands
-description: Use when developing or repairing an Orbit command or feature after its spec exists. Covers the code, the proof, and the PR through CI, merge and release (stages 2 to 6).
+description: Builds and proves an Orbit command or feature before opening its complete PR. Use after its spec exists, through CI and the authorized delivery gate.
 ---
 
-# Develop a command or feature (stages 2 to 6)
+# Develop a command or feature
 
-The flow is in the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx) and its stage charts in `docs/reference/pipeline/`. Read the chart of your stage before you act; the charts win over any other text. Write only to `hardimpactdev/orbit`.
+Read the current stage's chart in the [command development pipeline](../../../docs/reference/command-development-pipeline.mdx); charts win over other text. For a command, [prepare the spec](../preparing-commands/SKILL.md) as the first branch commit before coding. Keep the implementation and proof cases on that branch. Open no PR, draft or ready, until the whole feature works and its end-to-end proof passes.
 
-A command change has **one PR**. Its first commit is the spec ([preparing-commands](../preparing-commands/SKILL.md)). You add the code and the runnable cases to the same branch. Open no second PR.
+## Build and prove
 
-## Before code
+Use one [task copy](../../../docs/reference/tasks.md#task-copy) of a container Instance and its nested fleet for fleet behavior. Follow [Build a feature in one copy](../../../docs/reference/tasks.md#build-a-feature-in-one-copy): exercise the real result, codify manual changes and fix the next layer there, not through repeated releases.
 
-In the first commit of the draft PR, or already approved there:
+Use the owner for the part you change:
 
-1. The Task and its acceptance criteria. They decide when you are done.
-2. The docs page, the chart and the cases file of the ideal state. Call Recall `resolve` for the command and its family.
+- [Architecture](../../../docs/architecture.md) and the command chart for component boundaries; the CLI calls the API, the Gateway admits intent and records results, and Swamp executes. The agent remains an observer.
+- [Swamp shape guide](../../../swamp/docs/swamp-shape.md), [swamp-flow](../swamp-flow/SKILL.md) and [ansible-phase](../ansible-phase/SKILL.md) for execution.
+- [Contributor guide](../../../docs/contributor-guide.md) and the changed project's `AGENTS.md` for tests, checks, generated contracts and documentation impact. In a task, run targeted tests; the Gateway owns the [scoped task check](../../../docs/reference/tasks.md#scoped-task-check), not a repeated full `composer check` or `bin/review-check` in each turn.
+- [verifying-commands](../verifying-commands/SKILL.md), [`orbit proof`](../../../docs/cli/proof/proof.mdx) and [Verification cases](../../../docs/reference/verification-cases.mdx) for the end-to-end proof. A plan, a mapping or a refusal-only run is not evidence that the successful path works.
+- [verifying-cli-output](../verifying-cli-output/SKILL.md) for terminal behavior and [verifying-web-ui](../verifying-web-ui/SKILL.md) for web layout.
 
-For a feature that is not a command, follow the [contributor guide](../../../docs/contributor-guide.md): settle the behavior with [grill-with-docs](../grill-with-docs/SKILL.md), write the ADR and docs first, then the code and tests. Use [designing-cli-commands](../designing-cli-commands/SKILL.md) for CLI changes, [verifying-cli-output](../verifying-cli-output/SKILL.md) for terminal rendering and [verifying-web-ui](../verifying-web-ui/SKILL.md) for the web app.
+For a non-command feature, settle its contract with [grill-with-docs](../grill-with-docs/SKILL.md) and write the owning documentation before implementation. Put lasting lessons in the existing reference or `docs/solutions`, not an incident log in this skill.
 
-## Build
+## Deliver only the proven result
 
-1. **The split is right.**
-   - CLI: parse arguments, call the API, show the result. No logic.
-   - Gateway: admission (validation, refusals, conflicts), intent, recording the result. No execution.
-   - Agent: observes only. Add no agent command; `apps/agent` is frozen.
-   - Swamp: all execution, following the chart. Build it with [swamp-flow](../swamp-flow/SKILL.md) and, for Node state, [ansible-phase](../ansible-phase/SKILL.md).
-2. **The code is minimal.** Delete the old CLI and Gateway paths of this command, including execution code it no longer needs. Report net lines.
-3. **The workflow matches the chart** step for step; Swamp lane labels equal step names.
-4. **Tests.** Gateway Pest tests only for what this command's Gateway code needs: admission, refusals, intent, projection. Run the affected proof with [verifying-commands](../verifying-commands/SKILL.md). The runnable cases go in the same PR as the code.
+Follow [stage 4](../../../docs/reference/pipeline/4-pr-and-ci.mmd) for independent review, one complete PR, CI and the authorized merge gate. Task agents hand off to Orbit's reviewer and publisher. Before a push, run `bin/docs-impact --gate --base origin/main`; the contributor guide owns proposed PR-body waivers.
 
-## PR, CI, merge
+CI proof confirms an already-passing local proof. It is deliberately disabled by `ORBIT_PROOF_ENABLED` until commands have been checked systematically; do not enable it as part of ordinary feature work. Copy proofs do not replay flagged cases on the merge base. The [pipeline](../../../docs/reference/command-development-pipeline.mdx#4-pr-and-ci) owns both limits. Neither a skipped CI proof nor green fast checks replace the pre-PR proof.
 
-Stage 4 is the [chart](../../../docs/reference/pipeline/4-pr-and-ci.mmd). Push to the branch of the draft PR. CI runs on every push. When it is green on the head, take the PR out of draft. After the gate, the PR is squash-merged into `main`. There is no merge queue and no GitHub auto-merge. Until Swamp merges, the author squash-merges the green PR as `nckrtl` with `gh pr merge <n> -R hardimpactdev/orbit --squash`. Use `timeout` on every `gh` call.
+Watch CI, fix failures caused by the change and repeat affected proofs after fixes. Report unrelated failures separately. Publication is not merge or release approval. [Stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd) and [stage 6](../../../docs/reference/pipeline/6-task-image-seed-refresh.mmd) own release and seed refresh; do not trigger a release to discover whether the feature works.
 
-Whoever turns `main` red fixes it forward, first. Watch CI on `main` after every merge. Before every push, run `bin/docs-impact --gate --base origin/main`.
-
-## Release
-
-The release ([stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd)) runs automatically only while enabled and unpaused. When automatic releases are off, use the manual [`gateway:release:deploy COMMIT`](../../../docs/cli/gateway/release-deploy.mdx) path. The release admits the per-host refresh ([stage 6](../../../docs/reference/pipeline/6-task-image-seed-refresh.mmd)) only after verification and Horizon start; it does not wait for refresh completion. If a step of the pipeline is missing, build its smallest form as part of the command that needs it.
-
-## Lessons
-
-A proof mapping is not coverage when its cases file is absent, empty or contains only refusals. For Instance lifecycle execution changes, report the exact uncovered files in CI; once a real successful Operation case exists, preserve its selection across mapping edits and case removal. Count setup and cleanup separately before making the first live proof required.
-
-When a Docs test is aborted by PHPUnit on a shared runner, distinguish its per-test timer from assertion failures. Docs uses the existing CI job ceiling for timing and still fails risky tests and PHPUnit warnings. Keep the timer policy and its configuration test consistent.
-
-When promoting a fast read-only audit into CI controls, remove it from fixture discovery, the registry and the case inventory. Prove that its input paths select the control job, that it runs once in the full gate, and that a failing audit fails the control run. Run the gate's tool-contract fixture as well as the CI tooling tests: it checks fixture permissions, collection paths and complete file discovery. Measure the audit and report existing source failures separately.
-
-When a deployment captures source metadata, test an older pinned commit after the branch advances. A branch-head fake alone cannot prove that the selected runtime and the checked-out commit agree. Check recorded lifecycle refusals before reading remote metadata. Read it before opening any admission write transaction, including an automatic caller’s outer transaction; recheck lifecycle, source settings and idempotency under ownership before recording the result.
-
-Task parents that can use a ready VM capture resume only for a parked VM. Keep `task_vm_id` separate from the optional resume intent, and let the next workflow step follow either a succeeded or skipped resume.
-
-For a command namespace change, audit model route bindings and operation fingerprints. A selector may span rows hidden by a global scope; public names must not change stored operation or retry identity.
-
-When parallelizing CI commands, bound their nested worker pools as well as the outer executor. Keep prerequisite setup and ratchets ordered, and give each command its own output and temporary directory.
-
-Before you finish, add what you learned to the skill that owns it (this one, swamp-flow, ansible-phase or flow-tighten), in the same PR. Say what changed.
-
-For a shape-gate cancellation, identify the slow command from its completed output. Long fixture files share the existing worker budget only after they are split into independent files.
-
-
-A provider retirement needs its full resource inventory. An empty task VM sweep does not prove templates or storage are absent; verified templates can be deliberately excluded from sweep results. Close that inventory before removing the provider path.
-
-Receipt redaction tests must inspect the persisted response. A numeric mask can also occur legitimately in an identity, digest or timestamp; searching the whole receipt creates clock-dependent false failures.
-
-When updating CLI or SDK fixtures from resource replies to Operations, preserve product result assertions as well as the transport envelope. In SDK tests, assert the start receipt’s identity, kind, target, status and request ID, and keep resource fields on their typed read requests. Use the complete terminal result from its writer and an independently specified exact expectation. Check human warnings against the current command chart; a generic Operation success line does not prove them.
-
-Run a combined Unit and Feature test collection when adding global test constants or helpers. Separate focused runs do not catch duplicate names across files.
-
-Before changing a CI cache, separate hits from misses in job logs. A Cargo lock change can restore dependencies built by the same compiler on the same OS and architecture; Cargo fingerprints still decide what must rebuild. A manifest commit option can label output without selecting a checkout; trace the build command's actual working directory before choosing cache paths.
-
-Nested command proof must cross the same CLI, typed SDK and Gateway validation boundaries as ordinary commands. Reuse CI's cases-file lookup so `node:role:add` resolves to `node/role-add.cases.yaml`. Run the approved human-only refusal cases too: JSON coverage alone does not prove that operators can see the stable error code. Pass that code through the shared renderer's code argument, not through its bounded validation fields. Map the command's implementation in the shared proof selection list when its cases become runnable.
-
-
-Ansible fixture deadlines need pinned-Ansible and orphan regressions: test an exited leader and a child forked during TERM. Own descendants from launch with a Linux subreaper, signal through pidfds, and bound output collection. Deno test files have separate isolates: establish a shared command deadline in the parent environment and test exhaustion across two files. Size both the playbook guard and the shared serial-command budget from slow-runner measurements; include a stall in the last playbook and the rest of the gate in the arithmetic.
-
-## Report
-
-The command, the PR, net lines, the cases run and their verdicts, the gaps you filled, and the lessons you added.
-
-
-
-Each host has separate `task_places` and `ci_places`; one VM holds one place until confirmed deletion. Task publication releases the VM. Later build, fix and review work claims again from the base and task branch. Full pools wait within a two-hour budget; authenticated CI eligibility comes from the caller Node, never reporting flags.
-
-CI capacity is a bounded wait, never a passing no-case outcome. A proof report must account for every admitted case and every selected command. Read full Swamp output artifacts for merged reports; the native history summary keeps only 4 KiB.
-
-Released proof workflows run the runner from each PR head. Check its help for support before calling a new runner command; an older open PR can still use the previous interface.
-
-A PTY key driver must acknowledge consumed input, not rendered output. With color off, moving a selector highlight can produce no new bytes. Wait for the complete key to enter the stopped reader’s terminal queue, then for consumption before sending the next key. Start on a marker unique to the prompt, not a progress label.
-
-After adding an API input, regenerate OpenAPI and the MCP manifest and exercise the generated tool through admission. Ignored generated outputs are release artifacts; source support alone does not prove the deployed tool exposes the input.
-
-A migrated Instance has no clone source. Test lifecycle consumers against migrated non-defaults too; identify the default by its name, and retire migration execution copies during destroy.
-
-Large SQLite fixtures need bounded insert batches. A single insert can exceed the build's bound-parameter limit; formatting its huge QueryException may consume the test deadline and hide the actual error. Keep the production row count and indexes, then measure compilation, preparation and execution before changing a timeout.
-
-Inspect the whole previous-exception chain when a timed test reports a migration error. Laravel can wrap PHPUnit's timer exception in a QueryException, and an action can wrap it again. Account for work before lazy database initialization; use fixed test inputs for RSA prime search while preserving the real signing and database paths.
-
-A Process preset moved into a container needs the shared container ingress and Route projection as well as its unit. Keep its assigned port in the shared intent so deployment rebuilds preserve access, and use container controls after cutover instead of the Node preset preparation.
-
-Gateway releases admit refresh jobs only after verification and the new Horizon start. A command from a new release can serialize a job class that old workers cannot load. Keep the pre-load Operation guard separate from the Horizon drain: Swamp runs can outlive the queue job that started them.
-
-For an attachment read, reuse the operation's ordered inventory and eager-load its identity graph. Project public fields explicitly, and compare query counts with one attachment and several on distinct Nodes.
-
-A Node hold orders publication runs but cannot make an earlier whole-file capture current. Refresh a waiting create's publication after it gains the hold, before dispatch, and preserve its admitted resource and certificate identities. Commit accepted catalog state and release the hold in the same transaction. A writer whose hold starts after its run needs a separate design: promotion cannot change frozen run inputs.
-
-An inline Route publication must complete its Instance projection mark in the same terminal transaction as the seed. A later policy receipt cannot prove a create or migration that publishes no separate Route update.
-
-A family that defers work behind an Operation settles it atomically at the first terminal row transition, including a bound native start failure and expiry. Lock its target, queue against the recorded runtime or fail deferred work explicitly when admission stays closed, and keep its terminal result. Keep family settlement out of shared timeout and cancel selection rules. Enumerate the terminal paths and test another kind’s renewed cancel after a lockless timeout.
-
-Classify a no-start failure at the submission boundary, including execution-copy preparation, instead of enumerating error codes in a projection. Terminal settlement must fail any deferred work when its target was deleted, including when its resource record was also deleted; guard destructive admission with the existing lifecycle rule before side effects and under the target lock.
-
-Fixture calibration binds to source and registered case names, including loop-generated cases. Include startup in each slice cost, distinguish a completed case from a censored unit, and report whole-file capacity failures instead of packing new cases into old slices.
-
-Audit fixture headroom across several hosted runs, using exact case names and source hashes. A passing case near its ceiling still needs splitting or a proof case; CI has [no after-merge stage](../../../docs/reference/implementation-loop.md#no-after-merge-stage); a larger slice count cannot split one state transition across consecutive converges. Planner tests use the checked-in case inventory: the selection job runs before fixture runtimes such as Deno are installed.
-
-A release gate must verify the exact SHA, main event and CI workflow through Actions run and job records. The workflow may finish red. Give skipped PR and main gates distinct names when a reader counts every check with the required name.
-
-For CI or CLI release workflow changes, run `apps/cli/tests/Feature/CliReleaseContractTest.php` with the CLI’s Pest runner as well as the CI tooling tests. The CLI suite owns release-contract assertions that workflow lint and Python tests do not exercise.
-
-CI metadata preflights share one API deadline and run only for selected work. Ineligibility skips; an API error fails. A runtime trust refusal skips only with explicit admission failure and no case evidence; preserve interrupted and completed failures. A check that runs is part of its gate; add no report-only switch.
-
-Child-process timeout tests must observe the PID returned by spawn, not require a startup log that the deadline may prevent. Keep a silent-child regression and assert real process termination.
-
-A shared CI registry needs semantic selection for both fixture units and fast jobs. Compare entries at the same merge base, keep unrelated paths active, and exercise the CLI output in a diverged-history regression.
-
-A required docs-impact check must read per-page reasons from the PR body as data, read the live body when failed jobs are rerun after a body edit, and keep generator failures non-waivable. Verify the same proposed body locally with `bin/docs-impact --gate --base origin/main --pr-body-file /tmp/orbit-pr-body.md`; private branch notes are not review evidence.
-
-When splitting a shared test registry, preserve admission order as well as record values. Replay selected and deferred units and ordered case slices against the old planner, and compare metadata through the PR merge base. Keep historical format readers data-only; load only the new format for the current checkout.
-
-For Python fixture registration, whole-file costs and shared test harnesses, follow [fixture policy](../../../docs/reference/implementation-loop.md#ci-budget).
-
-Saved fixture boundaries need pre-merge producer checks when their source tasks change. Declare required cases through [fixture admission](../../../docs/reference/implementation-loop.md#ci-budget); test that insufficient capacity fails Required.
-
-No registry flag keeps a fixture or case out of pull requests, and the planner defers nothing: overflow fails Required. Split a slow case or make it faster. A file that needs runner tools sets `self_hosted` and runs only in [self-hosted fixture shards](../../../docs/reference/implementation-loop.md#self-hosted-fixture-shards), never for a fork. Check named case receipts, since an ignored case or setup refusal does not test the product.
-
-When a production input bundle gains a helper, update fixture copies and their registry inputs together. Exercise transport stand-ins with real pipelined input: an early exit can replace the intended remote diagnostic with a local broken pipe.
-
-A fast caller-contract proof should derive its input from the shipped producer and invoke the shipped guard. Keep the guard's own truth-table cases separate, and prove that bypassing the guard fails the caller test before making it mandatory.
-
-Fixture intents must include the fields their Gateway producer always sends, even empty lists. A missing field can stop a case before its assertions; repair the fixture payload and run the named case through its final assertion before claiming coverage.
-
-A proof CLI timeout does not settle its Operation. Cancel and confirm settlement or stop admission of later cases in that batch, retaining an explicit receipt for each unrun case. Account for CLI waits separately from setup and assertion budgets, and preserve product timing assertions.
-
-A coalesced proof range selects each intervening commit against its own first parent and then intersects case IDs with the tested tree. A net diff loses reverted inputs. Share variant expansion with batch admission, and refuse an incomplete history instead of claiming partial coverage.
-
-A manual hosted proof checks out trusted workflow code, passes the tested SHA only as data, and preserves the existing caller’s signal forwarding. A successful zero-case selection does not prove hosted execution.
-
-A fixture that replaces a subprocess environment must retain the interpreter's loader paths. Mint-order audits must distinguish a vault name from the resolved key on each live path. Size long fixture files from completed per-case receipts; keep censored estimates explicit and split before the whole-file ceiling.
-
-When moving fixture jobs to one runner pool, bound the sum of all fixture matrices, not each matrix separately. Preserve each class's worker count and mandatory reservations, keep fork code off the pool, and measure from push through Required, including queue and setup time.
-
-When a subsystem fixture repeats a whole host converge, scope it through the shipped caller tasks while retaining their variables, loops, conditions and order; fail on missing names. Keep the integration fixture and every subsystem assertion. Split independent state transitions before calibrating costs, distinguish copy measurements from runner-pool receipts, and reserve a repaired caller case when its file has a capacity gap.
-
-Bound shared fixture concurrency by physical-core topology as well as logical CPU count. Avoid placing both workers on sibling threads of one core. A retry-budget fixture can assert the shipped task's rendered retry count and exercise pending-to-terminal reads without replaying hundreds of subprocesses; use a shorter-budget negative control.
-
-Validate the complete CI fixture placement immediately after planning in a copy, even when local test parts are filtered or out of time. Keep policy regression tests required while running them beside selection, rather than delaying every fixture behind them.
-
-Rank fixture work by completed case names, since new cases move slice indices. Preserve full order and saved-boundary producer proofs; narrow subsystem cases through shipped callers and result expressions. Measure local Ansible pipelining before pruning an integration path, and keep missing-caller and bypassed-check negative controls.
+Report the PR, tested checkout, cases and verdicts, checks, unresolved coverage and actual delivery state.

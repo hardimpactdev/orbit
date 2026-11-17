@@ -19,7 +19,7 @@ Submit a complete feature: its implementation, tests, documentation, and any arc
 
 New to Orbit? [Your first contribution](/first-contribution) is the short path for a person who works by hand. It also lists the parts of this guide that Orbit's maintainers and agents handle.
 
-The order is always the same: architecture, documentation, implementation, a complete pull request, review, the gate, and merge ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)).
+The order is always the same: architecture, documentation, implementation, passing end-to-end proof, a complete pull request, review, the gate, and merge ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)). For a command change, the spec (chart, page and cases) is the first commit on the feature branch. Build and prove the feature in one task copy, using its nested fleet for fleet behavior, before any pull request opens, draft or ready. CI confirms an already-passing result.
 
 From the repository root, install the project dependencies:
 
@@ -233,7 +233,7 @@ Required checks target five minutes for pull requests; the fast checks take abou
 
 The target: after the gate, Swamp merges the PR straight into `main` with a squash merge, using a Gateway-minted App token. The gate is Nick's approving review on the exact head in manual mode, or green CI plus a fresh self-review agent in automatic mode. There is no merge queue and no GitHub auto-merge. CI then runs on `main`; a red `main` is fixed forward and never released. The proof runs only on the PR head. Two PRs for the same command normally conflict, and the second rebases, which reruns CI and the proof.
 
-The interim, until Swamp's merge step is built: whoever opens a pull request squash-merges it as `nckrtl`, with `gh pr merge <n> -R hardimpactdev/orbit --squash`, once CI is green on the head. Open a draft to hold a change back.
+The interim, until Swamp's merge step is built: whoever opens a pull request squash-merges it as `nckrtl`, with `gh pr merge <n> -R hardimpactdev/orbit --squash`, once CI is green on the head. A draft can hold back an already-built and proven change; it does not move implementation or proof after PR creation.
 
 Root `composer check` builds OpenAPI and the documentation outputs before running `bin/review-check`, so a task checkout checks artifacts from its current sources.
 
@@ -287,7 +287,7 @@ From the repository root, `composer audit:dependencies` runs `composer audit --l
 
 Explain the problem, the resulting behavior, the architecture decisions, the documentation changes, the verification results, and the remaining limits. Link an issue when one exists. A bug fix closes its issue with `Fixes #N` and names its regression test.
 
-Request maintainer review when the feature is complete. You can use a draft pull request while you work. Mark it ready when the implementation is complete.
+Open the pull request and request maintainer review only after the feature is built and its end-to-end proof has passed in one task copy with its nested fleet. Draft pull requests have the same pre-PR proof requirement. Include the proof evidence and state that an independent review ran before opening the PR.
 
 ## Review and merge
 

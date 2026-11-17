@@ -180,7 +180,7 @@ export async function batchReceipt(
     const title = "Update all eligible dependency majors and advisory fixes";
     // The complete immutable selections stay in Swamp; keep Orbit's child brief under 8000 bytes.
     const brief =
-        `${title}. Apply the entire admitted Swamp batch in one VM and one PR. Preserve unrelated constraints and release-age policy. Gateway owns checks, repair and publication.\n\nBatch: ${findings.key}\nTargets: ${findings.targets.length}\nBlocked findings retained: ${findings.blocked.length}\nCheck: ${project.check}\nSwamp schedule: ${key}`;
+        `${title}. Apply the entire admitted Swamp batch in one task copy and one PR. Preserve unrelated constraints and release-age policy. Gateway owns checks, repair and publication.\n\nBatch: ${findings.key}\nTargets: ${findings.targets.length}\nBlocked findings retained: ${findings.blocked.length}\nCheck: ${project.check}\nSwamp schedule: ${key}`;
     return {
         key,
         projectId: project.projectId,
@@ -216,8 +216,7 @@ export function cleanedCancelledGroup(group: Record<string, unknown>): boolean {
         !row.assistance_requested && !row.assistance_kind &&
         !row.assistance_reason && !row.assistance_question;
     return group.status === "cancelled" &&
-        (group.vm_power === "destroyed" ||
-            (group.vm_power === null && group.taskable_id === null)) &&
+        group.vm_power === null && group.taskable_id === null &&
         noAssistance(group) && Array.isArray(group.tasks) &&
         group.tasks.every((task: Record<string, unknown>) =>
             ["completed", "cancelled", "failed"].includes(

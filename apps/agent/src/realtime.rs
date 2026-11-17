@@ -61,7 +61,11 @@ pub async fn connect_by_address(
     address: std::net::IpAddr,
     port: u16,
 ) -> Result<TcpStream, std::io::Error> {
-    TcpStream::connect(std::net::SocketAddr::new(address, port)).await
+    let stream = TcpStream::connect(std::net::SocketAddr::new(address, port)).await?;
+    // An executor reply is two small frames, `accepted` and then the result. With Nagle's algorithm the result waits for
+    // Reverb's delayed ACK of the first, about 40 ms (ADR 0266 D3: every millisecond counts).
+    stream.set_nodelay(true)?;
+    Ok(stream)
 }
 
 pub async fn protocol_handshake(
@@ -424,6 +428,21 @@ mod tests {
             operation: operation.into(),
             wire: wire.into(),
         }
+    }
+
+    #[tokio::test]
+    async fn the_reverb_socket_sends_small_frames_at_once() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        let stream = connect_by_address(address.ip(), address.port())
+            .await
+            .expect("connect");
+        assert!(
+            stream.nodelay().expect("nodelay"),
+            "the result frame must not wait for the ACK of the accepted frame"
+        );
     }
 
     async fn settle(relay: &ExecutorRelay) {

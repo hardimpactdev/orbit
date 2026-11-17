@@ -1,0 +1,57 @@
+sequenceDiagram
+  %% Target design: ADR 0266 slice 3 proof (D4, D5, D7). docs/reference/executor.md#the-proof-operation.
+  %% status: draft
+  %% command: none · started by the proof support on a nested Gateway
+  %% kind: executor.proof
+  autonumber
+  %% lane RN icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane OB icon=server pill=target tone=amber
+  %% lane EX icon=server pill=target tone=amber
+  participant RN as Proof runner<br/>outer machine
+  participant GW as Gateway<br/>nested Gateway
+  participant OB as Observer<br/>orbit-agent
+  participant EX as Executor<br/>orbit-executor
+  RN->>GW: Run the proof support<br/>executor-order.php
+  %%> What it does:
+  %%> - the runner step `executor_round_trip`, `executor_lost_result` or `executor_publish` runs `tools/swamp-proof-guest/executor-order.php` on the nested Gateway as its managed user
+  %%> Who can start it:
+  %%> - only this script; no route, CLI command, job or schedule names the kind
+  Note over GW: Record executor.proof<br/>node_id set · running
+  %%> What it does:
+  %%> - records a durable Operation on the app-dev Node; its target is the Node (D7)
+  %%> Why no Swamp run:
+  %%> - `proof.noop` changes nothing on the Node; the Gateway runs and closes the kind itself
+  GW->>OB: executor-order<br/>presence-node.{id}
+  %%> What it does:
+  %%> - signs a `proof.noop` order with a new nonce and publishes it as a server event through Reverb (D5)
+  %%> - the data is the Operation id and the order, nothing else
+  OB->>EX: Order bytes, unread<br/>/run/orbit-executor.sock
+  %%> What it does:
+  %%> - the observer copies the order unchanged; the executor checks the caller, the signature and the order
+  Note over EX: Run proof.noop once<br/>journal open, done
+  %%> What it does:
+  %%> - runs the no-op under the Node's lock and records it in its journal
+  %%> When the Operation already ran:
+  %%> - returns the first result as `repeat` and does not act; the journal gets a `seen` record
+  EX-->>OB: accepted, then result<br/>two lines
+  OB->>GW: client-executor-result<br/>{operation, line}
+  %%> What it does:
+  %%> - the listener records the result on the Operation, then pushes it to Valkey for 60 s
+  GW->>GW: BLPOP the result<br/>bound ORBIT_EXECUTOR_WAIT_MS
+  %%> What it does:
+  %%> - the waiting request takes the result, as a visit will in slice 6
+  opt the hand-off is lost
+    GW->>OB: New order, same Operation<br/>new nonce
+    %%> What it does:
+    %%> - the executor answers `repeat` with the first result; the listener pushes it again and the waiter gets it
+    %%> Result:
+    %%> - the action ran once; the Operation keeps the first result
+  end
+  Note over GW: Close the Operation<br/>succeeded or failed
+  %%> Result:
+  %%> - `succeeded` on `done`; `failed` with `executor.proof_<status>` otherwise
+  %%> - a throw in the proof run fails every open Operation with `executor.proof_aborted`
+  GW-->>RN: Results and timings<br/>JSON on stdout
+  %%> Returns:
+  %%> - each Operation, its nonce, its result and the latency from publish to the waiter

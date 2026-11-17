@@ -1,4 +1,8 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert@1.0.19";
+import {
+    assertEquals,
+    assertStringIncludes,
+    assertThrows,
+} from "jsr:@std/assert@1.0.19";
 import { projectById } from "./_support/projects.ts";
 import {
     batchReceipt,
@@ -70,6 +74,10 @@ Deno.test("project findings retain reports and blocked reasons and create one de
     const receipt = await batchReceipt(original, findings);
     assertEquals(receipt.targets?.length, 2);
     assertEquals((receipt.request.tasks as unknown[]).length, 1);
+    assertStringIncludes(
+        String(receipt.request.brief),
+        "Apply the entire admitted Swamp batch in one task copy and one PR.",
+    );
     assertEquals(await batchReceipt(original, findings), receipt);
     assertThrows(
         () => projectFindings(original, "source", [], plans),
@@ -88,7 +96,7 @@ Deno.test("project findings retain reports and blocked reasons and create one de
     );
 });
 
-Deno.test("cancelled schedule cleanup requires ended children, no assistance and a removed or absent VM", () => {
+Deno.test("cancelled schedule cleanup requires ended children, no assistance and no bound copy", () => {
     const clean = {
         status: "cancelled",
         taskable_id: null,
@@ -102,7 +110,7 @@ Deno.test("cancelled schedule cleanup requires ended children, no assistance and
             taskable_id: 7,
             vm_power: "destroyed",
         }),
-        true,
+        false,
     );
     for (
         const changes of [
@@ -118,4 +126,3 @@ Deno.test("cancelled schedule cleanup requires ended children, no assistance and
         ]
     ) assertEquals(cleanedCancelledGroup({ ...clean, ...changes }), false);
 });
-
