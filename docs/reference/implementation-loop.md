@@ -73,6 +73,8 @@ The nested fleet step fixture runs the rules, start, refresh and reset of an Ins
 
 Refresh cases start from saved Incus state. A separate case runs the first refresh and start, then compares all persistent fields with that saved state. Each check of changed inputs, repeated refreshes, snapshots or failure recovery runs its own refresh. It does not rerun setup playbooks. The first refresh for each changed input verifies the record consumed by its repeat case.
 
+Fleet subsystem cases select the shipped start or refresh tasks they exercise, with their original conditions, variables and order. Pin restoration, host group membership, proxy bypass, Swamp pin reads and service checks do not repeat unrelated fleet phases. Complete start, refresh, reset and boundary-producer cases retain the integration coverage.
+
 Saved refresh records keep the code and converge digests. Their `converged` timestamp is normalized and rebound to the current time when restored. Producer checks require a real timestamp within the refresh interval; a skipped converge must preserve its prior timestamp. The stale-record cases use explicit ages. Regenerate the saved state and records through the shipped refresh when its format changes.
 
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.
