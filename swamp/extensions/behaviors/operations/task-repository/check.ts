@@ -73,6 +73,59 @@ const relativeDirectory = (path: string) =>
 const within = (root: string, directory: string) =>
     directory === "." || directory === "" ? root : `${root}/${directory}`;
 
+const quoted = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+/** A Pest run: Laravel's test command, Pest itself, Pest through a wrapper, or a Composer test script. */
+const PestCall =
+    /^(?:php artisan test|(?:\.\/)?vendor\/bin\/pest|\S*bin\/pest-plain\s+(?:\.\/)?vendor\/bin\/pest|composer test)(?:\s|$)/;
+
+/**
+ * A command deliverable that runs Pest gets CI's per-test time limit, which a
+ * task copy, a shared and loaded host, needs as CI does
+ * (docs/reference/tasks.md#deliverables). The Project's check command, when
+ * it is one executable path, answers `--ci-time-limit DIR` with that limit for
+ * the Pest project that holds DIR, or with nothing when CI passes none. The
+ * check asks it for the directory that the final Pest call runs in, relative
+ * to `tree`, the checked workspace or a start-commit tree, and appends the
+ * limit to that call. A failed answer fails the command. A command whose last
+ * simple command is not a Pest call, or that passes its own limit, runs
+ * unchanged.
+ */
+export function withCiTimeLimit(
+    source: string,
+    check: string | null,
+    workspace: string,
+    tree: string,
+): string {
+    const simple = !/[|;&<>`\n]|\$\(/.test(source.replaceAll("&&", ""));
+    const calls = source.split("&&");
+    const last = calls.pop()!.trim();
+    if (
+        check === null || !/^[\w.-]+(?:\/[\w.-]+)+$/.test(check) ||
+        !relativeFile(check) || !simple || !PestCall.test(last) ||
+        source.includes("--default-time-limit")
+    ) return source;
+    return [
+        "orbit_ci_time_limit() {",
+        `    local directory=\${PWD#${quoted(tree)}} limit extra`,
+        "    directory=${directory#/}",
+        `    limit=$(${
+            quoted(`${workspace}/${check}`)
+        } --ci-time-limit "\${directory:-.}") && [[ $limit =~ ^[0-9]*$ ]] || {`,
+        `        echo ${
+            quoted(`Task check: ${check} --ci-time-limit gave no limit`)
+        } >&2`,
+        "        return 2",
+        "    }",
+        '    if [[ -z $limit ]]; then echo "Pest time limit: CI passes none for ${directory:-.}; its phpunit.xml holds"; "$@"; return; fi',
+        '    echo "Pest time limit: --default-time-limit=$limit, CI\'s limit for ${directory:-.}"',
+        '    extra=(--default-time-limit="$limit")',
+        '    [[ $1 == composer && " $* " != *" -- "* ]] && extra=(-- "${extra[@]}")',
+        '    "$@" "${extra[@]}"',
+        "}",
+        [...calls, ` orbit_ci_time_limit ${last}`].join("&&"),
+    ].join("\n");
+}
+
 /**
  * The argv lists of every check step, from the admitted intent. `root` is the
  * run's scratch directory on the VM; it holds the snapshot index, the
@@ -116,7 +169,12 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
             command(
                 `deliverable-${index}`,
                 within(workspace, item.directory),
-                item.command,
+                withCiTimeLimit(
+                    item.command,
+                    input.command,
+                    workspace,
+                    workspace,
+                ),
             )
         ),
         // The start-commit run of a `fails_on_base` command: an extracted
@@ -180,10 +238,16 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
                     ]
                     : ["true"],
                 directory: ["test", "-d", within(tree, item.directory)],
+                // The same limit as the deliverable's own run, from the checked workspace.
                 run: command(
                     `base-${index}`,
                     within(tree, item.directory),
-                    item.command,
+                    withCiTimeLimit(
+                        item.command,
+                        input.command,
+                        workspace,
+                        tree,
+                    ),
                 ),
             };
         }),
