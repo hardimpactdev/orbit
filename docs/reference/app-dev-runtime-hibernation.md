@@ -100,6 +100,9 @@ The Gateway's Valkey must run with `hz 100` before this path is enabled. At its 
 The executor path queues its Operation notices and successful lifecycle follow-up on `operations-prompt` after commit. Success records the pending follow-up in the same transaction. Its handoff runs before terminal notices, and a later completion retries a pending handoff without duplicating a queued one. Notice enqueue failures cannot lose the follow-up.
 
 Reverb delivery and Conn session renewal run on queue workers, with a receipt for the successful hooks. Neither runs in the request or after its response on the same PHP worker.
+
+If the completion job exhausts its retries while enqueueing hooks, no new visit is needed. The existing minute reconciliation pass retries up to 50 pending handoffs, oldest first, once wake success is 30 seconds old. It logs the recovered Operation IDs. The same lock and receipt prevent duplicate enqueue or hook execution; older pending work remains eligible until recovered. See [executor handoff recovery](/reference/executor#the-wake-inside-the-request).
+
 Planned: a production live gets no progress page. The Gateway still answers at once; then the Node's Caddy holds the visitor's request until the asleep marker is gone, up to 10 s, and proxies it to live ([Production containers](/reference/production-containers#sleep-and-wake)).
 
 The restore makes the app's first answer faster. The progress page keeps its 250 ms poll on both wake paths. The page polls the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.

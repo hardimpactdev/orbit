@@ -22,6 +22,8 @@ A container wake with `ORBIT_EXECUTOR_WAKE_ENABLED=true` keeps its durable `inst
 
 Executor wake notices and successful lifecycle follow-up go to `operations-prompt` after commit. Neither runs in request termination callbacks. Success records a pending follow-up with the terminal result, and its handoff runs before terminal notices. A later completion retries a pending handoff even on a succeeded Operation, without duplicating a queued one. Notice enqueue failures do not stop that handoff. Each notice keeps its recorded sequence, and the follow-up records a receipt under the Operation lock so repeated delivery skips successful hooks.
 
+The existing minute reconciliation pass also recovers succeeded executor wakes whose hook handoff is still pending after 30 seconds, up to 50 per pass, oldest first. It reuses the completion path's lock and queued marker, logs recovered IDs, and leaves a failed enqueue for a later pass. Exhausting the completion job's retries therefore needs no new visit. The [executor reference](/reference/executor#the-wake-inside-the-request) owns the recovery bounds.
+
 Container Process journal tails and unit state reads create no Operation. They use the narrow [direct transport exception](/reference/node-agent#commands); Process actions still run as Operations.
 
 Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).

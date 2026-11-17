@@ -29,15 +29,19 @@ use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Jobs\Operations\CompleteExecutorWake;
 use App\Jobs\Operations\ProjectExecutorWake;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Testing\Fakes\EventFake;
 use Illuminate\Testing\TestResponse;
@@ -576,4 +580,177 @@ it('rolls back the pending hook handoff together with wake success', function ()
     expect($operation->state)->not->toHaveKey('wake_executor_follow_up');
     Queue::assertNotPushed(ProjectExecutorWake::class);
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+});
+
+it('recovers hooks in the scheduled pass after all three completion attempts fail without another visit', function (): void {
+    $queues = app('queue');
+    $instance = executorWakeInstance();
+    executorWakeVisit($instance)->assertUnauthorized();
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    executorWakeReply($operation, ['status' => 'done']);
+    $operation->forceFill(['started_at' => now()->subSeconds(10)])->save();
+    $completion = Queue::pushed(CompleteExecutorWake::class)->sole();
+    $completion->delay(null);
+    Queue::swap($queues);
+    Bus::dispatch($completion);
+    $bus = Bus::getFacadeRoot();
+    Bus::partialMock()->shouldReceive('dispatch')->andReturnUsing(function ($job) use ($bus) {
+        if ($job instanceof ProjectExecutorWake) {
+            throw new RuntimeException('Injected hook enqueue failure.');
+        }
+
+        return $bus->dispatch($job);
+    });
+    Bus::shouldReceive('dispatchNow')->andReturnUsing(fn (...$arguments) => $bus->dispatchNow(...$arguments));
+    $attempts = [];
+    $worker = app('queue.worker');
+    try {
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            $job = $queues->connection('gateway')->pop('operations-prompt');
+            expect($job)->not->toBeNull();
+            $attempts[] = $job->attempts();
+            try {
+                $worker->process('gateway', $job, new WorkerOptions(backoff: 0, sleep: 0, maxTries: 3));
+            } catch (RuntimeException $error) {
+                expect($error->getMessage())->toBe('Injected hook enqueue failure.');
+            }
+        }
+    } finally {
+        Bus::swap($bus);
+    }
+    expect($attempts)->toBe([1, 2, 3]);
+    expect(DB::table('jobs')->count())->toBe(0);
+    expect($operation->refresh())->status->toBe(OperationStatus::Succeeded);
+    expect($operation->state[ExecutorWake::FollowUpState])->toBe('pending');
+    $this->travel(31)->seconds();
+    Log::spy();
+
+    app()->call([new ReconcileSwampOperations, 'handle']);
+
+    expect($operation->refresh()->state[ExecutorWake::FollowUpState])->toBe('queued');
+    expect(DB::table('jobs')->count())->toBe(1);
+    Log::shouldHaveReceived('info')->with('Executor wake hook handoffs recovered.',
+        ['recovered' => 1, 'operation_ids' => [$operation->id]])->once();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    app(ExecutorWake::class)->complete($operation);
+    expect(DB::table('jobs')->count())->toBe(1);
+    $contribution = $this->mock(InstanceLifecycleContribution::class);
+    $contribution->shouldReceive('projectWake')->once()->withArgs(fn (Instance $woken): bool => $woken->is($instance));
+    app()->tag([InstanceLifecycleContribution::class], InstanceLifecycleContribution::class);
+    $job = $queues->connection('gateway')->pop('operations-prompt');
+    expect($job)->not->toBeNull();
+    $worker->process('gateway', $job, new WorkerOptions(sleep: 0));
+    expect($operation->refresh()->state)->toMatchArray([ExecutorWake::FollowUpState => 'delivered', 'wake_executor_projected' => true]);
+    app()->call([new ProjectExecutorWake($operation->id), 'handle']);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    expect(DB::table('jobs')->count())->toBe(0);
+});
+
+/** @param array<string, mixed> $attributes */
+function executorWakePendingHooks(Instance $instance, array $attributes = []): Operation
+{
+    return Operation::query()->create([
+        'kind' => InstanceWake::Kind, 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'status' => OperationStatus::Succeeded, 'input' => [],
+        'state' => [ExecutorWake::State => true, ExecutorWake::FollowUpState => 'pending'],
+        'started_at' => now()->subMinute(), 'finished_at' => now()->subSeconds(30),
+        ...$attributes,
+    ]);
+}
+
+it('recovers only old succeeded executor handoffs even when new executor wakes are disabled', function (): void {
+    $instance = executorWakeInstance();
+    $this->freezeTime();
+    $eligible = executorWakePendingHooks($instance);
+    $older = executorWakePendingHooks($instance, ['finished_at' => now()->subDays(2)]);
+    $skipped = [
+        executorWakePendingHooks($instance, ['finished_at' => now()->subSeconds(29)]),
+        executorWakePendingHooks($instance, ['finished_at' => null]),
+        executorWakePendingHooks($instance, ['kind' => 'instance.sleep']),
+        executorWakePendingHooks($instance, ['target_type' => 'node']),
+        executorWakePendingHooks($instance, ['status' => OperationStatus::Failed]),
+        executorWakePendingHooks($instance, ['status' => OperationStatus::Running, 'finished_at' => null]),
+        executorWakePendingHooks($instance, ['state' => [ExecutorWake::FollowUpState => 'pending']]),
+        executorWakePendingHooks($instance, ['state' => [ExecutorWake::State => true, ExecutorWake::FollowUpState => 'queued']]),
+        executorWakePendingHooks($instance, ['state' => [ExecutorWake::State => true, ExecutorWake::FollowUpState => 'delivered']]),
+    ];
+    $before = array_map(fn (Operation $operation): array => $operation->refresh()->getAttributes(), $skipped);
+    config(['orbit.executor.wake_enabled' => false]);
+    Log::spy();
+
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(2);
+
+    expect(Queue::pushed(ProjectExecutorWake::class)->pluck('operationId')->all())->toBe([$older->id, $eligible->id]);
+    expect(array_map(fn (Operation $operation): array => $operation->refresh()->getAttributes(), $skipped))->toBe($before);
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(0);
+    Queue::assertPushed(ProjectExecutorWake::class, 2);
+    Log::shouldHaveReceived('info')->with('Executor wake hook handoffs recovered.',
+        ['recovered' => 2, 'operation_ids' => [$older->id, $eligible->id]])->once();
+});
+
+it('bounds each recovery pass to fifty handoffs in oldest success order', function (): void {
+    $instance = executorWakeInstance();
+    $this->freezeTime();
+    $ids = [];
+    for ($age = 30; $age <= 80; $age++) {
+        $ids[] = executorWakePendingHooks($instance, ['finished_at' => now()->subSeconds($age)])->id;
+    }
+
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(50);
+
+    expect(Queue::pushed(ProjectExecutorWake::class)->pluck('operationId')->all())->toBe(array_slice(array_reverse($ids), 0, 50));
+    expect(Operation::query()->findOrFail($ids[0])->state[ExecutorWake::FollowUpState])->toBe('pending');
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(1);
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(0);
+    Queue::assertPushed(ProjectExecutorWake::class, 51);
+});
+
+it('does not duplicate a handoff claimed after sweep selection by another sweep or late completion', function (string $competitor): void {
+    $instance = executorWakeInstance();
+    $operation = executorWakePendingHooks($instance, ['finished_at' => now()->subMinute()]);
+    $raced = false;
+    DB::listen(function (QueryExecuted $query) use ($operation, $competitor, &$raced): void {
+        if (! $raced && str_starts_with($query->sql, 'select') && str_contains($query->sql, ExecutorWake::FollowUpState)) {
+            $raced = true;
+            if ($competitor === 'sweep') {
+                expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(1);
+            } else {
+                app(ExecutorWake::class)->complete($operation);
+            }
+        }
+    });
+
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(0);
+
+    expect($raced)->toBeTrue();
+    expect($operation->refresh()->state[ExecutorWake::FollowUpState])->toBe('queued');
+    app(ExecutorWake::class)->complete($operation);
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(0);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+})->with(['sweep', 'completion']);
+
+it('stops recovery on a queue failure and still finishes native reconciliation before retrying next pass', function (): void {
+    $instance = executorWakeInstance();
+    $pending = [executorWakePendingHooks($instance, ['finished_at' => now()->subMinute()]), executorWakePendingHooks($instance)];
+    $bus = Bus::getFacadeRoot();
+    Bus::partialMock()->shouldReceive('dispatch')->once()->with(Mockery::type(ProjectExecutorWake::class))
+        ->andThrow(new RuntimeException('Injected hook enqueue failure.'));
+    Log::spy();
+
+    try {
+        app()->call([new ReconcileSwampOperations, 'handle']);
+    } finally {
+        Bus::swap($bus);
+    }
+
+    foreach ($pending as $operation) {
+        expect($operation->refresh()->state[ExecutorWake::FollowUpState])->toBe('pending');
+    }
+    Queue::assertNotPushed(ProjectExecutorWake::class);
+    Log::shouldHaveReceived('warning')->with('An executor wake hook handoff could not be recovered; the next pass tries again.',
+        ['operation_id' => $pending[0]->id, 'exception_type' => RuntimeException::class])->once();
+    Log::shouldHaveReceived('info')->with('Operation reconcile pass ran.', Mockery::type('array'))->once();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    Queue::assertPushed(ProjectExecutorWake::class, 2);
+    expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(0);
 });

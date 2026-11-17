@@ -8,6 +8,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\FailNativeOperationAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationReconcileHealth;
@@ -61,6 +62,11 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     {
         $started = hrtime(true);
         $health = new OperationReconcileHealth;
+        try {
+            app(ExecutorWake::class)->recoverPendingHooks();
+        } catch (Throwable $exception) {
+            Log::warning('Executor wake hook handoffs could not be swept; the next pass tries again.', ['exception_type' => $exception::class]);
+        }
         $operations = $this->pass($step, $expire, $health);
         $health->record($started, $operations);
     }

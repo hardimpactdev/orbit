@@ -53,6 +53,7 @@ sequenceDiagram
       %%> - the Operation succeeds and records the runtime running
       %%> - record the pending lifecycle follow-up with success, then enqueue it before terminal notices; a notice enqueue failure cannot lose it
       %%> - a later completion retries a pending handoff even on a succeeded Operation; a queued handoff and the successful hook receipt prevent duplicates
+      %%> - the minute reconciliation pass also retries up to 50 pending handoffs, oldest first, after a 30 s grace; exhausted completion retries need no new visit
     else no successful result in time
       %% path: executor-pending
       GW-->>CL: 401 progress page<br/>activation state pending

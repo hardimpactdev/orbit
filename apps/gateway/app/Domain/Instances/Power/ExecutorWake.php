@@ -32,6 +32,10 @@ final readonly class ExecutorWake
 
     public const int CompletionSeconds = 6;
 
+    private const int FollowUpGraceSeconds = 30;
+
+    private const int FollowUpBatchSize = 50;
+
     public function __construct(private ExecutorOrderPublisher $publisher, private ExecutorResultWait $wait, private OperationStore $operations) {}
 
     public static function enabled(): bool
@@ -153,18 +157,47 @@ final readonly class ExecutorWake
         });
     }
 
-    /** Success is already committed. A failed enqueue leaves the durable pending handoff for the next completion. */
-    private function enqueueHooks(int $operationId): void
+    /** Recovers admitted work even if executor wakes are now disabled or completion exhausted its retries. */
+    public function recoverPendingHooks(): int
     {
-        DB::transaction(static function () use ($operationId): void {
+        $pending = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')
+            ->where('status', OperationStatus::Succeeded)->where('state->'.self::State, true)
+            ->where('state->'.self::FollowUpState, 'pending')
+            ->where('finished_at', '<=', now()->subSeconds(self::FollowUpGraceSeconds))
+            ->orderBy('finished_at')->orderBy('id')->limit(self::FollowUpBatchSize)->get(['id']);
+        $recovered = [];
+        foreach ($pending as $operation) {
+            try {
+                if ($this->enqueueHooks($operation->id)) {
+                    $recovered[] = $operation->id;
+                }
+            } catch (Throwable $exception) {
+                Log::warning('An executor wake hook handoff could not be recovered; the next pass tries again.',
+                    ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                break;
+            }
+        }
+        if ($recovered !== []) {
+            Log::info('Executor wake hook handoffs recovered.', ['recovered' => count($recovered), 'operation_ids' => $recovered]);
+        }
+
+        return count($recovered);
+    }
+
+    /** Success is already committed. A failed enqueue leaves the handoff for completion or the minute sweep. */
+    private function enqueueHooks(int $operationId): bool
+    {
+        return DB::transaction(static function () use ($operationId): bool {
             $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
             if ($operation === null || ! self::owns($operation) || $operation->status !== OperationStatus::Succeeded
                 || ($operation->state[self::FollowUpState] ?? null) !== 'pending') {
-                return;
+                return false;
             }
             // The Gateway queue defaults to after_commit: enqueue now so a failure rolls back the queued marker.
             Bus::dispatch((new ProjectExecutorWake($operation->id))->beforeCommit());
             $operation->forceFill(['state' => [...($operation->state ?? []), self::FollowUpState => 'queued']])->save();
+
+            return true;
         });
     }
 }
