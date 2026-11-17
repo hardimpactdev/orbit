@@ -33,10 +33,10 @@
     quiet: true
 
 # The Process's unit runs as `www-data`: a running container of an older image moves its app account from `orbit` to `www-data` first
-# (files/instance-app-user.sh).
+# (/usr/local/libexec/orbit-app-user).
 # A moved container only reads.
 - name: Move the app account to www-data
-  ansible.builtin.command: { argv: "{{ as_root + ['sh', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-app-user.sh'), 'orbit-app-user'] }}" }
+  ansible.builtin.command: { argv: "{{ as_root + ['/usr/local/libexec/orbit-app-user'] }}" }
   register: app_user_name
   changed_when: "'moved to www-data' in app_user_name.stdout"
 

@@ -56,8 +56,8 @@ if '--project' in args and args != ['--project', 'fixture', 'exec', 'fixture', '
 if args[:1] == ['--project'] and any(x in args[:args.index('--')] for x in ['--user', '--group', '--cwd']):
     sys.exit(95)
 args = args[args.index('--') + 1:]
-# Root's swap file of the app user's name (files/instance-app-user.sh): recorded, never run on this machine.
-if args[:2] == ['sh', '-c'] and args[3:] == ['orbit-app-user']:
+# Root's swap file of the app account (/usr/local/libexec/orbit-app-user): recorded, never run on this machine.
+if args == ['/usr/local/libexec/orbit-app-user']:
     (root / 'app-user-swaps').open('a').write('swap\\n')
     print('unchanged')
     sys.exit(0)
@@ -346,8 +346,6 @@ sys.exit(result.returncode)
         tasks.mkdir(exist_ok=True)
         shutil.copy(SOURCE, self.root / SOURCE.name)
         shutil.copy(ROOT / 'swamp/ansible/tasks/instance-mail-line.yml', tasks)
-        (self.root / 'files').mkdir(exist_ok=True)
-        shutil.copy(ROOT / 'swamp/ansible/files/instance-app-user.sh', self.root / 'files')
         (tasks / 'instance-mail.yml').write_text('---\n- name: Fixture shared path boundary\n  ansible.builtin.set_fact:\n    mail_result: ' + json.dumps({'status': path_status, **({'reason': 'mail_port_in_use'} if path_status == 'skipped' else {})}) + '\n')
         if failure:
             (tasks / 'instance-mail.yml').write_text('---\n- name: Fixture mail path failure\n  ansible.builtin.fail: {msg: instance.host_unavailable}\n')
@@ -407,7 +405,7 @@ sys.exit(result.returncode)
         self.assertEqual(self.ansible(migrate=True)['mailer'], {'status': 'changed', 'lines': [1]})
         self.assertTrue(self.envfile.read_bytes() == before.replace(b'"log"', b'"smtp"'))
         self.assertTrue((self.root / 'config-clear').exists())
-        # Root names the app user web before config:clear runs as web.
+        # Root moves the app account to www-data before config:clear runs as www-data.
         self.assertEqual((self.root / 'app-user-swaps').read_text(), 'swap\n')
         self.assertEqual(json.loads(self.calls.read_text()), ['orbit-frankenphp.service', 'orbit-process-42.service'])
         self.assertEqual(self.ansible('unchanged')['mailer'], {'status': 'already_smtp'})

@@ -400,9 +400,9 @@ if (family === "list") {
     save();
     Deno.exit(0);
   }
-  // Root's swap file (ansible/files/instance-app-user.sh) runs here as in the container: its account, unit, process and file calls come
+  // Root's swap file (/usr/local/libexec/orbit-app-user from ansible/files/instance-app-user.sh) runs here as in the container: its account, unit, process and file calls come
   // back to this stand-in through `incus exec`, and the text filters it runs on its own output run as they are.
-  if (command[0] === "sh" && command[1] === "-c" && command[3] === "orbit-app-user") {
+  if (command[0] === "/usr/local/libexec/orbit-app-user") {
     const bin = `${folder}/app-user-bin`;
     // The stand-in runs its own tools from the plain PATH, so a routed call never finds these shims again.
     const back = 'PATH=$APP_USER_PATH exec incus --project "$APP_USER_PROJECT" exec "$APP_USER_NAME" --';
@@ -416,9 +416,10 @@ if (family === "list") {
     }
     save();
     // The file's own path tests (`[ -e … ]`, `[ -d … ]`) are shell builtins: they read the container's folder here, not this machine.
-    const script = command[2].replace(/\[ -([def]) "?(\/[^" \]]*|\$WS)"? \]/g, (_, flag, path) => `[ -${flag} "${rootfs(name)}${path}" ]`);
+    const source = Deno.readTextFileSync(new URL("../../ansible/files/instance-app-user.sh", import.meta.url));
+    const script = source.replace(/\[ -([def]) "?(\/[^" \]]*|\$WS)"? \]/g, (_, flag, path) => `[ -${flag} "${rootfs(name)}${path}" ]`);
     const done = new Deno.Command("sh", {
-      args: [command[1], script, ...command.slice(3)],
+      args: ["-c", script, "orbit-app-user"],
       env: { PATH: `${bin}:${Deno.env.get("PATH")}`, APP_USER_PATH: Deno.env.get("PATH")!, APP_USER_PROJECT: project ?? "default", APP_USER_NAME: name },
     }).outputSync();
     Deno.stdout.writeSync(done.stdout);

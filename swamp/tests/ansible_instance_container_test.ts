@@ -100,8 +100,6 @@ function fixture() {
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
   Deno.copyFileSync(new URL("instance_workspace_owner.py", root), `${folder}/instance_workspace_owner.py`);
-  Deno.mkdirSync(`${folder}/files`, { recursive: true });
-  Deno.copyFileSync(new URL("files/instance-app-user.sh", root), `${folder}/files/instance-app-user.sh`);
   // The power helper that resumes a Frozen container and discards a Stopped one's plan (_support/power_helper.ts).
   installPowerHelper(folder, folder);
   // The composed proxy environment goes into the container through instance_node_services.py `proxy`; the fake keeps its value.
