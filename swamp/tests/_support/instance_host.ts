@@ -274,8 +274,8 @@ function gatewayImage() {
     );
     const values: Record<string, string> = {
         agent: "2750",
-        orbit: "1000",
-        work: "2760",
+        web: "1000",
+        group: "2760",
         workspace: "/srv/workspace",
         vite: "/var/lib/orbit/vite-plus-home",
         sharedVite: "/opt/orbit-runtime/current/vite-plus-home",

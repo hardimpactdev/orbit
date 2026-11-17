@@ -716,7 +716,7 @@ for (const [desired, kind] of [["enabled", "current"], ["disabled", "agent"], ["
         assert(!exists(schedules.timerPath));
         const service = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.service);
         const timer = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.timer);
-        assert(service.includes("User=orbit\n"));
+        assert(service.includes("User=web\n"));
         assert(service.includes("WorkingDirectory=/srv/workspace\n"));
         assert(timer.includes("Persistent=false\n"));
         assert(timer.includes("OnCalendar=" + schedules.schedule.calendar));
@@ -776,7 +776,7 @@ Deno.test({
       assert(!exists(schedules.servicePath));
       assert(!exists(schedules.timerPath));
       const service = Deno.readTextFileSync(f.rootfs + "/etc/systemd/system/" + schedules.schedule.service);
-      assert(service.includes("User=orbit\n"));
+      assert(service.includes("User=web\n"));
       assert(!service.includes(f.checkout));
       assert(!exists(schedules.scriptPath));
       assert(!exists(schedules.callbackPath));
@@ -1164,7 +1164,7 @@ Deno.test({
         const path = `${directory}/${name}`;
         Deno.writeTextFileSync(path, "old unit\n");
         f.migrate.processes.push({name, path, environment_directory: directory, desired: "running", executables: ["/bin/sleep"]});
-        f.container.processes.push({id, name, content: "[Service]\nUser=orbit\nExecStart=/bin/sleep infinity\n", environment: null, desired: "running"});
+        f.container.processes.push({id, name, content: "[Service]\nUser=web\nExecStart=/bin/sleep infinity\n", environment: null, desired: "running"});
         host[name] = {state: "started", enabled: true};
       }
       Deno.writeTextFileSync(`${f.folder}/host-processes.json`, JSON.stringify(host));

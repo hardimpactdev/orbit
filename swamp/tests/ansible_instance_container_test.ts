@@ -145,7 +145,7 @@ function fixture() {
     commit: null as string | null,
     workspace: "/srv/workspace",
     environment_file: "/srv/workspace/.env",
-    units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
+    units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=web\n" }],
     web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     web_port: 8080,
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
@@ -785,6 +785,119 @@ Deno.test({
   },
 });
 
+// The rename of the app user (the block "Name the app user web" of tasks/instance-container-phase.yml, ADR 0268 second amendment). An older image made `orbit` (uid 1000) in its
+// group `orbit` (gid 1000) and the group `work` (gid 2760); the start renames both to `web` before any other command in the container.
+const IMAGE_PASSWD = "root:x:0:0:root:/root:/bin/bash\nagent:x:2750:2750::/home/agent:/bin/bash\nweb:x:1000:2760::/home/web:/bin/bash\n";
+const OLDER_PASSWD = IMAGE_PASSWD.replace("web:x:1000:2760::/home/web", "orbit:x:1000:1000::/home/orbit");
+const OLDER_GROUP = "root:x:0:\nagent:x:2750:\norbit:x:1000:\nwork:x:2760:agent,orbit\n";
+// `usermod -l` also renames the user in the member list, so a renamed container lists `web` in its own group beside `agent`.
+const RENAMED_GROUP = "root:x:0:\nagent:x:2750:\nweb:x:2760:agent,web\n";
+const OLDER_UNIT = "[Service]\nUser=orbit\nGroup=orbit\nUMask=0007\nEnvironment=HOME=/home/orbit\nExecStart=frankenphp run\n";
+const RENAMED_UNIT = "[Service]\nUser=web\nGroup=web\nUMask=0007\nEnvironment=HOME=/home/web\nExecStart=frankenphp run\n";
+
+/** A created default made older: the accounts, the home and the unit files of an older image's container. */
+function olderContainer(f: ReturnType<typeof fixture>, passwd = OLDER_PASSWD, group = OLDER_GROUP, home = "orbit") {
+  const root = `${f.folder}/containers/instance-7`;
+  Deno.writeTextFileSync(`${root}/etc/passwd`, passwd);
+  Deno.writeTextFileSync(`${root}/etc/group`, group);
+  if (home !== "web") Deno.renameSync(`${root}/home/web`, `${root}/home/${home}`);
+  Deno.writeTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`, OLDER_UNIT);
+  Deno.writeTextFileSync(`${root}/etc/systemd/system/orbit-schedule-9.service`, "[Service]\nType=oneshot\nUser=orbit\nGroup=work\n");
+  Deno.writeTextFileSync(`${root}/etc/systemd/system/orbit-schedule-9.timer`, "[Timer]\nOnCalendar=hourly\n");
+  Deno.mkdirSync(`${root}/etc/systemd/system/t3.service.d`, { recursive: true });
+  Deno.writeTextFileSync(`${root}/etc/systemd/system/t3.service.d/20-orbit-server.conf`, "[Service]\nEnvironment=HOME=/home/agent\n");
+  const state = f.state();
+  delete state.accounts;
+  state.systemctl = [];
+  Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+  return root;
+}
+
+Deno.test({
+  name: "a start renames an older container's orbit and work to web before its units run as web again; a second start changes nothing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      assert(f.run("container").ok);
+      // The image's own accounts need no rename.
+      assertEquals(f.state().accounts, undefined);
+      const root = olderContainer(f);
+      const result = f.run("start");
+      assert(result.ok, result.output);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), IMAGE_PASSWD);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/group`), RENAMED_GROUP);
+      assert(Deno.statSync(`${root}/home/web`).isDirectory);
+      assertThrows(() => Deno.statSync(`${root}/home/orbit`));
+      assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), RENAMED_UNIT);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-schedule-9.service`), "[Service]\nType=oneshot\nUser=web\nGroup=web\n");
+      // `agent`'s T3 is not the app's: its drop-in stays as it was.
+      assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/t3.service.d/20-orbit-server.conf`), "[Service]\nEnvironment=HOME=/home/agent\n");
+      assertEquals(f.state().accounts, [
+        ["usermod", "--login", "web", "--home", "/home/web", "--move-home", "orbit"],
+        ["groupmod", "--new-name", "web", "work"],
+        ["usermod", "--gid", "web", "web"],
+        ["chown", "--recursive", "--no-dereference", "--from=:1000", ":2760", "--", "/srv/workspace", "/home/web"],
+        ["groupdel", "orbit"],
+      ]);
+      // The units that ran under the old name stop before the rename and start after the reload; the Schedule's own service waits
+      // for its timer.
+      const calls = f.state().systemctl.map((call: string[]) => call.join(" "));
+      const stop = calls.indexOf("stop -- orbit-frankenphp.service orbit-schedule-9.service orbit-schedule-9.timer");
+      const reload = calls.indexOf("daemon-reload");
+      const start = calls.indexOf("start -- orbit-frankenphp.service orbit-schedule-9.service orbit-schedule-9.timer");
+      assert(stop >= 0 && stop < reload && reload < start, calls.join("\n"));
+
+      const before = f.state();
+      delete before.accounts;
+      before.systemctl = [];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(before));
+      const again = f.run("start");
+      assert(again.ok, again.output);
+      assertEquals(f.state().accounts, undefined);
+      assert(!f.state().systemctl.some((call: string[]) => ["stop", "daemon-reload"].includes(call[0])), JSON.stringify(f.state().systemctl));
+      assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), RENAMED_UNIT);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a start finishes a rename that stopped after the user: the group, the files of gid 1000 and the units that failed under orbit",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      assert(f.run("container").ok);
+      // The user is renamed and moved, but `work` and the group 1000 are left, and the units still name `orbit`: they failed at boot.
+      const root = olderContainer(f, IMAGE_PASSWD.replace("web:x:1000:2760", "web:x:1000:1000"), OLDER_GROUP.replace("agent,orbit", "agent,web"), "web");
+      const state = f.state();
+      state.inactive = ["orbit-frankenphp.service", "orbit-schedule-9.service", "orbit-schedule-9.timer"];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const result = f.run("start");
+      assert(result.ok, result.output);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/passwd`), IMAGE_PASSWD);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/group`), RENAMED_GROUP);
+      assertEquals(Deno.readTextFileSync(`${root}/etc/systemd/system/orbit-frankenphp.service`), RENAMED_UNIT);
+      assertEquals(f.state().accounts, [
+        ["groupmod", "--new-name", "web", "work"],
+        ["usermod", "--gid", "web", "web"],
+        ["chown", "--recursive", "--no-dereference", "--from=:1000", ":2760", "--", "/srv/workspace", "/home/web"],
+        ["groupdel", "orbit"],
+      ]);
+      // Nothing ran under the old name, so nothing stops; the enabled units start again after the reload.
+      const calls = f.state().systemctl.map((call: string[]) => call.join(" "));
+      assert(!calls.some((call: string) => call.startsWith("stop ")), calls.join("\n"));
+      assert(calls.indexOf("daemon-reload") < calls.indexOf("start -- orbit-frankenphp.service orbit-schedule-9.service orbit-schedule-9.timer"),
+        calls.join("\n"));
+      assert(calls.indexOf("daemon-reload") >= 0, calls.join("\n"));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
 Deno.test({
   name: "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   ignore: !hasAnsible,
@@ -806,7 +919,7 @@ Deno.test({
       const route = { route: "yes", interface_in: "orbit", interface_out: "orbitinst0", to_ip: "10.253.0.3", to_port: "3773", proto: "tcp" };
       Object.assign(f.container, {
         instance_id: 8, name: "instance-8", address: "10.253.0.3", acl: "instance-8", mirror: `${f.folder}/mirror/8.git`,
-        branch: "feature", units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\nExecStart=frankenphp --listen 10.253.0.3:8080\n" }],
+        branch: "feature", units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=web\nExecStart=frankenphp --listen 10.253.0.3:8080\n" }],
         acl_rules: { description: "Orbit Instance 8", egress: [], ingress: [{ action: "allow", protocol: "tcp", destination_port: "3773", state: "enabled" }] },
         firewall: [
           { ...route, rule: "deny", from_ip: "10.44.0.128/25", comment: "orbit:instance-8-t3-task-vms" },
@@ -1002,14 +1115,14 @@ Deno.test({
 const worker = {
   id: 41,
   name: "orbit-process-41-worker.service",
-  content: "[Service]\nUser=orbit\nEnvironmentFile=/etc/orbit/processes/41/abc.env\nExecStart=php artisan queue:work\n",
+  content: "[Service]\nUser=web\nEnvironmentFile=/etc/orbit/processes/41/abc.env\nExecStart=php artisan queue:work\n",
   environment: "/etc/orbit/processes/41/abc.env",
   desired: "running",
 };
 const paused = {
   id: 42,
   name: "orbit-process-42-scheduler.service",
-  content: "[Service]\nUser=orbit\nExecStart=php artisan schedule:work\n",
+  content: "[Service]\nUser=web\nExecStart=php artisan schedule:work\n",
   environment: null,
   desired: "stopped",
 };
@@ -1123,7 +1236,7 @@ Deno.test({
       }
       // The Project gained a definition: its record is in the intent, but no unit file is in the container yet. The scheduler was
       // stopped and is now set to run: its unit file is there, but disabled and inactive.
-      const fresh = { id: 43, name: "orbit-process-43-fresh.service", content: "[Service]\nUser=orbit\nExecStart=sleep infinity\n", environment: null, desired: "running" };
+      const fresh = { id: 43, name: "orbit-process-43-fresh.service", content: "[Service]\nUser=web\nExecStart=sleep infinity\n", environment: null, desired: "running" };
       const resumed = { ...paused, desired: "running" };
       assert(Deno.statSync(`${f.folder}/containers/instance-7/etc/systemd/system/${paused.name}`).isFile);
       const stopped = f.state();
@@ -1163,7 +1276,7 @@ Deno.test({
         const result = f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments });
         assert(result.ok, `${phase}: ${result.output}`);
       }
-      const broken = { id: 44, name: "orbit-process-44-broken.service", content: "[Service]\nUser=orbit\nExecStart=/bin/false\n", environment: null, desired: "running" };
+      const broken = { id: 44, name: "orbit-process-44-broken.service", content: "[Service]\nUser=web\nExecStart=/bin/false\n", environment: null, desired: "running" };
       f.container.processes = [worker, broken];
       f.write();
       const state = f.state();
@@ -2510,7 +2623,7 @@ Deno.test({
   fn() {
     // The record that the host tasks write when the nested build fails its sudo audit, as ansible_instance_host_image_test.ts
     // proves ("a sudo path in the nested-fleet image fails only the nested-fleet image").
-    const record = { error: "nested image build failed", alias: "orbit-instance-nested-aaaaaaaaaaaa", task: "Require an image without a sudo path" };
+    const record = { error: "nested image build failed", alias: "orbit-instance-nested-aaaaaaaaaaaa", task: "Require the image's accounts and its one sudo path" };
     const f = fixture();
     try {
       nestedCreate(f);

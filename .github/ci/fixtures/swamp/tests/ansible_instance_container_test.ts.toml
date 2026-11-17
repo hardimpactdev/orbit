@@ -12,6 +12,8 @@ cases = [
   "a deployment refuses a pinned commit off the branch at its fetch, and dirty or diverged work at its checkout",
   "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
+  "a start renames an older container's orbit and work to web before its units run as web again; a second start changes nothing",
+  "a start finishes a rename that stopped after the user: the group, the files of gid 1000 and the units that failed under orbit",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes",
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer",
@@ -105,12 +107,12 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 7996
+cost = 8086
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
 # Every registered case has its own slice; startup is added separately.
-slices = 102
+slices = 104
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -157,6 +159,8 @@ inputs = [
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed" = 136 # ESTIMATE (hosted run 43787856522): 117.7s, its 46.9 of 51.0 local play seconds of the former case (128.0s), x 1.15, rounded up
   "a deployment refuses a pinned commit off the branch at its fetch, and dirty or diverged work at its checkout" = 133 # hosted run 43787856522: 114.9s x 1.15, rounded up
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 89 # hosted run 43787856522: 77.3s x 1.15, rounded up
+"a start renames an older container's orbit and work to web before its units run as web again; a second start changes nothing" = 45 # estimate: 22 s locally x 2
+"a start finishes a rename that stopped after the user: the group, the files of gid 1000 and the units that failed under orbit" = 45 # estimate: 18-29 s locally, as the case above
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 89 # hosted run 43787856522: 76.8s x 1.15, rounded up
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 91 # hosted run 43787856522: 78.5s x 1.15, rounded up
   "the first build installs the Project's Processes as orbit units with environment files from the vault; a rerun changes nothing, a drifted web configuration alone restarts PHP, and a changed value replaces its environment file" = 101 # ESTIMATE (hosted run 43787856522): 87.5s from 76.7s measured plus the rotation's 6.7 of 90.9 local play seconds of the new-seed case (146.6s), x 1.15, rounded up

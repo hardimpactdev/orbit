@@ -75,9 +75,18 @@ final readonly class InstanceHostIntent
 
     public const int AgentUid = 2750;
 
-    public const int OrbitUid = 1000;
+    /**
+     * The app user `web` (development-containers.md#the-app-users-name): FrankenPHP, every Process and Schedule run as it, with its home,
+     * and in its primary group, which has the same name.
+     */
+    public const string WebUser = 'web';
 
-    public const int WorkGid = 2760;
+    public const string WebHome = '/home/web';
+
+    public const int WebUid = 1000;
+
+    /** The group `web`, `web`'s primary group, with `agent` as a member. */
+    public const int WebGid = 2760;
 
     public const int T3Port = 3773;
 

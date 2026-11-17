@@ -29,7 +29,7 @@
       when: mail_refresh.php is not none
       ansible.builtin.command:
         argv: >-
-          {{ as_orbit + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
+          {{ as_web + ['sh', '-c', 'if [ -x "$1" ] && [ -f "$2/artisan" ]; then cd -- "$2" && "$1" artisan config:clear >/dev/null 2>&1; fi',
               'sh', mail_refresh.php, mail_refresh.application] }}
         expand_argument_vars: false
       no_log: true

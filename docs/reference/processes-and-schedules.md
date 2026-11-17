@@ -70,7 +70,7 @@ Run the sibling Deno unit tests for Orbit's Process and Schedule logic. Workflow
 
 An Instance Process serves one Instance. The Gateway derives its Node and systemd user and default working directory from the Instance. Docker keeps the image's working directory instead. [Instance removal](/reference/instance-removal) removes it.
 
-An Instance in a container runs its Processes as `orbit` units in the container. New Instances use the Project's development definitions; a clone keeps a Process stopped that is stopped on its default; [migration](/cli/instance/migrate) moves an existing Instance's systemd Processes with their ids and desired states. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
+An Instance in a container runs its Processes as units of the app user `web` in the container, in the group `web` and with the home `/home/web`. New Instances use the Project's development definitions; a clone keeps a Process stopped that is stopped on its default; [migration](/cli/instance/migrate) moves an existing Instance's systemd Processes with their ids and desired states. Swamp reaches them through `incus exec` on the Node, never through the Node agent. [Instance containers](/reference/development-containers#processes) has the differences.
 
 A Node Process serves the Node itself, for example a shared Docker database. A systemd Process runs as the Node's managed user, with `/home/{managed user}` as its default working directory, unless `user` names another account. A Docker Process keeps the image's working directory unless an explicit directory is supplied. A Node Process reads no Instance environment file.
 
@@ -203,7 +203,7 @@ It comes only from a Project Process definition for `development`. Create one wi
           "restart_policy": "on-failure"}}
 ```
 
-The command must be exactly this canonical command. The definition may add `environment`, `keep_alive` and `restart_policy`; without `restart_policy`, Vite is not restarted after a crash. A container clone created after that gets the Process. A container default never gets it: see below. The container unit runs `<application directory>/node_modules/.bin/vite --host=0.0.0.0 --port=5173 --strictPort` as `orbit`, in the application directory. It installs no dependencies. A checkout Instance has no container for it: its create refuses the definition with `process.container_command_unsupported`.
+The command must be exactly this canonical command. The definition may add `environment`, `keep_alive` and `restart_policy`; without `restart_policy`, Vite is not restarted after a crash. A container clone created after that gets the Process. A container default never gets it: see below. The container unit runs `<application directory>/node_modules/.bin/vite --host=0.0.0.0 --port=5173 --strictPort` as `web`, in the application directory. It installs no dependencies. A checkout Instance has no container for it: its create refuses the definition with `process.container_command_unsupported`.
 
 The unit sets `VITE_APP_URL` to the Instance's Route URL, `https://<Route domain>`, beside the host allowance. The definition's own `VITE_APP_URL` wins, including an empty value; Orbit then adds none. Orbit does not read the Project's `.env` for it.
 

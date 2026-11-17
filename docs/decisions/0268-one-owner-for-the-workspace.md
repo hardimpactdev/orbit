@@ -1,7 +1,7 @@
 ---
 title: "ADR 0268: One owner for the workspace"
 sidebarTitle: "0268 One workspace owner"
-description: "In progress. `agent` owns a development container's workspace. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit` stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's group pass also makes `agent` the owner of each workspace entry that `orbit` owns."
+description: "In progress. `agent` owns a development container's workspace. It runs Orbit's checkout Git calls and the Project's development deploy steps. `orbit`, renamed `web` by its second amendment, stays the app user: FrankenPHP, queue workers and every Orbit Process. Root's group pass also makes `agent` the owner of each workspace entry that `orbit` owns."
 ---
 
 # ADR 0268: One owner for the workspace
@@ -26,7 +26,7 @@ The workspace already gives the group `work` write access: setgid folders with m
 
 The owner decided these points, and they stay closed:
 
-- **Q1. Keep the names.** `agent` (uid 2750) is the owner of the workspace and runs the steps. `orbit` (uid 1000) is the app user. No user is renamed and no uid changes.
+- **Q1. Keep the names.** `agent` (uid 2750) is the owner of the workspace and runs the steps. `orbit` (uid 1000) is the app user. No uid changes. The [second amendment](#amendment-the-app-user-and-its-group-are-named-web) renames the app user and its group, names only.
 - **Q2. Sudo for `agent`.** Today the normal image gives `agent` no sudo, and the [nested-fleet image](/reference/development-containers#the-nested-fleet-image) gives it passwordless sudo. The owner decided that `agent` gets passwordless sudo in every container, normal and nested, and that membership of `incus-admin` stays as it is. That comes with a security model in which a container holds no production-grade secrets. A separate task group builds it; the [amendment](#amendment-sudo-for-agent-in-every-container) below records it.
 - **Q3. Development deploy steps run as `agent` everywhere**, nested-fleet defaults included.
 
@@ -55,6 +55,15 @@ The owner decided on 2026-11-16 to build Q2.
 - **Reason.** Convenience: the agent installs a package or fixes a system file itself and never needs outside help.
 - **Trade-off.** Root in a container can read that Instance's `.env` and its per-copy model key, and can change the container's own firewall, which holds the model-route rule of [ADR 0252](/decisions/0252-reach-the-model-router-from-containers-through-a-node-forwarder). So that rule no longer keeps `agent`'s own processes apart; it still keeps `orbit` and the app off the model route while nobody uses root to change it. The container wall stays the boundary: the container is unprivileged, with an isolated ID map, and root in it is no user on the Node.
 - **Existing sudo use stays.** The task check's `sudo -n systemd-run`, `bin/e2e-topology-host-setup` and `reconcile-firewall.py` work as before.
+
+### Amendment: the app user and its group are named `web`
+
+The owner decided on 2026-11-16 to rename the app user and its group inside every development container. The rest of this ADR uses the old names `orbit` and `work`; read them as `web`.
+
+- **Names.** uid 1000 `orbit` becomes `web`, with the home `/home/web`. It serves the Project: FrankenPHP, the workers, the Processes and the Schedules. The group `work`, gid 2760, becomes `web` and is `web`'s primary group. `agent` and `web` are its members. The group `orbit`, gid 1000, goes, and files that still have gid 1000 get the group `web`. No user or group in a container is named `orbit` or `work`.
+- **Kept.** `agent` (uid 2750) keeps its name, its home, its group and its sudo, so T3, Conn and the agents' settings do not change. Every rule by number stays: the model route rule (uid 2750), the nested firewall rule (uid 1000) and the nested fleet's `raw.idmap`. The Node's own `orbit` user and its `/home/orbit` do not change. The nested fleet's guests are Nodes, so their `orbit` user, their group `work` and their checkout `/home/orbit/orbit` keep their names; the map by number makes the container's `web` the guests' `orbit`.
+- **Reason.** The name says what the user does: it serves the web app. `orbit` named both the Node's account and the app user in a container, so a reader had to tell them apart from the context.
+- **Existing containers.** Root renames an older container in the `start` phase, before any other command in it ([The app user's name](/reference/development-containers#the-app-users-name)). A default gets it at its next deployment or start, and its seed carries it to new copies. A copy of a seed taken before the rename keeps the old names until its first start through Orbit: a clone does not run the `start` phase. No converge and no migration are needed.
 
 ## Rejected alternatives
 

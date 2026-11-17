@@ -32,7 +32,7 @@
     - name: Prepare Node as the app user without starting any Process
       ansible.builtin.command:
         argv: >-
-          {{ as_orbit + (['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_runtime.py'), 'seed-prepare']
+          {{ as_web + (['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_runtime.py'), 'seed-prepare']
               if phase == 'seed' else ['python3', '/usr/local/libexec/orbit-instance-node-runtime.py',
                 ('launch-fetch' if phase == 'node-runtime' else 'fetch') if node_fetch | default(false) else 'prepare'])
               + [container | to_json] }}

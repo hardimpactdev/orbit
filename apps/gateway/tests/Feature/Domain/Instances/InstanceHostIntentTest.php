@@ -307,18 +307,21 @@ describe('the Instance image', function (): void {
         $files = array_column($image['files'], null, 'path');
 
         expect($image['prepare'])->toContain(
-            "touch /etc/cloud/cloud-init.disabled\n", 'useradd --uid 2750 --gid agent', 'useradd --uid 1000 --gid orbit', 'groupadd --gid 2760 work', 'passwd --lock agent',
-            "find /etc/sudoers.d -mindepth 1 ! -name README -delete\n", 'install -d -o agent -g work -m 2770 /srv/workspace',
-            'd:u::rwX,d:g::rwX,d:g:work:rwX,d:o::---', 'hidepid=invisible',
+            "touch /etc/cloud/cloud-init.disabled\n", 'useradd --uid 2750 --gid agent', "groupadd --gid 2760 web\n", "useradd --uid 1000 --gid web --create-home --shell /bin/bash web\n",
+            "usermod --append --groups web agent\n", 'passwd --lock agent', "passwd --lock web\n", "chmod 0750 /home/web\n",
+            "find /etc/sudoers.d -mindepth 1 ! -name README -delete\n", 'install -d -o agent -g web -m 2770 /srv/workspace',
+            'setfacl -m g:web:rwX -m d:u::rwX,d:g::rwX,d:g:web:rwX,d:o::--- /srv/workspace', 'hidepid=invisible',
         )
+            // ADR 0268, second amendment: no user or group is named `orbit` or `work`, and no group takes gid 1000.
+            ->and($image['prepare'])->not->toMatch('/(?:\s|g:)(?:orbit|work)(?::|\s|$)|--gid 1000\b/m')
             ->and($image['packages'])->toBe(['acl', 'git', 'nftables', 'sudo'])
-            // ADR 0268, amendment: the stock grants go, and `agent`'s one grant is the only sudo path; `orbit` has none.
+            // ADR 0268, amendment: the stock grants go, and `agent`'s one grant is the only sudo path; `web` has none.
             ->and($files[InstanceImage::SudoGrant])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440', 'existing' => true])
             ->and(array_values(array_filter(array_keys($files), static fn (string $path): bool => str_starts_with($path, '/etc/sudoers'))))->toBe([InstanceImage::SudoGrant])
             ->and($image['prepare'])->not->toContain('incus-admin')
             ->and($files['/etc/systemd/system/t3.service']['mode'])->toBe('0640')
             ->and($files['/home/agent/.codex/config.toml'])->toMatchArray(['content' => "check_for_update_on_startup = false\n", 'uid' => 2750, 'mode' => '0600'])
-            ->and($files)->not->toHaveKey('/home/orbit/.gitconfig')
+            ->and($files)->not->toHaveKey('/home/web/.gitconfig')
             ->and($files['/etc/gitconfig']['content'])->toBe("# Managed by Orbit.\n[safe]\n\tdirectory = /srv/workspace\n");
     });
 
@@ -346,22 +349,24 @@ describe('the Instance image', function (): void {
         $home = InstanceImage::RuntimeEnvironment['VP_HOME'];
 
         expect($script)->toContain(
-            "install -d -o agent -g work -m 2770 {$home}\n",
-            "d:g:work:rwX,d:o::--- {$home}\n",
-            "install -d -o agent -g work -m 2770 {$home}/cache\n",
+            "install -d -o agent -g web -m 2770 {$home}\n",
+            "d:g:web:rwX,d:o::--- {$home}\n",
+            "install -d -o agent -g web -m 2770 {$home}/cache\n",
             'for part in bin js_runtime node_modules recipe config.json; do',
             'ln -s /opt/orbit-runtime/current/vite-plus-home/$part '.$home.'/$part',
         );
     });
 
-    it('removes cloud-init\'s group lxd, which holds the gid of orbit, before it makes the groups', function (): void {
+    it('removes cloud-init\'s group lxd, which holds gid 1000, before it makes the groups', function (): void {
         $script = InstanceImage::for('10.253.0.1')['prepare'];
 
-        // `groupadd --gid 1000` refuses a taken gid: on the stock image `lxd` took 1000 at first boot, and `ubuntu` got gid 1001.
+        // On the stock image `lxd` took gid 1000 at first boot, and `ubuntu` got gid 1001. A container has no group 1000.
         expect($script)->toContain("if getent group lxd >/dev/null 2>&1; then groupdel lxd; fi\n")
             // The user goes first: `groupdel` refuses a group that is still a user's.
             ->and(strpos($script, 'userdel --remove ubuntu'))->toBeLessThan(strpos($script, 'groupdel lxd'))
-            ->and(strpos($script, 'groupdel lxd'))->toBeLessThan(strpos($script, 'groupadd --gid 1000 orbit'));
+            ->and(strpos($script, 'groupdel lxd'))->toBeLessThan(strpos($script, 'groupadd --gid 2760 web'))
+            // `useradd --gid web` needs the group first.
+            ->and(strpos($script, 'groupadd --gid 2760 web'))->toBeLessThan(strpos($script, 'useradd --uid 1000 --gid web'));
     });
 
     it('publishes the image with an empty machine-id, so each container writes its own at its first start', function (): void {
