@@ -20,7 +20,7 @@ On an established target, live, preparation and rollback are three distinct cont
 
 In progress.
 
-Proposed: a design for review, with no part built. A measuring spike follows it in the same task group: the same release under PHP-FPM and under worker mode on a task copy's nested Gateway. The spike's numbers replace the guesses below. Number 0269 was the next free number on the workspace's `main` on 2026-11-16, after 0268; the design thread checks open pull requests before it publishes.
+The release implementation and disposable Gateway tests are in progress. Production adoption and the matched PHP-FPM and worker-mode performance measurements remain open.
 
 Principle: [One way, one name](/mission#principles). The Gateway uses the release states and traffic switch of ADR 0263. Its clone source is a permanent preparation container. It also serves [No exceptions and no legacy](/mission#principles): the worktree releases, the PHP-FPM pool and `bin/gateway-rollback` go when their replacements are built.
 
@@ -250,18 +250,7 @@ Unlike an app container, the Gateway's container is the control plane. Anyone wh
 
 ### 6. Rollout from today's Gateway
 
-The move keeps the same commit live and changes only where it runs. The orchestrator owns releases, windows and host changes, so it runs these steps:
-
-1. **Turn automatic releases off** with `gateway:auto-release:disable`, so no release starts during the move.
-2. **Converge the `gateway` role with the container setup**: Incus, a ZFS pool for the Gateway's containers, the bridge `orbitgw0`, the NAT rule and the runtime folder. No traffic changes. A Node without a spare disk gets a pool on a file; the open points name this.
-3. **Release the commit that holds the container workflows, through today's flow.** The release that adds this design's workflows still builds a worktree and reloads PHP-FPM. Its Swamp load installs the new workflows, unused. The Gateway Node's recorded site state stays `host`, so a converge keeps publishing `php_fastcgi`.
-4. **Run `gateway:release:move`** (a new one-time run, `operation-gateway-release-move`) at the same commit. It refuses while a release runs. It creates the preparation container from the image, builds the current commit there, clones the finished build as hot, mounts `ORBIT_HOME`, runs no migration (the schema is current), checks readiness on the bridge address, and switches: it sets the site state to `container`, and the Caddy site goes from `php_fastcgi` on the pool's socket to the upstream file, in one reload. PHP-FPM finishes its requests in flight. It hands over in the order of [part 3](#3-long-running-parts-and-their-switch): the container's listener starts and the host's Horizon drains before the switch. After the switch and its verify, Horizon starts in the container, and the scheduler, hibernator timer and agent view move from the host to the container. The host units stay installed and disabled.
-5. **Check** `/up`, `gateway:status` and one wake of a sleeping clone through the public name.
-6. **Rollback during the move** is the inverse: set the site state back to `host`, restore the Caddy site with `php_fastcgi`, reload, and enable the host units again. The host release stays until step 8.
-7. **Release one commit through the container flow**, with automatic releases still off. It updates the same preparation container and takes a fresh clone. The moved release becomes old only after the clone serves successfully.
-8. **Remove the host path** after that release is verified: the worktree releases, the PHP-FPM pool and its unit, the host units, `web/releases`, and the old-paths entries. Turn automatic releases on.
-
-No step needs a maintenance window. The orchestrator owns the host change of step 2 and picks its time. It picks a quiet time for step 4 too, because the drain of the host's Horizon runs as long as its longest job. The nested Gateways of task copies and proofs bootstrap the same way: `workflow-gateway-bootstrap` creates the preparation container and clones its first release, so there is one path. Whether a nested Gateway's machine allows a container inside it is an open point.
+The first move keeps the same commit live. Deploy the tooling through the host release flow first. The operator then prepares the container runtime and moves the verified release with its published web archive. The host remains the recovery target until the next verified container release establishes a rollback container. See [Move the Gateway to release containers](/reference/gateway-recovery#move-the-gateway-to-release-containers) for the sequence and recovery commands.
 
 ### 7. Cost per request, in one table
 
@@ -295,7 +284,7 @@ Each slice is one pull request. Slices 3 to 7 depend on ADR 0263's build subtask
    - Proof: a load loop through a release with one 60-second request across the switch: no failed request, one scheduler tick per minute, no lost wake result.
 6. **Rollback.** `gateway:release:rollback` to old with its forced Swamp load and pause, and the host's `bin/gateway-rollback`.
    - Proof: rollback and forward again on the nested Gateway, under the load loop.
-7. **Move and remove.** `gateway:release:move`, the bootstrap through a new preparation container, then the removal of the host path: the `php*-fpm.service` match in `SshControlGroup`, `php8.5-fpm` in `NodeRoleServiceCatalog` (it becomes `incus`), PHP in the `gateway` role, and the host units. The [Update and recover a Gateway](/reference/gateway-recovery) page absorbs this ADR.
+7. **Move and remove.** `bin/gateway-container-move`, the bootstrap through a new preparation container, then the removal of the host path: the `php*-fpm.service` match in `SshControlGroup`, `php8.5-fpm` in `NodeRoleServiceCatalog` (it becomes `incus`), PHP in the `gateway` role, and the host units. The [Update and recover a Gateway](/reference/gateway-recovery) page absorbs this ADR.
    - Proof: the move on the nested Gateway, then on the live Gateway by the orchestrator.
 
 ### 9. Open points

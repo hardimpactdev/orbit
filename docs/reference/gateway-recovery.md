@@ -96,7 +96,25 @@ Adjust the paths when `ORBIT_HOME` or `DB_DATABASE` differs. Include an external
 
 The archive contains secrets. Do not attach it to a bug report or commit it to Git. A successful archive listing verifies readability, not restore behavior.
 
+## Move the Gateway to release containers
+
+The Gateway Node keeps Caddy, WireGuard, the SQLite database and the Gateway identity. An unprivileged container runs the application with FrankenPHP in Laravel Octane worker mode. The first move runs the same commit and uses the same database on both sides of the switch.
+
+1. On an operator machine, run `orbit gateway:auto-release:disable`. Let any active release finish. Keep working SSH and console access and a verified off-host recovery copy of Gateway state.
+2. Release the commit containing the container tooling through the existing host flow. Record the verified release Operation ID, the full serving commit, and the published web archive for that Operation. A later commit or a locally rebuilt archive is a different release input.
+3. Check the Node's free storage, swap, private bridge and access to its dependencies. Allow space for the SQLite recovery snapshot, the preparation container, live, rollback and a candidate during handover. A frozen container still occupies disk and swap. The application must reach its configured queue and cache from its own network namespace. A host-loopback address points into the container.
+4. On the Gateway Node, run `bin/gateway-container-prepare` in check mode with the deployment's storage, network and stock image settings, then apply the same settings. Keep the Gateway serving through its host Caddy site while preparation completes.
+5. From the verified host release, run `sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>`. It checks the commit and archive, builds in preparation, checks its clone, drains the host jobs and changes the Gateway route. The old host release is the recovery target for this first move.
+6. Through the normal Gateway address, check `/up`, run `orbit gateway:status`, and exercise a request that needs an authenticated peer. Check the release list and background workers. Use `sudo /home/orbit/bin/gateway-rollback --host` on the Node to restore the original host during this first-move window.
+7. With automatic releases still disabled, deploy the next verified commit through `orbit gateway:release:deploy`. Check that it serves, the previous live is the retained rollback, and both preparation and rollback are frozen. Converge the Gateway role to retire host PHP-FPM after a container rollback exists. Restore the previous automation setting after verifying the handover.
+
+Once established, each target has three containers. A release wakes preparation, installs the exact commit and web archive, and clones the sealed result. Preparation can sleep while the candidate starts. The existing container serves until the candidate passes its private check. After switching Caddy, the public check and drain must succeed before the former live is frozen for rollback. The previous rollback can then be retired.
+
+Use `orbit gateway:release:rollback` to select the retained release. Recovery wakes that container or cold starts it after a Node reboot. It keeps the current database and skips the build, web download and migration. If a switch was interrupted and the Gateway or Swamp is unavailable, use `sudo /home/orbit/bin/gateway-rollback --recover` from the Node console. For an ordinary offline rollback, pass the retained 12-digit release ID to the same helper. Verify the public Gateway address after recovery.
+
 ## Release layout
+
+The following layout describes the host deployment used before the first container move.
 
 A Gateway in the release layout runs from immutable releases instead of an in-place checkout. Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
 
