@@ -20,7 +20,8 @@ type Request = { id: string; kind: string; status: string; responseCapability?: 
 // `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends.
 type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck"; respond?: "refuse" | "stuck" | "raced";
     projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[]; launchProjection?: LaunchProjection; dropLaunchReply?: boolean;
-    launchReadFails?: boolean; servedEnvironment?: string };
+    launchReadFails?: boolean; servedEnvironment?: string; config?: unknown; bounded?: unknown;
+    history?: Record<string, unknown>; historyReads?: string[] };
 
 /** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
 function serve(state: Server) {
@@ -31,6 +32,16 @@ function serve(state: Server) {
         }
         if (url.pathname === "/api/auth/websocket-ticket") {
             return request.headers.get("authorization") === `Bearer ${token}` ? Response.json({ ticket: "ticket-1" }) : new Response("no", { status: 401 });
+        }
+        const threadPath = "/api/orchestration/threads/" + launchRequest.threadId;
+        if (url.pathname.startsWith(threadPath + "/")) {
+            assert(request.headers.get("authorization") === "Bearer " + token);
+            assertEquals(request.headers.get("x-t3-orchestration-protocol"), "2");
+            if (url.pathname === threadPath + "/bounded") return Response.json(state.bounded ?? null);
+            assertEquals([url.pathname, url.searchParams.get("view")], [threadPath + "/history", "conversation"]);
+            const cursor = url.searchParams.get("cursor")!;
+            state.historyReads?.push(cursor);
+            return state.history?.[cursor] === undefined ? new Response(null, { status: 500 }) : Response.json(state.history[cursor]);
         }
         assertEquals([url.pathname, url.searchParams.get("orchestrationProtocol"), url.searchParams.get("wsTicket")], ["/ws", "2", "ticket-1"]);
         const { socket, response } = Deno.upgradeWebSocket(request);
@@ -43,7 +54,9 @@ function serve(state: Server) {
                 return;
             }
             if (frame._tag === "Interrupt") return;
-            if (frame.tag === "orchestration.launchThread") {
+            if (frame.tag === "server.getConfig") {
+                value = state.config;
+            } else if (frame.tag === "orchestration.launchThread") {
                 state.commands.push(frame.payload);
                 state.launchProjection = acceptedProjection();
                 if (state.dropLaunchReply) {
@@ -271,9 +284,11 @@ Deno.test({ name: "interrupt never stops a new run for a stored question owned b
 const freezeLaunch = (incarnation: string) => ({ incarnation, environment_id: launchEnvironment, request: launchRequest });
 
 Deno.test({ name: "Conn launch uses its frozen first message and recovers a lost reply without resending", ignore: !available, async fn() {
-    const state = { ...waiting([], {}), dropLaunchReply: true, projects: [{ id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null }] };
+    const state = { ...waiting([], {}), dropLaunchReply: true, projects: [{ id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null }],
+        config: { providers: [], settings: { defaultModelSelection: { instanceId: "codex", model: "gpt-6.2-sol", options: { reasoningEffort: "high" } } } } };
     const inspected = await helper(state, ["inspect-launch", launchEnvironment]);
     assertEquals([inspected.code, inspected.out!.environment_id, inspected.out!.project_id, inspected.out!.error_code], [0, launchEnvironment, launchRequest.projectId, null]);
+    assertEquals(inspected.out!.model_selection, state.config.settings.defaultModelSelection);
     assert(/^[0-9a-f]{64}$/.test(String(inspected.out!.incarnation)));
     const lost = await helper(state, ["launch"], "json", freezeLaunch);
     assertEquals([lost.code, lost.out, lost.stderr, state.commands, lost.revoked],
@@ -302,4 +317,42 @@ Deno.test({ name: "Conn launch fails closed on a replaced server or mismatched f
         const rejected = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
         assertEquals([rejected.out, rejected.stderr, state.commands], [{ error_code: "conn.launch_first_message_unconfirmed" }, "", []]);
     }
+} });
+
+Deno.test({ name: "Conn launch keeps the requested model on an enabled provider and resolves the fallback for the workspace", ignore: !available, async fn() {
+    const project = { id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null };
+    const config = { providers: [
+        { instanceId: "disabled", driver: "codex", enabled: true, status: "ready", models: [{ slug: "disabled-model" }] },
+        { instanceId: "checking", driver: "codex", enabled: false, status: "checking", models: [] },
+        { instanceId: "codex", driver: "codex", enabled: true, status: "ready", models: [
+            { slug: "custom", isDefault: true, isCustom: true }, { slug: "ordinary" }, { slug: "default-model", isDefault: true },
+        ] },
+        { instanceId: "claudeAgent", driver: "claudeAgent", enabled: true, status: "ready", models: [{ slug: "claude-model" }] },
+    ], settings: { projectSettingsOverrides: { [project.id]: { providerInstances: { disabled: { enabled: false }, checking: { enabled: true } } } } } };
+    const state = { ...waiting([], {}), projects: [project], config };
+    const retained = await helper(state, ["inspect-launch", launchEnvironment, "checking"]);
+    assertEquals([retained.out!.requested_provider_available, retained.out!.model_selection, retained.revoked], [true, null, ["session-1"]]);
+    const fallback = await helper(state, ["inspect-launch", launchEnvironment, "disabled"]);
+    assertEquals([fallback.out!.requested_provider_available, fallback.out!.model_selection, state.commands],
+        [false, { instanceId: "codex", model: "default-model" }, []]);
+} });
+
+Deno.test({ name: "Conn launch finds the first message in older local history without consulting a command receipt", ignore: !available, async fn() {
+    const oldWindow = { ...acceptedProjection(), messages: [] };
+    const item = { threadId: launchRequest.threadId, type: "user_message", createdBy: "user",
+        messageId: launchRequest.initialMessage.messageId, text: launchText, startedAt: acceptedAt };
+    const historyItem = { sourceThreadId: launchRequest.threadId, visibility: "local", item };
+    const state = { ...waiting([], {}), launchProjection: oldWindow,
+        bounded: { projection: oldWindow, hasMoreHistory: true, historyCursor: "later" },
+        history: { later: { items: [], hasMoreHistory: true, nextCursor: "older" },
+            older: { items: [historyItem], hasMoreHistory: false, nextCursor: null } }, historyReads: [] as string[] };
+    const found = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([found.out, found.stderr, found.revoked, state.historyReads, state.commands],
+        [{ accepted_at: acceptedAt, error_code: null }, "", ["session-1"], ["later", "older"], []]);
+
+    state.history.older.items[0] = { ...historyItem, visibility: "inherited" };
+    const inherited = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([inherited.out, state.commands], [{ error_code: "conn.launch_first_message_unconfirmed" }, []]);
+    const broken = await helper({ ...state, history: {} }, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([broken.out, broken.stderr, state.commands], [{ error_code: "conn.launch_first_message_unconfirmed" }, "", []]);
 } });
