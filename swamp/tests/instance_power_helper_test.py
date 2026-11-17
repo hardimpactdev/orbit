@@ -382,7 +382,12 @@ class SwapTest(Fixture):
     def test_the_configured_swap_is_the_bytes_of_a_size_and_0_otherwise(self):
         for value, expected in (("12GiB", str(12 << 30)), ("5GiB", str(5 << 30)), ("2GB", "2000000000"), ("4096", "4096"),
                                 ("512MiB", str(512 << 20)), ("true", "0"), ("false", "0"), ("", "0"), (None, "0"),
-                                ("50%", "0"), ("12XiB", "0"), ("1", "0"), ("12 GiB", "0")):
+                                ("50%", "0"), ("12XiB", "0"), ("1", "0"), ("12 GiB", "0"), ("4096 bytes", "4096"),
+                                ("4096B", "4096"), ("4096bytes", "0"), ("4096 B", "0"), ("1kB", "1000"), ("3EiB", str(3 << 60)),
+                                ("7EiB", str(7 << 60)), ("8EiB", "0"), ("9EiB", "0"), (str((1 << 63) - 1), str((1 << 63) - 1)),
+                                (str(1 << 63), "0"), ("9" * 4301, "0"), ("0" * 30 + "5GiB", str(5 << 30)), ("0" * 5000 + "5", "5"), ("TRUE", "0"),
+                                ("Off", "0"), ("yes", "0"), ("-1GiB", "0"), ("+1GiB", "0"), ("1gib", "0"), ("１GiB", "0"),
+                                (" 1GiB", "0"), ("1GiB ", "0"), (12, "0")):
             self.assertEqual(power.configured_swap(value), expected, value)
 
     def test_the_incus_read_takes_the_swap_from_the_expanded_config(self):

@@ -438,7 +438,9 @@
   loop_control: { label: "{{ item.comment }}" }
 
 # A nested-fleet intent sets keys that create and clone write; a container made before a key keeps its config, so the start writes
-# it here, before the start guard below demands it. These are the keys a start converges; Incus applies each without a restart.
+# it here, before the start guard below demands it. These are the keys a start converges: each is owned, so a start writes the
+# intent's value over an absent or a different one, and the guard then refuses any other key or device that differs. Incus applies
+# each without a restart.
 # `boot.autostart: false` only takes a start away: Incus restores a container that was running when the host boots, without the
 # guard. `limits.memory.swap` gives the container real swap, which its nested fleet sleeps into: Incus writes memory.swap.max 0 for
 # a container with `limits.memory` unless this key holds a byte size.

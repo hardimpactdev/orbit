@@ -604,18 +604,27 @@ def thaw(host, relative, seconds):
         os.close(events)
 
 
-BYTE_UNITS = {"": 1, "B": 1, "kB": 10**3, "MB": 10**6, "GB": 10**9, "TB": 10**12, "PB": 10**15, "EB": 10**18,
+# Incus v7.0.2 (internal/server/instance/drivers/driver_lxc.go) writes memory.swap.max 0 for a container with `limits.memory`
+# when `limits.memory.swap` is empty or a boolean (util.IsTrue / util.IsFalse, any case), else the bytes of
+# units.ParseByteSizeString (shared/units/units.go): ASCII digits, then exactly one of these suffixes, as a signed 64-bit integer.
+SWAP_BOOLEANS = ("", "true", "1", "yes", "on", "false", "0", "no", "off")
+BYTE_UNITS = {"": 1, "B": 1, " bytes": 1, "kB": 10**3, "MB": 10**6, "GB": 10**9, "TB": 10**12, "PB": 10**15, "EB": 10**18,
               "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40, "PiB": 1 << 50, "EiB": 1 << 60}
+INT64_MAX = (1 << 63) - 1
 
 
 def configured_swap(value):
-    """The memory.swap.max that Incus writes for a container's `limits.memory.swap`: its bytes when it is a byte size, else `0`.
-    Incus writes 0 for any container with `limits.memory` unless this key holds a size; `true`, `false` and empty give 0 too."""
-    match = re.fullmatch(r"(\d+)([A-Za-z]*)", str(value or ""))
-    # Incus reads `1` and `0` as booleans before sizes.
-    if match is None or match.group(2) not in BYTE_UNITS or value in ("0", "1"):
+    """The memory.swap.max that Incus writes for a container's `limits.memory.swap`, as the rule above reads it: the bytes of a
+    size, else `0`. A value that Incus would refuse, or one past a signed 64-bit integer, gives `0` and never raises."""
+    if not isinstance(value, str) or value.lower() in SWAP_BOOLEANS:
         return "0"
-    return str(int(match.group(1)) * BYTE_UNITS[match.group(2)])
+    match = re.fullmatch(r"([0-9]+)(.*)", value, re.DOTALL)
+    # 19 digits hold every signed 64-bit integer; a longer run is past it, and is never handed to int().
+    digits = match.group(1).lstrip("0") if match else ""
+    if match is None or match.group(2) not in BYTE_UNITS or len(digits) > 19:
+        return "0"
+    size = int(digits or "0") * BYTE_UNITS[match.group(2)]
+    return str(size) if size <= INT64_MAX else "0"
 
 
 def open_swap(host, instance_id, relative, boot_id):
