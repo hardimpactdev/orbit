@@ -323,7 +323,7 @@ A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write ch
 
 The publish of a copy also checks the copy itself, before any token exists. A workspace phase, `scan`, runs `swamp/ansible/task_copy_scan.py` in the container, where the secrets are. Root reads the secret values and never follows a link to a source. Git runs as `agent` and only lists and reads objects. The program searches them itself, so a value reaches no other process. It checks each object's hash, so a changed object file reads as an error.
 
-The program prints one line of evidence. It names paths, line numbers and secret names, never a value. So no value reaches an Operation result, a log line, an error or a vault execution copy. In a nested-fleet copy `agent` has root through `sudo`, so there these rules guard the check, not the secrets: the agent can read them anyway.
+The program prints one line of evidence. It names paths, line numbers and secret names, never a value. So no value reaches an Operation result, a log line, an error or a vault execution copy. In every copy `agent` has root through `sudo` ([ADR 0268](/decisions/0268-one-owner-for-the-workspace#amendment-sudo-for-agent-in-every-container)), so these rules guard the check, not the secrets: the agent can read them anyway. A container holds only dev-scoped secrets, never production-grade ones.
 
 | Part | Rule |
 | --- | --- |
