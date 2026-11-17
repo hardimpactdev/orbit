@@ -214,11 +214,11 @@ it('preserves the run directory and reports when permission prevents stopping de
 import itertools,json,pathlib,sys
 from unittest.mock import patch
 sys.path.insert(0,sys.argv[1])
-import test_runtime
+import pest_runtime
 # Permission failure keeps the group alive through both cleanup deadlines.
 # Advance their clock deterministically; still run the real child and cleanup.
-with patch.object(test_runtime.os,'killpg',side_effect=PermissionError), patch.object(test_runtime.time,'monotonic',side_effect=itertools.count().__next__):
-    sys.exit(test_runtime.main([sys.executable,'-c', 'import json,os; print(json.dumps(os.environ["TMPDIR"]))']))
+with patch.object(pest_runtime.os,'killpg',side_effect=PermissionError), patch.object(pest_runtime.time,'monotonic',side_effect=itertools.count().__next__):
+    sys.exit(pest_runtime.main([sys.executable,'-c', 'import json,os; print(json.dumps(os.environ["TMPDIR"]))']))
 PYTHON;
     $process = new Process(['python3', '-c', $script, dirname(__DIR__, 4).'/tools'], timeout: 10);
     $process->mustRun();
@@ -297,9 +297,9 @@ it('bounds the interrupt grace period for a command that never finishes cleanup'
 import sys
 from unittest.mock import patch
 sys.path.insert(0,sys.argv[1])
-import test_runtime
-with patch.object(test_runtime,'INTERRUPT_GRACE_SECONDS',0.2):
-    sys.exit(test_runtime.main([sys.executable,'-c','import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.environ["TMPDIR"],flush=True); time.sleep(60)']))
+import pest_runtime
+with patch.object(pest_runtime,'INTERRUPT_GRACE_SECONDS',0.2):
+    sys.exit(pest_runtime.main([sys.executable,'-c','import os,signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); print(os.environ["TMPDIR"],flush=True); time.sleep(60)']))
 PYTHON;
     $process = new Process(['python3', '-c', $script, dirname(__DIR__, 4).'/tools'], timeout: 10);
     $process->start();
@@ -317,14 +317,14 @@ it('forwards an interrupt received before the command spawn returns', function (
 import os,signal,sys
 from unittest.mock import patch
 sys.path.insert(0,sys.argv[1])
-import test_runtime
-spawn = test_runtime.subprocess.Popen
+import pest_runtime
+spawn = pest_runtime.subprocess.Popen
 def interrupted_spawn(*args,**kwargs):
     process = spawn(*args,**kwargs)
     os.kill(os.getpid(),signal.SIGTERM)
     return process
-with patch.object(test_runtime.subprocess,'Popen',side_effect=interrupted_spawn):
-    sys.exit(test_runtime.main([sys.executable,'-c','import time; time.sleep(1.4); print("ran to the end")']))
+with patch.object(pest_runtime.subprocess,'Popen',side_effect=interrupted_spawn):
+    sys.exit(pest_runtime.main([sys.executable,'-c','import time; time.sleep(1.4); print("ran to the end")']))
 PYTHON;
     $process = new Process(['python3', '-c', $script, dirname(__DIR__, 4).'/tools'], timeout: 10);
     $process->run();

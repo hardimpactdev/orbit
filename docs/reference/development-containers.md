@@ -13,7 +13,7 @@ covers:
 
 # Instance containers
 
-**Partly built, limited to the [build list](#the-build-list).** This page describes the delivered parts and the remaining target of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#build-order). The [Container runtime plan](/solutions/development-container-runtime) tracks the remaining work. Existing checkout Instances stay until migrated. Task groups still run on [task VMs](/reference/compute-drivers#task-vms).
+**Partly built; development host preparation and first-default creation still use the [build list](#the-build-list).** Task groups run only in [task copies](/reference/tasks#task-copy), and proofs run in copies with a nested fleet. Every new Instance should be a container, but universal Instance admission is not delivered: Nodes outside the build list can still create checkout defaults, and registration and production cloning still admit host checkouts. Existing checkout Instances need migration. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) owns the remaining transition and acceptance.
 
 | Part | Delivered state |
 | --- | --- |
@@ -21,18 +21,19 @@ covers:
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
 | [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start, and a copy's [reset](#reset). Planned: rebuild |
 | [Sleep and wake](#sleep-and-wake) | Built: the commands, the wake on a Route visit, and the idle sleep, which is off until the operator turns it on. Planned: the wake from Conn and tasks |
-| Task containers, nested-fleet parity and production containers | Planned |
+| Task copies and command proofs on their nested fleet | Built; merge-base proof replay is [not ported](/reference/old-paths#the-task-vm-proof-run). No VM runtime remains for a parity comparison |
+| Production containers | [Planned](/reference/production-containers) |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
 
-Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
+An Instance on the container path runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
-Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys each new commit of the default branch [by itself](/reference/deployments#automatic-development-defaults), so clones start at the current default branch with its dependencies installed. A nested-fleet default deploys after each release instead. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
+Every non-default Instance on this path is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys each new commit of the default branch [by itself](/reference/deployments#automatic-development-defaults), so clones start at the current default branch with its dependencies installed. A nested-fleet default deploys after each release instead. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
 
 A task runs in such a container too. There is no separate task container: the same container has two [drivers](#drivers), a user in Conn and Swamp for a task. A Project may turn on a [nested fleet](#nested-fleet), which Orbit needs for its command proofs.
 
 ## Charts
 
-The container flows keep the kinds of today's Instance flows. Their charts sit one folder below the command charts, because each kind keeps its checkout or task VM chart until its switch.
+The container flows keep the existing Instance kinds. Their charts sit one folder below the command charts. Checkout admission still exists outside the container path; task VM admission does not.
 
 | Flow | Chart |
 | --- | --- |
@@ -49,7 +50,7 @@ The container flows keep the kinds of today's Instance flows. Their charts sit o
 
 ## Nodes
 
-Every `app-dev` Node runs its Instances in containers. There is no setting to opt in. A task VM keeps its checkout workspace until step 9 of ADR 0250 removes task VMs.
+Container host preparation is enabled for `app-dev` Nodes on the [build list](#the-build-list). The container-only switch for every Node remains unfinished. Task VMs are removed, not waiting for that switch.
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
@@ -119,7 +120,7 @@ Refresh errors stay in the journal. A writer that acquired the lock also records
 
 The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. It reconciles the attached-target union and moves existing NICs to the proxy ACL. Running containers keep working, with no restart.
 
-A task VM host on the build list, such as Beast, gets the container branch beside its task side. The two sides share nothing they change: the Instance side has its own project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules, and touches no task VM, task container or CI place. The task side keeps the ZFS ARC: on a task VM host the Instance side writes no cap. Only a task VM's own Node gets no branch.
+A Node on the build list gets the Instance project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules. Its CI project and places stay separate. The Instance host setup applies the Node's ZFS ARC budget.
 
 Before it changes anything, the converge refuses a bridge range that another interface of the Node holds, with `instance.host_unavailable`. The Gateway only knows the bridges it records, not one an operator made, such as a CI bridge.
 
@@ -133,7 +134,7 @@ T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. 
 
 ### The build list
 
-Until every `app-dev` Node switches, only the Nodes on the build list run container Instances. The list is the Gateway setting `instances.container_nodes`, a JSON list of Node ids in `ORBIT_INSTANCES_CONTAINER_NODES`, such as `[12]`. It is empty by default. A malformed list fails with `instance.container_nodes_invalid` (500), so a typo puts no Node on it. The list exists for the build only; the switch removes it ([plan](/solutions/development-container-runtime#rules-for-every-pr)). On the nested Gateway of an Instance fleet, which has the fleet marker, the fleet's own `app-dev` Node is on the list too: the [Instance host in the fleet](#instance-host-in-the-fleet).
+The Gateway setting `instances.container_nodes` controls container host preparation and first-default creation: `ORBIT_INSTANCES_CONTAINER_NODES` is a JSON list of Node ids, such as `[12]`, empty by default. A malformed list fails with `instance.container_nodes_invalid` (500). A clone of an existing container default follows that default's runtime and placement rather than this first-default gate. Removing the build list belongs to the [universal container switch](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance), not a delivered behavior. On the nested Gateway of an Instance fleet, which has the fleet marker, the fleet's own `app-dev` Node is included too: the [Instance host in the fleet](#instance-host-in-the-fleet).
 
 The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 10 ([Production Instances](#production-instances)).
 
@@ -354,9 +355,11 @@ A Project chooses the server that runs in its containers, in its [`container_ser
 
 When Orbit reserves the runtime of a container with a server, a clone or a [migrated checkout](#migrate-a-checkout-instance), the runtime records the Project's choice as its own `container_server`. The default's runtime records none: the default runs no server. Every later step reads the runtime's record, never the Project's setting. So a changed setting reaches only containers that Orbit reserves after the change. An existing container keeps its server: the two servers store threads and pairings differently, and nothing converts them.
 
-The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit.
+The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit. The Node's converge keeps it and `10-orbit-boot.conf` current in every existing container: see [T3's unit drop-ins](#t3s-unit-drop-ins).
 
-For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. [agent-browser](#agent-browser) opens the same executable. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
+For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/current/agent/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`. This is the unpacked executable in the current agent folder version, beside its support files, rather than its `bin` link. [agent-browser](#agent-browser) opens the same executable. It also sets `T3CODE_SERVER_BROWSER_SANDBOX=0` because the container has no user namespaces. T3 gets neither override.
+
+The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
 The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
 
@@ -548,6 +551,25 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Frozen.** A frozen container gets the files through the file API. `incus exec` refuses it, so it gets no exec.
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
+
+#### T3's unit drop-ins
+
+A container with a T3, a clone or a migrated checkout, holds two root-owned drop-ins of `t3.service`: `10-orbit-boot.conf` and `20-orbit-server.conf` in `/etc/systemd/system/t3.service.d/`. `InstanceContainer::t3DropIns` renders both. The create writes them before the first start, and the Gateway hands the same texts to the Node converge as `t3_files`, one entry for each container with a T3. A default has none.
+
+When a drop-in in a container holds other text, the converge rewrites it through the file API, as root with mode 0644. It does this in its own step, before the shared folders, so a change such as a new Conn environment line reaches existing containers:
+
+| State | What the converge does |
+| --- | --- |
+| Running | Writes the file and runs `systemctl daemon-reload`. The agent folder's step then restarts T3 once, after the reload. |
+| Stopped | Writes the file only. systemd reads it at the next boot |
+| Frozen | Writes the file only: `incus exec` refuses a frozen container. The first converge that finds it running sees that systemd has not reloaded the unit (`NeedDaemonReload`), so it reloads and restarts T3 then |
+| Same text | No rewrite. A retained restart or `NeedDaemonReload` still gets its catch-up; otherwise a second converge writes nothing and restarts nothing |
+
+The restart is `systemctl try-restart t3.service`. When the agent folder changed in the same converge, its restart covers the container, so T3 does not restart twice. The Node lists each reloaded container in `/var/lib/orbit/instance-t3-restart.json` until its T3 restarted. So a converge that fails between the reload and the restart leaves the list.
+
+Each successful restart removes only its own entry, even if another restart fails. A frozen or stopped container keeps its entry until a converge finds it running and successfully restarts T3; a deleted container leaves the list. A stopped container may already have read the new drop-in at boot, but the entry still requires that explicit restart rather than inferring completion from its power state.
+
+The converge writes only these root-owned drop-ins. T3's settings, `.claude.json` and Codex's `config.toml` belong to `agent`: T3 and the agents change them, and root never writes through `agent`'s paths. `/etc/orbit/instance` keeps the text of its create.
 
 ### The machine name
 
@@ -947,7 +969,7 @@ A clone holds no app of its default, so its names are its [own site](#the-own-si
 
 ## Egress and DNS
 
-This part is built. A container has full outbound access to the public internet, and all of it goes through one forward proxy on its Node. The proxy is the one place where a rule can narrow that access later, with no change to the containers. Step 2c of the [ADR 0250 rollout](/solutions/agent-runtime-and-manual-mode) decided it. The `app-dev` converge of a [prepared Node](#prepare-a-node) installs it, in `tasks/instance-egress.yml`.
+This part is built. A container has full outbound access to the public internet, and all of it goes through one forward proxy on its Node. The proxy is the one place where a rule can narrow that access later, with no change to the containers. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#nested-fleet) records the decision. The `app-dev` converge of a [prepared Node](#prepare-a-node) installs it, in `tasks/instance-egress.yml`.
 
 ### The proxy
 
@@ -1916,7 +1938,7 @@ What is built:
 - Conn creates the clone through the Conn layer, on the default's Node.
 - Conn keeps each thread start on the device until its first message is sent. A reload resumes it.
 - Conn pairs once: it follows the pairing's Operation to the end.
-- Conn shows a server whose container is stopped as asleep. It does not wake it yet: the wake is PR 13 of the [build plan](/solutions/development-container-runtime).
+- Conn shows a server whose container is stopped as asleep. It does not wake it yet; this remains in [ADR 0250's acceptance](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance).
 - The desktop app starts these threads. The phone does not yet.
 
 The agents use their own subagents only. MCP servers come from the project's own files: `.mcp.json` for Claude Code and the project's Codex configuration.
@@ -1943,7 +1965,7 @@ A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a
 
 ## Swamp drives T3
 
-Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver, which replaces the [`pi` driver](/reference/tasks#drivers) for tasks in Instance containers. The `pi` driver stays for task VMs until they go.
+Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver. The [`pi` driver](/reference/tasks#drivers) and task VMs are removed.
 
 ### Reach and authentication
 
@@ -1965,13 +1987,14 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 | Purpose | Command | What Orbit sets |
 | --- | --- | --- |
 | Create a new thread | `node - T3 create TITLE INSTANCE MODEL OPTIONS`, with `t3_copy_rpc.mjs` on stdin | Through T3's own RPC: the title `Orbit task GROUP thread THREAD`, the provider instance of the effort, the [turn model](#turn-model-and-effort) and its model options, in full access, with no message. Bounded at 60 seconds |
+| Resolve stored answered requests | `node - T3 answered T3THREAD REQUEST...`, with `t3_copy_rpc.mjs` on stdin | Before reviewer checkout or send: cancel only the stored pending questions, then confirm resolution in one RPC session. Bounded at 60 seconds |
 | Run a turn and wait for its run | `t3 thread send --wait --json T3THREAD -` | On the created or the continued thread: the composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance and options, so its model and effort. |
 | Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id. Bounded at 60 seconds |
 | Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
 | Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch, its tip, the detach mark at it, then the candidate, detached. Each bounded at 20 seconds |
 | Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a cut one: the reviewer's changes go and the task branch is back at its earlier tip. A verified restore clears the detach mark |
 | Read the question of a run that asks | `node - T3 read T3THREAD`, with `t3_copy_rpc.mjs` on stdin | When the start exits 2. Prints the open runs, the pending requests with their questions, and whether Orbit may stop on them. Bounded at 60 seconds |
-| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After the question's evidence is written, only while the run waits for exactly the stored requests. Waits for its end within a 42-second deadline, inside a 60-second bound |
+| Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After storing the questions, only for those exact requests whose nodes belong to this run. Waits for its end within 42 seconds, inside a 60-second bound |
 | Stop a thread's active run | `node - T3 stop T3THREAD`, with `t3_copy_rpc.mjs` on stdin | After a wait cut by the bound, and before the launch for an earlier turn that T3 shows active. Same interrupt and wait; bounded at 60 seconds |
 
 The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input` once [the question ends the turn](#a-question-ends-the-turn), and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`; the phase stops its run, and the turn is over once that stop ended it. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
@@ -1984,24 +2007,28 @@ A reviewer turn's composed prompt names the checked commit and ends with two fix
 
 ### A question ends the turn
 
-Stock T3's CLI cannot answer a question or stop a run. `t3 thread send` to a run that waits queues a second run behind it, and the answer never reaches the agent. Stock T3's server can do both through its own WebSocket RPC, which T3's web client uses:
+Stock T3's CLI cannot resolve a pending question request or stop a run. Sending a new message with `t3 thread send` does not resolve that request. Stock T3's server exposes both operations through its own WebSocket RPC, which T3's web client uses:
 
 - `POST /api/auth/websocket-ticket` with a bearer session gives a ticket.
 - `GET /ws?orchestrationProtocol=2&wsTicket=TICKET` opens the RPC.
 - `orchestration.getThreadProjection {threadId}` gives the thread's runs, its pending requests and each `user_input_request` with its questions.
-- `orchestration.dispatchCommand` with `run.interrupt {commandId, threadId, runId, reason}` stops a run; `runtime-request.respond` with `answers` would answer one.
+- `orchestration.dispatchCommand` with `run.interrupt {commandId, threadId, runId, reason}` stops a run; `runtime-request.respond {commandId, threadId, requestId, decision: "cancel"}` resolves a question request without sending a reply message.
 
 `t3 auth session issue` grants the session. Its MCP endpoint `/mcp` refuses that session, so the MCP tools are not a path.
 
 So the phase ends a turn at its question. When `--wait` exits 2, `t3_copy_rpc.mjs read` stores every pending request with its questions: the id, header, text, options and flags, as the agent asked them. A free-text question without options is stored too. Only after that evidence is written does `t3_copy_rpc.mjs interrupt` stop the run.
 
-The stop has two guards. The read must find questions alone: no approval, no request without a question, and no more text than the result can hold. And the run must still wait for exactly the stored requests. A run that someone answered meanwhile, or that now asks something else, goes on, so no new question is lost.
+The read must find questions alone: no approval, no request without a question, and no more text than the result can hold. The run must still wait for exactly the stored requests, and every request's node must belong to the run being stopped. A run that someone answered meanwhile, that now asks something else, or whose pending question belongs to an earlier run goes on.
 
 The helper runs on the runtime's Node.js, `/opt/orbit-runtime/current/bin/node`, from stdin. It takes a session of one minute, read-only for the read, holds it only in its memory and revokes it before it exits. Its `stop` finds the thread's active run, sends the same `run.interrupt` as `interrupt` and waits for the run's end the same way. It answers `{stopped, run, state}`. A thread with no active run answers `stopped: false` and no run. No session reaches an argument, a file, a log or the run folder. T3 stays stock.
 
-The turn is then `asking_for_input` and over, and its Operation succeeds. Its result and its thread keep the questions. The role's next turn quotes them before the caller's prompt and continues the thread with `t3 thread send`, as a normal follow-up. A question the helper could not read is `tasks.copy_question_unread`, and a run it could not stop is `tasks.copy_question_unstopped`. Neither is over, so the group holds.
+The turn is then `asking_for_input` and over, and its Operation succeeds. Its result and its thread keep the questions. A question the helper could not read is `tasks.copy_question_unread`, and a run it could not stop is `tasks.copy_question_unstopped`. Neither is over, so the group holds.
 
-This was tried on a throwaway T3 0.1.7 server on 2026-11-14. A run that asked two questions was read, then stopped: its run became `interrupted` and its request `cancelled`. A `t3 thread send` with the answer then ran at once as the thread's next run. `runtime-request.respond` with `answers` let the same run continue instead; Orbit does not use it, so a turn's end stays the run's end.
+The Gateway passes the stored question request IDs in the continued turn's `answered` list. Before any reviewer checkout or send, `t3_copy_rpc.mjs answered` cancels exactly those pending user-input requests and reads them back in one RPC session. Requests already resolved, cancelled or absent need no action. An older admitted intent without `answered` treats it as an empty list.
+
+If a stored request remains pending, or resolution cannot be confirmed, the turn fails before launch with `tasks.copy_question_unresolved` and keeps the questions for retry. Once resolution is confirmed, the role's next turn quotes the questions with “You asked in your last turn” and sends the caller's answer as a new run with `t3 thread send`.
+
+In T3 0.1.7, interrupting a Claude question with a `live` response capability cancels its request. A Codex question with a `message` response capability can remain pending after interruption. The CLI checks the thread's pending requests after a 15-second wait slice, so a stale request can make a continued run return `waiting` while it is doing work. Resolving the stored requests before sending the answer prevents that stale question from ending the new turn.
 
 ### Turn model and effort
 
@@ -2119,7 +2146,7 @@ When the turn ends, Swamp reads the thread's activity since the turn began with 
 
 Swamp keeps its own Git evidence before and after a turn, with a temporary index in the workspace. It does not use T3's diff calls; Conn shows them to a user.
 
-The plan's [decisions](/solutions/development-container-runtime#decided) record the choices behind this contract.
+[ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) records the choices behind this contract; [remaining acceptance](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) distinguishes unfinished work from delivered behavior.
 
 Migration checks executable availability before downtime and requires moved running Processes to settle before cutover. The [`instance:migrate` contract](/cli/instance/migrate) defines the runtime command mapping, readiness window and recovery.
 
@@ -2489,7 +2516,7 @@ A refresh with no change keeps the host and adds no time. The host is built only
 
 The converge workflow accepts only 900 to 1,800 for `roles_seconds` and refuses any other value before the playbook. The refresh waits up to 1,800 s for that converge while the record holds no `host` yet. That converge runs last, after the other Nodes' converges have ended: the hub's reservation refuses a converge with roles beside any other converge. Every other converge keeps 900 s for each phase and for the refresh's wait.
 
-**Memory.** In an Instance fleet the nested containers get 4 GiB (`nested-gateway`), 5 GiB (`nested-app-dev`) and 2 GiB (`nested-app-prod`), 11 GiB of the Instance container's 12 GiB. These are owned fleet rules (`limits.memory`), so the next refresh writes them with the fleet stopped. On 2454, `nested-app-prod` used 124 MiB and `nested-gateway` 1.64 GiB. `nested-app-dev` with its Incus and no Instance used 178 MiB. A task VM's fleet keeps 4, 3 and 3 GiB.
+**Memory.** In an Instance fleet the nested containers get 4 GiB (`nested-gateway`), 5 GiB (`nested-app-dev`) and 2 GiB (`nested-app-prod`), 11 GiB of the Instance container's 12 GiB. These are owned fleet rules (`limits.memory`), so the next refresh writes them with the fleet stopped. On 2454, `nested-app-prod` used 124 MiB and `nested-gateway` 1.64 GiB. `nested-app-dev` with its Incus and no Instance used 178 MiB.
 
 **The fast wake stays off.** The [power helper](/reference/prepared-restore#the-power-helper) reads `/etc/orbit/instance-fleet-node` and records no plan, with `placement_unproven`, for every Instance on that Node, as for a nested-fleet Instance ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)). Sleep and wake use the normal path.
 
@@ -2954,7 +2981,7 @@ After a restore, the run starts the restored fleet and waits for readiness. If t
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
 
-It replaces the release trigger and the daily run of the task VM refresh for the nested-fleet path; that refresh and its kind `task_vm.image_refresh` are removed; [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
+It replaces the removed task VM refresh and its kind `task_vm.image_refresh`. [Old paths](/reference/old-paths) tracks the remaining fleet residue, not another refresh runtime. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
 
 What stops during a refresh:
 
@@ -3231,7 +3258,7 @@ The fleet step never reads, prints or copies the Club key file. Without the file
 
 ## Git in and out
 
-A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository as a Git bundle.
+A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node: it fetches with a minted read token and pushes the branch into the container's repository as a Git bundle.
 
 The bundle holds only what the workspace lacks: its prerequisite is the newest commit the branch shares with the workspace's HEAD, or the tip's parent when the workspace already holds the tip. A workspace whose HEAD the mirror does not hold, or that has none, gets the whole branch. On the Orbit Project the whole branch was 89 MB and took 4 s to bundle; a release's bundle is a few kilobytes. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
 
@@ -3242,7 +3269,7 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 - The `app-prod` role installs the container setup and the runtime folder, not PHP-FPM. It installs no agent folder.
 - A production container has only the user `orbit`: no T3, no agent and no model route.
 - A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov)).
-- FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
+- FrankenPHP serves it once it has proved itself in development, by [ADR 0263's production gate](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#production-gate).
 - Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 - Planned ([ADR 0265](/decisions/0265-sleep-idle-production-containers)): an idle live sleeps and wakes fully ready by the rule of [Sleep and wake](#sleep-and-wake). [Production containers](/reference/production-containers#sleep-and-wake) has the details.
 - Existing production checkouts are migrated, as development checkouts are.

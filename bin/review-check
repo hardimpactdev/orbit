@@ -26,7 +26,7 @@ ProcessBudget, lane_count, lane_weight = (_budget[name] for name in ("ProcessBud
 # The same rule as CI decides when a change needs the contract and Swamp checks.
 ci_select = runpy.run_path(str(Path(__file__).resolve().parent / "ci-build-plan"))["select"]
 
-PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
+PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'check'),)
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_BUILD_OUTPUTS = ('bash', '-c', 'test -s dist/index.html && test -s dist/version.json')
@@ -34,7 +34,7 @@ WEB_TYPES = ('bash', '-c', 'generated=$(mktemp) && trap \'rm -f "$generated"\' E
 WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_BUILD_OUTPUTS, WEB_TYPES)
 # The checks of CI's Generated contracts job. The generators write ignored build outputs; they fail when the sources
 # disagree with the API contract, and the recorded fixtures are then checked against the fresh OpenAPI document.
-CONTRACT_COMMANDS = (('bin/check-operation-kinds',), ('bin/docs-openapi',), ('bin/mcp-tools',),
+CONTRACT_COMMANDS = (('bin/check-operation-kinds',), ('bin/build-api',),
                      ('bin/api-fixtures', '--check'))
 RUST_FORMAT = ('cargo', 'fmt', '--all', '--', '--check')
 # CI's Swamp shape gate and workflow validation are one script, bin/swamp-shape-gate. Validation needs a Swamp account
@@ -229,6 +229,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--shard', type=shard, default=(1, 1))
     parser.add_argument('--base')
+    parser.add_argument('--prepared-api', action='store_true',
+                        help='root composer check already ran bin/build-api; keep fixture validation')
     args = parser.parse_args(argv)
     shard_index, shard_count = args.shard
     root = Path(__file__).resolve().parent.parent
@@ -284,6 +286,8 @@ def main(argv=None):
 
     def run_entry(lane, order, project, commands):
         for position, command in enumerate(commands):
+            if args.prepared_api and project == 'repository' and command == ('bin/build-api',):
+                continue
             lane_processes = budget.acquire(lane)
             log = directory / (project.replace('/', '-') + '-' + command_log_name(command) + '.log')
             started = time.monotonic()

@@ -34,6 +34,10 @@ cases:
     path: main
     fails_today: true
     local: Stage a force-added ignored file before the check. The checked snapshot, the commit tree and the pinned check-operations ref all hold it; the candidate is not changed.
+  - id: scoped-isolated-base-replays
+    path: main
+    fails_today: true
+    local: Run commands in different projects, including a local-package dependency link and a nested workspace. Reuse one base extraction, but give each command private writable dependencies and only its own test overlays. Exclude unrelated vendors and node_modules; a prior replay's writes must not reach the next replay or candidate. Refuse dependency links outside the checkout. Skip extraction when no base command can run.
   - id: check-failure-and-cleanup
     path: target-or-evidence-differs
     fails_today: true

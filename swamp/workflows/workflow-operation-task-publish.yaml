@@ -1,7 +1,7 @@
 id: dd1ccba6-5339-44da-8040-616a905706a4
 name: operation-task-publish
 autoContinue: false
-description: Publish the admitted checked commit in the chart's six steps; task VM work is official SSH exec argv, a task copy's export is its workspace phase, 209 work is inline git and gh api.
+description: Publish the admitted checked commit exported from the group's task copy; worker work is inline git and gh api.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -169,6 +169,7 @@ inputs:
       - object_format
       - pull_request
       - ssh_execution
+      - workspace
       additionalProperties: false
     # Vault references only. A task copy's run also names the .env Orbit renders for the Instance (docs/reference/tasks.md#task-copy).
     execution_secrets:
@@ -207,11 +208,10 @@ jobs:
         run: timeout 5 mktemp -d /tmp/orbit-task-publish-XXXXXXXX
     writes: true
   - name: Preflight the copy
-    # A task copy: its checkout is read as agent through its Node, and the bundle comes to this worker. The task VM steps skip.
+    # The checkout is read as agent through its Node, and the bundle comes to this worker.
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: workflow
       workflowIdOrName: task-instance-workspace
@@ -219,8 +219,7 @@ jobs:
         node_id: ${{ inputs.intent.node_id }}
         group_id: ${{ inputs.intent.group_id }}
         phase: preflight
-        # Swamp resolves this at run start also for a task VM, whose intent has no workspace: the map is empty then.
-        intent: '${{ has(inputs.intent.workspace) ? {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
+        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution} }}'
     dependsOn:
     - step: Create publication scratch
       condition:
@@ -229,7 +228,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: workflow
       workflowIdOrName: task-instance-workspace
@@ -249,7 +247,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: workflow
       workflowIdOrName: task-instance-workspace
@@ -257,7 +254,7 @@ jobs:
         node_id: ${{ inputs.intent.node_id }}
         group_id: ${{ inputs.intent.group_id }}
         phase: scan
-        intent: '${{ has(inputs.intent.workspace) ? {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "start": inputs.intent.workspace.start, "nested": has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key, "proposed_body_path": ".git/orbit/proposed-pr-bodies/" + inputs.intent.branch + ".md"} : {} }}'
+        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "start": inputs.intent.workspace.start, "nested": has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key, "proposed_body_path": ".git/orbit/proposed-pr-bodies/" + inputs.intent.branch + ".md"} }}'
     dependsOn:
     - step: Export the copy
       condition:
@@ -268,7 +265,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -278,246 +274,6 @@ jobs:
         evidence: '${{ "Check the copy" in steps && steps["Check the copy"].status == "succeeded" ? steps["Check the copy"].outputs.evidence : {} }}'
     dependsOn:
     - step: Check the copy
-      condition:
-        type: succeeded
-  - name: Read the index
-    labels:
-      role: swamp
-    queueTimeout: 30
-    guard: '${{ "workspace" in inputs.intent }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-index-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - read-tree
-        - HEAD
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-publish-index-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    dependsOn:
-    - step: Create publication scratch
-      condition:
-        type: succeeded
-    writes: true
-  - name: Add workspace files
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-add-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - add
-        - --all
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-publish-add-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    dependsOn:
-    - step: Read the index
-      condition:
-        type: succeeded
-    writes: true
-  - name: Read workspace tree
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-tree-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - env
-        - ${{ "GIT_INDEX_FILE=/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - write-tree
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-publish-tree-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    dependsOn:
-    - step: Add workspace files
-      condition:
-        type: succeeded
-    writes: true
-  - name: Read workspace HEAD
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-head-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '10'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - rev-parse
-        - HEAD
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-publish-head-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    dependsOn:
-    - step: Read workspace tree
-      condition:
-        type: succeeded
-  - name: Check the workspace
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-verify-" + string(inputs.intent.node_id) }}
-      methodName: verify
-      inputs:
-        input: ${{ inputs.intent }}
-        "steps":
-          snapshot-head: ${{ steps["Read workspace HEAD"] }}
-          snapshot-tree: ${{ steps["Read workspace tree"] }}
-    dependsOn:
-    - step: Read workspace HEAD
-      condition:
-        type: succeeded
-  - name: Export the commit
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-export-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '60'
-        - git
-        - -C
-        - ${{ inputs.intent.checkout_path }}
-        - bundle
-        - create
-        - ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
-        - HEAD
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-publish-export-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    dependsOn:
-    - step: Check the workspace
-      condition:
-        type: succeeded
-    writes: true
-  - name: Copy the bundle
-    labels:
-      role: swamp
-    queueTimeout: 30
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-copy-" + string(inputs.intent.node_id) }}
-      methodName: copy
-      inputs:
-        hosts: name:target
-        src: ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
-        dst: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle" }}
-        direction: from
-      globalArgs:
-        name: ${{ "task-publish-copy-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    dependsOn:
-    - step: Export the commit
       condition:
         type: succeeded
   - name: Init the bare repo
@@ -536,13 +292,9 @@ jobs:
           GIT_CONFIG_NOSYSTEM: '1'
           ORBIT_OBJECT_FORMAT: ${{ inputs.intent.object_format }}
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
-    # One of the two bundle steps skips; a skip after a failure must not start the import, so the step of this path must have succeeded.
-    guard: '${{ !(("workspace" in inputs.intent ? "Export the copy" : "Copy the bundle") in steps && steps["workspace" in inputs.intent ? "Export the copy" : "Copy the bundle"].status == "succeeded") }}'
     dependsOn:
-    - step: Copy the bundle
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     - step: Export the copy
-      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
+      condition: {type: succeeded}
     writes: true
   - name: Import the bundle
     labels:
@@ -558,8 +310,7 @@ jobs:
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
-          # A task VM bundles HEAD; a task copy's export bundles only its branch.
-          ORBIT_REF: '${{ "workspace" in inputs.intent ? "refs/heads/" + inputs.intent.workspace.branch : "HEAD" }}'
+          ORBIT_REF: '${{ "refs/heads/" + inputs.intent.workspace.branch }}'
           ORBIT_BUNDLE: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle" }}
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
     dependsOn:
@@ -608,7 +359,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: behavior
       behaviorType: command/shell
@@ -627,9 +377,8 @@ jobs:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
-          # Resolved at run start also for a task VM, whose intent has no workspace.
-          ORBIT_START: '${{ has(inputs.intent.workspace) ? inputs.intent.workspace.start : "" }}'
-          ORBIT_PATH: '${{ has(inputs.intent.workspace) ? inputs.intent.workspace.environment_path : "" }}'
+          ORBIT_START: '${{ inputs.intent.workspace.start }}'
+          ORBIT_PATH: '${{ inputs.intent.workspace.environment_path }}'
     dependsOn:
     - step: Check imported commit
       condition:
@@ -641,7 +390,7 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) || inputs.intent.pull_request == null }}'
+    guard: '${{ inputs.intent.pull_request == null }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -664,7 +413,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: behavior
       behaviorType: command/shell
@@ -772,13 +520,11 @@ jobs:
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
           ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
           ORBIT_FILE: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/environment" }}
-          # Resolved at run start also for a task VM, whose intent has no workspace and whose run has no environment copy: it names
-          # the push header's key instead, which only a run of this skipped step would read.
-          ORBIT_START: '${{ has(inputs.intent.workspace) ? inputs.intent.workspace.start : "" }}'
-          ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.git_authorization.vault, has(inputs.intent.workspace) ? inputs.execution_secrets.environment.key : inputs.execution_secrets.git_authorization.key) }}'
+          ORBIT_START: '${{ inputs.intent.workspace.start }}'
+          ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}'
           # Without a Club key the step reads the render again and ORBIT_NESTED is empty, so it adds nothing.
-          ORBIT_NESTED: '${{ has(inputs.intent.workspace) && has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? "1" : "" }}'
-          ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.git_authorization.vault, !has(inputs.intent.workspace) ? inputs.execution_secrets.git_authorization.key : has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
+          ORBIT_NESTED: '${{ has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? "1" : "" }}'
+          ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.environment.vault, has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
           ORBIT_PULL: '${{ inputs.intent.pull_request == null ? "" : "1" }}'
           ORBIT_SCANNED: '${{ "Read the copy check" in steps && steps["Read the copy check"].status == "succeeded" ? steps["Check the copy"].outputs.evidence.evidence.scan.objects_sha256 : "" }}'
         ignoreExitCode: true
@@ -798,7 +544,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -816,7 +561,7 @@ jobs:
       role: swamp
     queueTimeout: 30
     # A copy mints only after its content check and its copy check passed; a skip of either is never a pass.
-    guard: '${{ "workspace" in inputs.intent && !("Read the .env check" in steps && steps["Read the .env check"].status == "succeeded" && "Read the copy check" in steps && steps["Read the copy check"].status == "succeeded") }}'
+    guard: '${{ !("Read the .env check" in steps && steps["Read the .env check"].status == "succeeded" && "Read the copy check" in steps && steps["Read the copy check"].status == "succeeded") }}'
     task:
       type: workflow
       workflowIdOrName: task-github-mint
@@ -848,7 +593,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: behavior
       behaviorType: command/shell
@@ -959,7 +703,6 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    guard: '${{ !("workspace" in inputs.intent) }}'
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
@@ -977,7 +720,7 @@ jobs:
       role: swamp
     queueTimeout: 30
     # A copy pushes only after its base check passed; a skip of that check is never a pass.
-    guard: '${{ "workspace" in inputs.intent && !("Check the base" in steps && steps["Check the base"].status == "succeeded") }}'
+    guard: '${{ !("Check the base" in steps && steps["Check the base"].status == "succeeded") }}'
     task:
       type: behavior
       behaviorType: command/shell
@@ -1067,7 +810,7 @@ jobs:
         input: ${{ inputs.intent }}
         directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
         exit_code: ${{ steps["Read open PRs"].outputs.exitCode }}
-        # A task copy's base statement becomes the body's fixed ## Base section; a task VM publish has none.
+        # The base statement becomes the body's fixed ## Base section.
         base: '${{ "Check the base" in steps && steps["Check the base"].status == "succeeded" ? steps["Check the base"].outputs.stdout : "" }}'
     dependsOn:
     - step: Read open PRs
@@ -1147,41 +890,6 @@ jobs:
     guard: ${{ !("Mint the push token" in steps && steps["Mint the push token"].status == "succeeded") }}
     allowFailure: true
     writes: true
-  - name: Remove remote scratch
-    labels:
-      role: swamp
-    queueTimeout: 30
-    guard: '${{ "workspace" in inputs.intent }}'
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-remote-cleanup-" + string(inputs.intent.node_id) }}
-      methodName: exec
-      inputs:
-        hosts: name:target
-        argv:
-        - timeout
-        - '10'
-        - rm
-        - -f
-        - --
-        - ${{ "/tmp/orbit-task-publish-" + run.id + ".index" }}
-        - ${{ "/tmp/orbit-task-publish-" + run.id + ".bundle" }}
-        timeoutSec: 70
-      globalArgs:
-        name: ${{ "task-publish-remote-cleanup-" + string(inputs.intent.node_id) }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.ssh_execution.target.user }}
-          port: ${{ inputs.intent.ssh_execution.target.port }}
-          identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-        hosts:
-        - name: target
-          address: ${{ inputs.intent.ssh_execution.target.host }}
-          transport:
-            hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-    allowFailure: true
-    writes: true
   - name: Discard the copy scratch
     labels:
       role: swamp
@@ -1217,11 +925,9 @@ jobs:
       role: swamp
     queueTimeout: 30
     dependsOn:
-    # The revoke is guarded off when no token was minted, and each path guards off the other path's scratch step;
+    # The revoke is guarded off when no token was minted, and the discard when preflight failed;
     # a skipped dependency must still let the end check run.
     - step: Revoke the token
-      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
-    - step: Remove remote scratch
       condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Remove local scratch
       condition:

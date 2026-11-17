@@ -40,7 +40,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Install the shared folders", "Bring the existing containers to the image's shared files"]);
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders", "Bring the existing containers to the image's shared files"]);
             const nss = await deb(f.folder, "libfake3", {
                 "usr/lib/x86_64-linux-gnu/libfake3.so": "library",
                 "usr/lib/x86_64-linux-gnu/libfakeutil.so.1.0.0": "versioned",
@@ -110,7 +110,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Install the shared folders"]);
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
             const one = await deb(f.folder, "libone", { "usr/lib/x86_64-linux-gnu/libsame.so.1": "one" });
             const two = await deb(f.folder, "libtwo", { "usr/lib/x86_64-linux-gnu/libsame.so.1": "two" });
             f.write({ ...f.instances, folders: { ...f.instances.folders, runtime: { ...f.instances.folders.runtime, parts: [...f.instances.folders.runtime.parts, one, two] } } });
@@ -207,6 +207,150 @@ Deno.test({
     },
 });
 
+Deno.test({
+    name: "a changed T3 drop-in reaches running, stopped and frozen containers; only a running one reloads and restarts T3 once, a folder flip included; a second pass changes nothing",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
+            // Incus answers the drop-in step's systemd calls through its own fake, which hands every other call to the shared one.
+            Deno.writeTextFileSync(`${f.folder}/bin/incus`,
+                `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-host-t3-incus.ts", import.meta.url).pathname}' "$@"\n`);
+            // A Node with no container yet: the step passes and writes nothing.
+            let result = await f.run();
+            assert(result.ok, result.output);
+            const server = "/etc/systemd/system/t3.service.d/20-orbit-server.conf";
+            const boot = { path: "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", content: "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\n", mode: "0644" };
+            const old = "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve\n";
+            const text = (extra: string) => ({ path: server, content: old + extra, mode: "0644" });
+            const names = ["app-feature", "app-asleep", "app-frozen", "app-current"];
+            const state = f.state();
+            state.instances.push(...names.map((name, i) => ({ name, project: "orbit-instances", status: ["Running", "Stopped", "Frozen", "Running"][i] })),
+                { name: "app-default", project: "orbit-instances", status: "Running" });
+            state.files = Object.fromEntries(names.flatMap((name) => [[`${name}${boot.path}`, { ...boot, uid: "0", gid: "0" }],
+                [`${name}${server}`, { content: name === "app-current" ? old + "Environment=A=1\n" : old, mode: "0644", uid: "0", gid: "0" }]]));
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            const pass = async (extra: string) => {
+                f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, files: [boot, text(extra)] })) });
+                // The first pass with a container makes the fixture's call log.
+                const before = f.has("calls") ? f.calls().length : 0;
+                const run = await f.run();
+                assert(run.ok, run.output);
+                // The read of whether systemd reloaded each running unit, which changes nothing, is left out.
+                return f.calls().slice(before).filter((call) => (call[0] === "exec" && !call.includes("NeedDaemonReload")) || (call[0] === "file" && call[1] === "push"));
+            };
+
+            const exec = (name: string, ...command: string[]) => ["exec", "--project", "orbit-instances", name, "--", "systemctl", ...command];
+            let calls = await pass("Environment=A=1\n");
+            // Each changed drop-in is written as root, running, stopped and frozen; the current one and the boot drop-in stay.
+            for (const name of ["app-feature", "app-asleep", "app-frozen"]) {
+                assertEquals(f.state().files[`${name}${server}`], { content: old + "Environment=A=1\n", mode: "0644", uid: "0", gid: "0" });
+            }
+            assertEquals(calls.filter((call) => call[0] === "file").map((call) => call.at(-1)),
+                ["app-asleep" + server, "app-feature" + server, "app-frozen" + server]);
+            // Only the changed running container reloads and restarts. No exec reaches the stopped or frozen ones.
+            assertEquals(calls.filter((call) => call[0] === "exec"),
+                [exec("app-feature", "daemon-reload"), exec("app-feature", "try-restart", "t3.service")]);
+
+            // The restart emptied the Node's list, and a second pass writes nothing and restarts nothing.
+            assert(!f.has("t3-restart.json"));
+            assertEquals(await pass("Environment=A=1\n"), []);
+            // A run that failed between its reload and the restart left the list: the next pass restarts that T3 once and empties it.
+            Deno.writeTextFileSync(`${f.folder}/t3-restart.json`, JSON.stringify([{ project: "orbit-instances", name: "app-feature" }]));
+            assertEquals(await pass("Environment=A=1\n"), [exec("app-feature", "try-restart", "t3.service")]);
+            assert(!f.has("t3-restart.json"));
+            // A unit systemd has not reloaded since its drop-in changed, as in a container that was frozen at the write, reloads and
+            // restarts though its text is current.
+            const reloadDue = f.state();
+            reloadDue.need_reload = ["app-current"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(reloadDue));
+            assertEquals(await pass("Environment=A=1\n"), [exec("app-current", "daemon-reload"), exec("app-current", "try-restart", "t3.service")]);
+
+            // A new drop-in with an agent folder flip in the same pass: the reload comes first, and each running T3 restarts once.
+            const agent = f.instances.folders.agent;
+            Deno.writeTextFileSync(`${agent.path}/${agent.version}/old`, "a file the new version lacks");
+            f.instances.folders.agent = { ...agent, version: "444444444444" };
+            calls = await pass("Environment=A=2\n");
+            const execs = calls.filter((call) => call[0] === "exec");
+            // Both running containers with a T3 reload first; the folder flip then restarts each running T3 once.
+            assertEquals(execs.slice(0, 2), [exec("app-current", "daemon-reload"), exec("app-feature", "daemon-reload")]);
+            assertEquals(execs.slice(2).filter((call) => call.includes("t3.service")).map((call) => call[3]).sort(), ["app-current", "app-default", "app-feature"]);
+            assertEquals(execs.filter((call) => call.includes("daemon-reload")).length, 2);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a failed T3 converge retains frozen and stopped restarts, removes vanished and completed entries, and restarts each recovered container once",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders"]);
+            Deno.writeTextFileSync(`${f.folder}/bin/incus`,
+                `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-host-t3-incus.ts", import.meta.url).pathname}' "$@"\n`);
+            const ready = await f.run();
+            assert(ready.ok, ready.output);
+            const names = ["app-done", "app-frozen", "app-stopped", "app-gone"];
+            const file = { path: "/etc/systemd/system/t3.service.d/20-orbit-server.conf", content: "[Service]\nEnvironment=CONN_SERVER_BROWSER_PATH=/new/browser\n", mode: "0644" };
+            const state = f.state();
+            state.instances.push(...names.map((name) => ({ project: "orbit-instances", name, status: "Running" })));
+            state.files = Object.fromEntries(names.map((name) => [name + file.path, { content: "# stale\n", mode: "0644", uid: "0", gid: "0" }]));
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            f.write({ ...f.instances, t3_files: names.map((container) => ({ project: "orbit-instances", container, files: [file] })) });
+            const entry = (name: string) => ({ project: "orbit-instances", name });
+            const pending = () => f.has("t3-restart.json") ? JSON.parse(Deno.readTextFileSync(`${f.folder}/t3-restart.json`)) : [];
+            const host = `${f.folder}/tasks/instance-host.yml`;
+            const shipped = Deno.readTextFileSync(host);
+            const tasks = JSON.parse(shipped);
+            tasks.splice(1, 0, { name: "Injected failure after reload", "ansible.builtin.fail": { msg: "injected failure after reload" } });
+            Deno.writeTextFileSync(host, JSON.stringify(tasks));
+            const failed = await f.run();
+            assert(!failed.ok && failed.output.includes("injected failure after reload"), failed.output);
+            assertEquals(pending(), [...names].sort().map(entry));
+            assertEquals(f.state().folder_restarts ?? [], []);
+            Deno.writeTextFileSync(host, shipped);
+
+            const sleeping = f.state();
+            sleeping.instances = sleeping.instances.filter((row: { name: string }) => row.name !== "app-gone");
+            for (const row of sleeping.instances) {
+                if (row.name === "app-frozen") row.status = "Frozen";
+                if (row.name === "app-stopped") row.status = "Stopped";
+            }
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(sleeping));
+            const pass = async () => {
+                const before = f.calls().length;
+                const result = await f.run();
+                assert(result.ok, result.output);
+                return f.calls().slice(before).filter((call) => call[0] === "exec" && call.includes("try-restart"));
+            };
+            assertEquals((await pass()).map((call) => call[3]), ["app-done"]);
+            assertEquals(pending(), [entry("app-frozen"), entry("app-stopped")]);
+            // Both sleeping containers return. One restart succeeds and the other fails; retain only the failed one.
+            const resumed = f.state();
+            for (const row of resumed.instances) row.status = "Running";
+            resumed.fail_restarts = ["app-stopped"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(resumed));
+            const restartFailed = await f.run();
+            assert(!restartFailed.ok && restartFailed.output.includes("injected T3 restart failure"), restartFailed.output);
+            assertEquals(pending(), [entry("app-stopped")]);
+            assertEquals(f.state().folder_restarts.map((row: { name: string }) => row.name), ["app-done", "app-frozen"]);
+            const recovered = f.state();
+            recovered.fail_restarts = [];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(recovered));
+            assertEquals((await pass()).map((call) => call[3]), ["app-stopped"]);
+            assert(!f.has("t3-restart.json"));
+            assertEquals(await pass(), []);
+            assertEquals(f.state().folder_restarts.map((row: { name: string }) => row.name), ["app-done", "app-frozen", "app-stopped"]);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
 /** The restart rule's own script: whether the new folder version keeps everything the version in use holds. */
 function same(old: string, next: string) {
     const out = new Deno.Command("python3", { args: ["-I", new URL("../ansible/instance_folder_same.py", import.meta.url).pathname, old, next] }).outputSync();
@@ -261,7 +405,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            hostTasks(f.folder, ["Install the shared folders", "Bring the existing containers to the image's shared files"]);
+            hostTasks(f.folder, ["Bring the T3 unit drop-ins of the existing containers to their text", "Install the shared folders", "Bring the existing containers to the image's shared files"]);
             let result = await f.run();
             assert(result.ok, result.output);
             const state = f.state();

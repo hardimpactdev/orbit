@@ -36,6 +36,7 @@ describe('Laravel Zero project manager', function (): void {
             ->and($guidelineComposer->guidelines()->has('laravel/core'))
             ->toBeFalse()
             ->and($guidelineComposer->compose())
-            ->not->toContain('php artisan');
+            ->toContain('Required Guidance Bootstrap above owns missing-guidance recovery')
+            ->not->toContain('php artisan', 'If `.ai/rules` does not exist');
     });
 });

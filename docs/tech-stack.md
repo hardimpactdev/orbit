@@ -20,7 +20,6 @@ Each project in the repository uses the stack in this table.
 | `apps/desktop` | Rust, Tauri 2, wrapping `apps/web` |
 | `apps/agent` | Rust |
 | `apps/docs` | PHP 8.5, Laravel 13, Librarian |
-| `apps/e2e` | PHP 8.5, Laravel 13, Incus |
 
 ## Platform
 

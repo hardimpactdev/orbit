@@ -311,3 +311,30 @@ Deno.test("the method reads the model evidence: a model the catalog does not off
         Deno.removeSync(folder, { recursive: true });
     }
 });
+
+Deno.test("an answered question whose resolution cannot be confirmed fails before launch and holds no run", () => {
+    for (const evidence of [
+        { answered_exit: 0, answered: JSON.stringify({ resolved: false, pending: [request], error: "Still pending." }) },
+        { answered_exit: 1, answered: "" },
+        { answered_exit: 124, answered: "" },
+        { answered_exit: 0, answered: "not json" },
+        { answered_exit: 0, answered: JSON.stringify({ resolved: true, pending: [request], error: null }) },
+    ]) {
+        const refused = shapeTurn({ ...none, answered: evidence, resumed: { list_exit: 0, found: 1 }, launched: false, start: null, read: null });
+        assertEquals([refused.state, refused.error_code, refused.ended, refused.launched, refused.run_id, refused.questions],
+            ["failed", "tasks.copy_question_unresolved", true, false, null, []]);
+    }
+    assertEquals(turn(0, started("completed"), { answered: { answered_exit: 0, answered: JSON.stringify({ resolved: true, pending: [], error: null }) } }).state, "done");
+});
+
+Deno.test("the method reads the answered evidence and refuses an unconfirmed resolution before launch", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    try {
+        await Deno.mkdir(folder);
+        await Deno.writeTextFile(`${folder}/answered.json`, JSON.stringify({ answered_exit: 0, answered: JSON.stringify({ resolved: false, pending: [request], error: "Still pending." }) }));
+        const result = await behavior.methods.result.execute({ folder }, { writeResource: () => Promise.resolve() });
+        assertEquals([result.successful, result.turn.error_code, result.turn.ended, result.turn.launched], [false, "tasks.copy_question_unresolved", true, false]);
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
+});

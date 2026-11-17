@@ -5,7 +5,6 @@ cases = [
   "a workspace phase names its group only for the phase itself",
   "a copy check names its group only for the merge, check, commit and commit-ref phases",
   "a copy's handoff check passes its group to both calls of the copy's base",
-  "a sync names its group only for the clone and the bundle on 209",
   "a copy's base names its group only for the base phase, which runs up to 600 s",
   "the copy's sync passes its group to both calls of the copy's base",
 ]
@@ -18,7 +17,6 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/workflows/workflow-operation-task-publish.yaml",
-  "swamp/workflows/workflow-operation-task-sync.yaml",
   "swamp/workflows/workflow-task-instance-check.yaml",
   "swamp/workflows/workflow-task-instance-workspace.yaml",
   "swamp/workflows/workflow-task-copy-base.yaml",

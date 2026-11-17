@@ -9,8 +9,10 @@
       - intent.runtime.name | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
       - intent.snapshot_id | default('') is match('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
       - intent.branch | default('') | length > 0
-      - workspace_phase in workspace_check_phases + workspace_base_phases + ['base-merge'] or intent.head | default('') is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
-      - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard', 'scan', 'base-merge'] + workspace_check_phases + workspace_base_phases
+      - workspace_phase in workspace_check_phases + workspace_base_phases + ['base-merge']
+        or intent.head | default('') is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
+      - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard', 'scan', 'base-merge']
+        + workspace_check_phases + workspace_base_phases
       - workspace_phase not in ['check', 'commit'] or intent.check | default(none) is mapping
       - workspace_phase != 'commit-ref' or intent.candidate_commit | default('') | length in [40, 64]
       # A publication's content check also takes the copy's .env, by its path under the fixed workspace root.
@@ -177,6 +179,61 @@
                   refuse('phase_failed')
               return done.returncode
 
+          def dependencies(tree, directory):
+              # Installed links define the local-package closure. Keep package source from the base archive, not HEAD.
+              pending, copied, links = [within(root, directory)], set(), {}
+              visited = set()
+              while pending:
+                  project = pending.pop()
+                  if project in visited or any(parent in copied for parent in [project, *project.parents]):
+                      continue
+                  visited.add(project)
+                  installations = []
+                  # Linked ignored payloads are installed artifacts, not candidate package source.
+                  # check-ignore takes literal filenames itself and rejects Git's global literal-pathspecs flag.
+                  ignored = tool(git_argv + ['--no-literal-pathspecs', 'check-ignore', '--quiet', '--',
+                                            str(project.relative_to(root))], root, ok=True)
+                  if ignored not in [0, 1]:
+                      refuse('phase_failed')
+                  if ignored == 0:
+                      installations.append(project)
+                  for parent in [project, *project.parents]:
+                      if not parent.is_relative_to(root):
+                          break
+                      for name in ['vendor', 'node_modules']:
+                          dependency = parent / name
+                          if dependency.is_dir():
+                              installations.append(dependency)
+                  for dependency in installations:
+                      if dependency in copied:
+                          continue
+                      if not dependency.resolve().is_relative_to(root):
+                          refuse('phase_failed')
+                      copied.add(dependency)
+                      # A dependency root may itself be a link to a checkout-local installation cache.
+                      if dependency.is_symlink():
+                          copied.add(dependency.resolve())
+                      for folder, directories, files in os.walk(dependency.resolve()):
+                          for entry in directories + files:
+                              link = Path(folder) / entry
+                              if not link.is_symlink():
+                                  continue
+                              target = link.resolve()
+                              if not target.is_relative_to(root):
+                                  refuse('phase_failed')
+                              links[link.relative_to(root)] = target.relative_to(root)
+                              pending.append(target)
+                      if dependency.is_symlink():
+                          links[dependency.relative_to(root)] = dependency.resolve().relative_to(root)
+              if copied:
+                  paths = sorted(str(path.relative_to(root)) for path in copied
+                                 if not any(parent in copied for parent in path.parents))
+                  tool(['cp', '-a', '--reflink=auto', '--parents', '-t', str(tree), '--', *paths], root)
+              for link, target in links.items():
+                  destination = tree / link
+                  destination.unlink()
+                  destination.symlink_to(os.path.relpath(tree / target, destination.parent))
+
           record('original', 0, text('rev-parse', 'HEAD') + '\n')
           base = check['base']
           if base != '' and request.get('default_commit', ''):
@@ -207,12 +264,15 @@
           for index, item in enumerate(commands):
               directory = item.get('directory', '.')
               if runnable and item.get('fails_on_base', False):
+                  source = scratch / 'base'
+                  if not source.exists():
+                      archive = scratch / 'base.tar'
+                      git('archive', '--format=tar', '--prefix=base/', '--output=' + str(archive), base)
+                      tool(['tar', '-x', '-f', str(archive), '-C', str(scratch)], root)
+                      archive.unlink()
                   tree = scratch / f'base-{index}'
-                  archive = scratch / f'base-{index}.tar'
-                  git('archive', '--format=tar', f'--prefix=base-{index}/', '--output=' + str(archive), base)
-                  tool(['tar', '-x', '-f', str(archive), '-C', str(scratch)], root)
-                  tool(['find', '.', '-name', '.git', '-prune', '-o', '(', '-name', 'vendor', '-o', '-name', 'node_modules', ')',
-                        '-type', 'd', '-prune', '-exec', 'cp', '-a', '--parents', '-t', str(tree), '{}', '+'], root)
+                  tool(['cp', '-a', '--reflink=auto', '--', str(source), str(tree)], root)
+                  dependencies(tree, directory)
                   paths = item.get('paths', [])
                   overlay = tool(['cp', '-p', '--parents', '-t', str(tree), '--', *paths], root, ok=True) if paths else 0
                   record(f'base_overlay-{index}', overlay)
@@ -221,6 +281,7 @@
                       record(f'base_directory-{index}', present)
                       if present == 0:
                           captured(f'base-{index}', within(tree, directory), item['command'], 600)
+                  shutil.rmtree(tree)
               if runnable:
                   captured(f'deliverable-{index}', within(root, directory), item['command'], 3600)
           after = capture()

@@ -22,7 +22,6 @@ inputs = [
   "swamp/ansible/tasks/ssh-execution-*.yml",
   "swamp/extensions/behaviors/operations/task-instance-workspace/**",
   "swamp/workflows/workflow-task-instance-workspace.yaml",
-  "swamp/workflows/workflow-operation-task-sync.yaml",
   "swamp/workflows/workflow-task-copy-base.yaml",
   "swamp/workflows/workflow-operation-task-sync-copy.yaml"
 ]

@@ -12,27 +12,17 @@ import {
     type Run,
     run,
 } from "../tasks/publish.ts";
-import { capturedArgv, readPublicTail } from "../../_lib/public_output.ts";
-import { lifecycleArgv } from "./lifecycle.ts";
+import { readPublicTail } from "../../_lib/public_output.ts";
 
 /*
- * Typed data for tasks.check and its scheduled CI observations. Every task VM
- * step is one official `@swamp/ssh exec` argv; this module builds those argv
- * lists on Node 209 and shapes their public outputs. It runs nothing.
- * Repository commands write their output to `<root>/output/<step>` on the VM;
- * one official SSH copy downloads that directory to a private worker
- * directory, and `local` reads, redacts and deletes each file, so raw command
- * output never enters native history.
+ * Typed data for tasks.check and its scheduled CI observations. Instance
+ * workspace phases run the commands and download their output. `local` reads,
+ * redacts and deletes each file, so raw command output never enters native history.
  */
 
 const ObjectValue = z.record(z.string(), z.unknown());
 const OUTPUT_BYTES = 16384;
 const Sha = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
-const Account = z.object({
-    ssh_execution: z.object({
-        target: z.object({ user: z.string().min(1) }).passthrough(),
-    }).passthrough(),
-}).passthrough();
 type Input = z.infer<typeof CheckInput>;
 type Steps = Record<string, unknown>;
 type Context = {
@@ -70,94 +60,15 @@ const relativeFile = (path: string) =>
 /** A working directory inside the checkout: relative, with no `..` segment. */
 const relativeDirectory = (path: string) =>
     !path.startsWith("/") && !path.split("/").includes("..");
-const within = (root: string, directory: string) =>
-    directory === "." || directory === "" ? root : `${root}/${directory}`;
-
-const quoted = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
-/** A Pest run: Laravel's test command, Pest itself, Pest through a wrapper, or a Composer test script. */
-const PestCall =
-    /^(?:php artisan test|(?:\.\/)?vendor\/bin\/pest|\S*bin\/pest-plain\s+(?:\.\/)?vendor\/bin\/pest|composer test)(?:\s|$)/;
-
 /**
- * A command deliverable that runs Pest gets CI's per-test time limit, which a
- * task copy, a shared and loaded host, needs as CI does
- * (docs/reference/tasks.md#a-pest-command-gets-cis-time-limit). The Project
- * opts in through its check command: one executable path whose file contains
- * the text `--ci-time-limit`. Asked `--ci-time-limit DIR`, it prints exactly
- * `ci-time-limit: N`, or `ci-time-limit: none` when CI passes no limit to the
- * Pest project that holds DIR. The check asks it for the directory that the
- * final Pest call runs in, relative to `tree`, the checked workspace or a
- * start-commit tree, and appends the limit to that call. Any other answer, or
- * a call outside `tree`, fails the command. A check command that does not
- * declare the flag is never asked, and the command runs as given; so does a
- * command whose last simple command is not a Pest call, or that passes its
- * own limit.
+ * Validate the admitted check target and deliverable paths before the Instance phase runs any command.
  */
-export function withCiTimeLimit(
-    source: string,
-    check: string | null,
-    workspace: string,
-    tree: string,
-): string {
-    const simple = !/[|;&<>`\n]|\$\(/.test(source.replaceAll("&&", ""));
-    const calls = source.split("&&");
-    const last = calls.pop()!.trim();
-    if (
-        check === null || !/^[\w.-]+(?:\/[\w.-]+)+$/.test(check) ||
-        !relativeFile(check) || !simple || !PestCall.test(last) ||
-        source.includes("--default-time-limit")
-    ) return source;
-    return [
-        "orbit_ci_time_limit() {",
-        `    local check=${
-            quoted(`${workspace}/${check}`)
-        } tree directory answer limit extra`,
-        '    [[ -f $check ]] && grep -qF -- --ci-time-limit "$check" || { "$@"; return; }',
-        // Physical paths: `env -C` leaves `PWD` unset, so a symlinked checkout would not match.
-        `    tree=$(cd ${quoted(tree)} && pwd -P) && directory=$(pwd -P) &&`,
-        '        [[ $directory == "$tree" || $directory == "$tree"/* ]] &&',
-        '        directory=${directory#"$tree"} && directory=${directory#/} &&',
-        '        answer=$("$check" --ci-time-limit "${directory:-.}") &&',
-        "        [[ $answer =~ ^ci-time-limit:\\ ([0-9]+|none)$ ]] || {",
-        `        echo ${
-            quoted(`Task check: ${check} --ci-time-limit gave no limit`)
-        } >&2`,
-        "        return 2",
-        "    }",
-        "    limit=${BASH_REMATCH[1]}",
-        '    if [[ $limit == none ]]; then echo "Pest time limit: CI passes none for ${directory:-.}; its phpunit.xml holds"; "$@"; return; fi',
-        '    echo "Pest time limit: --default-time-limit=$limit, CI\'s limit for ${directory:-.}"',
-        '    extra=(--default-time-limit="$limit")',
-        '    [[ $1 == composer && " $* " != *" -- "* ]] && extra=(-- "${extra[@]}")',
-        '    "$@" "${extra[@]}"',
-        "}",
-        [...calls, ` orbit_ci_time_limit ${last}`].join("&&"),
-    ].join("\n");
-}
-
-/**
- * The argv lists of every check step, from the admitted intent. `root` is the
- * run's scratch directory on the VM; it holds the snapshot index, the
- * start-commit trees and each command's output file under `output/`, named
- * after its step. Invalid deliverable paths refuse before any command.
- */
-export function prepare(raw: unknown, nodeId: number, root: string) {
+export function prepare(raw: unknown, nodeId: number) {
     const input = CheckInput.parse(raw);
     if (
         input.node_id !== nodeId ||
         input.branch !== `task-${input.group_id}-handoff`
     ) throw new Error("Wrong check target");
-    const user = Account.parse(raw).ssh_execution.target.user;
-    const environment = input.ssr_port === null ? [] : [
-        "INERTIA_SSR_PORT=" + input.ssr_port,
-        "INERTIA_SSR_URL=http://127.0.0.1:" + input.ssr_port,
-    ];
-    const command = (name: string, directory: string, source: string) =>
-        capturedArgv(
-            `${root}/output`,
-            name,
-            lifecycleArgv(directory, user, source, environment),
-        );
     const commands = input.deliverables.filter((item) =>
         item.type === "command"
     );
@@ -165,125 +76,13 @@ export function prepare(raw: unknown, nodeId: number, root: string) {
         relativeDirectory(item.directory) && item.paths.every(relativeFile) &&
         (!item.fails_on_base || Sha.test(input.base))
     );
-    const workspace = input.checkout_path;
     return {
         valid,
         error_code: valid ? "" : "tasks.deliverable_invalid",
-        setup: input.setup.map((step, index) =>
-            command(`setup-${index}`, workspace, step.command)
-        ),
-        // Skipped by its guard when the Project has no check command.
-        project: command("project", workspace, input.command ?? "true"),
-        deliverables: commands.map((item, index) =>
-            command(
-                `deliverable-${index}`,
-                within(workspace, item.directory),
-                withCiTimeLimit(
-                    item.command,
-                    input.command,
-                    workspace,
-                    workspace,
-                ),
-            )
-        ),
-        // The start-commit run of a `fails_on_base` command: an extracted
-        // archive of the base commit, the installed `vendor` and
-        // `node_modules` directories, and only the declared test paths.
-        bases: commands.map((item, index) => {
-            const tree = `${root}/base-${index}`, archive = `${tree}.tar`;
-            return {
-                archive: [
-                    "git",
-                    "-C",
-                    workspace,
-                    "archive",
-                    "--format=tar",
-                    `--prefix=base-${index}/`,
-                    `--output=${archive}`,
-                    input.base,
-                ],
-                extract: ["tar", "-x", "-f", archive, "-C", root],
-                dependencies: [
-                    "env",
-                    "-C",
-                    workspace,
-                    "find",
-                    ".",
-                    "-name",
-                    ".git",
-                    "-prune",
-                    "-o",
-                    "(",
-                    "-name",
-                    "vendor",
-                    "-o",
-                    "-name",
-                    "node_modules",
-                    ")",
-                    "-type",
-                    "d",
-                    "-prune",
-                    "-exec",
-                    "cp",
-                    "-a",
-                    "--parents",
-                    "-t",
-                    tree,
-                    "{}",
-                    "+",
-                ],
-                overlay: item.paths.length
-                    ? [
-                        "env",
-                        "-C",
-                        workspace,
-                        "cp",
-                        "-p",
-                        "--parents",
-                        "-t",
-                        tree,
-                        "--",
-                        ...item.paths,
-                    ]
-                    : ["true"],
-                directory: ["test", "-d", within(tree, item.directory)],
-                // The same limit as the deliverable's own run, from the checked workspace.
-                run: command(
-                    `base-${index}`,
-                    within(tree, item.directory),
-                    withCiTimeLimit(
-                        item.command,
-                        input.command,
-                        workspace,
-                        tree,
-                    ),
-                ),
-            };
-        }),
     };
 }
 
 type Command = { exit_code?: number; output?: string };
-
-/**
- * The check's chart steps run as child workflows; the parent sees each child's
- * step outputs under its own step. This lifts them to one flat map keyed by the
- * child step names that `run` reads.
- */
-export function flatten(parent: Steps): Steps {
-    const flat: Steps = {};
-    for (const step of Object.values(parent)) {
-        const outputs = ObjectValue.safeParse(
-            ObjectValue.safeParse(step).data?.outputs,
-        );
-        for (const [name, value] of Object.entries(outputs.data ?? {})) {
-            if (ObjectValue.safeParse(value).success) {
-                flat[name] = { outputs: value };
-            }
-        }
-    }
-    return flat;
-}
 
 /**
  * One command step's exit code and the redacted tail of its downloaded output
@@ -570,15 +369,14 @@ export async function localResult(
  * A passed handoff names the commit that `git commit` made, read back with
  * `git rev-parse HEAD HEAD^{tree} HEAD^`. Its tree and parent must be the
  * checked snapshot; otherwise the workspace moved and the check is `changed`.
- * A container check (`container`) makes no commit for a clean head that an
+ * A copy check makes no commit for a clean head that an
  * earlier check recorded, and reads no parent: that head, with the checked
- * tree, is its own candidate. A task VM check always commits.
+ * tree, is its own candidate.
  */
 export function candidateResult(
     input: Input,
     local: Record<string, unknown>,
     read: Run,
-    container = false,
 ) {
     if (
         typeof local.error_code === "string" || local.outcome !== "passed" ||
@@ -588,7 +386,7 @@ export function candidateResult(
         return { ...local, error_code: "tasks.repository_execution_unknown" };
     }
     const [commit = "", tree, parent] = (read.stdout ?? "").trim().split("\n");
-    const recorded = container && commit === local.head;
+    const recorded = commit === local.head;
     if (
         !Sha.test(commit) || tree !== local.tree ||
         (!recorded && parent !== local.head)
@@ -760,8 +558,8 @@ export function observed(
 
 /**
  * The base of a copy's handoff check (docs/reference/tasks.md#the-handoff-check-merges-main-first): the default head it judged
- * against and the head it merged, or `unavailable` with the reason when the base phase failed. `requested` is false for a baseline
- * and a task VM check, which state no base.
+ * against and the head it merged, or `unavailable` with the reason when the base phase failed. `requested` is false for a baseline,
+ * which states no base.
  */
 export function baseFields(
     base: Record<string, unknown>,
@@ -900,16 +698,15 @@ export const behavior = {
         },
         prepare: {
             description:
-                "Validate public check intent and build every check step's SSH exec argv",
+                "Validate public check intent and deliverable paths",
             arguments: z.object({
                 intent: ObjectValue,
                 node_id: z.number().int().positive(),
-                root: z.string().startsWith("/"),
             }),
             execute: (
-                args: { intent: unknown; node_id: number; root: string },
+                args: { intent: unknown; node_id: number },
                 ctx: Context,
-            ) => output(ctx, prepare(args.intent, args.node_id, args.root)),
+            ) => output(ctx, prepare(args.intent, args.node_id)),
         },
         snapshot: {
             description: "Read one workspace snapshot's HEAD and tree",
@@ -971,11 +768,7 @@ export const behavior = {
                 const result = await localResult(
                     CheckInput.parse(args.intent),
                     ObjectValue.parse(args.prepared),
-                    // The check's other chart steps ran as sibling child workflows; the parent hands their outputs in.
-                    {
-                        ...flatten(ObjectValue.parse(args.parent ?? {})),
-                        ...ObjectValue.parse(args.steps),
-                    },
+                    ObjectValue.parse(args.steps),
                     z.string().startsWith("/").parse(args.outputs),
                 );
                 return output(ctx, {
@@ -994,8 +787,6 @@ export const behavior = {
                     input,
                     ObjectValue.parse(args.local),
                     run(ObjectValue.parse(args.steps), "commit_read"),
-                    // Only a container Instance workspace names `workspace`.
-                    "workspace" in ObjectValue.parse(args.intent),
                 );
                 return output(ctx, {
                     result,

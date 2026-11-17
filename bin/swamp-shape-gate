@@ -15,7 +15,7 @@ before you push; commit first, because the checkers compare committed HEAD with 
 --strict           fail instead of skipping a step that needs a credential or a tool
 
 The linters are pinned in swamp/ansible/shape-gate-requirements.txt, the only place that names them.
-The task VM role playbook builds them into /opt/orbit-shape-gate, so a task VM runs the gate without a download.
+Container preparation caches them in /opt/orbit-shape-gate so a task copy runs the gate without a download.
 Native workflow validation needs a Swamp account. It reads only SWAMP_API_KEY and SWAMP_SIGNIN_TOKEN.
 Without them it is skipped and reported as skipped, not passed. `--only validate` then exits 78."""
 import argparse
@@ -49,11 +49,11 @@ ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py
                  'tests/task_instance_workspace_receipt_test.py',
                  'tests/task_instance_workspace_export_test.py',
                  'tests/task_instance_check_test.py',
-                 'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py', 'tests/ansible_task_vm_role_test.py',
-                 'tests/ansible_task_vm_incus_test.py',
+                 'tests/task_instance_check_dependencies_test.py',
+                 'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py',
                  'tests/ansible_gateway_swamp_grants_test.py',
                  'tests/ansible_task_vm_fleet_wait_test.py',
-                 'tests/ansible_hub_prune_test.py', 'tests/ansible_task_vm_checkout_test.py',
+                 'tests/ansible_hub_prune_test.py',
                  'tests/ansible_wireguard_hub_lan_rules_test.py', 'tests/ansible_wireguard_hub_lan_recovery_test.py',
                  'tests/ansible_wireguard_hub_lan_load_test.py', 'tests/ansible_hub_converge_peers_test.py', 'tests/ansible_static_php_test.py',
                  'tests/instance_migrate_env_test.py', 'tests/instance_node_runtime_test.py', 'tests/instance_migrate_dotenv_test.py',
@@ -114,8 +114,8 @@ def plan(base, reports, cache, collections, tracked_paths=None):
     steps = [
         Step('shape', 'ansible collections', ['ansible-galaxy', 'collection', 'install', '-r', 'ansible/requirements.yml', '-p', str(collections)],
              env=ansible_env),
-        Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/ai-router-task-guard.yml', 'ansible/ai-router-model-forwarder.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/operation-node-role-add-local-dns.yml', 'ansible/operation-node-converge-local-dns.yml', 'ansible/swamp-worker-renewal.yml', 'ansible/task-vm-role.yml',
-                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-instance-workspace.yml', 'ansible/task-vm-host.yml', 'ansible/proof-gateway.yml', 'ansible/proof-observers.yml', 'ansible/operation-fleet-reboot.yml', 'ansible/conn-environment-restart.yml'], env=ansible_env, parallel=True),
+        Step('shape', 'ansible-lint', ['ansible-lint', 'ansible/operation-instance-create.yml', 'ansible/route-create-site.yml', 'ansible/route-withdraw.yml', 'ansible/ai-router-task-guard.yml', 'ansible/ai-router-model-forwarder.yml', 'ansible/operation-node-add.yml', 'ansible/operation-node-role-add.yml', 'ansible/operation-node-role-add-local-dns.yml', 'ansible/operation-node-converge-local-dns.yml', 'ansible/swamp-worker-renewal.yml',
+                                       'ansible/task-vm-fleet-wait.yml', 'ansible/task-instance-workspace.yml', 'ansible/proof-gateway.yml', 'ansible/proof-observers.yml', 'ansible/operation-fleet-reboot.yml', 'ansible/conn-environment-restart.yml'], env=ansible_env, parallel=True),
     ]
     deno_files = deno_test_files(tracked_paths)
 
