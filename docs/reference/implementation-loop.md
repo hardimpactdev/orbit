@@ -702,6 +702,7 @@ The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the d
 - `packages/php-sdk` runs its whole suite. It takes about a second.
 - Each Pest run uses the per-test time limit of the project's CI job, read from `.github/workflows/ci.yml`. For `apps/gateway` that is `--default-time-limit=5`.
 - A job that sets no limit keeps its project's `phpunit.xml` limit. A copy, like CI, runs on a shared and loaded host.
+- A command deliverable that runs Pest gets the same limit. The handoff check asks `bin/task-check --ci-time-limit <directory>` for it and appends it to the deliverable's Pest call. See [A Pest command gets CI's time limit](/reference/tasks#a-pest-command-gets-cis-time-limit).
 - `apps/gateway`, `apps/cli` and `apps/docs` run their changed test files in one Pest run. `apps/cli` also runs the CLI tests that replay a changed SDK fixture, as `bin/cli-contract --changed <start commit>` names them.
 - `apps/gateway` and `apps/cli` also run their pin test files in that run, whatever changed. The `PIN_TESTS` table in `bin/task-check` lists them.
 - The line's detail counts the changed and pin files and names the pins, such as `0 changed or contract-mapped, 1 pin test files: CommandSurfaceTest`.

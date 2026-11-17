@@ -14,7 +14,10 @@ last lines of each failed part, so the stored tail of the output always holds it
 
 --base REF        the start commit (default: the merge base with origin/main, else main)
 --budget SECONDS  wall time of the whole run (default 270)
---only PARTS      comma-separated part names, such as pest,phpstan"""
+--only PARTS      comma-separated part names, such as pest,phpstan
+--ci-time-limit DIR  print `ci-time-limit: N`, the per-test time limit that CI passes to Pest for the project that
+                  holds DIR, a path relative to the checkout, or `ci-time-limit: none`; the task check's command
+                  deliverables that run Pest append it, so they run with CI's limit"""
 import argparse
 from contextlib import contextmanager
 from importlib.machinery import SourceFileLoader
@@ -271,6 +274,13 @@ def ci_time_limit(job):
     return next(iter(limits), None)
 
 
+def project_time_limit(directory):
+    """CI's Pest limit for the Pest project that holds DIRECTORY, relative to the checkout, or None."""
+    path = Path(os.path.normpath(directory))
+    return next((ci_time_limit(job) for job, project in PEST_JOBS.items()
+                 if path == Path(project) or Path(project) in path.parents), None)
+
+
 def ci_caps():
     """CI's per-unit time caps, as the check prints them at its start."""
     budget = tomllib.loads(CI_TABLE.read_text())['budget']
@@ -469,7 +479,14 @@ def main(argv=None):
     parser.add_argument('--base')
     parser.add_argument('--budget', type=float, default=DEFAULT_BUDGET)
     parser.add_argument('--only', type=lambda value: [part.strip() for part in value.split(',') if part.strip()])
+    parser.add_argument('--ci-time-limit', metavar='DIR')
     args = parser.parse_args(argv)
+    if args.ci_time_limit is not None:
+        if os.path.isabs(args.ci_time_limit) or os.path.normpath(args.ci_time_limit).split(os.sep)[0] == '..':
+            parser.error(f'--ci-time-limit takes a directory inside the checkout, not {args.ci_time_limit}')
+        limit = project_time_limit(args.ci_time_limit)
+        print(f'ci-time-limit: {"none" if limit is None else limit}')
+        return 0
     if args.only and set(args.only) - set(PARTS):
         parser.error('unknown part: ' + ', '.join(sorted(set(args.only) - set(PARTS))) + '; parts: ' + ', '.join(PARTS))
     started = time.monotonic()
