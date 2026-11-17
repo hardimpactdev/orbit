@@ -67,8 +67,16 @@ final readonly class ProofSeeds
      */
     public const int HoldWaitSeconds = 1800;
 
-    /** A deployment of the default that holds the seed records it in its Operation state until it ends. */
-    public const string HeldState = 'seed_held';
+    /**
+     * A deployment of the default records its claim on the seed in its Operation state until it ends: `waiting` while a seed copy holds
+     * the seed, then `held`. Either claim refuses a new seed copy, so a copy that ends while a deployment waits admits none; the
+     * deployment gets the hold next, and its end admits the copy (docs/reference/development-containers.md#the-seed-hold).
+     */
+    public const string HoldState = 'seed_hold';
+
+    public const string Waiting = 'waiting';
+
+    public const string Holding = 'held';
 
     /** The admission's refusal while a deployment of the default holds the seed; the deployment's end admits the copy again. */
     public const string Held = 'instance.seed_held';
@@ -268,8 +276,8 @@ final readonly class ProofSeeds
             // The default's row orders this admission with a deployment's hold of the seed ({@see self::hold()}).
             return DB::transaction(static function () use ($source, $input, $trigger): Operation {
                 Instance::query()->whereKey($source->instance_id)->lockForUpdate()->firstOrFail();
-                if (self::heldByDeployment($source->instance_id)) {
-                    throw new ResourceOperationException(self::Held, 'A deployment of the default holds its seed.', 409);
+                if (self::claimedByDeployment($source->instance_id)) {
+                    throw new ResourceOperationException(self::Held, 'A deployment of the default holds its seed or waits for it.', 409);
                 }
 
                 return app(StartOperationAction::class)->execute(self::Kind, 'instance', $source->instance_id, $source->node_id, $input,
@@ -292,32 +300,30 @@ final readonly class ProofSeeds
 
     /**
      * A deployment of the default takes the seed before its first `seed` phase (docs/cli/instance/container/deploy-default.mmd): true
-     * when it holds it now or held it already, false while a seed copy holds it. Once taken, the deployment holds the seed until it ends,
-     * and no seed copy is admitted meanwhile; its end admits one again.
+     * when it holds it now or held it already, false while a seed copy holds it; then it waits, and no new seed copy is admitted. Once
+     * taken, the deployment holds the seed until it ends; its end admits a seed copy again.
      */
     public function hold(Operation $deployment): bool
     {
         return DB::transaction(static function () use ($deployment): bool {
             Instance::query()->whereKey($deployment->target_id)->lockForUpdate()->firstOrFail();
             $locked = Operation::query()->lockForUpdate()->findOrFail($deployment->id);
-            if (($locked->state[self::HeldState] ?? false) === true) {
+            if (($locked->state[self::HoldState] ?? null) === self::Holding) {
                 return true;
             }
-            if (Operation::query()->where('lock_key', self::holdKey($locked->target_id))->exists()) {
-                return false;
-            }
-            $locked->forceFill(['state' => [...($locked->state ?? []), self::HeldState => true]])->save();
+            $claim = Operation::query()->where('lock_key', self::holdKey($locked->target_id))->exists() ? self::Waiting : self::Holding;
+            $locked->forceFill(['state' => [...($locked->state ?? []), self::HoldState => $claim]])->save();
 
-            return true;
+            return $claim === self::Holding;
         });
     }
 
-    /** Whether an open deployment of the default holds its seed. */
-    private static function heldByDeployment(int $defaultId): bool
+    /** Whether an open deployment of the default holds its seed or waits for it. */
+    private static function claimedByDeployment(int $defaultId): bool
     {
         // An open deployment of a container holds the Instance lock; the terminal status frees it, and the seed with it.
         return Operation::query()->where('lock_key', OperationStore::lockKey('instance', $defaultId))->where('kind', 'instance.deploy')
-            ->where('state->'.self::HeldState, true)->exists();
+            ->whereIn('state->'.self::HoldState, [self::Waiting, self::Holding])->exists();
     }
 
     /**

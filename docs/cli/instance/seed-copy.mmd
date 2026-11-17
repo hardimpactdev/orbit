@@ -28,7 +28,7 @@ sequenceDiagram
   %%> Not a target:
   %%> - a Node whose listener is not ready: no copy fails on it and no copy marks it tried; its next passed `ci-runner` converge makes it a target
   %%> - one copy at a time: an open copy holds the default's seed hold, `operation.target_busy`
-  %%> - while a deployment of the default holds the seed: the admission is refused, `instance.seed_held`, and the deployment's end admits it again (the seed moved or the Nodes are still behind)
+  %%> - while a deployment of the default holds the seed or waits for it: the admission is refused, `instance.seed_held`, and the deployment's end admits it again (the seed moved or the Nodes are still behind); so a copy that ends while a deployment waits admits no next copy, and the deployment gets the hold next
   %%> The seed hold (one rule for one resource, docs/reference/development-containers.md#the-seed-hold):
   %%> - one hold key per default, `instance_seed:DEFAULT_ID`: the seed copy takes it as its Operation lock at admission and keeps it to its end, so every push of the run sends a seed that no retake deletes or renames
   %%> - a deployment of the default asks the Gateway for the seed before its first `seed` phase and keeps it to its end; it waits while a seed copy is open (see container/deploy-default.mmd)
@@ -98,5 +98,6 @@ sequenceDiagram
     %%> - the default took a newer seed while the copy ran: every Node behind it is a target
     %%> - the seed is the same, and a Node that no seed copy has tried at this seed is behind it: only such Nodes are targets; the Gateway reads which Nodes were tried from the targets of the recorded `instance.seed_copy` Operations of that seed
     %%> Not:
+    %%> - while a deployment of the default waits for the seed hold or holds it (`instance.seed_held`): the deployment goes first, and its end admits the copy
     %%> - for a Node that failed at the same seed
   end

@@ -73,7 +73,7 @@ sequenceDiagram
     %%> - before "Prepare the container", whose play runs the first `seed` phase of a nested-fleet default; only the proof Project's default, whose seed a seed copy sends (instance/seed-copy.mmd); its container intent's `seed_hold` names it; every other default skips the step
     %%> What it does:
     %%> - asks the Gateway for the default's seed hold `instance_seed:DEFAULT_ID` (`POST direct-operations/ID/seed-hold`); while a seed copy holds it (its Operation lock), the Gateway answers `423 instance.seed_busy` after 5 s and the step asks again, for up to 1,800 s (`ProofSeeds::HoldWaitSeconds`), which the run budget adds
-    %%> - once granted, the deployment holds the seed until it ends; a seed copy is not admitted meanwhile (`instance.seed_held`), and the deployment's end, passed or failed, admits it again
+    %%> - from its first busy answer the deployment waits for the seed, and once granted it holds the seed until it ends; while it waits or holds, a seed copy is not admitted (`instance.seed_held`), so the end of a running copy admits no next copy and the deployment goes first; the deployment's end, passed or failed, admits the copy again
     %%> Why:
     %%> - a retake deletes or renames `seed-COMMIT`, also at the same commit; a push of that snapshot to a CI Node at that moment fails the seed copy, and the retake's own snapshot calls can fail too (docs/reference/development-containers.md#the-seed-hold)
     %%> On failure:
