@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RunTaskMergeRoundAction;
 use App\Actions\Tasks\RunTaskPublishWhenDoneAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Data\Tasks\StartTaskPublishData;
@@ -92,6 +93,25 @@ it('never starts the publish of the same done check twice, also after its run fa
     $results = whenDoneTick();
 
     expect($results)->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'skipped', 'code' => 'tasks.push_failed', 'operation' => $operation->id]])
+        ->and(whenDonePublishes($world->group))->toBe(1);
+});
+
+it('leaves a done check whose publish conflicted with main to the merge round, which starts its sync once', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    whenDoneTick();
+    $conflicted = whenDoneEndPublish($world->group, RunTaskMergeRoundAction::ConflictCode);
+
+    $tick = whenDoneTick();
+    $round = app(RunTaskMergeRoundAction::class)->execute();
+    $again = [...whenDoneTick(), ...app(RunTaskMergeRoundAction::class)->execute()];
+
+    $sync = Operation::query()->where('kind', OperationKinds::TasksSync)->sole();
+    expect($tick)->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'skipped', 'code' => RunTaskMergeRoundAction::ConflictCode, 'operation' => $conflicted->id]])
+        ->and($round)->toBe([['group' => $world->group->id, 'publish' => $conflicted->id, 'step' => 'sync', 'result' => 'admitted', 'code' => null, 'operation' => $sync->id]])
+        ->and($sync->idempotency_key)->toBe("merge-round:{$world->group->id}:{$conflicted->id}:sync")
+        ->and($sync->triggered_by)->toBe(RunTaskMergeRoundAction::Caller)
+        ->and(array_column($again, 'result'))->toBe(['busy'])
         ->and(whenDonePublishes($world->group))->toBe(1);
 });
 
