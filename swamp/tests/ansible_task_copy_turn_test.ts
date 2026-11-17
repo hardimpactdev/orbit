@@ -27,8 +27,8 @@ Deno.test("the workflow writes only the turn's target into the phase input, runs
     assert(run.task.inputs.run!.endsWith('"$ORBIT_ANSIBLE/task-copy-turn.yml"'));
     // The turn and its kill grace, nine T3 or helper calls of up to 60 s (the settle's list and its stops of two earlier runs, the list and
     // answered-request resolution of a continued turn, the question's read and stop or a cut run's list and stop, the list and show after it) and sixteen Git commands of
-    // up to 20 s (the settle's restore, a reviewer's set-up and restore).
-    assert(Number(/^timeout (\d+) /.exec(run.task.inputs.run!)![1]) > turn.seconds + 30 + 9 * 60 + 16 * 20);
+    // up to 20 s (the settle's restore, a reviewer's set-up and restore), two catalog reads and the Codex model probe.
+    assert(Number(/^timeout (\d+) /.exec(run.task.inputs.run!)![1]) > turn.seconds + 30 + 9 * 60 + 16 * 20 + 2 * 20 + 25);
     const env = Object.fromEntries(Object.entries(run.task.inputs.env!).map(([key, value]) => [key, String(evaluate(value))]));
     assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN], [`${shipped}/ansible.cfg`, shipped, `/tmp/orbit-ansible-${runId}`]);
     assertEquals(String(evaluate(run.task.behaviorName)), "task-copy-turn-9-2685");
@@ -37,6 +37,7 @@ Deno.test("the workflow writes only the turn's target into the phase input, runs
     assertEquals(cel.evaluate(outcome.task.expr!, context), true);
     const manifest = Deno.readTextFileSync(new URL("../manifest.yaml", import.meta.url));
     assert(manifest.includes("  - ansible/task-copy-turn.yml\n"), "the playbook ships to the worker");
+    assert(manifest.includes("  - ansible/task_copy_codex_model.py\n"), "the model probe ships to the worker");
 });
 
 // Swamp locks a behavior by name for the whole step; a second run waits 60 s and then fails. The turn holds its lock for the whole
@@ -108,8 +109,11 @@ if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
 if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
     catalog = os.environ.get('T3_CATALOG', 'cached')
     if rest[3] == '/home/agent/.t3/userdata/settings.json':
+        if os.environ.get('T3_SETTINGS') == 'unreadable':
+            sys.exit(1)
         print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'},
-                                                'codexHigh': {'driver': 'codex', 'displayName': 'Codex, high effort'}}}))
+                                                'codexHigh': {'driver': os.environ.get('T3_CODEX_DRIVER', 'codex'),
+                                                              'displayName': 'Codex, high effort'}}}))
         sys.exit(0)
     assert rest[3:] == ['/home/agent/.t3/userdata/model-manifest.json'], rest
     if catalog == 'missing':
@@ -124,6 +128,10 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
         models = [{'name': 'No slug'}, 'claude-fable-5-2']
     print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}, {'slug': 'gpt-6.1-sol'}]}}}}))
     sys.exit(0)
+if rest[:4] == ['/usr/bin/timeout', '25', '/usr/bin/python3', '-']:
+    assert rest[4:] == [os.environ['T3_MODEL']], rest
+    assert stdin == open(os.environ['T3_MODEL_HELPER']).read(), 'the model probe arrives on stdin'
+    sys.exit(int(os.environ['T3_PROBE_EXIT']))
 if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node', '-']:
     assert stdin == open(os.environ['T3_HELPER']).read(), 'the shipped helper arrives on stdin'
     assert rest[4] == os.environ['T3_PROGRAM'], rest
@@ -232,6 +240,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
                 `${shipped}/task-copy-turn.yml`],
             env: { ORBIT_RUN: run, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, T3_PROGRAM: String(change.t3 ?? turn.t3), ...copy,
                 T3_HELPER: `${shipped}/t3_copy_rpc.mjs`,
+                T3_MODEL_HELPER: `${shipped}/task_copy_codex_model.py`,
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         const read = (path: string) => { try { return Deno.readTextFileSync(path); } catch { return null; } };
@@ -415,6 +424,7 @@ Deno.test({ name: "a Codex thread is created with its effort as the reasoningEff
     const codex = { T3_INSTANCE: "codexHigh", T3_MODEL: "gpt-6.1-sol", T3_OPTIONS: JSON.stringify(options) };
     const done = await phase("completed", { provider: "codexHigh", model: "gpt-6.1-sol", options }, "clean", "questions", "", codex);
     assert(done.ok, done.output);
+    assert(!done.calls.some((call) => call.args.includes("/usr/bin/python3")), "listed Codex models need no probe");
     const create = done.calls.find((call) => call.args[20] === "create")!;
     assertEquals([...create.args.slice(20, 24), JSON.parse(create.args[24])], ["create", turn.title, "codexHigh", "gpt-6.1-sol", options]);
     assertEquals([done.start!.start_exit, done.result.state], [0, "done"]);
@@ -428,6 +438,67 @@ Deno.test({ name: "a Codex thread is created with its effort as the reasoningEff
         assertEquals([refused.result.state, refused.result.error_code], ["failed", "tasks.copy_turn_failed"], create);
     }
 } });
+
+Deno.test({ name: "an uncatalogued Codex model needs provider confirmation before launch or reviewer checkout", ignore: !available, async fn() {
+    for (const [model, probeExit, probe, errorCode] of [
+        ["gpt-6.2-sol", "0", "confirmed", undefined],
+        ["gpt-6.2-sol-typo", "2", "rejected", "tasks.copy_turn_model_unoffered"],
+        ["gpt-6.2-sol", "124", "unavailable", "tasks.copy_turn_model_unverified"],
+    ] as const) {
+        const provider = "codexHigh";
+        const accepted = probeExit === "0";
+        const turnCandidate = accepted ? null : candidate;
+        const done = await phase("completed", { provider, model, candidate: turnCandidate }, "clean", "questions", "",
+            { T3_INSTANCE: provider, T3_MODEL: model, T3_PROBE_EXIT: probeExit });
+        assertEquals(done.model, { model, offered: ["other-model", "gpt-6.1-sol"], accepted, probe }, done.output);
+        assertEquals([done.ok, done.launched, done.result.error_code], [accepted, accepted, errorCode]);
+        assertEquals(done.calls.filter((call) => call.args.includes("/usr/bin/python3")).length, 1);
+        assertEquals(git(done.calls), []);
+        if (probe === "rejected") assertEquals(done.result.error, `The copy's Codex provider rejected the model ${model}.`);
+    }
+    const model = "gpt-6.2-sol-typo";
+    for (const settings of [{ T3_SETTINGS: "unreadable", T3_CODEX_DRIVER: "codex" }, { T3_SETTINGS: "readable", T3_CODEX_DRIVER: "   " }]) {
+        const unresolved = await phase("completed", { provider: "codexHigh", model, candidate }, "clean", "questions", "", settings);
+        assertEquals(unresolved.model, { model, offered: null, accepted: false, driver_unresolved: true }, unresolved.output);
+        assertEquals([unresolved.launched, unresolved.result.error_code, git(unresolved.calls)], [false, "tasks.copy_turn_model_unverified", []]);
+        assert(!unresolved.calls.some((call) => call.args.includes("/usr/bin/python3")), unresolved.output);
+    }
+} });
+
+Deno.test("the Codex model probe requires a usable response for the exact requested model", async () => {
+    const home = Deno.makeTempDirSync();
+    const model = "gpt-6.2-sol";
+    const requests: unknown[] = [];
+    let response = { status: 200, body: {} as Record<string, unknown> };
+    const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+        requests.push([request.method, new URL(request.url).pathname, await request.json()]);
+        return Response.json(response.body, { status: response.status });
+    });
+    try {
+        const origin = `http://127.0.0.1:${server.addr.port}`;
+        Deno.mkdirSync(`${home}/.codex`);
+        Deno.mkdirSync(`${home}/.config/orbit`, { recursive: true });
+        Deno.writeTextFileSync(`${home}/.codex/config.toml`,
+            `model_provider = "orbit"\n[model_providers.orbit]\nbase_url = "${origin}/v1"\nenv_key = "ORBIT_MODEL_KEY"\nwire_api = "responses"\n`);
+        Deno.writeTextFileSync(`${home}/.config/orbit/model.env`, `ANTHROPIC_BASE_URL=${origin}\nORBIT_MODEL_KEY=fixture\n`);
+        for (const [status, body, exit] of [
+            [200, { object: "response", status: "completed", model }, 0],
+            [200, { object: "response", status: "incomplete", model, incomplete_details: { reason: "max_output_tokens" } }, 0],
+            [200, { object: "response", status: "completed", model: "different-model" }, 1],
+            [400, { error: { code: "model_not_found", message: "Provider detail" } }, 2],
+            [503, { error: { message: "Provider unavailable" } }, 1],
+        ] as const) {
+            response = { status, body };
+            const result = await new Deno.Command("python3", { args: [`${shipped}/task_copy_codex_model.py`, model], env: { HOME: home } }).output();
+            assertEquals([result.code, result.stdout.length, result.stderr.length], [exit, 0, 0]);
+        }
+        assertEquals(requests, Array.from({ length: 5 }, () =>
+            ["POST", "/v1/responses", { model, input: "Reply OK.", max_output_tokens: 16, store: false }]));
+    } finally {
+        await server.shutdown();
+        Deno.removeSync(home, { recursive: true });
+    }
+});
 
 const reads = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).filter((args) => args[2] === "/usr/bin/cat").map((args) => args[3]);
 

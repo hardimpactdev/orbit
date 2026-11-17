@@ -2102,7 +2102,7 @@ Stock T3's CLI takes no effort, but T3's settings can hold several provider inst
 | `claude` | `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh`, `claudeMax`, driver `claudeAgent` | `CLAUDE_CODE_EFFORT_LEVEL` in the instance's environment |
 | `codex` | `codexLow`, `codexMedium`, `codexHigh`, `codexXhigh`, `codexMax`, `codexUltra`, driver `codex` | The thread's `reasoningEffort` model option |
 
-A new thread is created on the instance of its provider and effort, through T3's own RPC, with its model and model options; its first turn is then a `t3 thread send`, as a continued turn is. Before that, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). A turn's result names the provider instance, the model and the effort the thread started with.
+A new thread is created on the instance of its provider and effort, through T3's own RPC, with its model and model options. Its first turn uses `t3 thread send`, as a continued turn does. Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`) and checks the model against T3's cached model catalog. When that catalog does not confirm a Codex model, Orbit asks the copy's Codex provider to verify the exact slug before starting the thread. A turn's result names the provider instance, the model and the effort the thread started with. See [copy turn agents](/reference/tasks#copy-turn-agents).
 
 Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7. A Claude thread carries no model options.
 
