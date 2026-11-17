@@ -1,0 +1,16 @@
+file = "swamp/tests/ansible_swamp_retention_test.py"
+# Measured locally at 5 seconds; allow for the shared runner and Ansible startup.
+cost = 20
+host_programs = ["rm"]
+cases = [
+  "test_selection_previous_mapped_and_unknown_folders_survive_and_repeat_is_unchanged",
+  "test_an_unknown_previous_selection_never_authorizes_deletion",
+  "test_drained_start_removes_only_downloaded_bundles_and_keeps_identity",
+]
+inputs = [
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/tasks/role-swamp.yml",
+  "swamp/ansible/tasks/swamp-binary-retention.yml",
+  "swamp/ansible/tasks/swamp-housekeeping.yml",
+  "swamp/manifest.yaml",
+]

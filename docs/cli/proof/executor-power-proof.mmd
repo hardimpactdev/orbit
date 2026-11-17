@@ -1,0 +1,46 @@
+sequenceDiagram
+  %% ADR 0266 slice 4; docs/reference/executor.md#rust-sleep-and-discard. Proof-only durable power orders, never production instance.sleep.
+  %% status: draft
+  %% command: none · started by proof support on a nested Gateway
+  %% kind: executor.power_proof
+  autonumber
+  %% lane RN icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane OB icon=server pill=target tone=amber
+  %% lane EX icon=server pill=target tone=amber
+  participant RN as Proof runner
+  participant GW as Nested Gateway
+  participant OB as Observer<br/>orbit-agent
+  participant EX as Executor<br/>app-dev Node
+  RN->>GW: Sleep or discard INSTANCE
+  %%> Caller:
+  %%> - only tools/swamp-proof-guest/executor-order.php, as the Gateway's managed user
+  Note over GW: Record running Operation<br/>Instance target, node_id
+  GW->>OB: Signed executor-order
+  OB->>EX: Order bytes, unread
+  %%> Admission:
+  %%> - caller, signature, enabled family, Node and target checks precede work
+  alt sleep
+    Note over EX: Limits, Incus freeze<br/>scan whole subtree, publish plan
+    %%> Durable state:
+    %%> - atomically fsync non-max swap limits before opening them, and the plan before reclaim
+    %%> - parallel maps/pagemap capture includes bits 63 and 62; recovery preserves a valid published plan
+    Note over EX: Reclaim, residual policy<br/>write asleep marker last
+    %%> Outcome:
+    %%> - memory.current settles or 2 s pass; at most 32 MiB anonymous RAM may remain
+    %%> - otherwise unfreeze and stop; a nested fleet resumes and fails instead
+    %%> Failure:
+    %%> - retain frozen recovery state; a refused freeze restores the original swap limits
+  else discard
+    Note over EX: Drop plan and limits
+    %%> Scope:
+    %%> - after stop, destroy or fresh boot; repeating removal is safe
+  end
+  EX-->>OB: Journaled result
+  %%> Execution:
+  %%> - per-target lock; a repeated Operation returns its first result without running again
+  OB->>GW: Result bytes, unread
+  GW->>GW: Record and hand off result<br/>close Operation
+  %%> Outcome:
+  %%> - succeeded on done, failed otherwise; a throw closes all open proof Operations
+  GW-->>RN: Durable result and timings

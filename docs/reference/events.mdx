@@ -210,6 +210,8 @@ No component publishes `client-output` events now: the agent command that did wa
 
 In a request or a scheduler tick, a change only to tokens, line counts, or duration sends no event, because showing a task refreshes those values. A publish run for a new workspace report always sends `task_group.updated` for the tasks of that workspace. The Gateway collects the task changes of one request, one scheduler tick, or one publish run, and sends each record once when that work ends.
 
+Conn's Tasks panel follows these events and reads the task again on each one: [Tasks panel](/reference/conn#tasks-panel).
+
 ### Activity
 
 | Type | Fires when | Data |

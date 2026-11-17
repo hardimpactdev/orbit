@@ -19,4 +19,6 @@ Starting commands follow the parent Operation until its result arrives. Ctrl-C s
 | [`operation:show`](/cli/operation/show) | Show one Operation and its native result. |
 | [`operation:cancel`](/cli/operation/cancel) | Ask one operation to stop. |
 
+For a clone create or migration, `operation:show` prints a `Model route` line when the result's `model_route.ready` is false. The line includes the admission-time error code and message. See [Model access](/reference/development-containers#model-access).
+
 Every command accepts `--json`.

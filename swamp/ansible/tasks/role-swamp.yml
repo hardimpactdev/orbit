@@ -28,6 +28,10 @@
 - name: Link the pinned Swamp executable
   ansible.builtin.file: { path: /usr/local/bin/swamp, src: "{{ rt.swamp.binary.path }}", state: link, force: true, follow: false }
   register: swamp_link
+- name: Retain the selected and previous Swamp binary and live process versions
+  ansible.builtin.import_tasks: swamp-binary-retention.yml
+- name: Install bounded host housekeeping
+  ansible.builtin.import_tasks: swamp-housekeeping.yml
 - name: Install the Swamp SSH identity
   ansible.builtin.copy:
     src: /etc/orbit/node-proxy/id_ed25519

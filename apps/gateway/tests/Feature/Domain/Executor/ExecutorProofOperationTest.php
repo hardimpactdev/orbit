@@ -18,9 +18,10 @@ use App\Infrastructure\Executor\ExecutorResultQueue;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
-use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
@@ -32,7 +33,7 @@ use Psr\Log\NullLogger;
  * publish is faked and Valkey is an in-memory list, so these run without Reverb or a server.
  */
 
-uses(LazilyRefreshDatabase::class);
+uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     Event::fake([ExecutorOrderBroadcast::class]);
@@ -124,6 +125,16 @@ it('sends each order of the Operation as executor-order on its Node, with a new 
     Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 2);
     Event::assertDispatched(ExecutorOrderBroadcast::class, fn (ExecutorOrderBroadcast $event): bool => $event->broadcastOn()[0]->name === "presence-node.{$this->node->id}"
         && $event->broadcastWith() === ['operation' => (string) $operation->id, 'order' => $first->wire]);
+});
+
+it('refuses a non-string stored action before signing or publishing an order', function (): void {
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
+    $operation->update(['input' => ['action' => ['sleep']]]);
+
+    expect(fn () => $this->proof->send($operation, ExecutorOrderSigner::fromConfig()))
+        ->toThrow(InvalidArgumentException::class, 'An executor proof Operation needs a string action.');
+
+    Event::assertNotDispatched(ExecutorOrderBroadcast::class);
 });
 
 it('hands the result the listener records to the waiting request and closes the Operation', function (): void {
@@ -239,4 +250,43 @@ it('fails every open Operation of a burst whose third publish throws, and keeps 
     expect($statuses)->toBe([['status' => 'succeeded', 'error_code' => null], ['status' => 'failed', 'error_code' => ExecutorProofOperation::Aborted],
         ['status' => 'failed', 'error_code' => ExecutorProofOperation::Aborted]])
         ->and(Operation::query()->where('kind', OperationKinds::ExecutorProof)->where('status', OperationStatus::Running)->exists())->toBeFalse();
+});
+
+it('records sleep, wake and discard as durable power proof Operations on the Instance and sends their signed target', function (string $action): void {
+    $instance = (new Instance)->forceFill(['id' => 23, 'node_id' => $this->node->id]);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, $action);
+    $order = $this->proof->send($operation, ExecutorOrderSigner::fromConfig());
+    $payload = json_decode(base64_decode(explode('.', $order->wire)[0]), true);
+
+    expect($operation->refresh())->kind->toBe(OperationKinds::ExecutorPowerProof)
+        ->target_type->toBe('instance')->target_id->toBe(23)->node_id->toBe($this->node->id)
+        ->input->toBe(['action' => $action])->status->toBe(OperationStatus::Running)
+        ->and($payload)->toMatchArray(['action' => $action, 'target' => '23', 'operation' => (string) $operation->id]);
+    Event::assertDispatched(ExecutorOrderBroadcast::class);
+
+    $done = ['operation' => (string) $operation->id, 'action' => $action, 'target' => '23', 'status' => 'done', 'repeat' => false];
+    $this->listener->receive($this->node->id, proofReply($operation, $done));
+    $this->proof->finish($operation, $this->proof->wait($operation, 1.0));
+    expect($operation->refresh())->status->toBe(OperationStatus::Succeeded)->executor_result->toBe($done);
+})->with(['sleep', 'wake', 'discard']);
+
+it('succeeds a wake proof on a partial result: the container runs again before its whole restore', function (): void {
+    $instance = (new Instance)->forceFill(['id' => 23, 'node_id' => $this->node->id]);
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, 'wake');
+    $partial = ['operation' => (string) $operation->id, 'action' => 'wake', 'target' => '23', 'status' => 'partial',
+        'code' => 'instance.restore_deadline', 'repeat' => false];
+    $this->listener->receive($this->node->id, proofReply($operation, $partial));
+    $this->proof->finish($operation, $this->proof->wait($operation, 1.0));
+
+    expect($operation->refresh())->status->toBe(OperationStatus::Succeeded)->executor_result->toBe($partial)->result->toBe($partial);
+});
+
+it('refuses a power proof of another Node or an action outside power before recording an Operation', function (): void {
+    $instance = (new Instance)->forceFill(['id' => 23, 'node_id' => $this->node->id + 1]);
+    expect(fn () => $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, 'sleep'))
+        ->toThrow(InvalidArgumentException::class);
+    $instance->node_id = $this->node->id;
+    expect(fn () => $this->proof->run($this->node, fn (Closure $start): Operation => $start(), $instance, 'proof.noop'))
+        ->toThrow(InvalidArgumentException::class);
+    expect(Operation::query()->where('kind', OperationKinds::ExecutorPowerProof)->count())->toBe(0);
 });

@@ -97,6 +97,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet-rules-read.yml
   - ansible/tasks/instance-fleet-check.yml
   - ansible/tasks/instance-fleet-start.yml
+  - ansible/tasks/instance-fleet-known-hosts.yml
   - ansible/tasks/instance-fleet-reach.yml
   - ansible/tasks/instance-fleet-ready.yml
   - ansible/tasks/instance-fleet-proxy.yml
@@ -151,6 +152,8 @@ additionalFiles:
   - ansible/tasks/role-tool-manager.yml
   - ansible/tasks/role-analytics.yml
   - ansible/tasks/role-swamp.yml
+  - ansible/tasks/swamp-binary-retention.yml
+  - ansible/tasks/swamp-housekeeping.yml
   - ansible/tasks/role-publication-read.yml
   - ansible/tasks/role-publication-php.yml
   - ansible/tasks/role-publication-dns.yml

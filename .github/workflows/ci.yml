@@ -564,7 +564,7 @@ jobs:
       # BeautifulRust (ADR 0267 P9): the executor crates have been clippy-clean from their first commit; the observer and its
       # contract crate joined in slice B1 (#3944), which also denies unwrap() outside tests.
       - name: Lint the agent and executor crates
-        run: cargo clippy --locked -p orbit-agent -p orbit-agent-contract -p orbit-executor-core -p orbit-executor --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
   ci-policy:
     name: CI policy
@@ -689,6 +689,9 @@ jobs:
       matrix:
         shard: ${{ fromJSON(needs.changes.outputs.fixture_shards) }}
     steps:
+      # The shard deadline counts from here, so checkout and setup time stay inside the job's four minutes.
+      - name: Record the job start
+        run: echo "ORBIT_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -751,6 +754,9 @@ jobs:
       matrix:
         shard: ${{ fromJSON(needs.changes.outputs.self_hosted_shards) }}
     steps:
+      # The shard deadline counts from here, so checkout and setup time stay inside the job's four minutes.
+      - name: Record the job start
+        run: echo "ORBIT_JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

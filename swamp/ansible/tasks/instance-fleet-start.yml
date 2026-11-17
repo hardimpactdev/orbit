@@ -60,6 +60,31 @@
       {{ fleet_start_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
     quiet: true
 
+# The fleet builds these Nodes itself. Direct Gateway reads run Incus as the managed user; the Instance host marker
+# identifies every Node that needs socket access. The account already has passwordless sudo. Repair each copy at start.
+- name: Read which nested Nodes are Instance hosts
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', item, '--', 'test', '-f', '/etc/orbit/instance-fleet-node'] }}"
+  loop: "{{ fleet_names }}"
+  register: fleet_instance_hosts
+  changed_when: false
+  failed_when: fleet_instance_hosts.rc not in [0, 1]
+- name: Read the managed user's groups on nested Instance hosts
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', item, '--', 'id', '-nG', fleet_as_app_user[2]] }}"
+  loop: "{{ fleet_instance_hosts.results | selectattr('rc', 'eq', 0) | map(attribute='item') | list }}"
+  register: fleet_instance_host_groups
+  changed_when: false
+- name: Give nested Instance hosts' managed users Incus socket access
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', item.item, '--', 'usermod', '--append', '--groups', 'incus-admin', fleet_as_app_user[2]] }}"
+  loop: "{{ fleet_instance_host_groups.results }}"
+  when: "'incus-admin' not in item.stdout.split()"
+  register: fleet_instance_host_membership
+  changed_when: fleet_instance_host_membership.rc == 0
+
+- { name: Restore the nested Gateway SSH trust, ansible.builtin.import_tasks: instance-fleet-known-hosts.yml }
+
 # The nested Swamp reads its key file `api-key` as a link into the folder that the `club-key` device shows. The link is in the nested
 # Gateway's own disk, so `base` keeps it; a start sets it only when it differs.
 - name: Read the Club key link of the nested Gateway

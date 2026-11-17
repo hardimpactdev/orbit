@@ -903,13 +903,22 @@ final class Task extends Model
         TaskStatus::from($status);
     }
 
-    /** Records once when a task first becomes ready and when it ends ([Lifecycle times](/reference/tasks#lifecycle-times)). */
+    /**
+     * Records once when a task first becomes ready and when it ends, and when a subtask settles: a subtask that ends keeps its first
+     * settle, and one that runs again clears it, so its next end is recorded ([Lifecycle times](/reference/tasks#lifecycle-times)).
+     */
     private function stampLifecycle(): void
     {
-        if ($this->resolvedParentId() !== null || ! $this->isDirty('status')) {
+        if (! $this->isDirty('status')) {
             return;
         }
         $value = $this->attributes['status'] ?? null;
+        if ($this->resolvedParentId() !== null) {
+            $ended = in_array(is_string($value) ? TaskStatus::tryFrom($value) : null, [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled], true);
+            $this->settled_at = $ended ? ($this->settled_at ?? now()) : null;
+
+            return;
+        }
         $status = is_string($value) ? TaskGroupStatus::tryFrom($value) : null;
         if ($status === TaskGroupStatus::Todo) {
             $this->ready_at ??= now()->toImmutable();

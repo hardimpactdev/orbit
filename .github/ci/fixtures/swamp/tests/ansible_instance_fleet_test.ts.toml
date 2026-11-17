@@ -1,6 +1,9 @@
 order = 30
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
+  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired",
+  "an old-checkout fleet start records unavailable pin sync, then refresh writes pins on the new checkout and repeats unchanged",
+  "a fleet start appends the managed user to Incus admin on every marked host, preserves other groups and repeats unchanged without a converge",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
   "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts",
@@ -79,8 +82,8 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2840
-slices = 77
+cost = 2990
+slices = 80
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
   ".github/workflows/ci.yml",
@@ -101,6 +104,7 @@ inputs = [
 # ESTIMATE: ceil(seconds * 2.1) + 1; the planner adds 6s startup.
 # Other cases retain their earlier hosted or explicitly marked local estimates.
 [case_costs]
+"an old-checkout fleet start records unavailable pin sync, then refresh writes pins on the new checkout and repeats unchanged" = 70 # ESTIMATE: local 32 s x 2.1, rounded up
   "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads" = 58 # hosted run 43730633700: 45s x 1.25, rounded up, plus 1s
   "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record" = 10 # hosted run 43730633700: 7s x 1.25, rounded up, plus 1s
   "a refresh without the Club key reads no Swamp release and installs none" = 19 # hosted run 43730633700: 14s x 1.25, rounded up, plus 1s
@@ -180,3 +184,7 @@ inputs = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 45
   "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current" = 84 # ESTIMATE: local 39.196s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named" = 22
+
+  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired" = 40 # ESTIMATE: local 18 s x 2.1, rounded up plus 1 s
+
+  "a fleet start appends the managed user to Incus admin on every marked host, preserves other groups and repeats unchanged without a converge" = 40 # ESTIMATE: start twice and a failed group read, including two marked hosts

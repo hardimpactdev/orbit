@@ -31,9 +31,10 @@ final readonly class ListTaskGroupsAction
      * Reads one row more than the page, so the caller knows whether a next page exists.
      *
      * @param  int|null  $before  the cursor: only groups with a lower ID
+     * @param  int|null  $instanceId  only the groups whose task workspace is this Instance
      * @return array{groups: Collection<int, Task>, next_cursor: ?string}
      */
-    public function execute(?int $projectId, ?TaskGroupStatus $status, int $limit = self::DefaultLimit, ?int $before = null): array
+    public function execute(?int $projectId, ?TaskGroupStatus $status, int $limit = self::DefaultLimit, ?int $before = null, ?int $instanceId = null): array
     {
         $this->requireExtension->execute();
         $rows = Task::topLevel()
@@ -51,6 +52,7 @@ final readonly class ListTaskGroupsAction
                     ]]),
             ])
             ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
+            ->when($instanceId !== null, static fn ($query) => $query->where('taskable_type', (new Instance)->getMorphClass())->where('taskable_id', $instanceId))
             ->when($status instanceof TaskGroupStatus, static fn ($query) => $query->where('status', $status))
             ->when($before !== null, static fn ($query) => $query->where('id', '<', $before))
             ->orderByDesc('id')

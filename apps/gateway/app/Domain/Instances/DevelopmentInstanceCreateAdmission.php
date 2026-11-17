@@ -124,7 +124,6 @@ final readonly class DevelopmentInstanceCreateAdmission
     public function assertRuntime(): void
     {
         $this->assertRuntimeContributions();
-        $this->assertModelRoute();
     }
 
     public function assertRuntimeContributions(): void

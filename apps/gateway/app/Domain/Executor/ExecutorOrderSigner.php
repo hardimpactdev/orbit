@@ -17,8 +17,7 @@ use SensitiveParameter;
  */
 final readonly class ExecutorOrderSigner
 {
-    /** The Gateway's allowed actions; wake stays behind orbit.executor.wake_enabled until its Node action and fallback land. */
-    public const array Actions = ['proof.noop', 'wake'];
+    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard'];
 
     public const int MaxWireBytes = 4096;
 

@@ -221,7 +221,6 @@ final readonly class CompleteTaskGroupAction
                             ->update(['status' => TaskCheckStatus::Cancelled, 'finished_at' => now()]);
                         $task->update([
                             'status' => TaskStatus::Cancelled,
-                            'settled_at' => now(),
                             'completion_summary' => 'Cancelled by operator.',
                         ]);
                     }

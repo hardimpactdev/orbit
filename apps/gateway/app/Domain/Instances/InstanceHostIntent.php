@@ -76,6 +76,22 @@ final readonly class InstanceHostIntent
 
     public const int AgentUid = 2750;
 
+    /**
+     * The app account of a container (development-containers.md#the-app-users-name): the stock Debian `www-data`, uid and gid 33, with its
+     * stock home. FrankenPHP, every Process and Schedule run as it; `agent` is in its group.
+     */
+    public const string AppUser = 'www-data';
+
+    public const string AppHome = '/var/www';
+
+    public const int AppUid = 33;
+
+    public const int AppGid = 33;
+
+    /**
+     * The nested-fleet container's `orbit` and `work`: its inner guests are Nodes whose `orbit` the ID map puts on these numbers, and
+     * the inner fleet runs as them over the shared checkout (ADR 0268, second amendment).
+     */
     public const int OrbitUid = 1000;
 
     public const int WorkGid = 2760;
@@ -266,16 +282,17 @@ final readonly class InstanceHostIntent
     }
 
     /**
-     * Each container on the Node with a T3, a clone or a moved checkout, and its unit drop-ins as its create writes them
-     * (InstanceContainer::t3DropIns). A default runs no T3.
+     * Each container on the Node with a T3, a clone or a moved checkout, its server's program, which the converge asks for open
+     * turns before it restarts T3 there, and its unit drop-ins as its create writes them (InstanceContainer::t3DropIns). A default
+     * runs no T3.
      *
-     * @return list<array{project: string, container: string, files: list<array{path: string, content: string, mode: string}>}>
+     * @return list<array{project: string, container: string, program: string, files: list<array{path: string, content: string, mode: string}>}>
      */
     private static function t3Files(Node $node, InstanceFolders $folders): array
     {
         return array_values(InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->orderBy('incus_project')->orderBy('container_name')->get()
             ->map(static fn (InstanceRuntime $runtime): array => ['project' => $runtime->incus_project, 'container' => $runtime->container_name,
-                'files' => InstanceContainer::t3DropIns($runtime, $folders)])->all());
+                'program' => $runtime->server()->program(), 'files' => InstanceContainer::t3DropIns($runtime, $folders)])->all());
     }
 
     /**

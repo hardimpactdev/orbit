@@ -47,7 +47,7 @@ sequenceDiagram
   SW->>C: Fetch, check out, .env<br/>Ansible · tags source
   %%> What it does:
   %%> - the source step of a deploy, at the frozen commit
-  SW->>C: Run before steps<br/>incus exec · as orbit
+  SW->>C: Run before steps<br/>incus exec · as www-data
   %%> What it does:
   %%> - each `before_activation` step; `migrate` finds the schema at this commit and changes nothing
   SW->>C: Install units, snapshot<br/>Ansible · tags release
@@ -64,7 +64,7 @@ sequenceDiagram
   %%> What it does:
   %%> - disables and stops the host Node timers and Process units, with the bounded graceful stop, then the PHP-FPM pool
   %%> - enables and starts the new live's timers and Processes, and turns `boot.autostart` on
-  SW->>C: Run after steps<br/>incus exec · as orbit
+  SW->>C: Run after steps<br/>incus exec · as www-data
   %%> What it does:
   %%> - each `after_activation` step, in the new live
   SW->>N: Copy changes, read back<br/>Ansible · tags copy · check

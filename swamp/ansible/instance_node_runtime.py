@@ -190,7 +190,7 @@ def node_environment(context, base, private_environments):
     return environment
 
 
-def fetch(container, home=HOME, vp=VP, app_user='orbit', private_environments=None, budget_seconds=FETCH_SECONDS):
+def fetch(container, home=HOME, vp=VP, app_user='www-data', private_environments=None, budget_seconds=FETCH_SECONDS):
     contexts = unit_contexts(container)
     if not contexts:
         return False, []

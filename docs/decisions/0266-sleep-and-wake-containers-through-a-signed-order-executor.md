@@ -12,7 +12,9 @@ A new Rust binary, the **executor**, sleeps and wakes app containers on its Node
 
 In progress.
 
-Slices 1 to 3 are built ([Executor](/reference/executor)): the executor with the no-op `proof` action, its install, the Gateway signer, the `executor-order` event, the observer's pass-through, and the Gateway's result listener with its Valkey hand-off. Slice 2 puts the Operation id, as a numeric string, beside the order in the event: `{"operation", "order"}`. The observer copies it unread into each reply line, `{"operation", "line"}`, because the `accepted` line and a refusal before the payload is read carry no Operation. Every order belongs to an Operation with a `node_id`, and the listener records a result only from that Node. No Gateway command sends an order yet. Sleep and wake through the executor are not built.
+Slices 1 to 3 are built ([Executor](/reference/executor)): the executor with the no-op `proof` action, its install, the Gateway signer, the `executor-order` event, the observer's pass-through, and the Gateway's result listener with its Valkey hand-off. Slice 2 puts the Operation id, as a numeric string, beside the order in the event: `{"operation", "order"}`. The observer copies it unread into each reply line, `{"operation", "line"}`, because the `accepted` line and a refusal before the payload is read carry no Operation. Every order belongs to an Operation with a `node_id`, and the listener records a result only from that Node.
+
+Slices 4 and 5 are built and have swap-backed proof from real clones with T3 and Vite: 30 signed Rust sleeps and wakes, a three-clone burst and SIGKILL recovery. Every wake returned `done`, with zero failed pages after capture excluded Linux guard markers and restore continued after failed pages. Thirty Python sleeps skipped capture as `placement_unproven`, so they do not measure the same work. [Executor](/reference/executor#rust-sleep-and-discard) records the numbers, scopes and nested-fleet capability limit. No production sleep or wake goes through the executor yet.
 
 Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One executor does every sleep and wake for every caller. The kernel's page records decide what comes back. The signature is the security boundary, and root on a Node is an accepted risk. Exceptions:
 
@@ -38,7 +40,7 @@ Today a wake takes 0.72 s on the Node with the live Python helper: restore 0.39�
 | Order security tests: bad signature, changed action or target, expired, replayed (also across a restart), unknown action, wrong Node | every one refused and logged |
 | SIGKILL in the middle of a wake | systemd restarted the executor in 0.34 s; it finished the open wake from its journal; a repeat of the Operation returned that result |
 
-Two things are not yet proven. The spike froze and thawed a delegated cgroup directly, not through the Incus unfreeze call. Its stand-in was a 7-process cgroup, not a real clone with T3 and Vite. Both wait for group 5513, which makes nested-app-dev host app containers.
+The spike used a delegated cgroup and a 7-process stand-in. Subtask 5768 subsequently measured the real Incus API and real clones with T3 and Vite on the nested Instance host. Its nested-fleet capability and Python capture limits are recorded in [Executor](/reference/executor#rust-wake).
 
 ## Decision
 
@@ -47,7 +49,7 @@ The owner's decisions D1–D8 bind every part of this design. The sections after
 ### The owner's decisions
 
 - **D1. A Rust executor does the work.** A separate binary, `orbit-executor`, built from the `apps/agent` Cargo workspace, sleeps and wakes containers itself: in-process, multi-threaded and long-running. No systemd call, Python program, dispatch script or path unit sits on the path. systemd only starts it at boot and restarts it (`Restart=always`). Only roles that need it install it: `app-dev` now, and `app-prod` when ADR 0265 (group 5556) brings sleep to production.
-- **D2. The whole container hibernates.** A sleep freezes and records every process in the container's cgroup subtree, with no picking: T3 and Vite included. The plan records each page that is present **or swapped** (pagemap bit 63 or bit 62). A partial wake therefore never shrinks the next sleep's plan.
+- **D2. The whole container hibernates.** A sleep freezes and records every process in the container's cgroup subtree, with no picking: T3 and Vite included. The plan records each readable page that is present **or swapped** (pagemap bit 63 or bit 62). Guard markers (bit 58) contain no readable page and are excluded. A partial wake therefore never shrinks the next sleep's plan.
 - **D3. Every millisecond counts.** The wake runs inside the visitor's request. Caddy sends the visit to the Gateway, the Gateway waits a short bound for the wake, and then the original request goes to the app. When the bound passes first, the visitor gets today's waiting page.
 - **D4. No Node-to-Node traffic, ever.** Everything flows through the Gateway, which authorizes and signs.
 - **D5. Orders and results travel over the observer's WebSocket** (Reverb), not SSH or HTTP POSTs. A long-running Gateway listener hands each result to the waiting request by Operation id through Valkey.
@@ -169,9 +171,9 @@ Slices 1–3 can run before group 5513 lands. Slices 4–8 need a nested `app-de
 4. **Clock skew is untested.** The nested fleet shares one kernel clock. Skew over 5 s refuses every order on that Node until it is fixed.
 5. **The signing key stays readable by the Gateway's `orbit` user.** See Key custody: a separate signer would protect nothing more today, but any `orbit` process can sign orders.
 6. **A result finished after an executor crash reaches the Gateway only when it asks again.** The executor has no outbound path. The Gateway learns the result by sending the same Operation again.
-7. **The Incus unfreeze and freeze calls are not measured.** The spike wrote `cgroup.freeze` directly. If the Incus API adds tens of milliseconds, the bound must grow.
-8. **A real clone with T3 and Vite is not measured.** It has more processes, more file-backed pages and pages that have been cold for hours. Swap for the spike was host swap files under load from other Instances.
-9. **Bursts exceed the bound.** Three wakes at once ended at 747 ms median for the last. Serving one target at a time helps the first wake only.
+7. **Incus unfreeze is measured.** Its state-change request and operation wait took p50/p95/max 9.471/18.734/19.041 ms over 30 wakes. Freeze is included in the measured sleep total but was not timed separately.
+8. **Real clones with T3 and Vite are proven.** All 30 single wakes, the burst and SIGKILL recovery returned `done` with zero failed pages. Linux guard markers are excluded at capture; short reads continue after each failed page. The nested fleet gets `EPERM` for the optional `process_madvise` hint, so its timings have no WILLNEED head start. The effect of pages cold for hours remains unmeasured.
+9. **Burst queue time counts toward the bound.** The three clones woke on the Node in 238.297, 402.372 and 484.466 ms. Larger bursts and a different swap device remain unmeasured.
 10. **Root on the Node is trusted**, as above.
 
 ## Affects

@@ -3,6 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
+  %% ADR 0266 slice 5: the proof-only executor.power_proof Operation signs wake; production instance.wake stays below until slices 6-8.
   autonumber
   %% lane CL icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -12,6 +13,15 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>Instance container
+  Note over GW,N: Slice 5 proof: Rust wake<br/>pool restore → Incus unfreeze
+  %%> Executor proof path:
+  %%> - a durable executor.power_proof Operation signs `wake`; the observer only relays bytes; the reply is `accepted`, then one result line
+  %%> - before any memory syscall: boot id, cgroup inode and Incus incarnation against the plan, then each process's start time through a pidfd; any mismatch drops the plan and the wake goes on without a restore (`partial`, `instance.restore_plan_stale`)
+  %%> - restore through the Node's one restore pool (`/etc/orbit/executor/restore-threads`, 32, floor 16), one target's items finished before the next starts: `process_madvise(MADV_WILLNEED)` then `process_vm_readv` of each recorded page that is not resident, within 2 s; at the bound the wake skips unstarted items and waits 250 ms for running ones, then reports `partial`, `instance.restore_deadline`; a read still stuck in its syscall then is stalled: `partial`, `instance.restore_stalled`, and the wake goes on, because a late read only copies into the executor's buffer; a later sleep or discard of the target waits up to 10 s for that reader, else `instance.restore_readers_busy`; a short read skips its failed page and continues with the rest of the item, counting unreadable pages; an unreadable pagemap or a failed page reports `partial`, `instance.restore_read_failed`; a plan that breaks a bound is `instance.restore_plan_invalid`
+  %%> - unfreeze through the Incus local API with its 5 s bounds, then wait up to 5 s for the kernel thaw; a kernel freeze that stays, or one Incus lost before the wake, fails `instance.container_frozen_unmanaged` with no cgroup write
+  %%> - close exactly the recorded swap limits, with no disk sync; one readiness request to the web port until an answer below 500, within 1.5 s, else `instance.web_unready` and the marker stays; then remove the asleep marker
+  %%> - a stopped container fails `instance.container_stopped` and drops its plan: a boot is the run's work; a running one gets only the steps after the unfreeze (`done`), so crash recovery and a repeat are safe
+  %%> - no production flow switches in this slice: slice 6 has the Gateway call it, slice 7 Swamp and the relay
   CL->>GW: instance:wake INSTANCE
   %%> Command:
   %%> - `orbit instance:wake INSTANCE`
@@ -131,7 +141,7 @@ sequenceDiagram
   GW-->>CL: 202 Accepted<br/>Operation ID
   SW->>N: Wake the container<br/>Ansible · tags start
   %%> What it does:
-  %%> - Frozen: `orbit-instance-power restore` as the Instance's lock unit, a busy lock (systemd's `UnitExists` refusal) retried 0.25 s apart, 40 times, else `instance.power_helper_busy`; a helper crash fails with `instance.power_helper_failed`: with a valid plan it reads the recorded pages back within 2 s while still frozen; then one `incus resume`, and `memory.swap.max` back to 0 on each cgroup of `limits.json` that still exists (a short-lived unit's cgroup may be gone; that never fails the wake); FrankenPHP gets 10 tries 1 s apart from the Node to its address; nothing boots and nothing converges, `wake: resumed`
+  %%> - Frozen: `orbit-instance-power restore` as the Instance's lock unit, a busy lock (systemd's `UnitExists` refusal) retried 0.25 s apart, 40 times, else `instance.power_helper_busy`; a helper crash fails with `instance.power_helper_failed`: with a valid plan it reads the recorded pages back within 2 s while still frozen; then one `incus resume`, and `memory.swap.max` back to 0 on each inner cgroup of `limits.json` that still exists, and on the container's own cgroup back to its `limits.memory.swap` bytes, or 0 without a size (Incus gives 0 without a size; a nested-fleet container keeps its swap) (a short-lived unit's cgroup may be gone; that never fails the wake); FrankenPHP gets 10 tries 1 s apart from the Node to its address; nothing boots and nothing converges, `wake: resumed`
   %%> - a missing, stale or invalid plan makes no memory call; the resume is ordinary
   %%> - a run that follows the fast path finds the state the Node reached: a container that already runs is not resumed again, and the run reads this Operation's outcome files for their facts
   %%> - a nested-fleet Instance resumes with its inner fleet, `wg-nested` and the Club key in /run: a freeze keeps them, so the wake starts and checks no fleet
@@ -141,6 +151,7 @@ sequenceDiagram
   %%> - a Frozen container without the marker is resumed; the result says `marker_found: false`
   %%> - before the boot, the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - boot: `incus start`; nftables, T3, FrankenPHP and the enabled Process units start with the container
+  %%> - an older container's app account moves to the stock `www-data` (uid and gid 33) as soon as it runs, before any other command in it, by root's one swap file `/usr/local/libexec/orbit-app-user`; a moved container only reads, and a nested-fleet container keeps `orbit` and `work` for its inner fleet, with `www-data` in `work`
   %%> - waits until each desired-running unit is active, then until FrankenPHP answers, else `instance.web_unready`
   %%> - a 5xx answer gets up to 5 s to clear; an app that answers 5xx by itself is then served as it is
   %%> - removes the asleep marker, so Caddy sends the next request to the app

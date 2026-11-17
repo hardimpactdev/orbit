@@ -3,12 +3,15 @@
 import ast
 import contextlib
 import copy
+import errno
 import io
 import json
 import os
 import pwd
 import runpy
 import shutil
+import stat
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -180,14 +183,144 @@ INNER_CONFIG = {"zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mo
                 "security.shifted": "true"}
 
 
+class IdmapTest(unittest.TestCase):
+    MAP = [{"Isuid": True, "Isgid": False, "Hostid": 131072, "Nsid": 0, "Maprange": 65536},
+           {"Isuid": False, "Isgid": True, "Hostid": 131072, "Nsid": 0, "Maprange": 65536}]
+
+    def helper(self):
+        # Load the phase's imports and definitions, without executing its command-line main.
+        tree = ast.parse(SCRIPT.read_text())
+        module = ast.Module(body=[node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef))], type_ignores=[])
+        namespace = {}
+        exec(compile(module, str(SCRIPT), "exec"), namespace)
+        return namespace["unshift_clone_rootfs"]
+
+    def run_helper(self, root, source=None, own=None, status="Stopped", driver="dir"):
+        container = {"name": "instance-7", "project": "orbit-instances", "root_disk_pool": "orbit-instances",
+                     "clone": {"source": "instance-1"}}
+        calls = []
+
+        def run(argv):
+            calls.append(argv)
+            data = {"driver": driver, "config": {"source": str(root.parents[2])}} if "/storage-pools/" in argv[-1] else {
+                "config": {"volatile.last_state.idmap": json.dumps(self.MAP if source is None else source)}}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(data), "")
+
+        changed = self.helper()(container, {"status": status, "config": {"volatile.last_state.idmap": json.dumps(own or [])}}, run)
+        return changed, calls
+
+    def test_unshift_preserves_modes_links_acls_and_capabilities_and_can_repeat(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "containers/orbit-instances_instance-7/rootfs"
+            root.mkdir(parents=True)
+            file = root / "program"
+            file.write_text("program")
+            file.chmod(0o6755)
+            link = root / "link"
+            link.symlink_to("/outside")
+            other = root / "outside-map"
+            other.write_text("ordinary")
+            paths = [root, file, link, other]
+            owners = {str(path): (131072, 131079) for path in paths}
+            owners[str(other)] = (70000, 80000)
+            acl = struct.pack("<IHHIHHIHHI", 2, 2, 7, 131075, 8, 5, 131076, 1, 7, 0xffffffff)
+            cap = struct.pack("<6I", 0x03000001, 1, 2, 3, 4, 131072)
+            attrs = {(str(file), "security.capability"): cap,
+                     (str(file), "system.posix_acl_access"): acl,
+                     (str(root), "system.posix_acl_default"): acl}
+            real_lstat = os.lstat
+            chowns = []
+
+            def lstat(path, **kwargs):
+                held = list(real_lstat(path, **kwargs))
+                held[4:6] = owners[str(path)]
+                return os.stat_result(held)
+
+            def chown(path, uid, gid):
+                chowns.append((str(path), uid, gid))
+                owners[str(path)] = (uid, gid)
+                if not stat.S_ISLNK(real_lstat(path).st_mode):
+                    os.chmod(path, stat.S_IMODE(real_lstat(path).st_mode) & ~0o6000)
+                attrs.pop((str(path), "security.capability"), None)
+
+            def getxattr(path, name, **kwargs):
+                self.assertNotEqual(str(path), str(link), "Never read a symlink's target metadata")
+                if (str(path), name) not in attrs:
+                    raise OSError(errno.ENODATA, "missing")
+                return attrs[str(path), name]
+
+            with patch("os.lstat", lstat), patch("os.lchown", chown), patch("os.getxattr", getxattr), patch("os.setxattr", side_effect=lambda p, n, v, **kw: attrs.update({(str(p), n): v})):
+                changed, _ = self.run_helper(root)
+                self.assertTrue(changed)
+                self.assertEqual(owners[str(file)], (0, 7))
+                self.assertEqual(owners[str(link)], (0, 7))
+                self.assertEqual(owners[str(other)], (70000, 80000))
+                self.assertEqual(stat.S_IMODE(real_lstat(file).st_mode), 0o6755)
+                self.assertEqual(struct.unpack_from("<I", attrs[str(file), "security.capability"], 20)[0], 0)
+                for path, name in ((file, "system.posix_acl_access"), (root, "system.posix_acl_default")):
+                    self.assertEqual(struct.unpack_from("<I", attrs[str(path), name], 8)[0], 3)
+                    self.assertEqual(struct.unpack_from("<I", attrs[str(path), name], 16)[0], 4)
+                    self.assertEqual(struct.unpack_from("<I", attrs[str(path), name], 24)[0], 0xffffffff)
+                count = len(chowns)
+                changed, _ = self.run_helper(root)
+                self.assertFalse(changed)
+                self.assertEqual(len(chowns), count)
+
+    def test_unshift_translates_split_ranges_and_xattrs_without_changing_the_owner(self):
+        ranges = self.MAP + [{"Isuid": True, "Isgid": False, "Hostid": 300000, "Nsid": 1000, "Maprange": 10},
+                             {"Isuid": False, "Isgid": True, "Hostid": 400000, "Nsid": 2000, "Maprange": 10}]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "containers/orbit-instances_instance-7/rootfs"
+            root.mkdir(parents=True)
+            attrs = {"security.capability": struct.pack("<6I", 0x03000000, 1, 2, 3, 4, 300000),
+                     "system.posix_acl_access": struct.pack("<IHHIHHI", 2, 2, 7, 300003, 8, 5, 400004)}
+
+            def getxattr(path, name, **kwargs):
+                if name not in attrs:
+                    raise OSError(errno.ENOTSUP, "unsupported")
+                return attrs[name]
+
+            with patch("os.getxattr", getxattr), patch("os.setxattr", side_effect=lambda p, n, v, **kw: attrs.update({n: v})), patch("os.lchown") as chown:
+                changed, _ = self.run_helper(root, source=ranges)
+                self.assertTrue(changed)
+                chown.assert_not_called()
+                self.assertEqual(struct.unpack_from("<I", attrs["security.capability"], 20)[0], 1000)
+                self.assertEqual(struct.unpack_from("<I", attrs["system.posix_acl_access"], 8)[0], 1003)
+                self.assertEqual(struct.unpack_from("<I", attrs["system.posix_acl_access"], 16)[0], 2004)
+                # A v2 capability has no rootid; its data remains byte-for-byte unchanged.
+                cap_v2 = struct.pack("<5I", 0x02000001, 1, 2, 3, 4)
+                attrs["security.capability"] = cap_v2
+                changed, _ = self.run_helper(root, source=ranges)
+                self.assertFalse(changed)
+                self.assertEqual(attrs["security.capability"], cap_v2)
+
+    def test_running_copy_or_an_empty_source_map_does_no_filesystem_work(self):
+        for source, own, status in (([], [], "Stopped"), (self.MAP, self.MAP, "Stopped"), (self.MAP, [], "Running")):
+            with self.subTest(source=source, own=own, status=status), patch("os.lstat") as lstat:
+                changed, calls = self.run_helper(Path("/unused/containers/orbit-instances_instance-7/rootfs"), source=source, own=own, status=status)
+                self.assertFalse(changed)
+                lstat.assert_not_called()
+                self.assertFalse(any("/storage-pools/" in call[-1] for call in calls))
+
+    def test_an_unreadable_rootfs_or_xattr_refuses_by_name(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "containers/orbit-instances_instance-7/rootfs"
+            with self.assertRaisesRegex(RuntimeError, "^instance.clone_idmap_unshift_failed$"):
+                self.run_helper(root)
+            root.mkdir(parents=True)
+            with patch("os.getxattr", side_effect=PermissionError(errno.EACCES, "denied")):
+                with self.assertRaisesRegex(RuntimeError, "^instance.clone_idmap_unshift_failed$"):
+                    self.run_helper(root)
+
+
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None, stdin="PRIVATE-INPUT"):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None, stdin="PRIVATE-INPUT", before_start=None):
         calls = []
         self.inputs = {}
         self.decoding = {}
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder) / "rootfs"
+            root = Path(folder) / "containers/orbit-instances_instance-7/rootfs"
             # The nested guard reads the volumes of its disks with `incus query`: this fake answers from `volumes`, by
             # `<kind>/<name>`, and gives any other volume no keys.
             (Path(folder) / "bin").mkdir()
@@ -253,8 +386,16 @@ class CloneTest(unittest.TestCase):
                 if argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if argv[3:4] == ["delete"]:
+                    self.assertEqual(argv[4:], [container["name"], "--force"])
+                    read = None
+                    if root.exists():
+                        shutil.rmtree(root)
+                    return subprocess.CompletedProcess(argv, 0, "", "")
                 if argv[3:5] == ["file", "push"] and argv[-1] in (container["name"] + "/etc/hosts", container["name"] + "/etc/hostname"):
                     files[argv[-1][len(container["name"]):]] = kwargs.get("input")
+                if argv[3:4] == ["start"] and before_start:
+                    before_start(root)
                 if argv[3:4] == ["start"] and copied and "copy" in templates.get("/etc/hosts", []):
                     # Incus runs the `copy` templates once, at the first start after the copy, before pid 1: hosts.tpl.
                     copied.clear()
@@ -340,7 +481,11 @@ class CloneTest(unittest.TestCase):
                         return subprocess.CompletedProcess(argv, 1, "", "Error: Project not found")
                     return subprocess.CompletedProcess(argv, 0 if acl else 1, json.dumps(acl) if acl else "", "" if acl else "Error: Network ACL not found")
                 if argv[:2] == ["incus", "query"]:
-                    if "snapshots?" in argv[2]:
+                    if argv[2].startswith("/1.0/storage-pools/"):
+                        output = json.dumps({"driver": container.get("fixture_pool_driver", "dir"), "config": {"source": folder}})
+                    elif argv[2] == "/1.0/instances/instance-1?project=orbit-instances":
+                        output = json.dumps({"config": {"volatile.last_state.idmap": json.dumps(container.get("fixture_source_idmap", []))}})
+                    elif "snapshots?" in argv[2]:
                         output = json.dumps(container.get("fixture_snapshots", [{"name": "seed-abc"}]))
                     elif "sockets.target.wants" in argv[2]:
                         output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "orbit-node-service-3308.socket", "project.socket"])
@@ -410,6 +555,104 @@ class CloneTest(unittest.TestCase):
             self.hostname = (files.get("/etc/hostname"), files.get("kernel"))
             return calls, read, error.getvalue()
 
+    def test_a_copy_with_a_stripped_idmap_unshifts_its_rootfs_before_start(self):
+        touched = []
+        real_lstat = os.lstat
+
+        def shifted(path, **kwargs):
+            held = real_lstat(path, **kwargs)
+            if str(path).endswith("/etc/hostname"):
+                held = list(held)
+                held[4:6] = [131072, 131072]
+                return os.stat_result(held)
+            return held
+
+        def starting(root):
+            self.assertIn((str(root / "etc/hostname"), 0, 0), touched)
+
+        with patch("os.lstat", shifted), patch("os.lchown", side_effect=lambda p, u, g: touched.append((str(p), u, g))):
+            calls, _, error = self.clone(rootfs={"etc/hostname": "default"},
+                                        overrides={"fixture_source_idmap": IdmapTest.MAP}, before_start=starting)
+        self.assertEqual(error, "")
+        pool = next(i for i, call in enumerate(calls) if call[:2] == ["incus", "query"] and "/storage-pools/" in call[2])
+        start = next(i for i, call in enumerate(calls) if call[3:4] == ["start"])
+        self.assertLess(pool, start)
+
+    def test_a_failed_idmap_metadata_restore_deletes_the_copy_and_retry_copies_the_seed_again(self):
+        real_lstat, real_chmod = os.lstat, os.chmod
+        for fault in ("chmod", "setxattr"):
+            with self.subTest(fault=fault):
+                owners, attrs, chowns = {}, {}, []
+                fail = True
+
+                def lstat(path, **kwargs):
+                    held = real_lstat(path, **kwargs)
+                    if str(path).endswith("/rootfs/program"):
+                        if str(path) not in owners:
+                            # Every fresh seed copy has shifted owners and intact privileged metadata.
+                            owners[str(path)] = (131072, 131072)
+                            real_chmod(path, 0o6755)
+                            attrs[str(path)] = struct.pack("<6I", 0x03000001, 1, 2, 3, 4, 131072)
+                        held = list(real_lstat(path, **kwargs))
+                        held[4:6] = owners[str(path)]
+                        return os.stat_result(held)
+                    return held
+
+                def chown(path, uid, gid):
+                    chowns.append(str(path))
+                    owners[str(path)] = (uid, gid)
+                    real_chmod(path, 0o755)
+                    attrs.pop(str(path), None)
+
+                def chmod(path, mode, **kwargs):
+                    if fail and fault == "chmod" and str(path).endswith("/rootfs/program"):
+                        raise OSError(errno.EIO, "injected mode restore failure")
+                    real_chmod(path, mode, **kwargs)
+
+                def getxattr(path, name, **_):
+                    if name == "security.capability" and str(path) in attrs:
+                        return attrs[str(path)]
+                    raise OSError(errno.ENODATA, "missing")
+
+                def setxattr(path, name, value, **_):
+                    if fail and fault == "setxattr":
+                        raise OSError(errno.EIO, "injected capability restore failure")
+                    attrs[str(path)] = value
+
+                def starting(root):
+                    path = root / "program"
+                    self.assertEqual(owners[str(path)], (0, 0))
+                    self.assertEqual(stat.S_IMODE(real_lstat(path).st_mode), 0o6755)
+                    self.assertEqual(struct.unpack_from("<I", attrs[str(path)], 20)[0], 0)
+
+                with patch("os.lstat", lstat), patch("os.lchown", chown), patch("os.chmod", chmod), patch("os.getxattr", getxattr), patch("os.setxattr", setxattr):
+                    calls, read, error = self.clone(rootfs={"program": "seed program"}, overrides={"fixture_source_idmap": IdmapTest.MAP})
+                    self.assertEqual(error, "instance.clone_idmap_unshift_failed\n")
+                    self.assertEqual(len(chowns), 1, "Fail after ownership changed and privileged metadata was lost")
+                    self.assertIn(["incus", "--project", "orbit-instances", "delete", "instance-7", "--force"], calls)
+                    self.assertIsNone(read)
+                    self.assertFalse(any(call[3:4] == ["start"] for call in calls))
+                    fail = False
+                    retried, _, error = self.clone(existing=read, rootfs={"program": "seed program"},
+                                                   overrides={"fixture_source_idmap": IdmapTest.MAP}, before_start=starting)
+                    self.assertEqual(error, "")
+                    self.assertTrue(any(call[3:6] == ["copy", "instance-1/seed-abc", "instance-7"] for call in retried))
+                    self.assertEqual(len(chowns), 2)
+
+    def test_a_stripped_idmap_on_another_pool_driver_refuses_before_start(self):
+        calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": "zfs"})
+        self.assertEqual(error, "instance.clone_idmap_unshift_unsupported\n")
+        self.assertFalse(any(call[3:4] == ["start"] for call in calls))
+
+    def test_a_clone_with_no_missing_idmap_never_opens_its_pool(self):
+        for source, own in (([], []), ([], IdmapTest.MAP), (IdmapTest.MAP, IdmapTest.MAP)):
+            with self.subTest(source=source, own=own), patch("os.lchown") as chown:
+                calls, _, error = self.clone(overrides={"fixture_source_idmap": source},
+                                            damaged=lambda read: read["config"].update({"volatile.last_state.idmap": json.dumps(own)}))
+                self.assertEqual(error, "")
+                chown.assert_not_called()
+                self.assertFalse(any(call[:2] == ["incus", "query"] and "/storage-pools/" in call[2] for call in calls))
+
     def test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy(self):
         calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "other"}]})
         self.assertIn("instance.default_seed_missing", error)
@@ -440,16 +683,17 @@ class CloneTest(unittest.TestCase):
         self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
         self.assertIsNone(self.seed_commit)
 
-    def test_the_copy_reaches_the_default_only_through_its_snapshots_so_a_sleeping_default_needs_no_wake(self):
+    def test_a_sleeping_default_needs_no_wake_to_read_its_idmap_and_copy_its_snapshot(self):
         # A default sleeps frozen, and Incus may even report a lost freeze as Running (Instance 2454 on 2026-11-17). The copy never
-        # reads the default's state, never execs into it and never starts, stops, freezes or unfreezes it: every call that names it
-        # names its snapshot list or one snapshot.
+        # uses the default's state, never execs into it and never starts, stops, freezes or unfreezes it. It reads only its
+        # snapshot list and recorded ID map, and copies one snapshot.
         calls, _, error = self.clone()
         self.assertEqual(error, "")
         named = [arg for call in calls for arg in call if "instance-1" in arg]
         self.assertTrue(named)
         for arg in named:
-            self.assertTrue("/instances/instance-1/snapshots?" in arg or arg.startswith("instance-1/seed-"), arg)
+            self.assertTrue("/instances/instance-1/snapshots?" in arg or arg.startswith("instance-1/seed-")
+                            or arg == "/1.0/instances/instance-1?project=orbit-instances", arg)
 
     def test_a_replaced_seed_copies_the_newest_seed(self):
         calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"},
@@ -523,7 +767,7 @@ class CloneTest(unittest.TestCase):
         _, _, error = self.clone(transcript=transcript)
         self.assertEqual(error, "")
         printed = json.loads(transcript[0].strip().splitlines()[-1])
-        self.assertEqual(set(printed["timings"]), {"acl", "copy", "units", "boot_files", "firewall", "network_check", "start", "private_names",
+        self.assertEqual(set(printed["timings"]), {"acl", "copy", "units", "boot_files", "firewall", "network_check", "idmap", "start", "private_names",
                                                    "node_services", "mail", "branch", "t3_files"})
         self.assertTrue(all(isinstance(value, (int, float)) and value >= 0 for value in printed["timings"].values()))
 
@@ -1243,7 +1487,8 @@ class CloneTest(unittest.TestCase):
         # InstancePlacement::config of the nested project over the common limits, as the Gateway writes it.
         config = {"limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096", "security.nesting": "true",
                   "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true",
-                  "security.idmap.isolated": "true", "security.idmap.size": "101000000", "boot.autostart": "false"}
+                  "security.idmap.isolated": "true", "security.idmap.size": "101000000", "limits.memory.swap": "12GiB",
+                  "boot.autostart": "false"}
         damages = {
             "raw.lxc": ("raw.lxc", "lxc.apparmor.profile=unconfined"),
             "privileged": ("security.privileged", "true"),
@@ -1415,8 +1660,9 @@ class CloneTest(unittest.TestCase):
                 self.assertTrue(all(len(call) <= 7 for call in guards))
 
     def test_nested_guard_admits_the_live_shape_of_the_first_nested_container(self):
-        # The expanded config of the first nested-fleet container on a real Node, made before `boot.autostart`; the guard's
-        # allowed config is that intent's `config`. Its next start writes `boot.autostart` first, so only that key is missing now.
+        # The expanded config of the first nested-fleet container on a real Node, made before `boot.autostart` and
+        # `limits.memory.swap`; the guard's allowed config is that intent's `config`. Its next start writes both keys first, so
+        # only they are missing now.
         namespace = {}
         exec(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0]
              + (NETWORK_CHECK.parent / "instance_nested.py").read_text().split('if __name__ == "__main__":')[0], namespace)
@@ -1436,10 +1682,12 @@ class CloneTest(unittest.TestCase):
         }
         allowed = {"limits.cpu": "4", "limits.memory": "12GiB", "limits.processes": "4096", "security.nesting": "true",
                    "security.syscalls.intercept.mknod": "true", "security.syscalls.intercept.setxattr": "true",
-                   "security.idmap.isolated": "true", "security.idmap.size": "101000000", "boot.autostart": "false"}
+                   "security.idmap.isolated": "true", "security.idmap.size": "101000000", "limits.memory.swap": "12GiB",
+                   "boot.autostart": "false"}
         check = namespace["nested_unsafe_config"]
-        self.assertEqual(check(live, allowed), "config boot.autostart")
-        self.assertEqual(check({**live, "boot.autostart": "false"}, allowed), "")
+        self.assertEqual(check(live, allowed), "config limits.memory.swap")
+        self.assertEqual(check({**live, "limits.memory.swap": "12GiB"}, allowed), "config boot.autostart")
+        self.assertEqual(check({**live, "limits.memory.swap": "12GiB", "boot.autostart": "false"}, allowed), "")
 
     def test_guest_and_node_command_names_stay_in_sync(self):
         def commands(path):
@@ -1816,7 +2064,7 @@ class T3PhaseTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00"}), "")
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
 
-        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": fetched_mirror(self), "branch": "proof", "php": None,
+        container = {"name": "instance-proof", "project": "orbit-instances", "workspace_ids": {"group": 33, "writer": 33}, "mirror": fetched_mirror(self), "branch": "proof", "php": None,
                      **({} if clone is None else {"clone": clone})}
         self.calls = calls
         output, error = io.StringIO(), io.StringIO()
@@ -1991,7 +2239,7 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
 
         # A fetched branch is in the Node's mirror; a new branch at the seed's commit has no mirror.
-        container = {"name": "instance-proof", "project": "orbit-instances", "branch": "proof", "php": None,
+        container = {"name": "instance-proof", "project": "orbit-instances", "workspace_ids": {"group": 33, "writer": 33}, "branch": "proof", "php": None,
                      "mirror": fetched_mirror(self) if mirror else "/nowhere/mirror", "clone": {"seed_commit": "c" * 40}}
         self.calls = calls
         output, error = io.StringIO(), io.StringIO()

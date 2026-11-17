@@ -1,5 +1,13 @@
 order = 830
 cases = [
+  "test_a_failed_idmap_metadata_restore_deletes_the_copy_and_retry_copies_the_seed_again",
+  "test_a_copy_with_a_stripped_idmap_unshifts_its_rootfs_before_start",
+  "test_a_stripped_idmap_on_another_pool_driver_refuses_before_start",
+  "test_a_clone_with_no_missing_idmap_never_opens_its_pool",
+  "test_unshift_preserves_modes_links_acls_and_capabilities_and_can_repeat",
+  "test_running_copy_or_an_empty_source_map_does_no_filesystem_work",
+  "test_an_unreadable_rootfs_or_xattr_refuses_by_name",
+  "test_unshift_translates_split_ranges_and_xattrs_without_changing_the_owner",
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -13,6 +21,11 @@ cases = [
   "test_unreadable_remote_fails_without_creating_a_branch",
   "test_unreachable_frozen_commit_fails_without_using_current_tip",
   "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy",
+  "test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved",
+  "test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit",
+  "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing",
+  "test_a_sleeping_default_needs_no_wake_to_read_its_idmap_and_copy_its_snapshot",
+  "test_a_replaced_seed_copies_the_newest_seed",
   "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
   "test_the_copys_own_acl_is_read_by_its_name_and_never_from_the_list_of_every_acl",
@@ -86,6 +99,7 @@ cases = [
   "test_checkout_pushes_the_bundle_and_passes_only_the_env_half",
   "test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle",
   "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase",
+  "test_a_branch_the_mirror_lacks_starts_at_the_commit_of_the_seed_that_the_copy_took",
   "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout",
   "test_services_install_the_node_helper_and_pass_only_the_process_files",
   "test_workspace_still_passes_the_whole_value_in_one_guest_call",
@@ -104,12 +118,6 @@ cases = [
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
   "test_names_a_failed_delivery_without_its_output",
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
-  "test_the_copy_reaches_the_default_only_through_its_snapshots_so_a_sleeping_default_needs_no_wake",
-  "test_a_replaced_seed_copies_the_newest_seed",
-  "test_a_branch_the_mirror_lacks_starts_at_the_commit_of_the_seed_that_the_copy_took",
-  "test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved",
-  "test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit",
-  "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
 cost = 150
@@ -132,6 +140,7 @@ inputs = [
 
 # Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate.
 [case_costs]
+"test_a_failed_idmap_metadata_restore_deletes_the_copy_and_retry_copies_the_seed_again" = 1 # local injected chmod/capability failures and fresh retries: 0.2 s
   "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file" = 1
   "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name" = 1
   "test_a_copy_from_a_seed_snapshot_that_records_size_0_sets_the_intents_size_before_the_container_and_starts" = 1 # estimate: local run of 0.15s x 2, rounded up; not a CI measurement
@@ -149,19 +158,19 @@ inputs = [
   "test_unreachable_frozen_commit_fails_without_using_current_tip" = 2
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start" = 2
   "test_clone_launch_applies_mail_without_another_playbook" = 2
-  "test_clone_uses_the_admitted_common_acl_name" = 2
+  "test_clone_uses_the_admitted_common_acl_name" = 1
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
-  "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
+  "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 1
   "test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address" = 2
   "test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start" = 2
   "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code" = 2
   "test_the_three_holders_of_the_nic_filters_are_equal" = 1 # 2026-11-15: 0.001 s measured locally
-  "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code" = 2
-  "test_guest_and_node_command_names_stay_in_sync" = 2
-  "test_preserves_only_the_guest_command_and_exit_code" = 2
-  "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code" = 2
-  "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code" = 2
-  "test_a_timeout_names_the_part_that_was_running" = 2
+  "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code" = 1 # 2026-11-17: measured 0.019 s locally; over 50x margin
+  "test_guest_and_node_command_names_stay_in_sync" = 1
+  "test_preserves_only_the_guest_command_and_exit_code" = 1
+  "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code" = 1
+  "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code" = 1
+  "test_a_timeout_names_the_part_that_was_running" = 1
   "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
 
 "test_schedule_cleanup_listing_error_refuses_before_clone_boot" = 2 # local completed under 2 s; conservative CI estimate
@@ -243,4 +252,15 @@ inputs = [
 "test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved" = 1 # added 2026-11-17 (seed read once); local under 1 s
 "test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit" = 1 # added 2026-11-17 (seed read once); local under 1 s
 "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing" = 1 # added 2026-11-17 (seed read once); local under 1 s
-"test_the_copy_reaches_the_default_only_through_its_snapshots_so_a_sleeping_default_needs_no_wake" = 1 # added 2026-11-17 (a clone reaches the default only through its snapshots); local under 1 s
+"test_a_sleeping_default_needs_no_wake_to_read_its_idmap_and_copy_its_snapshot" = 1 # added 2026-11-17 (a clone reaches the default only through its snapshots); local under 1 s
+
+# ID map cases: local unprivileged runs under 1 s per case; conservative CI estimates.
+"test_a_copy_with_a_stripped_idmap_unshifts_its_rootfs_before_start" = 1
+"test_a_stripped_idmap_on_another_pool_driver_refuses_before_start" = 1
+"test_a_clone_with_no_missing_idmap_never_opens_its_pool" = 1
+"test_unshift_preserves_modes_links_acls_and_capabilities_and_can_repeat" = 1
+"test_running_copy_or_an_empty_source_map_does_no_filesystem_work" = 1
+"test_an_unreadable_rootfs_or_xattr_refuses_by_name" = 1
+"test_unshift_translates_split_ranges_and_xattrs_without_changing_the_owner" = 1
+
+# Seven existing cases remeasured below 0.5 s each on 2026-11-17; 1 s estimates include at least 2x margin.

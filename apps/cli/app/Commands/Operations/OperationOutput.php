@@ -13,6 +13,7 @@ final class OperationOutput
     public static function detail(OperationResponse $operation): array
     {
         $result = $operation->result === null ? null : (string) json_encode($operation->result, JSON_UNESCAPED_SLASHES);
+        $modelRoute = self::modelRoute($operation);
 
         return [
             'Kind' => $operation->kind,
@@ -25,6 +26,7 @@ final class OperationOutput
             'Failed step' => $operation->failedStep,
             'Error detail' => is_string($operation->error['detail'] ?? null) ? $operation->error['detail'] : null,
             'Result' => $result,
+            ...($modelRoute === null ? [] : ['Model route' => $modelRoute]),
             'Cancel requested' => $operation->cancelRequested ? 'yes' : null,
             'Attempts' => $operation->attempts,
             'By' => $operation->triggeredBy,
@@ -34,6 +36,20 @@ final class OperationOutput
             ...($operation->overdueSince === null ? [] : ['Overdue since' => $operation->overdueSince]),
             'Finished' => $operation->finishedAt,
         ];
+    }
+
+    /** The admission-time reason a clone or migrated T3 server cannot reach models. */
+    public static function modelRoute(OperationResponse $operation): ?string
+    {
+        $route = $operation->result['model_route'] ?? null;
+        if (! in_array($operation->kind, ['instance.create', 'instance.migrate'], true)
+            || ! is_array($route) || ($route['ready'] ?? null) !== false) {
+            return null;
+        }
+        $code = is_string($route['error_code'] ?? null) ? ' ('.$route['error_code'].')' : '';
+        $message = is_string($route['message'] ?? null) ? ': '.$route['message'] : '';
+
+        return 'unavailable'.$code.$message;
     }
 
     /** @return list<string> */

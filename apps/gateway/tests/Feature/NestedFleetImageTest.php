@@ -29,16 +29,15 @@ function nestedImageIncus(): array
     return app(CurrentRecipe::class)->currentRecipe()->incus('amd64') ?? throw new RuntimeException('The recipe holds no Incus packages.');
 }
 
-it('keeps the normal image definition byte-identical to the one before the nested-fleet variant', function (): void {
+it('pins the normal image definition and its complete digest', function (): void {
     $normal = InstanceImage::for('10.253.0.1');
 
-    // Captured at 2a-local 7b9e25ba02, again when the image gained the files every container needs (InstanceImage::shared), again
-    // when its finish ran `update-ca-certificates` for the Orbit root CA, and again when it gained `agent`'s NSS store for Chromium
-    // (`browser_trust`, with the module's version), and again when it gained `sudo` and `agent`'s grant (ADR 0268, amendment), which
-    // moved it from orbit-instance-bb2dec7d7d42. The alias is a digest of the rest of the definition, and the second value of the whole of it.
-    expect($normal['alias'])->toBe('orbit-instance-e7621201a4f3')
+    // The app-account script belongs to both definitions. Its repair of an older nested firewall's global reset changes both
+    // aliases, including the normal image's, from orbit-instance-89a1010b15e0 and orbit-instance-nested-2321a5d7292b.
+    // The release must announce both new aliases; only an approved Node converge builds them.
+    expect($normal['alias'])->toBe('orbit-instance-0139a556d054')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('2d0bc0415351db83cceee6f47c6844be255c094e77874dae3b38fe56b6e99ee3');
+        ->toBe('c5d726411700c432544c5b89fc7da24297d0cce9964fa80df445c3b145e8987b');
 });
 
 it('names the runtime folder\'s trust module in agent\'s NSS store of both images, so Chromium trusts the Orbit root CA', function (): void {
@@ -64,11 +63,9 @@ it('names the runtime folder\'s trust module in agent\'s NSS store of both image
         ->and($normal['browser_trust']['library'])->toBe($part?->trustModule['library'] ?? null);
 });
 
-it('keeps the nested image definition of the image built on Beast, so no converge is needed for it', function (): void {
-    // The alias of the nested image since `agent`'s grant became the normal image's shared file (ADR 0268, amendment); Beast held
-    // orbit-instance-nested-6388773554e6 before. A change of the definition gives a new alias, which only a converge builds; change
-    // this value only with a planned converge.
-    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-27a0fc94aee0');
+it('pins the nested image definition for a planned Node converge', function (): void {
+    // The script repair is also in the nested image. This pins the definition a later approved Node converge must build.
+    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-0ef94d86a37f');
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {
@@ -102,7 +99,12 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
         ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'sudo', 'wireguard-tools', 'sqlite3', 'zstd', 'btrfs-progs'])
         ->and(array_column($nested['incus'], 'name'))->toBe(['incus-base', 'incus-client'])
         ->and($nested['incus'])->toBe(array_values(array_filter($incus['packages'], fn (array $package): bool => $package['name'] !== 'incus')))
-        ->and($nested['prepare'])->toBe($normal['prepare']."usermod --append --groups incus-admin agent\n")
+        // The inner fleet keeps `orbit` (1000) and `work` (2760), which the ID map gives its guests' `orbit`; `agent` is in both groups.
+        ->and($nested['prepare'])->toContain("groupadd --gid 1000 orbit\nuseradd --uid 1000 --gid orbit --create-home --shell /bin/bash orbit\n",
+            "groupadd --gid 2760 work\nusermod --append --groups work agent\n", "usermod --append --groups www-data agent\n",
+            // The app account `www-data` opens the workspace through `work` there.
+            "usermod --append --groups work www-data\n",
+            'setfacl -m g:work:rwX -m d:u::rwX,d:g::rwX,d:g:work:rwX,d:o::--- /srv/workspace', "usermod --append --groups incus-admin agent\n")
         ->and($files)->not->toHaveKey('/etc/sysctl.d/90-orbit-no-userns.conf')
         ->and($files['/etc/subuid'])->toBe(['path' => '/etc/subuid', 'content' => "root:1000000:100000000\nroot:1000:1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'])
         ->and($files['/etc/subgid']['content'])->toBe("root:1000000:100000000\nroot:1000:1\n")
@@ -126,7 +128,7 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
     $rules = array_map('trim', explode("\n", $files['/etc/nftables.conf']['content']));
     $normalRules = array_map('trim', explode("\n", InstanceImage::firewall('10.253.0.1')));
     $policy = array_search('type filter hook output priority 0; policy accept;', $rules, true);
-    expect($rules[$policy + 1])->toBe('ip daddr { 10.45.0.0/24, 10.232.2.0/24 } meta skuid 1000 drop')
+    expect($rules[$policy + 1])->toBe('ip daddr { 10.45.0.0/24, 10.232.2.0/24 } meta skuid { 33, 1000 } drop')
         // The file replaces only Orbit's own table; the normal image keeps its flush of the whole rule set.
         ->and($rules)->toContain('destroy table inet orbit_agent_guard')->not->toContain('flush ruleset')
         ->and(array_values(array_diff($rules, [$rules[$policy + 1], 'destroy table inet orbit_agent_guard'])))->toBe(array_values(array_diff($normalRules, ['flush ruleset'])))

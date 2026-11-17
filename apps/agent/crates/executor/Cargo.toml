@@ -12,6 +12,8 @@ path = "src/main.rs"
 [dependencies]
 orbit-executor-core = { path = "../executor-core" }
 
+orbit-executor-power = { path = "../power" }
+
 [dev-dependencies]
 base64 = "0.22"
 ed25519-dalek = { version = "2", default-features = false, features = ["std"] }

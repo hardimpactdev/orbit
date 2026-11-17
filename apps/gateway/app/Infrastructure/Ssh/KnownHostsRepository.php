@@ -26,9 +26,9 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         return $this->path;
     }
 
-    public function put(string $host, int $port, HostKey $key): void
+    public function put(string $host, int $port, HostKey $key): bool
     {
-        $this->update($host, $port, $key);
+        return $this->update($host, $port, $key);
     }
 
     public function remove(string $host, int $port): void
@@ -36,7 +36,7 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         $this->update($host, $port, null);
     }
 
-    private function update(string $host, int $port, ?HostKey $key): void
+    private function update(string $host, int $port, ?HostKey $key): bool
     {
         if ($host === '' || preg_match('/\s/', $host) === 1) {
             throw new InvalidArgumentException('SSH host names cannot contain whitespace.');
@@ -52,12 +52,12 @@ final readonly class KnownHostsRepository implements KnownHostsStore
             throw new RuntimeException("Could not create SSH directory [{$directory}].");
         }
 
-        chmod(filename: $directory, permissions: 0o700);
+        $directoryChanged = $this->protect($directory, 0o700);
 
         $lock = $this->acquireLock();
 
         try {
-            $this->replace($host, $port, $key);
+            return $this->replace($host, $port, $key) || $directoryChanged;
         } finally {
             $this->releaseLock($lock);
         }
@@ -120,11 +120,19 @@ final readonly class KnownHostsRepository implements KnownHostsStore
         }
     }
 
-    private function replace(string $host, int $port, ?HostKey $key): void
+    private function replace(string $host, int $port, ?HostKey $key): bool
     {
         $directory = dirname($this->path);
         $hostLabel = $port === 22 ? $host : "[{$host}]:{$port}";
         $lines = $this->lines();
+        $existing = array_values(array_filter(
+            $lines,
+            static fn (string $line): bool => str_starts_with($line, $hostLabel.' '),
+        ));
+        $wanted = $key === null ? [] : ["{$hostLabel} {$key->type} {$key->value}"];
+        if ($existing === $wanted) {
+            return is_file($this->path) && $this->protect($this->path, 0o600);
+        }
         $lines = array_values(array_filter(
             $lines,
             static fn (string $line): bool => ! str_starts_with($line, $hostLabel.' '),
@@ -167,6 +175,23 @@ final readonly class KnownHostsRepository implements KnownHostsStore
                 unlink($candidatePath);
             }
         }
+
+        return true;
+    }
+
+    private function protect(string $path, int $permissions): bool
+    {
+        clearstatcache(clear_realpath_cache: true, filename: $path);
+
+        if ((fileperms($path) & 0o7777) === $permissions) {
+            return false;
+        }
+
+        if (! chmod(filename: $path, permissions: $permissions)) {
+            throw new RuntimeException("Could not protect SSH path [{$path}].");
+        }
+
+        return true;
     }
 
     private function monotonicNanoseconds(): int

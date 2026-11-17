@@ -208,6 +208,19 @@ pub struct Checks<'cfg> {
 ///
 /// Returns the first [`OrderRefusal`] that applies.
 pub fn check(wire: &[u8], checks: &Checks<'_>, now_ms: u64) -> Result<VerifiedOrder, OrderRefusal> {
+    check_with_target(wire, checks, now_ms, |_, _| false)
+}
+
+/// Checks an order using the binary's local target truth for Instance actions.
+///
+/// # Errors
+/// Returns the first order refusal, including a target missing from local Incus.
+pub fn check_with_target(
+    wire: &[u8],
+    checks: &Checks<'_>,
+    now_ms: u64,
+    target_exists: impl FnOnce(Action, &TargetId) -> bool,
+) -> Result<VerifiedOrder, OrderRefusal> {
     if wire.len() > MAX_ORDER_BYTES {
         return Err(OrderRefusal::TooLarge);
     }
@@ -244,6 +257,7 @@ pub fn check(wire: &[u8], checks: &Checks<'_>, now_ms: u64) -> Result<VerifiedOr
     }
     let target_exists = match action.target_kind() {
         TargetKind::Node => payload.target.as_str() == checks.node.as_str(),
+        TargetKind::Instance => target_exists(action, &payload.target),
     };
     if !target_exists {
         return Err(OrderRefusal::UnknownTarget);
@@ -400,9 +414,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn power_targets_are_checked_against_the_binarys_local_truth_before_expiry() {
+        let mut p = payload();
+        p["action"] = "sleep".into();
+        p["target"] = "23".into();
+        let keys = pinned(1);
+        let enabled = Enabled::parse("power").expect("power");
+        let node = "7".parse().expect("node");
+        let checks = Checks {
+            keys: &keys,
+            enabled: &enabled,
+            node: &node,
+        };
+        assert_eq!(
+            check_with_target(&sign(1, &p), &checks, NOW, |_, _| false),
+            Err(OrderRefusal::UnknownTarget)
+        );
+        let order = check_with_target(&sign(1, &p), &checks, NOW, |action, id| {
+            action == Action::Sleep && id.as_str() == "23"
+        })
+        .expect("local container");
+        assert_eq!(order.action(), Action::Sleep);
+        p["expires_ms"] = NOW.into();
+        assert_eq!(
+            check_with_target(&sign(1, &p), &checks, NOW, |_, _| false),
+            Err(OrderRefusal::UnknownTarget)
+        );
+    }
+
+    #[test]
     fn each_check_has_its_own_refusal() {
         assert_eq!(
-            run(&with("action", "sleep".into())),
+            run(&with("action", "hibernate".into())),
             Err(OrderRefusal::UnknownAction)
         );
         assert_eq!(run(&with("node", "8".into())), Err(OrderRefusal::WrongNode));

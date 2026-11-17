@@ -59,7 +59,7 @@ The [task Instance workspace regression](/reference/task-instance-workspace#veri
 
 The migration environment fixtures cover dependency-file isolation and explicit application, Process and Schedule file selection. Clone runtime fixtures cover inherited-store reuse, empty-clone preparation followed by a later pinned Process, and same-commit seed refresh after conversion.
 
-Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. They check that the source stays unchanged, objects are independent, partial imports can repeat and retirement refuses later changes. The smaller Git checks run in selected PR shards; the large fixture that runs the migration phases runs in [self-hosted fixture shards](#self-hosted-fixture-shards).
+Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. The phase fixtures disable automatic Git maintenance during setup, so a detached setup process cannot change repository bytes after the source snapshot. The comparison still includes every source file. The fixtures check that objects are independent, partial imports can repeat and retirement refuses later changes. The smaller Git checks run in selected PR shards; the large fixture that runs the migration phases runs in [self-hosted fixture shards](#self-hosted-fixture-shards).
 
 Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
 
@@ -209,6 +209,20 @@ After admission, a plan with more than one shard uses spare planned shards to sp
 
 The latest 200 main CI runs measured on 17 November 2026 span 14–17 November. The 135 ordinary fixture jobs with valid timestamps across 22 runs used ten distinct shared runners, `ci-sabre-1..5` and `ci-shark-1..5`. Their queue p90 was 329 seconds against 137 seconds running. Percentiles weight every job equally and use nearest rank. Earlier jobs in the window used GitHub-hosted runners and are measured separately.
 
+#### The lane of the slowest runner
+
+A shard can start on any runner of the pool, and the plan cannot choose the host. So the planner packs for the slowest one. `[runner-pool].slowest_runner_factor` in `checks.toml` is 1.15: a lane that holds more than one unit holds at most 150 / 1.15 = 130 declared seconds. A unit alone in a lane may still fill the 150 seconds of `shard_seconds`, and no other unit joins it. A change to `[runner-pool]` is a machinery change: it selects the machinery canary set.
+
+The measurement is from 17 November 2026: 97 CI runs, 1,020 fixture shard jobs and 5,291 unit results, read from the run logs. The same unit took 1.57 times as long on Sabre as on Shark (median of 335 units; quartiles 1.39 and 1.75). All 21 `OVER BUDGET` units of that day, in 13 shards, ran on Sabre: 6 at the unit ceiling and 15 at the shard deadline.
+
+The runner CPU limits are equal on both hosts and were almost never reached, so they are not the cause. Unit time grows with the number of fixture units that run on the whole host: against the unit's Shark median, from 0.54 alone to 1.10 with nine or more on Shark, and from 0.72 to 1.81 on Sabre.
+
+Of the 298 Sabre shards with a declared lane of 100 seconds or more, 99 in 100 ran at most 1.37 times that lane, and the slowest was cut at 1.51 times. The factor is not 1.57, because the [shard deadline](#ci-budget) carries most of that distance: 130 declared seconds 1.6 times over is 208 seconds, the time the units get. The shorter lane needs more shards for the largest plans, so `runner_shards` and `pr_shards` are 20 and `self_hosted_shards` is 10. With the former 18 and 8, 6 of that day's 52 merged pull requests with fixtures would have failed on capacity; with the new limits none does, for 25 more jobs in 577.
+
+Two other remedies were measured and refused. One worker for each shard on Sabre makes a unit 0.77 times as long, but the two lanes then run one after the other: 18% of Sabre shards would pass the deadline. Units of 100 declared seconds or more on Shark only would need a host label, against [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies), would bind 21% of the jobs to five places, and would leave the lane overruns.
+
+The lane does not help one unit that is too slow alone. A case that takes more than about 112 seconds on Shark can pass the 180-second unit ceiling on a busy Sabre runner. Split such a case or make it faster.
+
 The main-only sample does not establish that changing spreading or per-PR admission would lower the queue: even runs with no more jobs than observed runners waited. Keep the current admission and spread targets until comparable concurrent-PR evidence supports a change.
 
 `bin/ci-queue --run-id ID` reads the GitHub Actions API and prints a per-attempt pressure report; `--attempt N` selects an earlier attempt. The PR and main Required jobs append it to their Actions summaries, even after a failed gate. Reporting is advisory: an API failure writes an unavailable summary without changing the gate result.
@@ -258,6 +272,8 @@ Required checks has static dependencies on the selected checks, including Swamp.
 
 Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirroring its source path with `.toml` appended. It holds the input rules, costs and ordered case names. It holds no hash of the test file: an edit that keeps the case names leaves the metadata alone, so two PRs that change different cases of one file do not conflict on it. When the fixture's tests run a host program, such as `zip` or `jq`, `host_programs` lists it; `bin/ci-units` refuses a list that is empty or names a program twice. Shared budgets, defaults and build checks stay in `.github/ci/checks.toml`.
 
+The Swamp host retention fixture runs the shipped Ansible tasks against temporary version folders and process-map records. It checks selected, previous and mapped binaries, unknown or missing rollback targets, and an unchanged repeat. It also executes the worker's startup cleanup against a temporary cache and verifies that its machine identity and configuration survive. It starts no service and needs no fleet access.
+
 `bin/ci-registry` is the loader for fixture selection and execution. Editing what a fixture tests selects only that fixture, using the same merge base as path selection: its cases, its inputs or any other key except the scheduling keys. The scheduling keys are `self_hosted`, `cost`, `case_costs` and `slices`. Removing the old `after_merge`, `after_merge_cases` and `reason` keys counts as a scheduling edit too. An edit that changes only them is a machinery change: it selects the machinery canary set, not the fixture. Formatting and edits to check definitions select no extra fixture bodies.
 
 A change to the shared fixture machinery does not select every fixture. The machinery is the fixture list, budgets, defaults and fixture order in `checks.toml`, the loader, the planner, the runner, the slice preload, the shape gate `bin/swamp-shape-gate` and the Ansible toolchain pins: `swamp/ansible/ansible.cfg` and the files `requirements.txt`, `requirements.yml` and `shape-gate-requirements.txt` beside it. A fixture that lists one of these paths as an input is not selected by it.
@@ -266,7 +282,7 @@ Such a change selects the fixtures whose own code it touches, plus the machinery
 
 A canary file must be a registered hosted fixture; `bin/ci-units plan` refuses a list that names an unregistered or `self_hosted` file, or that needs more than one shard.
 
-`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard, each with at most 150 declared seconds, within the [shared fixture capacity](#shared-fixture-capacity).
+`bin/ci-units` turns each selected file into a unit; Deno files above 60 seconds run in slices that register every n-th case. Units fill two lanes per shard within the [shared fixture capacity](#shared-fixture-capacity). One unit costs at most 150 declared seconds. A lane that holds more than one unit holds at most 130: [the lane of the slowest runner](#the-lane-of-the-slowest-runner).
 
 Each shared host has six physical cores with twelve CPU threads and at most five active runners. Two runners have three CPU threads each; three runners have two each. The CPU sets are disjoint, each runner spans different physical cores, and its CPU quota matches its assigned thread count. Extra runner containers stay stopped with their listener and autostart disabled. Fixture jobs beyond the available places wait; the [capacity model](#shared-fixture-capacity) is not a promise of free runners.
 
@@ -294,7 +310,11 @@ Fleet subsystem cases run the shipped caller tasks, with their variables, condit
 
 The fleet reboot fixture uses six interleaved units. Each unit is costed from the slowest measured group, including the declared startup allowance. All cases remain in Required.
 
-The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case whose own cost plus startup exceeds the 150-second lane is split or made faster; it stays in pull requests.
+The shard deadline is 210 seconds and counts from the job's first step, `Record the job start`, which writes `ORBIT_JOB_STARTED_AT`. So checkout and setup time are inside the deadline, and a slow start cannot push the named cut past the job's four-minute limit. Outside a job, `bin/ci-units run` counts the deadline from its own start.
+
+On 17 November 2026 a pool job spent a median of 4 to 5 seconds before its first step (largest 14.5), 1 to 2 seconds from that step to its units, and at most 14 seconds after them. So 14.5 + 210 + 14 seconds stays under the 240-second job limit, and the units of a pool job get about 208 seconds. A fork's job on a hosted runner installs its tools first, so its units get less.
+
+The time between a lane's declared seconds and the shard deadline is the headroom above that percentile, and it carries the [slowest runner](#the-lane-of-the-slowest-runner). A case whose own cost plus startup exceeds the 150-second lane is split or made faster; it stays in pull requests.
 
 The browser runtime-flip case runs on pull requests in a slice of its own: its two converges took 121.4 seconds in run `43660983227`. Runner queue time still counts toward the five-minute target and is not bounded by fixture costs.
 

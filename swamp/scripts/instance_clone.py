@@ -2,11 +2,14 @@
 
 import ast
 import datetime
+import errno
 import json
 import os
 import pwd
 import re
 import shutil
+import stat
+import struct
 import subprocess
 import sys
 import time
@@ -23,7 +26,7 @@ BOOT_SOURCES = ("/etc/orbit/agent/ca.pem",)
 INCUS_SOCKET = "/var/lib/incus/unix.socket"
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("conn-server", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+GUEST_COMMANDS = ("conn-server", "orbit-app-user", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
 # A failed command's detail: its code line, what it did and the end of its stderr, in at most this many UTF-8 bytes, so the native
 # step's wrapper ("exec failed on 1/1 host(s): target (exit 1: ...)") still fits the Gateway's 4,096-byte detail.
@@ -160,6 +163,101 @@ def nic_filters(network_check):
                 return filters
             break
     raise RuntimeError("instance.nic_filters_missing")
+
+
+def unshift_clone_rootfs(container, read, run):
+    """Normalize a stopped local copy whose restricted project stripped its on-disk idmap.
+
+    Incus retains the source's shifted files on non-idmapped mounts but strips the unsafe
+    volatile key during copy. Unshift those files so its first start can apply its own map.
+    Sources using idmapped mounts record [] and need no repair. Never change Incus config.
+    """
+    if read["status"] != "Stopped":
+        return False
+    try:
+        if json.loads(read.get("config", {}).get("volatile.last_state.idmap", "[]")):
+            return False
+        source = json.loads(run(["incus", "query", "/1.0/instances/" + urllib.parse.quote(container["clone"]["source"], safe="")
+                                 + "?project=" + urllib.parse.quote(container["project"], safe="")]).stdout)
+        ranges = json.loads(source["config"].get("volatile.last_state.idmap", "[]"))
+        if not ranges:
+            return False
+        pool = json.loads(run(["incus", "query", "/1.0/storage-pools/" + urllib.parse.quote(container["root_disk_pool"], safe="")]).stdout)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise RuntimeError("instance.clone_idmap_unshift_failed") from error
+    if pool.get("driver") != "dir":
+        raise RuntimeError("instance.clone_idmap_unshift_unsupported")
+
+    try:
+        root = Path(pool["config"]["source"]) / "containers" / (container["project"] + "_" + container["name"]) / "rootfs"
+        uids = [(r["Hostid"], r["Nsid"], r["Maprange"]) for r in ranges if r["Isuid"]]
+        gids = [(r["Hostid"], r["Nsid"], r["Maprange"]) for r in ranges if r["Isgid"]]
+
+        def back(ident, maps):
+            for host, ns, size in maps:
+                if host <= ident < host + size:
+                    return ident - host + ns
+            return ident
+
+        def acl(value):
+            out = bytearray(value)
+            for at in range(4, len(value) - 7, 8):
+                tag, _perm, ident = struct.unpack_from("<HHI", value, at)
+                if tag in (0x02, 0x08):  # Named USER and GROUP entries; object entries have no ID.
+                    struct.pack_into("<I", out, at + 4, back(ident, uids if tag == 0x02 else gids))
+            return bytes(out)
+
+        def xattr(path, name):
+            try:
+                return os.getxattr(path, name, follow_symlinks=False)
+            except OSError as error:
+                if error.errno not in (errno.ENODATA, errno.ENOTSUP):
+                    raise
+                return None
+
+        changed = False
+
+        def one(path):
+            nonlocal changed
+            held = os.lstat(path)
+            link = stat.S_ISLNK(held.st_mode)
+            uid, gid = back(held.st_uid, uids), back(held.st_gid, gids)
+            owner_changed = (uid, gid) != (held.st_uid, held.st_gid)
+            # chown can discard capabilities and clear setuid/setgid. Capture all metadata first.
+            attrs = {} if link else {name: xattr(path, name) for name in
+                                     ("security.capability", "system.posix_acl_access", "system.posix_acl_default")}
+            if owner_changed:
+                os.lchown(path, uid, gid)
+                if not link:
+                    os.chmod(path, stat.S_IMODE(held.st_mode))
+                changed = True
+            for name, value in attrs.items():
+                if value is None:
+                    continue
+                rewritten = value
+                if name == "security.capability":
+                    # VFS_CAP_REVISION_3 stores the namespace's root ID at offset 20.
+                    if len(value) == 24 and struct.unpack_from("<I", value)[0] & 0xff000000 == 0x03000000:
+                        rewritten = value[:20] + struct.pack("<I", back(struct.unpack_from("<I", value, 20)[0], uids))
+                else:
+                    rewritten = acl(value)
+                if owner_changed or rewritten != value:
+                    os.setxattr(path, name, rewritten, follow_symlinks=False)
+                    changed = True
+
+        if not stat.S_ISDIR(os.lstat(root).st_mode):
+            raise OSError("rootfs is not a directory")
+        one(root)
+
+        def walk_error(error):
+            raise error
+
+        for top, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
+            for name in dirs + files:
+                one(os.path.join(top, name))
+        return changed
+    except (OSError, ValueError, KeyError, TypeError, struct.error) as error:
+        raise RuntimeError("instance.clone_idmap_unshift_failed") from error
 
 
 def main():
@@ -551,9 +649,9 @@ def main():
                             "file",
                             "push",
                             "--uid",
-                            "1000",
+                            "2750",
                             "--gid",
-                            "2760",
+                            str(container["workspace_ids"]["group"]),
                             "--mode",
                             "0640",
                             str(bundle),
@@ -896,6 +994,15 @@ def main():
             if checked.returncode:
                 raise RuntimeError("instance.container_network_unsafe")
             check_timer.__exit__()
+            with timed("idmap"):
+                try:
+                    if unshift_clone_rootfs(container, read, run):
+                        changes.append("idmap")
+                except Exception:
+                    # chown can clear modes/caps before their restore fails. The new
+                    # ownership cannot tell a retry what was lost; copy the seed again.
+                    run(project + ["delete", name, "--force"], check=False)
+                    raise
             with timed("start"):
                 if read["status"] != "Running":
                     change(project + ["start", name])
