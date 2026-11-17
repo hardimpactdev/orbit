@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Route;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentRestartController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnInstancesController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnLaunchesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnOperationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
@@ -33,6 +34,11 @@ Route::middleware([
         Route::get('me', [ConnNodesController::class, 'show'])->name('conn:me');
         Route::get('operations/{operation}', [ConnOperationsController::class, 'show'])->whereNumber('operation')->name('conn:operation:show');
         Route::post('operations/{operation}/cancel', [ConnOperationsController::class, 'cancel'])->whereNumber('operation')->name('conn:operation:cancel');
+        Route::withoutMiddleware(RecordCommandActivity::class)->group(function (): void {
+            Route::get('launches', [ConnLaunchesController::class, 'index'])->name('conn:launch:list');
+            Route::post('launches', [ConnLaunchesController::class, 'store'])->withoutMiddleware(RequireNodeAccess::class)->name('conn:launch:create');
+            Route::get('launches/{operationId}', [ConnLaunchesController::class, 'show'])->whereNumber('operationId')->name('conn:launch:show');
+        });
         Route::put('me/profile', [ConnNodesController::class, 'bindProfile'])->name('conn:me:profile');
         Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');
         Route::post('profiles', [ConnProfilesController::class, 'store'])->name('conn:profile:create');

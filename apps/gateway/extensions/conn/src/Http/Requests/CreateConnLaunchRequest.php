@@ -1,0 +1,136 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Orbit\Extensions\Conn\Http\Requests;
+
+use App\Domain\Instances\InstanceName;
+use App\Domain\SourceControl\GitBranchName;
+use App\Support\StrictJson;
+use App\Support\ValidatedData;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Validator;
+use InvalidArgumentException;
+use Orbit\Extensions\Conn\Data\ConnLaunchRequestData;
+use stdClass;
+
+final class CreateConnLaunchRequest extends FormRequest
+{
+    private const array Fields = ['expected_profile_id', 'expected_node_id', 'project_id', 'workspace_id', 'target',
+        'prompt', 'model_selection', 'runtime_mode', 'interaction_mode', 'source', 'command_id', 'thread_id', 'message_id'];
+
+    private stdClass $body;
+
+    /** @return array<string, mixed> */
+    public function validationData(): array
+    {
+        $content = $this->getContent();
+        try {
+            $body = StrictJson::decode($content, strlen($content));
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages(['body' => ['The request must be a valid JSON object without duplicate keys.']]);
+        }
+        if (! $body instanceof stdClass || array_diff(array_keys(get_object_vars($body)), self::Fields) !== []) {
+            throw ValidationException::withMessages(['body' => ['The request must be a JSON object with supported launch fields.']]);
+        }
+        $this->body = $body;
+        $keys = $this->headers->all('Idempotency-Key');
+
+        return [...StrictJson::associative($body), 'Idempotency-Key' => count($keys) === 1 ? $keys[0] : null];
+    }
+
+    /** @return array<string, list<string>> */
+    public function rules(): array
+    {
+        return [
+            'Idempotency-Key' => ['required', 'uuid'],
+            'expected_profile_id' => ['required', 'integer:strict', 'min:1'],
+            'expected_node_id' => ['required', 'integer:strict', 'min:1'],
+            'project_id' => ['required', 'integer:strict', 'min:1'],
+            'workspace_id' => ['nullable', 'string', 'min:1', 'max:100'],
+            'target' => ['required', 'array:kind,name,branch,instance_id'],
+            'target.kind' => ['required', 'in:new,existing'],
+            'target.name' => ['exclude_unless:target.kind,new', ...InstanceName::rules()],
+            'target.instance_id' => ['required_if:target.kind,existing', 'integer:strict', 'min:1'],
+            'target.branch' => ['nullable', 'array:mode,from,name'],
+            'target.branch.mode' => ['required_with:target.branch', 'in:new,existing'],
+            'prompt' => ['present', 'string'],
+            'model_selection' => ['sometimes', 'array'],
+            'runtime_mode' => ['sometimes', 'in:approval-required,auto-accept-edits,auto,full-access'],
+            'interaction_mode' => ['sometimes', 'in:default,plan'],
+            'source' => ['required', 'in:web,mobile'],
+            'command_id' => ['required', 'uuid'],
+            'thread_id' => ['required', 'uuid'],
+            'message_id' => ['required', 'uuid'],
+        ];
+    }
+
+    /** @return list<callable(Validator): void> */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if (($this->body->prompt ?? null) === '') {
+                $validator->errors()->add('prompt', 'The first message must contain text.');
+            }
+            $target = $this->body->target ?? null;
+            if (! $target instanceof stdClass) {
+                return;
+            }
+            if (($target->kind ?? null) === 'existing') {
+                foreach (['name', 'branch'] as $field) {
+                    if (property_exists($target, $field)) {
+                        $validator->errors()->add('target.'.$field, 'This field is not allowed on an existing target.');
+                    }
+                }
+            } elseif (property_exists($target, 'instance_id')) {
+                $validator->errors()->add('target.instance_id', 'This field is not allowed on a new target.');
+            }
+            $branch = $target->branch ?? null;
+            if ($branch !== null) {
+                $mode = $branch instanceof stdClass ? ($branch->mode ?? null) : null;
+                if (! in_array($mode, ['new', 'existing'], true)) {
+                    $validator->errors()->add('target.branch.mode', 'Choose a branch mode.');
+                } else {
+                    $field = $mode === 'new' ? 'from' : 'name';
+                    $value = $branch->{$field} ?? null;
+                    if (! is_string($value) || ! GitBranchName::isValid($value) || str_starts_with($value, 'refs/')) {
+                        $validator->errors()->add('target.branch.'.$field, 'A short Git branch name without refs/ is required.');
+                    }
+                    if (property_exists($branch, $mode === 'new' ? 'name' : 'from')) {
+                        $validator->errors()->add('target.branch', 'This field is not allowed in this mode.');
+                    }
+                    if ($mode === 'new' && is_string($target->name ?? null) && ! GitBranchName::isValid($target->name)) {
+                        $validator->errors()->add('target.name', 'The derived Git branch name is invalid.');
+                    }
+                }
+            }
+            if (property_exists($this->body, 'model_selection') && ! $this->body->model_selection instanceof stdClass) {
+                $validator->errors()->add('model_selection', 'The model selection must be an object.');
+            }
+        }];
+    }
+
+    public function payload(): ConnLaunchRequestData
+    {
+        $body = $this->body;
+        assert($body->target instanceof stdClass);
+        $body->workspace_id ??= null;
+        if ($body->target->kind === 'new') {
+            $body->target->branch ??= null;
+        }
+
+        return new ConnLaunchRequestData(
+            ValidatedData::string($this->validated('Idempotency-Key')),
+            ValidatedData::integer($body->expected_profile_id),
+            ValidatedData::integer($body->expected_node_id),
+            ValidatedData::integer($body->project_id),
+            ValidatedData::nullableString($body->workspace_id),
+            ValidatedData::string($body->target->kind),
+            ValidatedData::nullableString($body->target->name ?? null),
+            isset($body->target->instance_id) ? ValidatedData::integer($body->target->instance_id) : null,
+            ValidatedData::string($body->source),
+            $body,
+        );
+    }
+}

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\Swamp\NativeRunStepTimes;
 use Illuminate\Database\Eloquent\Builder;
@@ -88,10 +89,16 @@ final class Operation extends Model
         $query->addSelect(['caller_node_name' => Node::query()->select('name')->whereColumn('nodes.id', 'operations.input->caller_node_id')]);
     }
 
+    /** @param Builder<self> $query */
+    public function scopePubliclyVisible(Builder $query): void
+    {
+        $query->where('kind', '!=', OperationKinds::ConnLaunch);
+    }
+
     #[\Override]
     public function resolveRouteBinding($value, $field = null): ?self
     {
-        return self::query()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value)->first();
+        return self::query()->publiclyVisible()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value)->first();
     }
 
     #[\Override]

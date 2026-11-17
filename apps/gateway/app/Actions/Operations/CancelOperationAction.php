@@ -30,6 +30,7 @@ final readonly class CancelOperationAction
     {
         DB::transaction(function () use ($operation): void {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
+            abort_if($operation->kind === OperationKinds::ConnLaunch, 404);
             if ($operation->status->terminal()) {
                 return;
             }

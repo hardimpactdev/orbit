@@ -23,11 +23,17 @@ final readonly class OperationBroadcaster
 
     public function created(Operation $operation): void
     {
+        if ($operation->kind === OperationKinds::ConnLaunch) {
+            return;
+        }
         $this->broadcaster->broadcast(RecordEventType::OperationCreated, $operation->id, self::notice($operation));
     }
 
     public function changed(Operation $operation, bool $statusChanged): void
     {
+        if ($operation->kind === OperationKinds::ConnLaunch) {
+            return;
+        }
         $notice = self::notice($operation);
         $this->broadcaster->broadcast(RecordEventType::OperationUpdated, $operation->id, $notice, self::channel($operation->id));
 
