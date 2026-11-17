@@ -92,13 +92,20 @@ final class Operation extends Model
     /** @param Builder<self> $query */
     public function scopePubliclyVisible(Builder $query): void
     {
-        $query->where('kind', '!=', OperationKinds::ConnLaunch);
+        $query->whereNotIn('kind', OperationKinds::PrivateConnKinds);
     }
 
     #[\Override]
     public function resolveRouteBinding($value, $field = null): ?self
     {
-        return self::query()->publiclyVisible()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value)->first();
+        $query = self::query()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value);
+        if (request()->routeIs('operation:direct:*')) {
+            $query->where('kind', '!=', OperationKinds::ConnLaunch);
+        } else {
+            $query->publiclyVisible();
+        }
+
+        return $query->first();
     }
 
     #[\Override]

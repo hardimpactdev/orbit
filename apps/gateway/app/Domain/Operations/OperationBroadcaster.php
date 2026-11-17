@@ -23,7 +23,7 @@ final readonly class OperationBroadcaster
 
     public function created(Operation $operation): void
     {
-        if ($operation->kind === OperationKinds::ConnLaunch) {
+        if (in_array($operation->kind, OperationKinds::PrivateConnKinds, true)) {
             return;
         }
         $this->broadcaster->broadcast(RecordEventType::OperationCreated, $operation->id, self::notice($operation));
@@ -31,7 +31,7 @@ final readonly class OperationBroadcaster
 
     public function changed(Operation $operation, bool $statusChanged): void
     {
-        if ($operation->kind === OperationKinds::ConnLaunch) {
+        if (in_array($operation->kind, OperationKinds::PrivateConnKinds, true)) {
             return;
         }
         $notice = self::notice($operation);

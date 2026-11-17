@@ -19,6 +19,7 @@ use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Orbit\Extensions\Conn\Data\ConnLaunchRequestData;
+use Orbit\Extensions\Conn\Data\ConnLaunchSnapshot;
 use Orbit\Extensions\Conn\Domain\ConnInstanceNames;
 use Orbit\Extensions\Conn\Domain\ConnLaunchAccess;
 use Orbit\Extensions\Conn\Domain\ConnThreadProjects;
@@ -36,12 +37,14 @@ final readonly class AdmitConnLaunchAction
         private OperationIdempotency $idempotency,
         private OperationStore $store,
         private Encrypter $encrypter,
+        private ConnLaunchSnapshot $snapshot,
     ) {}
 
-    public function execute(Node $caller, ConnLaunchRequestData $input, string $requestId): Operation
+    /** @return array<string, mixed> */
+    public function execute(Node $caller, ConnLaunchRequestData $input, string $requestId): array
     {
-        return DB::transaction(function () use ($caller, $input, $requestId): Operation {
-            $profileId = $this->access->lockedProfileId($caller);
+        return DB::transaction(function () use ($caller, $input, $requestId): array {
+            $profileId = $this->access->profileId($caller, lock: true);
             if ($caller->id !== $input->expectedNodeId || $profileId !== $input->expectedProfileId) {
                 self::scopeChanged();
             }
@@ -50,7 +53,7 @@ final readonly class AdmitConnLaunchAction
             $key = 'node:'.$caller->id.':'.$input->launchId;
             $existing = Operation::query()->where('kind', $kind)->where('idempotency_key', $key)->lockForUpdate()->first();
             if ($existing !== null) {
-                if (($existing->input['profile_id'] ?? null) !== $profileId) {
+                if ($existing->target_id !== $profileId) {
                     self::scopeChanged();
                 }
                 $this->assertTargetAccess($caller, $existing->node_id);
@@ -59,7 +62,7 @@ final readonly class AdmitConnLaunchAction
             $fingerprint = hash_hmac('sha256', 'conn.launch:v1.1:'.$this->fingerprints->make($caller, 'conn:launch:create', [],
                 $input->privateRequest(), new StartsOperation($kind, bindCaller: true)), $this->encrypter->getKey());
 
-            return $this->idempotency->under($kind, $key, $fingerprint, function () use ($caller, $input, $profileId, $requestId, $existing, $kind): Operation {
+            $operation = $this->idempotency->under($kind, $key, $fingerprint, function () use ($caller, $input, $profileId, $requestId, $existing, $kind): Operation {
                 if ($existing !== null) {
                     return $this->idempotency->replay($kind) ?? throw new \LogicException('The locked launch is not replayable.');
                 }
@@ -69,22 +72,23 @@ final readonly class AdmitConnLaunchAction
                 $instance = $this->target($caller, $project, $input);
                 $new = $input->targetKind === 'new';
 
-                $operation = $this->store->create($kind, $new ? 'project' : 'instance', $new ? $project->id : $instance->id,
+                $operation = $this->store->create($kind, ConnLaunchAccess::Target, $profileId,
                     $instance->node_id, [
                         'launch_id' => $input->launchId,
                         'project_id' => $project->id,
                         'workspace_id' => $input->workspaceId,
-                        'profile_id' => $profileId,
                         'caller_node_id' => $caller->id,
                         'source' => $input->source,
                         'target_kind' => $input->targetKind,
-                        ...($new ? ['default_instance_id' => $instance->id] : ['instance_id' => $instance->id]),
+                        ...($new ? ['default_instance_id' => $instance->id, 'target_name' => $input->name] : ['instance_id' => $instance->id]),
                     ], 'node:'.$caller->id, $requestId);
                 ConnLaunchIntent::query()->create(['operation_id' => $operation->id, 'request' => $input->privateRequest()]);
                 $this->store->change($operation, ['state' => ['launch_phase' => 'preparing']]);
 
                 return $operation;
             });
+
+            return $this->snapshot->project($operation);
         });
     }
 

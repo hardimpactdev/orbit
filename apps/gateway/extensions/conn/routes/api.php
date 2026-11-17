@@ -37,7 +37,9 @@ Route::middleware([
         Route::withoutMiddleware(RecordCommandActivity::class)->group(function (): void {
             Route::get('launches', [ConnLaunchesController::class, 'index'])->name('conn:launch:list');
             Route::post('launches', [ConnLaunchesController::class, 'store'])->withoutMiddleware(RequireNodeAccess::class)->name('conn:launch:create');
-            Route::get('launches/{operationId}', [ConnLaunchesController::class, 'show'])->whereNumber('operationId')->name('conn:launch:show');
+            Route::get('launches/{operation_id}', [ConnLaunchesController::class, 'show'])->whereNumber('operation_id')->name('conn:launch:show');
+            Route::post('launches/{operation_id}/cancel', [ConnLaunchesController::class, 'cancel'])->whereNumber('operation_id')->name('conn:launch:cancel');
+            Route::post('launches/{operation_id}/retry', [ConnLaunchesController::class, 'retry'])->whereNumber('operation_id')->name('conn:launch:retry');
         });
         Route::put('me/profile', [ConnNodesController::class, 'bindProfile'])->name('conn:me:profile');
         Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');

@@ -756,6 +756,8 @@ Project the safe fields of `OperationData::summary`: `id`, `kind`, `status`, `cr
 
 The `stages`, `actions`, and `children` fields are keyed JSON objects even in the initial snapshot. Record stage times and errors from Gateway transitions and native results, never from a client's socket. Use the message's recorded time for `thread.accepted_at`, not the time a reply arrives. Keep core Operation status nonterminal while launch retry or cleanup remains pending. Do not reopen a terminal Operation to represent later application progress.
 
+Keep following `poll_after_seconds` after the launch reaches `ready` if application completion or an application retry is pending. Read `application_preview` separately from thread readiness. If preparation confirms there is no application to complete, the stage is `skipped` and reports no readiness value.
+
 ## Remove an Instance
 
 `POST /instances/{id}/destroy` requires an `Idempotency-Key` and `{"acknowledge_unsaved": true|false}`. The caller needs access to the Instance's Node. Only non-default container Instances can be removed here:

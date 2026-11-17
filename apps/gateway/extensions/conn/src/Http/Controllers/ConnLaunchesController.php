@@ -13,8 +13,10 @@ use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Actions\AdmitConnLaunchAction;
+use Orbit\Extensions\Conn\Actions\ControlConnLaunchAction;
 use Orbit\Extensions\Conn\Actions\ReadConnLaunchesAction;
-use Orbit\Extensions\Conn\Data\ConnLaunchSnapshot;
+use Orbit\Extensions\Conn\Domain\ConnLaunchAccess;
+use Orbit\Extensions\Conn\Http\Requests\ControlConnLaunchRequest;
 use Orbit\Extensions\Conn\Http\Requests\CreateConnLaunchRequest;
 
 #[RequiresNodeAccess(ServingNode::Collection)]
@@ -25,17 +27,25 @@ final class ConnLaunchesController extends Controller
         return $this->respond($request, $launches->index($this->caller($request)));
     }
 
-    public function show(Request $request, int $operationId, ReadConnLaunchesAction $launches): JsonResponse
+    public function show(Request $request, string $operationId, ReadConnLaunchesAction $launches): JsonResponse
     {
-        return $this->respond($request, $launches->show($this->caller($request), $operationId));
+        return $this->respond($request, $launches->show($this->caller($request), ConnLaunchAccess::operationId($operationId)));
     }
 
     #[StartsOperation(OperationKinds::ConnLaunch, requiresKey: true, secretInputs: ['prompt'], bindCaller: true, keyed: false)]
-    public function store(CreateConnLaunchRequest $request, AdmitConnLaunchAction $admit, ConnLaunchSnapshot $snapshot): JsonResponse
+    public function store(CreateConnLaunchRequest $request, AdmitConnLaunchAction $admit): JsonResponse
     {
-        $operation = $admit->execute($this->caller($request), $request->payload(), $request->attributes->getString('orbit.request_id'));
+        return $this->respond($request, $admit->execute($this->caller($request), $request->payload(), $request->attributes->getString('orbit.request_id')), 202);
+    }
 
-        return $this->respond($request, $snapshot->project($operation), 202);
+    public function cancel(ControlConnLaunchRequest $request, ControlConnLaunchAction $control): JsonResponse
+    {
+        return $this->respond($request, $control->cancel($this->caller($request), $request->operationId(), $request->attributes->getString('orbit.request_id')), 202);
+    }
+
+    public function retry(ControlConnLaunchRequest $request, ControlConnLaunchAction $control): JsonResponse
+    {
+        return $this->respond($request, $control->retry($this->caller($request), $request->operationId(), $request->target(), $request->attributes->getString('orbit.request_id')), 202);
     }
 
     private function caller(Request $request): Node
