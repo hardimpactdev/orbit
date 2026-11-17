@@ -117,6 +117,13 @@ if operation == 'install' and mode != 'no-tools':
         self.assertEqual([(c['mirror'], c['operation']) for c in self.apt],
                          [('primary', 'update'), ('primary', 'install')])
 
+    def test_valkey_has_more_time_for_primary_package_configuration(self):
+        result = self.run_helper('valkey-server', primary='install-fail')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        deadlines = [c['sudo'][:5] for c in self.calls if c.get('sudo', [None, None])[1] == 'python3']
+        self.assertEqual(deadlines, [['-n', 'python3', '-', '25', 'valkey-server'],
+                                     ['-n', 'python3', '-', '20', 'valkey-server']])
+
     def test_update_and_install_failures_try_the_known_fallback(self):
         for mode in ('fail', 'partial', 'install-fail'):
             with self.subTest(mode=mode):
@@ -184,7 +191,7 @@ class MirrorDeadlineTest(unittest.TestCase):
     guard = HELPER.read_text().split("<<'PYTHON'\n", 1)[1].split('\nPYTHON', 1)[0]
 
     def test_update_and_install_share_each_mirrors_deadline(self):
-        for budget in (10, 20):
+        for budget in (10, 20, 25):
             with self.subTest(budget=budget):
                 child = Mock(pid=123)
                 child.wait.return_value = 0
@@ -206,9 +213,11 @@ class MirrorDeadlineTest(unittest.TestCase):
                 with patch.object(sys, 'argv', ['-', '10', 'nftables']), \
                         patch('time.monotonic', side_effect=[100, 100, 104]), \
                         patch('subprocess.Popen', return_value=child), patch('os.killpg') as kill, \
+                        patch('sys.stderr') as stderr, \
                         self.assertRaises(SystemExit) as stopped:
                     exec(self.guard, {})
                 self.assertEqual(stopped.exception.code, 124)
+                stderr.write.assert_any_call(f'apt-get {operation} exceeded the shared 10s deadline for nftables')
                 kill.assert_called_once_with(123, signal.SIGKILL)
                 self.assertEqual(child.wait.call_args_list[-1], call())
 

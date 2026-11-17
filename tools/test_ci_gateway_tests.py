@@ -217,7 +217,8 @@ class GatewayRealClientsPolicyTest(unittest.TestCase):
         for step in steps:
             self.assertNotIn('continue-on-error', step)
         artifact = next(step for step in steps if step.get('uses', '').startswith('actions/upload-artifact@'))
-        self.assertEqual(artifact['if'], 'always()')
+        self.assertEqual(test['id'], 'real-client-tests')
+        self.assertEqual(artifact['if'], "${{ always() && (steps.real-client-tests.outcome == 'success' || steps.real-client-tests.outcome == 'failure') }}")
         self.assertEqual(artifact['with']['if-no-files-found'], 'error')
         self.assertIn('--log-junit="$RUNNER_TEMP/gateway-real-clients.xml"', test['run'])
         self.assertEqual(artifact['with']['path'], '${{ runner.temp }}/gateway-real-clients.xml')
