@@ -16,7 +16,10 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     [[ $EUID == 0 ]] || fail "run container recovery as root on the Gateway Node"
     inventory=$base/.orbit/gateway-containers.json
     phase=/usr/local/libexec/orbit-gateway-release-phase
-    exec 9<>"$base/.orbit/gateway-release.lock"
+    lock=$base/.orbit/gateway-release.lock
+    if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 || ! /proc/self/fd/9 -ef $lock ]]; then
+        exec 9<>"$lock"
+    fi
     export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
     flock -n 9 || fail "another Gateway release holds the lock"
     if [[ $id == --recover ]]; then

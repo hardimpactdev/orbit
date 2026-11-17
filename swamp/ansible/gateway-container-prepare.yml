@@ -68,6 +68,8 @@
         group: root
       loop:
         - { src: bin/gateway-container-site, dest: orbit-gateway-site }
+        - { src: bin/gateway-container-rollback, dest: orbit-gateway-rollback }
+        - { src: bin/gateway-rollback, dest: orbit-gateway-rollback-host }
         - { src: bin/gateway-release-phase, dest: orbit-gateway-release-phase }
         - { src: bin/gateway-container-environment, dest: orbit-gateway-environment }
         - { src: swamp/ansible/files/gateway-web/orbit-gateway-unit, dest: orbit-gateway-unit }

@@ -59,6 +59,7 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
   jq -e --arg sha "$sha" '.config | .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha and .["user.orbit.release.role"]=="candidate" and .["boot.autostart"]=="false"' <<< "$existing" >/dev/null
   "${incus_cli[@]}" delete "$candidate" --force
   ctl forget gateway "${sha:0:12}"
+  rm -f -- "$journal/rollback-$sha"
   exit
 fi
 git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:$script"

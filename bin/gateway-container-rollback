@@ -1,0 +1,54 @@
+#!/usr/bin/python3
+"""Select the installed recovery program while holding the Gateway release lock."""
+import fcntl
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+BASE = Path("/home/orbit")
+JOURNAL = Path("/var/lib/orbit/gateway-release-switch")
+HOST = Path("/usr/local/libexec/orbit-gateway-rollback-host")
+
+
+def implementation(inventory, journal, host, action):
+    if action == "--recover":
+        if not (journal / "operation").is_file():
+            raise ValueError("there is no interrupted Gateway traffic switch")
+        sha = (journal / "candidate").read_text().strip()
+    elif inventory.is_file():
+        sha = json.loads(inventory.read_text())["live"]
+    elif action == "--host":
+        raise ValueError("the Gateway already uses its host deployment")
+    else:
+        return host
+    if not isinstance(sha, str) or not re.fullmatch("[0-9a-f]{40}", sha):
+        raise ValueError("invalid Gateway recovery commit")
+    return journal / ("rollback-" + sha)
+
+
+def main():
+    if os.geteuid() != 0:
+        raise ValueError("run Gateway recovery as root")
+    state = BASE / ".orbit"
+    # The host adapter and phase scripts share descriptor 9 with this process.
+    with (state / "gateway-release.lock").open("r+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        script = implementation(state / "gateway-containers.json", JOURNAL, HOST, next(iter(sys.argv[1:]), ""))
+        info = script.lstat()
+        if not script.is_file() or script.is_symlink() or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError("unexpected Gateway recovery helper ownership or mode")
+        os.dup2(lock.fileno(), 9, inheritable=True)
+        os.set_inheritable(9, True)
+        os.environ["ORBIT_GATEWAY_RELEASE_LOCK_HELD"] = "1"
+        os.execv("/bin/bash", ["bash", str(script), *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BlockingIOError:
+        sys.exit("another Gateway release holds the lock")
+    except (OSError, ValueError, KeyError) as error:
+        sys.exit(str(error))

@@ -65,6 +65,7 @@ prune_previous() {
       "${incus_cli[@]}" delete "$other" --force
     fi
     ctl forget gateway "${discarded:0:12}"
+    rm -f -- "$journal/rollback-$discarded"
   fi
   rm -- "$journal/pending-prune"
 }
@@ -319,6 +320,10 @@ case "$action" in
       install -d -m 0700 "$journal"
       if [[ ! -e $journal/operation ]]; then prune_previous; fi
       if [[ -e $journal/operation && $(cat "$journal/operation") != "$operation" ]]; then fail 'another switch needs recovery'; fi
+      # Stage recovery before publishing the switch. The host adapter can recover even if power fails mid-switch.
+      rollback_file=$(mktemp "$journal/.rollback.XXXXXXXX")
+      if ! src bin/gateway-rollback > "$rollback_file"; then rm -f "$rollback_file"; fail 'missing recovery program'; fi
+      mv -fT "$rollback_file" "$journal/rollback-$sha"
       if [[ $previous ]]; then
         cp -- "$inventory" "$journal/inventory"
         cp -- "$upstream" "$journal/upstream"

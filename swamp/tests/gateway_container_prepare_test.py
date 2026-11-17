@@ -23,6 +23,7 @@ def module(name, path):
 
 prep = module("prepare", "bin/gateway-container-prepare")
 environment = module("environment", "bin/gateway-container-environment")
+recovery = module("recovery", "bin/gateway-container-rollback")
 guest = module("guest", "swamp/ansible/files/gateway-release-guest.py")
 infra = module("infra", "swamp/ansible/files/gateway-release-infrastructure.py")
 
@@ -91,6 +92,30 @@ class BootstrapTest(unittest.TestCase):
                 guest.main({"uid": 1000, "gid": 1000})
             attach.assert_not_called()
             incus.assert_not_called()
+
+    def test_offline_recovery_selects_the_journaled_live_or_host_program(self):
+        with tempfile.TemporaryDirectory() as temp:
+            journal = Path(temp)
+            inventory = journal / "inventory"
+            host = journal / "installed-host-rollback"
+            first, second = "a" * 40, "b" * 40
+            select = lambda action: recovery.implementation(inventory, journal, host, action)
+            self.assertEqual(select(first[:12]), host)
+            with self.assertRaisesRegex(ValueError, "already"):
+                select("--host")
+            inventory.write_text(json.dumps({"live": first, "old": None}))
+            self.assertEqual(select("--host"), journal / ("rollback-" + first))
+            (journal / "candidate").write_text(second)
+            (journal / "operation").write_text("42")
+            self.assertEqual(select("--recover"), journal / ("rollback-" + second))
+            (journal / "operation").unlink()
+            inventory.write_text(json.dumps({"live": second, "old": first}))
+            self.assertEqual(select(first[:12]), journal / ("rollback-" + second))
+            with self.assertRaisesRegex(ValueError, "interrupted"):
+                select("--recover")
+            inventory.write_text('{"live":"../../anything"}')
+            with self.assertRaisesRegex(ValueError, "invalid"):
+                select(first[:12])
 
     def test_release_checkout_keeps_only_admitted_history_for_cold_fleet_cli_resolution(self):
         with tempfile.TemporaryDirectory() as temp:
