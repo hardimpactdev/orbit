@@ -601,6 +601,8 @@ bin/swamp-shape-gate --only shape   # or --only validate
 
 The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate` and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
 
+Unit reloads and restarts that the next task depends on remain immediate tasks, with narrow `no-handler` annotations. Deferring them to handlers would change phase ordering.
+
 The venv folder is `venv-<digest>`. The digest covers two things:
 
 - the pin files `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`
