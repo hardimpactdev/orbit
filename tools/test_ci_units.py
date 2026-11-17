@@ -591,6 +591,10 @@ class TableTest(unittest.TestCase):
             ('swamp/ansible/tasks/instance-migrate-retire.yml', 'swamp/tests/ansible_instance_migrate_preflight_test.ts'),
             ('swamp/ansible/instance_bridge.py', 'swamp/tests/ansible_instance_container_test.ts'),
             ('swamp/tests/_support/instance_host.ts', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/ansible/files/instance-container-power.py', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/ansible/files/instance-container-wake.sh', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/ansible/tasks/instance-power-helper.yml', 'swamp/tests/ansible_instance_host_image_test.ts'),
+            ('swamp/tests/fixtures/host-image-boundaries.json', 'swamp/tests/ansible_instance_host_acl_test.ts'),
             ('swamp/ansible/tasks/task-container-host-system.yml', 'swamp/tests/ansible_container_host_system_test.py'),
         ]:
             result = units.plan([path], budget, fixtures, defaults)
