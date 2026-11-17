@@ -217,7 +217,8 @@ class FixtureRunTest(unittest.TestCase):
         self.assertEqual(self.ran(calls), ['swamp/tests/a_test.ts', 'swamp/tests/c_test.ts'])
         self.assertEqual((part.status, part.detail), ('passed', '2 of 3 planned units passed; '
                                                       'deferred to CI: 1 units, 60s declared: swamp/tests/b_test.ts'))
-        self.assertEqual(check['report']([part], 'a' * 40, 1)[-1], 'Task check PASSED against aaaaaaaaaaaa in 1.0s')
+        self.assertEqual(check['report']([part], 'a' * 40, 1)[-1],
+                         'Task check PASSED with incomplete coverage (budget exhausted; CI must finish) against aaaaaaaaaaaa in 1.0s')
 
     def test_a_unit_that_ran_and_failed_fails_the_check(self):
         part, _calls = self.fixtures(self.plan(), 110, 1, {'swamp/tests/a_test.ts': 'FAILED'}, 'a failed')
@@ -435,7 +436,18 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(lines[7:9], ['Last lines of pest packages/php-sdk:', 'output'])
         self.assertTrue(lines[9].startswith('Not in this check: '))
         self.assertEqual(lines[-1], 'Task check FAILED against 0123456789ab in 130.0s')
-        self.assertEqual(check['report'](parts[:3], '0123456789abcdef', 1)[-1], 'Task check PASSED against 0123456789ab in 1.0s')
+        self.assertEqual(check['report'](parts[:3], '0123456789abcdef', 1)[-1],
+                         'Task check PASSED with incomplete coverage (budget exhausted; CI must finish) against 0123456789ab in 1.0s')
+
+    def test_budget_deferrals_and_stops_cannot_read_as_full_coverage(self):
+        for detail in ('budget: stopped after 40s', 'budget: not started, no time left',
+                       '1 of 2 planned fixtures collected; budget skipped: b.ts',
+                       '1 of 2 planned units passed; deferred to CI: 1 units, 90s declared: b.ts'):
+            with self.subTest(detail=detail):
+                lines = check['report']([Part('fixtures', 'passed', 1, detail)], 'a' * 40, 1)
+                self.assertIn('PASSED with incomplete coverage (budget exhausted; CI must finish)', lines[-1])
+        lines = check['report']([Part('pest apps/gateway suite', 'skipped', 0, 'CI runs the full suite')], 'a' * 40, 1)
+        self.assertIn('Task check PASSED against', lines[-1])
 
 
     def test_the_summary_stays_within_its_bound_and_names_every_part(self):
@@ -480,7 +492,7 @@ class ReportTest(unittest.TestCase):
 
 
 class CiPolicyTest(unittest.TestCase):
-    """The ci-policy part runs CI's policy and budget tests on every change, as CI's "Select build inputs" job runs them."""
+    """Expensive checks follow their inputs, without skipping unconditional budget and capacity checks."""
 
     def policy(self, commands, seconds=30):
         with patch.dict(check['ci_policy'].__globals__, {'CI_POLICY': commands}):
@@ -493,8 +505,7 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(check['CI_POLICY'], commands)
         self.assertEqual(len(commands), 2)
 
-    def test_a_change_that_touches_no_ci_input_runs_them(self):
-        # Checks 2498 and 2499: a Python test over CI's 150 s lane changed no CI input; only CI's budget tests caught it.
+    def test_a_docs_input_runs_policy_tests(self):
         ran = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
         stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
@@ -506,6 +517,38 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(ran, check['CI_POLICY'])
         self.assertEqual(code, 0)
         self.assertIn('  passed       ci-policy (', output.getvalue())
+
+    def test_expensive_checks_follow_tooling_docs_and_api_inputs_not_the_pr_docs_job(self):
+        cases = [([], []), (['packages/php-sdk/tests/Unit/Requests/Tasks/TaskRequestsTest.php'], []),
+                 (['apps/web/src/main.ts'], []),
+                 (['bin/task-check'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['tools/test_ci_units.py'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['.github/ci/checks.toml'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['docs/reference/tasks.md'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['apps/docs/app/Documentation/DocsImpact.php'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['swamp/workflows/workflow-operation-instance-create.yaml'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['apps/agent/src/commands/ci_runner.rs'], ['ci-policy']),
+                 (['apps/pi-server/src/main.ts'], ['ci-policy']),
+                 (['.node-version'], ['ci-policy']),
+                 (['apps/gateway/app/Support/ValidatedData.php'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['swamp/extensions/behaviors/operations/node/ci_host_spec.ts'], ['ci-policy']),
+                 (['apps/gateway/resources/ci-runner/hold.py'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['apps/gateway/resources/machine-software/recipe.json'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['apps/gateway/app/Domain/Tasks/direct-operations.php'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['packages/php-sdk/src/Requests/Tasks/CancelTaskRequest.php'], ['check-flows', 'docs-lint'])]
+        for paths, expected in cases:
+            with self.subTest(paths=paths):
+                ran = []
+                jobs = {**JOBS, 'docs': True, 'api-reference': False, 'swamp': False}
+                stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', paths),
+                         'candidate_head': lambda _committed: 'HEAD',
+                         'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
+                         'timed': lambda name, *_args, **_kwargs: ran.append(name) or Part(name, 'passed'),
+                         'ci_policy': lambda _deadline: ran.append('ci-policy') or Part('ci-policy', 'passed')}
+                with patch.dict(check['main'].__globals__, stubs), redirect_stdout(io.StringIO()):
+                    code = check['main'](['--only', 'ci-policy,docs-lint,check-flows'])
+                self.assertEqual(code, 0)
+                self.assertEqual(ran, expected)
 
     def test_a_selected_part_passes_or_fails_with_its_command(self):
         self.assertEqual(self.policy([['true'], ['true']]).status, 'passed')
@@ -524,7 +567,7 @@ class CiPolicyTest(unittest.TestCase):
         stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
                  'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
                  'ci_policy': lambda _deadline: order.append('ci-policy') or Part('ci-policy', 'passed'),
-                 'fixture_population': lambda _plan, _deadline: order.append('fixture-population') or Part('fixture-population', 'passed'),
+                 'fixture_population': lambda _plan, _deadline, _table: order.append('fixture-population') or Part('fixture-population', 'passed'),
                  'pest_plan': lambda _jobs, _paths, _base: order.append('pest') or [],
                  'fixtures': lambda _plan, _deadline, _table, _paths: order.append('fixtures') or Part('fixtures', 'passed'),
                  'capacity_errors': lambda _plan, _table: []}
