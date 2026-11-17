@@ -194,6 +194,47 @@ def inventory_changes(base, head):
     return sorted(file for file in before.keys() | after.keys() if before.get(file) != after.get(file))
 
 
+def fixture_inputs(paths, base, head):
+    """Ignore YAML presentation-only edits, but retain any input we cannot compare safely."""
+    import yaml
+
+    class UniqueLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            keys = [self.construct_object(key, deep=deep) for key, _ in node.value]
+            if len(set(keys)) != len(keys):
+                raise ValueError('Duplicate YAML key')
+            return super().construct_mapping(node, deep=deep)
+
+    def nodes(node):
+        if node is None:
+            return None
+        if node.tag not in yaml.SafeLoader.yaml_constructors:
+            raise ValueError('Unsupported YAML tag')
+        if isinstance(node, yaml.ScalarNode):
+            return node.tag, node.value
+        if isinstance(node, yaml.SequenceNode):
+            return node.tag, tuple(nodes(value) for value in node.value)
+        pairs = tuple((nodes(key), nodes(value)) for key, value in node.value)
+        # Do not collapse mappings to dicts: Ansible can consume their insertion order.
+        return node.tag, pairs
+
+    def unchanged(path):
+        if Path(path).suffix.lower() not in ('.yaml', '.yml'):
+            return False
+        try:
+            values = []
+            for ref in (base, head):
+                text = subprocess.check_output(['git', 'show', f'{ref}:{path}'], stderr=subprocess.DEVNULL, timeout=60)
+                # Validate constructors too: composing alone accepts e.g. an invalid !!int.
+                yaml.load(text, Loader=UniqueLoader)
+                values.append(nodes(yaml.compose(text, Loader=yaml.SafeLoader)))
+            return values[0] == values[1]
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, yaml.YAMLError, ValueError, TypeError, RecursionError):
+            return False
+
+    return [path for path in paths if not unchanged(path)]
+
+
 def registry_changes(base, head):
     """Scope table edits to fixture entries; shared execution policy affects all."""
     before, _ = registry.read_revision(Path.cwd(), base)
@@ -776,6 +817,7 @@ def main():
         signal.signal(signal.SIGINT, lambda *_: CANCELLED.set())
         return run(units, budget, fixtures, args.times, args.tools.resolve() if args.tools is not None else None)
     base, paths = selection.changed_inputs(gate.resolve_base(args.base), args.head)
+    paths = fixture_inputs(paths, base, args.head)
     inventory_changed = inventory_changes(base, args.head) if registry.metadata_changed(paths) else []
     registry_changed, shared_registry = registry_changes(base, args.head) if registry.metadata_changed(paths) else ([], False)
     result = plan(paths, budget, fixtures, defaults, inventory_changed, registry_changed, shared_registry)
