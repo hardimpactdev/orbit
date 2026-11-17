@@ -447,8 +447,6 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(copies[0][4], "instance-1/seed-def")
         # The later phases start the branch at the copied seed's commit, not the admitted one.
         self.assertEqual(self.seed_commit, "def\n")
-
-    def test_a_copy_waits_for_a_retake_at_the_same_commit_and_copies_its_seed(self):
         # The admitted seed is still there, but a retake at the same commit runs beside it: the copy waits for its end.
         calls, _, error = self.clone(overrides={"fixture_snapshot_reads": [
             [{"name": "seed-abc"}, {"name": "next-abc"}], [{"name": "seed-abc"}]]})
