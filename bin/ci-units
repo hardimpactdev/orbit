@@ -202,7 +202,7 @@ def fixture_inputs(paths, base, head):
     quoted_key = re.compile(r'[ -~]*')
     comments = re.compile(r'^[ \t]*#[^\r\n]*(?:\r?\n|$)|[ \t]+#[^\r\n]*', re.MULTILINE)
 
-    def uncommented(source):
+    def comment_comparison(source):
         class UniqueLoader(yaml.SafeLoader):
             def construct_mapping(self, node, deep=False):
                 keys = set()
@@ -226,6 +226,7 @@ def fixture_inputs(paths, base, head):
         if any(char in source for char in '\x85\u2028\u2029'):
             raise ValueError('Ambiguous YAML line break')
         parts = []
+        scalar_values = []
         end = 0
         for token in yaml.scan(source):
             if isinstance(token, (yaml.AliasToken, yaml.TagToken, yaml.DirectiveToken)):
@@ -240,8 +241,12 @@ def fixture_inputs(paths, base, head):
                 end = comment.end()
             parts.append(source[end:stop])
             end = stop
+            if isinstance(token, yaml.ScalarToken):
+                # A comment can end a block scalar before blank lines that keep-chomping would retain.
+                # Compare decoded values from the original source alongside the comment-stripped text.
+                scalar_values.append(token.value)
         yaml.load(source, Loader=UniqueLoader)
-        return ''.join(parts)
+        return ''.join(parts), scalar_values
 
     def unchanged(path):
         if Path(path).suffix.lower() not in ('.yaml', '.yml'):
@@ -249,7 +254,7 @@ def fixture_inputs(paths, base, head):
         try:
             before, after = (subprocess.check_output(['git', 'show', f'{ref}:{path}'], stderr=subprocess.DEVNULL,
                                                      timeout=60).decode('utf-8') for ref in (base, head))
-            return uncommented(before) == uncommented(after)
+            return comment_comparison(before) == comment_comparison(after)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, yaml.YAMLError, ValueError, TypeError, RecursionError):
             return False
 

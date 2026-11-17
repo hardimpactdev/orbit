@@ -99,6 +99,28 @@ class ChangedPathsTest(unittest.TestCase):
                 units = [unit for shard in plan['shards'] for unit in shard['units']]
                 self.assertIn(fixture, [unit.split('#', 1)[0] for unit in units])
 
+    def test_yaml_block_scalar_chomping_can_change_at_a_comment(self):
+        path = 'swamp/workflows/workflow-operation-instance-complete.yaml'
+        fixture = 'swamp/tests/instance_complete_workflow_test.ts'
+        source = (ROOT / path).read_text()
+        description = next(line for line in source.splitlines(keepends=True) if line.startswith('description:'))
+        for style in ('|', '>'):
+            for chomp, selects in (('+', True), ('', False), ('-', False)):
+                with self.subTest(style=style, chomp=chomp):
+                    block = f'description: {style}{chomp}\n  First line\n  Second line\n'
+                    before = source.replace(description, block + '\n', 1)
+                    after = source.replace(description, block + '# Boundary after the description\n\n', 1)
+                    self.commit(path, before)
+                    base = self.git('rev-parse', 'HEAD')
+                    self.commit(path, after)
+                    plan = self.cli('ci-units', 'plan', '--base', base, '--head', 'HEAD')
+                    if selects:
+                        units = [unit for shard in plan['shards'] for unit in shard['units']]
+                        self.assertIn(fixture, units)
+                    else:
+                        self.assertEqual([], plan['shards'])
+                        self.assertEqual([], plan['self_hosted_shards'])
+
     def test_yaml_meaning_changes_and_uncertain_comparisons_keep_fixtures(self):
         path = 'swamp/ansible/tasks/instance-fleet.yml'
         changes = [
