@@ -1,0 +1,73 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Larastan\Larastan\Types\ModelProperty;
+
+use Illuminate\Database\Eloquent\Model;
+use Larastan\Larastan\Properties\ModelPropertyHelper;
+use PHPStan\Analyser\NameScope;
+use PHPStan\PhpDoc\TypeNodeResolver;
+use PHPStan\PhpDoc\TypeNodeResolverExtension;
+use PHPStan\PhpDocParser\Ast\Type\GenericTypeNode;
+use PHPStan\PhpDocParser\Ast\Type\TypeNode;
+use PHPStan\Reflection\ReflectionProvider;
+use PHPStan\Type\ErrorType;
+use PHPStan\Type\NeverType;
+use PHPStan\Type\ObjectType;
+use PHPStan\Type\StringType;
+use PHPStan\Type\Type;
+
+use function count;
+
+/**
+ * Ensures a 'model-property' type in PHPDoc is recognised to be of type ModelPropertyType.
+ */
+final class ModelPropertyTypeNodeResolverExtension implements TypeNodeResolverExtension
+{
+    public function __construct(
+        protected TypeNodeResolver $baseResolver,
+        protected bool $active,
+        private ModelPropertyHelper $modelPropertyHelper,
+        private ReflectionProvider $reflectionProvider,
+    ) {
+    }
+
+    public function resolve(TypeNode $typeNode, NameScope $nameScope): Type|null
+    {
+        if (! $typeNode instanceof GenericTypeNode) {
+            return null;
+        }
+
+        if ((string) $typeNode->type !== 'model-property') {
+            return null;
+        }
+
+        if (! $this->active) {
+            return new StringType();
+        }
+
+        if (count($typeNode->genericTypes) !== 1) {
+            return new ErrorType();
+        }
+
+        $genericType = $this->baseResolver->resolve($typeNode->genericTypes[0], $nameScope);
+
+        if ((new ObjectType(Model::class))->isSuperTypeOf($genericType)->no()) {
+            return new ErrorType();
+        }
+
+        if ($genericType instanceof NeverType) {
+            return new ErrorType();
+        }
+
+        // A file calling a method with such a parameter does not have to use a model itself
+        $className = $nameScope->getClassName();
+
+        if ($className !== null && $this->reflectionProvider->hasClass($className)) {
+            $this->modelPropertyHelper->trackSchemaDependency($this->reflectionProvider->getClass($className));
+        }
+
+        return new GenericModelPropertyType($genericType, $this->modelPropertyHelper);
+    }
+}
