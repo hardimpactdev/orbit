@@ -23,7 +23,7 @@ BOOT_SOURCES = ("/etc/orbit/agent/ca.pem",)
 INCUS_SOCKET = "/var/lib/incus/unix.socket"
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("conn-server", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+GUEST_COMMANDS = ("conn-server", "orbit-app-user", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
 # A failed command's detail: its code line, what it did and the end of its stderr, in at most this many UTF-8 bytes, so the native
 # step's wrapper ("exec failed on 1/1 host(s): target (exit 1: ...)") still fits the Gateway's 4,096-byte detail.

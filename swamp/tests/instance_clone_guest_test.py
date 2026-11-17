@@ -716,6 +716,12 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.assertEqual(self.state(), whole_state)
         # The app user `web` runs the Node store step of the services part, with its own home (ADR 0268, second amendment).
         self.assertEqual(self.node_store_runs, [("web", "/home/web")])
+        # Root's swap file from the boot files runs once, first: a copy of a seed taken before the rename names its `orbit` web before
+        # the Node store step runs as web.
+        swap = [n for n, call in enumerate(part_commands) if call == [GUEST.APP_USER_SWAP]]
+        store = [n for n, call in enumerate(part_commands) if "clone-fetch" in call]
+        self.assertEqual((len(swap), swap[:1]), (1, [0]))
+        self.assertLess(swap[0], store[0])
         # The same units start, the same Node store call runs, in the same order.
         self.assertEqual(self.named(part_commands), whole_commands)
         self.assertIn(["systemctl", "start", "orbit-process-19.service"], whole_commands)

@@ -14,9 +14,11 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 # Mirrored by the Node boundary; the clone tests keep the two sets in sync.
-GUEST_COMMANDS = ("conn-server", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+GUEST_COMMANDS = ("conn-server", "orbit-app-user", "curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 # The Node's clone script hands this helper to the `workspace` and `services` parts in their intent.
 NODE_RUNTIME = "/usr/local/libexec/orbit-instance-node-runtime.py"
+# Root's swap file of the app user's name, from the boot files (InstanceImage::AppUserSwap).
+APP_USER_SWAP = "/usr/local/libexec/orbit-app-user"
 # The CLI-only PHP settings (php-runtime.md#pcov-in-the-cli-only).
 PHP_CLI_INI = "/etc/orbit/php/php-cli.ini"
 # The commands whose own stderr follows the diagnostic line, for the Node's clone script to redact: none of them sees a token that T3
@@ -470,6 +472,8 @@ def phase_main(phase, raw):
         """The rest of the workspace: PHP settings, file rights, Process files, web config, the Node store and the units."""
         # No Process starts on a branch this Instance did not check out.
         assert json.loads(root(CHECKOUT_MARK).read_text())["instance_id"] == c["instance_id"]
+        # A copy of a seed taken before the rename still has `orbit`: root's swap file from the boot files names it web first.
+        run([APP_USER_SWAP], timeout=120)
         inputs = json.loads(private)
         # The shipped Node runtime helper, outside the app-owned store; the Node store step below runs it as web.
         write(NODE_RUNTIME, c["node_runtime"], 0, 0, "0755")
