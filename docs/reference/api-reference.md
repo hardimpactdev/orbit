@@ -39,6 +39,8 @@ Optional lists keep their declared item schema. The Operation `steps` list refer
 
 The Conn Operation cancel description names the same kinds except `instance.destroy`, which it refuses with 404, and answers 200 with `OperationData`; [Cancel a create or a completion](/reference/conn#cancel-a-create-or-a-completion) owns its rules.
 
+`POST /api/v1/conn/launches` documents `Idempotency-Key` as a required header and the expected profile and Node IDs as required body fields. The launch routes use `ConnLaunchSnapshot`, with an array for list and one snapshot for show and control. The Conn reference defines the fields, scope, and failures. [Durable launches](/reference/conn#durable-launches-v1)
+
 Run the generator from the repository root:
 
 ```bash
