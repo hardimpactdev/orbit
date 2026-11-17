@@ -206,6 +206,11 @@ case "$action" in
     # Run the same bounded extraction and digest validation used by host releases.
     enter "$prep" env ORBIT_GATEWAY_WEB_GROUP=orbit ORBIT_GATEWAY_WEB_ARCHIVE_STDIN="${ORBIT_GATEWAY_WEB_ARCHIVE_STDIN:-0}" bash "$checkout/swamp/scripts/gateway-release-web.sh" "$id" "$@"
     user "$prep" ln -sfnT "releases/$id" /home/orbit/web/current
+    # Sealed clones have independent web trees. Only the newly checked web build
+    # belongs in the preparation snapshot; never traverse a symlink or a shared mount.
+    user "$prep" find /home/orbit/web/releases -xdev -regextype posix-extended -mindepth 1 -maxdepth 1 \
+      '!' -name "$id" '!' -name ".$id.digest" \
+      -regex '.*/([a-f0-9]{12}|\.[a-f0-9]{12}\.(partial|digest))' -exec rm -rf -- '{}' +
     ;;
   clone)
     digest=$1

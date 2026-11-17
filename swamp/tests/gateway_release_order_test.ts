@@ -83,3 +83,12 @@ Deno.test("failure cleanup runs after every handover outcome", () => {
   assertEquals(release.find((step) => step.name === "Release unused candidate")?.dependsOn,
     [{ step: "Hand over the release", condition: { type: "always" } }]);
 });
+
+Deno.test("failed web installation cannot migrate even when its clone is skipped", () => {
+  const snapshot = release.find((step) => step.name === "Snapshot the database")!;
+  const installation = snapshot.dependsOn!.find((edge) => edge.step === "Install the web build")!;
+  assertEquals(installation.condition.conditions?.some((entry) => entry.type === "failed"), false);
+  assert(snapshot.guard?.includes('steps["Install the web build"].status != "succeeded"'));
+  assert(snapshot.guard?.includes('steps["Clone the prepared release"].status != "succeeded"'));
+  assert(snapshot.guard?.includes("!(has(inputs.intent.retained) && inputs.intent.retained)"));
+});

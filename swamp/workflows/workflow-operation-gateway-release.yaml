@@ -203,7 +203,12 @@ jobs:
   - name: Snapshot the database
     labels: {role: swamp}
     writes: true
-    dependsOn: [{step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Build the release, condition: {type: succeeded}}]
+    # Only retained releases have a previously sealed web build and container.
+    guard: '${{ !(has(inputs.intent.retained) && inputs.intent.retained) && (steps["Install the web build"].status != "succeeded" || steps["Clone the prepared release"].status != "succeeded") }}'
+    dependsOn:
+    - {step: Build the release, condition: {type: succeeded}}
+    - {step: Install the web build, condition: &built_or_retained {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Clone the prepared release, condition: *built_or_retained}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
