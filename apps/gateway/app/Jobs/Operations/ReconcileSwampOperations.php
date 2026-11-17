@@ -63,6 +63,11 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         $started = hrtime(true);
         $health = new OperationReconcileHealth;
         try {
+            app(ExecutorWake::class)->recoverPendingCompletions();
+        } catch (Throwable $exception) {
+            Log::warning('Executor wake completion handoffs could not be swept; the next pass tries again.', ['exception_type' => $exception::class]);
+        }
+        try {
             app(ExecutorWake::class)->recoverPendingHooks();
         } catch (Throwable $exception) {
             Log::warning('Executor wake hook handoffs could not be swept; the next pass tries again.', ['exception_type' => $exception::class]);

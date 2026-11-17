@@ -30,11 +30,15 @@ final readonly class ExecutorWake
 
     public const string FollowUpState = 'wake_executor_follow_up';
 
+    public const string CompletionState = 'wake_executor_completion';
+
     public const int CompletionSeconds = 6;
 
     private const int FollowUpGraceSeconds = 30;
 
     private const int FollowUpBatchSize = 50;
+
+    private const int CompletionBatchSize = 50;
 
     public function __construct(private ExecutorOrderPublisher $publisher, private ExecutorResultWait $wait, private OperationStore $operations) {}
 
@@ -53,10 +57,17 @@ final readonly class ExecutorWake
         $operation = app(StartOperationAction::class)->execute(InstanceWake::Kind, 'instance', $instance->id, $instance->node_id, $input,
             $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id), start: false);
         if ($operation->wasRecentlyCreated) {
-            $state = [...($operation->state ?? []), self::State => true];
+            $state = [...($operation->state ?? []), self::State => true, self::CompletionState => 'pending'];
             unset($state['swamp_start']);
             $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now(), 'attempts' => 1, 'state' => $state]);
-            DB::afterCommit(static fn () => Bus::dispatch((new CompleteExecutorWake($operation->id))->delay(now()->addSeconds(self::CompletionSeconds))));
+            DB::afterCommit(function () use ($operation): void {
+                try {
+                    $this->enqueueCompletion($operation->id);
+                } catch (Throwable $exception) {
+                    Log::warning('The executor wake completion could not be queued; the minute sweep retries.',
+                        ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                }
+            });
         }
 
         return $operation;
@@ -99,7 +110,15 @@ final readonly class ExecutorWake
             if (hrtime(true) / 1e9 > $deadline || ! in_array($line['status'] ?? null, ['done', 'partial'], true)) {
                 return false;
             }
-            $this->complete($operation);
+            try {
+                $this->complete($operation);
+            } catch (Throwable $exception) {
+                if ($operation->refresh()->status !== OperationStatus::Succeeded) {
+                    throw $exception;
+                }
+                Log::warning('The executor wake succeeded but its follow-up could not be queued; the minute sweep retries.',
+                    ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+            }
 
             return $operation->refresh()->status === OperationStatus::Succeeded;
         } catch (Throwable $exception) {
@@ -154,6 +173,49 @@ final readonly class ExecutorWake
             if ($success) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => InstanceRuntimePowerState::Running]);
             }
+        });
+    }
+
+    /** Recovers the initial handoff without another visit, including a request that stopped before publishing its order. */
+    public function recoverPendingCompletions(): int
+    {
+        $pending = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')
+            ->where('status', OperationStatus::Running)->where('state->'.self::State, true)
+            ->where('state->'.self::CompletionState, 'pending')
+            ->where('started_at', '<=', now()->subSeconds(self::CompletionSeconds))
+            ->orderBy('started_at')->orderBy('id')->limit(self::CompletionBatchSize)->get(['id']);
+        $recovered = [];
+        foreach ($pending as $operation) {
+            try {
+                if ($this->enqueueCompletion($operation->id)) {
+                    $recovered[] = $operation->id;
+                }
+            } catch (Throwable $exception) {
+                Log::warning('An executor wake completion handoff could not be recovered; the next pass tries again.',
+                    ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                break;
+            }
+        }
+        if ($recovered !== []) {
+            Log::info('Executor wake completion handoffs recovered.', ['recovered' => count($recovered), 'operation_ids' => $recovered]);
+        }
+
+        return count($recovered);
+    }
+
+    private function enqueueCompletion(int $operationId): bool
+    {
+        return DB::transaction(static function () use ($operationId): bool {
+            $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
+            if ($operation === null || ! self::owns($operation) || $operation->status !== OperationStatus::Running
+                || ($operation->state[self::CompletionState] ?? null) !== 'pending') {
+                return false;
+            }
+            Bus::dispatch((new CompleteExecutorWake($operation->id))->beforeCommit()
+                ->delay($operation->started_at?->addSeconds(self::CompletionSeconds)));
+            $operation->forceFill(['state' => [...($operation->state ?? []), self::CompletionState => 'queued']])->save();
+
+            return true;
         });
     }
 

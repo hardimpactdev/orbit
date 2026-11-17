@@ -183,9 +183,15 @@ The request shares one `ORBIT_EXECUTOR_WAIT_MS` budget, default 500 ms, across p
 
 Admission also queues `CompleteExecutorWake` on `operations-prompt` for 6 seconds after admission. It reads `executor_result` rather than holding a PHP request worker or another blocking pop. A late `done` or `partial` succeeds; `refused` fails with `executor.wake_refused`, `failed` with `executor.wake_failed`, and no result with `executor.wake_timeout`. The result stays on the Operation. A terminal Operation keeps its end.
 
+Admission records `state.wake_executor_completion: pending` with the running Operation. After commit, a locked handoff enqueues completion before recording `queued`. An enqueue failure is logged and leaves `pending`; the request still publishes and waits, returning the progress page when no successful result arrives. The minute reconciler retries up to 50 running pending completion handoffs, oldest first, once admission is six seconds old. It preserves the original completion deadline, logs recovered IDs and stops that sweep on an enqueue error. No new visit is needed.
+
+Recovery does not republish orders. If the request stopped before publishing, completion closes the same Operation with `executor.wake_timeout` unless a durable successful result exists. Repeated sweeps share the handoff lock and queued marker, so they enqueue once. A wake that already ended needs no completion handoff.
+
 Success hands the lifecycle follow-up, including Conn session renewal, to `operations-prompt` after commit. The job takes the Operation lock and records its receipt with the hooks' record changes, so another completion or a repeated job does not run successful hooks again. Operation notices also go to that queue after commit, carrying each change's notice and sequence. Neither lifecycle work nor Reverb delivery runs in the activation request or its termination callbacks. A slow vault write or broadcast therefore cannot keep that request worker busy past the wake bound.
 
 The success transaction also records `state.wake_executor_follow_up: pending`. After commit, the hook handoff runs before terminal notice enqueues. It takes the Operation lock, enqueues the job, then records `queued`; an enqueue failure leaves `pending`. A later completion, including the already scheduled six-second job, retries that pending handoff even though the Operation succeeded. Repeating a queued handoff adds no job. The hook job records `delivered` with its existing successful-hook receipt, which still prevents repeat execution. Notice enqueue failures are logged and do not stop other callbacks or change the wake's result.
+
+A failed hook enqueue after an in-bound success is also logged and remains pending for recovery; it does not change the activation response from 200.
 
 The minute `ReconcileSwampOperations` pass also recovers pending hook handoffs, even after the completion job exhausts all three attempts. Each pass selects at most 50 succeeded executor wakes, oldest first, whose success is at least 30 seconds old. Older pending handoffs remain eligible, including when executor wakes have since been disabled.
 

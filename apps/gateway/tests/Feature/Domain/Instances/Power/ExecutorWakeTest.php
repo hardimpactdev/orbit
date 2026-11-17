@@ -754,3 +754,190 @@ it('stops recovery on a queue failure and still finishes native reconciliation b
     Queue::assertPushed(ProjectExecutorWake::class, 2);
     expect(app(ExecutorWake::class)->recoverPendingHooks())->toBe(0);
 });
+
+it('keeps an in-bound success authorized when its durable hook handoff cannot enqueue', function (string $status, bool $failCompletion): void {
+    $instance = executorWakeInstance();
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => $status]);
+    $bus = Bus::getFacadeRoot();
+    Bus::partialMock()->shouldReceive('dispatch')->andReturnUsing(function ($job) use ($bus, $failCompletion) {
+        if ($failCompletion && $job instanceof CompleteExecutorWake) {
+            throw new RuntimeException('Injected completion enqueue failure.');
+        }
+        if ($job instanceof ProjectExecutorWake) {
+            throw new RuntimeException('Injected hook enqueue failure.');
+        }
+
+        return $bus->dispatch($job);
+    });
+    Log::spy();
+    $started = hrtime(true);
+    try {
+        $response = executorWakeVisit($instance);
+    } finally {
+        Bus::swap($bus);
+    }
+    $elapsedMs = (hrtime(true) - $started) / 1e6;
+
+    $response->assertOk()->assertHeaderMissing('X-Orbit-Runtime-Activation-State');
+    expect($elapsedMs)->toBeLessThan(500);
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    expect($operation)->status->toBe(OperationStatus::Succeeded);
+    expect($operation->state[ExecutorWake::FollowUpState])->toBe('pending');
+    Queue::assertNotPushed(ProjectExecutorWake::class);
+    Log::shouldHaveReceived('warning')->with('The executor wake succeeded but its follow-up could not be queued; the minute sweep retries.',
+        ['operation_id' => $operation->id, 'exception_type' => RuntimeException::class])->once();
+    $this->travel(31)->seconds();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+    $contribution = $this->mock(InstanceLifecycleContribution::class);
+    $contribution->shouldReceive('projectWake')->once();
+    app()->tag([InstanceLifecycleContribution::class], InstanceLifecycleContribution::class);
+    $job = Queue::pushed(ProjectExecutorWake::class)->sole();
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+    expect($operation->refresh()->state[ExecutorWake::FollowUpState])->toBe('delivered');
+})->with(['done' => ['done', false], 'partial' => ['partial', false],
+    'done and no completion enqueue' => ['done', true], 'partial and no completion enqueue' => ['partial', true]]);
+
+it('keeps the progress page and recovers a failed initial completion enqueue without another visit', function (bool $publish, bool $reply): void {
+    $instance = executorWakeInstance();
+    if (! $publish) {
+        $this->publisher->publishing = static fn () => throw new RuntimeException('Injected publish failure.');
+    }
+    $bus = Bus::getFacadeRoot();
+    Bus::partialMock()->shouldReceive('dispatch')->andReturnUsing(function ($job) use ($bus) {
+        if ($job instanceof CompleteExecutorWake) {
+            throw new RuntimeException('Injected completion enqueue failure.');
+        }
+
+        return $bus->dispatch($job);
+    });
+    Log::spy();
+    try {
+        $response = executorWakeVisit($instance);
+    } finally {
+        Bus::swap($bus);
+    }
+
+    $response->assertUnauthorized()->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
+    $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    expect($operation)->status->toBe(OperationStatus::Running);
+    expect($operation->state['wake_executor_completion'])->toBe('pending');
+    Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, $publish ? 1 : 0);
+    Queue::assertNotPushed(CompleteExecutorWake::class);
+    Log::shouldHaveReceived('warning')->with('The executor wake completion could not be queued; the minute sweep retries.',
+        ['operation_id' => $operation->id, 'exception_type' => RuntimeException::class])->once();
+    if ($reply) {
+        executorWakeReply($operation, ['status' => 'done']);
+    }
+    $this->travel(7)->seconds();
+    config(['orbit.executor.wake_enabled' => false]);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+
+    Queue::assertPushed(CompleteExecutorWake::class, 1);
+    Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, $publish ? 1 : 0);
+    expect($operation->refresh()->state['wake_executor_completion'])->toBe('queued');
+    $job = Queue::pushed(CompleteExecutorWake::class)->sole();
+    expect($job->delay->isPast())->toBeTrue();
+    expect($job->afterCommit)->toBeFalse();
+    app()->call([$job, 'handle']);
+    app()->call([$job, 'handle']);
+    expect($operation->refresh()->status)->toBe($reply ? OperationStatus::Succeeded : OperationStatus::Failed);
+    expect($operation->error_code)->toBe($reply ? null : 'executor.wake_timeout');
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
+    Queue::assertPushed(ProjectExecutorWake::class, $reply ? 1 : 0);
+})->with(['no order' => [false, false], 'no result' => [true, false], 'late success' => [true, true]]);
+
+function executorWakePendingCompletion(Instance $instance, int $age = 6): Operation
+{
+    return executorWakePendingHooks($instance, [
+        'status' => OperationStatus::Running, 'started_at' => now()->subSeconds($age), 'finished_at' => null,
+        'state' => [ExecutorWake::State => true, ExecutorWake::CompletionState => 'pending'],
+    ]);
+}
+
+it('recovers completion handoffs only after six seconds and at most fifty oldest running wakes per pass', function (): void {
+    $instance = executorWakeInstance();
+    $this->freezeTime();
+    $young = executorWakePendingCompletion($instance, 5);
+    $closed = executorWakePendingCompletion($instance);
+    $closed->update(['status' => OperationStatus::Cancelled]);
+    $queued = executorWakePendingCompletion($instance);
+    $queued->update(['state' => [ExecutorWake::State => true, ExecutorWake::CompletionState => 'queued']]);
+    $native = executorWakePendingCompletion($instance);
+    $native->update(['state' => [ExecutorWake::CompletionState => 'pending']]);
+    $ids = [];
+    for ($age = 6; $age <= 56; $age++) {
+        $ids[] = executorWakePendingCompletion($instance, $age)->id;
+    }
+    $oldest = executorWakePendingCompletion($instance, 86400);
+    config(['orbit.executor.wake_enabled' => false]);
+    Log::spy();
+
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(50);
+
+    $expected = [$oldest->id, ...array_slice(array_reverse($ids), 0, 49)];
+    expect(Queue::pushed(CompleteExecutorWake::class)->pluck('operationId')->all())->toBe($expected);
+    Log::shouldHaveReceived('info')->with('Executor wake completion handoffs recovered.', ['recovered' => 50, 'operation_ids' => $expected])->once();
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(2);
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(0);
+    Queue::assertPushed(CompleteExecutorWake::class, 52);
+    expect($young->refresh()->state[ExecutorWake::CompletionState])->toBe('pending');
+    expect($closed->refresh()->state[ExecutorWake::CompletionState])->toBe('pending');
+    expect($native->refresh()->state[ExecutorWake::CompletionState])->toBe('pending');
+    $this->travel(1)->seconds();
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+    Queue::assertPushed(CompleteExecutorWake::class, 53);
+});
+
+it('claims one completion handoff when two sweeps select the same pending wake', function (): void {
+    $instance = executorWakeInstance();
+    $operation = executorWakePendingCompletion($instance, 7);
+    $raced = false;
+    DB::listen(function (QueryExecuted $query) use (&$raced): void {
+        if (! $raced && str_starts_with($query->sql, 'select') && str_contains($query->sql, ExecutorWake::CompletionState)) {
+            $raced = true;
+            expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+        }
+    });
+
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(0);
+
+    expect($raced)->toBeTrue();
+    expect($operation->refresh()->state[ExecutorWake::CompletionState])->toBe('queued');
+    Queue::assertPushed(CompleteExecutorWake::class, 1);
+});
+
+it('retains pending completion on sweep enqueue failure while hook and native reconciliation continue', function (): void {
+    $instance = executorWakeInstance();
+    $operation = executorWakePendingCompletion($instance, 7);
+    $hook = executorWakePendingHooks($instance, ['finished_at' => now()->subMinute()]);
+    $bus = Bus::getFacadeRoot();
+    Bus::partialMock()->shouldReceive('dispatch')->andReturnUsing(function ($job) use ($bus) {
+        if ($job instanceof CompleteExecutorWake) {
+            throw new RuntimeException('Injected completion enqueue failure.');
+        }
+
+        return $bus->dispatch($job);
+    });
+    Log::spy();
+    try {
+        app()->call([new ReconcileSwampOperations, 'handle']);
+    } finally {
+        Bus::swap($bus);
+    }
+
+    Queue::assertNotPushed(CompleteExecutorWake::class);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+    expect($operation->refresh()->state[ExecutorWake::CompletionState])->toBe('pending');
+    expect($hook->refresh()->state[ExecutorWake::FollowUpState])->toBe('queued');
+    Log::shouldHaveReceived('warning')->with('An executor wake completion handoff could not be recovered; the next pass tries again.',
+        ['operation_id' => $operation->id, 'exception_type' => RuntimeException::class])->once();
+    Log::shouldHaveReceived('info')->with('Operation reconcile pass ran.', Mockery::type('array'))->once();
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    app()->call([new ReconcileSwampOperations, 'handle']);
+    Queue::assertPushed(CompleteExecutorWake::class, 1);
+    Queue::assertPushed(ProjectExecutorWake::class, 1);
+});

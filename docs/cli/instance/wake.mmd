@@ -41,6 +41,8 @@ sequenceDiagram
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
     %%> - record or join instance.wake under the Instance lock before signing; only a new Operation publishes an order
+    %%> - record a pending completion handoff with admission; enqueue after commit under the Operation lock, and keep it pending on a queue error
+    %%> - the minute reconciler retries up to 50 pending completion handoffs, oldest first, after 6 s; no new visit is needed
     %%> - hand Operation notices to operations-prompt after commit; no Reverb delivery remains in the request's termination callbacks
     %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
     GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
@@ -52,6 +54,7 @@ sequenceDiagram
       %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
       %%> - the Operation succeeds and records the runtime running
       %%> - record the pending lifecycle follow-up with success, then enqueue it before terminal notices; a notice enqueue failure cannot lose it
+      %%> - a failed hook enqueue is logged and stays pending for recovery; it cannot change an in-bound success from 200 to the progress page
       %%> - a later completion retries a pending handoff even on a succeeded Operation; a queued handoff and the successful hook receipt prevent duplicates
       %%> - the minute reconciliation pass also retries up to 50 pending handoffs, oldest first, after a 30 s grace; exhausted completion retries need no new visit
     else no successful result in time
