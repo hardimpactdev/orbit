@@ -424,10 +424,10 @@ describe('the shared folders', function (): void {
         // `bunx` is Bun itself, which acts as `bunx` by the name it runs under. The browser's Debian packages give no program either.
         expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg'])
             ->and($programs($plan['runtime'])['bunx'])->toBe($programs($plan['runtime'])['bun'])
-            ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'conn-server'])
+            ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'conn-server', 'chrome-headless-shell'])
             ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'php/8.5' => 'tar'])
             ->and(array_unique(array_values($browser)))->toBe(['deb'])
-            ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'conn-server' => 'tar'])
+            ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'conn-server' => 'tar', 'chrome-headless-shell' => 'zip'])
             ->and(array_column($plan['runtime']['parts'], 'bin', 'name')['php-data-bridge'])->toBe([]);
     });
 
