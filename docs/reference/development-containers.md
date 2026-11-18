@@ -3280,7 +3280,9 @@ On a directory pool a restore copies back only the files that changed since `bas
 
 #### No stale network pid file
 
-An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, at `/var/lib/incus/networks/<network>/dnsmasq.pid`. At its next start, Incus reads the file to stop the old dnsmasq. A file that is not valid YAML stops the network: an empty file fails with `Could not read pid file`. On nested-app-dev that stops `orbitinst0`, and every `instance.create` there fails at its `container` step. A copy of a running fleet, such as the seed of a task copy, can hold the file empty because its last write never reached the disk. A clean stop keeps that file, so a `base` taken after it held the empty file too, and each reset brought it back.
+An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, at `/var/lib/incus/networks/<network>/dnsmasq.pid`. At its next start, Incus reads the file to stop the old dnsmasq. A file that is not valid YAML stops the network: an empty file fails with `Could not read pid file`. On nested-app-dev that stops `orbitinst0`, and every `instance.create` there fails at its `container` step.
+
+A copy of a running fleet, such as the seed of a task copy, can hold the file empty because its last write never reached the disk. A clean stop keeps that file, so a `base` taken after it held the empty file too, and each reset brought it back.
 
 So a stopped nested container never keeps such a file. `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of the named stopped containers. The refresh runs it just before it takes `base`. The start runs it before it boots the stopped containers, so a reset to an older `base`, a resumed fleet and a started copy all bring their bridges up clean. No dnsmasq runs in a stopped container, so every such file there is stale. The helper opens no folder through a symlink, and it removes the pid file itself, never what the file links to.
 
