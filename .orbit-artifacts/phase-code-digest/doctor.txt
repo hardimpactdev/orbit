@@ -2,3 +2,4 @@ healthy True
 app-dev True online
 app-prod True online
 gateway True online
+operator (no agent: the operator's own peer)
