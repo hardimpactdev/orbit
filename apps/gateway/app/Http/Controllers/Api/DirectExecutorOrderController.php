@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Nodes\SwampNode;
@@ -37,7 +38,11 @@ final class DirectExecutorOrderController extends Controller
                 throw new ResourceOperationException('executor.intent_missing', 'This phase has no admitted executor action.', 403);
             }
 
-            return ExecutorPowerIntent::sign($current, $phase)->wire;
+            $wire = ExecutorPowerIntent::sign($current, $phase)->wire;
+            // ADR 0266, R2: from here the order may reach the Node, so the Operation keeps its fence until a receipt exists.
+            $current->forceFill(['state' => ExecutorFence::issue($current->state)])->save();
+
+            return $wire;
         });
 
         return response()->json(['data' => ['order' => $order]])->header('Cache-Control', 'private, no-store');

@@ -207,18 +207,20 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
             $kept = $this->kept($phase);
             $action = ExecutorPowerIntent::action($operation);
-            $receipt = $action === null ? null : ExecutorResults::matchingReceipt($operation, $action, $operation->executor_result ?? $phase['executor'] ?? null);
-            if ($action !== null && $succeeded && ! $this->provesSignedSuccess($receipt, $phase)) {
-                $succeeded = false;
-                $data['status'] = OperationStatus::Failed->value;
-                $phase['error_code'] = $receipt === null || ExecutorResults::succeeded($receipt)
-                    ? 'executor.result_unproven' : ExecutorResults::failureCode($receipt);
-            }
-            if ($receipt !== null && ! $succeeded && ! ExecutorResults::succeeded($receipt)) {
-                $code = ExecutorResults::failureCode($receipt);
-                if ($code !== 'instance.container_stopped' || ($phase['error_code'] ?? null) !== InstanceWake::NestedStopped) {
-                    $phase['error_code'] = $code;
+            $receipt = null;
+            if ($action !== null) {
+                // ADR 0266, R1: the durable receipt decides; the run's transport only decides whether to ask again.
+                $receipt = $endedBefore ? ExecutorResults::matchingReceipt($operation, $action, $operation->executor_result)
+                    : ExecutorFence::record($operation, $action, $phase['executor'] ?? null);
+                $runError = $phase['error_code'] ?? $data['error_code'] ?? null;
+                $verdict = ExecutorFence::verdict($receipt, $succeeded, is_string($runError) ? $runError : null, ($phase['wake'] ?? null) === 'started');
+                if ($verdict['succeeded'] && ! $this->provesSignedSuccess($receipt)) {
+                    $verdict = ['succeeded' => false, 'error_code' => 'executor.result_unproven'];
                 }
+                $succeeded = $verdict['succeeded'];
+                $data['status'] = $succeeded ? OperationStatus::Succeeded->value
+                    : (($data['status'] ?? null) === OperationStatus::Succeeded->value ? OperationStatus::Failed->value : ($data['status'] ?? OperationStatus::Failed->value));
+                $phase['error_code'] = $verdict['error_code'];
             }
             $result = $succeeded ? $this->result($operation) : array_intersect_key($phase, ['error_code' => true]);
             if ($receipt !== null) {
@@ -226,9 +228,6 @@ abstract readonly class InstancePower implements DirectOperationProjection
                     $result = $this->signedResult($operation, $receipt);
                 } else {
                     $result['executor'] = $receipt;
-                }
-                if (! $endedBefore && $operation->executor_result === null) {
-                    $operation->forceFill(['executor_result' => $receipt, 'executor_result_received_us' => (int) now()->format('Uu')])->save();
                 }
             }
             if ($action === 'sleep') {
@@ -253,11 +252,9 @@ abstract readonly class InstancePower implements DirectOperationProjection
         return $operation;
     }
 
-    /** @param array<string, mixed>|null $receipt
-     * @param  array<string, mixed>  $phase
-     */
-    protected function provesSignedSuccess(?array $receipt, array $phase): bool
+    /** @param array<string, mixed>|null $receipt */
+    protected function provesSignedSuccess(?array $receipt): bool
     {
-        return ExecutorResults::succeeded($receipt);
+        return true;
     }
 }

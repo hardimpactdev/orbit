@@ -188,12 +188,6 @@ final readonly class InstanceWake extends InstancePower
         return parent::reached($operation) || $operation->error_code === 'instance.t3_unready';
     }
 
-    protected function provesSignedSuccess(?array $receipt, array $phase): bool
-    {
-        return parent::provesSignedSuccess($receipt, $phase)
-            || (($receipt['status'] ?? null) === 'failed' && ($receipt['code'] ?? null) === 'instance.container_stopped' && ($phase['wake'] ?? null) === 'started');
-    }
-
     /**
      * A frozen container's wake is recorded without its run: the Node's resume comes first, after the commit
      * (resumeOnNode(): within the command's call, or after a visit's answer).
@@ -329,15 +323,18 @@ final readonly class InstanceWake extends InstancePower
     public function activate(Instance $instance, bool $retry, string $caller): string|true|null
     {
         $budget = new ExecutorWakeBudget;
-        if (! $retry) {
-            $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
-                ->where('target_id', $instance->id)->orderByDesc('id')->first();
-            if ($last?->kind === self::Kind && $last->status === OperationStatus::Failed) {
-                return 'The wake failed ('.($last->error_code ?? 'instance.wake_failed').'). Try again.';
-            }
+        // ADR 0266, R4: a wake that ended and cannot advance shows its failure. A retry under an unknown order's fence (R2) shows it
+        // again, because no second wake can be admitted beside that order.
+        $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
+            ->where('target_id', $instance->id)->orderByDesc('id')->first();
+        if ($last?->kind === self::Kind && in_array($last->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
+            && (! $retry || ($last->status === OperationStatus::Interrupted && $last->lock_key !== null))) {
+            return 'The wake failed ('.($last->error_code ?? 'instance.wake_failed').'). Try again.';
         }
+        $runtime = $instance->runtime()->first();
         try {
-            $operation = ExecutorWake::enabled() || ExecutorPowerIntent::enabled()
+            // The request bound belongs to a wake of a signed freeze too, after the settings went off (R3).
+            $operation = ExecutorWake::enabled() || ($runtime !== null && ExecutorPowerIntent::forInstance($instance, $runtime))
                 ? $budget->write(fn (): Operation => $this->admitWake($instance, $caller, null))
                 : $this->admitWake($instance, $caller, null);
             if ($operation === null) {

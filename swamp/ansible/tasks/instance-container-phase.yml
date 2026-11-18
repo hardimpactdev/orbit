@@ -162,10 +162,13 @@
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
       register: signed_start_read
       changed_when: false
+    # A repeated receipt reports the Operation's earlier action, not the container now: a failed deployment's rollback stops the
+    # container and starts it a second time on the same Operation. The real state then decides the boot (ADR 0266, rule R1).
     - name: Check the receipt agrees with the container state
       ansible.builtin.assert:
         that:
           - >-
+            executor_receipt.repeat | default(false) | bool or
             (signed_start_read.stdout | from_json).status ==
             ('Stopped' if executor_receipt.code | default('') == 'instance.container_stopped' else 'Running')
         fail_msg: instance.container_start_failed
@@ -173,8 +176,12 @@
     - name: Use the executor's wake outcome
       ansible.builtin.set_fact:
         container_read: "{{ signed_start_read }}"
-        start_resumed: "{{ start_found == 'Frozen' and executor_receipt.status in ['done', 'partial'] }}"
-        start_found: "{{ 'Stopped' if executor_receipt.code | default('') == 'instance.container_stopped' else start_found }}"
+        start_resumed: >-
+          {{ start_found == 'Frozen' and executor_receipt.status in ['done', 'partial']
+             and not executor_receipt.repeat | default(false) | bool }}
+        start_found: >-
+          {{ (signed_start_read.stdout | from_json).status if executor_receipt.repeat | default(false) | bool
+             else ('Stopped' if executor_receipt.code | default('') == 'instance.container_stopped' else start_found) }}
 
 - name: Refuse a signed wake that discovered a stopped nested fleet
   tags: [start]

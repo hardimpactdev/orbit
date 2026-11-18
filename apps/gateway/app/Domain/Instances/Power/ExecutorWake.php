@@ -199,7 +199,7 @@ final readonly class ExecutorWake
                 if ($operation->status !== OperationStatus::Running || $operation->cancel_requested_at !== null) {
                     return false;
                 }
-                $operation->forceFill(['state' => [...($operation->state ?? []), self::Wire => Crypt::encryptString($order->wire), self::PublishedAt => $publishedAt]])->save();
+                $operation->forceFill(['state' => [...ExecutorFence::issue($operation->state), self::Wire => Crypt::encryptString($order->wire), self::PublishedAt => $publishedAt]])->save();
 
                 return true;
             })) !== true) {
@@ -240,17 +240,6 @@ final readonly class ExecutorWake
     {
         return $operation->target_type === 'instance' && in_array($operation->kind, [InstanceWake::Kind, InstanceSleep::Kind], true)
             && ($operation->state[self::State] ?? false) === true;
-    }
-
-    public static function managedDeliveryStarted(Operation $operation): bool
-    {
-        return self::owns($operation) && ExecutorPowerIntent::managed($operation)
-            && (isset($operation->state[self::PublishedAt]) || $operation->executor_accepted_us !== null);
-    }
-
-    public static function requiresReceipt(Operation $operation): bool
-    {
-        return self::managedDeliveryStarted($operation) && $operation->executor_result === null;
     }
 
     private static function untilAcceptance(Operation $operation): float

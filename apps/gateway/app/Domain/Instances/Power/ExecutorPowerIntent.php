@@ -7,7 +7,6 @@ namespace App\Domain\Instances\Power;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Instances\InstanceRuntimePowerState;
-use App\Infrastructure\Executor\ExecutorResults;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
@@ -98,12 +97,12 @@ final class ExecutorPowerIntent
         return ExecutorOrderSigner::fromConfig()->sign($operation, $action, (string) $operation->target_id, $powerCheck);
     }
 
-    /** @return array<string, mixed>|null */
+    /** @return array<string, mixed>|null The lifecycle phase's receipt, recorded once on the Operation (ADR 0266, R1). */
     public static function lifecycleReceipt(Operation $operation, mixed $receipt): ?array
     {
         foreach (['resume', 'boot'] as $phase) {
             $action = self::action($operation, $phase);
-            if ($action !== null && ($line = ExecutorResults::matchingReceipt($operation, $action, $receipt)) !== null) {
+            if ($action !== null && ($line = ExecutorFence::record($operation, $action, $receipt)) !== null) {
                 return $line;
             }
         }
@@ -111,15 +110,18 @@ final class ExecutorPowerIntent
         return null;
     }
 
-    /** @param array<string, mixed>|null $receipt */
-    public static function lifecycleError(Operation $operation, mixed $raw, ?array $receipt, bool $verifiedBoot): ?string
+    /**
+     * The failure of a lifecycle run that reported success, from its receipt alone. A resume always needs one. A boot whose run issued
+     * no order needs none, such as an already-running container; an issued order without one is never a success (R2).
+     *
+     * @param  array<string, mixed>|null  $receipt
+     */
+    public static function lifecycleError(Operation $operation, ?array $receipt, bool $verifiedBoot): ?string
     {
-        if (($raw === null && self::action($operation, 'resume') === null) || ExecutorResults::succeeded($receipt)
-            || ($verifiedBoot && ($receipt['action'] ?? null) === 'wake'
-                && ($receipt['status'] ?? null) === 'failed' && ($receipt['code'] ?? null) === 'instance.container_stopped')) {
-            return null;
+        if ($receipt === null) {
+            return ExecutorFence::issued($operation) || self::action($operation, 'resume') !== null ? 'executor.result_unproven' : null;
         }
 
-        return $receipt === null ? 'executor.result_unproven' : ExecutorResults::failureCode($receipt);
+        return ExecutorFence::verdict($receipt, true, null, $verifiedBoot)['error_code'];
     }
 }

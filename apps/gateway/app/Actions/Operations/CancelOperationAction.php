@@ -6,6 +6,7 @@ namespace App\Actions\Operations;
 
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
@@ -35,11 +36,11 @@ final readonly class CancelOperationAction
             if ($operation->status->terminal()) {
                 return;
             }
-            if (ExecutorWake::managedDeliveryStarted($operation)) {
+            if (ExecutorFence::issued($operation)) {
                 throw new ResourceOperationException('executor.already_started', 'The signed power action has started and cannot be cancelled.', 409);
             }
             if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)
-                && ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0
+                && ! isset($operation->state['swamp_run_id']) && ($operation->attempts === 0 || (ExecutorWake::owns($operation) && ! isset($operation->state[ExecutorWake::PublishedAt])))
                 && ! ($operation->status === OperationStatus::Running && isset($operation->state['swamp_start']))) {
                 $provisioning = $operation->kind === 'instance.create'
                     ? ValidatedData::object($operation->input['direct_provisioning'] ?? []) : [];

@@ -77,9 +77,9 @@ final readonly class InstanceSleep extends InstancePower
         return [...parent::signedResult($operation, $receipt), ...$this->kept($measured), 'prepared_restore' => $prepared];
     }
 
-    protected function provesSignedSuccess(?array $receipt, array $phase): bool
+    protected function provesSignedSuccess(?array $receipt): bool
     {
-        return parent::provesSignedSuccess($receipt, $phase) && self::hasSleepOutcome($receipt);
+        return self::hasSleepOutcome($receipt);
     }
 
     /** @param array<string, mixed>|null $receipt */

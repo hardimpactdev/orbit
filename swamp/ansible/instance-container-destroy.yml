@@ -204,8 +204,9 @@
             # The power helper's files of the Instance go with the container: its plan, sleep result, swap limits record, target
             # descriptor, receipts, and its fast wake's request and outcome files. `discard` takes the Instance's lock, so it waits for a
             # helper still at work, and a late worker then finds no descriptor (docs/reference/prepared-restore.md#lifecycle).
-            - name: Discard this Instance's disabled-mode power state
-              when: not container.signed_power | default(false) | bool
+            # A signed removal runs it too: the Instance may have slept under Python before the switch, and the executor's discard
+            # removes only its own state (ADR 0266, rule R3).
+            - name: Discard this Instance's Python power state
               block:
                 - name: Install the power helper
                   ansible.builtin.include_tasks: { file: tasks/instance-power-helper.yml, apply: {tags: [always]} }

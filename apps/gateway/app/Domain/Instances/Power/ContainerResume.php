@@ -112,16 +112,17 @@ final readonly class ContainerResume
         return self::frozenSleep($instance) !== null;
     }
 
-    /** The sleep that froze the Instance's container while that freeze still holds; see frozenBySleep(). */
+    /**
+     * The sleep that froze the Instance's container while that freeze still holds; see frozenBySleep(). ADR 0266, R3: the freezing
+     * sleep owns the freeze, so a later sleep that froze nothing (cancelled, refused, failed or unknown) is passed over, whatever the
+     * engine or the current settings.
+     */
     public static function frozenSleep(Instance $instance): ?Operation
     {
-        $sleeps = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)->latest('id');
-        $sleep = (clone $sleeps)->first();
-        if ($sleep !== null && ExecutorPowerIntent::managed($sleep) && $sleep->status === OperationStatus::Failed && $sleep->error_code !== InstanceSleep::IncompleteFreeze) {
-            $sleep = $sleeps->where(fn ($query) => $query->where('status', OperationStatus::Succeeded)->orWhere('error_code', InstanceSleep::IncompleteFreeze))->first();
-        }
-        if ($sleep === null || ($sleep->error_code !== InstanceSleep::IncompleteFreeze
-            && ($sleep->status !== OperationStatus::Succeeded || ($sleep->result['sleep'] ?? null) !== 'frozen'))) {
+        $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->where(fn ($query) => $query->where('status', OperationStatus::Succeeded)->orWhere('error_code', InstanceSleep::IncompleteFreeze))
+            ->latest('id')->first();
+        if ($sleep === null || ($sleep->error_code !== InstanceSleep::IncompleteFreeze && ($sleep->result['sleep'] ?? null) !== 'frozen')) {
             return null;
         }
         $found = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)

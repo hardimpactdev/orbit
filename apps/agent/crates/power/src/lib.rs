@@ -701,14 +701,24 @@ fn route_checks(response: &[u8], marker: &Path) -> bool {
     let Some(headers) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n") else {
         return false;
     };
-    serde_json::from_slice(&response[headers + 4..])
-        .is_ok_and(|config| matches_marker(&config, root, &format!("/{filename}")))
+    // The rule must send the matching visit to the Gateway's activation endpoint (Caddy's forward_auth is a reverse_proxy that
+    // rewrites to it); a matcher whose route only answers or skips its log cannot wake the app.
+    let Some(activation) = filename
+        .strip_suffix(".asleep")
+        .and_then(|key| key.strip_prefix("app-instance-"))
+        .map(|id| format!("/api/v1/runtime-activations/app-instance/{id}"))
+    else {
+        return false;
+    };
+    serde_json::from_slice(&response[headers + 4..]).is_ok_and(|config| {
+        matches_marker(&config, root, &format!("/{filename}"), &activation)
+    })
 }
 
-fn matches_marker(config: &serde_json::Value, root: &str, file: &str) -> bool {
+fn matches_marker(config: &serde_json::Value, root: &str, file: &str, activation: &str) -> bool {
     match config {
         serde_json::Value::Object(object) => {
-            object
+            let exact = object
                 .get("match")
                 .and_then(serde_json::Value::as_array)
                 .is_some_and(|matchers| {
@@ -721,14 +731,27 @@ fn matches_marker(config: &serde_json::Value, root: &str, file: &str) -> bool {
                                     .any(|candidate| candidate.as_str() == Some(file))
                             })
                     })
-                })
+                });
+            (exact && object.get("handle").is_some_and(|handle| activates(handle, activation)))
                 || object
                     .values()
-                    .any(|value| matches_marker(value, root, file))
+                    .any(|value| matches_marker(value, root, file, activation))
         }
-        serde_json::Value::Array(values) => {
-            values.iter().any(|value| matches_marker(value, root, file))
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|value| matches_marker(value, root, file, activation)),
+        _ => false,
+    }
+}
+
+fn activates(handle: &serde_json::Value, activation: &str) -> bool {
+    match handle {
+        serde_json::Value::Object(object) => {
+            (object.get("handler").and_then(serde_json::Value::as_str) == Some("reverse_proxy")
+                && object["rewrite"]["uri"].as_str() == Some(activation))
+                || object.values().any(|value| activates(value, activation))
         }
+        serde_json::Value::Array(values) => values.iter().any(|value| activates(value, activation)),
         _ => false,
     }
 }
