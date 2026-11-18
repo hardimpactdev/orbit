@@ -1123,11 +1123,12 @@ class WorkflowTest(unittest.TestCase):
                      'timeout-minutes: 4', 'shard: ${{ fromJSON(needs.changes.outputs.self_hosted_shards) }}', 'bin/ci-units run'):
             self.assertIn(text, block)
         self.assertIn("self_hosted_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.self_hosted_shards }}", source)
-        for gate in ('required', 'delivery'):
-            self.assertIn('self-hosted-fixtures]', source.split(f'\n  {gate}:\n', 1)[1].split('\n    runs-on:', 1)[0])
+        required = source.split('\n  required:\n', 1)[1].split('\n    runs-on:', 1)[0]
+        self.assertIn('self-hosted-fixtures]', required)
         self.assertIn("SELF_HOSTED_FIXTURES: ${{ github.event_name != 'pull_request' && 'none' || "
                       "github.event.pull_request.head.repo.full_name == github.repository && 'run' || 'fork' }}", source)
-        self.assertIn('SELF_HOSTED_FIXTURES: none', source.split('\n  delivery:\n', 1)[1])
+        delivery = source.split('\n  delivery:\n', 1)[1].split('\n  main-required:\n', 1)[0]
+        self.assertNotIn('fixtures', delivery)
 
 if __name__ == '__main__':
     unittest.main()

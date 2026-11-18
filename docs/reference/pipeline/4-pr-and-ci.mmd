@@ -56,7 +56,7 @@ sequenceDiagram
     %%> - publication or a green result alone does not authorize a merge
     GH->>CI: Check main delivery<br/>tested tree · release inputs
     %%> What it does:
-    %%> - verifies reusable PR evidence against the merged tree, or runs the selected checks; main runs no proof
+    %%> - verifies PR evidence against the landed tree; the PR plan covers changes since a verified main delivery
     %%> - a red main is fixed forward and never released; stages 5 and 6 confirm and refresh the working result
   else a required check fails
     CI--xGH: Required checks<br/>red · no merge

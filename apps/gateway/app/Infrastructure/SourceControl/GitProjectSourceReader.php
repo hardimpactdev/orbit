@@ -16,6 +16,7 @@ use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use SensitiveParameter;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 
 /**
  * Fetches a branch head or an exact commit without blobs into a scratch repository, then reads only the named files, with the Project's
@@ -68,10 +69,14 @@ final readonly class GitProjectSourceReader implements ProjectSourceReader
      */
     private function git(string $directory, array $environment, array $arguments, int $maxOutput = 65_536): CommandResult
     {
-        $result = $this->processes->run(new ProcessInvocation(
-            arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', $directory, ...$arguments],
-            timeout: 60.0, maxOutputBytes: $maxOutput, environment: $environment,
-        ));
+        try {
+            $result = $this->processes->run(new ProcessInvocation(
+                arguments: ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', $directory, ...$arguments],
+                timeout: 60.0, maxOutputBytes: $maxOutput, environment: $environment,
+            ));
+        } catch (ProcessTimedOutException) {
+            throw $this->unavailable();
+        }
         if (! $result->succeeded() || $result->truncated) {
             throw $this->unavailable();
         }

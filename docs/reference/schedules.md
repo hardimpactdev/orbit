@@ -32,7 +32,7 @@ The Gateway schedules no task VM job: the [host sweep](/reference/compute-driver
 
 No schedule starts the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the task VM hosts any more: the 03:20 daily refresh is removed.
 
-While the [fleet rollout](/reference/gateway-recovery#fleet-rollout) is on, the Gateway queues its admission every day at 03:05 Europe/Amsterdam, when the window of the non-daytime Nodes opens. A verified release queues the same admission. The job waits a minute at a time while the commit has no CLI release yet or a rollout runs.
+The Gateway queues the [fleet and seed continuation](/reference/gateway-recovery#fleet-rollout) after verification and daily at 03:05 Europe/Amsterdam when fleet rollout or default refresh is enabled. That is when the Nodes outside the daytime set can start their rollout. The job revisits pending default refresh and seed publication each minute.
 
 Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).
 
