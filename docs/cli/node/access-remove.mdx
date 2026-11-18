@@ -39,3 +39,5 @@ Removing a grant to the Gateway Node also revokes Grafana access that depends on
 | `node_access.required` | The caller is not the Gateway Node or its serving host and has no grant to the Gateway Node. |
 
 Removing a grant also removes the consumer's [Conn](/reference/conn#access) access to the serving Node's T3 servers. The sessions Orbit holds for the consumer there end at once, and Orbit revokes them on each server ([Held sessions](/reference/conn#held-sessions)). Sessions that a device paired itself are not revoked. Revoke those with the pairing revocation for that Node.
+
+In the same transaction as the delete, Orbit records the removal for every [managed Conn target](/reference/conn#managed-grant-revocation) of the serving Node, and revokes the consumer's managed tokens there. After the commit it sends each target a restrictive notice. A removal that rolls back records and sends nothing.
