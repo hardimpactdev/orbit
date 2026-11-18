@@ -286,15 +286,20 @@ def seed(target, revision, operation):
     snapshot = "seed-" + operation
     prep = instance(name)
     if prep is None:
+        gateway_slots(target)
+        require_clone_copy(live)
         snapshots = json.loads(incus("snapshot", "list", live["name"], "--format", "json"))
         if not any(entry["name"] == snapshot for entry in snapshots):
             incus("snapshot", "create", live["name"], snapshot)
         # The live address reservation stays with live; the preparer takes a fresh DHCP lease.
         incus("copy", live["name"] + "/" + snapshot, name, "--stateless", "--device", "eth0,ipv4.address=",
               "--config", "boot.autostart=false", "--config", PREFIX + "role=prepare",
-              "--config", PREFIX + "operation=" + operation, "--config", PREFIX + "seeded-from=" + live["config"][PREFIX + "commit"])
+              "--config", PREFIX + "operation=" + operation, "--config", PREFIX + "seeded-from=" + live["config"][PREFIX + "commit"],
+              "--config", PREFIX + "seed-ready=false")
         prep = instance(name)
-    if prep["config"].get(PREFIX + "seeded-from") == live["config"][PREFIX + "commit"] and prep["status"] == "Stopped":
+    # A crash can stop a seed at any step. Until seed-ready is set, every run redoes the cleanup and no wake starts it.
+    unfinished = prep["config"].get(PREFIX + "seeded-from") and prep["config"].get(PREFIX + "seed-ready") != "true"
+    if unfinished and prep["status"] == "Stopped":
         owned(prep, {"target": target, "role": "prepare"})
         for key in ("raw.lxc", PREFIX + "commit", PREFIX + "artifact", PREFIX + "parked-seal"):
             if key in prep["config"]:
@@ -307,6 +312,8 @@ def seed(target, revision, operation):
     if any(entry["name"] == snapshot for entry in json.loads(incus("snapshot", "list", live["name"], "--format", "json"))):
         incus("snapshot", "delete", live["name"], snapshot)
     detach(live, name)
+    if unfinished:
+        incus("config", "set", name, PREFIX + "seed-ready=true")
     return name
 
 
@@ -314,15 +321,35 @@ def zfs(*args):
     return subprocess.run(["zfs", *args], stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=120).stdout
 
 
-def datasets(record):
-    """The ZFS pool dataset behind an instance's root disk, or None when the pool uses another driver."""
+def pool_info(record):
     pool = record["expanded_devices"]["root"]["pool"]
     if not re.fullmatch(r"[a-zA-Z0-9_.-]+", pool):
         raise ValueError("invalid release pool")
-    info = json.loads(subprocess.check_output(["incus", "--force-local", "query", f"/1.0/storage-pools/{pool}"], text=True, timeout=30))
+    return json.loads(subprocess.check_output(["incus", "--force-local", "query", f"/1.0/storage-pools/{pool}"], text=True, timeout=30))
+
+
+def datasets(record):
+    """The ZFS pool dataset behind an instance's root disk, or None when the pool uses another driver."""
+    info = pool_info(record)
     if info["driver"] != "zfs":
         return None
     return info["config"].get("zfs.pool_name") or info["config"]["source"]
+
+
+def require_clone_copy(record):
+    """A seed must be a ZFS clone. With zfs.clone_copy false or rebase, Incus would send the files instead."""
+    info = pool_info(record)
+    if info["driver"] == "zfs" and info["config"].get("zfs.clone_copy", "true") != "true":
+        raise ValueError("release.pool_copies_files: set zfs.clone_copy=true on the release pool; a seed never copies files")
+
+
+def gateway_slots(target):
+    """Refuse a new container when the Gateway already holds three."""
+    records = json.loads(incus("list", "--format", "json"))
+    owned = [item for item in records if item["name"] == "prepare-" + target or re.fullmatch(target + r"-[0-9a-f]{12}", item["name"])
+             or item.get("config", {}).get(PREFIX + "target") == target]
+    if len(owned) >= 3:
+        raise ValueError("release.gateway_container_limit: three Gateway containers exist; finish or demote the candidate first")
 
 
 def detach(live, name):
@@ -341,6 +368,13 @@ def detach(live, name):
     if origin.startswith(prefix + live["name"] + "@"):
         if "@deleted-" not in origin:
             raise ValueError("release.seed_snapshot_still_recorded")
+        # Promotion moves every snapshot of live up to the origin. Each must be one Incus already forgot.
+        listing = zfs("list", "-H", "-p", "-t", "snapshot", "-o", "name,createtxg", "-d", "1", prefix + live["name"])
+        snapshots = [line.split("\t") for line in listing.splitlines() if line.strip()]
+        limit = next(int(txg) for snap, txg in snapshots if snap == origin)
+        moving = [snap for snap, txg in snapshots if int(txg) <= limit]
+        if any("@deleted-" not in snap for snap in moving):
+            raise ValueError("release.recorded_snapshot_would_move: delete live's Incus snapshots before the seed")
         zfs("promote", prefix + name)
     prune(root)
 
@@ -548,6 +582,8 @@ def main(argv):
         if args.action == "wake":
             if int(record["config"].get(PREFIX + "operation", 0)) > int(args.operation):
                 raise ValueError("release.preparation_changed")
+            if record["config"].get(PREFIX + "seeded-from") and record["config"].get(PREFIX + "seed-ready") != "true":
+                raise ValueError("release.preparation_seed_unfinished: run the seed again before waking it")
             wake(record, args.operation)
             incus("config", "set", record["name"], PREFIX + "operation=" + args.operation)
             return record["name"]

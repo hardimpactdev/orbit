@@ -19,7 +19,9 @@ use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Gateway\GatewayHorizon;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use App\Models\Node;
@@ -242,8 +244,9 @@ it('resumes a retained release without minting a GitHub token or selecting a new
     $operation = new Operation(['input' => ['sha' => ReleaseB, 'retained' => true, 'repository' => 'hardimpactdev/orbit']]);
     $input = app(GatewayReleaseRunProjection::class)->workflowInput($operation);
 
+    // The projection yields an empty map; DirectOperation checks it and encodes it as {} for Swamp.
     expect($input['intent'])->toBe($operation->input)
-        ->and(json_encode($input['execution_secrets']))->toBe('{}');
+        ->and($input['execution_secrets'])->toBe([]);
     Http::assertNothingSent();
 });
 
@@ -278,7 +281,8 @@ it('admits only the exact serving container for reconciliation and uses no GitHu
     symlink(base_path('../../swamp'), $layout->currentPath().'/swamp');
     $record = $admit->execute(ReleaseA, trigger: 'reconcile');
     $operation = Operation::findOrFail($record->phases['run']['operation_id']);
-    $input = app(GatewayReleaseRunProjection::class)->workflowInput($operation);
+    // The submitted inputs pass DirectOperation's execution-secret check and encode as an empty map.
+    $input = app(DirectOperation::class)->workflowInputs($operation);
 
     expect($record->trigger)->toBe('reconcile')
         ->and(app(DirectOperation::class)->workflowFor($operation))->toBe('operation-gateway-reconcile')
@@ -306,7 +310,8 @@ it('admits a container rollback only to the stopped old release and refuses olde
 
     $record = $admit->rollback(substr(ReleaseB, 0, 12));
     $operation = Operation::findOrFail($record->phases['run']['operation_id']);
-    $input = app(GatewayReleaseRunProjection::class)->workflowInput($operation);
+    // The submitted inputs pass DirectOperation's execution-secret check and encode as an empty map.
+    $input = app(DirectOperation::class)->workflowInputs($operation);
 
     expect($record->trigger)->toBe('rollback')
         ->and(app(DirectOperation::class)->workflowFor($operation))->toBe('production-release')
@@ -314,6 +319,12 @@ it('admits a container rollback only to the stopped old release and refuses olde
         ->and($input['intent'])->not->toHaveKeys(['manifest', 'web', 'repository'])
         ->and(json_encode($input['execution_secrets']))->toBe('{}');
     Http::assertNothingSent();
+
+    // A refused start ran nothing: the release record fails as retryable instead of staying running.
+    app(StartSwampRun::class)->refuse($operation, new ResourceOperationException('swamp.start_job_failed', 'Refused before submission.', 503));
+    expect($record->refresh()->outcome)->toBe('failed')
+        ->and($record->retryable)->toBeTrue()
+        ->and($record->error_code)->toBe('swamp.start_job_failed');
 });
 
 it('observes the stopped old release that a container Gateway keeps for rollback', function (): void {

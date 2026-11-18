@@ -34,7 +34,7 @@ if action == "address":
 elif action in ("retire", "resume") and (state / key).exists():
     (state / key).write_text("Stopped" if action == "retire" else "Running")
     event(("stop " if action == "retire" else "start ") + key)
-    if os.environ.get("FIXTURE_INTERRUPT") == "after " + key + " stop":
+    if os.environ.get("FIXTURE_INTERRUPT") == "after " + key + (" stop" if action == "retire" else " start"):
         os.killpg(os.getpgrp(), 9)
 elif action == "seed" and not (state / "prep").exists():
     (state / "prep").write_text("Stopped")
@@ -608,6 +608,31 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         result = self.direct("build", "false", "{}", "false")
         self.assertIn("already serves", result.stderr)
         self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
+
+    def test_a_retried_build_returns_its_candidate_before_it_can_seed_a_fourth_container(self):
+        self.serving_former()
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": EARLIER, "pending": None,
+                                              "verified": [self.old, EARLIER], "host_retired": True}))
+        (self.state / "earlier").write_text("Stopped")
+        (self.state / f"gateway-{EARLIER[:12]}-boot").write_text("false")
+        self.direct("build", "false", "{}", "false")
+        events = (self.state / "events").read_text()
+        self.assertIn("demote candidate", events)
+        self.assertNotIn("seed prep", events)
+        self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
+
+    def test_an_unverified_former_live_never_becomes_old(self):
+        self.serving_former()
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": None, "pending": None,
+                                              "verified": [], "host_retired": True}))
+        self.assert_ok(self.switch())
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
+        self.assertFalse((self.state / "former").exists())
+        self.assertTrue((self.state / "prep").exists())
+        self.inventory_is(self.sha, None, verified=(self.sha,))
         self.assert_at_most_three()
 
     def test_a_running_old_refuses_the_next_build(self):

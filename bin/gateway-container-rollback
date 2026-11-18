@@ -16,7 +16,8 @@ def implementation(inventory, journal, host, action):
         if action != "--recover":
             raise ValueError("finish the interrupted Gateway handover with --recover first")
         return host
-    if action == "--recover" and not (inventory.is_file() and json.loads(inventory.read_text()).get("pending")):
+    if action == "--recover" and not (journal / "rollback").is_file() and not (
+            inventory.is_file() and json.loads(inventory.read_text()).get("pending")):
         raise ValueError("there is no interrupted Gateway container handover")
     if action == "--host":
         raise ValueError("the Gateway returns to its stopped old container, not to the host")

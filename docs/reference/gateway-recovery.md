@@ -149,6 +149,8 @@ Retire runs in this order, with at most three containers at each step:
 6. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
 7. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
 
+The seed refuses a pool whose `zfs.clone_copy` is not `true`, because Incus would then copy files. It refuses to promote while a snapshot that Incus still records would move. It refuses a fourth Gateway container. Until its cleanup and promotion finish, the preparer is marked unfinished: no release wakes it, and the next build repeats the seed.
+
 If the new live fails its public check, retire keeps every earlier stopped release and the former live when it was verified. The inventory records the older one as `pending`; it holds the preparation slot. The release fails. Roll back to old, or fix the cause and run `--recover`, which verifies live, keeps one stopped release and recreates preparation. The next build does the same before it starts. It also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
 
 If the selected Horizon unit cannot start, inspect its journal in the selected container. Orbit keeps the outgoing workers and the handover journal. Repair the reported dependency, configuration or service in place and rerun `--recover`. For an emergency code patch, use a temporary systemd override on the affected Horizon unit to mount the corrected file read-only from a writable path in that container. Commit the same patch and deploy the forward release after the journal clears. The correction then lives in the sealed release. The temporary override stays in the stopped old until the next release replaces it.
@@ -464,6 +466,8 @@ sudo /usr/local/libexec/orbit-gateway-rollback [<old id>]
 ```
 
 It holds the release lock and runs the same phases as the native rollback, from old's own commit: start and check old, switch through the journal, verify, start Horizon and retire the rolled-away live as the new old. It needs Incus and Caddy, not Swamp and not the Gateway. It reuses the last release's Operation ID and creates no Operation or release record. It loads no Swamp workflows: when the Gateway answers again, reconcile the serving commit with `orbit gateway:release:deploy <full-sha> --reconcile`. A failure before the switch stops old again. After the switch, an interrupted run resumes with `--recover`.
+
+Before it starts old, a rollback records its intent in the switch journal directory. If it stops before the switch is journaled, `--recover`, and any other release phase, stops old again.
 
 For an interrupted container handover or rollback, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover`. It resumes the durable switch and drain.
 

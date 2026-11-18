@@ -1,6 +1,6 @@
 order = 776
 file = "swamp/tests/gateway_release_recovery_test.py"
-cost = 143
+cost = 140
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-horizon-ready",
@@ -17,6 +17,8 @@ inputs = [
   "swamp/workflows/workflow-production-release-activate.yaml",
 ]
 cases = [
+  "test_a_retried_build_returns_its_candidate_before_it_can_seed_a_fourth_container",
+  "test_an_unverified_former_live_never_becomes_old",
   "test_first_move_publishes_before_draining_host_horizon",
   "test_interruption_after_caddy_publication_republishes_only_the_candidate",
   "test_precommit_candidate_configuration_failure_keeps_the_previous_live",
@@ -37,7 +39,9 @@ cases = [
   "test_cleanup_reports_deferred_and_propagates_other_failures",
 ]
 [case_costs]
-"test_first_move_publishes_before_draining_host_horizon" = 20
+"test_a_retried_build_returns_its_candidate_before_it_can_seed_a_fourth_container" = 3
+"test_an_unverified_former_live_never_becomes_old" = 3
+"test_first_move_publishes_before_draining_host_horizon" = 11
 "test_interruption_after_caddy_publication_republishes_only_the_candidate" = 12
 "test_precommit_candidate_configuration_failure_keeps_the_previous_live" = 10
 "test_interrupted_drain_with_a_failing_public_check_keeps_the_verified_former_as_old" = 12

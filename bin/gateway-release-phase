@@ -157,6 +157,7 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
         'any(.[]; .name==$name and (.status!="Stopped" or .config["boot.autostart"]!="false"))' >/dev/null; then
       ctl retire gateway "${sha:0:12}" "$operation"
     fi
+    rm -f -- "$journal/rollback"
     exit
   fi
   existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')

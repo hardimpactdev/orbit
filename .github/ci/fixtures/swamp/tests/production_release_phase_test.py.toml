@@ -22,6 +22,8 @@ cases = [
   "test_a_changed_live_link_never_enters_preparation",
   "test_reload_failure_restores_only_the_selected_instance_before_unlocking_caddy",
   "test_the_earlier_rollback_survives_a_failed_stop_of_the_previous_live",
+  "test_a_retire_retry_records_an_already_stopped_former_live_as_parked",
+  "test_rollback_cleanup_leaves_an_already_parked_old_alone",
   "test_an_interrupted_non_idempotent_application_step_is_not_replayed",
   "test_best_effort_steps_record_bounded_exit_status_on_both_sides_of_activation",
   "test_frankenphp_serves_public_assets_and_denies_private_files_at_both_web_roots",

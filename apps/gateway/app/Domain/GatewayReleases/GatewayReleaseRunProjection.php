@@ -11,6 +11,7 @@ use App\Domain\GitHub\GitHubTokenGrant;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowChoice;
 use App\Domain\Operations\DirectOperationWorkflowInput;
@@ -35,7 +36,7 @@ use Throwable;
  * Actions and puts it in the vault; at its end the run's terminal result ends the release record through the same
  * recorder the legacy runner uses, so pauses, alerts and the fleet rollout follow it unchanged.
  */
-final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
+final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
 {
     /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. */
     public const array Steps = [
@@ -94,7 +95,8 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
     public function workflowInput(Operation $operation): array
     {
         if (($operation->input['retained'] ?? false) === true || ($operation->input['reconcile'] ?? false) === true) {
-            return [...$this->input($operation), 'execution_secrets' => (object) []];
+            // An empty map; DirectOperation encodes it as {} for Swamp after checking it.
+            return [...$this->input($operation), 'execution_secrets' => []];
         }
 
         $credentials = app(GitHubAppStore::class)->credentials()
@@ -136,6 +138,18 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
 
             return $projected;
         });
+    }
+
+    /** A start that the Gateway refused ran nothing: the release record fails as retryable instead of staying running. */
+    public function refused(Operation $operation): void
+    {
+        $record = GatewayRelease::query()->find($operation->target_id);
+        if (! $record instanceof GatewayRelease || $record->finished()) {
+            return;
+        }
+        app(GatewayReleaseRecorder::class)->fail($record, new GatewayReleaseException('run', $operation->error_code ?? 'gateway.release_run_failed',
+            "The Swamp run of Operation {$operation->id} was refused before it started.", 503, sha: ValidatedData::string($operation->input['sha'])),
+            retryable: true, durationMs: 0, phase: 'run');
     }
 
     /** The run may still be working on the Gateway Node, or ended with no readable result, so its release pauses with the old or new code live. */

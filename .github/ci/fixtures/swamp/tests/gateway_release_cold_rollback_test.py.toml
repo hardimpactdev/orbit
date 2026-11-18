@@ -1,5 +1,5 @@
 file = "swamp/tests/gateway_release_cold_rollback_test.py"
-cost = 48
+cost = 51
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-container-rollback",
@@ -16,6 +16,7 @@ inputs = [
   "swamp/tests/gateway_release_recovery_test.py",
 ]
 cases = [
+  "test_a_rollback_killed_after_old_started_is_parked_by_recover",
   "test_console_rolls_back_to_the_stopped_old_and_forward_again_without_swamp",
   "test_interrupted_rollback_resumes_with_recover",
   "test_native_rollback_phases_switch_through_the_same_journal",
@@ -24,6 +25,7 @@ cases = [
   "test_rollback_needs_a_stopped_old_release",
 ]
 [case_costs]
+"test_a_rollback_killed_after_old_started_is_parked_by_recover" = 3
 "test_console_rolls_back_to_the_stopped_old_and_forward_again_without_swamp" = 8
 "test_interrupted_rollback_resumes_with_recover" = 8
 "test_native_rollback_phases_switch_through_the_same_journal" = 8

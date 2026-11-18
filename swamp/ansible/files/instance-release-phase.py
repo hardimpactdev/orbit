@@ -888,16 +888,21 @@ class Release:
         self.primitive("forget", sha[:12])
         self.record(sha).unlink(missing_ok=True)
 
+    @staticmethod
+    def parked(record):
+        return record["status"] == "Stopped" and record["config"].get("boot.autostart") == "false"
+
     def retire(self):
         if not self.state.get("verified"):
             raise Refusal("deployment.not_ready: refusing to retire before public verification")
         self.check_selection(self.sha)
         previous, old = self.state["previous"], self.state["previous_old"]
         if previous and not self.state.get("parked_previous"):
-            self.identity(previous)
-            # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
-            self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
-            self.primitive("retire", previous[:12], self.operation)
+            # A retry after a completed stop finds the container already parked; a stopped guest takes no exec.
+            if not self.parked(self.identity(previous)):
+                # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
+                self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
+                self.primitive("retire", previous[:12], self.operation)
             self.persist(parked_previous=True)
         if old and old not in (self.sha, previous):
             self.discard(old)
@@ -918,8 +923,9 @@ class Release:
         self.reverse()
         self.check_selection(self.state["previous"])
         if self.state["action"] == "rollback":
-            if self.state.get("rollback_awake") and self.sha == self.inventory["old"]:
-                self.identity(self.sha)
+            # A retry after a completed stop finds old already parked.
+            if (self.state.get("rollback_awake") and self.sha == self.inventory["old"]
+                    and not self.parked(self.identity(self.sha))):
                 self.guest(self.name, "systemctl", "stop", "orbit-frankenphp.service")
                 self.primitive("retire", self.sha[:12], self.operation)
         elif self.state.get("candidate_attempted") and self.sha not in (self.inventory["live"], self.inventory["old"]):

@@ -20,9 +20,11 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     flock -n 9 || fail "another Gateway release holds the lock"
     if [[ $id == --recover ]]; then
         if [[ ! -f $journal/operation ]]; then
-            # An unverified live keeps two stopped releases instead of preparation. Verify it and settle them.
+            # An interrupted rollback parks old again. An unverified live keeps two stopped releases instead of
+            # preparation: verify it and settle them.
             live=$(jq -er '.live' "$base/.orbit/gateway-containers.json")
-            [[ -n $(jq -r '.pending // ""' "$base/.orbit/gateway-containers.json") ]] || fail "there is no interrupted handover"
+            [[ -f $journal/rollback || -n $(jq -r '.pending // ""' "$base/.orbit/gateway-containers.json") ]] ||
+                fail "there is no interrupted handover"
             exec "$phase" settle "$live" "$(cat "$journal/last-operation")"
         fi
         operation=$(cat "$journal/operation")

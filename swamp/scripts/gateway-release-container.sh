@@ -163,6 +163,17 @@ present() {
   parked "$record" "$1" || [[ $2 == rollback && $1 == "$sha" ]] ||
     fail "the retained Gateway release ${1:0:12} is running; finish its rollback or release it first"
 }
+park_rollback() {
+  local started
+  started=$(cut -d' ' -f2 "$journal/rollback")
+  [[ $started =~ ^[a-f0-9]{40}$ ]] || fail 'invalid rollback intent'
+  if [[ $(record_of "gateway-${started:0:12}") != '{}' ]] && [[ $(jq -r '.live' "$inventory") != "$started" ]]; then
+    echo "gateway.release_rollback_parked: ${started:0:12} started without a switch; it is stopped again" >&2
+    ctl retire gateway "${started:0:12}" "$operation" >&2
+  fi
+  rm -f -- "$journal/rollback"
+  sync -f "$journal"
+}
 # Count every Gateway container. At most three exist at any moment: preparation or its promoted candidate,
 # live and old; while live is unverified, a pending older release takes the preparation slot instead.
 three_containers() {
@@ -175,6 +186,8 @@ three_containers() {
 gateway_slot() {
   local live='' old='' pending='' changed=false legacy
   [[ ! -e $journal/operation ]] || fail 'finish the interrupted Gateway handover first'
+  # An interrupted rollback started old without a journaled switch. Any other phase parks it again first.
+  if [[ -f $journal/rollback && ${1:-} != rollback ]]; then park_rollback; fi
   if [[ -f $inventory ]]; then
     live=$(field '.live | select(test("^[0-9a-f]{40}$"))')
     old=$(field '.old // ""')
@@ -397,8 +410,8 @@ finish_forward() {
       if [[ " $known " == *" $each "* ]]; then keep[0]=$each; break; fi
     done
     if [[ ${#keep[@]} == 0 ]]; then
-      # Nothing is verified: keep the earlier old rather than replace it with an unverified former live.
-      if [[ ${#earlier[@]} -gt 0 ]]; then keep[0]=${earlier[0]}; elif [[ $exists != '{}' ]]; then keep[0]=$previous_sha; fi
+      # Nothing is verified: keep the earlier old, never an unverified former live. Without one, old stays empty.
+      if [[ ${#earlier[@]} -gt 0 ]]; then keep[0]=${earlier[0]}; fi
     fi
   else
     if [[ $exists != '{}' ]] && { [[ " $known " == *" $previous_sha "* ]] || [[ ${#earlier[@]} == 0 ]]; }; then keep[0]=$previous_sha; fi
@@ -485,6 +498,12 @@ case "$action" in
       gateway_slot rollback
       # A missing old was just forgotten; its pending release, if any, is the rollback target now.
       rollback_target || fail "the selected rollback release is gone; the stopped old is now $(field '.old // "none"')"
+      # Record the intent before old starts. Until the switch is journaled, --recover parks old again.
+      install -d -m 0700 "$journal"
+      printf '%s %s\n' "$operation" "$sha" > "$journal/rollback.next"
+      sync -f "$journal"
+      mv -fT "$journal/rollback.next" "$journal/rollback"
+      sync -f "$journal"
       ctl resume gateway "$id" "$operation" >&2
       # The switch admits only a candidate of this operation.
       "${incus_cli[@]}" config set "$candidate" user.orbit.release.operation="$operation"
@@ -493,8 +512,17 @@ case "$action" in
     fi
     [[ $force != true ]] || fail "Gateway releases require a descendant of live"
     gateway_slot
-    # Preparation can be missing after a forgotten old freed its slot.
-    if [[ -f $inventory && $(record_of "$prep") == '{}' ]]; then ctl seed gateway "$(field '.live' | cut -c1-12)" "$operation" >&2; fi
+    # A retry after promotion finds this build's candidate in the preparation slot. It never served: return it first.
+    if [[ $(record_of "$candidate") != '{}' ]] && ! retained && ! rollback_target; then
+      ctl demote gateway "$operation" "$sha" >&2
+    fi
+    # Preparation can be missing after a forgotten old freed its slot, or a seed can have stopped half way.
+    # seed refuses a fourth container and repeats an unfinished cleanup before anything wakes the preparer.
+    if [[ -f $inventory ]] && { [[ $(record_of "$prep") == '{}' ]] ||
+        [[ -n $("${incus_cli[@]}" config get "$prep" user.orbit.release.seeded-from) &&
+           $("${incus_cli[@]}" config get "$prep" user.orbit.release.seed-ready) != true ]]; }; then
+      ctl seed gateway "$(field '.live' | cut -c1-12)" "$operation" >&2
+    fi
     if retained; then
       fail 'selected Gateway already serves; reconcile its exact revision or deploy a corrective commit'
     fi
@@ -645,6 +673,7 @@ case "$action" in
       # No on-disk or live traffic selection changes until the database has durably
       # rejected new admissions for all builders declared obsolete by this candidate.
       record_switch
+      rm -f -- "$journal/rollback"
       fence_admissions
       publish_forward
     fi
@@ -657,7 +686,8 @@ case "$action" in
   settle)
     # Without an open handover: verify live, keep one stopped release and recreate preparation.
     [[ ! -e $journal/operation && $(field '.live') == "$sha" ]] || fail 'finish the Gateway handover first'
-    # Forget recorded releases whose containers are gone, then settle what remains.
+    # Park an interrupted rollback, forget recorded releases whose containers are gone, then settle what remains.
+    if [[ -f $journal/rollback ]]; then park_rollback; fi
     gateway_slot rollback
     if [[ -n $(field '.pending // ""') ]]; then settle_parked "$sha" "$(field '.old // ""')" "$(field '.pending // ""')"; fi
     ;;

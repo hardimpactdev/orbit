@@ -191,6 +191,30 @@ class ProductionReleaseTest(unittest.TestCase):
                 self.r.retire()
             discard.assert_not_called()
 
+    def test_a_retire_retry_records_an_already_stopped_former_live_as_parked(self):
+        self.r.link(NEXT)
+        self.r.state["verified"] = True
+        stopped = {"status": "Stopped", "config": {"boot.autostart": "false"}}
+        with patch.object(self.r, "guest") as guest, patch.object(self.r, "identity", return_value=stopped), \
+                patch.object(self.r, "primitive") as primitive, patch.object(self.r, "discard") as discard, \
+                patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"):
+            self.r.retire()
+        guest.assert_not_called()
+        primitive.assert_not_called()
+        discard.assert_called_once_with(OLD)
+        self.assertTrue(self.r.state["parked_previous"])
+
+    def test_rollback_cleanup_leaves_an_already_parked_old_alone(self):
+        self.r.state.update(action="rollback", rollback_awake=True, sha=OLD)
+        self.r.sha = OLD
+        stopped = {"status": "Stopped", "config": {"boot.autostart": "false"}}
+        with patch.object(self.r, "reverse"), patch.object(self.r, "check_selection"), patch.object(self.r, "park"), \
+                patch.object(self.r, "free_capacity"), patch.object(self.r, "identity", return_value=stopped), \
+                patch.object(self.r, "guest") as guest, patch.object(self.r, "primitive") as primitive:
+            self.r.release_unused()
+        guest.assert_not_called()
+        primitive.assert_not_called()
+
     def test_an_interrupted_non_idempotent_application_step_is_not_replayed(self):
         step = {"name": "migrate", "phase": "before_activation", "command": "echo migrated", "timeout_seconds": 15}
         with patch.object(self.r, "user", return_value=CompletedProcess([], 0)) as run:
