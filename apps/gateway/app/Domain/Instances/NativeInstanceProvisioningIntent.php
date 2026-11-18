@@ -19,11 +19,22 @@ use App\Support\ValidatedData;
 /** Immutable parent admission. No child Operations and no Node effects. */
 final readonly class NativeInstanceProvisioningIntent
 {
-    public function assertCloneSupported(Instance $candidate, ?string $sqliteSource): void
+    /** @return array{project: string, name: string, seed_commit: string}|null */
+    public function cloneCandidateContainer(Instance $candidate, ?string $sqliteSource): ?array
     {
         if ($candidate->databaseConnectionTargets()->exists()) {
             $this->unavailable();
         }
+
+        $runtime = $candidate->runtime()->first();
+        if ($runtime === null) {
+            return null;
+        }
+        if ($candidate->name !== DefaultInstanceName::Name || $runtime->seed_commit === null || $sqliteSource !== null) {
+            $this->unavailable();
+        }
+
+        return ['project' => $runtime->incus_project, 'name' => $runtime->container_name, 'seed_commit' => $runtime->seed_commit];
     }
 
     /** @param array<string,mixed> $input

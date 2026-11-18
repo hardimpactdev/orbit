@@ -156,15 +156,21 @@ export const behavior = {
                 },
                 ctx: Context,
             ) {
+                const commit = text(args.commit);
+                const container = z.object({ seed_commit: z.string() }).optional()
+                    .parse(args.intent.container);
+                const sourceMatches = container === undefined
+                    ? repositoryIdentity(text(args.origin)) ===
+                        args.intent.repository_identity
+                    : commit === container.seed_commit;
                 if (
-                    repositoryIdentity(text(args.origin)) !==
-                        args.intent.repository_identity ||
+                    !sourceMatches ||
                     text(args.branch) !== args.intent.branch ||
                     text(args.status) !== "" || text(args.submodules) !== ""
                 ) throw new Error("instance.clone_candidate_source_invalid");
                 const result = {
                     commit: z.string().regex(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/)
-                        .parse(text(args.commit)),
+                        .parse(commit),
                 };
                 return {
                     dataHandles: [

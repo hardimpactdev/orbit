@@ -1,7 +1,7 @@
 id: b2f83469-9dcd-5aaf-a57d-7ee137a158fb
 name: instance-clone-candidate
 autoContinue: false
-description: Check the clone candidate source on its Node, read-only, as the candidate Node user.
+description: Check the clone candidate source on its Node, read-only, as the checkout owner or the container workspace owner.
 vaults:
 - orbit-control-inputs
 inputs:
@@ -104,16 +104,12 @@ jobs:
             hostKeys: ${{ inputs.intent.candidate.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.candidate.checkout }}
-        - branch
-        - --show-current
+        sudo: ${{ has(inputs.intent.candidate.container) }}
+        argv: >-
+          ${{ (has(inputs.intent.candidate.container) ?
+          ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
+          "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "branch", "--show-current"] }}
   - name: candidate-commit
     labels:
       role: swamp
@@ -140,17 +136,12 @@ jobs:
             hostKeys: ${{ inputs.intent.candidate.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.candidate.checkout }}
-        - rev-parse
-        - --verify
-        - HEAD^{commit}
+        sudo: ${{ has(inputs.intent.candidate.container) }}
+        argv: >-
+          ${{ (has(inputs.intent.candidate.container) ?
+          ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
+          "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "rev-parse", "--verify", "HEAD^{commit}"] }}
   - name: candidate-status
     labels:
       role: swamp
@@ -177,17 +168,12 @@ jobs:
             hostKeys: ${{ inputs.intent.candidate.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.candidate.checkout }}
-        - status
-        - --porcelain
-        - --untracked-files=all
+        sudo: ${{ has(inputs.intent.candidate.container) }}
+        argv: >-
+          ${{ (has(inputs.intent.candidate.container) ?
+          ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
+          "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "status", "--porcelain", "--untracked-files=all"] }}
   - name: candidate-submodules
     labels:
       role: swamp
@@ -214,17 +200,12 @@ jobs:
             hostKeys: ${{ inputs.intent.candidate.ssh_execution.target.host_keys }}
       inputs:
         hosts: name:target
-        argv:
-        - /usr/bin/git
-        - -c
-        - core.hooksPath=/dev/null
-        - -c
-        - core.fsmonitor=false
-        - -C
-        - ${{ inputs.intent.candidate.checkout }}
-        - submodule
-        - status
-        - --recursive
+        sudo: ${{ has(inputs.intent.candidate.container) }}
+        argv: >-
+          ${{ (has(inputs.intent.candidate.container) ?
+          ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
+          "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "submodule", "status", "--recursive"] }}
   - name: candidate-origin
     labels:
       role: swamp
@@ -232,6 +213,7 @@ jobs:
     - step: candidate-submodules
       condition:
         type: succeeded
+    guard: ${{ has(inputs.intent.candidate.container) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -264,9 +246,15 @@ jobs:
     labels:
       role: swamp
     dependsOn:
-    - step: candidate-origin
+    - step: candidate-submodules
       condition:
         type: succeeded
+    - step: candidate-origin
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
     task:
       type: behavior
       behaviorType: '@nckrtl/instance-source-command'
@@ -274,7 +262,7 @@ jobs:
       methodName: cloneCandidate
       inputs:
         intent: ${{ inputs.intent.candidate }}
-        origin: ${{ steps["candidate-origin"].outputs }}
+        origin: '${{ has(inputs.intent.candidate.container) ? {} : steps["candidate-origin"].outputs }}'
         branch: ${{ steps["candidate-branch"].outputs }}
         commit: ${{ steps["candidate-commit"].outputs }}
         status: ${{ steps["candidate-status"].outputs }}

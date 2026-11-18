@@ -61,7 +61,6 @@ final readonly class InstancePlacement
     public static function productionClone(Instance $candidate): void
     {
         self::checkout($candidate->project);
-        InstanceContainer::assertCheckout($candidate);
     }
 
     /**
