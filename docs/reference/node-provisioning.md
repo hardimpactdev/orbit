@@ -649,6 +649,7 @@ Swamp resolves each phase's files from the staged bundle when it prepares the in
 3. The roles phase also starts at the local DNS wrapper playbook, because the roles phase may run that playbook instead.
 4. It follows every bundle file that a reached file names, by path or by file name.
 5. It follows a Python file by its module name. So Ansible modules, `module_utils` files and imported helpers count.
+6. It follows a folder with every file under it. A folder counts when a path of two or more parts names it, when a path ends in `/`, or when a local `copy`, `template` or `synchronize` source or a fileglob names it.
 
 A full-line comment is not read. A file that more than one phase reaches is in each of those phases. `ansible.cfg`, `build_vars.py` and both converge playbooks are in every phase. `build_vars.py` is the role materializer.
 
@@ -656,15 +657,18 @@ Some references cannot be resolved. Each of them makes its phase read the whole 
 
 - an include or import with a templated name;
 - a file or template lookup of a computed path;
-- a local `copy`, `template` or `script` source with a templated name;
+- a local `copy`, `template`, `script` or `synchronize` source with a templated name;
+- a `with_fileglob` with a templated glob;
 - `role_path`;
 - a Python file that opens files beside itself.
 
-The resolver does resolve three forms: a playbook-relative path that ends in a literal file name, a run-folder path, and a loop item of a literal loop.
+The tasks that a phase selects in a converge playbook get the same check as the task files.
 
-A bundle file that no phase names is in no phase digest, because no skippable phase can load it. The `check` phase always runs, so its own files are in no digest either.
+The resolver does resolve four forms: a playbook-relative path that ends in a literal file name, a run-folder path, a loop item of a literal loop, and a fileglob item.
 
-A test fails when a phase of the shipped bundle falls back to the whole bundle, or when a reached file includes a task file outside its phase's set (`swamp/tests/phase_code_test.ts`). A role Operation's phases still read the whole bundle.
+A bundle file that no phase names is in every phase digest. Ansible can read a file without naming it, such as the collection pins in `requirements.yml`. So a change to a playbook of another Operation, or to any other file that no converge phase names, runs every phase again. Git ignores Python byte code, so it is in no digest.
+
+A test fails when a phase of the shipped bundle falls back to the whole bundle, or when a reached file includes a task file outside its phase's set (`swamp/tests/phase_code_test.ts`). It also fails when a file that no phase names, a templated include in a converge playbook, or a file in a copied folder does not move its digests. A role Operation's phases still read the whole bundle.
 
 The first converge of each Node after this rule shipped finds every code digest moved and runs every phase once.
 

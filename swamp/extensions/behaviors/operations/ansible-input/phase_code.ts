@@ -7,8 +7,9 @@ import { parse } from "jsr:@std/yaml@1.0.12";
  * A phase starts at the tasks of the converge playbooks that `--tags <phase>` selects: a task or play tagged with the phase or `always`,
  * and every file that the playbooks import statically and that names the phase or `always` in a tag. From there it follows every bundle
  * file a reached file names: by relative path, by file name, or by module name for a Python file (Ansible modules, module_utils and
- * imported helpers). Shared infrastructure is in every phase. A reference the resolver cannot name, such as a templated include, makes
- * that phase read the whole bundle. A bundle file that no phase names is in no phase: nothing in a converge can load it.
+ * imported helpers). A directory a reached file names, such as a `copy` source or a fileglob, brings every file under it. Shared
+ * infrastructure is in every phase. A reference the resolver cannot name, such as a templated include, makes that phase read the whole
+ * bundle. A bundle file that no phase names is in every phase: Ansible may read it without a name, as it reads the collection pins.
  */
 
 export const phases = ["agent", "software", "roles", "tools", "network"] as const;
@@ -27,9 +28,10 @@ export const entries: Record<Phase, string[]> = {
  * variables. Each phase also follows the names in the shared files. */
 export const shared = ["ansible.cfg", "build_vars.py", ...new Set(Object.values(entries).flat())];
 
-export type Resolution = { files: string[]; whole: false } | { files: null; whole: true; reason: string };
+/** `unnamed` holds the bundle files that no phase names; each is in every phase that does not read the whole bundle. */
+export type Resolution = { files: string[]; whole: false; unnamed: string[] } | { files: null; whole: true; reason: string; unnamed: string[] };
 
-type Bundle = { files: string[]; texts: Map<string, string>; byPath: Map<string, string[]>; byStem: Map<string, string[]> };
+type Bundle = { files: string[]; texts: Map<string, string>; byPath: Map<string, string[]>; byStem: Map<string, string[]>; byDir: Map<string, string[]> };
 
 async function bundle(root: string): Promise<Bundle> {
     const files: string[] = [];
@@ -38,7 +40,8 @@ async function bundle(root: string): Promise<Bundle> {
         for await (const entry of Deno.readDir(`${root}${relative ? `/${relative}` : ""}`)) entries.push(entry);
         for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
             const path = relative ? `${relative}/${entry.name}` : entry.name;
-            if (entry.isDirectory) await walk(path);
+            // Python's byte code is derived from the source beside it, and Git ignores it; a local test run must not move a digest.
+            if (entry.isDirectory && entry.name !== "__pycache__") await walk(path);
             else if (entry.isFile) files.push(path);
         }
     };
@@ -48,25 +51,43 @@ async function bundle(root: string): Promise<Bundle> {
     for (const file of files) texts.set(file, decoder.decode(await Deno.readFile(`${root}/${file}`)));
     const byPath = new Map<string, string[]>();
     const byStem = new Map<string, string[]>();
+    const byDir = new Map<string, string[]>();
     const add = (map: Map<string, string[]>, key: string, file: string) => map.set(key, [...(map.get(key) ?? []), file]);
     for (const file of files) {
         // Every path suffix: `tasks/a.yml` is named as `tasks/a.yml` or `a.yml`.
         const parts = file.split("/");
         for (let index = 0; index < parts.length; index++) add(byPath, parts.slice(index).join("/"), file);
         if (file.endsWith(".py")) add(byStem, parts[parts.length - 1].slice(0, -3), file);
+        // Every suffix of every folder above it: `files/a/b.conf` is under `files/a` and `a`.
+        for (let end = 1; end < parts.length; end++) for (let index = 0; index < end; index++) add(byDir, parts.slice(index, end).join("/"), file);
     }
-    return { files, texts, byPath, byStem };
+    return { files, texts, byPath, byStem, byDir };
 }
 
-/** The bundle files a text names. */
-export function named(source: string, byPath: Map<string, string[]>, byStem: Map<string, string[]>): string[] {
+/** The bundle files a text names. A folder counts with every file under it when the text names it as a path of two or more parts, with a
+ * trailing slash, or as a local source or fileglob. */
+export function named(source: string, byPath: Map<string, string[]>, byStem: Map<string, string[]>, byDir: Map<string, string[]> = new Map()): string[] {
     // A full-line comment loads nothing.
     const text = source.replace(/^\s*#.*$/gm, "");
     const found = new Set<string>();
+    const folder = (path: string, single: boolean) => {
+        const parts = path.split("/");
+        for (let index = 0; index < parts.length; index++) {
+            if (!single && parts.length - index < 2) continue;
+            for (const file of byDir.get(parts.slice(index).join("/")) ?? []) found.add(file);
+        }
+    };
     for (const token of text.match(/[A-Za-z0-9_.\/-]+/g) ?? []) {
         const path = token.replace(/^(\.\.?\/)+/, "").replace(/[.\/-]+$/, "");
         const parts = path.split("/");
         for (let index = 0; index < parts.length; index++) for (const file of byPath.get(parts.slice(index).join("/")) ?? []) found.add(file);
+        folder(path, token.endsWith("/"));
+    }
+    // A local source or fileglob names its folder, even by one part: `src: tools/` or `with_fileglob: tools/*`.
+    for (const match of text.matchAll(/(?:\bsrc["']?\s*[:=]|\bfileglob["']\s*,|\bwith_fileglob["']?\s*:\s*\[?(?:\s*-)?)\s*["']?([^\s"',}\]]+)/g)) {
+        const glob = match[1].search(/[*?[]/);
+        const path = (glob < 0 ? match[1] : match[1].slice(0, match[1].lastIndexOf("/", glob) + 1)).replace(/^(\.\.?\/)+/, "").replace(/\/+$/, "");
+        if (path) folder(path, true);
     }
     for (const word of text.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []) for (const file of byStem.get(word) ?? []) found.add(file);
     return [...found];
@@ -106,7 +127,7 @@ export function unresolved(file: string, text: string): string | null {
 }
 
 const includes = /^(ansible\.builtin\.)?(include_tasks|import_tasks|import_playbook|include_role|import_role|include_vars|include)$/;
-const localSource = /^(ansible\.builtin\.)?(template|copy|script|unarchive)$/;
+const localSource = /^((ansible\.builtin\.)?(template|copy|script|unarchive)|(ansible\.posix\.)?synchronize)$/;
 
 function taskUnresolved(file: string, node: unknown): string | null {
     if (Array.isArray(node)) {
@@ -123,12 +144,15 @@ function taskUnresolved(file: string, node: unknown): string | null {
             const target = typeof value === "string" ? value : (value as Record<string, unknown> | null)?.file ?? (value as Record<string, unknown> | null)?.name;
             if (typeof target !== "string" || (target.includes("{{") && !/^\{\{\s*orbit_run\s*\}\}\//.test(target))) return `${file}: ${key} ${JSON.stringify(target)}`;
         }
+        if (/^with_fileglob$/.test(key) && JSON.stringify(value).includes("{{")) return `${file}: ${key} ${JSON.stringify(value)}`;
         if (localSource.test(key)) {
             const args = typeof value === "string" ? Object.fromEntries(value.split(/\s+/).map((pair) => pair.split("=", 2))) : value as Record<string, unknown> | null;
             const source = args?.src;
             const remote = args?.remote_src === true || args?.remote_src === "true" || args?.remote_src === "yes";
             // A loop item names its file literally in the same task, so the file is named in the text.
-            const fromLoop = /^\{\{\s*playbook_dir\s*\}\}\/\{\{\s*item(\.\w+)?\s*\}\}$/.test(String(source)) && Array.isArray(record.loop) && !JSON.stringify(record.loop).includes("{{");
+            const fromLoop = (/^\{\{\s*playbook_dir\s*\}\}\/\{\{\s*item(\.\w+)?\s*\}\}$/.test(String(source)) && Array.isArray(record.loop) && !JSON.stringify(record.loop).includes("{{"))
+                // A fileglob item: the glob names its folder literally (with_fileglob with a templated glob is refused above).
+                || (/^\{\{\s*item\s*\}\}$/.test(String(source)) && record.with_fileglob !== undefined);
             if (typeof source === "string" && source.includes("{{") && !remote && !fromLoop && !/^\{\{\s*playbook_dir\s*\}\}\/[^{}]+$/.test(source)) {
                 return `${file}: ${key} src ${JSON.stringify(source)}`;
             }
@@ -188,7 +212,7 @@ function playbookRoots(text: string, phase: Phase): string[] {
 
 /** Each phase's files, relative to the bundle root, or the whole bundle with the reason. */
 export async function resolvePhases(root: string): Promise<Record<Phase, Resolution>> {
-    const { files, texts, byPath, byStem } = await bundle(root);
+    const { files, texts, byPath, byStem, byDir } = await bundle(root);
     const text = (file: string) => texts.get(file) ?? "";
     // The files the playbooks import statically. Ansible parses each of them for every phase, so a task tagged there runs in that phase.
     const statics = new Set<string>();
@@ -202,7 +226,7 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
             if (target) pending.push(target);
         }
     }
-    const result = {} as Record<Phase, Resolution>;
+    const reach = {} as Record<Phase, { reached: Set<string>; reason: string | null }>;
     for (const phase of phases) {
         const reached = new Set<string>(shared);
         const queue: string[] = [];
@@ -215,7 +239,11 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
         let reason: string | null = null;
         for (const entry of entries[phase]) {
             try {
-                for (const root of playbookRoots(text(entry), phase)) visit(named(root, byPath, byStem), entry);
+                // A selected task or play key of an entry playbook is checked as a task file is.
+                for (const root of playbookRoots(text(entry), phase)) {
+                    reason ??= unresolved(entry, root);
+                    visit(named(root, byPath, byStem, byDir), entry);
+                }
             } catch (error) {
                 reason ??= `${entry}: ${(error as Error).message.split("\n")[0]}`;
             }
@@ -224,13 +252,22 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
             if (entries[phase].includes(file)) continue;
             if (tagsIn(text(file)).some((tag) => tag === phase || tag === "always")) visit([file], "static import");
         }
-        while (queue.length && !reason) {
+        // The walk goes on after a reason, so the files no phase names are known whatever falls back.
+        while (queue.length) {
             const file = queue.shift()!;
-            reason = unresolved(file, text(file));
-            visit(named(text(file), byPath, byStem), file);
+            reason ??= unresolved(file, text(file));
+            visit(named(text(file), byPath, byStem, byDir), file);
         }
         if (reason) for (let file = reason.split(":")[0]; file; file = via.get(file) ?? "") reason += ` <- ${via.get(file) || "root"}`;
-        result[phase] = reason ? { files: null, whole: true, reason } : { files: [...reached].filter((file) => texts.has(file)).sort(), whole: false };
+        reach[phase] = { reached, reason };
+    }
+    const named_ = new Set(phases.flatMap((phase) => [...reach[phase].reached]));
+    const unnamed = files.filter((file) => !named_.has(file));
+    const result = {} as Record<Phase, Resolution>;
+    for (const phase of phases) {
+        const { reached, reason } = reach[phase];
+        result[phase] = reason ? { files: null, whole: true, reason, unnamed }
+            : { files: [...new Set([...reached, ...unnamed])].filter((file) => texts.has(file)).sort(), whole: false, unnamed };
     }
     return result;
 }
