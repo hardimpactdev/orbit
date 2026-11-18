@@ -118,7 +118,6 @@ jobs:
         hosts: name:target
         sudo: true
         timeoutSec: 180
-        sudo: true
         argv:
         - /usr/bin/timeout
         - '150'
