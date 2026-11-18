@@ -2593,6 +2593,8 @@ Measured by hand on a task copy on 2026-11-17, with Squid 7.7 on `nested-app-dev
 
 No other path is excluded. Shared, new and unclassified files in the tree still count. A missing host record, a changed digest or a failed read of a required host input makes the host due. A failed read leaves no host digest in the record. When the host is due, `nested-app-dev` joins the due converges with its `app-dev` role, not just the base scope. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
 
+The app-dev role creates its wake marker directory in `/dev/shm`. Its systemd-tmpfiles rule recreates the directory at boot with owner `root:caddy` and mode `0755`, including after a base retake restarts the nested Node.
+
 When only the host part is due, the base digest of `nested-app-dev` did not change, and its converge reason is `host_due`.
 
 A refresh with no change keeps the host and adds no time. The host is built only when the default's recorded ID map size is 2,000,000 or more: the fleet intent's `host` says so. Below that no isolated Instance fits on `nested-app-dev`, so the refresh changes nothing there. The result names `host` as `converged`, `kept` or `skipped_idmap_small`; the Operation's `fleet_refresh` keeps it, and leaves it out when the run names none ([What a refresh skips](#what-a-refresh-skips)).
