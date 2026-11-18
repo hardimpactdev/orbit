@@ -245,7 +245,7 @@ jobs:
         - /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" config --get remote.origin.url | sed -E
           "s#^([a-z+]+://)[^/@]*:[^/@]*@#\1REDACTED@#; s#^(https?://)[^/@]+@#\1REDACTED@#"
         - sh
-        - ${{ inputs.intent.candidate.checkout }}
+        - '${{ has(inputs.intent.candidate.container) ? "/dev/null" : inputs.intent.candidate.checkout }}'
   - name: candidate
     labels:
       role: swamp
