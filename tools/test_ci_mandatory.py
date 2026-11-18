@@ -10,7 +10,7 @@ from test_ci_units import BUDGET, ROOT, fixture, names, units
 HOST = 'swamp/ansible/tasks/instance-host.yml'
 IMAGE = 'swamp/tests/ansible_instance_host_image_test.ts'
 BOUNDARIES = [
-    'the saved dir host prepare boundary matches the shipped tasks',
+    'the saved btrfs host prepare boundary matches the shipped tasks',
     'the saved zfs host prepare boundary matches the shipped tasks',
     'the saved nested host prepare boundary matches the shipped tasks',
     'a passed nested-fleet image build repeats the host prepare stage without changes',

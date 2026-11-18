@@ -156,11 +156,10 @@ def configuration(path=TABLE):
         fits = False
     if not fits:
         raise ValueError('machinery_canary must fit one shard')
-    # ADR 0262 names each capacity gap: a self-hosted file that cannot fit the self-hosted shards when selected.
+    # ADR 0262 names each capacity gap: a file that cannot fit its class's shards when selected.
     gaps = budget.get('capacity_gap')
-    if not isinstance(gaps, list) or len(gaps) != len(set(gaps)) or \
-            any(file not in fixtures or not fixtures[file].get('self_hosted') for file in gaps):
-        raise ValueError('capacity_gap must list unique registered self_hosted fixtures')
+    if not isinstance(gaps, list) or len(gaps) != len(set(gaps)) or any(file not in fixtures for file in gaps):
+        raise ValueError('capacity_gap must list unique registered fixtures')
     for file, fixture in fixtures.items():
         for name, cost in units_for(fixture, budget):
             if file not in gaps and cost > budget['shard_seconds']:

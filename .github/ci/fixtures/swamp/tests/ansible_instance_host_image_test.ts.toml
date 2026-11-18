@@ -1,7 +1,7 @@
 order = 60
 cases = [
-  "the saved dir host system boundary matches the shipped tasks",
-  "the saved dir host prepare boundary matches the shipped tasks",
+  "the saved btrfs host system boundary matches the shipped tasks",
+  "the saved btrfs host prepare boundary matches the shipped tasks",
   "the saved zfs host system boundary matches the shipped tasks",
   "the saved zfs host prepare boundary matches the shipped tasks",
   "the saved nested host system boundary matches the shipped tasks",
@@ -84,8 +84,8 @@ inputs = [
 ]
 
 [case_costs]
-  "the saved dir host system boundary matches the shipped tasks" = 33
-  "the saved dir host prepare boundary matches the shipped tasks" = 34
+  "the saved btrfs host system boundary matches the shipped tasks" = 33
+  "the saved btrfs host prepare boundary matches the shipped tasks" = 34
   "the saved zfs host system boundary matches the shipped tasks" = 34
   "the saved zfs host prepare boundary matches the shipped tasks" = 40
   "the saved nested host system boundary matches the shipped tasks" = 40
@@ -126,7 +126,7 @@ inputs = [
 
 [mandatory_cases]
 "swamp/ansible/tasks/instance-host.yml" = [
-  "the saved dir host prepare boundary matches the shipped tasks",
+  "the saved btrfs host prepare boundary matches the shipped tasks",
   "the saved zfs host prepare boundary matches the shipped tasks",
   "the saved nested host prepare boundary matches the shipped tasks",
   "a passed nested-fleet image build repeats the host prepare stage without changes",

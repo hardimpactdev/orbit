@@ -18,7 +18,7 @@ async function fixture(options: Parameters<typeof rawFixture>[0]) {
         ];
         const selected = tasks.filter((task) => names.includes(task.name));
         assertEquals(selected.map((task) => task.name), names);
-        restore(f, boundaries["dir-system"]);
+        restore(f, boundaries["btrfs-system"]);
         f.calls();
         Deno.writeTextFileSync(path, JSON.stringify([
             { "ansible.builtin.include_vars": `${f.folder}/boundary-facts.json` }, ...selected,
