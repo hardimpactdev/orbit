@@ -13,7 +13,7 @@ covers:
 
 # Instance removal
 
-A production Instance keeps its registration once its first container deployment starts. Both removal commands return `operation.kind_unavailable` before stopping Schedules or changing storage, including when you pass `--force`. See [Production containers](/reference/production-containers#prepare-the-appprod-node).
+A production Instance keeps its registration once its first container deployment starts. Its serving clone, rollback and persistent volume belong to the release controller. Both removal commands return `operation.kind_unavailable` before stopping Schedules or withdrawing Routes, including with `--force`. See [Production containers](/reference/production-containers#prepare-the-appprod-node).
 
 `instance:destroy` admits one Operation and one native Swamp run. Before any removal side effect or Operation write, host checkout admission uses the existing SSH remote-program reader to inspect live Git dependencies. It refuses unreadable Git in the target and never relies on `source_layout`. It reads only a host checkout with a nonempty stored path, a non-reserved source state and an active Node; containers skip it. A reserved source that was never created needs no read. An active checkout’s disk state can be known only on its Node; a missing path returns no dependencies.
 
@@ -38,9 +38,6 @@ An unreadable recorded checkout elsewhere does not block unrelated removal. Afte
 Missing or unreadable candidate paths, Git errors/timeouts and unreadable or malformed pointers proceed with typed `instance.checkout_unknown` warnings naming the path, recorded Instance IDs and cause. This includes mode-000 markers, FIFOs, symlink loops, unreadable commondir/alternates, oversized pointers and gitdir paths through regular files. Pointer files are opened non-blocking, must be regular and are capped at 4 KiB. Symlinks resolve before comparison.
 
 Only a confirmed dependency or a target read failure refuses. The target’s directory, pointer or Git failure names its path and the unreadable or timed_out cause. Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Admission warnings survive in the Operation result. As in transfer, human output names the warning code, path, Instance IDs and read cause; JSON keeps the typed warning. The Gateway inventory excludes containers and empty or relative paths; malformed candidate rows are bounded warnings, never a whole-call failure.
-
-
-An AppProd Instance whose first container deployment has started keeps its registration. Its serving clone, rollback and persistent volume belong to the release controller. The existing removal commands refuse at admission, including with `--force`, before stopping Schedules or withdrawing Routes. See [production container ownership](/reference/production-containers).
 
 ## Replication slots
 
