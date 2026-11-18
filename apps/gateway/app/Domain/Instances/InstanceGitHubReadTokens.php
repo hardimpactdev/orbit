@@ -86,15 +86,18 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
      * One git credential-store line under `$key`, for a fetch that reads a 0600 credential file. Only a confirmed
      * public GitHub repository gets an empty line and fetches anonymously.
      *
+     * @param  array<string,mixed>|null  $release  Other private fields sent with the credential in one stdin value.
      * @return array{vault:string,key:string}
      */
-    public function credentialCopy(string $origin, string $key): array
+    public function credentialCopy(string $origin, string $key, #[\SensitiveParameter] ?array $release = null): array
     {
         $credential = $this->mint($origin);
         try {
             $token = $credential?->reveal();
 
-            return $this->step->executionCopy('orbit-control-inputs', $key, $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n");
+            $line = $token === null ? '' : 'https://x-access-token:'.$token."@github.com\n";
+
+            return $this->step->executionCopy('orbit-control-inputs', $key, $release === null ? $line : json_encode([...$release, 'credential' => $line], JSON_THROW_ON_ERROR));
         } catch (\Throwable $exception) {
             if ($credential !== null && ! $this->github->revokeInstallationToken($credential)) {
                 Log::warning('operation.github_token_revoke_failed');

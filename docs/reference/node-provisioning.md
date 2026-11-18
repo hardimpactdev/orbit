@@ -149,7 +149,7 @@ The enrollment workflow records the verified bootstrap host key for the WireGuar
 
 Node enrollment runs the software phases for every Node. Task copies instead clone a Project's default Instance; no task VM base or role playbook supplies their software ([task copies](/reference/development-containers#lifecycle)).
 
-The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. The gateway role convergence installs the [host log-retention rules](/reference/gateway-recovery#disk-retention), the Gateway PHP-FPM pool and the agent-view and hibernator units, and retires the release unit's timer and the Documents PHP-FPM start hook. Releases leave them unchanged.
+The Gateway role requires `logrotate`, pinned in the recipe's `gateway` profile. Before the first container move, Gateway role convergence installs the [host log-retention rules](/reference/gateway-recovery#disk-retention), the Gateway PHP-FPM pool and the agent-view and hibernator units, and retires the release unit's timer and the Documents PHP-FPM start hook. Once a container rollback exists, convergence removes the host Gateway pool. Other roles on the same Node retain their own services. See [Gateway container adoption](/reference/gateway-recovery#move-the-gateway-to-release-containers).
 
 The Gateway’s local listener uses the image prerequisites and readiness checks described in [Gateway private DNS](/reference/private-dns#the-gateway-machine).
 

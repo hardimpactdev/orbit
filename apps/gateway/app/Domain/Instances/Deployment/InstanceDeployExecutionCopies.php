@@ -28,7 +28,7 @@ final readonly class InstanceDeployExecutionCopies
      */
     public static function ended(Operation $deploy): bool
     {
-        if ($deploy->kind !== 'instance.deploy' || ! $deploy->status->terminal() || ExpireOperationAction::awaitsSettlement($deploy)) {
+        if (($deploy->kind !== 'instance.deploy' && ! ($deploy->kind === 'instance.rollback' && isset($deploy->input['production_release']))) || ! $deploy->status->terminal() || ExpireOperationAction::awaitsSettlement($deploy)) {
             return false;
         }
 
@@ -39,6 +39,9 @@ final readonly class InstanceDeployExecutionCopies
     /** @return list<string> */
     public static function keys(Operation $deploy): array
     {
+        if (isset($deploy->input['production_release'])) {
+            return ['production-release-operation-'.$deploy->id];
+        }
         $deployment = $deploy->input['deployment'] ?? null;
         $deployment = is_array($deployment) ? $deployment : [];
         $variant = $deployment['variant'] ?? null;

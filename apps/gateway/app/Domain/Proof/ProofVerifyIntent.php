@@ -8,9 +8,9 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOperations;
+use App\Domain\Tasks\TaskTurn;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
@@ -70,7 +70,7 @@ final readonly class ProofVerifyIntent
             throw new ResourceOperationException('proof.wrong_project', 'Proof cases in a task copy need a Project with a nested fleet.', 409);
         }
         $copy->requireReady();
-        TaskCopyTurn::refuseUnended($group);
+        TaskTurn::refuseUnended($group);
         $target = $copy->intent();
         // Both names stand before the `--` of `incus exec`, which Swamp runs as root on the Node: neither may read as an option.
         foreach ($target['runtime'] as $name) {

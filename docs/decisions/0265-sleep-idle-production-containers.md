@@ -1,12 +1,12 @@
 ---
 title: "ADR 0265: Sleep idle production containers"
 sidebarTitle: "0265 Production sleep"
-description: "In progress. A production Instance's live release container sleeps after an idle hour and wakes fully ready, by the rule of development containers. Hot never sleeps, old stays stopped, and a sleep never stops live. A visitor waits for the fast wake behind Caddy and never sees a progress page."
+description: "In progress. An idle production live sleeps after one hour and wakes before receiving traffic. Deployment independently freezes the preparation and rollback containers when their work has drained."
 ---
 
 # ADR 0265: Sleep idle production containers
 
-A production Instance's live release container sleeps when it is idle, by the same rule as a development container: the same idle window, sweep, Operations, reasons and dry run. The whole container sleeps, with no Process left out, and it wakes fully ready, with the fast wake and the [prepared restore](/reference/prepared-restore) of [ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes). Hot never sleeps, and old stays stopped. A visitor never sees a progress page: Caddy holds the request while live wakes.
+A production Instance's live release container sleeps when it is idle, by the same rule as a development container: the same idle window, sweep, Operations, reasons and dry run. The whole container sleeps, with no Process left out, and it wakes fully ready, with the fast wake and the [prepared restore](/reference/prepared-restore) of [ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes). Hot stays awake through readiness. The release operation stops old after its drain. A visitor never sees a progress page: Caddy holds the request while live wakes.
 
 ## Status
 
@@ -14,7 +14,7 @@ In progress.
 
 The owner decided on 2026-11-16 that idle sleep also applies to production containers. The orchestrator decided parts 8, 9 and 10 on the same day; the owner may overrule them. No part is built. Production containers ([ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers)) are not built yet, so this design is built with them.
 
-It supersedes the rule "production containers never sleep" in [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) and ADR 0263. Everything else in ADR 0263 stays: hot, live and old per Instance; old stays stopped for rollback until the next deploy; no default memory limit, an optional limit per Instance; hauzer moves first, and its PowerSync Processes never stop.
+This decision applies the idle sweep to the serving production release. [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) owns release-driven sleep for the preparation and rollback containers, their capacity and rollback rules.
 
 Principle: [One way, one name](/mission#principles) and [Lean](/mission#principles). One sleep rule serves every container Instance. A production Instance that nobody uses frees its Node's memory as a development Instance does.
 
@@ -36,7 +36,9 @@ Production differs from development in these ways that drive the design:
 
 The numbered parts below settle which release container sleeps, how a deploy and a rollback meet a sleeping live, what counts as traffic, what a visitor sees, what happens to Schedules and workers, how an Instance opts out, and the rollout.
 
-### 1. Only live sleeps
+### 1. Idle sleep for live
+
+<a id="1-only-live-sleeps"></a>
 
 The [idle sleep](/reference/development-containers#sleep-and-wake) acts on the live release container of each production Instance. The same parts apply as in development:
 
@@ -47,7 +49,7 @@ The [idle sleep](/reference/development-containers#sleep-and-wake) acts on the l
 
 The `ContainerSleepScope` and the sweep gain production live containers. The three `t3_` rows and `t3_server` never apply, because a production container has no T3 server. So the values `without_t3` and `true` of `ORBIT_HIBERNATION_CONTAINER_SLEEP` both act on live. Production gets no value of its own. A Gateway that already uses `without_t3` or `true` puts each production live to sleep as soon as production containers exist.
 
-The reason `not_development` goes. A new reason, `not_live`, keeps a hot or old release container awake: the sweep never acts on it.
+The reason `not_live` excludes preparation, hot and old from the idle sweep. The deploy and rollback operations own their power state.
 
 ### 2. Hot never sleeps
 
@@ -57,7 +59,7 @@ A native Schedule fire records its `schedule.run` Operation only after it ends. 
 
 ### 3. A deploy and the switch
 
-A deploy does not wake a sleeping live. Hot is a ZFS clone of live's `release` snapshot, not of the running live, so a frozen live gives the same clone. The [capacity check](/reference/production-containers#capacity) counts a sleeping live too, because a visit can wake it during the deploy and the handover resumes it. For a sleeping live, the Node's available memory must cover hot's need plus the memory that live used before its last sleep, which the sleep records, plus 1 GiB. Without a memory limit, hot's need is that recorded use.
+A deploy wakes its preparation container and clones the finished build while live can remain asleep. The [capacity check](/reference/production-containers#capacity) includes a possible wake of live during the deploy and the handover. Use live’s recorded working set from before its last freeze when no Instance limit is set.
 
 A visit during a deploy wakes live as at any other time. A deploy changes live only after the switch, so the wake of a production live is admitted beside an open deploy or rollback. The switch, the wake and the handover's resume take the Instance's power lock, the unit `orbit-instance-power-<id>` of the [power helper](/reference/prepared-restore), so none of them runs in the middle of another.
 
@@ -65,13 +67,13 @@ The switch never waits for a wake: the new live just passed readiness. The switc
 
 A wake reads the live link after it takes the power lock, and acts only on the container that the link names. A wake that finds no marker after the switch ends with `wake: already_running` and never resumes or starts the previous live.
 
-After the switch, the handover needs the previous live running to stop its units. When the previous live is frozen, the handover resumes it, with no restore, and closes its swap. Then it stops its timers and Processes, and retire stops it as old. A clean stop of a frozen container times out ([Sleep and wake](/reference/development-containers#sleep-and-wake)), so the resume always comes first.
+After a verified switch, handover resumes a sleeping previous live to drain requests, Processes and timers. Once those units finish, retire stops the drained container as old.
 
-A rollback is the same: old starts and is ready, the switch runs and removes the marker, then the handover resumes a frozen rolled-away live and retire stops it.
+Rollback starts the stopped old. After readiness, switch and handover, the drained former live stops as the new rollback release.
 
 ### 4. Old stays stopped, never frozen
 
-Old is stopped, so it holds no memory and no swap. A rollback boots it. The sweep never acts on old (`not_live`).
+Old is stopped, so it holds no memory and no swap. A rollback boots it and checks it against the current configuration and database. The sweep never acts on old (`not_live`).
 
 ### 5. A production sleep never stops live
 
@@ -122,7 +124,7 @@ Production joins the sweep under the existing values of `ORBIT_HIBERNATION_CONTA
 The live proof of ADR 0263 changes:
 
 - **One fire.** Each Schedule fires once each minute, except while the Node reboots. While live sleeps, a container timer skips its minutes; a native cron Schedule still fires each minute, because each fire wakes live.
-- **Sleep and wake, new.** The load loop pauses, and live sleeps after its idle window. The proof measures how long Caddy holds a visit, and checks that a due native Schedule wakes live and runs once, that the worker resumes and runs the queued jobs, and that no request fails. Then a deploy and a rollback each run while live sleeps: no request fails, the previous live stops as old, and each job runs once. Last, the Node reboots while live sleeps: live boots awake, the boot removes the marker, the Gateway records `running` and starts a fresh watch, and the first request gets the app with no wake.
+- **Sleep and wake, new.** The load loop pauses, and live sleeps after its idle window. The proof measures how long Caddy holds a visit, and checks that a due native Schedule wakes live and runs once, that the worker resumes and runs the queued jobs, and that no request fails. Then a deploy and a rollback each run while live sleeps: no request fails, the previous live drains and stops as old, and each job runs once. Last, the Node reboots while live sleeps: live boots awake, the boot removes the marker, the Gateway records `running` and starts a fresh watch, and the first request gets the app with no wake.
 
 ## Rejected alternatives
 
@@ -130,8 +132,8 @@ The live proof of ADR 0263 changes:
 - **Sleep only the web server, and keep workers running.** The owner decided that the whole container sleeps. A partial sleep is a second rule beside the container rule.
 - **The development progress page for production.** Status 401 and an HTML page break an API client and a webhook. A held request only answers more slowly.
 - **Stop live when swap is full.** The next visit would wait for a cold boot of every unit. A live that stays awake costs only memory.
-- **Freeze old instead of a stop.** A frozen old holds swap. A stopped old holds nothing, and a rollback boots it in seconds.
-- **A deploy that wakes live first.** Hot clones the snapshot, not the running live, so a wake gains nothing and costs memory during the build.
+- **Apply the visitor wake to old.** Only a release operation can resume the rollback container. A visitor always resolves the selected live release.
+- **Wake live to prepare the new release.** The dedicated preparation container owns the build, so a deploy can leave live asleep until a visit or handover needs it.
 - **Catch up missed scheduler minutes.** A scheduler that catches up runs every missed task at the wake. Laravel's scheduler expects one run each minute.
 - **A separate setting value for production.** One rule for every container Instance is simpler. The never-sleep field gives each Instance its own choice.
 

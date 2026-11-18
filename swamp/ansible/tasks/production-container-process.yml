@@ -1,0 +1,59 @@
+---
+- name: Check the serving production Instance Process
+  ansible.builtin.assert:
+    that:
+      - container.project == 'orbit-releases'
+      - container.name == 'instance-' ~ (container.instance_id | string) ~ '-' ~ container.release[:12]
+      - intent.control.name is match('^orbit-process-' ~ intent.control.process_id ~ '-[a-z0-9-]+\.service$')
+      - action in ['create', 'update', 'start', 'stop', 'restart', 'destroy']
+    fail_msg: process.target_unsupported
+  vars: { action: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') }}" }
+
+# The existing private file writer staged the environment in root's tmpfs. Consume it
+# once here. The retained definition below is sufficient for retries after an apply.
+- name: Read and remove the production Instance Process environment
+  when: intent.installation is defined and intent.installation.has_environment
+  vars: { staged: "{{ '/run/orbit-gateway-process-' ~ (intent.gateway_operation | int) ~ '.env' }}" }
+  block:
+    - name: Read the root-only environment
+      ansible.builtin.slurp: { src: "{{ staged }}" }
+      register: gateway_process_environment
+      no_log: true
+  always:
+    - name: Remove the staged environment
+      ansible.builtin.file: { path: "{{ staged }}", state: absent }
+
+- name: Apply the production Instance Process action
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/orbit-instance-release-control
+      - "{{ container.node_id }}"
+      - "{{ container.instance_id }}"
+      - "{{ container.release }}"
+      - process
+      - "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') }}"
+      - "{{ intent.control.name }}"
+    stdin: >-
+      {{ {'unit': intent.installation.unit, 'environment': (gateway_process_environment.content | b64decode)
+          if intent.installation.has_environment else '', 'environment_path': intent.installation.environment_path, 'desired': intent.installation.desired,
+          'activation_pending': intent.installation.activation_pending | default(false),
+          'mounts': intent.installation.required_mount_paths | default([])} | to_json if intent.installation is defined else
+         omit }}
+  no_log: true
+  changed_when: true
+
+- name: Read the serving production Instance Process state
+  ansible.builtin.command: { argv: [/usr/local/libexec/orbit-instance-release-control, "{{ container.node_id }}", "{{ container.instance_id }}", "{{ container.release }}", process, is-active, "{{ intent.control.name }}"] }
+  when: lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') != 'destroy'
+  register: gateway_process_state
+  changed_when: false
+  failed_when: false
+  until: >-
+    (gateway_process_state.stdout | trim) == ('inactive' if lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') in ['stop', 'destroy']
+      or (intent.installation is defined and intent.installation.desired == 'stopped') else 'active')
+  retries: 10
+  delay: 1
+
+- name: Report the serving production Instance Process state
+  ansible.builtin.set_fact:
+    process_result: { state: "{{ 'removed' if lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') == 'destroy' else gateway_process_state.stdout | trim }}", output: "" }

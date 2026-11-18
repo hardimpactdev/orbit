@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyTurn;
+use App\Domain\Tasks\TaskTurn;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
@@ -74,12 +74,12 @@ it('names no command of one Project in the copy rules', function (): void {
 });
 
 it('tells the reviewer that its text opens the pull request, and updates one that is open already on the next publish', function (): void {
-    expect(TaskCopyTurn::PrTextRule)->toContain('Orbit opens the pull request with it once the work is done; when the pull request is open already, '
+    expect(TaskTurn::PrTextRule)->toContain('Orbit opens the pull request with it once the work is done; when the pull request is open already, '
         .'the next publish of this check updates its title and body with it.');
 });
 
 it('lets a reviewer block only on real impact, not on rare interleavings or a flag that is off', function (): void {
-    expect(TaskCopyTurn::ReviewRule)
+    expect(TaskTurn::ReviewRule)
         ->toContain('A finding blocks only if a normal run, or a likely failure (a crash, reboot or network loss at one step), would stop or delete something live')
         ->toContain('Rare interleavings, races that need several unlikely events, hardening and defence in depth are non-blocking follow-ups')
         ->toContain('Do not ask for new recovery states, markers or retry paths to cover them.')

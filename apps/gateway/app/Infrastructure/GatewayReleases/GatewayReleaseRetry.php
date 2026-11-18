@@ -43,7 +43,12 @@ final readonly class GatewayReleaseRetry
      *
      * @var list<string>
      */
-    private const array Waiting = ['gateway.release_agent_delivery_unavailable', 'gateway.release_provenance_unconfigured'];
+    private const array Waiting = [
+        'gateway.release_agent_delivery_unavailable',
+        'gateway.release_provenance_unconfigured',
+        'gateway.release_node_capacity',
+        'gateway.release_disk_low',
+    ];
 
     /**
      * The triggers whose attempts spend the budget. A rollback to the commit never does.

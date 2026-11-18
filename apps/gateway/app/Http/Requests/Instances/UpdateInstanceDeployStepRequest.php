@@ -22,6 +22,7 @@ final class UpdateInstanceDeployStepRequest extends FormRequest
         return [
             'command' => ['sometimes', 'string'],
             'phase' => ['sometimes', Rule::enum(DeploymentPhase::class)],
+            'required' => ['sometimes', 'boolean'],
             'timeout_seconds' => ['sometimes', 'integer'],
             'before' => ['sometimes', 'string'],
             'after' => ['sometimes', 'string'],
@@ -34,7 +35,7 @@ final class UpdateInstanceDeployStepRequest extends FormRequest
         try {
             $payload = app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['command', 'phase', 'timeout_seconds', 'before', 'after'],
+                ['command', 'phase', 'timeout_seconds', 'required', 'before', 'after'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -50,6 +51,10 @@ final class UpdateInstanceDeployStepRequest extends FormRequest
 
         if (array_key_exists('phase', $payload) && ! is_string($payload['phase'])) {
             throw ValidationException::withMessages(['body' => ['The phase field must be a string.']]);
+        }
+
+        if (array_key_exists('required', $payload) && ! is_bool($payload['required'])) {
+            throw ValidationException::withMessages(['body' => ['The required field must be a boolean.']]);
         }
 
         if (array_key_exists('timeout_seconds', $payload) && ! is_int($payload['timeout_seconds'])) {

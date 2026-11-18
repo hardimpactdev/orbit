@@ -36,6 +36,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
 use Tests\Support\SwampNodeFixture;
+use Tests\Support\TestOrbitHome;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -411,4 +412,17 @@ it('keeps an idle held task host out of the pass task-work lock', function (): v
     $operation = app(AdmitFleetRebootAction::class)->execute(nodeIds: [$this->beast->id]);
     expect($operation->input)->not->toHaveKey('task_hosts')
         ->and($operation->input['intent']['nodes'][(string) $this->beast->id]['defer'])->toBe('operator_hold');
+});
+
+it('checks the host agent and drains the scheduler inside the admitted serving Gateway revision', function (): void {
+    $base = TestOrbitHome::scratch('reboot-release');
+    mkdir($base.'/.orbit', 0700, true);
+    $sha = str_repeat('c', 40);
+    file_put_contents($base.'/.orbit/gateway-containers.json', json_encode(['version' => 1, 'live' => $sha, 'old' => null], JSON_THROW_ON_ERROR));
+    config(['orbit.gateway_checkout' => $base.'/orbit/apps/gateway']);
+    $plan = app(FleetReboot::class)->node($this->gateway);
+    expect($plan['services'])->toBe(['orbit-agent.service'])
+        ->and($plan['gateway']['release'])->toBe($sha)
+        ->and($plan['gateway']['scheduler'])->toBe('orbit-gateway-schedule.service')
+        ->and(app(FleetReboot::class)->node($this->operator)['gateway'])->toBeNull();
 });

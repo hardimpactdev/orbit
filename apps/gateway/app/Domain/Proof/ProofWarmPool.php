@@ -12,8 +12,8 @@ use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStart;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -150,11 +150,11 @@ final readonly class ProofWarmPool
         }
         $copies = app(ProofCopies::class);
         $places = array_filter($copies->freePlaces($project, $copies->read()),
-            static fn (int $nodeId): bool => TaskCopyStart::live($nodeId) < Config::integer('orbit.tasks.copies_max'), ARRAY_FILTER_USE_KEY);
+            static fn (int $nodeId): bool => TaskStart::live($nodeId) < Config::integer('orbit.tasks.copies_max'), ARRAY_FILTER_USE_KEY);
         if ($places === []) {
             return [];
         }
-        $read = app(TaskCopyStart::class)->read($project, array_keys($places));
+        $read = app(TaskStart::class)->read($project, array_keys($places));
         $places = array_intersect_key($places, $read['hosts']);
 
         return DB::transaction(function () use ($places, $need, $read, $source): array {
@@ -167,11 +167,11 @@ final readonly class ProofWarmPool
             $nodes = Node::query()->findMany(array_keys($places))->keyBy('id');
             $groups = [];
             foreach (ProofCopies::spread($places, $need) as $nodeId) {
-                if (TaskCopyStart::live($nodeId) >= Config::integer('orbit.tasks.copies_max')) {
+                if (TaskStart::live($nodeId) >= Config::integer('orbit.tasks.copies_max')) {
                     continue;
                 }
                 $group = $this->group();
-                app(TaskCopyStart::class)->admitRead($group, self::Trigger, null, $read, $nodes->get($nodeId));
+                app(TaskStart::class)->admitRead($group, self::Trigger, null, $read, $nodes->get($nodeId));
                 ProofWarmCopy::query()->create(['task_id' => $group->id, 'node_id' => $nodeId,
                     'seed_commit' => $source->seed_commit, 'seed_taken_at' => $source->seed_taken_at]);
                 $groups[] = $group->id;

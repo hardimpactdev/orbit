@@ -1,0 +1,14 @@
+file = "swamp/tests/production_release_sql_test.py"
+cost = 1
+inputs = [
+  "swamp/ansible/files/instance-release-sql.py",
+  "swamp/ansible/files/instance-release-phase.py",
+  "swamp/ansible/files/instance-release-prepare.py",
+  "swamp/ansible/files/instance-control-environment.py",
+]
+cases = [
+  "test_convert_two_grants_with_coincident_ports_without_exposing_host_or_login",
+  "test_deny_wrong_owner_loopback_broad_or_unadmitted_database_before_guest_commands",
+  "test_unowned_or_modified_proxy_cannot_be_adopted_as_an_existing_grant",
+  "test_checking_candidate_or_live_environment_never_installs_missing_or_changed_devices",
+]

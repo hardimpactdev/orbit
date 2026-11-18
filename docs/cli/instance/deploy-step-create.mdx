@@ -5,7 +5,7 @@ description: "Record one named deploy step on a production Instance."
 ---
 
 ```bash
-orbit instance:deploy-step:create <instance> <name> --command=COMMAND [--phase=before_activation|after_activation] [--timeout=SECONDS] [--before=NAME | --after=NAME] [--json]
+orbit instance:deploy-step:create <instance> <name> --command=COMMAND [--phase=before_activation|after_activation] [--timeout=SECONDS] [--required=true|false] [--before=NAME | --after=NAME] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -17,6 +17,7 @@ orbit instance:deploy-step:create <instance> <name> --command=COMMAND [--phase=b
 | --- | --- | --- |
 | `--command=COMMAND` | prompt | The shell command, at most 16 KiB of UTF-8 text with no NUL byte, and not blank. It runs at the release's repository root. |
 | `--phase=PHASE` | `before_activation` | `before_activation` or `after_activation`. |
+| `--required=BOOL` | true | A required step stops the release on failure. A best-effort step records its exit code and continues. |
 | `--timeout=SECONDS` | `300` | Timeout from 1 through 900 seconds. |
 | `--before=NAME` | none | Insert before this step of the same phase. Exclusive with `--after`. |
 | `--after=NAME` | none | Insert after this step of the same phase. Exclusive with `--before`. |
@@ -31,7 +32,7 @@ In a terminal, an omitted Instance is chosen from an interactive list, and an om
 
 The command records one step on the Instance and writes no file into a release. The Gateway checks the whole change against the limits and stores nothing when one fails: an Instance has at most 32 steps, the names are unique, the timeouts add up to at most 3,600 seconds, and `--before` or `--after` must name a step of the same phase. A refusal is `validation.failed` with the reason, which names the failed rule. The step runs during the next [`instance:deploy`](/cli/instance/deploy); the command runs nothing. Creating a name that exists is refused for the same reason: the command has no skip. A change locks the Instance row, so a competing change waits for it. A deploy that has already been admitted refuses to start when a step's command differs from the one it admitted. See [Production deploy steps](/reference/deployments#production-deploy-steps).
 
-The command prints a detail titled `Deploy step: <name>` with Phase, Command, Timeout (seconds) and the request ID; a long command wraps and is never cut. With `--json`, stdout holds the step with `name`, `phase`, `command`, `timeout_seconds` and `request_id`. Activity and errors never contain a step command.
+The command prints a detail titled `Deploy step: <name>` with Phase, Command, Timeout (seconds), Required and the request ID; a long command wraps and is never cut. With `--json`, stdout holds the step with `name`, `phase`, `command`, `timeout_seconds`, `required` and `request_id`. Activity and errors never contain a step command.
 
 ## Errors
 

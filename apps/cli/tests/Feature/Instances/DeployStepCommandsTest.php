@@ -49,6 +49,7 @@ it('creates a deploy step with command phase timeout and placement', function ()
             '--phase' => 'before_activation',
             '--timeout' => '60',
             '--after' => 'cache',
+            '--required' => 'false',
             '--json' => true,
         ])
         ->expectsOutput(deploy_step_json())
@@ -62,6 +63,7 @@ it('creates a deploy step with command phase timeout and placement', function ()
             'phase' => 'before_activation',
             'timeout_seconds' => 60,
             'after' => 'cache',
+            'required' => false,
         ]);
 });
 
@@ -143,6 +145,7 @@ function deploy_step_json(): string
 {
     return json_encode([
         ...deploy_step_payload(),
+        'required' => true,
         'request_id' => deploy_step_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

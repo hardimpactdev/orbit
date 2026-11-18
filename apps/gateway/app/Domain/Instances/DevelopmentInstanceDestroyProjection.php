@@ -11,7 +11,7 @@ use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
-use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Domain\Tasks\TaskLifecycle;
 use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\Instance;
@@ -113,7 +113,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
                 }
                 if ($data['status'] === 'succeeded') {
                     // A task's copy lets go of its group before its row goes; any other Instance has no owner and nothing happens.
-                    app(TaskCopyLifecycle::class)->destroyed($operation->target_id);
+                    app(TaskLifecycle::class)->destroyed($operation->target_id);
                     app(ProjectDirectInstanceDestroyAction::class)->execute(app(InstanceDestroySourceInspection::class)->executable($operation->input), $result);
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     InstanceRemoval::query()->whereKey($operation->input['removal_id'])->update(['status' => InstanceRemovalStatus::Failed,

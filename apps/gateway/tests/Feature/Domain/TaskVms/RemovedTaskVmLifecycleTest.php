@@ -547,7 +547,7 @@ describe('nested-fleet Projects', function (): void {
     };
     $flag = static fn (Project $project) => DB::table('projects')->where('id', $project->id)->update(['nested_fleet' => true]);
 
-    // A task start of such a Project takes the copy path (TaskCopyStart): without a default to copy it is refused by name, and no VM place is used.
+    // A task start of such a Project takes the copy path (TaskStart): without a default to copy it is refused by name, and no VM place is used.
     it('starts no task VM for a Project flagged through the API, with or without a free place', function (int $places) use ($rows): void {
         Queue::fake();
         [, $project] = vmEraHost(taskPlaces: $places);

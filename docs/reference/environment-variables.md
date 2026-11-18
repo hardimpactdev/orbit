@@ -58,6 +58,8 @@ The logins requested as reviewers on a published task pull request are also Gate
 
 `ORBIT_DOCS_ROOT` overrides the Docs tooling's documentation directory, normally repository-root `docs/`. `bin/docs-merge-check` sets it to the temporary checkout's `docs/` directory so all lint rules inspect the selected tree. This local tooling setting is not an Instance environment value. See [the contributor checks](/contributor-guide#checks-that-need-no-network).
 
+After an AppProd Instance moves to release containers, import and sync use the serving clone. Each operation fixes the full commit at admission and checks it again on the Node. A release change requires a new operation. A sync checks the actual live file for unmanaged keys and preserves a tracked `.env.testing`.
+
 ## Operations
 
 The import and update endpoints accept either a positive numeric Instance ID or an exact Route domain in `{instance}`. A selector that matches no Instance returns HTTP 404. A Route domain that has multiple Instance targets returns HTTP 409 with `env.target_ambiguous`. The Instance's recorded placement owns its environment: the owning Node is the Instance's `node_id`, not a Route. An Instance without a Route can still have its environment synchronized. Changing the Project's [task workspace routing setting](/reference/projects#task-workspace-routing) does not change an existing Instance's environment target.

@@ -1,0 +1,52 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Contracts\Console\Kernel;
+use Laravel\Horizon\Contracts\MasterSupervisorRepository;
+use Laravel\Horizon\Contracts\SupervisorRepository;
+
+[$script, $application, $group] = $argv;
+if (! preg_match('~^/system\.slice/orbit-(?:gateway-horizon|process-[1-9][0-9]*-horizon)\.service$~D', $group)) {
+    exit(1);
+}
+
+require $application.'/vendor/autoload.php';
+$app = require $application.'/bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+function inUnit(mixed $pid, string $group): bool
+{
+    return ctype_digit((string) $pid) && (int) $pid > 0
+        && in_array('0::'.$group, @file('/proc/'.$pid.'/cgroup', FILE_IGNORE_NEW_LINES) ?: [], true);
+}
+
+$masters = $app->make(MasterSupervisorRepository::class);
+$supervisors = $app->make(SupervisorRepository::class);
+$deadline = hrtime(true) + 25_000_000_000;
+do {
+    foreach ($masters->all() as $master) {
+        if ($master->status !== 'running' || ! inUnit($master->pid, $group) || empty($master->supervisors)) {
+            continue;
+        }
+        foreach ($master->supervisors as $name) {
+            $supervisor = $supervisors->find($name);
+            if ($supervisor === null || $supervisor->master !== $master->name || $supervisor->status !== 'running'
+                || ! inUnit($supervisor->pid, $group) || array_sum($supervisor->processes ?? []) <= 0) {
+                continue 2;
+            }
+            // PID namespaces can assign identical numbers to both releases. The local
+            // supervisor command must carry the same per-master token as the Redis heartbeat.
+            $arguments = explode("\0", (string) @file_get_contents('/proc/'.$supervisor->pid.'/cmdline'));
+            if (! in_array($name, $arguments, true)) {
+                continue 2;
+            }
+        }
+        exit(0);
+    }
+    usleep(250_000);
+} while (hrtime(true) < $deadline);
+
+fwrite(STDERR, "Candidate Horizon has no ready local master and supervisors.\n");
+exit(1);
