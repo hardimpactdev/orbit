@@ -14,8 +14,10 @@ use App\Jobs\Operations\CompleteExecutorWake;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -135,6 +137,18 @@ final readonly class ExecutorResults
             && ($line['operation'] ?? ($refused ? $id : null)) === $id
             && ($line['action'] ?? ($refused ? $action : null)) === $action
             && ($line['target'] ?? ($refused ? $target : null)) === $target;
+    }
+
+    /** @return array<string, mixed>|null */
+    public static function matchingReceipt(Operation $operation, string $action, mixed $receipt): ?array
+    {
+        try {
+            $line = ValidatedData::object($receipt);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        return self::matches($operation, $action, $line) ? $line : null;
     }
 
     /**

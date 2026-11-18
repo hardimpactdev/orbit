@@ -204,8 +204,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
         $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
         $kept = $this->kept($phase);
         $action = ExecutorPowerIntent::action($operation);
-        $line = $phase['executor'] ?? null;
-        $receipt = $action !== null && is_array($line) && ExecutorResults::matches($operation, $action, $line) ? $line : null;
+        $receipt = $action === null ? null : ExecutorResults::matchingReceipt($operation, $action, $phase['executor'] ?? null);
         if ($action !== null && $succeeded && ! $this->provesSignedSuccess($receipt, $phase)) {
             $succeeded = false;
             $data['status'] = OperationStatus::Failed->value;

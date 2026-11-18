@@ -77,7 +77,15 @@ final readonly class InstanceSleep extends InstancePower
 
     protected function provesSignedSuccess(?array $receipt, array $phase): bool
     {
-        return parent::provesSignedSuccess($receipt, $phase) && in_array($receipt['receipt']['sleep'] ?? null, ['frozen', 'stopped'], true);
+        return parent::provesSignedSuccess($receipt, $phase) && self::hasSleepOutcome($receipt);
+    }
+
+    /** @param array<string, mixed>|null $receipt */
+    public static function hasSleepOutcome(?array $receipt): bool
+    {
+        $measured = $receipt['receipt'] ?? null;
+
+        return is_array($measured) && in_array($measured['sleep'] ?? null, ['frozen', 'stopped'], true);
     }
 
     protected function open(Instance $instance, bool $join): ?Operation

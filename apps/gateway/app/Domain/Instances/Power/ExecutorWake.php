@@ -241,16 +241,17 @@ final readonly class ExecutorWake
         $this->lock->run('relay', $operationId, static function () use ($operationId, $timeout, $budget): void {
             $claim = static fn (): ?array => DB::transaction(static function () use ($operationId): ?array {
                 $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->firstOrFail();
-                $published = $operation->state[self::PublishedAt] ?? null;
-                $wire = $operation->state[self::Wire] ?? null;
+                $state = $operation->state ?? [];
+                $published = $state[self::PublishedAt] ?? null;
+                $wire = $state[self::Wire] ?? null;
                 if (! is_int($published) || ! is_string($wire) || self::untilAcceptance($operation) > 0
                     || $operation->status !== OperationStatus::Running || $operation->cancel_requested_at !== null || $operation->executor_result !== null
-                    || isset($operation->state[self::RelayAttempted])
+                    || isset($state[self::RelayAttempted])
                     || ($operation->executor_accepted_us !== null && $operation->executor_accepted_us <= ($published + self::AcceptanceMs) * 1000)
                     || now()->getTimestampMs() >= $published + ExecutorOrderSigner::ExpiresAfterMs) {
                     return null;
                 }
-                $operation->forceFill(['state' => [...$operation->state, self::RelayAttempted => now()->getTimestampMs()]])->save();
+                $operation->forceFill(['state' => [...$state, self::RelayAttempted => now()->getTimestampMs()]])->save();
 
                 return [$operation, $wire];
             });
@@ -300,7 +301,7 @@ final readonly class ExecutorWake
             $power = $sleep ? app(InstanceSleep::class) : app(InstanceWake::class);
             if ($managed) {
                 $code = ($line['status'] ?? null) === 'refused' ? 'executor.order_refused' : ($line['code'] ?? 'executor.power_failed');
-                if ($sleep && $success && ! in_array($line['receipt']['sleep'] ?? null, ['frozen', 'stopped'], true)) {
+                if ($sleep && $success && ! InstanceSleep::hasSleepOutcome($line)) {
                     $success = false;
                     $code = 'executor.sleep_receipt_missing';
                 }
@@ -359,7 +360,7 @@ final readonly class ExecutorWake
     private function recoveryStarts(): Builder
     {
         return Operation::query()->where('state->'.self::Recovery, true)->where('status', OperationStatus::Queued)
-            ->whereNull('state->start_deferrals')->where('state->'.self::RecoveryQueued, '<=', now()->timestamp - self::HandoffLeaseSeconds);
+            ->whereNull('state->start_deferrals')->where('state->'.self::RecoveryQueued, '<=', now()->getTimestamp() - self::HandoffLeaseSeconds);
     }
 
     private function retryRecoveryStart(int $operationId): bool

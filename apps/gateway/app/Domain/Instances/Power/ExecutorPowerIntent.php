@@ -54,18 +54,20 @@ final class ExecutorPowerIntent
         if ($operation->target_type !== 'instance') {
             return null;
         }
+        $deployment = $operation->input['deployment'] ?? null;
+        $removal = $operation->input['container_destroy'] ?? null;
 
         return match (true) {
             $phase === 'power' && self::managed($operation) && $operation->kind === InstanceSleep::Kind => 'sleep',
             $phase === 'power' && self::managed($operation) && $operation->kind === InstanceWake::Kind => 'wake',
             $operation->kind === InstanceStart::Kind && self::managed($operation),
-            $operation->kind === 'instance.deploy' && ($operation->input['deployment'][self::Managed] ?? false) === true => match ($phase) {
+            $operation->kind === 'instance.deploy' && is_array($deployment) && ($deployment[self::Managed] ?? false) === true => match ($phase) {
                 'resume' => 'wake',
                 'boot' => 'discard',
                 default => null,
             },
             $phase === 'removal' && in_array($operation->kind, ['instance.destroy', 'instance.unregister'], true)
-                && ($operation->input['container_destroy'][self::Managed] ?? false) === true => 'discard',
+                && is_array($removal) && ($removal[self::Managed] ?? false) === true => 'discard',
             default => null,
         };
     }
@@ -73,7 +75,8 @@ final class ExecutorPowerIntent
     public static function sign(Operation $operation, string $phase = 'power'): SignedExecutorOrder
     {
         $action = self::action($operation, $phase) ?? throw new LogicException('This Operation has no signed power intent.');
-        $container = $operation->input['container'] ?? $operation->input['deployment']['container'] ?? null;
+        $deployment = $operation->input['deployment'] ?? null;
+        $container = $operation->input['container'] ?? (is_array($deployment) ? ($deployment['container'] ?? null) : null);
         $powerCheck = match (true) {
             $action === 'sleep' && ($operation->input['route'] ?? false) === true => 'route',
             $action === 'wake' && is_array($container) && array_key_exists('web_config', $container) && $container['web_config'] === null => 'no_web',
@@ -88,8 +91,8 @@ final class ExecutorPowerIntent
     {
         foreach (['resume', 'boot'] as $phase) {
             $action = self::action($operation, $phase);
-            if ($action !== null && is_array($receipt) && ExecutorResults::matches($operation, $action, $receipt)) {
-                return $receipt;
+            if ($action !== null && ($line = ExecutorResults::matchingReceipt($operation, $action, $receipt)) !== null) {
+                return $line;
             }
         }
 
