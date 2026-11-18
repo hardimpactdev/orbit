@@ -47,6 +47,7 @@ final readonly class NativeInstanceEnvironmentSync
             'environment' => $context->environment, 'base' => $context->path, 'user' => $context->executionUser,
             'keys' => $files['keys'], 'owned_keys' => $instance->environment_owned_keys ?? [],
             'sha256' => hash('sha256', $files['content']),
+            ...($context->productionContainer ? ['sql_sha256' => ProductionDatabaseEndpoints::routeDigest($files['sql'])] : []),
             'testing' => $files['testing'] === null ? null : ['sha256' => hash('sha256', $files['testing']['content']),
                 'test_database' => $files['testing']['test_database']], 'testing_skipped' => $skipped,
             'runtime' => $context->environment === 'production' && $includeRuntime ? $this->runtime($instance) : null];
@@ -71,7 +72,7 @@ final readonly class NativeInstanceEnvironmentSync
                 'content' => $files['content'], 'testing' => $files['testing']['content'] ?? null,
                 'force' => ($operation->input['force'] ?? false) === true, 'laravel' => $instance->source_is_laravel === true,
                 'managed_keys' => array_values(array_unique([...ValidatedData::stringList($plan['keys']), ...ValidatedData::stringList($plan['owned_keys'])])),
-                'restart_units' => $units];
+                'restart_units' => $units, 'sql' => $files['sql']];
 
             return ['intent' => ['target' => $target, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node)],
                 'execution_secrets' => ['environment' => $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-'.$operation->id, json_encode($payload, JSON_THROW_ON_ERROR))]];
@@ -87,7 +88,7 @@ final readonly class NativeInstanceEnvironmentSync
             'execution_secrets' => $secrets];
     }
 
-    /** @return array{content:string,keys:list<string>,testing:array{content:string,test_database:string}|null} */
+    /** @return array{content:string,keys:list<string>,sql:list<array<string,int|string>>,testing:array{content:string,test_database:string}|null} */
     public function admittedFiles(Operation $operation): array
     {
         $plan = ValidatedData::object($operation->input['direct_environment']);
@@ -100,14 +101,15 @@ final readonly class NativeInstanceEnvironmentSync
         $files = $this->render($context, ($plan['testing_skipped'] ?? null) === null);
         $testing = $files['testing'] === null ? null : hash('sha256', $files['testing']['content']);
         $planned = $plan['testing'] === null ? null : ValidatedData::object($plan['testing'])['sha256'];
-        if (hash('sha256', $files['content']) !== $plan['sha256'] || $testing !== $planned) {
+        if (hash('sha256', $files['content']) !== $plan['sha256'] || $testing !== $planned
+            || (isset($plan['sql_sha256']) && $plan['sql_sha256'] !== ProductionDatabaseEndpoints::routeDigest($files['sql']))) {
             throw new ResourceOperationException('env.configuration_changed', 'The Instance environment changed after admission.', 409);
         }
 
         return $files;
     }
 
-    /** @return array{content:string,keys:list<string>,testing:array{content:string,test_database:string}|null} */
+    /** @return array{content:string,keys:list<string>,sql:list<array<string,int|string>>,testing:array{content:string,test_database:string}|null} */
     private function render(InstanceEnvironmentContext $context, bool $writeTesting): array
     {
         $values = $this->store->synchronizationSnapshot($context)->values();
@@ -120,8 +122,21 @@ final readonly class NativeInstanceEnvironmentSync
             $values['DB_DATABASE'] = '/srv/shared/database.sqlite';
         }
 
-        return ['content' => $this->renderer->render($context, $values), 'keys' => array_keys($values),
-            'testing' => $testing === null ? null : ['content' => $this->renderer->render($context, $testing->values),
+        $sql = [];
+        $testValues = $testing?->values;
+        if ($context->productionContainer) {
+            $projected = app(ProductionDatabaseEndpoints::class)->project($context->instanceId, $values);
+            $values = $projected['values'];
+            $sql = $projected['sql'];
+            foreach ($sql as $endpoint) {
+                if ($testValues !== null) {
+                    $testValues[$endpoint['prefix'].'_HOST'] = (string) $endpoint['listen'];
+                }
+            }
+        }
+
+        return ['sql' => $sql, 'content' => $this->renderer->render($context, $values), 'keys' => array_keys($values),
+            'testing' => $testing === null ? null : ['content' => $this->renderer->render($context, $testValues ?? []),
                 'test_database' => $testing->testDatabase]];
     }
 

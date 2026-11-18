@@ -189,14 +189,6 @@ final readonly class ProcessTargetResolver
     private function instanceContext(Instance $instance, bool $allowRemovingRole = false): ProcessTarget
     {
         $this->ensureLinux($instance->node);
-        $release = ProductionContainerRelease::target($instance);
-        if ($release !== null) {
-            $directory = ProductionContainerUnits::directory($instance);
-
-            return new ProcessTarget($instance->node, 'orbit', $directory, instance: $instance,
-                environmentFile: $directory.'/.env', container: $release);
-        }
-
         // An Instance in a container runs its Processes as `www-data` units in the container, with the workspace's .env
         // (docs/reference/development-containers.md#processes).
         $runtime = $instance->runtime()->first();
@@ -213,6 +205,14 @@ final readonly class ProcessTargetResolver
                 container: ['instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
                     'app_account' => InstanceImage::appAccount()],
             );
+        }
+
+        $release = ProductionContainerRelease::target($instance);
+        if ($release !== null) {
+            $directory = ProductionContainerUnits::directory($instance);
+
+            return new ProcessTarget($instance->node, 'orbit', $directory, instance: $instance,
+                environmentFile: $directory.'/.env', container: $release);
         }
 
         $appDevPlacement = $instance->placedOnAppDev()

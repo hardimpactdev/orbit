@@ -4,6 +4,7 @@ import json
 import os
 import pwd
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -150,6 +151,8 @@ def main():
     version = record["php_version"]
     if not re.fullmatch(r"[0-9]+[.][0-9]+", version):
         raise ValueError("invalid release runtime")
+    runpy.run_path("/usr/local/libexec/orbit-instance-release-sql")["reconcile"](
+        instance, machine, version, plan.pop("sql", []), verify_only=True)
     plan.update(routes=record["routes"], php=f"/opt/orbit-runtime/current/php/{version}/bin/php")
     guest = subprocess.run([*incus, "runuser", "-u", "orbit", "--", "/usr/bin/python3", "-c", Path(__file__).read_text(), "--guest"],
                            input=json.dumps(plan), capture_output=True, text=True, timeout=180, check=False)

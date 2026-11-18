@@ -277,6 +277,16 @@ class Release:
                 if (read(filename, {}) or {}).get("operation_id") == self.operation:
                     filename.unlink(missing_ok=True)
 
+    def sql(self, machine, rows, *, verify_only=False):
+        try:
+            runpy.run_path(str(LIB / "orbit-instance-release-sql"))["reconcile"](
+                self.instance, machine, self.state["php_version"], rows, verify_only=verify_only)
+        except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            raise Refusal("deployment.database_unreachable: could not verify the selected SQL login from the release") from error
+
+    def sql_input(self):
+        return self.private / ("sql-" + str(self.operation) + ".json")
+
     def build(self, plan):
         self.parse_plan(plan)
         if legacy := plan.get("legacy"):
@@ -297,6 +307,10 @@ class Release:
             safe = {key: plan[key] for key in ("action", "routes", "health_path", "php_version", "application_suffix")}
             self.persist(**safe, operation=self.operation, sha=self.sha, plan_digest=fingerprint, previous=self.inventory["live"],
                          previous_old=self.inventory["old"], legacy=plan.get("legacy"), shared_paths=plan["shared_paths"], units=[], completed_steps=[], step_outcomes=[])
+        sql = plan.get("sql", [])
+        if sql:
+            save(self.sql_input(), sql)
+        self.persist(has_sql=bool(sql))
         if plan["action"] == "rollback":
             if self.inventory["old"] != self.sha:
                 raise Refusal("rollback.release_not_retained: selected release is not old")
@@ -304,6 +318,7 @@ class Release:
             self.identity(self.sha)
             self.persist(rollback_awake=True, php_version=metadata["php_version"])
             self.primitive("resume", self.sha[:12], self.operation)
+            self.sql(self.name, sql)
             self.guest_action(self.name, "environment", plan)
             application = WORK + self.state["application_suffix"]
             if self.user(self.name, "test", "-f", "bootstrap/cache/config.php", cwd=application, check=False).returncode == 0:
@@ -322,6 +337,7 @@ class Release:
             run([LIB / "orbit-instance-release-prepare", str(self.instance), plan["php_version"]], timeout=1500)
             if not existed:
                 self.primitive("wake", self.operation)
+            self.sql(self.prep, sql)
             self.reserve(plan, measured=True)
             self.route_files("prepare")
             self.guest_action(self.prep, "checkout", plan)
@@ -495,6 +511,7 @@ class Release:
         info = self.identity(self.sha)
         if info["config"][self.ctl["PREFIX"] + "artifact"] != self.state["artifact"]:
             raise Refusal("deployment.selection_invalid: different sealed artifact")
+        self.sql(self.name, read(self.sql_input()) if self.state.get("has_sql") else [], verify_only=True)
         head = self.user(self.name, "git", "--no-replace-objects", "rev-parse", "HEAD").stdout.strip()
         if head != self.sha:
             raise Refusal("deployment.selection_invalid: different revision in candidate")
@@ -853,6 +870,7 @@ class Release:
             self.discard(old)
         self.route_files("finish")
         self.free_capacity()
+        self.sql_input().unlink(missing_ok=True)
         self.persist(retired=True)
         (self.private / "after.json").unlink(missing_ok=True)
 
@@ -883,6 +901,7 @@ class Release:
         self.park()
         self.free_capacity()
         (self.private / "after.json").unlink(missing_ok=True)
+        self.sql_input().unlink(missing_ok=True)
         self.persist(cleaned=True)
 
     def readback(self):

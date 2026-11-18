@@ -182,6 +182,12 @@ The switch, the visitor wake and the handover serialize against the Instance’s
 
 ## Database
 
+AppProd derives each MySQL or PostgreSQL route from the Instance's Database attachment and the server Process's private TCP publication. The selected WireGuard or LAN address must match that publication. This also applies when the Database server runs on the same Node. The Gateway renders each attachment's guest-loopback address in the release environment. Incus binds its listener inside that Instance’s guest and connects to the server’s private address. Two attachments can use the same server port.
+
+Preparation authenticates with the attached application's login and runs `SELECT 1` before deployment steps. Each candidate repeats the query before traffic switches. Rollback reconciles the retained container's listeners against the current attachments and repeats the same checks. An unverified endpoint or a server configured solely through `DB_*` prevents the release from switching. Login details travel through the release's private execution input.
+
+After changing an attachment's route, deploy the Instance to install and verify the new route. An ordinary `env:sync` on a serving release verifies that the installed routes still match its attachments before writing the environment. It can apply a credential change on an existing route.
+
 Every release container uses the Instance's one shared database. Migrations run during the preparation build before the switch, so live's code must work on the migrated schema:
 
 - Each schema change follows expand and contract. A change that live cannot read is split over two deploys.

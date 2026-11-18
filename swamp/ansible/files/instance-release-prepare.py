@@ -3,6 +3,7 @@
 import argparse
 import json
 import re
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -134,7 +135,8 @@ def prepare(instance, php):
     tagged(prep["config"], target)
     if prep["config"].get(ROLE) != "prepare" or prep["config"].get("boot.autostart") != "false" or prep["profiles"]:
         raise ValueError("Unexpected preparation container")
-    if set(prep["expanded_devices"]) - {"root", "eth0", "runtime", "vite-plus", "shared"}:
+    sql = runpy.run_path("/usr/local/libexec/orbit-instance-release-sql")["approved_devices"](prep)
+    if set(prep["expanded_devices"]) - {"root", "eth0", "runtime", "vite-plus", "shared", *sql}:
         raise ValueError("Preparation container has unrecognized devices")
     ensure_device(machine, "root", {"type":"disk","pool":pool,"path":"/"})
     ensure_device(machine, "eth0", {"type":"nic","network":network})

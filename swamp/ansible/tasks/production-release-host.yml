@@ -78,6 +78,7 @@
     - {src: files/instance-control-schedule.py, name: orbit-instance-control-schedule}
     - {src: files/instance-legacy-schedule.py, name: orbit-instance-legacy-schedule}
     - {src: files/instance-control-environment.py, name: orbit-instance-control-environment}
+    - {src: files/instance-release-sql.py, name: orbit-instance-release-sql}
     - {src: files/instance-release-guest.py, name: orbit-instance-release-guest}
     - {src: files/instance-release-prepare.py, name: orbit-instance-release-prepare}
     - {src: "{{ playbook_dir }}/module_utils/orbit_route_withdraw.py", name: orbit_route_withdraw.py}

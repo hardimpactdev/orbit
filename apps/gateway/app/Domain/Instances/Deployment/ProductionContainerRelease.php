@@ -9,6 +9,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeFailedStep;
@@ -35,6 +36,13 @@ use Illuminate\Support\Facades\DB;
 final readonly class ProductionContainerRelease
 {
     public const string Workflow = 'production-release';
+
+    // The shared chart bounds selection/restore, verification, drain, retirement and cleanup separately.
+    // Include its clone, parallel readiness/park, SSH and queue allowances in the outer deadline.
+    public const int HandoverBudgetSeconds = 7800;
+
+    // Each SSH phase in production-release declares this maximum in its input schema.
+    public const int MaximumPhaseSeconds = 90000;
 
     public const array Terminal = ['job' => 'release', 'step' => 'Read the serving release', 'native' => true,
         'captures' => ['receipt' => ['job' => 'release', 'step' => 'Read the serving release', 'field' => 'stdout']]];
@@ -99,7 +107,7 @@ final readonly class ProductionContainerRelease
         if (! is_array($steps) || ! array_is_list($steps)) {
             throw new \LogicException('Invalid deployment step list.');
         }
-        $before = 2400;
+        $before = $material['needs_vp'] === true ? 3450 : 2400;
         $after = 60;
         $optional = [];
         foreach ($steps as $step) {
@@ -115,7 +123,11 @@ final readonly class ProductionContainerRelease
             }
         }
 
-        return ['commit' => $sha, 'run_budget_seconds' => $before + $after + 900, 'direct_environment' => $environment, 'production_release' => [
+        if ($before > self::MaximumPhaseSeconds || $after > self::MaximumPhaseSeconds) {
+            throw new ResourceOperationException('deployment.step_budget_exceeded', 'The configured commands exceed the Swamp release phase deadline.', 422);
+        }
+
+        return ['commit' => $sha, 'run_budget_seconds' => $before + $after + self::HandoverBudgetSeconds, 'direct_environment' => $environment, 'production_release' => [
             'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'project_id' => $instance->project_id,
             'sha' => $sha, 'legacy_commit' => $current, 'retained' => $rollback, 'expected_live' => $instance->production_release['live'] ?? null,
             'build_timeout_seconds' => $before, 'after_timeout_seconds' => $after, 'optional_steps' => $optional,
@@ -175,6 +187,7 @@ final readonly class ProductionContainerRelease
             'repository' => $instance->project->repository_url, 'branch' => $configuration->branch,
             'application_suffix' => ProductionApplicationPaths::suffix($instance->root ?? $instance->project->root),
             'php_version' => $instance->selected_php_version ?? $instance->project->php_version ?? '8.5',
+            'needs_vp' => ! $rollback && array_any($configuration->steps, static fn (DeploymentStep $step): bool => InstanceVpEnvironmentMaterial::required($step->name, $step->command)),
             'shared_paths' => SharedPaths::forProduction($instance), 'routes' => $routes,
             'health_path' => $instance->project->is_laravel ? '/up' : '/',
             'steps' => $rollback ? [] : array_map(fn (DeploymentStep $step): array => ['name' => $step->name, 'phase' => $step->phase->value,
@@ -200,7 +213,7 @@ final readonly class ProductionContainerRelease
         $intent = ['target' => 'instance-'.$instance->id, 'instance_id' => $instance->id, 'sha' => $release['sha'], 'retained' => $rollback, 'build_timeout_seconds' => $release['build_timeout_seconds'], 'after_timeout_seconds' => $release['after_timeout_seconds'], 'ssh' => app(SwampSshExecutionInput::class)->forNode($instance->node)];
         $files = app(NativeInstanceEnvironmentSync::class)->admittedFiles($operation);
         $private = [...$material, 'operation_id' => $operation->id, 'node_id' => $instance->node_id,
-            'instance_id' => $instance->id, 'sha' => $release['sha'], 'environment' => $files['content'],
+            'instance_id' => $instance->id, 'sha' => $release['sha'], 'environment' => $files['content'], 'sql' => $files['sql'],
             ...($files['testing'] === null ? [] : ['testing_environment' => $files['testing']['content']])];
         if ($material['legacy'] !== null) {
             // A previously scheduled host fire must not start after the final data copy.
