@@ -24,7 +24,7 @@ GIT_ENV = {**os.environ, 'GIT_AUTHOR_NAME': 'Orbit', 'GIT_AUTHOR_EMAIL': 'orbit@
 
 
 def git(folder, *args):
-    return subprocess.run(['git', '-c', 'protocol.file.allow=always', *args], cwd=folder, env=GIT_ENV,
+    return subprocess.run(['git', '-c', 'protocol.file.allow=always', '-c', 'maintenance.auto=false', *args], cwd=folder, env=GIT_ENV,
                           check=True, capture_output=True, text=True).stdout.strip()
 
 
@@ -71,6 +71,18 @@ class RetentionTest(unittest.TestCase):
         self.assertRegex(receipt['retained_git_at'], r'^\d{4}-\d{2}-\d{2}T')
         self.assertFalse(self.source.exists())
         return receipt
+
+    def test_fixture_setup_commit_starts_no_automatic_maintenance(self):
+        checkout = self.folder / 'setup'
+        checkout.mkdir()
+        git(checkout, 'init', '--quiet', '--initial-branch=main')
+        # Force real maintenance into the foreground, not a timing-sensitive wait.
+        for key, value in [('maintenance.auto', 'true'), ('maintenance.autoDetach', 'false'),
+                           ('maintenance.gc.enabled', 'false'), ('maintenance.loose-objects.enabled', 'true'),
+                           ('maintenance.loose-objects.auto', '1')]:
+            git(checkout, 'config', key, value)
+        git(checkout, 'commit', '--quiet', '--allow-empty', '-m', 'fixture commit')
+        self.assertEqual(list((checkout / '.git/objects/pack').iterdir()), [])
 
     def test_linked_retirement_keeps_all_files_and_independent_recovery_without_changing_owner_or_sibling(self):
         owner = self.source
