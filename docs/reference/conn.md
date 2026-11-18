@@ -229,12 +229,16 @@ After a profile write commits, the Gateway tells the Nodes bound to that profile
 **Generation.** The key is the binding's generation. A socket receives events only while its key is current. A key ends when the Gateway replaces it, and at the latest 15 minutes after it was issued. The Gateway replaces the key in a write transaction on the binding row:
 
 - **Bind.** Every successful `PUT /me/profile`, also to the profile the Node already has.
-- **Renewal.** `GET /me` and `PUT /me/profile` issue a new key for a key older than 5 minutes or ended. So a device that compares every 10 minutes always holds a live key.
-- **Edge removal.** Conn's existing `NodeAccessRemovalHook` replaces the key after every `node:access:remove` of the Node's edges. It does this whatever access remains, so a regrant at the same moment cannot hide the removal.
+- **Renewal.** `GET /me` and `PUT /me/profile` issue a new key for a key older than 5 minutes or ended.
+- **Edge removal.** Conn's existing `NodeAccessRemovalHook` replaces the key on every `node:access:remove` of the Node's edges, whatever access remains.
 - **Serving Node removal.** Conn's existing `NodeRemovalHook` replaces the key of every Node with an edge to the removed Node, before the cascade deletes those edges.
 - **Observed lapse.** A send that finds the Node not `active`, or failing the [collection rule](#access), replaces the key.
 
 Node removal deletes the binding. Keys are random, so two replacements in the same second still give two keys.
+
+`RemoveNodeAccessAction` deletes the edge and runs `NodeAccessRemovalHook` in one database transaction. That transaction commits before any fallible side effect, such as the Metrics access revoker. So no committed deletion leaves the old key, and a regrant cannot fall between the deletion and the new key.
+
+A device that compares every 10 minutes recovers before its key would expire. Another client on the same Node can still renew or rebind in between, so the cadence does not promise an unbroken subscription.
 
 **Bound.** Some authority changes have no hook and can return to the same state:
 
@@ -258,7 +262,9 @@ Otherwise it sends nothing to that binding. While the `conn` switch is off, the 
 
 So a key created after the write never receives its event. Take the binding sequence A₁, B, A₂ around a write to A at A₁. The write captured A₁'s key. The check finds that key ended, so nothing is sent, and A₂'s key never gets this event. A device on A₂ learns the version from its compare after it subscribed.
 
-**Late frames.** The check and the publish request to Reverb are not atomic. If a rebind commits between them, the frame already in flight reaches sockets on the captured key only. Those sockets were authorized for that profile when the write committed. The Gateway never starts a publish to a key that its check found ended. A frame can also arrive late, twice, or out of order, or not arrive at all. No event leaves before its write commits, so a read after an event always shows that version or a later one.
+**Late frames.** The check and the publish request to Reverb are not atomic.
+
+The guarantee is this: a withdrawal still in effect at the final check prevents publication. A frame admitted before a withdrawal or expiry can arrive after it. So if a rebind commits after the check, the frame in flight reaches sockets on the captured key only. The Gateway never starts a publish to a key that its check found ended. A frame can also arrive late, twice, or out of order, or not arrive at all. No event leaves before its write commits, so a read after an event always shows that version or a later one.
 
 **When.** The writers on `main` are below; paths are under `apps/gateway`. A new writer must call `ApplyConnProfileSectionsAction`.
 
