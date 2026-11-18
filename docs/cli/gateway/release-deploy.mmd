@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: docs/reference/feature-flow.md section 6, one Swamp workflow per Gateway release, manual or automatic.
   %% A failed check switches back; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
-  %% status: draft
+  %% status: migrated
   %% command: gateway:release:deploy
   %% kind: gateway.release
   %% behavior name: gateway-release-<step>-209 (fixed)
@@ -17,11 +17,12 @@ sequenceDiagram
   participant AC as Activate run<br/>child · new commit
   participant GN as Gateway Node<br/>Node 14
   alt Recover Swamp after an offline rollback
-    TR->>GW: gateway:release:deploy --reconcile<br/>exact serving SHA
-    GW->>SW: operation-gateway-reconcile
-    SW->>GN: Confirm serving revision and wait for protected Operations
-    SW->>SW: Reload retained workflows on Node 209
-    SW->>GN: Verify public Gateway and exact live selection
+    TR->>GW: gateway:release:deploy<br/>--reconcile · exact serving SHA
+    GW->>SW: Start reconciliation
+    SW->>GN: Check the serving release
+    SW->>SW: Reload serving workflows
+    SW->>GN: Verify the serving release
+    SW->>GN: Release the serving<br/>generation
     SW-->>GW: Verified release record
   else Deploy a release
   TR->>GW: gateway:release:deploy<br/>full sha
@@ -33,10 +34,14 @@ sequenceDiagram
   %%> - the agent pin passes its Sigstore check; CI published the commit's web build
   %%> Result:
   %%> - a running release record; the pin, artifact, Horizon unit and SSH targets frozen as inputs
-  GW->>SW: Start run, full intent<br/>operation-gateway-release
+  GW->>SW: Start release workflow<br/>shared or legacy selection
   %%> What it does:
-  %%> - at run start, mints one read token (contents, actions) into the vault
+  %%> - Container releases select production-release. The host release path selects operation-gateway-release.
+  %%> - At run start, the Gateway writes the scoped read token to the vault.
   GW-->>TR: 202 Accepted<br/>running release record
+  opt Container release
+    Note over SW: Check release ownership
+  end
   SW->>GN: Fetch the commit<br/>shared repository
   %%> What it does:
   %%> - fetches the commit with the read token when the shared repository lacks it; the token reaches git only in its environment
@@ -83,7 +88,14 @@ sequenceDiagram
     Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
     %%> What it does:
     %%> - the load child checks the target on the Gateway Node before updating the checkout, grants and loaded workflows
-    Note over SW: Hand over the release<br/>gateway-release-activate
+    opt Container release
+      SW->>GN: Read the activation<br/>workflow
+    end
+    alt Retained Gateway activation
+      SW->>AC: Hand over a retained<br/>Gateway release
+    else Selected activation
+      Note over SW: Hand over the release<br/>run the selected child
+    end
     %%> Why:
     %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
     opt the Gateway serves through host PHP-FPM

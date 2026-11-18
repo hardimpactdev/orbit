@@ -150,7 +150,7 @@ jobs:
   - name: Clone the prepared release
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    guard: '${{ inputs.kind == "instance.rollback" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     dependsOn:
     - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -392,7 +392,7 @@ jobs:
   - name: Hand over a retained Gateway release
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !(inputs.kind == "gateway.release" && steps["Read the activation workflow"].outputs.stdout.trim() == "gateway-release-activate") }}'
+    guard: '${{ inputs.kind != "gateway.release" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || steps["Read the activation workflow"].outputs.stdout.trim() != "gateway-release-activate" }}'
     dependsOn:
     - {step: Check the candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Check the Instance candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}

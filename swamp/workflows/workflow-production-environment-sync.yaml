@@ -9,7 +9,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {const: instance.sync_environment}
+    kind: {type: string, const: instance.sync_environment}
     intent: {type: object, required: [target, ssh_execution]}
     execution_secrets:
       type: object

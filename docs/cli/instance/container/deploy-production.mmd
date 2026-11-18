@@ -6,16 +6,18 @@ sequenceDiagram
   participant CLI as CLI / MCP
   participant GW as Gateway
   participant SW as Swamp
-  participant N as Owning AppProd Node
-  CLI->>GW: instance:deploy and optional pinned commit
-  GW->>GW: Hold this Instance and record the admitted commit
-  Note over GW: First checkout migration pins its serving commit
-  GW->>SW: Start production-release with a private vault reference
-  SW->>N: Validate Instance, Node, source, live selection and prerequisites
-  SW->>N: Wake preparation, deploy, migrate and seal the build
-  SW->>N: Clone the finished build and sleep preparation
-  SW->>N: Verify candidate and switch the Instance Routes
-  SW->>N: Handover workloads, drain and freeze former live
-  SW->>N: Read actual live and old identities
-  SW-->>GW: Operation, Node, Instance, commit and artifact receipt
-  GW-->>CLI: Record verified selection and deployment outcome
+  participant N as AppProd Node<br/>Instance owner
+  CLI->>GW: instance:deploy<br/>optional pinned commit
+  GW->>GW: Hold the Instance<br/>record its admitted commit
+  Note over GW: First host migration<br/>pin the serving commit
+  GW->>SW: Start production-release<br/>private Operation input
+  SW->>N: Verify target and source<br/>check room for the release
+  SW->>N: Build in preparation<br/>apply deploy steps and seal
+  SW->>N: Clone the sealed build
+  SW->>N: Sleep preparation<br/>reclaim memory to swap
+  SW->>N: Check candidate readiness
+  SW->>N: Switch Instance Routes<br/>hand over Processes and Schedules
+  SW->>N: Drain and freeze old live<br/>retain it for rollback
+  SW->>N: Read live and old commits
+  SW-->>GW: Verified release receipt<br/>Node, Instance, commit and digest
+  GW-->>CLI: Record the result<br/>verified live and rollback commits

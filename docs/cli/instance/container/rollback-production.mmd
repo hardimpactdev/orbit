@@ -6,14 +6,15 @@ sequenceDiagram
   participant CLI as CLI / MCP
   participant GW as Gateway
   participant SW as Swamp
-  participant N as Owning AppProd Node
-  CLI->>GW: instance:rollback with the previous release name
-  GW->>GW: Check the retained commit and hold this Instance
-  GW->>SW: Start production-release for the retained commit
-  SW->>N: Check target ownership and the current live selection
-  SW->>N: Wake rollback and apply current environment
-  SW->>N: Verify readiness and switch the Instance Routes
-  SW->>N: Handover workloads, drain and freeze former live
-  SW->>N: Read actual live and old identities
-  SW-->>GW: Operation, Node, Instance, commit and artifact receipt
-  GW-->>CLI: Record the verified selection and rollback outcome
+  participant N as AppProd Node<br/>Instance owner
+  CLI->>GW: instance:rollback<br/>previous release
+  GW->>GW: Hold the Instance<br/>confirm its rollback commit
+  GW->>SW: Start production-release<br/>private Operation input
+  SW->>N: Confirm current live<br/>check retained commit
+  SW->>N: Wake retained container<br/>apply current environment
+  SW->>N: Check candidate readiness
+  SW->>N: Switch Instance Routes<br/>hand over Processes and Schedules
+  SW->>N: Drain and freeze old live<br/>retain it for rollback
+  SW->>N: Read live and old commits
+  SW-->>GW: Verified release receipt<br/>Node, Instance, commit and digest
+  GW-->>CLI: Record the result<br/>verified live and rollback commits

@@ -106,7 +106,7 @@ return [
                 'route_hold_release' => ['job' => 'unregister', 'step' => 'Release the Route Nodes', 'field' => 'stdout']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']]],
     'instance.deploy' => [
-        'workflow' => 'operation-instance-deploy-direct', 'alternate_workflows' => [ProductionContainerRelease::Workflow],
+        'workflow' => 'operation-instance-deploy-direct', 'alternate_workflows' => ['production-release'],
         'alternate_results' => [ProductionContainerRelease::Workflow => ProductionContainerRelease::Terminal],
         // Development ends with the checkout's end check, a container default with "Finish the container", whose last phase is its
         // check, and production with the deployment's; the Vite+ runtime the steps ran under comes as one capture. Every step runs on
@@ -126,7 +126,7 @@ return [
         'projection' => InstanceDeployProjection::class,
     ],
     // The link read back after the swap is the end check; every step runs on Node 209 over official SSH.
-    'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'alternate_workflows' => [ProductionContainerRelease::Workflow],
+    'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'alternate_workflows' => ['production-release'],
         'alternate_results' => [ProductionContainerRelease::Workflow => ProductionContainerRelease::Terminal],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^production-release-operation-[1-9][0-9]*$']], 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'rollback', 'step' => 'Check the selection', 'native' => true], 'projection' => InstanceRollbackProjection::class],
