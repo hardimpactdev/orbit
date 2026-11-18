@@ -14,6 +14,8 @@ covers:
   - swamp/workflows/workflow-operation-instance-start.yaml
 ---
 
+With signed power enabled, native delivery and relay recovery share one `instance.wake` Operation. A visitor whose wake completes within the request bound receives the app's own response to the original request. Otherwise the progress page keeps waiting for that Operation.
+
 Wake one sleeping development container Instance: a clone, a Project's default, or a nested-fleet Instance. A visit to its Route does the same, so you rarely need this command. Planned: a production Instance's live release container wakes the same way, and Caddy holds its visitor instead of a page ([Production containers](/reference/production-containers#sleep-and-wake)). A deployment of a sleeping Instance wakes it too. After an [automatic deployment](/reference/deployments#automatic-development-defaults), a default may sleep again at the next sweep. A clone or a task copy of an asleep default needs no wake: it copies the default's seed snapshot. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
 ## Usage

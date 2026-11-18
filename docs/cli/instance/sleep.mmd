@@ -3,7 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
-  %% ADR 0266 slice 4: the proof-only executor.power_proof Operation signs sleep/discard; production instance.sleep stays below until slices 7/8.
+  %% ADR 0266 slice 7: ordinary sleep and the idle sweep share one admitted Operation and one signed action.
   %% Executor sleep: record and fsync non-max subtree swap limits, open them, freeze through Incus local API, scan every process in parallel (readable mappings, pagemap bits 63 OR 62, excluding bit 58 guard markers), atomically fsync the plan, reclaim until memory.current settles or 2 s, apply the 32 MiB anonymous policy, write the asleep marker. Recovery keeps an existing valid plan. Discard removes plan and limits after stop/destroy/fresh boot.
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
@@ -47,8 +47,25 @@ sequenceDiagram
   %%> On failure:
   %%> - no container, a non-development Instance, an active task or lifecycle work starts no run
   %%> - planned: the reason `not_development` goes; a production Instance is admitted for its live only
-  GW->>SW: Start run, full intent<br/>operation-instance-sleep
   GW-->>CLI: 202 Accepted<br/>Operation ID
+  alt signed power enabled at admission
+    %% path: signed-sleep
+    GW->>N: Publish signed sleep<br/>executor-order · WebSocket
+    %%> - Check the loaded Caddy rule before any freeze and put up the marker before the app stops answering. Without a published Route there is no site to check.
+    %%> - The executor owns freeze, capture, swap and the final marker; it rolls back a failed freeze and never stops a nested fleet.
+    opt no accepted line within 150 ms
+      GW->>N: Relay same order<br/>SSH · stdin
+    end
+    opt no terminal result within 6 s
+      GW->>SW: Recover the same Operation<br/>operation-instance-sleep
+      SW->>GW: Sign fresh order<br/>bound Operation
+      SW->>N: Relay fresh order<br/>SSH · stdin
+      SW-->>GW: Return executor receipt
+    end
+    Note over GW: Project sleep or failure<br/>one terminal Operation
+    %%> - A known refusal or failure does not start recovery or record asleep. Repeated deliveries return the first result without freezing twice.
+  else signed power disabled at admission
+  GW->>SW: Start run, full intent<br/>operation-instance-sleep
   SW->>N: Sleep the container<br/>Ansible · tags prepared_sleep
   %%> What it does:
   %%> - one phase: first installs the power helper from this commit when it differs and probes it, so a failed install changes nothing a visitor sees
@@ -114,6 +131,7 @@ sequenceDiagram
     %%> - `power_state` stays as it was. A marker left on a running container is harmless: the next request wakes the Instance, which removes it
     %%> Retry:
     %%> - the same command again
+  end
   end
   loop until terminal
     CLI->>GW: operation:show TASK

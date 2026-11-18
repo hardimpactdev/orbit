@@ -3,7 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
-  %% ADR 0266 slice 5: the proof-only executor.power_proof Operation signs wake; production instance.wake stays below until slices 6-8.
+  %% ADR 0266 slice 7: signed power applies to ordinary wakes and recovers through the same Operation.
   autonumber
   %% lane CL icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -21,7 +21,6 @@ sequenceDiagram
   %%> - unfreeze through the Incus local API with its 5 s bounds, then wait up to 5 s for the kernel thaw; a kernel freeze that stays, or one Incus lost before the wake, fails `instance.container_frozen_unmanaged` with no cgroup write
   %%> - close exactly the recorded swap limits, with no disk sync; one readiness request to the web port until an answer below 500, within 1.5 s, else `instance.web_unready` and the marker stays; then remove the asleep marker
   %%> - a stopped container fails `instance.container_stopped` and drops its plan: a boot is the run's work; a running one gets only the steps after the unfreeze (`done`), so crash recovery and a repeat are safe
-  %%> - no production flow switches in this slice: slice 6 has the Gateway call it, slice 7 Swamp and the relay
   CL->>GW: instance:wake INSTANCE
   %%> Command:
   %%> - `orbit instance:wake INSTANCE`
@@ -40,14 +39,14 @@ sequenceDiagram
   %%> When:
   %%> - an active development container, a default and a nested-fleet Instance included
   %%> - planned: a production Instance's live release container; the wake is admitted beside an open deploy or rollback, which changes live only after its switch; the switch and the wake take the Instance's power lock
-  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) only with executor wakes off, and a nested-fleet default refuses: only its deployment starts it
+  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd), and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
   %%> - an open wake of the Instance is joined: a second caller gets the same Operation; Caddy waits within the bound for a signed wake and otherwise gets the progress page
   %%> - a join to a Conn launch's wake records shared use while locking the wake Operation. If launch cleanup already cancelled the queued wake, a new request admits a new wake
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
   %%> - no container, a non-development Instance, a nested-fleet Instance that cannot take the wake or its start, or other lifecycle work admits no wake
-  alt executor wake enabled
+  alt signed wake admitted
     %% path: executor
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
@@ -56,7 +55,11 @@ sequenceDiagram
     %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
     %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it recovers recorded results before publishing any missing order for the same Operation
     %%> - record Operation notices locally and hand them to operations-prompt in the background; the request never enqueues a job
-    %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
+    %%> - the observer passes the order unread to the executor; the normal path needs no SSH, Python or marker/times command
+    opt no accepted line within 150 ms
+      GW->>N: Relay same order<br/>SSH · stdin
+      %%> - The relay and observer can race. A replay without a terminal result does not prove failure or success.
+    end
     GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
     %%> Result:
     %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
@@ -73,10 +76,16 @@ sequenceDiagram
       GW-->>CL: 401 progress page<br/>activation state pending
       %%> Result:
       %%> - the existing page polls every 250 ms and loads the app when the marker goes
-      %%> - a queued completion reads the durable result 6 s after publication, without holding a request worker; done or partial succeeds, refused or failed fails, and no result fails executor.wake_timeout
-      %%> - slice 7 adds the relay and Swamp fallback; until then this path fails without calling either, and the setting stays off by default
+      %%> - a durable completion reads a known result without holding a request worker; done or partial succeeds, refused or failed fails
     end
-  else executor wake disabled
+    opt no terminal result within 6 s, or a legitimate stopped container needs boot
+      GW->>SW: Continue Operation<br/>operation-instance-wake
+      SW->>GW: Sign fresh order<br/>bound Operation
+      SW->>N: Relay fresh order<br/>SSH · stdin
+      %%> - The journal returns the first result or acts once. A confirmed stopped container takes its existing boot and readiness phase; an unmanaged stopped nested default never boots here.
+      SW-->>GW: Return result<br/>terminal projection
+    end
+  else Python wake admitted
   opt Caddy, for a development visit
     GW-->>CL: 401 progress page, at once<br/>spinner only
     %%> Result:
