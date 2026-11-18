@@ -9,8 +9,8 @@ A `base` taken before the Node's heal existed holds neither the heal nor a clean
 
 An Incus Node keeps the pid file of each managed bridge's dnsmasq at `/var/lib/incus/networks/<network>/dnsmasq.pid`. A stop keeps it,
 so a `base` would hold it; at the next start Incus reads it, and a file that is not YAML (an empty one) stops the network. In a stopped
-container no dnsmasq runs, so every such file is stale and goes. The Node's own heal (files/incus-network-pid-heal.py) covers every
-other boot of a disk that still holds one.
+container no dnsmasq runs, so every such file is stale and goes. The guest's own heal (files/incus-network-pid-heal.py, placed by
+the fleet start) covers every other boot of a disk that still holds one.
 
 It reads each container from the inner Incus: a container whose status is not `Stopped` (a frozen one keeps its dnsmasq) is skipped
 and named, and only the root disk in the pool of its `root` device is cleared. The root disk belongs to the nested container's root,

@@ -80,7 +80,9 @@ def owned(text, network, proc, boot_id):
     if not isinstance(keys, dict) or keys.get('name') != 'dnsmasq':
         return False
     pid, start, boot = keys.get('pid'), keys.get('start_time'), keys.get('boot_id')
-    if type(pid) is not int or pid <= 0 or type(start) is not int or not isinstance(boot, str) or not BOOT_ID.fullmatch(boot) or boot != boot_id:
+    if type(pid) is not int or pid <= 0 or type(start) is not int:
+        return False
+    if not isinstance(boot, str) or not BOOT_ID.fullmatch(boot) or boot != boot_id:
         return False
     try:
         with open(f'{proc}/{pid}/comm', encoding='utf-8') as comm, open(f'{proc}/{pid}/stat', encoding='utf-8') as stat_file, \

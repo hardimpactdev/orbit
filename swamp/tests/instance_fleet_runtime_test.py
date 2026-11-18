@@ -157,7 +157,8 @@ class NetworkPidHealTest(unittest.TestCase):
     def process(self, comm='dnsmasq', start=START, interface='--interface=orbitinst0'):
         write(self.proc / str(PID) / 'comm', comm + '\n')
         write(self.proc / str(PID) / 'stat', f'{PID} ({comm}) S 1 {PID} {PID} 0 -1 4194560 ' + ' '.join(['0'] * 12) + f' {start} 4096 0\n')
-        write(self.proc / str(PID) / 'cmdline', ''.join(arg + '\0' for arg in ['dnsmasq', '--keep-in-foreground', interface, '--listen-address=10.253.1.1']))
+        arguments = ['dnsmasq', '--keep-in-foreground', interface, '--listen-address=10.253.1.1']
+        write(self.proc / str(PID) / 'cmdline', ''.join(argument + '\0' for argument in arguments))
 
     def pid_file(self, content):
         return write(self.networks / 'orbitinst0/dnsmasq.pid', content)

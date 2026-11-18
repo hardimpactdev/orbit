@@ -3,14 +3,15 @@
 # `fleet_runtime_names` names (instance_fleet_runtime.py). A stop keeps the file, and an empty one stopped `orbitinst0` on nested-app-dev.
 # - The refresh runs it before it takes `base`, so no `base` holds one.
 # - The reset runs it between the restore of `base` and the start, and its rescue before it starts the containers again: a `base` taken
-#   before the Node's heal (instance-fleet-node.yml) holds neither the heal nor a clean disk.
+#   before the heal (placed by instance-fleet-start.yml) holds neither the heal nor a clean disk.
 # A container that is not stopped (`skipped`) or that could not be checked without following a link (`unsafe`) fails the step, so no
 # `base` is taken and no reset starts it. The rescue sets `fleet_runtime_best_effort`: it never fails there, and the reset keeps its own
 # error. Input: instance-fleet.yml.
 - name: Clear the network pid files of the stopped nested containers
   vars:
     fleet_runtime_result: >-
-      {{ (fleet_runtime.stdout_lines | last | from_json) if fleet_runtime.rc | default(1) == 0 and fleet_runtime.stdout_lines | default([]) | length > 0
+      {{ (fleet_runtime.stdout_lines | last | from_json)
+         if fleet_runtime.rc | default(1) == 0 and fleet_runtime.stdout_lines | default([]) | length > 0
          else {'removed': [], 'skipped': [], 'unsafe': fleet_runtime_names} }}
   ansible.builtin.command:
     argv: >-
