@@ -3,7 +3,6 @@ import { redactText } from "../../_lib/public_output.ts";
 
 /** The longest public transcript of one turn, as for a task VM turn. */
 const TranscriptBytes = 262144;
-const ErrorChars = 2000;
 const StartBytes = 16777216;
 const ReadBytes = 16777216;
 const AskBytes = 1048576;
@@ -46,24 +45,32 @@ const Question = z.object({
     required: z.boolean().optional(),
 });
 const Run = z.object({ id: z.string(), status: z.string() });
-// What `t3_copy_rpc.mjs read` prints: the runs that are not over, every pending request with its questions, and whether the phase may
-// stop the run on them (questions only, stored whole).
-const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ request_id: z.string(), kind: z.string(), questions: z.array(Question) })),
+// What `t3_copy_rpc.mjs read` prints: the runs that are not over, every pending request with its owner run and its questions, and
+// whether the phase may stop the run on them (questions only, stored whole).
+const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ request_id: z.string(), kind: z.string(), run_id: z.string().nullish(),
+    questions: z.array(Question) })),
     stoppable: z.boolean() });
 // What `t3_copy_rpc.mjs interrupt` prints once the run ended or its wait for that did.
 const Stopped = z.object({ interrupted: z.boolean(), error: z.string().nullable(), runs: z.array(Run), pending: z.number().int() });
-// What `t3_copy_rpc.mjs stop` prints: whether the thread's active run stopped, its id and its last state; no run when none was active.
-const Halted = z.object({ stopped: z.boolean(), run: z.string().nullable(), state: z.string().nullable() });
+// What `t3_copy_rpc.mjs stop` prints: whether it stopped the run, whether its last readback shows that exact run in a status that ends
+// it, the run's id and that status.
+const Halted = z.object({ stopped: z.boolean(), over: z.boolean(), run: z.string().nullable(), state: z.string().nullable() });
 const Read = z.object({
     list_exit: z.number().int().nullable(),
+    // The thread the turn sent to, which the read looked for by its ID; null when the turn made no thread and the read looked for its title.
+    thread_id: z.string().nullable().optional(),
     found: z.number().int(),
-    // The status `t3 thread list` gives the thread of this turn's title.
+    // The status `t3 thread list` gives the thread of this turn.
     status: z.string().nullable(),
     show_exit: z.number().int().nullable(),
     show: z.string(),
 }).strict();
 /** Thread states in which T3's run may still change the checkout. */
 const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]);
+/** T3's run statuses that end a run. A run status in neither set is unknown: it names no end and is never echoed. */
+const RunOver = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
+/** The thread states in which T3 runs nothing. A thread state in neither this set nor Active is unknown and names no end. */
+export const ThreadOver = new Set([...RunOver, "idle"]);
 export type Evidence = {
     settle?: z.infer<typeof Settle> | null;
     resumed: z.infer<typeof Resumed> | null;
@@ -93,6 +100,8 @@ const Shown = z.object({
 const Entry = z.object({ id: z.string(), kind: z.literal("message"), label: z.string(), text: z.string(), at: z.string() });
 const AskedQuestion = z.object({
     request_id: z.string(),
+    // The run that owns the request: only that run's question is cancelled when the answer comes. A question without one is never stored.
+    run_id: z.string(),
     id: z.string(),
     header: z.string(),
     question: z.string(),
@@ -111,7 +120,9 @@ export const Turn = z.object({
     ended: z.boolean(),
     t3_thread_id: z.string().nullable(),
     run_id: z.string().nullable(),
-    // Whether the phase launched T3 on the thread: a turn that launched nothing leaves the thread as it was.
+    // Whether the turn's message may have reached T3, and whether T3 confirmed the run it started from it. A turn sent but not launched
+    // is possibly sent: it keeps the thread's stored questions (docs/reference/development-containers.md#stable-ids).
+    sent: z.boolean(),
     launched: z.boolean(),
     // The thread's provider instance and model as T3 shows them; the Gateway records the ones the thread started with instead.
     provider_instance: z.string().nullable(),
@@ -120,6 +131,8 @@ export const Turn = z.object({
     questions: z.array(AskedQuestion),
     // The earlier turns whose run this turn's phase found over, with a reviewer's detach undone.
     settled: z.array(z.number().int()),
+    // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
+    spent: z.array(z.string()),
     transcript: z.array(Entry),
 });
 export type Turn = z.infer<typeof Turn>;
@@ -133,14 +146,18 @@ const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     }
 };
 
-/** Message text only: T3's CLI gives no tool items and no token use. Newest entries first within the bound. */
+/**
+ * Message text only: T3's CLI gives no tool items and no token use. Newest entries first within the bound. A user message keeps only its
+ * ID, author and time: redaction does not catch an ordinary private prompt, and the Gateway holds the prompt in the turn's input.
+ */
 function transcript(shown: z.infer<typeof Shown> | null): Turn["transcript"] {
     const entries: Turn["transcript"] = [];
     let size = 0;
     const messages = shown?.messages ?? [];
     for (let index = messages.length - 1; index >= 0; index--) {
         const message = messages[index];
-        const entry = { id: `${message.runId ?? "run"}:${index}`, kind: "message" as const, label: message.role, text: redactText(message.text), at: "" };
+        const entry = { id: `${message.runId ?? "run"}:${index}`, kind: "message" as const, label: message.role,
+            text: message.role === "assistant" ? redactText(message.text) : "", at: "" };
         size += new TextEncoder().encode(JSON.stringify(entry)).length;
         if (size > TranscriptBytes) {
             entries.unshift({ id: "orbit-truncated", kind: "message", label: "system", text: "[Transcript truncated: older entries omitted from the recorded turn.]", at: "" });
@@ -159,7 +176,7 @@ export function shapeTurn(evidence: Evidence): Turn {
     const turn = shapeRun(evidence);
     if (!evidence.detached || evidence.restore?.restored === true) return turn;
     const run = turn.state === "failed" ? ` The run: ${turn.error}` : "";
-    return { ...turn, state: "failed", ended: false, error: `The checkout was not restored after the reviewer's turn.${run}`, error_code: "tasks.copy_review_unrestored" };
+    return { ...turn, state: "failed", error: `The checkout was not restored after the reviewer's turn.${run}`, error_code: "tasks.copy_review_unrestored" };
 }
 
 /**
@@ -170,24 +187,23 @@ export function shapeTurn(evidence: Evidence): Turn {
 function shapeRun(evidence: Evidence): Turn {
     const started = evidence.start === null ? null : parse(Started, evidence.start.start);
     const shown = evidence.read?.show_exit === 0 ? parse(Shown, evidence.read.show) : null;
-    // The stop of a cut run ended it, or found no run of the thread active.
+    // The stop of a cut run read that exact run in a status that ends it.
     const halted = evidence.stop?.stop_exit === 0 ? parse(Halted, evidence.stop.stop) : null;
-    const cutEnded = halted !== null && (halted.stopped || halted.run === null);
-    // Over when nothing was launched, when the start printed an end that is not a wait for an answer, when the phase stopped the
-    // run its bound cut, or when T3 holds no thread of this title or holds it in no active state. Anything else may still write in the
-    // checkout.
+    const cutEnded = halted?.over === true;
     const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
-    const ended = !evidence.launched || (started !== null && started.status !== "waiting") || cutEnded
-        || (listed !== null && (listed.found === 0 || (listed.found === 1 && listed.status !== null && !Active.has(listed.status))));
     const base = {
-        ended,
-        t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? null,
+        ended: over(evidence, started?.status, listed, cutEnded),
+        // The thread the turn targeted stays named when the last read failed: a later turn settles that thread by its ID.
+        t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? evidence.read?.thread_id ?? null,
         run_id: started?.runId ?? null,
-        launched: evidence.launched,
+        // The launch mark precedes the send, so it means possibly sent; only a run that T3 reported for the send confirms the launch.
+        sent: evidence.launched,
+        launched: evidence.launched && (started?.runId ?? null) !== null,
         provider_instance: shown?.thread.providerInstanceId ?? null,
         model: shown?.thread.model ?? null,
         questions: [],
         settled: evidence.settle?.settled ?? [],
+        spent: [],
         transcript: transcript(shown),
     };
     if (evidence.settle && evidence.settle.open.length > 0) {
@@ -197,27 +213,28 @@ function shapeRun(evidence: Evidence): Turn {
     if (started?.status === "completed") return { ...base, state: "done", error: null };
     if (started?.status === "waiting") return asked(base, evidence);
     if (started !== null) {
-        const detail = redactText(started.error ?? "").slice(0, ErrorChars);
-        const status = started.status === undefined ? "T3 started no run" : `T3 run ${started.status}`;
-        return { ...base, state: "failed", error: `${status}${detail === "" ? "" : `: ${detail}`}`, error_code: "tasks.turn_failed" };
+        // T3's run status is named only from its known vocabulary; its error text stays in the run folder.
+        const status = started.status === undefined ? "T3 started no run" : RunOver.has(started.status) || Active.has(started.status)
+            ? `T3 run ${started.status}` : "T3 reported a run status Orbit does not know";
+        return { ...base, state: "failed", error: status, error_code: "tasks.turn_failed" };
     }
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
-        const stop = halted?.stopped ? "Orbit stopped its run." : ended ? "Its run has ended." : "Orbit could not stop its run; the next turn stops it.";
+        const stop = halted?.stopped ? "Orbit stopped its run." : base.ended ? "Its run has ended." : "Orbit did not stop its run; the turn holds until its run is over.";
         return { ...base, state: "failed", error: `The turn ran longer than its bound. ${stop}`, error_code: "tasks.turn_timeout" };
     }
     if (evidence.model !== null && !evidence.model.accepted) {
         if (evidence.model.driver_unresolved) {
-            return { ...base, state: "failed", error: `The copy's T3 provider instance could not be resolved for model ${evidence.model.model}.`,
+            return { ...base, state: "failed", error: "The copy's T3 provider instance could not be resolved for the thread's model.",
                 error_code: "tasks.copy_turn_model_unverified" };
         }
         if (evidence.model.probe === "rejected") {
-            return { ...base, state: "failed", error: `The copy's Codex provider rejected the model ${evidence.model.model}.`, error_code: "tasks.copy_turn_model_unoffered" };
+            return { ...base, state: "failed", error: "The copy's Codex provider rejected the thread's model.", error_code: "tasks.copy_turn_model_unoffered" };
         }
         if (evidence.model.probe === "unavailable") {
-            return { ...base, state: "failed", error: `The copy's Codex provider could not verify the model ${evidence.model.model}.`, error_code: "tasks.copy_turn_model_unverified" };
+            return { ...base, state: "failed", error: "The copy's Codex provider could not verify the thread's model.", error_code: "tasks.copy_turn_model_unverified" };
         }
-        const offered = (evidence.model.offered ?? []).join(", ").slice(0, ErrorChars);
-        return { ...base, state: "failed", error: `The copy's T3 does not offer the model ${evidence.model.model}; it offers: ${offered}.`, error_code: "tasks.copy_turn_model_unoffered" };
+        // The catalog's entries stay in the run folder's evidence: the error names none of them.
+        return { ...base, state: "failed", error: "The copy's T3 does not offer the thread's model.", error_code: "tasks.copy_turn_model_unoffered" };
     }
     if (evidence.resumed !== null && evidence.resumed.list_exit !== 0) {
         const exit = evidence.resumed.list_exit === null ? "no JSON" : `exit ${evidence.resumed.list_exit}`;
@@ -243,9 +260,50 @@ function shapeRun(evidence: Evidence): Turn {
         };
     }
     const exit = evidence.start === null ? "no exit" : `exit ${evidence.start.start_exit}`;
-    // T3's message ends its stderr; a long one keeps its end.
-    const refusal = redactText(evidence.start?.error?.trim() ?? "").slice(-ErrorChars);
-    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit})${refusal === "" ? "" : `: ${refusal}`}.`, error_code: "tasks.copy_turn_failed" };
+    // T3's stderr stays in the run folder.
+    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit}).`, error_code: "tasks.copy_turn_failed" };
+}
+
+/**
+ * The one rule for whether the copy is free of this turn, judged on this turn's own run, never on another run of its thread
+ * (docs/reference/development-containers.md#turn-evidence). In order, the first row that applies decides:
+ *
+ * | # | Evidence | ended |
+ * | 1 | A reviewer's checkout detached and not restored | false |
+ * | 2 | Nothing launched | true |
+ * | 3 | The run asks, and Orbit stored its question with its owner run and confirmed the interrupt of that run | true |
+ * | 4 | The run asks, and Orbit could not read its question, or a request is not this run's own, or the interrupt is not confirmed | false |
+ * | 5 | The start printed a status that ends a run | true |
+ * | 6 | The start printed any other status: one of a run still going, such as `running` or `queued`, or one Orbit does not know | false |
+ * | 7 | The stop of the run its bound cut proved its end | true |
+ * | 8 | With no status of its run: T3 lists the thread the turn sent to, by its ID, in a state that runs nothing, or, for a turn that made no thread, holds none of its title | true |
+ * | 9 | Anything else: a thread listed active or in an unknown state, a thread of the turn's ID that T3 does not list, or no list | false |
+ */
+export function over(evidence: Evidence, status: string | undefined, listed: z.infer<typeof Read> | null, cutEnded: boolean): boolean {
+    if (evidence.detached && evidence.restore?.restored !== true) return false;
+    if (!evidence.launched) return true;
+    if (status === "waiting") return question(evidence) === "stopped";
+    if (status !== undefined && RunOver.has(status)) return true;
+    // A status Orbit does not know, or one of a run still going: only the run's own end ends it, never its thread's state.
+    if (status !== undefined) return false;
+    if (cutEnded) return true;
+    // A thread T3 does not list proves nothing about a run sent to it; only a turn that made no thread is looked for by title.
+    return (listed?.found === 0 && (listed.thread_id ?? null) === null) || (listed?.found === 1 && listed.status !== null && ThreadOver.has(listed.status));
+}
+
+/** How far a run that asks got: its question unread (or without its owner run), stored but its run not stopped, or stored and stopped. */
+function question(evidence: Evidence): "unread" | "unstopped" | "stopped" {
+    const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
+    if (read === null || !read.stoppable || ownerless(evidence)) return "unread";
+    const stopped = evidence.interrupt?.interrupt_exit === 0 ? parse(Stopped, evidence.interrupt.interrupt) : null;
+    return stopped?.interrupted === true ? "stopped" : "unstopped";
+}
+
+/** Whether the question read names a request that this turn's run does not own: one without an owner, or another run's. */
+function ownerless(evidence: Evidence): boolean {
+    const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
+    const own = evidence.start === null ? null : parse(Started, evidence.start.start)?.runId ?? null;
+    return read !== null && read.requests.some((request) => !request.run_id || request.run_id !== own);
 }
 
 /**
@@ -256,6 +314,7 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
     const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
     const questions = (read?.requests ?? []).flatMap((request) => request.questions.map((question) => ({
         request_id: request.request_id,
+        run_id: request.run_id ?? "",
         id: question.id,
         header: redactText(question.header),
         question: redactText(question.question),
@@ -265,7 +324,9 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
         initial_answer: question.initialAnswer === undefined ? null : redactText(question.initialAnswer),
         required: question.required ?? null,
     })));
-    const turn = { ...base, questions, state: "asking_for_input" as const };
+    // A request whose owner run Orbit could not read stores no question: the answer turn could not cancel it exactly.
+    const owned = !ownerless(evidence);
+    const turn = { ...base, questions: owned ? questions : [], state: "asking_for_input" as const };
     if (read !== null && !read.stoppable) {
         return { ...turn, error: "The run waits for something Orbit cannot store whole (an approval, a request without a question, or too much text), "
             + "so Orbit did not stop the run.", error_code: "tasks.copy_question_unread" };
@@ -274,10 +335,14 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
         const exit = evidence.ask === null ? "no read" : `exit ${evidence.ask.ask_exit}`;
         return { ...turn, error: `Orbit could not read the agent's question (${exit}), so it did not stop the run.`, error_code: "tasks.copy_question_unread" };
     }
+    if (!owned) {
+        return { ...turn, error: "Orbit could not read which run owns the agent's question, so it did not stop the run.", error_code: "tasks.copy_question_unread" };
+    }
     const stopped = evidence.interrupt?.interrupt_exit === 0 ? parse(Stopped, evidence.interrupt.interrupt) : null;
     if (stopped?.interrupted !== true) {
-        const why = stopped?.error ?? (evidence.interrupt === null ? "no stop ran" : `exit ${evidence.interrupt.interrupt_exit}`);
-        return { ...turn, error: `Orbit could not stop the run that asks: ${redactText(why).slice(0, ErrorChars)}`, error_code: "tasks.copy_question_unstopped" };
+        // The helper's own error stays in the run folder: only how the stop ended is named.
+        const why = stopped !== null ? "T3 refused or did not end the stop" : evidence.interrupt === null ? "no stop ran" : `exit ${evidence.interrupt.interrupt_exit}`;
+        return { ...turn, error: `Orbit could not stop the run that asks: ${why}`, error_code: "tasks.copy_question_unstopped" };
     }
     return { ...turn, error: null };
 }
@@ -298,7 +363,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.17.1",
+    version: "2026.11.18.1",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {

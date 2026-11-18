@@ -12,7 +12,7 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
-const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, answered: [] as string[], settle: [] as { operation_id: number; title: string; branch: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
+const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, answered: [] as string[], settle: [] as { operation_id: number; title: string; branch: string | null; t3_thread_id?: string; admitted?: boolean; run_id?: string; sent?: boolean }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
 // What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
@@ -57,7 +57,9 @@ const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-play
 // Validates the Incus boundary, then answers as T3's CLI, the question helper and Git would. `T3_START` picks the start's or the send's
 // behaviour; `waiting` asks a question, `missing` lists no thread of the turn's title and `listfail` fails the list. `T3_ASK` is the
 // helper's read: `questions`, `none` (no pending request), `approval`, `large` (not stoppable) or `fail`. `T3_STOP` is the helper's stop:
-// `end` ends the run, `refuse` is a stop T3 refused, `idle` finds no active run. A run whose wait the bound cut (`timeout`), and an earlier
+// `end` ends the run, `refuse` is a stop T3 refused, `idle` finds the run already over,
+// `vanish` is an interrupt T3 accepted whose readback omits the still-active run. `T3_TITLE` renames the turn's thread in T3, and
+// `T3_CUT_STATUS` is how T3 lists a cut run's thread. A run whose wait the bound cut (`timeout`), and an earlier
 // turn's run, never end on their own: T3 lists their thread active until a stop ends it. `T3_TREE` is the checkout: `dirty` has changes before the turn,
 // `stuck` keeps changes after the restore, `moved` has the branch at another commit after it, and `locked` fails the reset.
 const SHIM = `#!/usr/bin/env python3
@@ -72,7 +74,7 @@ assert args[11:15] == ['/usr/bin/env', '-i', 'HOME=/home/agent', 'PATH=/usr/loca
 rest = args[15:]
 thread = 'mcp:66105c2c'
 # The threads whose run an earlier stop ended.
-stopped = [] if os.environ.get('T3_STOP') == 'refuse' else [
+stopped = [] if os.environ.get('T3_STOP') in ('refuse', 'vanish') else [
     json.loads(line)['args'][21] for line in list(open(os.environ['T3_CALLS']))[:-1] if json.loads(line)['args'][15:16] == ['/usr/bin/timeout']
     and json.loads(line)['args'][17:21] == ['/opt/orbit-runtime/current/bin/node', '-', os.environ['T3_PROGRAM'], 'stop']]
 if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
@@ -136,13 +138,26 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
     assert stdin == open(os.environ['T3_HELPER']).read(), 'the shipped helper arrives on stdin'
     assert rest[4] == os.environ['T3_PROGRAM'], rest
     if rest[5] == 'stop':
-        assert rest[6:] in (['earlier'], [thread]), rest
-        run = 'run:earlier' if rest[6] == 'earlier' else 'run:1'
-        print(json.dumps({'end': {'stopped': True, 'run': run, 'state': 'interrupted'}, 'refuse': {'stopped': False, 'run': run, 'state': 'running'},
-                          'idle': {'stopped': False, 'run': None, 'state': None}}[os.environ.get('T3_STOP', 'end')]), end='')
+        assert rest[6] == 'earlier' and len(rest) == 8, rest
+        run = rest[7]
+        # The helper reads only the exact run it is named on the captured thread: the earlier thread's run is run:earlier, so another
+        # ID, or a thread T3 does not hold, is refused. It answers over only when it reads that run in a status that ends it.
+        listed = os.environ.get('T3_SETTLE', '')
+        if run != 'run:earlier' or listed == '':
+            print(json.dumps({'stopped': False, 'over': False, 'run': run, 'state': None, 'error': 'no such run'}), end='')
+            sys.exit(0)
+        if listed in ('completed', 'failed', 'cancelled', 'interrupted', 'rolled_back', 'idle'):
+            print(json.dumps({'stopped': False, 'over': True, 'run': run, 'state': 'completed' if listed == 'idle' else listed}), end='')
+            sys.exit(0)
+        if listed not in ('running', 'waiting'):
+            print(json.dumps({'stopped': False, 'over': False, 'run': run, 'state': listed}), end='')
+            sys.exit(0)
+        print(json.dumps({'end': {'stopped': True, 'over': True, 'run': run, 'state': 'interrupted'}, 'refuse': {'stopped': False, 'over': False, 'run': run, 'state': 'running'},
+                          'idle': {'stopped': False, 'over': True, 'run': run, 'state': 'completed'},
+                          'vanish': {'stopped': False, 'over': False, 'run': run, 'state': None}}[os.environ.get('T3_STOP', 'end')]), end='')
         sys.exit(0)
     if rest[5] == 'answered':
-        assert rest[6:] == [thread, 'request:1', 'request:2'], rest
+        assert rest[6:] == [thread, 'run:1', 'request:1', 'request:2'], rest
         assert not os.path.exists(os.environ['ORBIT_RUN'] + '/launch.json'), 'resolve before launch'
         assert not os.path.exists(os.environ['ORBIT_RUN'] + '/detach.json'), 'resolve before reviewer checkout'
         mode = os.environ.get('T3_ANSWERED', 'resolved')
@@ -171,7 +186,7 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
         # 'large' holds questions alone but more than the result can hold: the read says the run may not be stopped.
         asking = ask in ('questions', 'large')
         print(json.dumps({'runs': [{'id': 'run:1', 'status': 'running'}], 'stoppable': ask == 'questions',
-                          'requests': [] if ask == 'none' else [{'request_id': 'request:1', 'kind': 'user_input' if asking else 'approval',
+                          'requests': [] if ask == 'none' else [{'request_id': 'request:1', 'kind': 'user_input' if asking else 'approval', 'run_id': 'run:1',
                                                                   'questions': questions if asking else []}]}), end='')
         sys.exit(0)
     assert rest[5:] == ['interrupt', thread, 'run:1', 'request:1'], rest
@@ -204,15 +219,17 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     sys.exit({'completed': 0, 'waiting': 2}.get(mode, 1))
 assert rest[0] == '/usr/bin/timeout' and rest[1] == '60' and rest[2] == os.environ['T3_PROGRAM'], rest
 if rest[3:5] == ['thread', 'list']:
-    if os.environ['T3_START'] == 'listfail':
+    if os.environ['T3_START'] == 'listfail' or os.environ.get('T3_LISTFAIL'):
         sys.stderr.write('server not running')
         sys.exit(1)
-    titles = [] if os.environ['T3_START'] in ('refused', 'missing') else ['Orbit task 4970 thread 77']
+    # T3_TITLE renames the turn's thread in T3; its ID stays.
+    titles = [] if os.environ['T3_START'] in ('refused', 'missing') else [os.environ.get('T3_TITLE', 'Orbit task 4970 thread 77')]
     if os.environ['T3_START'] == 'garbled':
         print('not json')
         sys.exit(0)
     earlier = [{'threadId': 'earlier', 'status': 'interrupted' if 'earlier' in stopped else os.environ['T3_SETTLE'], 'title': 'Orbit task 4970 thread 76'}] if os.environ.get('T3_SETTLE') else []
-    status = ('interrupted' if thread in stopped else 'running') if os.environ['T3_START'] == 'timeout' else 'completed'
+    # T3_CUT_STATUS is how T3 lists a cut run's thread: running by default, since no stop ends it.
+    status = ('interrupted' if thread in stopped else os.environ.get('T3_CUT_STATUS', 'running')) if os.environ['T3_START'] == 'timeout' else 'completed'
     print(json.dumps([{'threadId': thread, 'status': status, 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}] + earlier))
     sys.exit(0)
 assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8] == thread, rest
@@ -340,10 +357,10 @@ Deno.test({ name: "a reviewer works on the candidate, detached, and the task bra
     assert(order.findIndex((args) => args.includes("--detach")) < order.findIndex((args) => args.includes("--kill-after=30")));
     assert(order.findIndex((args) => args.includes("thread show")) < order.findIndex((args) => args.includes("reset --quiet --hard")));
     assertEquals([done.review, done.detached, done.launched, done.restore], [{ ready: true, error_code: null }, true, true, { restored: true }]);
-    // A run cut by its bound is restored too.
-    const cut = await phase("timeout", { candidate });
+    // A run cut by its bound is restored once T3 lists its thread, by its ID, in a state that runs nothing.
+    const cut = await phase("timeout", { candidate }, "clean", "questions", "", { T3_CUT_STATUS: "interrupted" });
     assert(cut.ok, cut.output);
-    assertEquals([cut.start!.start_exit, cut.restore], [124, { restored: true }]);
+    assertEquals([cut.start!.start_exit, cut.restore, cut.result.ended], [124, { restored: true }, true]);
 } });
 
 Deno.test({ name: "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so", ignore: !available, async fn() {
@@ -379,27 +396,41 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
     assertEquals([unreachable.launched, unreachable.start, unreachable.read, unreachable.calls.length], [false, null, null, 1]);
 } });
 
-Deno.test({ name: "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds", ignore: !available, async fn() {
+Deno.test({ name: "a turn cut by its bound stops no run, since Orbit cannot name its run, and holds", ignore: !available, async fn() {
     const cut = await phase("timeout");
     assert(cut.ok, cut.output);
-    // The thread is found by its title, its run stopped, and only then read back.
-    assertEquals(helper(cut.calls), ["stop mcp:66105c2c"]);
-    assertEquals([cut.stop!.stop_exit, JSON.parse(cut.stop!.stop as string)], [0, { stopped: true, run: "run:1", state: "interrupted" }]);
-    const order = cut.calls.map((call) => call.args.slice(15).join(" "));
-    assert(order.findIndex((args) => args.includes(" stop ")) < order.findIndex((args) => args.includes("thread show")), "the stop precedes the read back");
-    // No active run is left, and the turn is over: it fails with its bound and holds nothing.
-    assertEquals([cut.read!.status, cut.result.state, cut.result.error_code, cut.result.ended, cut.result.error],
-        ["interrupted", "failed", "tasks.turn_timeout", true, "The turn ran longer than its bound. Orbit stopped its run."]);
-    // A stop that T3 refuses leaves the run going: the turn is not over, and the next turn stops it.
-    const refused = await phase("timeout", {}, "clean", "questions", "", { T3_STOP: "refuse" });
-    assert(refused.ok, refused.output);
-    assertEquals([JSON.parse(refused.stop!.stop as string).stopped, refused.read!.status, refused.result.ended, refused.result.error],
-        [false, "running", false, "The turn ran longer than its bound. Orbit could not stop its run; the next turn stops it."]);
-    // A cut reviewer's run is stopped before its checkout is restored.
+    // The start printed nothing, so no run ID is known: no stop runs, and the thread T3 still lists running holds the turn.
+    assertEquals([helper(cut.calls), cut.stop], [[], null]);
+    assertEquals([cut.read!.status, cut.result.state, cut.result.error_code, cut.result.ended], ["running", "failed", "tasks.turn_timeout", false]);
+    // Rule (c): a cut reviewer whose thread T3 still lists running may still write. Its checkout is not touched and its detach mark
+    // stays, so no later write lands on a restored branch; the turn stays unrestored and held.
     const reviewer = await phase("timeout", { candidate });
-    const steps = reviewer.calls.map((call) => call.args.slice(15).join(" "));
-    assert(steps.findIndex((args) => args.includes(" stop ")) < steps.findIndex((args) => args.includes("reset --quiet --hard")), "the stop precedes the restore");
-    assertEquals([reviewer.restore, reviewer.result.ended], [{ restored: true }, true]);
+    assertEquals([helper(reviewer.calls), reviewer.restore, reviewer.result.ended, reviewer.result.error_code], [[], { restored: false }, false, "tasks.copy_review_unrestored"]);
+    assertEquals(git(reviewer.calls), ["status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", `update-ref refs/orbit/review-detach ${"a".repeat(40)}`,
+        `checkout --quiet --detach ${candidate}`]);
+    // The next turn finds that reviewer's run-less turn by its captured thread: while T3 lists it running, the dirty checkout and the
+    // mark stay untouched and nothing launches; once T3 lists it over, the checkout is restored, verified and the mark cleared first.
+    const held = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: "task-4970", t3_thread_id: "earlier" };
+    const mark = { T3_MARK: "a".repeat(40), T3_DETACHED: "1" };
+    const waiting = await phase("completed", { settle: [held] }, "dirty", "questions", "running", mark);
+    assertEquals([waiting.ok, waiting.launched, waiting.settle!.open, git(waiting.calls), helper(waiting.calls)], [false, false, [9], [], []]);
+    const freed = await phase("completed", { settle: [held] }, "dirty", "questions", "completed", mark);
+    assertEquals([freed.ok, freed.settle!.settled, git(freed.calls).slice(2, 9)], [true, [9], ["reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970",
+        "status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", "update-ref -d refs/orbit/review-detach"]]);
+} });
+
+Deno.test({ name: "rule (a): the turn's thread is read back and continued by its ID whatever its title; a title is used only without an ID", ignore: !available, async fn() {
+    // A running cut thread renamed before the bound: the readback finds it by its ID, still running, and the turn holds.
+    const renamed = await phase("timeout", {}, "clean", "questions", "", { T3_TITLE: "Renamed by a person" });
+    assertEquals([renamed.read!.thread_id, renamed.read!.found, renamed.read!.status, renamed.result.ended], ["mcp:66105c2c", 1, "running", false]);
+    // A thread whose ID a turn reported is continued by that ID, also renamed.
+    const known = { thread: "continue", provider: null, t3_thread_id: "mcp:66105c2c", admission: "overwritten" };
+    const continued = await phase("completed", known, "clean", "questions", "", { T3_TITLE: "Renamed by a person" });
+    assert(continued.ok, continued.output);
+    assertEquals([continued.resumed, continued.calls[2].args.slice(19)], [{ list_exit: 0, found: 1 }, ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]]);
+    // The admitted UUID that T3 never received names no thread in T3: the title still finds the thread, and a renamed one is missing.
+    const admitted = await phase("completed", { ...known, t3_thread_id: "0b1c", admission: "admitted" }, "clean", "questions", "", { T3_TITLE: "Renamed by a person" });
+    assertEquals([admitted.ok, admitted.resumed, admitted.launched], [false, { list_exit: 0, found: 0 }, false]);
 } });
 
 Deno.test({ name: "an intent outside the admitted shape runs nothing in the copy", ignore: !available, async fn() {
@@ -454,7 +485,7 @@ Deno.test({ name: "an uncatalogued Codex model needs provider confirmation befor
         assertEquals([done.ok, done.launched, done.result.error_code], [accepted, accepted, errorCode]);
         assertEquals(done.calls.filter((call) => call.args.includes("/usr/bin/python3")).length, 1);
         assertEquals(git(done.calls), []);
-        if (probe === "rejected") assertEquals(done.result.error, `The copy's Codex provider rejected the model ${model}.`);
+        if (probe === "rejected") assertEquals(done.result.error, "The copy's Codex provider rejected the thread's model.");
     }
     const model = "gpt-6.2-sol-typo";
     for (const settings of [{ T3_SETTINGS: "unreadable", T3_CODEX_DRIVER: "codex" }, { T3_SETTINGS: "readable", T3_CODEX_DRIVER: "   " }]) {
@@ -575,8 +606,15 @@ Deno.test({ name: "a run that asks has its question stored before the run is sto
     assert(order.findIndex((args) => args.includes(" interrupt ")) < order.findIndex((args) => args.includes("thread list")), "the read follows the stop");
     // The question stays in the run folder, never in the phase's output.
     assertEquals(asked.output.includes("Which color?"), false);
+    // The turn as Orbit records it: the question stored with its owner run, its run stopped and over, and no error.
+    assertEquals([asked.result.state, asked.result.error, asked.result.error_code, asked.result.ended], ["asking_for_input", null, undefined, true]);
+    assertEquals(asked.result.questions.map((question) => [question.request_id, question.run_id, question.question]), [["request:1", "run:1", "Which color?"]]);
     // A turn that ends other than at a question runs no helper.
     assertEquals(helper((await phase("completed")).calls), []);
+    // The confirmed interrupt of the run that asks ends the turn, also when the list after it fails.
+    const unlisted = await phase("waiting", {}, "clean", "questions", "", { T3_LISTFAIL: "1" });
+    assertEquals([unlisted.ok, unlisted.read!.list_exit, unlisted.result.state, unlisted.result.error, unlisted.result.ended, unlisted.result.questions.length],
+        [true, 1, "asking_for_input", null, true, 1]);
 } });
 
 Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored", ignore: !available, async fn() {
@@ -593,21 +631,55 @@ Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer t
     assertEquals([reviewer.interrupt!.interrupt_exit, reviewer.restore], [0, { restored: true }]);
 } });
 
-const earlier = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: null };
+const earlier = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: null, t3_thread_id: "earlier", run_id: "run:earlier" };
+
+Deno.test({ name: "an earlier turn passed with its admitted thread ID is found by its title, never by that ID", ignore: !available, async fn() {
+    // An admitted UUID passed for the RPC path is not one T3 was seen to receive: the CLI finds that turn by its title, never by the UUID.
+    const admitted = { operation_id: 9, title: earlier.title, branch: null, t3_thread_id: "4b0e7d1c-5d2a-4f43-9a51-0c3f2b7e8a10" };
+    const titled = await phase("completed", { settle: [{ ...admitted, admitted: true }] }, "clean", "questions", "completed");
+    assertEquals([titled.ok, titled.settle!.settled], [true, [9]]);
+    const held = await phase("completed", { settle: [{ ...admitted, admitted: true }] }, "clean", "questions", "running", { T3_STOP: "refuse" });
+    assertEquals([held.ok, held.settle!.open, held.launched], [false, [9], false]);
+    const observed = await phase("completed", { settle: [admitted] }, "clean", "questions", "completed");
+    assertEquals([observed.ok, observed.settle!.open], [false, [9]]);
+} });
 
 Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing", ignore: !available, async fn() {
     // A cut wait whose run T3 later completed, and a run whose stop failed and that later ended, are settled; the turn runs.
     for (const status of ["completed", "interrupted"]) {
         const settled = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
         assert(settled.ok, settled.output);
-        assertEquals([settled.settle, settled.launched, helper(settled.calls)], [{ list_exit: 0, settled: [9], open: [], stopped: [] }, true, []], status);
+        // Rule (b): the thread's state is no proof of the recorded run; the helper reads that exact run over and stops nothing.
+        assertEquals([settled.settle, settled.launched, helper(settled.calls)], [{ list_exit: 0, settled: [9], open: [], stopped: [] }, true, ["stop earlier run:earlier"]], status);
     }
-    // T3 holds no thread of the title: no run can go on.
+    // T3 does not list the captured thread: that proves nothing, so the turn holds and nothing launches.
     const gone = await phase("completed", { settle: [earlier] });
-    assertEquals([gone.ok, gone.settle!.settled], [true, [9]]);
+    assertEquals([gone.ok, gone.settle!.open, gone.launched], [false, [9], false]);
+    // A turn with no captured thread or run is found by title alone: T3 holds no thread of the title, so no run can go on.
+    const untitled = await phase("completed", { settle: [{ operation_id: 9, title: earlier.title, branch: null }] });
+    assertEquals([untitled.ok, untitled.settle!.settled], [true, [9]]);
+    // A turn that sent nothing has no run: it is settled without a read of T3's run.
+    const unsent = await phase("completed", { settle: [{ ...earlier, sent: false }] });
+    assertEquals([unsent.ok, unsent.settle!.settled, helper(unsent.calls)], [true, [9], []]);
     // A list that fails settles nothing and stops nothing.
     const unread = await phase("listfail", { settle: [earlier] });
     assertEquals([unread.ok, unread.settle, unread.launched, helper(unread.calls)], [false, { list_exit: 1, settled: [], open: [9], stopped: [] }, false, []]);
+    // A state T3 lists that Orbit does not know settles nothing, stops nothing and launches nothing.
+    const paused = await phase("completed", { settle: [earlier] }, "clean", "questions", "paused");
+    assertEquals([paused.ok, paused.settle, paused.launched, helper(paused.calls)], [false, { list_exit: 0, settled: [], open: [9], stopped: [] }, false, ["stop earlier run:earlier"]]);
+    // A turn with no recorded thread falls back to its title.
+    const legacy = await phase("completed", { settle: [{ operation_id: 9, title: earlier.title, branch: null }] }, "clean", "questions", "completed");
+    assertEquals([legacy.ok, legacy.settle!.settled], [true, [9]]);
+    // The captured thread listed under another title is still the turn's: running, its title missing settles nothing.
+    const renamed = await phase("completed", { settle: [{ ...earlier, title: "Orbit task 4970 thread 99" }] }, "clean", "questions", "running", { T3_STOP: "refuse" });
+    assertEquals([renamed.ok, renamed.settle, renamed.launched], [false, { list_exit: 0, settled: [], open: [9], stopped: [] }, false]);
+    // Only the captured run is stopped: with another run active on the thread, the helper refuses, and nothing is settled or launched.
+    const foreign = await phase("completed", { settle: [{ ...earlier, run_id: "orbit-run-A" }] }, "clean", "questions", "running");
+    assertEquals([foreign.ok, foreign.settle, foreign.launched, helper(foreign.calls)],
+        [false, { list_exit: 0, settled: [], open: [9], stopped: [] }, false, ["stop earlier orbit-run-A"]]);
+    // A turn with no captured run is never stopped: it stays open while its thread runs.
+    const unnamed = await phase("completed", { settle: [{ ...earlier, run_id: undefined }] }, "clean", "questions", "running");
+    assertEquals([unnamed.ok, unnamed.settle!.open, unnamed.launched, helper(unnamed.calls)], [false, [9], false, []]);
 } });
 
 Deno.test({ name: "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing", ignore: !available, async fn() {
@@ -616,7 +688,7 @@ Deno.test({ name: "an earlier turn whose run T3 still runs is stopped, settled, 
         const stopped = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
         assert(stopped.ok, stopped.output);
         assertEquals([stopped.settle, stopped.launched, helper(stopped.calls)],
-            [{ list_exit: 0, settled: [9], open: [], stopped: [{ operation_id: 9, run: "run:earlier" }] }, true, ["stop earlier"]], status);
+            [{ list_exit: 0, settled: [9], open: [], stopped: [{ operation_id: 9, run: "run:earlier" }] }, true, ["stop earlier run:earlier"]], status);
         const order = stopped.calls.map((call) => call.args.slice(15).join(" "));
         assert(order.findIndex((args) => args.includes(" stop earlier")) < order.findIndex((args) => args.includes("--kill-after=30")), "the stop precedes the launch");
         assertEquals([stopped.result.state, stopped.result.settled], ["done", [9]]);
@@ -626,13 +698,16 @@ Deno.test({ name: "an earlier turn whose run T3 still runs is stopped, settled, 
         assertEquals([held.settle, held.launched, held.start], [{ list_exit: 0, settled: [], open: [9], stopped: [] }, false, null], status);
         assertEquals([held.result.error_code, held.result.settled], ["tasks.copy_turn_unended", []]);
     }
-    // The run ended between the list and the stop: T3 shows no active run, so the turn is settled with no run stopped.
+    // The run ended between the list and the stop: the helper reads it over, so the turn is settled with no run stopped.
     const idle = await phase("completed", { settle: [earlier] }, "clean", "questions", "running", { T3_STOP: "idle" });
     assertEquals([idle.ok, idle.settle], [true, { list_exit: 0, settled: [9], open: [], stopped: [] }]);
     // Two turns of one thread: its run is stopped once, and both are settled.
     const two = await phase("completed", { settle: [earlier, { ...earlier, operation_id: 10 }] }, "clean", "questions", "running");
     assertEquals([two.ok, helper(two.calls), two.settle!.settled, two.settle!.stopped],
-        [true, ["stop earlier"], [9, 10], [{ operation_id: 9, run: "run:earlier" }, { operation_id: 10, run: "run:earlier" }]]);
+        [true, ["stop earlier run:earlier"], [9, 10], [{ operation_id: 9, run: "run:earlier" }, { operation_id: 10, run: "run:earlier" }]]);
+    // Rule (b): T3 accepted the interrupt, but its readback omits the still-active run. That is no proof: nothing is settled, touched or launched.
+    const vanished = await phase("completed", { settle: [{ ...earlier, branch: "task-4970" }] }, "dirty", "questions", "running", { T3_STOP: "vanish", T3_MARK: "a".repeat(40), T3_DETACHED: "1" });
+    assertEquals([vanished.ok, vanished.settle, vanished.launched, git(vanished.calls)], [false, { list_exit: 0, settled: [], open: [9], stopped: [] }, false, []]);
 } });
 
 Deno.test({ name: "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched", ignore: !available, async fn() {
@@ -682,15 +757,15 @@ Deno.test({ name: "a refused model while an earlier turn waits to be settled set
 } });
 
 Deno.test({ name: "a continued answer resolves its stored requests before the send so a stale question cannot cut the work", ignore: !available, async fn() {
-    const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"] }, "clean", "questions", "", { T3_ANSWERED: "resolved" });
+    const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"], answered_run: "run:1" }, "clean", "questions", "", { T3_ANSWERED: "resolved" });
     assert(done.ok, done.output + JSON.stringify(done.calls.map(({ args }) => args)));
     assertEquals([done.result.state, done.launched, done.result.ended], ["done", true, true]);
-    assertEquals(done.calls[2].args.slice(20), ["answered", "mcp:66105c2c", "request:1", "request:2"]);
+    assertEquals(done.calls[2].args.slice(20), ["answered", "mcp:66105c2c", "run:1", "request:1", "request:2"]);
     assertEquals(done.calls[3].args.slice(19), ["thread", "send", "--wait", "--json", "mcp:66105c2c", "-"]);
 } });
 
 Deno.test({ name: "an answered request that stays pending refuses the turn before launch or reviewer checkout", ignore: !available, async fn() {
-    const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"], candidate: "c".repeat(40) }, "clean", "questions", "", { T3_ANSWERED: "pending" });
+    const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"], answered_run: "run:1", candidate: "c".repeat(40) }, "clean", "questions", "", { T3_ANSWERED: "pending" });
     assert(!done.ok, done.output);
     assert(done.output.includes("tasks.copy_question_unresolved"), done.output);
     assertEquals([done.result.error_code, done.result.ended, done.launched, done.detached, done.start], ["tasks.copy_question_unresolved", true, false, false, null]);
@@ -699,7 +774,7 @@ Deno.test({ name: "an answered request that stays pending refuses the turn befor
 
 Deno.test({ name: "a failed or unreadable answered resolution launches nothing and names the resolution failure", ignore: !available, async fn() {
     for (const mode of ["fail", "garbled"]) {
-        const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"] }, "clean", "questions", "", { T3_ANSWERED: mode });
+        const done = await phase("completed", { thread: "continue", provider: null, answered: ["request:1", "request:2"], answered_run: "run:1" }, "clean", "questions", "", { T3_ANSWERED: mode });
         assert(!done.ok, done.output);
         assertEquals([done.result.error_code, done.result.ended, done.launched, done.start], ["tasks.copy_question_unresolved", true, false, null]);
         assertEquals(done.calls.length, 3);
