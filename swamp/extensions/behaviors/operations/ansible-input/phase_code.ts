@@ -80,7 +80,7 @@ const fromPlaybook = /^\s*(playbook_dir)\s*(~|\+)\s*'[^'{}]+'\s*(,|\)|$)/;
 export function unresolved(file: string, text: string): string | null {
     // A path computed from the playbook's own folder must end in a literal name.
     for (const match of text.matchAll(/\b(playbook_dir|role_path|inventory_dir|ansible_config_file)\b(.{0,80})/g)) {
-        if (match[1] !== "playbook_dir" || !/^\s*((~|\+)\s*'[^'{}]+'|\}\}\/[^"'{}\s]+|\}\}\/\{\{\s*item\b)/.test(match[2])) return `${file}: ${match[0].trim()}`;
+        if (match[1] !== "playbook_dir" || !/^\s*((~|\+)\s*'[^'{}]+'(?!\s*(~|\+))|\}\}\/[^"'{}\s]+|\}\}\/\{\{\s*item\b)/.test(match[2])) return `${file}: ${match[0].trim()}`;
     }
     // A file or template lookup of a bundle file must name it literally.
     for (const match of text.matchAll(/\b(lookup|query)\(\s*'([a-z_.]*?)(file|template|fileglob|first_found|filetree|lines|csvfile|ini|unvault)'\s*,([^\n]*)/g)) {
