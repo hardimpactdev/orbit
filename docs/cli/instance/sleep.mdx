@@ -36,6 +36,8 @@ Orbit first writes the asleep marker on the Node. From then on, each request to 
 
 Before Orbit admits the sleep of an Instance with a T3 server, the [Conn thread index](/reference/conn#thread-index) reads the container's T3 threads one last time, while its switch is on. It reads after the refusals, so a refused or repeated request does not wait, and it waits at most 3 seconds. A device then still lists the asleep Instance's threads. A failed read does not stop the sleep.
 
+When a sleep stops rather than freezes the container, the command says that its next wake starts it without restoring memory. In JSON, `sleep: stopped` and `prepared_restore.status: skipped` distinguish this from a frozen sleep.
+
 The Instance must be a development container. No other lifecycle work and no task may run in it. Planned: a production Instance is accepted too, and the command puts its live release container to sleep ([Production containers](/reference/production-containers#sleep-and-wake)).
 
 Sleeping an Instance that already sleeps runs again and changes nothing. A freeze that fails removes the marker, and the container runs as before. Run the command again to retry.

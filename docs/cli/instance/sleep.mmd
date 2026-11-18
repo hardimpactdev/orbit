@@ -64,6 +64,7 @@ sequenceDiagram
     end
     Note over GW: Project sleep or failure<br/>one terminal Operation
     %%> - A known refusal or failure does not start recovery or record asleep. Repeated deliveries return the first result without freezing twice.
+    %%> - More than 32 MiB of anonymous RAM after reclaim takes the same stop rule as Python for a plain container. Report `sleep: stopped`, `prepared_restore: skipped`, reason `stopped` and the residual counters. The CLI says the next wake boots without restoring memory.
   else signed power disabled at admission
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
   SW->>N: Sleep the container<br/>Ansible · tags prepared_sleep

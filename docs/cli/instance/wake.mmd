@@ -54,7 +54,7 @@ sequenceDiagram
     %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; Conn records cancellation of an unshared queued executor wake in the launch cancel transaction, before a publisher can claim it
     %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
     %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it recovers recorded results before publishing any missing order for the same Operation
-    %%> - record Operation notices locally and hand them to operations-prompt in the background; the request never enqueues a job
+    %%> - record Operation notices locally; delivering them never holds the visitor request
     %%> - the observer passes the order unread to the executor; the normal path needs no SSH, Python or marker/times command
     opt no accepted line within 150 ms
       GW->>N: Relay same order<br/>SSH · stdin
@@ -76,7 +76,8 @@ sequenceDiagram
       GW-->>CL: 401 progress page<br/>activation state pending
       %%> Result:
       %%> - the existing page polls every 250 ms and loads the app when the marker goes
-      %%> - a durable completion reads a known result without holding a request worker; done or partial succeeds, refused or failed fails
+      %%> - once the subscriber records a terminal result, it queues immediate completion of the same signed wake; done or partial succeeds, refused or failed fails, and the worker sends the Operation's notices without waiting for the sweep
+      %%> - the six-second job still recovers an absent result and finishes a known result if the immediate job did not run
     end
     opt no terminal result within 6 s, or a legitimate stopped container needs boot
       GW->>SW: Continue Operation<br/>operation-instance-wake
