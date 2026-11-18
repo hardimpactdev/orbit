@@ -17,6 +17,7 @@ use App\Models\NodeRole;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\Managed\EnrolConnManagedTargetAction;
@@ -129,6 +130,7 @@ function managed_introspect(Node $serving, string $credential, ConnManagedTarget
 beforeEach(function (): void {
     app(ExtensionStore::class)->set('conn', true);
     config(['orbit.conn.managed_targets' => true]);
+    config(['orbit.conn.managed_target_lock_wait_seconds' => 0]);
     $this->publisher = new RecordingManagedPublisher;
     app()->instance(ConnManagedNoticePublisher::class, $this->publisher);
 
@@ -469,15 +471,63 @@ describe('edge removal', function (): void {
             ->and($this->publisher->sent)->toBe([]);
     });
 
-    it('records suppression, never a send, when a rotation lands while the notice is in flight', function (): void {
-        $this->publisher->during = fn () => managed_enrol($this->environmentId);
+    it('refuses a rotation while the notice is being sent, and records the send', function (): void {
+        $refused = null;
+        $this->publisher->during = function () use (&$refused): void {
+            try {
+                managed_enrol($this->environmentId);
+            } catch (ResourceOperationException $exception) {
+                $refused = $exception->errorCode;
+            }
+        };
 
         managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
 
         $row = ConnManagedRevision::query()->sole();
-        expect($this->publisher->sent)->toHaveCount(1)
-            ->and($this->publisher->sent[0]['channel'])->toBe('private-conn-target.'.$this->target->id.'.1')
-            ->and($this->target->fresh()->generation)->toBe(2)
+        expect($refused)->toBe('conn.managed_target_busy')
+            ->and($this->target->fresh()->generation)->toBe(1)
+            ->and($this->publisher->sent)->toHaveCount(1)
+            ->and($row->notice_sent_at)->not->toBeNull()->and($row->notice_suppressed_at)->toBeNull();
+    });
+
+    it('refuses a rotation after a successful send but before its record, and keeps the send outcome', function (): void {
+        $refused = null;
+        ConnManagedRevision::saving(function (ConnManagedRevision $row) use (&$refused): void {
+            if ($row->isDirty('notice_sent_at') && $refused === null) {
+                try {
+                    managed_enrol($this->environmentId);
+                    $refused = 'rotated';
+                } catch (ResourceOperationException $exception) {
+                    $refused = $exception->errorCode;
+                }
+            }
+        });
+
+        managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
+
+        $row = ConnManagedRevision::query()->sole();
+        expect($refused)->toBe('conn.managed_target_busy')
+            ->and($this->target->fresh()->generation)->toBe(1)
+            ->and($row->notice_sent_at)->not->toBeNull()->and($row->notice_suppressed_at)->toBeNull()->and($row->superseded_at)->toBeNull();
+    });
+
+    it('rotates once the send is recorded, and keeps the sent notice apart from supersession', function (): void {
+        managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
+        managed_enrol($this->environmentId);
+
+        $row = ConnManagedRevision::query()->sole();
+        expect($row->notice_sent_at)->not->toBeNull()->and($row->superseded_at)->not->toBeNull()->and($row->notice_suppressed_at)->toBeNull();
+    });
+
+    it('skips and suppresses the notice when the target lock stays taken, and never sends', function (): void {
+        $held = Cache::lock('orbit:conn-managed-target:'.$this->target->id, 30);
+        expect($held->get())->toBeTrue();
+
+        managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
+        $held->release();
+
+        $row = ConnManagedRevision::query()->sole();
+        expect($this->publisher->sent)->toBe([])
             ->and($row->notice_sent_at)->toBeNull()->and($row->notice_suppressed_at)->not->toBeNull()->and($row->commit_observed_at)->not->toBeNull();
     });
 

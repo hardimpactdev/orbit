@@ -8,6 +8,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedSecrets;
+use Orbit\Extensions\Conn\Domain\Managed\ConnManagedTargetLock;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnManagedRevision;
 use Orbit\Extensions\Conn\Models\ConnManagedTarget;
@@ -36,6 +37,23 @@ final readonly class EnrolConnManagedTargetAction
         if (is_dir($credentialFile)) {
             throw new ResourceOperationException('conn.managed_credential_file_invalid', 'The credential file path is a directory.', 422);
         }
+
+        // A rotation takes the target's lock, so it never lands between a notice's generation check, send and record.
+        $existing = ConnManagedTarget::query()->where('conn_environment_id', $environment->id)->value('id');
+        if (! is_int($existing)) {
+            return $this->enrol($environment, $nodeId, $credentialFile);
+        }
+
+        return ConnManagedTargetLock::run(
+            $existing,
+            fn (): array => $this->enrol($environment, $nodeId, $credentialFile),
+            static fn (): never => throw new ResourceOperationException('conn.managed_target_busy', 'A revocation notice of this target is being sent; enrol again.', 409),
+        );
+    }
+
+    /** @return array{target_id: int, environment_id: string, generation: int, revision: int, node_id: int} */
+    private function enrol(ConnEnvironment $environment, int $nodeId, string $credentialFile): array
+    {
         $credential = ConnManagedSecrets::service();
         $temporary = $credentialFile.'.'.bin2hex(random_bytes(6)).'.tmp';
         // One cleanup for every outcome: after a delivery the temporary file no longer exists, after any failure it goes.

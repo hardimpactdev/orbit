@@ -165,5 +165,7 @@ return [
         // The routes of managed grant revocation (docs/reference/conn.md#managed-grant-revocation): off by default. Edge removal
         // records managed revisions for every enrolled target whether this is on or off.
         'managed_targets' => (bool) env('ORBIT_CONN_MANAGED_TARGETS', false),
+        // How long notice publication and rotation of one managed target wait for each other before they fail safe.
+        'managed_target_lock_wait_seconds' => 10,
     ],
 ];

@@ -52,12 +52,25 @@ final readonly class ConnManagedRevocation implements NodeAccessRemovalTransacti
      * `$observedAt` is sampled in the after-commit callback, so it bounds the commit from above as `committed_at` bounds it
      * from below.
      *
-     * The send holds no write lock, so a slow Reverb never delays another target's probe. The generation is checked under
-     * the lock before the send and again when the result is recorded. A rotation during the send can let the notice reach
-     * only the replaced generation's channel, which the Gateway signs for nobody and which carries no authority for the
-     * successor; the row then records `notice_suppressed_at`, never `notice_sent_at`.
+     * The target's lock, which rotation also takes, is held across the check, the send and its record, so no rotation lands
+     * between them. Each database step is its own short transaction: the send holds no writer lock. When the lock stays
+     * taken past its wait, the notice is skipped and suppressed, never sent to a generation that may have rotated.
      */
     private function publish(int $revisionId, string $observedAt): void
+    {
+        $targetId = ConnManagedRevision::query()->whereKey($revisionId)->value('conn_managed_target_id');
+        if (! is_int($targetId)) {
+            return;
+        }
+
+        ConnManagedTargetLock::run(
+            $targetId,
+            fn () => $this->publishLocked($revisionId, $observedAt),
+            fn () => $this->record($revisionId, ['commit_observed_at' => $observedAt, 'notice_suppressed_at' => ConnManagedSecrets::now()]),
+        );
+    }
+
+    private function publishLocked(int $revisionId, string $observedAt): void
     {
         $notice = DB::transaction(function () use ($revisionId, $observedAt): ?array {
             $row = ConnManagedRevision::query()->findOrFail($revisionId);
@@ -65,13 +78,10 @@ final readonly class ConnManagedRevocation implements NodeAccessRemovalTransacti
             $row->commit_observed_at = $observedAt;
             if ($target->generation !== $row->generation) {
                 $row->notice_suppressed_at = ConnManagedSecrets::now();
-                $row->save();
-
-                return null;
             }
             $row->save();
 
-            return ['channel' => $target->channel($row->generation), 'data' => [
+            return $row->notice_suppressed_at !== null ? null : ['channel' => $target->channel($row->generation), 'data' => [
                 'environment_id' => $target->environment_id,
                 'generation' => $row->generation,
                 'revision' => $row->revision,
@@ -82,18 +92,16 @@ final readonly class ConnManagedRevocation implements NodeAccessRemovalTransacti
             return;
         }
 
-        $sent = $this->publisher->publish($notice['channel'], $notice['data']);
-        $sentAt = ConnManagedSecrets::now();
+        if ($this->publisher->publish($notice['channel'], $notice['data'])) {
+            $this->record($revisionId, ['notice_sent_at' => ConnManagedSecrets::now()]);
+        }
+    }
 
-        DB::transaction(function () use ($revisionId, $sent, $sentAt): void {
-            $row = ConnManagedRevision::query()->findOrFail($revisionId);
-            $target = ConnManagedTarget::query()->findOrFail($row->conn_managed_target_id);
-            if ($target->generation !== $row->generation) {
-                $row->notice_suppressed_at = $sentAt;
-            } elseif ($sent) {
-                $row->notice_sent_at = $sentAt;
-            }
-            $row->save();
+    /** @param array<string, string> $values */
+    private function record(int $revisionId, array $values): void
+    {
+        DB::transaction(static function () use ($revisionId, $values): void {
+            ConnManagedRevision::query()->findOrFail($revisionId)->forceFill($values)->save();
         });
     }
 }
