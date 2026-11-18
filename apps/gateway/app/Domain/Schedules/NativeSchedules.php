@@ -213,7 +213,9 @@ final readonly class NativeSchedules
         $intent = ['schedule' => ['id' => $schedule->id, 'command_hash' => hash('sha256', $schedule->command), 'user' => $target->user,
             'working_directory' => $target->workingDirectory ?? '', 'shell' => $target->shell ?? '', 'login_shell' => $target->loginShell, 'timeout_seconds' => $schedule->timeout_seconds],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($target->node),
-            ...($target->container === null ? [] : ['container' => $target->container])];
+            ...($target->container === null ? [] : (isset($target->container['release'], $target->container['instance_id'])
+                ? ['production_control' => ['instance_id' => $target->container['instance_id'], 'release' => 'current']]
+                : ['container' => $target->container]))];
 
         return json_encode([
             'id' => $workflowId,

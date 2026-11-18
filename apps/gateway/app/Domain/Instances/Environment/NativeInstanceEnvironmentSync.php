@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
@@ -55,7 +57,25 @@ final readonly class NativeInstanceEnvironmentSync
     {
         $plan = ValidatedData::object($operation->input['direct_environment']);
         $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
+        $target = ProductionContainerRelease::target($instance);
+        if (($operation->input['production_control'] ?? null) != $target) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The admitted environment no longer belongs to the serving release.', 409);
+        }
         $files = $this->admittedFiles($operation);
+        if ($target !== null) {
+            $renderer = app(SystemdProcessRenderer::class);
+            $units = Process::query()->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $instance->id)
+                ->where('status', 'active')->where('desired_state', 'running')->where('restart_on_deploy', true)->orderBy('id')->get()
+                ->map(fn (Process $process): string => $renderer->unitName($process))->values()->all();
+            $payload = ['instance_id' => $instance->id, 'release' => $target['release'], 'base' => $plan['base'],
+                'content' => $files['content'], 'testing' => $files['testing']['content'] ?? null,
+                'force' => ($operation->input['force'] ?? false) === true, 'laravel' => $instance->source_is_laravel === true,
+                'managed_keys' => array_values(array_unique([...ValidatedData::stringList($plan['keys']), ...ValidatedData::stringList($plan['owned_keys'])])),
+                'restart_units' => $units];
+
+            return ['intent' => ['target' => $target, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node)],
+                'execution_secrets' => ['environment' => $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-'.$operation->id, json_encode($payload, JSON_THROW_ON_ERROR))]];
+        }
 
         $secrets = ['environment' => $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-'.$operation->id, $files['content'])];
         if ($files['testing'] !== null) {
@@ -72,7 +92,7 @@ final readonly class NativeInstanceEnvironmentSync
     {
         $plan = ValidatedData::object($operation->input['direct_environment']);
         $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
-        $context = $this->contexts->resolve($instance, true, productionContainer: isset($operation->input['production_release']));
+        $context = $this->contexts->resolve($instance, true, productionContainer: isset($operation->input['production_release']) || isset($operation->input['production_control']));
         if ($operation->node_id !== $instance->node_id || $plan['node_id'] !== $context->nodeId || $plan['base'] !== $context->path
             || $plan['user'] !== $context->executionUser || $plan['environment'] !== $context->environment) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Instance environment placement changed after admission.', 422);

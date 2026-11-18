@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
@@ -45,12 +46,18 @@ final readonly class StartInstanceEnvironmentSyncAction
         }
 
         return DB::transaction(function () use ($instance, $caller, $requestId, $force): Operation {
-            $context = $this->contexts->resolve($instance->refresh(), true);
+            $target = ProductionContainerRelease::target($instance->refresh());
+            $context = $this->contexts->resolve($instance, true, productionContainer: $target !== null);
             if (! $instance->environmentValues()->exists()) {
                 throw new ResourceOperationException('env.configuration_missing', 'Import or store environment configuration before synchronization.', 409);
             }
-            $testingSkip = $this->observed->admit($instance, $context, $force);
-            $input = ['instance_id' => $instance->id, 'direct_environment' => $this->sync->plan($context, testingSkip: $testingSkip)];
+            // For a release container the locked guest checks the real file and its tracked status.
+            $testingSkip = $target === null ? $this->observed->admit($instance, $context, $force) : null;
+            $input = ['instance_id' => $instance->id, 'direct_environment' => $this->sync->plan($context, includeRuntime: $target === null, testingSkip: $testingSkip)];
+            if ($target !== null) {
+                $input['production_control'] = $target;
+                $input['force'] = $force;
+            }
 
             return $this->operations->execute('instance.sync_environment', 'instance', $instance->id, $instance->node_id,
                 $input, $caller, $requestId);
