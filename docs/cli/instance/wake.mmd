@@ -78,7 +78,7 @@ sequenceDiagram
         %%> - the existing page polls every 250 ms and loads the app when the marker goes
       end
     end
-    Note over GW: Project the terminal receipt
+    Note over GW: Project the receipt<br/>end the Operation
     %%> - done or partial succeeds, refused or failed fails; the worker sends the Operation's notices without waiting for the sweep
     %%> - the job after 6 s still recovers an absent result and finishes a known result if the immediate job did not run
     %%> - a background worker runs the lifecycle hook after success without holding a database writer, and records it once per Operation
