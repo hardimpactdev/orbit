@@ -24,24 +24,33 @@ final class WebSocketSwampDependencyReader implements SwampDependencyReader
 
     private ?WebSocketClient $socket = null;
 
-    /** @param Closure(int): WebSocketClient $socketFactory */
+    /** @var Closure(): float */
+    private readonly Closure $clock;
+
+    /**
+     * @param  Closure(int): WebSocketClient  $socketFactory
+     * @param  (Closure(): float)|null  $clock
+     */
     public function __construct(
         private readonly Closure $socketFactory,
         private readonly string $address,
         #[\SensitiveParameter] private readonly string $token,
         private readonly string $caPath,
-    ) {}
+        ?Closure $clock = null,
+    ) {
+        $this->clock = $clock ?? static fn (): float => microtime(true);
+    }
 
     public function read(string $dataName, ?int $version, int $maxBytes): string
     {
         if ($this->token === '' || preg_match('/[\r\n]/', $this->token.$this->address) === 1 || ! in_array($maxBytes, [65_536, self::MaxBytes], true)) {
             throw new SwampDependencyReadException(DependencyReadFailure::Unavailable);
         }
-        $deadline = microtime(true) + 5.0;
+        $deadline = ($this->clock)() + 5.0;
         try {
             $socket = $this->connected();
             $id = $this->request($socket, $dataName, $version);
-            while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+            while ($socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
                 foreach ($socket->receive(min(0.2, $remaining)) as $message) {
                     if (($message['id'] ?? null) === $id) {
                         return $this->content($message, $dataName, $version, $maxBytes);
@@ -70,14 +79,14 @@ final class WebSocketSwampDependencyReader implements SwampDependencyReader
             return [];
         }
         $socket = $this->socket;
-        $deadline = microtime(true) + 5.0;
+        $deadline = ($this->clock)() + 5.0;
         $pending = [];
         $contents = [];
         try {
             foreach (array_values(array_unique($dataNames)) as $dataName) {
                 $pending[$this->request($socket, $dataName, null)] = $dataName;
             }
-            while ($pending !== [] && $socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
+            while ($pending !== [] && $socket->isConnected() && ($remaining = $deadline - ($this->clock)()) > 0) {
                 foreach ($socket->receive(min(0.2, $remaining)) as $message) {
                     $id = $message['id'] ?? null;
                     if (! is_string($id) || ! isset($pending[$id])) {

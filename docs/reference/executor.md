@@ -32,6 +32,10 @@ The converge writes:
 
 The converge also makes the system user `orbit-executor-relay`. A changed binary or file restarts the service.
 
+### One agent binary
+
+[ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7 makes the executor the second process of the one `orbit-agent` binary. On Linux, `orbit-agent execute serve` and `orbit-agent execute relay` run the same code as `orbit-executor serve` and `orbit-executor relay`: the executor crate is a library, and both binaries call its one entry point. The separate `orbit-executor` binary and its artifact stay until the Gateway pins an agent delivery whose `orbit-agent` has the `execute` mode. The pull request that moves the install to `orbit-agent execute serve` removes them. From then on a new agent binary restarts `orbit-executor.service` too: the relay check compares the caller with the executable the executor started from.
+
 ### Rollout
 
 A converge skips the executor install until the Gateway has both parts it needs. The intent names the reason as `skip`, and the converge records `executor install skipped: <reason>` in its run:
@@ -101,7 +105,7 @@ An allowed caller sends one order and gets two JSON lines: `{"status":"accepted"
 
 ## The order
 
-The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload holds `action`, `node`, `target`, `operation`, `nonce` (32 lowercase hex digits) and `expires_ms`, and an optional `power_check` for a `sleep` or `wake`. An unknown field refuses. The executor checks, in this order, and refuses with the code in brackets:
+The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload holds `action`, `node`, `target`, `operation`, `nonce` (32 lowercase hex digits) and `expires_ms`, an optional `power_check` for a `sleep` or `wake`, and an optional `input`: the primitive's public typed input, any JSON, `null` when absent ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats)). The executor keeps a non-null `input` in the order's open journal record, so crash recovery runs the order with it; the primitive checks it against its own schema. An unknown field refuses. The executor checks, in this order, and refuses with the code in brackets:
 
 1. The size and the form (`order_too_large`, `order_malformed`).
 2. The signature, with `verify_strict` against each pinned key (`bad_signature`), then the payload's shape (`bad_payload`).
@@ -119,7 +123,7 @@ Orders for one target run one at a time under that target's lock; different targ
 
 ## The Gateway signer and the event
 
-`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values).
+`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values). The signer sends no `input` yet: the first primitive that takes one adds it.
 
 The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 

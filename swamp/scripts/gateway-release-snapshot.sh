@@ -16,7 +16,7 @@ older() { local files=("$backups"/pre-*.sqlite); [ ${#files[@]} -eq 0 ] || ls -1
 # Prints the bytes free above the floor after <bytes> more are written: negative when the floor would break.
 room() {
   local size avail floor
-  read -r size avail < <(df --output=size,avail -B1 "$base" | tail -1)
+  read -r size avail < <(df --output=size,avail -B1 "${ORBIT_GATEWAY_DISK_CHECK:-$base}" | tail -1)
   floor=$((size / 10 > 2147483648 ? size / 10 : 2147483648))
   echo $((avail - $1 - floor))
 }
@@ -29,13 +29,13 @@ if [ "${1:-}" = --check ]; then
   exit 0
 fi
 
-id=$1 app=$base/releases/$1/apps/gateway
+id=$1 app=${ORBIT_GATEWAY_RELEASE_APP:-$base/releases/$1/apps/gateway}
 umask 077 && install -d -m 0700 "$backups"
 # Releases run one at a time, so a partial copy here is from a stopped run.
 rm -f -- "$backups"/pre-*.sqlite.partial
 # The PHP code is in single quotes on purpose.
 # shellcheck disable=SC2016
-database=$(php8.5 -r '$c = require $argv[1]; echo $c["database"]["connections"]["sqlite"]["database"];' "$app/bootstrap/cache/config.php")
+database=$("${ORBIT_GATEWAY_PHP:-php8.5}" -r '$c = require $argv[1]; echo $c["database"]["connections"]["sqlite"]["database"];' "$app/bootstrap/cache/config.php")
 need=$(stat -c %s "$database")
 if [ "$(room "$need")" -lt 0 ]; then
   older 1 | xargs -r rm -f --
@@ -43,7 +43,7 @@ if [ "$(room "$need")" -lt 0 ]; then
 fi
 path="$backups/pre-$id-$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n').sqlite"
 # shellcheck disable=SC2016
-php8.5 -r '$db = new PDO("sqlite:".$argv[1], null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); $db->exec("VACUUM INTO ".$db->quote($argv[2]));' \
+"${ORBIT_GATEWAY_PHP:-php8.5}" -r '$db = new PDO("sqlite:".$argv[1], null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); $db->exec("VACUUM INTO ".$db->quote($argv[2]));' \
   "$database" "$path.partial" || { rm -f "$path.partial"; echo "gateway.release_snapshot_failed: VACUUM INTO failed" >&2; exit 1; }
 sync "$path.partial" && mv "$path.partial" "$path"
 older 2 | xargs -r rm -f --

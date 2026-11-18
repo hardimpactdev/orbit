@@ -33,6 +33,24 @@ additionalFiles:
   - ansible/operation-node-converge.yml
   - ansible/fleet-converge-inputs.json
   - ansible/tasks/node-role-runtime.yml
+  - ansible/tasks/production-release-host.yml
+  - ansible/tasks/production-container-process.yml
+  - ansible/files/production-release-host.py
+  - ansible/files/instance-release-prepare.py
+  - ansible/files/instance-release-routes.py
+  - ansible/files/instance-release-phase.py
+  - ansible/files/instance-release-control.py
+  - ansible/files/instance-control-schedule.py
+  - ansible/files/instance-control-process.py
+  - ansible/files/instance-legacy-schedule.py
+  - ansible/files/instance-control-environment.py
+  - ansible/files/instance-release-vp.ts
+  - extensions/behaviors/operations/instance-deploy/vp_requirements.ts
+  - extensions/behaviors/operations/instance-vp-command/requirements.ts
+  - ansible/files/instance-release-guest.py
+  - ansible/files/instance-release-sql.py
+  - scripts/release-container.py
+  - scripts/production-release-phase
   - ansible/tasks/proof-seed-listener.yml
   - ansible/tasks/proof-seed-listen.yml
   - ansible/tasks/proof-seed-certificate.yml
@@ -55,6 +73,8 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
   - ansible/files/instance-container-wake.sh
+  - ansible/files/gateway-release-guest.py
+  - ansible/files/gateway-release-infrastructure.py
   - ansible/files/instance-container-power.py
   - ansible/files/incus-network-pid-heal.py
   - ansible/files/instance-browser-trust.sh
@@ -92,6 +112,7 @@ additionalFiles:
   - ansible/tasks/instance-container-phase.yml
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
+  - ansible/tasks/gateway-container-process.yml
   - ansible/tasks/instance-container-process.yml
   - ansible/tasks/instance-container-run-phase.yml
   - ansible/tasks/instance-fleet.yml
@@ -126,6 +147,7 @@ additionalFiles:
   - ansible/tasks/instance-migrate-link-result.yml
   - ansible/tasks/instance-migrate-process-ready.yml
   - ansible/schedule-logs.yml
+  - ansible/release-response-wait.yml
   - ansible/tasks/instance-migrate-phase.yml
   - ansible/tasks/instance-migrate-schedules.yml
   - ansible/tasks/instance-migrate-schedule-check.yml
@@ -143,6 +165,8 @@ additionalFiles:
   - ansible/tasks/instance-create-setup-step.yml
   - ansible/operation-node-add.yml
   - ansible/gateway-bootstrap.yml
+  - ansible/gateway-container-runtime.yml
+  - ansible/gateway-container-prepare.yml
   - ansible/tasks/role-prerequisites.yml
   - ansible/tasks/apt-proxy.yml
   - ansible/tasks/gateway-swamp.yml

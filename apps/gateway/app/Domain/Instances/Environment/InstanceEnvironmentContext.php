@@ -23,6 +23,7 @@ final readonly class InstanceEnvironmentContext
         public ?InstanceEnvironmentRouteDomain $routeDomainSource = null,
         public bool $cloning = false,
         public ?int $createOperationId = null,
+        public bool $productionContainer = false,
     ) {}
 
     public function samePlacement(self $other): bool
@@ -39,6 +40,7 @@ final readonly class InstanceEnvironmentContext
             && $this->routeDomain === $other->routeDomain
             && $this->nodeStatus === $other->nodeStatus
             && $this->routeDomainSource === $other->routeDomainSource
+            && $this->productionContainer === $other->productionContainer
             && $this->cloning === $other->cloning
             && $this->createOperationId === $other->createOperationId;
     }

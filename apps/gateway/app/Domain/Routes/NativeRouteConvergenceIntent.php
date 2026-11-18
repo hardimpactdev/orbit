@@ -137,7 +137,7 @@ final readonly class NativeRouteConvergenceIntent
             $routerId = $intent['router_node_id'];
             $lan = is_int($routerId) ? app(RouteHopInput::class)->firewall($instance, $route, Node::query()->findOrFail($routerId), $callerNodeId) : null;
             $served = null;
-            if ($member['production'] && $route->hasWebRoot()) {
+            if ($member['production'] && ! $instance->hasProductionRelease() && $route->hasWebRoot()) {
                 $root = $instance->root ?? $instance->project->root;
                 $served = ['repository' => $instance->project->repository_url, 'user' => $instance->production_user, 'home' => $instance->production_home, 'instance' => $instance->id,
                     'relative_root' => $root, 'application_suffix' => ProductionApplicationPaths::suffix($root),

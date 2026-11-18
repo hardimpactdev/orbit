@@ -1,32 +1,47 @@
 ---
 title: "ADR 0269: Run the Gateway in release containers with FrankenPHP worker mode"
 sidebarTitle: "0269 Gateway containers"
-description: "In progress, proposed, design only. The Gateway runs in an Incus container on its own Node, released as hot, live and old containers the way ADR 0263 releases production Instances. FrankenPHP in worker mode, through Laravel Octane's worker, serves it instead of PHP-FPM. The database, keys, Caddy, WireGuard and Swamp access stay on the host. Each choice states its cost per request."
+description: "In progress, proposed, design only. The Gateway runs in an Incus container on its own Node, with a permanent preparation container. A deploy builds there, promotes the preparation container itself to the candidate, and switches traffic to it once verified. At most three Gateway containers exist at any moment. FrankenPHP in worker mode, through Laravel Octane's worker, serves it instead of PHP-FPM. The database, keys, Caddy, WireGuard and Swamp access stay on the host. Each choice states its cost per request."
 ---
 
 # ADR 0269: Run the Gateway in release containers with FrankenPHP worker mode
 
 The Gateway runs in an Incus container on its dedicated Node. Each release is one container with one of three release states, as [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) defines them for production Instances:
 
-- **Hot** is the next release. It builds, migrates and passes its readiness check before any request reaches it.
+- **Hot** is the preparation container itself, promoted to the candidate after the build. It passes its readiness check before traffic switches.
 - **Live** serves every Gateway request and runs the Gateway's long-running parts.
-- **Old** is the release before live. It stays stopped for rollback.
+- **Old** is the release before live. After draining, it stays stopped for rollback until the next release replaces it.
 
 FrankenPHP serves live in worker mode: each worker boots Laravel once and then serves many requests. PHP-FPM goes. State that must outlive a release stays on the host: the SQLite database and every key in `ORBIT_HOME`, Caddy with its certificates, WireGuard and the Gateway's address. The host's Caddy switches traffic from live to hot with one graceful reload.
+
+The Gateway Node holds at most three Gateway containers at every moment, also during a rollback and during `--recover`:
+
+| Step | Containers |
+| --- | --- |
+| Between releases | preparation, live, stopped old |
+| Build, promote, migrate, ready, switch | the candidate (the promoted preparation), live, stopped old |
+| Verify the new live, drain and stop the former live | new live, former live, earlier old |
+| Keep the most recent verified former live as old | new live, stopped old |
+| Rebuild preparation from the new live | preparation, live, stopped old |
+| Rollback | preparation, live, old started as the candidate; then the rolled-away live stops and preparation is rebuilt |
+
+A failed candidate before the switch returns to the preparation slot, so live and the stopped old remain. The release records which releases passed public verification. One rule decides old: the most recent verified former live, else none. The earlier old goes only after the new live passed its public check; until then it stays as `earlier`, with no preparation, still three containers. After a verified switch or rollback, retire deletes every other stopped release and rebuilds preparation from the serving release. The release lock scopes the build and the switch to one target. Stopping old frees its memory; it keeps only its disk.
+
+**No file is copied, and no release keeps another's disk.** Preparation is a ZFS clone of a snapshot of live, created in about a second. A plain clone would chain every live to the release before it, so a deleted old would only move to Incus's `deleted/` path and keep its blocks. Retire therefore deletes the seed snapshot through Incus first. Incus forgets it and, because the clone needs it, keeps it as a hidden `deleted-*` snapshot. Then `zfs promote` makes preparation the origin: the forgotten snapshots move to preparation, and live becomes the dependent clone. Incus records no snapshot that moves and reads clones from ZFS on every delete, so its state stays consistent. A deleted old then frees its blocks. Retire also destroys `deleted-*` release snapshots that no clone needs any more, as Incus does for its own deleted objects. The rejected options copy files: `zfs.clone_copy=false` sends the whole dataset, and `rebase` sends everything since the image. The seed therefore refuses a pool without the zfs driver or where Incus would copy, and refuses to promote while a snapshot that Incus still records would move. Before any release container is deleted, its dependent clones are promoted off it, newest origin first, so no dataset is parked in Incus's `deleted/` path. Every clone of every snapshot that would move must be one of the Gateway's own containers by exact name: preparation, or a release the inventory or the switch journal names.
 
 ## Status
 
 In progress.
 
-Proposed: a design for review, with no part built. A measuring spike follows it in the same task group: the same release under PHP-FPM and under worker mode on a task copy's nested Gateway. The spike's numbers replace the guesses below. Number 0269 was the next free number on the workspace's `main` on 2026-11-16, after 0268; the design thread checks open pull requests before it publishes.
+Gateway and app-prod use the same Swamp build, verification and handover workflow. Gateway runs Laravel Octane in FrankenPHP worker mode. Production adoption remains open. The timing comparison between PHP-FPM and FrankenPHP also remains open.
 
-Principle: [One way, one name](/mission#principles). The Gateway uses the release states, the snapshot and the switch of ADR 0263, not a second release model. It also serves [No exceptions and no legacy](/mission#principles): the worktree releases, the PHP-FPM pool and `bin/gateway-rollback` go when their replacements are built.
+Principle: [One way, one name](/mission#principles). The Gateway uses the release states and traffic switch of ADR 0263. Its candidate is its permanent preparation container, promoted in place. It also serves [No exceptions and no legacy](/mission#principles): the worktree releases, the PHP-FPM pool and `bin/gateway-rollback` go when their replacements are built.
 
 ### The owner's decisions
 
 Nick decided these on 2026-11-16. They bind every part below.
 
-- **G1. Hot, live and old containers.** The Gateway runs in an Incus container on its dedicated Node, released the way ADR 0263 releases production Instances: hot is made ready before traffic, live serves, old is kept for rollback.
+- **G1. Hot, live and old containers.** The Gateway runs in an Incus container on its dedicated Node. A permanent preparation container stays off traffic. Wake it before deployment. Deploy the target commit there and promote that container as hot. Verify hot before switching traffic. Retain the previous live, stopped, for rollback until the next deploy. Hold at most three Gateway containers at any moment.
 - **G2. FrankenPHP worker mode.** FrankenPHP in worker mode serves the live Gateway, with Laravel booted once per worker. PHP-FPM goes, for faster requests on the wake and API paths.
 - **G3. Every millisecond counts.** As [ADR 0266 D3](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#the-owners-decisions) says for the wake, speed on the wake and API paths is measured in milliseconds. This design states what each choice costs or saves per request. A number marked *guess* is not measured yet; the spike measures it.
 
@@ -52,71 +67,75 @@ Three facts of today drive this design:
 
 The parts below take G1–G3 as given. Part 1 maps each release step of today, part 2 says what stays on the host and how traffic switches, part 3 moves the long-running parts, part 4 sets the worker, part 5 the security and part 6 the move from today's Gateway. Part 7 sums the costs per request; parts 8 and 9 hold the slices and the open points.
 
-### 1. Release and rollback, step by step
+### 1. Release and recovery, step by step
 
 The Gateway keeps its one release record and its one Swamp run per release. The run still reaches the Gateway Node over SSH from the Swamp Node, so a release never depends on a healthy Gateway. What each step does changes:
 
 | Step today | Script today | Becomes |
 | --- | --- | --- |
 | Fetch the commit into `shared/orbit.git` | inline in the workflow | The same, on the host. The host's bare repository stays the Gateway's mirror |
-| Build the release: worktree, links, `composer install --no-dev` in `apps/cli` and `apps/gateway`, agent manifest, `REVISION`, `config:cache` | `gateway-release-build.sh` | **Clone hot**, then build in it, as [Hot](#hot-and-ready) describes |
-| Install the web build into `web/releases/<id>`, with `sudo` for the `caddy` group | `gateway-release-web.sh` | The same checks; the build goes into hot, as [Hot](#hot-and-ready) describes. No `sudo`: the container's own Caddy reads it as `orbit` |
-| — | — | **Release snapshot.** New: hot's Incus snapshot `release`, before FrankenPHP starts |
-| Snapshot the database with `VACUUM INTO` | `gateway-release-snapshot.sh` | The same script, run in hot through `incus exec`, as [Where the steps run](#where-the-steps-run) says. The database stays on the host |
-| Migrate with `artisan migrate --force --isolated`, from the new release, while the old serves | inline | The same command, run in hot through `incus exec`, while live serves. See [Migrations](#migrations-across-hot-and-live) |
-| Wait for active Operations (the [release idle guard](/reference/gateway-recovery#release-idle-guard)) | `artisan gateway:release:wait-idle` | Unchanged, run in hot |
+| Build the release: worktree, links, `composer install --no-dev` in `apps/cli` and `apps/gateway`, agent manifest, `REVISION`, `config:cache` | `gateway-release-build.sh` | Build in the preparation container, as [Hot](#hot-and-ready) describes |
+| Install the web build into `web/releases/<id>`, with `sudo` for the `caddy` group | `gateway-release-web.sh` | The same checks; the build goes into the preparation container, as [Hot](#hot-and-ready) describes. No `sudo`: the container's own Caddy reads it as `orbit` |
+| — | — | **Promote.** New: stop the sealed preparation container, rename it to `gateway-<id>` with read-only boot mounts and start it as hot |
+| Snapshot the database with `VACUUM INTO` | `gateway-release-snapshot.sh` | Container releases skip this step and migrate the shared production database directly |
+| Migrate with `artisan migrate --force --isolated=1`, from the new release, while the old serves | inline | The same command, run in hot through `incus exec`, while live serves. See [Migrations](#migrations-across-hot-and-live) |
+| Wait for active Operations (the [release idle guard](/reference/gateway-recovery#release-idle-guard)) | `artisan gateway:release:wait-idle` | Existing and new Operations continue during the container release. Their admitted workflow versions outlive the switch |
 | — | — | **Ready.** New, before the Swamp load, as [Hot](#hot-and-ready) describes |
 | Load Swamp on the Swamp Node | child workflow | Unchanged |
-| Drain Horizon | `gateway-release-drain.sh` | The same rule (stop the unit, wait for its whole control group to empty), run in live through `incus exec` |
+| Drain Horizon | `gateway-release-drain.sh` | Record which workers were running, stop intake on the outgoing release and let its jobs finish |
 | Switch: both links, PHP-FPM reload, restart of every service under the application | `gateway-release-switch.sh` → `bin/gateway-rollback` | **Switch.** The host replaces one Caddy upstream file and the live link, and reloads Caddy once. No unit on the host restarts |
 | Verify `/up` and the status version through `https://gateway.orbit` | inline | Unchanged, through the public name, right after the switch |
-| Switch back after a failed verify | `gateway-release-switch-back.sh` | Put the previous upstream file and live link back and reload Caddy once. The previous live still runs, so this starts nothing |
-| Start Horizon, always | inline | Start Horizon in whichever container is live at the end, always. The rest of the [handover](#3-long-running-parts-and-their-switch) follows |
-| Admit nested-fleet refresh | inline | Unchanged, run in live after Horizon starts |
+| Failed public verification | `gateway-release-switch-back.sh` on the host PHP-FPM path | Record the failure and complete the journaled switch. The former live is stopped as old, so a rollback returns to it |
+| Start Horizon | inline | Start the selected release’s workers and finish draining the previous generation |
+| Admit nested-fleet refresh | Gateway fleet admission | The Gateway admits refresh after the [fleet is current](/reference/gateway-recovery#fleet-rollout), or after verification when fleet rollout is off |
 | Resume document cleanup | `artisan gateway:release:cleanup` | Unchanged, run in live |
-| Prune old releases | `gateway-release-prune.sh` | **Retire.** After the previous live has no request in flight, stop it as old and delete the earlier old container. ZFS keeps a dataset while a clone depends on it |
+| Retire | `gateway-release-prune.sh` | **Retire.** Verify the new live, delete the earlier old, stop the drained former live as old and recreate preparation. See the step table above |
 
 [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor) keeps the `gateway-release-*.sh` scripts as release steps outside the executor. This design changes what they do, not where they run.
 
 #### Hot and ready
 
-- **Clone.** Hot is a ZFS clone of live's `release` snapshot, named `gateway-<id>`. The clone copies no file and takes about 1 s, as ADR 0263 measured for Instances.
-- **Build.** The host pushes the commit into hot, which checks it out. `composer install --no-dev` runs in `apps/cli` and `apps/gateway` in hot, with live's `vendor/` and Composer cache, so a commit without a lock change installs nothing. The agent manifest, `REVISION`, the web build and `config:cache` follow, inside hot.
+- **Preparation container.** The Gateway Node keeps one, stopped, between releases. Retire recreates it from a snapshot of the new live: stopped, with no address reservation, boot mounts or enabled units. Start it on the next deployment. It is never frozen, so it needs no swap. Caddy never routes public requests to it. The scheduler, Horizon and the result listener stay disabled there. Only the release run can change its checkout. A failed preparation leaves traffic on live.
+- **Build.** The host sends the Git objects missing from the permanent preparation checkout and checks out the exact commit in place. A normal forward release retains the installed Composer dependencies. An interrupted build discards partial dependencies before retrying. `composer install --no-dev` runs in `apps/gateway`. Its autoloader includes two log-stream types from `packages/php-sdk/src`. The install hook reads the SDK source and CLI command definitions to generate OpenAPI and MCP files. The full checkout supplies these files. The release writes the agent delivery manifest and caches the Gateway configuration. It installs the verified CI build of `apps/web` before writing `REVISION` and promoting preparation.
 - **Checks.** The downgrade check stays. The disk check becomes the capacity check of [ADR 0263 part 8](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#8-capacity-an-optional-limit-and-an-admission-check) for the pool.
 - **Web build.** FrankenPHP's Caddy in the container serves it, so code and web build switch together in one step. Each asset pays the bridge hop, *under 0.2 ms (guess)*; the files are hashed and cached by browsers.
-- **Release snapshot.** As in ADR 0263, hot takes its Incus snapshot `release` after its build and before any request reaches it. A hot that fails a step after its snapshot is removed with that snapshot, so no next hot clones it.
-- **Ready.** After the migration and the idle guard, and before the Swamp load, hot starts FrankenPHP. The run checks `/up` and `/api/v1/gateway/status` through hot's bridge address, with `Host: gateway.orbit`. A hot that is not ready is removed. Live's code never changed, but its schema did, as after a failed release today. Swamp still holds live's workflows, because the load comes after ready.
+- **Promote.** Validate the commit, agent manifest and web artifact digest after all build steps finish. Only then seal the preparation container for this release. A retry of an interrupted build restores a clean checkout and discards partial output before rebuilding. Stop it, rename it to `gateway-<id>`, add the read-only boot mounts of the checkout and web build, and start it. A stop ends every build process. Check the sealed commit before the start. Only this candidate can become live.
+- **Ready.** After the migration, and before the Swamp load, hot starts FrankenPHP. The run checks `/up` and `/api/v1/gateway/status` through hot's bridge address, with `Host: gateway.orbit`. A hot that is not ready returns to the preparation slot: it stops, loses its boot mounts and takes the preparation name again. Live's code never changed, but its schema did, as after a failed release today. Swamp still holds live's workflows, because the load comes after ready.
 
-**Rollback.** `gateway:release:rollback` without an id returns to old, as `instance:rollback` does in ADR 0263:
+**Recovery.** Before the switch, live keeps serving. Repair preparation and retry. After the durable switch decision, recovery completes the switch and drains the outgoing release. Console recovery, `--recover`, resumes an interrupted switch when the application or Swamp is unavailable.
 
-1. Start old, cache its configuration again from the current env file, start FrankenPHP and check old as ready.
-2. Load old's commit into Swamp with `force`, as today's rollback does. Workflow inputs stay compatible only forward, so old's code needs its own workflows.
-3. Switch, verify and hand over. The rolled-away live becomes old, so a second rollback goes forward again.
+Two journal markers record owed work: `rollback` (a rollback target started) and `prep-owed` (preparation must be rebuilt from live). Only one step clears them: a successful Incus lookup that shows old and any started rollback target stopped, and preparation stopped and seeded from live. A failed lookup, check or seed keeps them, and `--recover` finishes the work. Every path that stops a release that may have served goes through one drain: stop the web server and confirm it, then the response gate, then stop. The gate saves its start before any Incus call and bounds each lookup.
+
+**Rollback.** `gateway:release:rollback <old id>` returns to old, as `instance:rollback` does in ADR 0263:
+
+1. Check that old's controller and activation workflow carry the rollback protocol. Refuse older revisions before starting old or loading its workflows. Then start old from disk. After the start, systemd-networkd waits for IPv4 on the managed `eth0` interface. The wait and Incus reads share a 15-second deadline, and the last read checks the reserved private address. If it stays absent, rollback refuses with `release.container_address_unavailable`. A single different private IPv4 address on `eth0` fails with `release.container_address_changed`. Once the address is ready, cache the configuration from the current env file, start FrankenPHP and check old privately.
+2. Load old's commit into Swamp with `force`, from the Swamp checkout, without a fetch. Workflow inputs stay compatible only forward, so old's code needs its own workflows.
+3. Switch, verify and hand over through the same journal as a release. An interrupted rollback resumes with `--recover`. The rolled-away live drains and stops as old, so a second rollback goes forward again. Rollback creates no container: preparation stays, and the count stays at three.
 4. Pause automatic releases with reason `rollback`, as today.
 
-Rollback builds nothing and restores no snapshot. Expand and contract makes the old code safe on the new schema, as today. Today's rollback runs `migrate`, which has nothing to do for an older commit; that step goes. A rollback further back is a forced release of the earlier commit. The `<id>` argument goes.
+Rollback builds nothing, runs no migration and restores no data. It uses the current database as it is. That is safe because every migration is [expand-only](#migrations-across-hot-and-live). A failure before the switch stops old again and leaves live serving. A rollback further back is a forced release of the earlier commit.
 
-**Rollback without Swamp.** `bin/gateway-rollback` becomes a host script that does only the switch and the handover to old: start old, check `/up` on its bridge address, replace the upstream file and the live link, reload Caddy, move the units. It needs Incus and Caddy, not Swamp and not the Gateway. As today, it loads no Swamp workflows: when the Gateway answers again, the operator admits a release of the serving commit to load them.
+**Rollback without Swamp.** `sudo /usr/local/libexec/orbit-gateway-rollback [<old id>]` does the same start, check, switch and handover to old through the same phases and journal. It needs Incus and Caddy, not Swamp and not the Gateway. It loads no Swamp workflows: when the Gateway answers again, the operator reconciles the serving commit to load them.
 
 #### Where the steps run
 
 The host keeps no release worktree, so it needs a rule for where each script comes from and runs:
 
 - **Source.** Every step takes its script from the commit being released, through `git -C /home/orbit/shared/orbit.git show <sha>:swamp/scripts/<script>`, as the build step already does today. So a release never runs another commit's scripts, and the host needs only Git and the bare repository.
-- **Host steps.** Fetch, clone hot, push the commit, the switch, the switch-back, the handover and retire run on the host as the release run's SSH account, with `sudo` for `incus` and Caddy. They use only shell, Git, `incus` and Caddy.
-- **Steps in a container.** Build, web build, snapshot, migrate, the idle guard, ready, the Horizon drain and the document cleanup run through `incus exec` in hot or live, as `orbit`, with the container's PHP. The snapshot step reads the database path from hot's cached configuration, as today's script reads it from the release's, and writes `VACUUM INTO` into `ORBIT_HOME/backups` through the mount. Its disk floor reads the host file system under that mount, which `df` inside the container reports.
-- **`bin/gateway-rollback`.** The switch step writes the live commit's `bin/gateway-rollback` to `/home/orbit/bin/gateway-rollback` on the host, from `git show` like every script. So the host always holds the rollback script of the release that serves. The operator reaches it as today: SSH to the Gateway Node over WireGuard, then `sudo /home/orbit/bin/gateway-rollback`.
+- **Host steps.** Fetch, push the commit to the preparation container, promote it, the switch, the handover and retire run on the host as the release run's SSH account, with `sudo` for `incus` and Caddy. They use only shell, Git, `incus` and Caddy.
+- **Steps in a container.** Build, web build, migrate, ready, the Horizon drain and the document cleanup run through `incus exec` in the preparation container, hot or live, as `orbit`, with the container's PHP.
+- **Offline recovery.** Preparation installs the root-owned entry point `/usr/local/libexec/orbit-gateway-rollback`. It holds the release lock. It rolls back to the stopped old release, or resumes the journal recorded by the switch with `--recover`. Both can be retried after fixing a failed phase.
 - **Host PHP.** None of the steps above needs PHP on the host. Until slice 7 removes the host path, the host keeps `php8.5` and its FPM pool, for the move and its rollback. After slice 7, the `gateway` role installs no PHP. A role that shares the machine and needs PHP, such as `websocket` for Reverb, installs its own.
 
 #### Migrations across hot and live
 
-The rule of today stays: forward only, expand and contract, run before the switch while the old code serves ([Expand and contract](/reference/gateway-recovery#expand-and-contract)). Containers change three things:
+Every migration is expand-only, and it runs before the switch while the old code serves ([Expand and contract](/reference/gateway-recovery#expand-and-contract)). A release only adds what its code needs. The contract waits for a following release, once no live or old release reads the old shape. So the stopped old keeps running on the current database, and a rollback never restores data. Reviewers reject a destructive migration: a dropped or renamed column or table, a narrowed type, or a data rewrite that old code cannot read. Containers change three things:
 
 - **Hot and live open the same file.** `ORBIT_HOME` is one host directory, mounted into both containers. SQLite's locks and its WAL index are kernel objects of one host file system, so a write in hot is a write that live sees on its next read. No copy and no sync exist.
 - **A table rebuild blocks live's writers.** SQLite rebuilds a table for many `ALTER TABLE` changes, and the rebuild holds the write lock. While it runs, every write in live waits on the busy timeout. Cost per request: the rebuild's time for each request that writes during it; *about 1 s per 100 MB of table (guess)*. A migration that rebuilds a large table is split, or runs as a background copy in the expand step.
 - **Worker mode keeps connections open.** A live worker keeps its PDO connection across requests. SQLite prepares a statement again when the schema changed, so a migration in hot needs no reload in live. A worker must never hold a read transaction between requests, or the WAL cannot checkpoint while hot migrates; the request end rolls back any open transaction (part 4).
 
-A failed migration leaves live serving and pauses automatic releases with the snapshot's name, as today. A rollback never undoes a migration.
+A failed migration stops the deployment before traffic switches and pauses automatic releases. Repair the production database with a corrective migration or an operator change. Rolling back the application preserves the current database.
 
 ### 2. What stays on the host, and the switch
 
@@ -124,7 +143,7 @@ The container holds only the release: the code, `vendor/`, the web build, the ca
 
 | Part | Where | Why |
 | --- | --- | --- |
-| SQLite database and its WAL | Host `ORBIT_HOME`, mounted into hot, live and old | One database serves every release; a copy per release would split writes. The host's backups and `VACUUM INTO` snapshots keep working unchanged |
+| SQLite database and its WAL | Host `ORBIT_HOME`, mounted into hot, live and old | One database serves every release; a copy per release would split writes. Database backups are independent of container releases |
 | `ORBIT_HOME` keys: SSH identity and known hosts, the WireGuard hub keys, root CA, `gateway.app-key`, the Ed25519 order key of ADR 0266 | Host `ORBIT_HOME`, same mount, so the container holds them | A key must survive every release and stay out of release snapshots. [Security](#5-security) says why the container holds the hub key |
 | `gateway.env` | Host `/home/orbit/shared/gateway.env`, mounted read-only | One env file. Only `config:cache` in a release reads it |
 | `gateway-storage` (file cache, locks, logs, uploads) | Host directory, mounted | File locks and the cache must be the same in hot and live during a deploy |
@@ -155,9 +174,9 @@ Cost: none measurable.
 
 **Who writes the site.** Node converge publishes the Gateway site today. The site's form follows one recorded state of the Gateway Node, `host` or `container`, which only the [move](#6-rollout-from-todays-gateway) sets. Converge renders the `import` of the upstream file only in `container` state, and never writes the upstream file. The switch is its only writer. So a converge between two steps of the move cannot publish an import with no container behind it.
 
-**The switch.** The Gateway's Caddy site on the host imports one upstream file, `/etc/caddy/orbit-gateway-upstream.caddy`, which names live's bridge address. The switch writes the new file beside it, renames it over the old one, replaces the live link `/home/orbit/gateway-live`, and runs one `caddy reload`. A failed reload puts both back, and live serves unchanged. Caddy's reload is graceful: requests that started on the previous live finish there, and new requests go to the new live. No request is dropped, because the previous live keeps running until it has no request in flight:
+**The switch.** The Gateway's Caddy site on the host imports one upstream file, `/etc/caddy/orbit-gateway-upstream.caddy`, which names live's bridge address. The switch writes the new file beside it, renames it over the old one, replaces the live link `/home/orbit/gateway-live`, and runs one `caddy reload`. After the durable selection, recovery republishes that upstream and retries the reload. Caddy's reload is graceful: requests that started on the previous live finish there, and new requests go to the new live. No request is dropped, because the previous live keeps running until it has no request in flight:
 
-- Retire reads FrankenPHP's `frankenphp_busy_workers` metric on the previous live and stops it only when the metric is 0, or when N has passed since the switch. N is the request limit of [ADR 0218](/decisions/0218-take-long-commands-off-the-request-path#the-new-limit-300-seconds): 600 s today, 300 s after ADR 0218's limit change. No setting holds N yet, as [part 4](#4-frankenphp-worker-mode) says.
+- Retire waits for HTTP and Horizon to drain, then stops the former live as old. If the deadline expires or a drain probe fails, preserve the outgoing container and retry recovery.
 - Caddy's `grace_period` is set to N, so a reload never cuts a request that the request limit still allows.
 
 Cost per request: the hop from the host's Caddy to FrankenPHP over the bridge replaces today's FastCGI hop over a Unix socket. *Under 0.2 ms either way (guess)*; the spike measures both. The switch itself costs no request any time: the reload is in Caddy, not in PHP.
@@ -166,23 +185,16 @@ Cost per request: the hop from the host's Caddy to FrankenPHP over the bridge re
 
 ### 3. Long-running parts and their switch
 
-ADR 0263's one rule holds, with one exception. A release container's units are enabled only while it is live, and only live starts with the Node. Hot installs them disabled, so its snapshot holds them disabled. The exception: the result listener starts in hot at step 1 below, while the previous live's listener runs until step 6. So it runs in two containers across the switch.
+ADR 0263's one rule holds, with one exception. A release container's units are enabled only while it is live, and only live starts serving with the Node. After a host reboot the next deploy starts the preparation container from disk, with its Gateway services disabled. Its clones have autostart disabled until promoted. The preparation container installs them disabled. The clone inherits disabled units. The exception: the result listener starts in hot at step 1 below, while the previous live's listener runs until step 6. So it runs in two containers across the switch.
 
-**Units and Process records.** Horizon and the scheduler are Node Processes today: Process records `horizon` and `schedule-work`, with host units that the `gateway` role's convergence writes, and the release intent names the Horizon unit as `horizon_unit`. In containers, hot renders these units from the same `GatewayRuntimeFiles` code when it builds, so each release carries its own units. The role no longer writes them. The Process records stay; `process:*` and the journal reads act on live, as [ADR 0263 part 5](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#5-workers-schedules-and-reverb-run-only-in-live) does for Instances. `horizon_unit` names the unit inside the container.
+**Units and Process records.** Horizon and the scheduler are Node Processes today: Process records `horizon` and `schedule-work`, with host units that the `gateway` role's convergence writes, and the release intent names the Horizon unit as `horizon_unit`. The preparation container renders these units from the same `GatewayRuntimeFiles` code when it builds, so each release carries its own units. The role no longer writes them. The Process records stay; `process:*` and the journal reads act on live, as [ADR 0263 part 5](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#5-workers-schedules-and-reverb-run-only-in-live) does for Instances. `horizon_unit` names the unit inside the container.
 
-The order of a release around the switch:
+The release remembers which workers were active, fences new work on the outgoing release, commits the switch and starts the selected release’s workers. Public verification and Horizon startup can run concurrently. Recovery completes the switch if verification fails. The former live remains available to its in-flight requests and jobs until both drains finish. Then its Horizon units are disabled and it stops as old, so a rollback start runs no consumer until the switch enables them.
 
-1. Start the listener in hot.
-2. Drain Horizon in live.
-3. Switch, and verify through the public name. A failed verify switches back.
-4. Start Horizon in whichever container is live now.
-5. Move the scheduler and the hibernator timer to the live container.
-6. Stop the listener in the container that is not live.
-7. Resume the release cleanups, then retire.
+The fence follows the release that is about to serve. Before a switch, the candidate closes the Operation versions it deprecates and reopens every version it can still start. A rollback therefore reopens the versions that the rolled-away release closed.
 
-Each part, with its cost:
+- **Horizon and its queues.** Jobs already executing finish on their original workers. The new workers can consume queued jobs admitted by either compatible release. Each Operation retains the workflow version assigned at admission.
 
-- **Horizon and its queues.** As today: drain Horizon in live before the switch, switch, then start Horizon in the new live, always. The drain stops the unit and waits for its control group to empty, up to the drain. Jobs that requests dispatch during the drain wait in Valkey, and a job finishes on the release that started it. Cost: no request waits for the drain, because live serves until the switch. Queued jobs wait up to the drain, as today.
 - **Scheduler** (`schedule:work`). Stop it in the previous live, then start it in the new live. The handover never runs in the last 2 s or the first 2 s of a minute, so no minute fires twice or is skipped. The release cleanups pause and resume by generation, as today. Cost: none per request. A minute's tick starts up to 2 s late during a release (guess).
 - **Runtime hibernator.** A container timer, enabled only in live. Cost: none.
 - **ADR 0266 result listener** (`orbit:agent-view`). It starts in the new live **before** the switch and stops in the previous live after it, so one listener always runs.
@@ -200,7 +212,7 @@ Only live has `boot.autostart`, so a reboot brings back live with its units, as 
 
 **SSH ControlMaster rule.** `SshControlGroup` keeps its reason and changes its match. In the container, FrankenPHP runs as the unit `orbit-gateway-web.service`, and its control group outlives every request, as PHP-FPM's did. So `Master` also goes to a process in that unit's control group (slice 5). The `php*-fpm.service` match stays until slice 7 removes the host path, so the host Gateway keeps its 18 ms commands during the move and its rollback. No step pays 190 ms per command. Horizon stays `Alone`; every other process rides an open master or opens its own connection.
 
-The connection sockets move from `ORBIT_HOME/ssh/mux`, which every container mounts, to the container's own `/run/orbit/ssh-mux`. Otherwise hot's migration and readiness commands, or old after a rollback, would ride live's masters across containers, and a stopped container would leave sockets behind that the next live trusts. The cost: after a switch, the first command to each Node from the new live opens a new connection, *about 190 ms instead of 18 ms*, once per Node. A warm-up before the switch would save that cost for the busiest Nodes, but only the FrankenPHP unit opens masters, so it needs a new internal endpoint. That is a new way in, and it stays an open point.
+The connection sockets move from `ORBIT_HOME/ssh/mux`, which every container mounts, to the container's own `/run/orbit/ssh-mux`. Otherwise hot's migration and readiness commands, or the draining release, would ride live's masters across containers, and a stopped container would leave sockets behind that the next live trusts. The cost: after a switch, the first command to each Node from the new live opens a new connection, *about 190 ms instead of 18 ms*, once per Node. A warm-up before the switch would save that cost for the busiest Nodes, but only the FrankenPHP unit opens masters, so it needs a new internal endpoint. That is a new way in, and it stays an open point.
 
 A master started by a FrankenPHP thread is a child of the FrankenPHP process, and a worker restart does not end it. Only the unit's stop ends it, and retire stops the unit only after the drain.
 
@@ -212,7 +224,7 @@ A master started by a FrankenPHP thread is a child of the FrankenPHP process, an
 
 - the PDO connection to SQLite: *about 0.1 ms per request (guess)*;
 - the Predis connection to Valkey with its login (`HELLO`, `CLIENT SETINFO`, `SELECT`): *1–2 ms per request that uses Valkey (guess)*, which includes every wake through ADR 0266's `BLPOP`;
-- the HTTP connection to Reverb's API for the signed `executor-order` event: *2–10 ms per wake (guess)* for the TCP and TLS setup. This saving needs a code change. `RealtimeConnection::configureBroadcasting` builds a new `CurlHandler` for every delivery, and channel auth purges the broadcaster, so today no connection survives a request even in a worker. Slice 1 keeps one handler per Reverb connection; until then this saving is 0.
+- the HTTP connection to Reverb's API for the signed `executor-order` event: *2–10 ms per wake (guess)* for the TCP and TLS setup. The worker reuses a cURL handler while the endpoint and trusted CA match. The signing driver is rebuilt when the settings change within a request and released after deferred sends and activity finalization, on both normal termination and a worker error. The cURL handler can keep its connection across requests and signing key rotations.
 
 The wake inside the request therefore costs the route, the Ed25519 signature (*about 50 µs, guess*), one Reverb publish and one `BLPOP`, with no boot. Compared with ADR 0266's 500 ms bound, the boot alone was up to 8 % of it.
 
@@ -224,7 +236,7 @@ The wake inside the request therefore costs the route, the Ed25519 signature (*a
 - **Static state.** The known statics: `RequestLogContext::$depth` and `$requestId` (a request id that leaks marks the next request's logs), `RecordEventBroadcaster::$immediate`, `RealtimeConnection::$caFactory` (a factory, safe), `SwampHandshakes::$warned`, `SourceDigest::$cache`, `SourceClosure::$cache` and `$roots`, `OperationRunBudgets::$history` (scoped to one tick, safe), and `ActivityShutdownFinalizer::$armed` (not safe, next item). Slice 1 resets each unsafe one at the request end. A test fails on any mutable static that is not on an allow list with its reason.
 - **Closures over the base container.** `TasksServiceProvider` registers a `terminating` callback that captures `$this->app`, the base container, not the copy that Octane gives each request. Its `TaskBroadcasts` flush can then read the wrong copy. Slice 1 resolves the container when the callback runs.
 - **`ActivityShutdownFinalizer`.** It registers one `register_shutdown_function` per request. In a worker, shutdown functions run only when the worker exits, so one closure piles up per request until then, and `disarm()` cannot remove it. It changes to disarm and finalize at Octane's request end (`RequestTerminated`), and to keep one shutdown function per worker for a fatal error that ends the worker. Its comment already names `forgetArmed()` for long-lived processes.
-- **Configuration.** A worker reads `bootstrap/cache/config.php` once. `gateway:release:configure` therefore restarts live's workers gracefully after it renames the cache. Request code writes configuration today: `RealtimeConnection::configureBroadcasting` sets the Reverb connection on each broadcast and channel auth. Octane gives each request its own copy of the configuration, so such a write ends with its request. This comes from Octane's documented sandbox, not from its source, which is not installed here; slice 1 confirms it with a test of two requests.
+- **Configuration.** A worker reads `bootstrap/cache/config.php` once. `gateway:release:configure` therefore restarts live's workers gracefully after it renames the cache. `RealtimeConnection::configureBroadcasting` sets the Reverb connection for broadcasts and channel auth. Octane gives each request its own copy of the configuration and shares Laravel's broadcast manager across requests. The next request starts with an empty Reverb driver cache and no prior signing credentials in its configuration.
 - **Connections.** At the request end, any open database transaction rolls back, and a Valkey connection that a client-side timeout cut is closed. A `BLPOP` uses the server-side timeout with a client read timeout above it. Otherwise a late reply would reach the next command on that connection and hand one request another request's result.
 - **`/proc/self/cgroup`.** `SshControlGroup` reads it per call; that stays correct in a worker.
 
@@ -248,18 +260,7 @@ Unlike an app container, the Gateway's container is the control plane. Anyone wh
 
 ### 6. Rollout from today's Gateway
 
-The move keeps the same commit live and changes only where it runs. The orchestrator owns releases, windows and host changes, so it runs these steps:
-
-1. **Turn automatic releases off** with `gateway:auto-release:disable`, so no release starts during the move.
-2. **Converge the `gateway` role with the container setup**: Incus, a ZFS pool for the Gateway's containers, the bridge `orbitgw0`, the NAT rule and the runtime folder. No traffic changes. A Node without a spare disk gets a pool on a file; the open points name this.
-3. **Release the commit that holds the container workflows, through today's flow.** The release that adds this design's workflows still builds a worktree and reloads PHP-FPM. Its Swamp load installs the new workflows, unused. The Gateway Node's recorded site state stays `host`, so a converge keeps publishing `php_fastcgi`.
-4. **Run `gateway:release:move`** (a new one-time run, `operation-gateway-release-move`) at the same commit. It refuses while a release runs. It builds a cold hot from the image, mounts `ORBIT_HOME`, runs no migration (the schema is current), checks readiness on the bridge address, and switches: it sets the site state to `container`, and the Caddy site goes from `php_fastcgi` on the pool's socket to the upstream file, in one reload. PHP-FPM finishes its requests in flight. It hands over in the order of [part 3](#3-long-running-parts-and-their-switch): the container's listener starts and the host's Horizon drains before the switch. After the switch and its verify, Horizon starts in the container, and the scheduler, hibernator timer and agent view move from the host to the container. The host units stay installed and disabled.
-5. **Check** `/up`, `gateway:status` and one wake of a sleeping clone through the public name.
-6. **Rollback during the move** is the inverse: set the site state back to `host`, restore the Caddy site with `php_fastcgi`, reload, and enable the host units again. The host release stays until step 8.
-7. **Release one commit through the container flow**, with automatic releases still off. It builds a warm hot from the moved release's snapshot, so the moved release becomes old.
-8. **Remove the host path** after that release is verified: the worktree releases, the PHP-FPM pool and its unit, the host units, `web/releases`, and the old-paths entries. Turn automatic releases on.
-
-No step needs a maintenance window. The orchestrator owns the host change of step 2 and picks its time. It picks a quiet time for step 4 too, because the drain of the host's Horizon runs as long as its longest job. The nested Gateways of task copies and proofs bootstrap the same way: `workflow-gateway-bootstrap` builds a cold hot instead of a worktree, so there is one path. Whether a nested Gateway's machine allows a container inside it is an open point.
+The first move keeps the same commit live. Deploy the tooling through the host release flow, prepare the container runtime and move the verified release with its published web archive. See [Move the Gateway to release containers](/reference/gateway-recovery#move-the-gateway-to-release-containers).
 
 ### 7. Cost per request, in one table
 
@@ -287,13 +288,14 @@ Each slice is one pull request. Slices 3 to 7 depend on ADR 0263's build subtask
    - Proof: Pest tests of a peer-only route through a trusted proxy, and of a forged header from an untrusted address.
 3. **Gateway role container setup.** Incus, the pool, `orbitgw0`, the NAT and hairpin rules, the image with only `orbit`, the idmapped mounts, and the site state `host` or `container` that picks the Caddy site's form.
    - Proof: a fixture `gateway` Node converged twice, with no change the second time.
-4. **Hot build and ready.** Every script from `git show` of the commit; clone, push, `composer install`, web build, `config:cache`, the units that hot renders, the `release` snapshot, the database snapshot and migrate in hot, ready on the bridge address before the Swamp load, removal on failure.
+4. **Hot build and ready.** Every script from `git show` of the commit; update the preparation container, run `composer install`, install the web build and units, cache configuration, promote preparation to hot, migrate in hot, ready on the bridge address before the Swamp load, removal on failure.
    - Proof: release cases on the nested Gateway; a failed step and a failed readiness leave live unchanged.
-5. **Switch, handover and retire.** The upstream file over every Caddy consumer and the live link; the graceful reload with `grace_period`; the busy-worker drain; the listener overlap with its conditional record; the scheduler's minute guard; `process:*` on live; the SSH socket move and the FrankenPHP match in `SshControlGroup`; `FleetReboot`'s drain and boot check in live; the request-limit setting, unless ADR 0218's limit PR added it; `/home/orbit/bin/gateway-rollback` written at the switch; switch-back and retire.
+5. **Switch, handover and retire.** The upstream file over every Caddy consumer and the live link; the graceful reload with `grace_period`; the busy-worker drain; the listener overlap with its conditional record; the scheduler's minute guard; `process:*` on live; the SSH socket move and the FrankenPHP match in `SshControlGroup`; `FleetReboot`'s drain and boot check in live; the request-limit setting, unless ADR 0218's limit PR added it; `/usr/local/libexec/orbit-gateway-rollback` for console recovery; retire to a stopped old.
    - Proof: a load loop through a release with one 60-second request across the switch: no failed request, one scheduler tick per minute, no lost wake result.
-6. **Rollback.** `gateway:release:rollback` to old with its forced Swamp load and pause, and the host's `bin/gateway-rollback`.
-   - Proof: rollback and forward again on the nested Gateway, under the load loop.
-7. **Move and remove.** `gateway:release:move`, the bootstrap through a cold hot, then the removal of the host path: the `php*-fpm.service` match in `SshControlGroup`, `php8.5-fpm` in `NodeRoleServiceCatalog` (it becomes `incus`), PHP in the `gateway` role, and the host units. The [Update and recover a Gateway](/reference/gateway-recovery) page absorbs this ADR.
+6. **Rollback.** `gateway:release:rollback` to old with its forced Swamp load and pause, and the host's `orbit-gateway-rollback`.
+   - Proof: rollback and forward again on the nested Gateway, under the load loop, through native Swamp and with Swamp down; an interrupted rollback finished with `--recover`.
+
+7. **Move and remove.** `bin/gateway-container-move`, the bootstrap through a new preparation container, then the removal of the host path: the `php*-fpm.service` match in `SshControlGroup`, `php8.5-fpm` in `NodeRoleServiceCatalog` (it becomes `incus`), PHP in the `gateway` role, and the host units. The [Update and recover a Gateway](/reference/gateway-recovery) page absorbs this ADR.
    - Proof: the move on the nested Gateway, then on the live Gateway by the orchestrator.
 
 ### 9. Open points
@@ -326,6 +328,7 @@ Each slice is one pull request. Slices 3 to 7 depend on ADR 0263's build subtask
 - Gateway code must be safe in a long-lived worker. A singleton, a static cache or a shutdown function that holds a request's data is a defect, and tests refuse the known shapes.
 - A release changes no PHP, unit or file on the host except the upstream file and the live link. A failed build, migration or readiness check never touches live's code. A migration that ran stays, as today.
 - A rollback to old takes seconds and needs no build. A deeper rollback is a forced release.
+- Every migration is expand-only, so old and live run on one database.
 - A migration that rebuilds a large SQLite table blocks live's writes while it runs. That was true before; worker mode does not change it.
 - During a release, two Gateways run on the Node, and their workers hold memory twice for the drain.
 - The first command to each Node after a switch opens a new SSH connection.

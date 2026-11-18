@@ -886,6 +886,8 @@ Acceptance is separate from publication. As soon as acceptance is known, store `
 
 ### Cancel, retry and follow
 
+A launch records the versions of the child Operations it can start. If a Gateway release occurs while the launch is waiting, its next owned child still uses the admitted version. Joining an existing Instance Operation preserves its original owner and version. A recorded application retry keeps its completion handler available until the retry settles.
+
 The launch routes in the [API table](#api) return the same snapshot shape. List returns visible launches newest first. Show reconciles the exact Operation from recorded facts. Both reads and both controls require an active WireGuard peer, a current binding to the launch's recorded profile, and current access to its recorded target Node. Filter list rows and return `404` for an invisible individual launch, subject to the existing collection access gate.
 
 Recheck control authority and the action under lock. Audit which Node requested Cancel or Retry separately from the initiator. The caller-only rule on the existing Conn Operation routes does not change. HTTP snapshots are authoritative. Reverb, if used, only invalidates reads for the same audience and carries no launch payload.

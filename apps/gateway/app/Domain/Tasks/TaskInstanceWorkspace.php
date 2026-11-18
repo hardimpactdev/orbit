@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
  * The container Instance workspace of a task group (docs/reference/task-instance-workspace.md#check-phases). The group's
  * Instance has a recorded container runtime on its own Node and names the group as its workspace owner. Swamp reaches the
  * container through that Node; every guest command runs as `agent` in the fixed root. A group without one keeps its task
- * VM path. A task copy (TaskCopyStart) creates this ownership.
+ * VM path. A task copy (TaskStart) creates this ownership.
  */
 final readonly class TaskInstanceWorkspace
 {
@@ -58,13 +58,13 @@ final readonly class TaskInstanceWorkspace
 
     /**
      * Refuses a turn, a check, a publish and a proof of a task copy that is not ready (docs/reference/tasks.md#a-failed-completion). A
-     * copy whose completion failed (TaskCopyLifecycle::completionFailure) answers `tasks.copy_completion_failed`: the completion did not
+     * copy whose completion failed (TaskLifecycle::completionFailure) answers `tasks.copy_completion_failed`: the completion did not
      * start its Processes or a nested copy's inner fleet, and its retry may run at the same time. Any other copy that is not `active`
      * yet, because its create, its completion or a retry still runs, answers `tasks.copy_not_ready`.
      */
     public function requireReady(): void
     {
-        $failure = TaskCopyLifecycle::completionFailure($this->instance);
+        $failure = TaskLifecycle::completionFailure($this->instance);
         if ($failure !== null) {
             throw new ResourceOperationException('tasks.copy_completion_failed', "The completion of the task copy failed. Retry it with `{$failure['retry']}`.", 409, details: $failure);
         }

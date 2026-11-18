@@ -14,11 +14,19 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class RetiredOperationSettlement
 {
+    // These kinds left Orbit before versioned admission. Unknown names may belong to a newer Gateway.
+    private const array HistoricalKinds = [
+        'fleet.recipe_pr', 'task_vm.image_refresh', 'task_vm.hub_converge', 'task_vm.resume', 'task_vm.slot_release',
+        'tasks.prep', 'tasks.prep_fix', 'tasks.build', 'tasks.review_round', 'tasks.maintenance', 'tasks.package',
+        'tasks.script', 'tasks.idle_save', 'tasks.turn',
+    ];
+
     public function __construct(private OperationStore $store) {}
 
     public static function retired(Operation $operation): bool
     {
-        return ! array_key_exists($operation->kind, OperationKinds::definitions());
+        return OperationVersions::pinned($operation) === 1 && in_array($operation->kind, self::HistoricalKinds, true)
+            && ! array_key_exists($operation->kind, OperationKinds::definitions());
     }
 
     /** Cancelled when a cancel was requested, failed at its budget, otherwise unchanged. Either end frees the target. */
@@ -51,7 +59,7 @@ final readonly class RetiredOperationSettlement
     {
         $ended = 0;
         $open = [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting];
-        foreach (Operation::query()->whereIn('status', $open)->whereNotIn('kind', array_keys(OperationKinds::definitions()))->lazyById() as $operation) {
+        foreach (Operation::query()->whereIn('status', $open)->where('operation_version', 1)->whereIn('kind', self::HistoricalKinds)->lazyById() as $operation) {
             if ($this->settle($operation)->status->terminal()) {
                 $ended++;
             }

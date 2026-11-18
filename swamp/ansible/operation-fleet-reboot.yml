@@ -252,6 +252,15 @@
           until: services.rc == 0
           retries: 12
           delay: 5
+        - name: Wait for the serving Gateway's services
+          when: target.gateway.release is defined
+          ansible.builtin.command: { argv: [/usr/local/libexec/orbit-gateway-unit, "{{ target.gateway.release }}", fleet-check, "{{ item }}"] }
+          loop: "{{ ['orbit-gateway-web.service', target.gateway.scheduler, target.gateway.horizon] | select | list if target.gateway is not none else [] }}"
+          register: gateway_services
+          changed_when: false
+          until: gateway_services.rc == 0
+          retries: 12
+          delay: 5
         - name: Record the reboot
           ansible.builtin.include_tasks: tasks/fleet-reboot-record.yml
           vars:

@@ -5,7 +5,7 @@ description: "Change the command, phase, timeout, or position of one deploy step
 ---
 
 ```bash
-orbit instance:deploy-step:update <instance> <name> [--command=COMMAND] [--phase=before_activation|after_activation] [--timeout=SECONDS] [--before=NAME | --after=NAME] [--json]
+orbit instance:deploy-step:update <instance> <name> [--command=COMMAND] [--phase=before_activation|after_activation] [--timeout=SECONDS] [--required=true|false] [--before=NAME | --after=NAME] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -17,6 +17,7 @@ orbit instance:deploy-step:update <instance> <name> [--command=COMMAND] [--phase
 | --- | --- | --- |
 | `--command=COMMAND` | unchanged | Replacement shell command, with the limits of [`instance:deploy-step:create`](/cli/instance/deploy-step-create). |
 | `--phase=PHASE` | unchanged | Move the step to `before_activation` or `after_activation`. |
+| `--required=BOOL` | unchanged | A required step stops the release on failure. A best-effort step records its exit code and continues. |
 | `--timeout=SECONDS` | unchanged | Timeout from 1 through 900 seconds. |
 | `--before=NAME` | unchanged | Move the step before this step of the same phase. Exclusive with `--after`. |
 | `--after=NAME` | unchanged | Move the step after this step of the same phase. Exclusive with `--before`. |
@@ -30,7 +31,7 @@ In a terminal, an omitted Instance is chosen from an interactive list, and an om
 
 At least one of `--command`, `--phase`, `--timeout`, `--before` or `--after` is required; a call with none is refused with `deploy_step.update_required` before any request. The name of a step never changes: remove the step and create it again to rename it. The Gateway checks the whole change against the limits of the create command, and a placement step must be in the phase the step ends up in. It stores nothing when a rule fails; a refusal is `validation.failed` with the reason. The command changes the Instance's list only and runs nothing; the next [`instance:deploy`](/cli/instance/deploy) uses the new values. Updating a step to the values it has succeeds and changes nothing, `--phase` included. A change locks the Instance row, so a competing change waits for it.
 
-The command prints a detail titled `Deploy step: <name>` with Phase, Command, Timeout (seconds) and the request ID. With `--json`, stdout holds the step with `name`, `phase`, `command`, `timeout_seconds` and `request_id`.
+The command prints a detail titled `Deploy step: <name>` with Phase, Command, Timeout (seconds), Required and the request ID. With `--json`, stdout holds the step with `name`, `phase`, `command`, `timeout_seconds`, `required` and `request_id`.
 
 ## Errors
 

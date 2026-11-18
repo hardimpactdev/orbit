@@ -109,7 +109,7 @@ use LogicException;
  * @property array{operation_id: int, failed_step: string, error_code: string}|null $copy_create_failure
  * @property string $implementer_model the task VM path's model; a task copy reads implementer_agent_model
  * @property string $reviewer_model
- * @property string|null $implementer_agent_provider the copy turn agent values the group names (TaskCopyAgent); null takes the Project's or the Gateway's
+ * @property string|null $implementer_agent_provider the copy turn agent values the group names (TaskAgent); null takes the Project's or the Gateway's
  * @property string|null $implementer_agent_model
  * @property string|null $implementer_agent_effort
  * @property string|null $reviewer_agent_provider

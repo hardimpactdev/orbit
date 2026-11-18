@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build\Sources;
 
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteRenderContext;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
@@ -13,6 +14,7 @@ use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteUnavailable;
 use App\Infrastructure\Metrics\MetricsPublicationRenderer;
+use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
 
 /**
@@ -42,6 +44,8 @@ final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
             return [];
         }
 
+        $prepared = is_file(rtrim(StoredValue::string(config('orbit.home')), '/').'/gateway-metrics-prepared')
+            && GatewayReleaseHost::owns($node);
         $sites = [];
         $renderer = $this->renderer ?? MetricsPublicationRenderer::forGateway();
 
@@ -63,7 +67,7 @@ final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
                 listener: CaddyListenerRule::WireGuard,
                 hosts: ['metrics.orbit'],
                 port: 443,
-                body: $renderer->caddy($metrics, $gateway),
+                body: $renderer->caddy($metrics, $gateway, prepared: $prepared),
             );
         }
 

@@ -15,8 +15,8 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Admits one `fleet.rollout` for the Nodes the plan names. A verified release queues it, and the scheduler queues it
- * once a day when the window of the non-daytime Nodes opens. Swamp runs the visits.
+ * Admits one `fleet.rollout` for the Nodes the plan names. A verified release queues it at once, and the scheduler queues
+ * it once a day to catch drift between releases. Swamp runs the visits.
  */
 final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
 {
@@ -39,7 +39,7 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
 
     public function uniqueId(): string
     {
-        return $this->releaseId === null ? 'fleet-window' : (string) $this->releaseId;
+        return $this->releaseId === null ? 'fleet-daily' : (string) $this->releaseId;
     }
 
     public function handle(FleetRolloutPlanAction $plan, AdmitFleetRolloutAction $admit): void
@@ -75,7 +75,7 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
             if ($refusal->errorCode !== 'fleet.rollout_not_ready') {
                 throw $refusal;
             }
-            // No Node needs a visit, or the rollout is off: the next release or window asks again.
+            // No Node needs a visit, or the rollout is off: the next release or daily pass asks again.
             Log::info('No fleet rollout was admitted.', ['error_code' => $refusal->errorCode]);
         }
         if ($selection['waiting_for_cli'] ?? false) {

@@ -25,7 +25,7 @@ final readonly class DependencyBatchMergeGuard
     {
         $group->refresh()->load('project', 'tasks', 'taskable');
         // A batch group that published from a task copy is never merged here (docs/reference/tasks.md#no-merge).
-        TaskCopyPullRequest::refuseGroup($group);
+        TaskPullRequest::refuseGroup($group);
         $project = $group->project;
         $policy = config('dependency_merge.projects.'.$project->id);
         $this->check(is_array($policy) && ($policy['enabled'] ?? false) === true, 'dependency_merge.disabled');

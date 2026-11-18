@@ -30,6 +30,7 @@ final readonly class MetricsPublicationRenderer
         ?string $gatewayAddress = null,
         string $certificatePath = '/etc/caddy/orbit-metrics-cert-current/metrics.pem',
         string $privateKeyPath = '/etc/caddy/orbit-metrics-cert-current/metrics.key',
+        bool $prepared = false,
     ): string {
         $this->validateAddress($metricsAddress);
         $gatewayAddress ??= $metricsAddress;
@@ -38,8 +39,12 @@ final readonly class MetricsPublicationRenderer
         $this->validatePath($privateKeyPath);
         $this->validateCheckoutPath($this->gatewayCheckoutPath);
 
+        $auth = $prepared
+            ? "import /etc/caddy/orbit-gateway-modes/metrics-auth.caddy {$this->gatewayCheckoutPath}/public"
+            : "forward_auth unix//run/php/orbit-gateway.sock {\n    uri /index.php\n    transport fastcgi {\n      root {$this->gatewayCheckoutPath}/public\n      resolve_root_symlink\n      split .php\n      env REQUEST_URI /api/v1/metrics/grafana/authorize\n      env REMOTE_ADDR {remote_host}\n    }\n  }";
+
         return
-            "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  forward_auth unix//run/php/orbit-gateway.sock {\n    uri /index.php\n    transport fastcgi {\n      root {$this->gatewayCheckoutPath}/public\n      resolve_root_symlink\n      split .php\n      env REQUEST_URI /api/v1/metrics/grafana/authorize\n      env REMOTE_ADDR {remote_host}\n    }\n  }\n  reverse_proxy http://{$metricsAddress}:"
+            "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  {$auth}\n  reverse_proxy http://{$metricsAddress}:"
             .MetricsFootprint::PublicationPort
             ."\n}\n";
     }

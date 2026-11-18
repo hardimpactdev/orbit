@@ -200,7 +200,9 @@ Deno.test("a failed drain starts what it stopped, and the drain stops no task gu
     const rescue = plays.find((p) => p.name === "Drain the Node")!.tasks.find((t) => t.name === "Drain the Node")!.rescue as Task[];
     assertEquals(rescue.map((t) => t["ansible.builtin.import_tasks"]), ["tasks/fleet-reboot-drain-undo.yml", "tasks/fleet-reboot-failed.yml"]);
     const undo = parse(await Deno.readTextFile(`${ansible}tasks/fleet-reboot-drain-undo.yml`)) as Task[];
-    assertEquals(undo.map((t) => t.name), ["Start the stopped runners again", "Start the Gateway scheduler and Horizon again"]);
+    assertEquals(undo.map((t) => t.name), ["Start the stopped runners again", "Start the Gateway scheduler and Horizon again", "Start the drained units in the serving Gateway"]);
+    assertEquals(undo[1].when, "target.gateway.release is not defined");
+    assertEquals(undo[2].when, "target.gateway.release is defined");
     // No Node is a task host any more (docs/reference/gateway-recovery.md#fleet-reboot): the intent names no task project.
     assertEquals(drainBlock.map((t) => t["ansible.builtin.import_tasks"]).filter(Boolean),
         ["tasks/fleet-reboot-read.yml", "tasks/fleet-reboot-drain-ci.yml", "tasks/fleet-reboot-drain-gateway.yml"]);

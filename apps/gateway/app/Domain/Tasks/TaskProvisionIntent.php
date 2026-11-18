@@ -22,7 +22,7 @@ final readonly class TaskProvisionIntent
     {
         InstancePlacement::taskCopy($group->project()->firstOrFail());
 
-        return app(TaskCopyStart::class)->start($group, $caller, $request);
+        return app(TaskStart::class)->start($group, $caller, $request);
     }
 
     public function assertProvisionable(Task $group): void

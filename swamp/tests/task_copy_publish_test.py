@@ -121,7 +121,7 @@ class CopyCheckTest(unittest.TestCase):
 PUBLISH = ROOT / 'workflows/workflow-operation-task-publish.yaml'
 
 
-class TaskCopyPublishTest(unittest.TestCase):
+class TaskPublishTest(unittest.TestCase):
     """A task copy's publication: the workflow's own CEL picks the copy steps, and its own script checks the .env Orbit wrote."""
 
     git = base.WorkspaceHarness.git

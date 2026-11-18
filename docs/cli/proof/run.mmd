@@ -78,7 +78,7 @@ sequenceDiagram
   %%> Which warm copy:
   %%> - Idle (no run child), active and from the Node's current seed. A warm copy from an older seed is never taken: the pool replaces it.
   %%> Seed:
-  %%> - Each new copy starts from its own Node's seed: the default's seed pair on the default's Node, the seed holder on a CI Node (TaskCopyStart::seed).
+  %%> - Each new copy starts from its own Node's seed: the default's seed pair on the default's Node, the seed holder on a CI Node (TaskStart::seed).
   SW->>CP: Stop idle runners<br/>orbit-ci-runner-hold hold
   %%> Why:
   %%> - A place runs one runner job or one proof copy. A Node's idle runners would take new jobs in the places that the proof holds.

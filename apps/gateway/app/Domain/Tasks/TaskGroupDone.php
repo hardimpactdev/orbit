@@ -50,7 +50,7 @@ final readonly class TaskGroupDone
     /**
      * The newest turn of the group's reviewer thread reviewed exactly the done check's commit, for the last subtask, and ended done. A copy
      * turn is admitted only on the current subtask, and a subtask of a task copy cannot be completed while a turn of the group runs
-     * ({@see TaskCopyTurn::refuseSubtaskMoveWhileRunning()}), so this turn ended before the subtask was completed.
+     * ({@see TaskTurn::refuseSubtaskMoveWhileRunning()}), so this turn ended before the subtask was completed.
      */
     private function reviewed(Task $group, Task $last, TaskCheck $check): bool
     {
@@ -92,7 +92,7 @@ final readonly class TaskGroupDone
     private function idle(Task $group): bool
     {
         try {
-            TaskCopyTurn::refuseUnended($group);
+            TaskTurn::refuseUnended($group);
         } catch (ResourceOperationException) {
             return false;
         }

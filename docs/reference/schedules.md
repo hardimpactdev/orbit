@@ -32,7 +32,7 @@ The Gateway schedules no task VM job: the [host sweep](/reference/compute-driver
 
 No schedule starts the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the task VM hosts any more: the 03:20 daily refresh is removed.
 
-The Gateway queues the [fleet and seed continuation](/reference/gateway-recovery#fleet-rollout) after verification and daily at 03:05 Europe/Amsterdam when fleet rollout or default refresh is enabled. That is when the Nodes outside the daytime set can start their rollout. The job revisits pending default refresh and seed publication each minute.
+The Gateway queues the [fleet and seed continuation](/reference/gateway-recovery#fleet-rollout) right after verification, at any hour, and daily at 03:05 Europe/Amsterdam when fleet rollout or default refresh is enabled. The daily pass catches membership changes, agent drift and late CLI releases between releases; it is not a window. The job revisits pending default refresh and seed publication each minute.
 
 Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).
 
@@ -45,6 +45,8 @@ The Gateway runs `orbit:vault-sync` every minute without overlap while the `vaul
 The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
 
 The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30 days daily. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the configurable cutoffs.
+
+A recurring Schedule for a containerized AppProd Instance resolves its serving release at each fire. A manual change or fire binds to the confirmed release under the same lock as cutover. A queued host fire cannot start on a checkout after migration.
 
 ## Execution
 

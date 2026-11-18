@@ -72,6 +72,8 @@ Open `https://gateway.orbit` from a machine on the Orbit WireGuard network. The 
 
 ## How the Gateway site routes requests
 
+On a container deployment, host Caddy forwards application requests to the serving clone. Its FrankenPHP workers run Laravel and its file server serves the matching web release. Host Caddy still handles the Grafana route.
+
 The Gateway's Caddy site sends each request to one of these places.
 
 | Path | Destination |

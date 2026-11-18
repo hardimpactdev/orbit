@@ -21,11 +21,11 @@ final readonly class InstanceFolderPlan
      * @return array{runtime: array{path: string, version: string, parts: list<array<string, mixed>>},
      *     agent: array{path: string, version: string, parts: list<array<string, mixed>>, notes: array<string, string>}}
      */
-    public static function for(InstanceFolders $folders, bool $shift = true): array
+    public static function for(InstanceFolders $folders, bool $shift = true, string $runtimeRoot = InstanceHostIntent::RuntimeFolder): array
     {
         // Unshifted folders carry `shift: false`, so their versions differ: the agent's programs are open to everyone there.
         $mount = $shift ? [] : ['shift' => 'false'];
-        $runtime = ['path' => InstanceHostIntent::RuntimeFolder, 'parts' => [...self::parts($folders->runtime), ...self::php($folders)]];
+        $runtime = ['path' => $runtimeRoot, 'parts' => [...self::parts($folders->runtime), ...self::php($folders)]];
         if ($folders->vitePlus instanceof VitePlusHome) {
             $runtime = self::vitePlus($runtime, $folders->vitePlus);
         }
@@ -125,7 +125,7 @@ final readonly class InstanceFolderPlan
         $release = array_values(array_filter($runtime['parts'], static fn (array $part): bool => $part['name'] === $home->part));
         $digest = hash('sha256', json_encode([$release, $home->binary, hash('sha256', $lock), $home->node], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 
-        return [...$runtime, 'vite_plus' => ['part' => $home->part, 'binary' => $home->binary, 'home' => InstanceHostIntent::RuntimeFolder.'/vite-plus/'.substr($digest, 0, 12),
+        return [...$runtime, 'vite_plus' => ['part' => $home->part, 'binary' => $home->binary, 'home' => $runtime['path'].'/vite-plus/'.substr($digest, 0, 12),
             'version' => $home->vp->version, 'node' => $home->node, 'lock' => $lock]];
     }
 

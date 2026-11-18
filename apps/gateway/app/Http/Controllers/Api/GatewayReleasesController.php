@@ -37,7 +37,7 @@ final class GatewayReleasesController extends Controller
 
     public function store(DeployGatewayReleaseRequest $request, AdmitSwampGatewayReleaseAction $action): JsonResponse
     {
-        $release = $action->execute($request->commit());
+        $release = $action->execute($request->commit(), trigger: $request->validated('reconcile') === true ? 'reconcile' : 'deploy');
 
         return $this->respond($request, GatewayReleaseData::fromModel($release)->toArray(), 202);
     }

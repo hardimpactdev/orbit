@@ -17,6 +17,9 @@ use Illuminate\Support\Carbon;
  * step hands to the steps after it, so a resumed operation continues where it stopped. `state` never leaves the
  * Gateway.
  *
+ * @property int|null $parent_operation_id
+ * @property int $operation_version
+ * @property array<string,int>|null $child_versions
  * @property int $id
  * @property string $kind
  * @property string|null $idempotency_key Never prune a keyed operation when ADR 0218 adds retention.
@@ -54,6 +57,9 @@ final class Operation extends Model
     #[\Override]
     protected $fillable = [
         'kind',
+        'operation_version',
+        'parent_operation_id',
+        'child_versions',
         'idempotency_key',
         'idempotency_fingerprint',
         'target_type',
@@ -136,6 +142,9 @@ final class Operation extends Model
             'status' => OperationStatus::class,
             'sequence' => 'integer',
             'attempts' => 'integer',
+            'operation_version' => 'integer',
+            'parent_operation_id' => 'integer',
+            'child_versions' => 'array',
             'cancel_requested_at' => 'datetime',
             'dispatched_at' => 'datetime',
             'started_at' => 'datetime',

@@ -23,6 +23,18 @@ sequenceDiagram
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   %%> - automatic deploys start the same deploy steps from a native schedule; see the `instance.auto_deploy` chart
+  alt AppProd container release
+    GW->>SW: Start production-release
+    Note over SW: Check release ownership
+    SW->>N: Build the Instance release<br/>deploy in preparation
+    SW->>N: Clone the prepared release
+    SW->>N: Sleep preparation
+    SW->>N: Check the Instance<br/>candidate
+    SW->>N: Hand over the release<br/>switch Routes and workers
+    SW->>N: Release unused candidate
+    SW->>N: Read the serving release
+    SW-->>GW: Verified commit and owner
+  else Development or host checkout
   opt Development default in a container
     Note over GW: Capture source facts<br/>project:update capture
     %%> What it does:
@@ -153,7 +165,7 @@ sequenceDiagram
     %%> - the deployed commit, or the public code of the refusal
     Note over SW: Remove the run folder<br/>always
   end
-  opt Production release
+  opt Checkout production Operation admitted before the container workflow
     SW->>N: Write release credential<br/>cfgmgmt/file apply
     SW->>N: Prepare the release<br/>ssh exec argv
     SW->>N: Remove release credential<br/>cfgmgmt/file apply
@@ -212,7 +224,7 @@ sequenceDiagram
     SW->>N: Read the checkout commit<br/>ssh exec argv
     Note over SW: Check the checkout<br/>native assert
   end
-  opt Production activation
+  opt Activation of a previously admitted checkout deployment
     SW->>N: Run before steps<br/>ssh exec argv
     %%> What it does:
     %%> - runs each frozen private command as the Project account in the new release; later required commands stop after a failure
@@ -289,4 +301,5 @@ sequenceDiagram
     GW-->>CLI: status + result
     %%> Returns:
     %%> - the current status, and the result once the task has ended
+  end
   end

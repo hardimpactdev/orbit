@@ -33,7 +33,6 @@ afterEach(function (): void {
 
 beforeEach(function (): void {
     Queue::fake();
-    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     $root = sys_get_temp_dir().'/orbit-fleet-catalog-'.bin2hex(random_bytes(8));
     $this->commit = 'ca7a109'.str_repeat('0', 33);
     $releasePath = $root.'/releases/'.substr($this->commit, 0, 12);

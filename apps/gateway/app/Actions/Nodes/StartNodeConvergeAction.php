@@ -51,11 +51,9 @@ final readonly class StartNodeConvergeAction
                 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {
                 // The one write before the capture: the role that runs the Instance container branch on the Node, `app-dev` on a
-                // development Node or `ci-runner` on a CI-only Node, gets its Instance bridge here, never in the capture.
-                $host = app(InstanceHostIntent::class)->role($node);
-                if ($host !== null && in_array($host->value, $selected, true)) {
-                    app(InstanceHostIntent::class)->prepare($node);
-                }
+                // development Node or `ci-runner` on a CI-only Node, and `app-prod` for its release bridge, gets its Instance bridge here,
+                // never in the capture.
+                app(InstanceHostIntent::class)->prepare($node, $selected);
                 $inputs = app(ReleaseNodeInputs::class);
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release);
                 $plans = RouteExecutionProof::objects($snapshot['intent']['roles']);

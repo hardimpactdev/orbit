@@ -18,6 +18,8 @@ This guide helps an operator keep Gateway state safe during a source update and 
 
 Node convergence applies its recorded network part after the other footprint parts. A matching network digest and live state leave WireGuard untouched.
 
+A preflight refusal with `gateway.release_node_capacity` means the container build would exceed the Node’s memory, swap, or disk allowance. Add the required capacity and repeat preflight before attempting the move.
+
 ## Gateway request logs
 
 Gateway releases use a [Swamp run](#release-as-a-swamp-run).
@@ -96,7 +98,75 @@ Adjust the paths when `ORBIT_HOME` or `DB_DATABASE` differs. Include an external
 
 The archive contains secrets. Do not attach it to a bug report or commit it to Git. A successful archive listing verifies readability, not restore behavior.
 
+## Move the Gateway to release containers
+
+The Gateway Node keeps Caddy, WireGuard, the SQLite database and the Gateway identity. An unprivileged container runs the application with FrankenPHP in Laravel Octane worker mode. The first move runs the same commit and uses the same database on both sides of the switch.
+
+Keep console access and a verified off-host recovery copy. Check space for three Gateway containers: preparation, live and the stopped old. The Gateway never holds more. Stopped containers use only storage. Test queue and cache access from the private bridge. A host-loopback address points into the container.
+
+Before waking preparation, each new build measures the serving workload, free RAM, free swap and free space in the release pool. A capacity refusal reports the resource and the required and available bytes. A later attempt can release the same commit when space is available. See the [production capacity rules](/reference/production-containers#capacity).
+
+The admitted commit pins PHP, FrankenPHP and Composer. The Node installs a changed runtime in its own immutable directory and mounts it read-only in preparation. The candidate inherits this mount. Each release keeps the runtime selected by its commit until it drains.
+
+Preparation updates the monorepo checkout in place. Composer installs the locked production packages in `apps/gateway`. The Gateway loads two PHP SDK log-stream types through its own autoloader. Its install hook reads SDK and CLI source to generate the API contracts. CI builds `apps/web` with Bun. The release installs that commit's verified web artifact at `/home/orbit/web/current` before cloning. At boot, Incus mounts the candidate’s checkout and web tree read-only. Laravel can write its bootstrap cache and shared storage. Preparation keeps its writable checkout. The candidate serves the web app and the Laravel API together.
+
+After preparation is asleep, the candidate runs pending Laravel migrations directly against the production SQLite database before traffic switches. The container release takes no pre-migration database copy.
+
+Every migration is expand-only: a release adds what its code needs, and a following release contracts what neither live nor old still reads. So the stopped old keeps running on the current database, and a rollback never restores data. Reviewers reject destructive migrations.
+
+If another migration holds the lock or a migration fails, the previous container keeps serving and the release records the error. Repair the database with a corrective migration or an operator change.
+
+The Gateway expects its managed Horizon and scheduler Processes to be named `horizon` and `schedule-work`. Preflight reports a custom name before the move. Record the Process configuration and desired state, recreate it under the expected name, then verify a host release to obtain a current Operation receipt.
+
+1. Run `orbit gateway:auto-release:disable`. Wait for any active release to finish.
+2. Deploy the container tooling through the host flow. Record its verified Operation ID, full serving commit and published web archive.
+3. Run `bin/gateway-container-prepare` in check mode with the Node's storage, network and image settings. Apply the same settings.
+4. From the verified host release, run `sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>`. This moves the same commit and preserves the database.
+5. Check `/up`, `orbit gateway:status` and an authenticated peer request through the public Gateway name. Check the background workers.
+6. If the move was interrupted, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` at the Node console. Inspect the selected commit, public traffic and background services.
+7. Release the next forward commit. Check that the former live stops as old after HTTP and Horizon drain, and that preparation returns. Until then the Gateway has no old to roll back to.
+8. Converge the Gateway role to retire host PHP-FPM. Restore the previous automation setting.
+
+The installed phase dispatcher accepts commits that carry recovery protocol 4 or later. Protocol 4 keeps a stopped old, journals a rollback before old starts and stops a former live only after the response wait. A dispatcher from before it strands the stopped old and any interrupted handover. Converge the Gateway's container helpers first, then release.
+
+After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
+
+An established Gateway has three containers: a stopped preparation container, a serving container and a stopped old container with `boot.autostart=false`. A release never adds a fourth.
+
+Orbit finishes an interrupted handover before it builds, and refuses a build while old runs.
+
+A recorded old whose container is gone is forgotten instead of blocking the release. A forward build recreates a missing preparation container first. It updates preparation in place and seals it. Then it stops preparation, renames it to `gateway-<id>`, adds the read-only boot mounts and starts it as the candidate. A candidate that fails before the switch returns to the preparation slot. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
+
+The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal.
+
+Retire is one ordered list of steps. Each checks state, then acts or skips, so a release, a native or console rollback and `--recover` replay it the same way, with at most three containers at each step:
+
+1. It starts Horizon on the new live. It checks the new live through the public name and records the result in the inventory's `verified` list.
+2. It moves the scheduler and the background units. It waits for the former live's HTTP requests and Horizon jobs, then disables its Horizon and scheduler units.
+3. A separate workflow step records the start of the wait. Ansible then checks every second for queued send bytes on the former live's connected or closing sockets. It records `drained`, or `timeout` after 600 seconds.
+4. A failed probe counts as busy. Only a successful Incus lookup that shows the container stopped or absent ends the wait early.
+5. Without that outcome, retire probes once per retry, as in console rollback and `--recover`. The bound counts from the recorded start.
+6. It stops the former live with `boot.autostart=false`.
+7. old becomes the most recent verified former live, else none.
+8. If the new live passed its public check, every other stopped release is deleted. Otherwise the other release stays as `earlier`.
+
+Then preparation returns:
+
+1. Only a new live that passed its public check rebuilds preparation, from a snapshot of the release that serves.
+2. Preparation stays stopped, without the live address reservation, boot mounts or enabled units.
+3. A preparer cloned from another release is replaced.
+4. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
+5. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
+
+The seed refuses a pool without the zfs driver or whose `zfs.clone_copy` is not `true`, because Incus would then copy files. Before any release container is deleted, its dependent clones are promoted off it, so Incus never parks a dataset in `deleted/`. It refuses to promote while a snapshot that Incus still records would move. It refuses a fourth Gateway container. Until its cleanup and promotion finish, the preparer is marked unfinished: no release wakes it, and the next build repeats the seed.
+
+If the new live fails its public check, the release fails after retire. Old and `earlier` fill the slots, three containers with live. Roll back to old, or fix the cause and run `--recover`: once live passes its public check, it deletes `earlier` and rebuilds preparation. The next build does the same first. Retire also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
+
+If the selected Horizon unit cannot start, inspect its journal in the selected container. Orbit keeps the outgoing workers and the handover journal. Repair the reported dependency, configuration or service in place and rerun `--recover`. For an emergency code patch, use a temporary systemd override on the affected Horizon unit to mount the corrected file read-only from a writable path in that container. Commit the same patch and deploy the forward release after the journal clears. The correction then lives in the sealed release. The temporary override stays in the stopped old until the next release replaces it.
+
 ## Release layout
+
+The following layout describes the host deployment used before the first container move.
 
 A Gateway in the release layout runs from immutable releases instead of an in-place checkout. Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
 
@@ -121,17 +191,17 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 The Gateway admits the run. It needs the full commit and no other queued or running release. It verifies the commit's [agent pin](#build-and-seal-a-release) and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
 
-The long steps run script files from `swamp/scripts/`, which `bin/swamp-shape-gate` lints with shellcheck. Every script comes from the commit being released, so a release never runs the scripts of another. The build step pipes its script out of the fetched commit in `shared/orbit.git`. The web and snapshot steps run theirs from the sealed release, `/home/orbit/releases/<id>/swamp/scripts/`, and so does the activate child. A Swamp-run release or rollback of a commit from before these scripts fails at the build with `gateway.release_script_missing`: switch to such a release with `bin/gateway-rollback`.
+The long steps run script files from `swamp/scripts/`, which `bin/swamp-shape-gate` lints with shellcheck. Every script comes from the commit being released, so a release never runs the scripts of another. The build step pipes its script out of the fetched commit in `shared/orbit.git`. In the host PHP-FPM workflow, the web and snapshot steps run theirs from the sealed release, `/home/orbit/releases/<id>/swamp/scripts/`, and so does the activate child. A Swamp-run release or rollback of a commit from before these scripts fails at the build with `gateway.release_script_missing`: switch to such a release with `bin/gateway-rollback`.
 
-The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
+The container workflow is described under [Move the Gateway to release containers](#move-the-gateway-to-release-containers). The host PHP-FPM `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
 
 | Step | What it does |
 | --- | --- |
 | Fetch the commit | Fetches the commit into `shared/orbit.git` when it is missing. The read token reaches git only in its environment. |
 | Build the release | Refuses a downgrade with `gateway.release_downgrade`, or a disk below the [floor](#migrations-and-the-snapshot) with `gateway.release_disk_low`. Builds and seals the release, and prints its grants. |
 | Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
-| Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. Refuses with `gateway.release_disk_low` before the copy when the disk floor would break. The newest two stay, and the one a pause names. |
-| Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
+| Snapshot the database (host PHP-FPM releases) | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. Refuses with `gateway.release_disk_low` before the copy when the disk floor would break. The newest two stay, and the one a pause names. |
+| Migrate | Runs `artisan migrate --force --isolated=1` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting Operations covered by the [release idle guard](#release-idle-guard) remain. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
@@ -139,7 +209,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
 
-The Gateway queues the fleet pass when it records verification. Fleet `current` permits the Gateway to advance [the default refresh and seed publication](/reference/development-containers#refresh-after-a-release), when refresh is enabled. Each has its own status and Operation receipts in the release record. With rollout disabled, verification permits the same attempt. The release can stay verified while the fleet is pending, deferred or failed. The refresh has its own admission and result.
+The Gateway queues the fleet pass when it records verification. Fleet `current` permits the Gateway to advance [the default refresh and seed publication](/reference/development-containers#refresh-after-a-release), when refresh is enabled. Each has its own status and Operation receipts in the release record. With rollout disabled, verification permits the same attempt. The release can stay verified while the fleet is pending or failed. The refresh has its own admission and result.
 
 The refresh can keep a current nested app-dev host when a release changes only the play that launches Conn or the helper that starts a task turn. The refresh result records why each Node converged or skipped and which base snapshots it retook.
 
@@ -155,9 +225,9 @@ The scheduler restart pauses each release cleanup, such as Documents cleanup, un
 
 The release switch reloads the Gateway application. The [gateway role convergence](/cli/node/role-add) owns the PHP-FPM pool, the hibernator and agent-view units and the host retention files. The fleet pass applies changed workload role inputs after verification.
 
-The Gateway records the run's terminal result. The Gateway reads the snapshot path from the snapshot step's output. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and the old release stays live.
+The Gateway records the run's terminal result. For a host PHP-FPM release, the record includes the snapshot path. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and the old release stays live.
 
-A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and names the snapshot, such as a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
+A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and records the failed step, including a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
 A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,600 seconds, including the 600-second busy guard. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. A run that ends without a readable result (`operation.result_unreadable`) pauses with `gateway.release_run_failed`. Read the run before you resume.
 
@@ -168,6 +238,8 @@ Read release records with `orbit gateway:release:list` and `orbit gateway:releas
 After verification, pruning keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` sealed releases, plus the current and previous releases and the build served by `web/current`. The setting defaults to 3 and has a minimum of 2. Pruning also removes incomplete releases older than one hour and web builds with no retained release. A pruning failure leaves the release live; a later release retries.
 
 ### Release idle guard
+
+This guard applies to the host PHP-FPM release path. Container Gateway releases allow Operations to continue across cutover.
 
 A kind needs this guard when its execution input is built or its execution code is read after admission, so switching Gateway code can change the outcome of already admitted work. A whole execution plan captured at admission can continue independently. The guard currently covers these kinds:
 
@@ -220,19 +292,22 @@ On timeout, stderr names every remaining Operation ID with `gateway.release_busy
 
 ### Load Swamp
 
-Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The build renders both grants files from the target release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and Node 209's SSH target in the load intent. This uses the target release, not the running Gateway's older manifests. The release run starts `operation-gateway-swamp-load` as a child with the release commit. That workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
+Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The build renders both grants files from the target release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and both Nodes' SSH targets in the load intent. This uses the target release, not the running Gateway's older manifests. The release run starts `operation-gateway-swamp-load` as a child with the release commit. That workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 
-1. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
-2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
-3. beside them, it compares the commit's `swamp/ansible/requirements.yml` with the pin the swamp role last installed collections from, `/opt/orbit/ansible/requirements.yml`, and installs nothing;
-4. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
-5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
-6. it sets the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node) from `swamp/config/swamp-node-schedules.json` as serve trigger overrides, with `swamp workflow trigger set`;
-7. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
+1. it checks the target commit and looks for an open switch on the Gateway Node before changing the staging checkout;
+2. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
+3. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
+4. beside them, it compares the commit's `swamp/ansible/requirements.yml` with the pin the swamp role last installed collections from, `/opt/orbit/ansible/requirements.yml`, and installs nothing;
+5. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+6. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
+7. it sets the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node) from `swamp/config/swamp-node-schedules.json` as serve trigger overrides, with `swamp workflow trigger set`;
+8. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
-A load-input change must release before a workflow requires its new fields. Retire a checkout script mode only after the served workflow has stopped calling it: a load checks out the target before reloading the workflow.
+The check also runs when a resumed release reuses Build. Host PHP-FPM releases can load without the container protocol when no switch is open.
+
+The release and load definitions ship together. A load refuses an older caller that cannot supply the Gateway SSH target. Retire a checkout script mode only after the served workflow has stopped calling it: a load checks out the target before reloading the workflow.
 
 Required checks invoke the Gateway renderer without deployment credentials and validate both grant files with the pinned serve startup parser before the commit can release.
 
@@ -246,7 +321,7 @@ A schedule that serve does not confirm fails the load. These workflows have no b
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
-The load is forward only unless the release is forced, as a rollback is: an unforced load of a commit that does not descend from the serve checkout fails with `gateway.release_downgrade` and leaves the checkout alone. Resume or start the release itself, never its load run: the release passes its `force` flag to the load, and a load run started before that flag existed cannot be resumed.
+The load is forward only unless the release is forced, as a rollback is: an unforced load of a commit that does not descend from the serve checkout fails with `gateway.release_downgrade` and leaves the checkout alone. Resume the release itself after Swamp serves the updated release and load definitions. The release starts a fresh load with the admitted inputs and checks the target again.
 
 Serve's reload re-reads each extension manifest's `additionalFiles` ([Lab #4282](https://swamp-club.com/lab/4282), fixed in Swamp `20261103.000636.0-sha.db3f6373`), so a newly shipped file reaches workers without a restart. The load never restarts serve or a worker.
 
@@ -344,7 +419,7 @@ The Swamp step downloads the artifact with the run's GitHub token, checks its di
 
 The activate child switches `web/current` together with the Gateway code, before verification. A failed check switches both back. Open pages read `version.json` and move to the new build on their next navigation or resume ([Updates to open pages](/reference/web-app#updates-to-open-pages)). Pruning keeps the current web build and every retained release's build.
 
-A missing or expired artifact refuses admission with `gateway.release_web_build_missing`. An invalid artifact returns `gateway.release_web_build_invalid`. A deploy or rollback needs a valid artifact even when it can reuse a sealed release.
+A missing or expired artifact refuses admission with `gateway.release_web_build_missing`. An invalid artifact returns `gateway.release_web_build_invalid`. A deploy or a host rollback needs a valid artifact even when it can reuse a sealed release. A container rollback reuses old's installed web build.
 
 The main `Required checks` and `Gateway release inputs` checks depend on successful promotion of the PR build. Swamp-only changes use the same delivery path because the release also [loads Swamp](#load-swamp).
 
@@ -354,7 +429,7 @@ The run must be a run of `.github/workflows/ci.yml` in this repository: a `push`
 
 ### Migrations and the snapshot
 
-Before it migrates, the run writes a consistent SQLite copy with `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes a new file. Retention keeps the newest two snapshots, the current and the previous, and the one a pause names. Snapshots stay on the Gateway; keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
+Before it migrates, the host PHP-FPM workflow writes a consistent SQLite copy with `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes a new file. Retention keeps the newest two snapshots, the current and the previous, and the one a pause names. Snapshots stay on the Gateway; keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
 
 No rollback reads a snapshot: a rollback restores no data. The newest snapshot holds the database from before the live release's migrations, and the one before it the database from before the previous release's. An operator restores one only after a failed migration, and that run's pause names the snapshot it needs.
 
@@ -364,25 +439,50 @@ When the copy would break the floor, the snapshot step first removes every older
 
 A new build checks the same floor before it writes anything. The 1 GiB for the build must fit as the disk is. The build and the database's size for the snapshot must fit when the older snapshots that the snapshot step would remove are gone. A copy that a stopped run left as `pre-*.sqlite.partial` goes at the next snapshot.
 
-The new release runs `php artisan migrate --force --isolated` while the old release still serves. Migrations must use expand and contract: both releases must work with the new schema. Before a schema squash, finish the existing migration chain, as the [contributor guide](/contributor-guide#3-implement-and-verify) requires.
+The new release runs `php artisan migrate --force --isolated=1` while the old release still serves. Migrations must use expand and contract: both releases must work with the new schema. Before a schema squash, finish the existing migration chain, as the [contributor guide](/contributor-guide#3-implement-and-verify) requires.
 
 A failed snapshot leaves the live database unchanged. A failed migration may have applied some changes. The run then pauses and names its snapshot. Restoring that snapshot is an operator action; follow [Recover a failed update](#recover-a-failed-update).
 
 ### Roll back
 
-To return to a retained release, run:
+A container Gateway returns to its stopped old release. A host PHP-FPM Gateway returns to a retained release.
 
 ```bash
 orbit gateway:release:rollback <id>
 ```
 
-`<id>` is the first 12 hex digits of its commit. The Gateway resolves that release's full commit and admits a forced `gateway.release` run with trigger `rollback`. Force skips the ancestry check. The build reuses the sealed release and refreshes its configuration. The load step brings back that commit's Swamp workflows. The run snapshots the database, runs migrations, switches both links and verifies the Gateway, as for a forward release.
+`<id>` is the first 12 hex digits of its commit.
 
-Rollback needs the target commit's verified agent delivery and a valid web build. Migrations must use expand and contract so the retained code can use the current database. Rollback does not restore data. If you need to restore a snapshot, follow [Recover a failed update](#recover-a-failed-update). A successful rollback pauses automatic releases with reason `rollback`.
+On a container Gateway, `<id>` must be old. The Gateway admits a forced `gateway.release` run with trigger `rollback` and the input `retained`. It needs no GitHub token, agent delivery or web build. The run fetches, builds and migrates nothing:
+
+1. The build step checks old's rollback protocol and that old is stopped, then starts it and claims it for this Operation. The address wait of a cold start applies.
+2. The candidate check writes old's bind address, caches the configuration from the current env file, restarts FrankenPHP and checks old privately.
+3. The load step brings back old's Swamp workflows from the Swamp checkout, with force.
+4. The switch, public check, Horizon start and retire run as in a release, through the same journal.
+5. An interrupted rollback resumes with `--recover`.
+6. Retire stops the rolled-away live as the new old. A second rollback goes forward again.
+
+The candidate fences the Operation versions it deprecates and reopens every version it can still start. A rollback therefore reopens the versions that the rolled-away release closed. Rollback does not yet check for open work pinned to versions that only the rolled-away release defines; that work waits for a release that defines them again. A failure before the switch stops old again and leaves live serving. A rollback uses the current database as it is. It creates no container: preparation stays, and the count stays at three.
+
+On a host PHP-FPM Gateway, the Gateway resolves that release's full commit and admits a forced `gateway.release` run with trigger `rollback`. Force skips the ancestry check. The build reuses the sealed release and refreshes its configuration. The load step brings back that commit's Swamp workflows. The host PHP-FPM workflow snapshots the database, runs migrations, switches both links and verifies the Gateway.
+
+A host rollback needs the target commit's verified agent delivery and a valid web build. Migrations are expand-only so the retained code can use the current database. Rollback does not restore data. If you need to restore a snapshot, follow [Recover a failed update](#recover-a-failed-update). A successful rollback pauses automatic releases with reason `rollback`.
 
 ### Roll back without Swamp
 
-When Swamp or the Gateway cannot run `gateway:release:rollback`, run the rollback script on the Gateway Node:
+On a container Gateway, run this on the Gateway Node when Swamp or the Gateway cannot run the rollback:
+
+```bash
+sudo /usr/local/libexec/orbit-gateway-rollback [<old id>]
+```
+
+It holds the release lock and runs the same phases as the native rollback, from old's own commit: start and check old, switch through the journal, verify, start Horizon and retire the rolled-away live as the new old. It needs Incus and Caddy, not Swamp and not the Gateway. It reuses the last release's Operation ID and creates no Operation or release record. It loads no Swamp workflows: when the Gateway answers again, reconcile the serving commit with `orbit gateway:release:deploy <full-sha> --reconcile`. A failure before the switch stops old again. After the switch, an interrupted run resumes with `--recover`.
+
+Before it starts old, a rollback records its intent in the switch journal directory. If it stops before the switch is journaled, `--recover`, and any other release phase, stops old again.
+
+For an interrupted container handover or rollback, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover`. It resumes the durable switch and drain.
+
+On a host deployment **before container preparation**, use the host release script:
 
 ```bash
 sudo /home/orbit/orbit/bin/gateway-rollback <id>
@@ -392,11 +492,13 @@ It needs only the release directories. It refuses an id that is not 12 hex digit
 
 It reloads PHP-FPM, so every request runs the release and OPcache starts empty. Then it restarts each running service whose working directory is under the application, such as Horizon, the scheduler and agent-view. A stopped Process stays stopped, Horizon included: after a release run that ended before its Horizon start, run `orbit process:start` for it, or `systemctl start orbit-process-<id>-horizon.service` on the Gateway when Orbit does not answer. The release run switches forward with the same script. A restart of Horizon by the script waits for its running jobs, up to the drain.
 
-It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, admit a release of the serving commit to load its workflows and record a verified release.
+The host script preserves the shared database. It loads no Swamp definitions and writes no release record. A host deployment uses the regular deploy command to reconcile.
+
+On a container Gateway, `orbit gateway:release:deploy <full-serving-sha> --reconcile` reloads the selected release’s workflows and verifies its public version. Reconciliation holds the serving generation during publication. If the run was interrupted, confirm on Node 209 that it is terminal and publication has stopped. Read the Operation ID and full SHA from `/var/lib/orbit/gateway-release-switch/reconcile`. Run `sudo /usr/local/libexec/orbit-gateway-release-phase reconcile-end <sha> <operation-id>` to clear that exact lease, then retry.
 
 ### Apply an env change
 
-Before editing `/home/orbit/shared/gateway.env`, make a private backup with mode `0600`. Keep both the backup and any temporary replacement out of terminal output, logs, and Git. Every release caches its configuration, so an edit changes nothing until you cache it again. As `orbit`, after the edit:
+Before editing `/home/orbit/shared/gateway.env`, make a private backup with mode `0600`. Keep both the backup and any temporary replacement out of terminal output, logs, and Git. Every release caches its configuration, so an edit changes nothing until you cache it again. For a container deployment, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It publishes the private file to the serving release and reloads its workers. For a host deployment, run the following command as `orbit`.
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
@@ -460,7 +562,7 @@ A pause is durable state with a reason. It holds until `resume` or until a deplo
 
 | Reason | Cause |
 | --- | --- |
-| `migration_failure` | Migrate or a later step failed, without a successful switch-back; inspect the run and snapshot |
+| `migration_failure` | Migrate or a later step failed, without a successful switch-back; inspect the failed step and its output |
 | `rollback` | A rollback went live. The runner does not release a newer commit over it |
 | `manual_deploy` | A manual deploy went live while a newer green commit already existed: a deliberate pin of an older commit. The runner does not undo it |
 | `interrupted` | A release died after a snapshot, a migration, or a switch |
@@ -470,7 +572,7 @@ A manual deploy or rollback still runs during a pause. A manual or automatic rel
 
 When a manual deploy goes live, the Gateway asks GitHub whether a newer green commit exists. It stores the answer on the record as the `newest_green` step: `superseded` with that commit, `newest`, or `unknown` when GitHub did not answer. `superseded` and `unknown` make the next tick pause with `manual_deploy`, so a pin is never undone on a guess. After a GitHub outage, a manual deploy may need one `resume`. A manual deploy of the newest green commit hands back to automation, and a newer commit that turns green later is released as usual.
 
-After a failure, decide between a forward fix, a [rollback](#roll-back), and a restore from the snapshot. Then clear a pause that is left:
+After a failure, inspect the migration output. Apply a forward fix or [roll back the application](#roll-back) if it can serve the current schema. A host PHP-FPM release also records a pre-migration snapshot. Then clear a pause that is left:
 
 ```bash
 orbit gateway:auto-release:resume
@@ -491,7 +593,7 @@ While it is up to date, the runner reads the branch head at most every 5 minutes
 
 ### Read the state
 
-`orbit gateway:auto-release:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the last run result. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes needs investigation. Check the Gateway scheduler, its logs and, when configured, the queue workers.
+`orbit gateway:auto-release:status` shows the switch, a pause with its release, error code, and any snapshot path, the current release, the last tick, the stalls, and the last run result. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes needs investigation. Check the Gateway scheduler, its logs and, when configured, the queue workers.
 
 A [Conn launch](/reference/conn#durable-launches-v1) resumes from its recorded Operation. An ambiguous T3 reply is recovered by reading the exact message on the original server. While a launch is Cancelling, owned native work must settle before Orbit can verify teardown.
 
@@ -604,9 +706,11 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 ## Fleet rollout
 
-A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `deferred`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
+A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
 
-The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam when either fleet rollout or default refresh is enabled. Pending default and seed work keeps that job active even while automatic Gateway admission is paused. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
+The fleet admission job runs as soon as the Gateway records a release `verified`, at any hour. The fleet rollout has no time window: every Node, and then the default refresh, starts right after the release.
+
+The job also runs daily at 03:05 Europe/Amsterdam when either fleet rollout or default refresh is enabled. Pending default and seed work keeps that job active even while automatic Gateway admission is paused. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
 
 Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Orbit resolves any required CLI release before reserving the fleet visit and uses that pin for admission. Under the database writer lock, each pass confirms that its release still serves before it records or admits fleet work.
 
@@ -616,11 +720,11 @@ The automatic converge can write the selected roles' software, files and service
 
 Public render inputs determine whether a release needs a role converge. Private material is resolved at admission. Per-Operation values such as the Instance bridge admission timestamp do not affect the release digest.
 
-Automatic role convergence and conflicting Instance, Conn, Process and task work exclude one another at admission on a shared Node. An Instance transfer holds both its source and its destination, together with its other recorded participants. A converge receipt lists the T3 restarts deferred for open turns or activity it could not read. The Node stays pending and retries while its window is open.
+Automatic role convergence and conflicting Instance, Conn, Process and task work exclude one another at admission on a shared Node. An Instance transfer holds both its source and its destination, together with its other recorded participants. A converge receipt lists the T3 restarts deferred for open turns or activity it could not read. The Node stays pending and retries.
 
 Before a verified release starts fleet work, Orbit preserves the previous host baseline for every eligible Node that has no baseline. It keeps that baseline through a deferral or superseding release. Host-wide inputs include the common and base-only recipe pins, kernel policy, and the WireGuard network tasks and their included tasks. A change to any of these inputs fails with `fleet.host_inputs_changed` before Orbit starts work on that Node. The release cannot become fleet current or start its nested-fleet refresh.
 
-An approval recorded before the network task dependencies were included needs renewal because it cannot prove which child tasks the Node ran. Apply a reviewed host change or renew its approval with a successful `orbit node:converge <node>` without a base or role filter. The pass retries on the next existing fleet window or follows a newer verified release. Unreadable desired inputs fail with `fleet.inputs_unavailable`. An invalid assignment scope fails with `fleet.role_scope_invalid`.
+An approval recorded before the network task dependencies were included needs renewal because it cannot prove which child tasks the Node ran. Apply a reviewed host change or renew its approval with a successful `orbit node:converge <node>` without a base or role filter. The pass retries on the next daily pass or follows a newer verified release. Unreadable desired inputs fail with `fleet.inputs_unavailable`. An invalid assignment scope fails with `fleet.role_scope_invalid`.
 
 `ORBIT_FLEET_ROLLOUT` defaults to `true`. Set it to `false` to pause fleet rollouts. The Gateway reports `disabled` and leaves the release without fleet-current status. `ORBIT_FLEET_ROLLOUT_ORDER` takes a comma-separated list of workload Node names to visit first. The order never adds or removes a Node.
 
@@ -655,7 +759,7 @@ Orbit has no `agent` or `s3` role yet. The order already places `agent` in group
 
 Control steps run on Node 209. No step asks orbit-agent to act.
 
-App-dev-only Nodes and a task copy’s isolated inner fleet may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later pass.
+Every Node starts at any hour, one at a time, as soon as the Node before it succeeded. Nick decided on 2026-11-18 that the fleet always rolls out right after each release, so no time window holds a Node back. A busy binary-publication lock defers that Node to a later pass.
 
 ### Desired state
 
@@ -669,7 +773,7 @@ When the commit's release is still missing after 30 minutes, the desired state [
 
 ### One Node
 
-Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open. For a Node with CLI intent, the `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. Other Nodes skip it and publish their observer without a CLI gate. A newer CLI release or a commit build stays in place.
+Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded and that the task is not cancelled. For a Node with CLI intent, the `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. Other Nodes skip it and publish their observer without a CLI gate. A newer CLI release or a commit build stays in place.
 
 A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` only when its SHA-256 differs. One SSH read prints the running service's binary digest. The agent restarts only when the file changed or the running digest differs from the pin. The same read then checks that the pinned digest runs on an active unit. A failed fetch records `agent.download_failed`, a failed restart `agent.restart_failed`, and a failed check `agent.observer_unhealthy`. The rollout never reads the agent secret or changes observer configuration.
 
@@ -685,7 +789,7 @@ A lost or unknown command result leaves the Operation unresolved; it is not repo
 
 At the first failed Node, native dependencies leave later Nodes untouched. The run fails with that Node's error code, and the Operation's result names the Node. The Gateway raises [`rollout_halted`](#release-alerts) for that Node.
 
-Fix the cause. The next pass, at least 5 minutes after the failed run, starts again at that Node, because it is the first Node in risk order that the commit has not converged. That pass comes with the next verified release, the daily window pass, or `orbit fleet:rollout`. Until it converges, later Nodes wait. A deferred Node does not hold back later Nodes, just as it does not inside a run. A retry raises no new alert for the same Node, commit and error code, and the alert's problem resolves once a later pass converges the Node.
+Fix the cause. The next pass, at least 5 minutes after the failed run, starts again at that Node, because it is the first Node in risk order that the commit has not converged. That pass comes with the next verified release, the daily pass, or `orbit fleet:rollout`. Until it converges, later Nodes wait. A deferred Node does not hold back later Nodes, just as it does not inside a run. A retry raises no new alert for the same Node, commit and error code, and the alert's problem resolves once a later pass converges the Node.
 
 Native `swamp workflow resume` does not replace the retry. A failed rollout Operation is final at the Gateway, and the pinned Swamp release drops the inline SSH arguments of a resumed run. A new pass is the retry.
 
@@ -699,7 +803,7 @@ The Gateway's plan reads the newest result of each Node in the terminal `fleet.r
 | `deferred`, `failed`, `cancelled` or `skipped` | Its last visit did not converge it |
 | `converged` or `unchanged`, but drifted | Its observer reports another version, or its required CLI is missing or differs from the desired release |
 
-A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged by the first pass after it returns, inside its window.
+A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged by the first pass after it returns.
 
 Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no visit yet`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a pass already resolved; it never asks Git or GitHub.
 
@@ -849,7 +953,7 @@ Automatic releases and the fleet rollout have these limits.
 
 A release needs an existing [release layout](#release-layout), the verified agent delivery, a valid CI web build and access to Swamp. There is no in-place update or layout-adoption command.
 
-Migrations must use expand and contract. A failed health check switches back; another failure from Migrate on pauses automation for an operator. Snapshots stay on the Gateway host. A new build needs room for 1 GiB and a database copy above the disk floor of 2 GiB and 10 % free, and the run keeps the newest two snapshots plus the snapshot a pause names.
+Migrations must use expand and contract. A failed health check switches back; another failure from Migrate on pauses automation for an operator. The host PHP-FPM workflow keeps its snapshots on the Gateway host. Its build needs room for 1 GiB and a database copy above the disk floor of 2 GiB and 10 % free, and the run keeps the newest two snapshots plus the snapshot a pause names.
 
 The parent workflow runs the definition loaded when it started. The activate child runs the target commit's definition after Load Swamp. Releases reload PHP-FPM and restart running application services. The [gateway role convergence](/cli/node/role-add) owns the static Gateway runtime files, and node converge the Gateway Node's agent.
 
@@ -911,11 +1015,11 @@ The switch reloads PHP-FPM so new requests use the new code and OPcache. It rest
 
 ### Expand and contract
 
-The old release serves while the new release migrates. Both must work with the resulting schema. This also lets a failed health check switch back without restoring the database. A snapshot protects operator recovery; it does not replace compatible migrations.
+The old release serves while the new release migrates. Both must work with the resulting schema. This also lets a failed health check switch back without restoring the database.
 
 ### Laravel owns migrations
 
-Laravel owns migration discovery, including vendor migrations. The run uses `migrate --force --isolated` rather than duplicating that discovery in a release guard. A migration failure or another unresolved failure after it pauses automation and names the snapshot for the operator.
+Laravel owns migration discovery, including vendor migrations. The run uses `migrate --force --isolated=1` rather than duplicating that discovery in a release guard. A migration failure or another unresolved failure after it pauses automation and records the error for the operator.
 
 ### The Gateway is not an Orbit Instance
 
@@ -927,7 +1031,7 @@ Converging Nodes in parallel is faster, but a bad release would break many Nodes
 
 Each pass starts again at the first Node in risk order that the commit has not converged. So a retry visits the failed Node first, and later Nodes stay untouched until it converges. The release record names each Node’s Operations. Swamp keeps the step history.
 
-A closed window or a busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing.
+A busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing.
 
 Development [`instance:mail:update`](/cli/instance/mail-update), [`instance:sleep`](/cli/instance/sleep), [`instance:wake`](/cli/instance/wake), [`instance:complete`](/cli/instance/complete) and [`env:sync` on a container Instance](/cli/env/sync#on-a-container-instance) (`instance.connection_environment`) also hold the release idle guard until their Operation settles.
 

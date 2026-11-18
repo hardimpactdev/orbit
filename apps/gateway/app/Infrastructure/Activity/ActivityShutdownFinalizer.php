@@ -27,6 +27,8 @@ final class ActivityShutdownFinalizer
     /** @var array<int, self> */
     private static array $armed = [];
 
+    private static bool $shutdownRegistered = false;
+
     private function __construct(private readonly int $activityId) {}
 
     public static function arm(Activity $activity): self
@@ -40,7 +42,10 @@ final class ActivityShutdownFinalizer
         $finalizer = new self($activityId);
         self::$armed[spl_object_id($finalizer)] = $finalizer;
 
-        register_shutdown_function($finalizer->finalize(...));
+        if (! self::$shutdownRegistered) {
+            register_shutdown_function(self::finalizeArmed(...));
+            self::$shutdownRegistered = true;
+        }
 
         return $finalizer;
     }

@@ -580,7 +580,6 @@ it('serializes automatic role admission with participating work in both admissio
 })->with(['instance.deploy', 'tasks.copy_turn']);
 
 it('keeps the release pending on a deferred T3 receipt and schedules a new role Operation after the retry interval', function (): void {
-    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     $this->node->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host(), 'agent' => app(AgentDelivery::class)->pin($this->node)]])->save();
     $operation = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod'], release: true);
