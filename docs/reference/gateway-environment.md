@@ -52,7 +52,7 @@ The orchestrator enables read-token requests for one Services peer during deploy
 | --- | --- |
 | `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID` | Gateway-owned Services Node ID, exposed as `dependency_detection.services_node_id`. Unset or invalid disables the dependency read-token route. The route ships disabled until the orchestrator follows the activation steps below. |
 
-Deploy Gateway first. Verify Services with `orbit node:show 17 --json`. On Gateway as `orbit`, back up `/home/orbit/shared/gateway.env` with mode `0600`, then set its single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry without changing other settings. Run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure`; never run `config:cache` in a release. From Services, verify `POST /api/v1/projects/20/dependency-read-token` succeeds without printing its token, then deploy Services. Follow the [release-safe env procedure](/reference/gateway-recovery#apply-an-env-change) and the exact backup/route-check commands in the [GitHub App](/reference/github-app#services-dependency-credentials) page. The orchestrator applies this setting during deployment; a merge does not enable it.
+Deploy Gateway first. Verify Services with `orbit node:show 17 --json`. On Gateway as `orbit`, back up `/home/orbit/shared/gateway.env` with mode `0600`, then set its single `ORBIT_DEPENDENCY_DETECTION_SERVICES_NODE_ID=17` entry without changing other settings. Apply the change with the command for the current [Gateway deployment](/reference/gateway-recovery#apply-an-env-change). From Services, verify `POST /api/v1/projects/20/dependency-read-token` succeeds without printing its token, then deploy Services. Follow the [release-safe env procedure](/reference/gateway-recovery#apply-an-env-change) and the exact backup/route-check commands in the [GitHub App](/reference/github-app#services-dependency-credentials) page. The orchestrator applies this setting during deployment; a merge does not enable it.
 
 ## Required Swamp SSH identity
 
@@ -81,20 +81,20 @@ Proof provision writes the credential to `/home/orbit/.config/swamp/club-api-key
 
 ### Install the nested-fleet Club key
 
-`gateway:nested-fleet-club-key:install` writes `ORBIT_NESTED_FLEET_CLUB_API_KEY` from stdin. Run it on Gateway as `orbit`. It reads one token of at least 16 printable characters without spaces or quotes; one final newline is allowed. It holds the Gateway release lock and uses the same protected env writer as the reader installer: a private mode-`0600` backup, then one atomic rename that keeps every other setting. It never prints the value or takes it as an argument.
+`gateway:nested-fleet-club-key:install` writes `ORBIT_NESTED_FLEET_CLUB_API_KEY` from stdin. Run it on the Gateway host as `orbit`, including when containers serve traffic. It reads one token of at least 16 printable characters without spaces or quotes; one final newline is allowed. It holds the Gateway release lock and uses the same protected env writer as the reader installer: a private mode-`0600` backup, then one atomic rename that keeps every other setting. It never prints the value or takes it as an argument.
 
 ```bash
 set +x
 <the key on stdin> | php /home/orbit/orbit/apps/gateway/artisan gateway:nested-fleet-club-key:install
 ```
 
-No `gateway:release:configure` and no worker reload is needed. The queue workers that start runs keep the configuration they loaded at boot, so each run start reads this one setting from the env file itself. The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). The backup holds the old env, so keep backups under the Gateway operator's retention policy.
+On a prepared Gateway, the installer also publishes the replacement into the directory mounted read-only by every release. Only the current env file is visible there. The backup stays on the host. Each successful installation takes effect without a worker reload. The queue workers that start runs keep the configuration they loaded at boot, so each run start reads this one setting from the env file itself. The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). If the host process stops during publication, run `sudo /usr/local/libexec/orbit-gateway-environment refresh` before starting another nested fleet. This republishes the complete host file. Keep the private backup under the Gateway operator's retention policy.
 
 ### Rotate the Swamp reader credential
 
 The Gateway operator owns rotation. Swamp requires admin authority to mint or revoke tokens. The Gateway keeps only workflow and data read grants, so it does not renew itself. A reader token lasts 30 days. While a reader is configured, Orbit checks the shared env file each hour and requests assistance in the `orbit` Project seven days before expiry. Missing name or invalid expiry metadata requests assistance at once. Repeated checks reuse the request for that credential. With Tasks disabled, the check returns a failure instead of silently skipping a due request.
 
-`gateway:swamp-reader:install` is the protected env writer. Run this internal Artisan command on Gateway as `orbit`. It reads at most 16 KiB of official `swamp access token reveal --yes --json` output from stdin. Pass the replacement's `expiresAt` from the mint result with `--expires-at`. The command requires a new token name, a non-expired reveal, and an expiry more than seven days away. It never prints the token or passes it in command arguments.
+`gateway:swamp-reader:install` is the protected env writer. Run this internal Artisan command as `orbit` on the Gateway host, where the protected file is writable. It reads at most 16 KiB of official `swamp access token reveal --yes --json` output from stdin. Pass the replacement's `expiresAt` from the mint result with `--expires-at`. The command requires a new token name, a non-expired reveal, and an expiry more than seven days away. It never prints the token or passes it in command arguments.
 
 1. On the Swamp server, mint a replacement under a new name.
 
@@ -129,9 +129,13 @@ The Gateway operator owns rotation. Swamp requires admin authority to mint or re
 
 3. Apply the env change and verify the serving Gateway.
 
+   On a container deployment, run the installed helper on the Gateway host. It publishes the host env and applies it to the serving release.
+
    ```bash
-   php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
+   sudo /usr/local/libexec/orbit-gateway-environment configure
    ```
+
+   On a host deployment, run `php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure` as `orbit`.
 
    Read a known group's `/api/v1/tasks/{task}/swamp-runs` endpoint and require `availability: available` with a fresh `observed_at`. HTTP 200 alone does not prove an upstream read. The installer verifies the candidate before publication; it does not refresh the serving configuration or revoke credentials.
 
@@ -141,7 +145,7 @@ The Gateway operator owns rotation. Swamp requires admin authority to mint or re
 
 `ORBIT_SWAMP_READ_TOKEN_NAME` and `ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT` record the installed credential.
 
-For an existing installation without these fields, the first hourly check requests assistance. When the name and expiry are already known, back up the env file privately, then add or replace only these two metadata keys in a private editor. Leave `ORBIT_SWAMP_READ_TOKEN` unchanged. Apply configuration with `gateway:release:configure`, then run `gateway:swamp-reader:check`. This records metadata without revealing the token. If assistance was already raised, resolve that request after a fresh serving read confirms the existing credential.
+For an existing installation without these fields, the first hourly check requests assistance. When the name and expiry are already known, back up the env file privately, then add or replace only these two metadata keys in a private editor. Leave `ORBIT_SWAMP_READ_TOKEN` unchanged. Apply configuration using the command for the current deployment in step 3, then run `gateway:swamp-reader:check`. This records metadata without revealing the token. If assistance was already raised, resolve that request after a fresh serving read confirms the existing credential.
 
 Run `gateway:swamp-reader:check` to check now. A due request stays visible after expiry; a token with no reader configured is skipped. Missing the `orbit` Project or disabling Tasks makes a due check fail visibly, and the failure names its error code or class. A release holds the release lock for its whole run. A check that meets that lock ends without error and reads the token again at the next hourly run. The request is an operator action and starts no agent or workflow.
 

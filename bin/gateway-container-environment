@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 """Publish the current Gateway env inode to the private, read-only guest mount."""
+import fcntl
 import json
 import os
 import pwd
@@ -18,18 +19,24 @@ INCUS = ["incus", "--force-local", "--project", "orbit-releases"]
 
 def publish(directory=PROJECTION, source=SHARED / "gateway.env"):
     directory.mkdir(mode=0o700, exist_ok=True)
-    folder = directory.lstat()
-    if not stat.S_ISDIR(folder.st_mode) or folder.st_uid != os.geteuid() or folder.st_mode & 0o077:
-        raise ValueError("unexpected Gateway environment projection ownership or permissions")
-    name = directory / (".refresh-" + secrets.token_hex(12))
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        folder = os.fstat(fd)
+        if folder.st_uid != os.geteuid() or stat.S_IMODE(folder.st_mode) != 0o700:
+            raise ValueError("unexpected Gateway environment projection ownership or permissions")
+        # Coordinate with the host credential installer. An older refresh must never overwrite a rotation.
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        name = source.parent / (".gateway-env-refresh-" + secrets.token_hex(12))
         os.link(source, name, follow_symlinks=False)
-        info = name.lstat()
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
-            raise ValueError("Gateway environment must be a private file owned by orbit")
-        os.replace(name, directory / "gateway.env")
+        try:
+            info = name.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
+                raise ValueError("Gateway environment must be a private file owned by orbit")
+            os.replace(name, "gateway.env", dst_dir_fd=fd)
+        finally:
+            name.unlink(missing_ok=True)
     finally:
-        name.unlink(missing_ok=True)
+        os.close(fd)
 
 
 def main(action):
