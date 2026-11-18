@@ -87,7 +87,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
 cost = 3240
-slices = 82
+slices = 84
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
   ".github/workflows/ci.yml",
