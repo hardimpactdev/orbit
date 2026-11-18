@@ -84,7 +84,7 @@ class ReleaseResponseWait(unittest.TestCase):
 
     def test_a_failed_probe_stays_busy_until_the_bound_unless_incus_reports_the_container_stopped(self):
         for status in ("Running", "error"):
-            result, calls, record = self.play("error", 0, status=status, seconds=3)
+            result, calls, record = self.play("error", 0, status=status)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertGreaterEqual(len(calls), 2)
             self.assertEqual(record, "42 timeout\n")
