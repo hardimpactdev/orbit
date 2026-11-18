@@ -224,11 +224,19 @@ Deno.test("Gateway and AppProd share the clone, handover, compensation and readb
     { step: "Write the response wait input", condition: { type: "always" } },
     { step: wait.name, condition: { type: "always" } },
   ]);
-  assertEquals(find(handover, "Check deprecated operation versions").dependsOn, [
-    { step: retire.name, condition: { type: "succeeded" } },
+  const review = find(handover, "Record eligible versions for cleanup Tasks");
+  assertEquals(review.allowFailure, true);
+  assertEquals(review.task.workflowIdOrName, "gateway-operation-cleanup");
+  const record = find(await steps("workflow-gateway-operation-cleanup"), "Record cleanup candidates");
+  assert(record.task.inputs?.argv?.includes("cleanup-versions"));
+  // A failed first public check followed by a passing retire probe fails the confirmation, so nothing is filed.
+  const confirm = find(handover, "Confirm the Gateway handover");
+  assertEquals(review.dependsOn, [
+    { step: confirm.name, condition: { type: "succeeded" } },
   ]);
-  assert(find(handover, "Confirm the Gateway handover").dependsOn?.some((edge) =>
-    edge.step === retire.name && edge.condition.type === "always"));
+  assert(confirm.dependsOn?.some((edge) => edge.step === retire.name && edge.condition.type === "always"));
+  assert(confirm.dependsOn?.some((edge) => edge.step === verify.name && edge.condition.type === "always"));
+  assert(JSON.stringify(confirm.task).includes('steps[\\"Verify the serving release\\"].status == \\"succeeded\\"'));
   assert(find(release, "Read the serving release").dependsOn?.every((edge) => edge.condition.type === "always"));
 });
 

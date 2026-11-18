@@ -170,16 +170,51 @@ class PlanningTest(unittest.TestCase):
         self.assertIn('swamp/gap.ts#1/3', units.unplaced_units(result))
         self.assertNotIn('not_run', result)
 
-    def test_a_capacity_gap_must_name_registered_self_hosted_files(self):
+    def test_a_hosted_capacity_gap_yields_to_other_work_and_runs_before_a_self_hosted_gap(self):
+        budget = {**BUDGET, 'pr_shards': 2, 'runner_shards': 2, 'shard_workers': 1, 'self_hosted_workers': 1,
+                  'capacity_gap': ['swamp/gap.ts', 'swamp/runner_gap.py']}
+        # Table order puts both gaps first; the other hosted file still takes its shard before them.
+        fixtures = [fixture('swamp/runner_gap.py', 100, ['swamp/input'], self_hosted=True),
+                    fixture('swamp/gap.ts', 200, ['swamp/input'], cases=['a', 'b']),
+                    fixture('swamp/other.py', 100, ['swamp/input'])]
+        fixtures[1]['case_costs'] = {'a': 100, 'b': 100}
+        result = planned(['swamp/input'], fixtures, budget=budget)
+        self.assertEqual(sorted(names(result)), ['swamp/gap.ts#0/2', 'swamp/other.py'])
+        self.assertEqual(result['self_hosted_shards'], [])
+        self.assertEqual(result['not_run'], [
+            {'file': 'swamp/gap.ts', 'units': ['swamp/gap.ts#1/2'], 'reason': 'capacity gap per ADR 0262'},
+            {'file': 'swamp/runner_gap.py', 'units': ['swamp/runner_gap.py'], 'reason': 'capacity gap per ADR 0262'}])
+        self.assertNotIn('capacity', result)
+        # A change to the hosted gap file itself runs all of its units; the overflow then fails Required.
+        result = planned(['swamp/input', 'swamp/gap.ts'], fixtures, budget=budget)
+        self.assertEqual(sorted(names(result)), ['swamp/gap.ts#0/2', 'swamp/gap.ts#1/2'])
+        self.assertEqual(units.unplaced_units(result), ['swamp/other.py'])
+        # Without the name, the same hosted overflow fails Required.
+        result = planned(['swamp/input'], fixtures, budget={**budget, 'capacity_gap': ['swamp/runner_gap.py']})
+        self.assertEqual(sorted(names(result)), ['swamp/gap.ts#0/2', 'swamp/gap.ts#1/2'])
+        self.assertEqual(units.unplaced_units(result), ['swamp/other.py'])
+
+    def test_a_capacity_gap_must_name_registered_files_and_a_hosted_gap_keeps_the_lane(self):
         original, inventory = units.registry.load(ROOT)
-        hosted = next(f['file'] for f in original['fixture'] if not f.get('self_hosted'))
-        for gaps in (['swamp/tests/missing_test.ts'], [hosted], 'swamp/tests/ansible_instance_migrate_move_test.ts',
+        for gaps in (['swamp/tests/missing_test.ts'], 'swamp/tests/ansible_instance_migrate_move_test.ts',
                      ['swamp/tests/ansible_instance_migrate_move_test.ts'] * 2):
             config = json.loads(json.dumps(original))
             config['budget']['capacity_gap'] = gaps
             with self.subTest(gaps=gaps), patch.object(units.registry, 'load', return_value=(config, inventory)):
-                with self.assertRaisesRegex(ValueError, 'capacity_gap must list unique registered self_hosted fixtures'):
+                with self.assertRaisesRegex(ValueError, 'capacity_gap must list unique registered fixtures'):
                     units.configuration()
+        budget, fixtures, _ = units.configuration()
+        hosted = [file for file in budget['capacity_gap'] if not fixtures[file].get('self_hosted')]
+        self.assertEqual(hosted, ['swamp/tests/ansible_task_copy_turn_test.ts',
+                                  'swamp/tests/ansible_instance_host_image_test.ts'])
+        # Only a self-hosted gap may hold a unit above the lane.
+        config = json.loads(json.dumps(original))
+        row = next(f for f in config['fixture'] if f['file'] == hosted[0])
+        row['case_costs'] = {**row['case_costs'], next(iter(row['case_costs'])): config['budget']['shard_seconds'] + 1}
+        row['cost'] = sum(row['case_costs'].values())
+        with patch.object(units.registry, 'load', return_value=(config, inventory)):
+            with self.assertRaisesRegex(ValueError, 'exceeds the 150s fixture lane'):
+                units.configuration()
 
     def test_self_hosted_units_follow_the_unit_ceiling_with_startup(self):
         result = planned(['swamp/runner.ts'], [fixture('swamp/runner.ts', 145, cases=['long'], self_hosted=True)])

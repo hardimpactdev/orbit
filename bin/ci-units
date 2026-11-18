@@ -156,14 +156,14 @@ def configuration(path=TABLE):
         fits = False
     if not fits:
         raise ValueError('machinery_canary must fit one shard')
-    # ADR 0262 names each capacity gap: a self-hosted file that cannot fit the self-hosted shards when selected.
+    # ADR 0262 names each capacity gap: a file whose units may stay out of a plan that has no room for them.
     gaps = budget.get('capacity_gap')
-    if not isinstance(gaps, list) or len(gaps) != len(set(gaps)) or \
-            any(file not in fixtures or not fixtures[file].get('self_hosted') for file in gaps):
-        raise ValueError('capacity_gap must list unique registered self_hosted fixtures')
+    if not isinstance(gaps, list) or len(gaps) != len(set(gaps)) or any(file not in fixtures for file in gaps):
+        raise ValueError('capacity_gap must list unique registered fixtures')
     for file, fixture in fixtures.items():
         for name, cost in units_for(fixture, budget):
-            if file not in gaps and cost > budget['shard_seconds']:
+            # Only a self-hosted gap may hold a unit above the lane; a hosted unit always fits it.
+            if not (file in gaps and fixture.get('self_hosted')) and cost > budget['shard_seconds']:
                 raise ValueError(f'{name}: {cost:g}s exceeds the {budget["shard_seconds"]}s fixture lane')
     return budget, fixtures, config['fixtures']['default']
 
@@ -383,7 +383,9 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
     def fits(rows, side):
         return fits_all({**admitted, side: rows})
     admitted, unplaced, capacity, not_run = {False: [], True: []}, [], [], []
-    gaps = budget['capacity_gap']
+    # A hosted gap yields only when other changes select it. A change to the file itself runs all of its units.
+    direct = {*paths, *inventory_changed, *registry_changed}
+    gaps = [file for file in budget['capacity_gap'] if file not in direct or pool(file)]
     mandatory, reserved = [], {False: [], True: []}
     for file in selected:
         fixture = fixtures[file]
@@ -408,8 +410,9 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
             admitted[side].extend(reserved[side])
     reserved_names = {name for side in admitted.values() for name, _, _ in side}
     order = {file: index for index, file in enumerate(fixtures)}
-    # Admission is by directness, then table order; a named capacity gap comes last. Size only decides packing.
-    for file in sorted(selected, key=lambda file: (file in gaps, tuple(-p for p in selected[file]), order[file])):
+    # Admission is by directness, then table order; a named capacity gap comes last, a hosted gap before a
+    # self-hosted one: a hosted gap fits a plan of its own. Size only decides packing.
+    for file in sorted(selected, key=lambda file: ((file in gaps) * (1 + pool(file)), tuple(-p for p in selected[file]), order[file])):
         fixture, side = fixtures[file], pool(file)
         candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)]
         remaining = [row for row in candidates if row[0] not in reserved_names]
