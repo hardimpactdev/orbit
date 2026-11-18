@@ -9,6 +9,14 @@ Gateway and app-prod Instances use the `production-release` Swamp workflow. Admi
 
 A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route. [ADR 0265](/decisions/0265-sleep-idle-production-containers) describes the separate plan for [sleeping an idle live Instance](#sleep-and-wake).
 
+## Prepare the AppProd Node
+
+Run `orbit node:role:add <node> app-prod` to add the role. On an existing AppProd Node, run `orbit node:role:add <node> app-prod --converge --full` to install the release controller, stock image, pinned runtime, bridge, egress proxy and memory-reclaim service. Provision an Incus ZFS pool named `orbit-releases`, or provide the existing `orbit-instances` ZFS pool from which the role can create its release dataset. Each Instance gets a separate shared volume and a port-isolated network interface.
+
+On the first move from host PHP-FPM, the preparer copies the declared shared directories and takes a SQLite backup. Orbit briefly returns HTTP 503 on the admitted Routes and stops the legacy writers. It checks the source files and SQLite again before selecting the new release. Source changes since preparation require a new build. The private health check can pass through the fence. Orbit records the new owner before admitting writes. On a Node that runs both Ingress and AppProd, the owned public Route and its private origin select the same Instance upstream.
+
+A production Instance must keep its Gateway registration while it owns preparation or release storage. `instance:destroy` and `instance:unregister` refuse removal once its first container deployment starts. The existing removal workflow supports development Instances.
+
 ## Release states
 
 Each release container has one release state.

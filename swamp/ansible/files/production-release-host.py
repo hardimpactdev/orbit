@@ -31,8 +31,13 @@ def provision(nested, cidr):
             dataset = source.get("config", {}).get("source", "")
             if source.get("driver") != "zfs" or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_./:-]*", dataset):
                 raise ValueError("Provision the orbit-releases ZFS Incus pool on the approved storage device")
-            # Same physical storage as the Node's explicitly provisioned Instance pool.
-            incus("storage", "create", PROJECT, "zfs", "source=" + dataset + "/production-releases", OWNER + "=true")
+            # This child belongs to releases. Never let Incus initialize an unrelated existing dataset.
+            child = dataset + "/production-releases"
+            if child not in command("zfs", "list", "-Hp", "-o", "name").splitlines():
+                command("zfs", "create", "-o", "mountpoint=none", "-o", "org.orbit:purpose=production-releases", child)
+            if command("zfs", "get", "-H", "-o", "value,source", "org.orbit:purpose", child).split() != ["production-releases", "local"]:
+                raise ValueError("The selected ZFS dataset is not owned by production releases")
+            incus("storage", "create", PROJECT, "zfs", "source=" + child, OWNER + "=true")
         changed = True
     pool = json.loads(incus("query", "/1.0/storage-pools/" + PROJECT))
     if pool["driver"] != "zfs" and not (nested and pool["driver"] == "dir"):

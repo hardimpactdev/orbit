@@ -74,6 +74,7 @@ final readonly class StartInstanceDestroyAction
             return $replay;
         }
 
+        ContainerInstanceDestroy::assertReleaseRemovalAvailable($instance);
         if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
         }
