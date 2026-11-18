@@ -86,7 +86,7 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3110
+cost = 3240
 slices = 82
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
