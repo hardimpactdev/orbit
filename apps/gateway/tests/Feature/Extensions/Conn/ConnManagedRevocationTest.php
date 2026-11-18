@@ -27,6 +27,7 @@ use Orbit\Extensions\Conn\Domain\Managed\ConnManagedRevocation;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnManagedRevision;
 use Orbit\Extensions\Conn\Models\ConnManagedTarget;
+use Orbit\Extensions\Conn\Models\ConnManagedToken;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -37,9 +38,15 @@ final class RecordingManagedPublisher implements ConnManagedNoticePublisher
 
     public bool $reachable = true;
 
+    /** @var (Closure(): void)|null runs during the send, as a rotation in flight would */
+    public ?Closure $during = null;
+
     public function publish(string $channel, array $data): bool
     {
         $this->sent[] = ['channel' => $channel, 'data' => $data, 'level' => DB::transactionLevel()];
+        if ($this->during instanceof Closure) {
+            ($this->during)();
+        }
 
         return $this->reachable;
     }
@@ -168,6 +175,22 @@ describe('enrolment', function (): void {
         rmdir($directory);
     });
 
+    it('removes the written temporary credential when the rotation fails after the write', function (): void {
+        $directory = sys_get_temp_dir().'/conn-svc-late-'.bin2hex(random_bytes(4));
+        mkdir($directory);
+        $file = $directory.'/svc';
+        // A directory appears at the destination during the transaction, after the temporary file was written.
+        ConnManagedTarget::saving(function () use ($file): void {
+            @mkdir($file);
+        });
+
+        expect(fn () => app(EnrolConnManagedTargetAction::class)->execute($this->environmentId, $file))->toThrow(RuntimeException::class, 'could not be delivered')
+            ->and($this->target->fresh()->generation)->toBe(1)
+            ->and(glob($directory.'/*.tmp'))->toBe([]);
+        rmdir($file);
+        rmdir($directory);
+    });
+
     it('refuses an environment ID that is not a lowercase canonical UUID', function (): void {
         managed_environment('env-beast', $this->serving);
 
@@ -241,6 +264,16 @@ describe('target routes', function (): void {
             ->assertOk()->assertExactJson(['auth' => 'test-key:'.hash_hmac('sha256', '1.2:'.$channel, 'test-secret')]);
     });
 
+    it('never signs or returns a replaced generation\'s channel for a request authenticated before rotation', function (): void {
+        $authenticated = $this->target->fresh();
+        managed_enrol($this->environmentId);
+        $authority = app(ConnManagedAuthority::class);
+
+        expect(fn () => $authority->withCurrentChannel($authenticated, fn (string $channel): string => $channel))
+            ->toThrow(ResourceOperationException::class, 'The generation is not the current one.');
+        managed_target_call($this->serving, $this->credential, $this->target, 'realtime', [], generation: 1)->assertStatus(403);
+    });
+
     it('answers snapshot, delta, current and refuses a future revision', function (): void {
         managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
         $call = fn (?int $after): TestResponse => managed_target_call($this->serving, $this->credential, $this->target, 'authority', ['nonce' => managed_nonce(), 'after_revision' => $after]);
@@ -295,6 +328,13 @@ describe('tokens', function (): void {
         managed_mint($this->callerA, $this->environmentId, ['purpose' => 'admin'])->assertUnprocessable();
         managed_mint($this->callerA, $this->environmentId, ['purpose' => 'reader', 'scopes' => []])->assertUnprocessable()->assertJsonValidationErrors('scopes', 'error.details');
         managed_mint($this->callerA, $this->environmentId, ['purpose' => 'reader', 'scopes' => null])->assertUnprocessable();
+        $this->withServerVariables(['REMOTE_ADDR' => $this->callerA->wireguard_ip])
+            ->post("/api/v1/conn/environments/{$this->environmentId}/managed-tokens", ['purpose' => 'reader', 'scopes' => 'terminal:write'], ['Accept' => 'application/json'])
+            ->assertUnprocessable();
+        $this->withServerVariables(['REMOTE_ADDR' => $this->callerA->wireguard_ip])
+            ->postJson("/api/v1/conn/environments/{$this->environmentId}/managed-tokens?scopes=terminal:write", ['purpose' => 'reader'])
+            ->assertUnprocessable();
+        expect(ConnManagedToken::query()->count())->toBe(1);
     });
 
     it('advertises the same expiry that introspection enforces', function (): void {
@@ -358,9 +398,17 @@ describe('overlapping writers', function (): void {
         $remover->exec('DELETE FROM node_access WHERE id = '.$edge);
         $default = config('database.default');
         config(['database.default' => 'overlap']);
+        $reads = new ArrayObject;
+        DB::listen(function (QueryExecuted $query) use ($reads): void {
+            if ($query->connectionName === 'overlap') {
+                $reads->append($query->sql);
+            }
+        });
 
         try {
-            expect(fn () => app(IssueConnManagedTokenAction::class)->execute($this->callerA, $this->environmentId))->toThrow(PDOException::class, 'locked');
+            // The lock must stop mint at BEGIN: a mint that read the edge first and blocked only at INSERT would leave a read here.
+            expect(fn () => app(IssueConnManagedTokenAction::class)->execute($this->callerA, $this->environmentId))->toThrow(PDOException::class, 'locked')
+                ->and($reads->getArrayCopy())->toBe([]);
             $remover->exec('COMMIT');
             expect(fn () => app(IssueConnManagedTokenAction::class)->execute($this->callerA, $this->environmentId))
                 ->toThrow(ResourceOperationException::class, 'The caller has no direct edge to the serving Node.')
@@ -389,7 +437,7 @@ describe('edge removal', function (): void {
             ->and($row->commit_observed_at >= $row->committed_at)->toBeTrue()->and($row->notice_sent_at >= $row->commit_observed_at)->toBeTrue()
             ->and($this->publisher->sent)->toHaveCount(1)
             ->and($this->publisher->sent[0]['channel'])->toBe('private-conn-target.'.$this->target->id.'.1')
-            ->and($this->publisher->sent[0]['level'])->toBe($this->baseLevel + 1)
+            ->and($this->publisher->sent[0]['level'])->toBe($this->baseLevel)
             ->and($this->publisher->sent[0]['data'])->toBe(['environment_id' => $this->environmentId, 'generation' => 1, 'revision' => 1, 'edge_ids' => [$edgeA]]);
         managed_introspect($this->serving, $this->credential, $this->target, $tokenA, $this->callerA)->assertForbidden()->assertJsonPath('error.code', 'conn.managed_token_invalid');
         managed_introspect($this->serving, $this->credential, $this->target, $tokenB, $this->callerB)->assertOk()->assertJsonPath('data.revision', 1);
@@ -419,6 +467,18 @@ describe('edge removal', function (): void {
             ->and($this->target->fresh()->revision)->toBe(0)
             ->and(ConnManagedRevision::query()->count())->toBe(0)
             ->and($this->publisher->sent)->toBe([]);
+    });
+
+    it('records suppression, never a send, when a rotation lands while the notice is in flight', function (): void {
+        $this->publisher->during = fn () => managed_enrol($this->environmentId);
+
+        managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
+
+        $row = ConnManagedRevision::query()->sole();
+        expect($this->publisher->sent)->toHaveCount(1)
+            ->and($this->publisher->sent[0]['channel'])->toBe('private-conn-target.'.$this->target->id.'.1')
+            ->and($this->target->fresh()->generation)->toBe(2)
+            ->and($row->notice_sent_at)->toBeNull()->and($row->notice_suppressed_at)->not->toBeNull()->and($row->commit_observed_at)->not->toBeNull();
     });
 
     it('suppresses the notice when a new generation replaced the captured one before the commit', function (): void {
@@ -505,7 +565,37 @@ describe('acknowledgement', function (): void {
         'numeric close' => [['handlers_closed_at' => 1763478000.5]],
         'time without an offset' => [['fenced_at' => '2026-11-18 15:00:00']],
         'close before fence' => [['handlers_closed_at' => '2026-11-18T15:00:00.100500+00:00']],
+        'close before fence by under a microsecond' => [['fenced_at' => '2026-11-18T15:00:00.101000001+00:00', 'handlers_closed_at' => '2026-11-18T15:00:00.101000000+00:00']],
+        'close before fence across offsets' => [['handlers_closed_at' => '2026-11-18T16:00:00.1+01:00']],
+        'fence in month 13' => [['fenced_at' => '2026-13-18T15:00:00.1+00:00']],
+        'fence at hour 24' => [['fenced_at' => '2026-11-18T24:00:00.1+00:00']],
+        'revision true' => [['revision' => true]],
+        'revision as a string' => [['revision' => '1']],
     ]);
+
+    it('leaves the revision owed when a recovered ACK names a day that does not exist', function (): void {
+        managed_target_call($this->serving, $this->credential, $this->target, 'ack', [
+            'revision' => 1, 'kind' => 'recovered', 'notice_received_at' => null, 'fenced_at' => null, 'handlers_closed_at' => null,
+            'recovered_at' => '2026-02-31T15:00:05.000000+00:00',
+        ])->assertUnprocessable();
+
+        expect(ConnManagedRevision::query()->sole()->acknowledged_at)->toBeNull();
+    });
+
+    it('leaves the revision owed when the revision is a JSON float', function (): void {
+        $body = json_encode(['environment_id' => $this->environmentId, 'generation' => 1, ...$this->observed]);
+        $this->withServerVariables(['REMOTE_ADDR' => $this->serving->wireguard_ip])
+            ->call('POST', '/api/v1/conn/managed/ack', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer '.$this->credential],
+                str_replace('"revision":1', '"revision":1.0', (string) $body))
+            ->assertUnprocessable();
+
+        expect(ConnManagedRevision::query()->sole()->acknowledged_at)->toBeNull();
+    });
+
+    it('accepts a close equal to its fence at full precision', function (): void {
+        managed_target_call($this->serving, $this->credential, $this->target, 'ack', [...$this->observed,
+            'fenced_at' => '2026-11-18T15:00:00.101000001Z', 'handlers_closed_at' => '2026-11-18T16:00:00.101000001+01:00'])->assertOk();
+    });
 
     it('refuses an ACK of a superseded generation and lists the new generation\'s owed rows only', function (): void {
         [, $rotated] = managed_enrol($this->environmentId);

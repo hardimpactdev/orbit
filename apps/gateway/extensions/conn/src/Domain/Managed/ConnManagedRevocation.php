@@ -50,30 +50,48 @@ final readonly class ConnManagedRevocation implements NodeAccessRemovalTransacti
     /**
      * Sends the notice on the captured generation's channel, or records its suppression when a new generation replaced it.
      * `$observedAt` is sampled in the after-commit callback, so it bounds the commit from above as `committed_at` bounds it
-     * from below. The generation check, the send and its record hold one write lock, so a rotation commits either before
-     * the check, and the notice is suppressed, or after the send.
+     * from below.
+     *
+     * The send holds no write lock, so a slow Reverb never delays another target's probe. The generation is checked under
+     * the lock before the send and again when the result is recorded. A rotation during the send can let the notice reach
+     * only the replaced generation's channel, which the Gateway signs for nobody and which carries no authority for the
+     * successor; the row then records `notice_suppressed_at`, never `notice_sent_at`.
      */
     private function publish(int $revisionId, string $observedAt): void
     {
-        DB::transaction(function () use ($revisionId, $observedAt): void {
+        $notice = DB::transaction(function () use ($revisionId, $observedAt): ?array {
             $row = ConnManagedRevision::query()->findOrFail($revisionId);
             $target = ConnManagedTarget::query()->findOrFail($row->conn_managed_target_id);
             $row->commit_observed_at = $observedAt;
-
             if ($target->generation !== $row->generation) {
-                $row->forceFill(['notice_suppressed_at' => ConnManagedSecrets::now()])->save();
+                $row->notice_suppressed_at = ConnManagedSecrets::now();
+                $row->save();
 
-                return;
+                return null;
             }
+            $row->save();
 
-            $sent = $this->publisher->publish($target->channel($row->generation), [
+            return ['channel' => $target->channel($row->generation), 'data' => [
                 'environment_id' => $target->environment_id,
                 'generation' => $row->generation,
                 'revision' => $row->revision,
                 'edge_ids' => $row->edge_ids,
-            ]);
-            if ($sent) {
-                $row->notice_sent_at = ConnManagedSecrets::now();
+            ]];
+        });
+        if ($notice === null) {
+            return;
+        }
+
+        $sent = $this->publisher->publish($notice['channel'], $notice['data']);
+        $sentAt = ConnManagedSecrets::now();
+
+        DB::transaction(function () use ($revisionId, $sent, $sentAt): void {
+            $row = ConnManagedRevision::query()->findOrFail($revisionId);
+            $target = ConnManagedTarget::query()->findOrFail($row->conn_managed_target_id);
+            if ($target->generation !== $row->generation) {
+                $row->notice_suppressed_at = $sentAt;
+            } elseif ($sent) {
+                $row->notice_sent_at = $sentAt;
             }
             $row->save();
         });

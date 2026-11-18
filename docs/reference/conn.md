@@ -1139,7 +1139,7 @@ A `nonce` is 16 to 64 base64url characters that the target draws at random for e
 
 ### Caller route
 
-`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The body holds `purpose` and nothing else: any other field, such as `scopes`, is refused even when it is empty or `null`. `reader` maps to `orchestration:read` and `terminal:read`. The response (201) holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
+`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The input holds `purpose` and nothing else, as JSON, form fields or query: any other field, such as `scopes`, is refused even when it is empty or `null`. `reader` maps to `orchestration:read` and `terminal:read`. The response (201) holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
 
 The token expires 15 minutes after issue, at a whole second, and has no renewal; the caller asks for a new one. Introspection enforces exactly the advertised `expires_at`. This lifetime is a lab choice. It does not bound enforcement: revocation ends a token at once, whatever its expiry.
 
@@ -1180,7 +1180,9 @@ Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consu
 4. Mark the edge's managed tokens as revoked at that revision.
 5. Record one owed acknowledgement for each target: its environment UUID, generation, revision and `committed_at`.
 
-The transaction captures each target's generation with its revision. After the outermost commit, the Gateway records `commit_observed_at` and publishes `conn.authority.revoked` on the channel of that captured generation, `private-conn-target.{target_id}.{generation}`, and never on another. Its data are `environment_id`, the captured `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`. The generation check, the publish and its record hold one write lock, so a rotation commits either before the check or after the send.
+The transaction captures each target's generation with its revision. After the outermost commit, the Gateway records `commit_observed_at` and publishes `conn.authority.revoked` on the channel of that captured generation, `private-conn-target.{target_id}.{generation}`, and never on another. Its data are `environment_id`, the captured `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`.
+
+The Gateway checks the generation under the write lock, sends without holding it, and checks again under the lock when it records the result. So a slow Reverb never delays another target's probe. When a rotation lands during the send, the notice can reach only the replaced generation's channel. The Gateway signs that channel for nobody, and it carries no authority for the successor. The row then records `notice_suppressed_at`, never `notice_sent_at`.
 
 When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after the outermost commit, in its own transaction, even when the removal ran inside an enclosing transaction. It checks broader server access and is neither managed enforcement nor its acknowledgement.
 
@@ -1250,7 +1252,9 @@ Bytes already passed to the operating system cannot be recalled. `notice_receive
 
 A restarted target observed no close: its handlers ended with the old process. Once it has applied the snapshot, it sends a `recovered` ACK for each `owed` revision. That ACK confirms that no affected handler remains. Its `recovered_at` is the time it applied the snapshot, an upper bound on the close; `fenced_at`, `handlers_closed_at` and `notice_received_at` are `null`. The timing proof leaves `recovered` ACKs out of every fence and close measure.
 
-The Gateway settles only the owed row with the same environment UUID, generation and revision. One ACK never settles another revision. It records `acknowledged_at` and the reported target times on the first valid ACK. An exact retry answers that first result and changes nothing. Every reported time is an RFC 3339 string with an offset, and `handlers_closed_at` is not earlier than `fenced_at`. An ACK that breaks this is refused with `validation.failed` (422), and the revision stays owed. A lost request leaves the row owed, and the target sends it again while `owed` lists it.
+The Gateway settles only the owed row with the same environment UUID, generation and revision. One ACK never settles another revision. It records `acknowledged_at` and the reported target times on the first valid ACK. An exact retry answers that first result and changes nothing.
+
+`revision` is a JSON integer. Every reported time is an RFC 3339 string with an offset that names a real date and time, and `handlers_closed_at` is not earlier than `fenced_at`, compared at every fractional digit. An ACK that breaks this is refused with `validation.failed` (422), and the revision stays owed. A lost request leaves the row owed, and the target sends it again while `owed` lists it.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -1282,12 +1286,12 @@ The Gateway and the target record these times separately, so the proof can measu
 | --- | --- | --- |
 | `committed_at` | Gateway | Inside the edge-removal transaction, before its writes: a lower bound on the commit |
 | `commit_observed_at` | Gateway | In the after-commit callback, before the publish: an upper bound on the commit |
-| `notice_sent_at` | Gateway | After the Reverb publish returns |
+| `notice_sent_at` | Gateway | After the Reverb publish returns, when the generation is still current |
 | `notice_received_at` | Target | On the notice, reported in the ACK; `null` when none arrived |
 | `fenced_at` | Target | When the edge is blocked; `null` in a `recovered` ACK |
 | `handlers_closed_at` | Target | When, after the fence, the target verified zero affected handlers and no sendable queued frame, including when that was already true; `null` in a `recovered` ACK |
 | `recovered_at` | Target | When a restarted target applied the snapshot; only in a `recovered` ACK, and only an upper bound on the close |
-| `notice_suppressed_at` | Gateway | When the Gateway skipped the notice of a replaced generation |
+| `notice_suppressed_at` | Gateway | When the Gateway skipped the notice of a replaced generation, or a rotation landed while the notice was in flight |
 | `acknowledged_at` | Gateway | On the first valid ACK of that revision |
 | `superseded_at` | Gateway | When enrolment started a new generation before the row was acknowledged |
 

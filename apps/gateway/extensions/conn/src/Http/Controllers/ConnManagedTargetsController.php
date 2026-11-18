@@ -18,26 +18,31 @@ use Orbit\Extensions\Conn\Http\Requests\IssueConnManagedTokenRequest;
 /** The target routes and the caller token route of [Managed grant revocation](/reference/conn#managed-grant-revocation). */
 final class ConnManagedTargetsController extends Controller
 {
-    public function realtime(ConnManagedTargetRequest $request, RealtimeConnection $realtime): JsonResponse
+    public function realtime(ConnManagedTargetRequest $request, RealtimeConnection $realtime, ConnManagedAuthority $authority): JsonResponse
     {
         $connection = $realtime->resolve();
+        $channel = $authority->withCurrentChannel($request->target(), static fn (string $channel): string => $channel);
 
-        return $this->respond($request, ['url' => $connection?->url(), 'key' => $connection?->key, 'channel' => $request->target()->channel()]);
+        return $this->respond($request, ['url' => $connection?->url(), 'key' => $connection?->key, 'channel' => $channel]);
     }
 
     /** @return array{auth: string} */
-    public function broadcastingAuth(ConnManagedTargetRequest $request, RealtimeConnection $realtime): array
+    public function broadcastingAuth(ConnManagedTargetRequest $request, RealtimeConnection $realtime, ConnManagedAuthority $authority): array
     {
-        $channel = $request->string('channel_name')->toString();
-        if ($channel !== $request->target()->channel()) {
-            throw new ResourceOperationException('conn.managed_channel_forbidden', 'The channel is not this target\'s current channel.', 403);
-        }
+        $requested = $request->string('channel_name')->toString();
+        $socketId = $request->string('socket_id')->toString();
         $connection = $realtime->resolve();
-        if ($connection === null) {
-            throw new ResourceOperationException('realtime.not_configured', 'Realtime is not configured.', 404);
-        }
 
-        return ['auth' => $connection->key.':'.hash_hmac('sha256', $request->string('socket_id')->toString().':'.$channel, $connection->secret)];
+        return $authority->withCurrentChannel($request->target(), static function (string $channel) use ($requested, $socketId, $connection): array {
+            if ($requested !== $channel) {
+                throw new ResourceOperationException('conn.managed_channel_forbidden', 'The channel is not this target\'s current channel.', 403);
+            }
+            if ($connection === null) {
+                throw new ResourceOperationException('realtime.not_configured', 'Realtime is not configured.', 404);
+            }
+
+            return ['auth' => $connection->key.':'.hash_hmac('sha256', $socketId.':'.$channel, $connection->secret)];
+        });
     }
 
     public function authority(ConnManagedTargetRequest $request, ConnManagedAuthority $authority): JsonResponse

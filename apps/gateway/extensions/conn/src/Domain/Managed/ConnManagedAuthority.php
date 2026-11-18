@@ -8,6 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Models\ConnManagedRevision;
 use Orbit\Extensions\Conn\Models\ConnManagedTarget;
@@ -21,6 +22,20 @@ use SensitiveParameter;
  */
 final readonly class ConnManagedAuthority
 {
+    /**
+     * Runs `$use` with the current generation's channel in one transaction that rechecks the authenticated generation, so
+     * a request authenticated before a rotation never gets the old channel or a signature for it.
+     *
+     * @template T
+     *
+     * @param  Closure(string): T  $use
+     * @return T
+     */
+    public function withCurrentChannel(ConnManagedTarget $authenticated, Closure $use): mixed
+    {
+        return DB::transaction(fn (): mixed => $use($this->current($authenticated)->channel()));
+    }
+
     /** @return array<string, mixed> */
     public function state(ConnManagedTarget $target, string $nonce, ?int $afterRevision): array
     {

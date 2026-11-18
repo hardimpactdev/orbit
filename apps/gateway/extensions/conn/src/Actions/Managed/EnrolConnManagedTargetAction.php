@@ -38,16 +38,17 @@ final readonly class EnrolConnManagedTargetAction
         }
         $credential = ConnManagedSecrets::service();
         $temporary = $credentialFile.'.'.bin2hex(random_bytes(6)).'.tmp';
-        $previous = umask(0077);
+        // One cleanup for every outcome: after a delivery the temporary file no longer exists, after any failure it goes.
         try {
-            if (@file_put_contents($temporary, $credential) === false || ! chmod($temporary, 0600)) {
-                throw new RuntimeException('The credential file could not be written.');
+            $previous = umask(0077);
+            try {
+                if (@file_put_contents($temporary, $credential) === false || ! @chmod($temporary, 0600)) {
+                    throw new RuntimeException('The credential file could not be written.');
+                }
+            } finally {
+                umask($previous);
             }
-        } finally {
-            umask($previous);
-        }
 
-        try {
             // The file is delivered as the last step before the commit: a failed delivery rolls the rotation back, so the
             // old credential and owed rows stay valid. A commit that fails after delivery leaves a file the Gateway refuses.
             $target = DB::transaction(function () use ($environment, $nodeId, $credential, $temporary, $credentialFile): ConnManagedTarget {
@@ -71,10 +72,10 @@ final readonly class EnrolConnManagedTargetAction
 
                 return $target;
             });
-        } catch (\Throwable $exception) {
-            @unlink($temporary);
-
-            throw $exception;
+        } finally {
+            if (file_exists($temporary)) {
+                @unlink($temporary);
+            }
         }
 
         return ['target_id' => $target->id, 'environment_id' => $target->environment_id, 'generation' => $target->generation, 'revision' => $target->revision, 'node_id' => $target->node_id];

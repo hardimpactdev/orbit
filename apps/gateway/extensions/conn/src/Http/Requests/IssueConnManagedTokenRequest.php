@@ -18,14 +18,14 @@ final class IssueConnManagedTokenRequest extends FormRequest
     }
 
     /**
-     * The body holds `purpose` and nothing else: a `scopes` field is refused even when it is empty or null.
+     * The input holds `purpose` and nothing else, as JSON, form or query: a `scopes` field is refused even when it is empty or null.
      *
      * @return list<Closure(Validator): void>
      */
     public function after(): array
     {
         return [function (Validator $validator): void {
-            foreach (array_diff(array_keys($this->json()->all()), ['purpose']) as $field) {
+            foreach (array_diff(array_keys($this->all()), ['purpose']) as $field) {
                 $validator->errors()->add((string) $field, 'The field is not accepted.');
             }
         }];

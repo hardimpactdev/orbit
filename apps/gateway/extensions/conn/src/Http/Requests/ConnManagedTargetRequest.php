@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Http\Requests;
 
-use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
+use Orbit\Extensions\Conn\Domain\Managed\ConnManagedTime;
 use Orbit\Extensions\Conn\Models\ConnManagedTarget;
 
 /** A request on a managed target route; `AuthenticateConnManagedTarget` already proved the target. */
@@ -15,12 +15,9 @@ final class ConnManagedTargetRequest extends FormRequest
 {
     public const string Nonce = 'regex:/^[A-Za-z0-9_-]{16,64}$/';
 
-    /** An RFC 3339 time with an explicit offset, the only form a target time takes. */
-    public const string Time = 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/';
-
     /**
-     * Rejects an `observed` ACK whose handler close is earlier than its fence, so evidence that cannot be true leaves the
-     * revision owed.
+     * Rejects an `observed` ACK whose handler close is earlier than its fence, by every fractional digit, so evidence that
+     * cannot be true leaves the revision owed.
      *
      * @return list<Closure(Validator): void>
      */
@@ -30,12 +27,32 @@ final class ConnManagedTargetRequest extends FormRequest
             if ($this->route()?->getName() !== 'conn:managed:ack' || $validator->errors()->isNotEmpty()) {
                 return;
             }
-            $fenced = $this->input('fenced_at');
-            $closed = $this->input('handlers_closed_at');
-            if (is_string($fenced) && is_string($closed) && CarbonImmutable::parse($closed)->lessThan(CarbonImmutable::parse($fenced))) {
+            $fenced = ConnManagedTime::parse($this->input('fenced_at'));
+            $closed = ConnManagedTime::parse($this->input('handlers_closed_at'));
+            if ($fenced instanceof ConnManagedTime && $closed instanceof ConnManagedTime && $closed->before($fenced)) {
                 $validator->errors()->add('handlers_closed_at', 'The handler close cannot be earlier than the fence.');
             }
         }];
+    }
+
+    /** A JSON integer: `true`, `"1"` and `1.0` are refused. */
+    private static function strictInteger(int $min): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail) use ($min): void {
+            if (! is_int($value) || $value < $min) {
+                $fail("The {$attribute} field must be an integer of at least {$min}.");
+            }
+        };
+    }
+
+    /** A time that exists, as RFC 3339 with an explicit offset. */
+    private static function time(): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail): void {
+            if (! ConnManagedTime::parse($value) instanceof ConnManagedTime) {
+                $fail("The {$attribute} field must be an RFC 3339 time with an offset.");
+            }
+        };
     }
 
     /** @return array<string, list<mixed>> */
@@ -43,15 +60,15 @@ final class ConnManagedTargetRequest extends FormRequest
     {
         return match ($this->route()?->getName()) {
             'conn:managed:broadcasting-auth' => ['socket_id' => ['required', 'string', 'regex:/^\d+\.\d+$/'], 'channel_name' => ['required', 'string']],
-            'conn:managed:authority' => ['nonce' => ['required', 'string', self::Nonce], 'after_revision' => ['present', 'nullable', 'integer', 'min:0']],
+            'conn:managed:authority' => ['nonce' => ['required', 'string', self::Nonce], 'after_revision' => ['present', 'nullable', self::strictInteger(0)]],
             'conn:managed:introspect' => ['nonce' => ['required', 'string', self::Nonce], 'token' => ['required', 'string'], 'peer_address' => ['required', 'ip']],
             'conn:managed:ack' => [
-                'revision' => ['required', 'integer', 'min:1'],
-                'kind' => ['required', 'in:observed,recovered'],
-                'notice_received_at' => ['present', 'nullable', 'string', self::Time, 'prohibited_if:kind,recovered'],
-                'fenced_at' => ['nullable', 'string', self::Time, 'required_if:kind,observed', 'prohibited_if:kind,recovered'],
-                'handlers_closed_at' => ['nullable', 'string', self::Time, 'required_if:kind,observed', 'prohibited_if:kind,recovered'],
-                'recovered_at' => ['nullable', 'string', self::Time, 'required_if:kind,recovered', 'prohibited_if:kind,observed'],
+                'revision' => ['required', self::strictInteger(1)],
+                'kind' => ['required', 'string', 'in:observed,recovered'],
+                'notice_received_at' => ['present', 'nullable', self::time(), 'prohibited_if:kind,recovered'],
+                'fenced_at' => ['nullable', self::time(), 'required_if:kind,observed', 'prohibited_if:kind,recovered'],
+                'handlers_closed_at' => ['nullable', self::time(), 'required_if:kind,observed', 'prohibited_if:kind,recovered'],
+                'recovered_at' => ['nullable', self::time(), 'required_if:kind,recovered', 'prohibited_if:kind,observed'],
             ],
             default => [],
         };
