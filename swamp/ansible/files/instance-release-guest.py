@@ -142,7 +142,12 @@ def environment(plan):
             raise ValueError("selected application directory is missing")
         file_bytes(application / ".env", plan["environment"])
         if plan.get("testing_environment") is not None:
-            file_bytes(application / ".env.testing", plan["testing_environment"])
+            tracked = subprocess.run(["git", "ls-files", "--error-unmatch", "--", ".env.testing"], cwd=application,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            if tracked.returncode == 1:
+                file_bytes(application / ".env.testing", plan["testing_environment"])
+            elif tracked.returncode:
+                raise ValueError("cannot establish whether the testing environment is tracked")
 
 
 def content_digest():

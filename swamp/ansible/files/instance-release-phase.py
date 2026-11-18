@@ -327,10 +327,11 @@ class Release:
             self.reserve(plan, measured=True)
             self.route_files("prepare")
             self.guest_action(self.prep, "checkout", plan)
+            vp = self.prepare_vp(plan)
             self.write_service(plan)
             units = self.install_units(self.prep, plan)
             save(self.private / "after.json", [step for step in plan["steps"] if step["phase"] == "after_activation"])
-            self.persist(checkout_ready=True, units=units)
+            self.persist(checkout_ready=True, units=units, vp=vp)
         self.steps(self.prep, [step for step in plan["steps"] if step["phase"] == "before_activation"], "before")
         artifact = self.guest_action(self.prep, "digest")
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", artifact):
@@ -399,6 +400,18 @@ class Release:
             self.guest(machine, "systemctl", "disable", "--now", "--", unit["name"])
         return units
 
+    def prepare_vp(self, plan):
+        if not plan.get("needs_vp"):
+            return []
+        helper = "orbit-instance-release-vp.mjs"
+        self.incus("file", "push", "--uid", "0", "--gid", "0", "--mode", "0644",
+                   LIB / helper, self.prep + "/usr/local/bin/" + helper)
+        result = self.user(self.prep, "/opt/orbit-runtime/current/bin/node", "/usr/local/bin/" + helper,
+                           WORK + self.state["application_suffix"], timeout=1050, check=False)
+        if result.returncode:
+            raise Refusal("deployment.vp_store_failed: the checkout's Vite+ prerequisite failed")
+        return json.loads(result.stdout)
+
     def steps(self, machine, steps, phase):
         for index, step in enumerate(steps):
             key = f"{phase}-{index}"
@@ -414,8 +427,8 @@ class Release:
             else:
                 self.persist(executing=key)
                 limit = positive(step["timeout_seconds"])
-                result = self.user(machine, "timeout", "--kill-after=10", str(limit), "/bin/bash", "--noprofile", "--norc", "-eu",
-                                   cwd=WORK + self.state["application_suffix"], data=step["command"], timeout=limit+20, check=False)
+                result = self.user(machine, "timeout", "--kill-after=10", str(limit), *self.state.get("vp", []),
+                                   "/bin/bash", "--noprofile", "--norc", "-eu", cwd=WORK, data=step["command"], timeout=limit+20, check=False)
                 code = result.returncode if 0 <= result.returncode <= 255 else None
             row = {"name": step["name"], "phase": step["phase"], "required": required, "exit_code": code}
             outcomes = [*self.state.get("step_outcomes", []), row]

@@ -2,10 +2,10 @@
 """Create or verify one AppProd preparer and its private network and persistent volume."""
 import argparse
 import json
-from pathlib import Path
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 PROJECT = "orbit-releases"
 STOCK = "ubuntu-26.04-instance-stock"
@@ -49,6 +49,33 @@ def guest(name, *args, **kwargs):
     return inc("exec", name, "--", *args, **kwargs)
 
 
+def vite_home(runtime):
+    link = runtime / "vite-plus-home"
+    launcher = runtime / "bin/vp"
+    if not (link.is_symlink() or launcher.is_symlink() or launcher.exists()):
+        return None
+    home = link.readlink()
+    if (home.parent != Path("/opt/orbit-runtime/vite-plus") or not re.fullmatch(r"[0-9a-f]{12}", home.name)
+            or home.resolve() != home or not (home / ".complete").is_file()
+            or launcher.resolve(strict=True) != home / "bin/vp"):
+        raise ValueError("Refusing an incomplete or unexpected pinned Vite+ home")
+    return home
+
+
+def bind_vite_home(machine, prep, runtime):
+    home = vite_home(runtime)
+    previous = prep["devices"].get("vite-plus")
+    if previous and previous.get("source") != str(home):
+        source = Path(previous["source"])
+        if (source.parent != Path("/opt/orbit-runtime/vite-plus") or not re.fullmatch(r"[0-9a-f]{12}", source.name)
+                or previous != {"type":"disk","source":str(source),"path":str(source),"readonly":"true"}):
+            raise ValueError("Refusing an unexpected preparer Vite+ mount")
+        inc("config", "device", "remove", machine, "vite-plus")
+    if home:
+        ensure_device(machine, "vite-plus", {"type":"disk","source":str(home),"path":str(home),"readonly":"true"})
+
+
+
 def prepare(instance, php):
     target = f"instance-{instance}"
     machine = "prepare-" + target
@@ -87,7 +114,7 @@ def prepare(instance, php):
     tagged(prep["config"], target)
     if prep["config"].get(ROLE) != "prepare" or prep["config"].get("boot.autostart") != "false" or prep["profiles"]:
         raise ValueError("Unexpected preparation container")
-    if set(prep["expanded_devices"]) - {"root", "eth0", "runtime", "shared"}:
+    if set(prep["expanded_devices"]) - {"root", "eth0", "runtime", "vite-plus", "shared"}:
         raise ValueError("Preparation container has unrecognized devices")
     ensure_device(machine, "root", {"type":"disk","pool":pool,"path":"/"})
     ensure_device(machine, "eth0", {"type":"nic","network":network})
@@ -104,6 +131,7 @@ def prepare(instance, php):
             raise ValueError("Refusing an unrecognized preparer runtime")
         inc("config","device","set",machine,"runtime","source="+str(runtime))
     ensure_device(machine, "runtime", runtime_device)
+    bind_vite_home(machine, prep, runtime)
     if prep["status"] == "Stopped":
         inc("start", machine)
     if prep["config"].get("user.orbit.release.prepared") != "true":

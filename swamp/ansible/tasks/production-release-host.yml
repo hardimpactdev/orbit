@@ -41,6 +41,27 @@
     folder: "{{ production.folder }}"
     folder_name: runtime
     folder_pinned_releases: true
+- name: Bundle the shared Vite+ selection rules on the Swamp Node
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/deno
+      - bundle
+      - --quiet
+      - --platform=browser
+      - --external=node:*
+      - --minify
+      - "{{ playbook_dir }}/files/instance-release-vp.ts"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: production_vp_bundle
+- name: Install the offline guest Vite+ selection helper
+  ansible.builtin.copy:
+    content: "{{ production_vp_bundle.stdout }}\n"
+    dest: /usr/local/libexec/orbit-instance-release-vp.mjs
+    owner: root
+    group: root
+    mode: "0644"
 - name: Install the production release controller
   ansible.builtin.copy:
     src: "{{ item.src }}"

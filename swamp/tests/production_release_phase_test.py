@@ -81,6 +81,35 @@ class ProductionReleaseTest(unittest.TestCase):
                                         text=True, capture_output=True, check=True)
                 self.assertEqual(all(finding["rule"] != "custom-control" for finding in json.loads(output.stdout)), allowed)
 
+    def test_guest_env_preserves_a_tracked_testing_file_in_a_monorepo(self):
+        with tempfile.TemporaryDirectory() as base:
+            workspace = Path(base)
+            app = workspace / "current/apps/web"
+            app.mkdir(parents=True)
+            subprocess.run(["git", "init", "-q", str(workspace / "current")], check=True)
+            testing = app / ".env.testing"
+            testing.write_text("from source")
+            subprocess.run(["git", "-C", str(app), "add", ".env.testing"], check=True)
+            plan = {"routes": [{"web_root": "apps/web/public"}], "application_suffix": "/apps/web",
+                    "environment": "managed", "testing_environment": "generated"}
+            with patch.object(guest, "WORK", workspace):
+                guest.environment(plan)
+                self.assertEqual(testing.read_text(), "from source")
+                subprocess.run(["git", "-C", str(app), "rm", "--cached", "-q", ".env.testing"], check=True)
+                guest.environment(plan)
+                self.assertEqual(testing.read_text(), "generated")
+
+    def test_pinned_step_runs_from_the_checkout_root_before_and_after_activation(self):
+        prefix = ["env", "VP_HOME=/home/orbit/.local/share/vite-plus", "/opt/orbit-runtime/current/bin/vp",
+                  "env", "exec", "--node", "24.22.1", "--package-manager", "npm@11.10.1", "--"]
+        self.r.state.update(application_suffix="/apps/web", vp=prefix)
+        with patch.object(self.r, "user", return_value=CompletedProcess([], 0)) as command:
+            for phase_name in ("before", "after"):
+                self.r.steps(self.r.prep, [{"name": "js", "phase": phase_name + "_activation", "command": "cd apps/web && npm run build",
+                                           "timeout_seconds": 30}], phase_name)
+                self.assertEqual(command.call_args.kwargs["cwd"], phase.WORK)
+                self.assertEqual(list(command.call_args.args[4:-4]), prefix)
+
     def test_a_changed_live_link_never_enters_preparation(self):
         self.r.link(OLD)
         with patch.object(self.r, "reserve") as reserve, self.assertRaisesRegex(phase.Refusal, "live link"):
