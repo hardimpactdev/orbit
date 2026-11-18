@@ -15,6 +15,8 @@ Run `orbit node:role:add <node> app-prod` to add the role. On an existing AppPro
 
 On the first move from host PHP-FPM, the preparer copies the declared shared directories and takes a SQLite backup. Orbit briefly returns HTTP 503 on the admitted Routes and stops the legacy writers. It checks the source files and SQLite again before selecting the new release. Source changes since preparation require a new build. The private health check can pass through the fence. Orbit records the new owner before admitting writes. On a Node that runs both Ingress and AppProd, the owned public Route and its private origin select the same Instance upstream.
 
+Route publication keeps the selected container upstream. Deploy a new release after changing a Route domain or web root so its FrankenPHP configuration includes the change.
+
 A production Instance must keep its Gateway registration while it owns preparation or release storage. `instance:destroy` and `instance:unregister` refuse removal once its first container deployment starts. The existing removal workflow supports development Instances.
 
 ## Release states

@@ -16,7 +16,7 @@ final readonly class ContainerInstanceDestroy
 {
     public static function assertReleaseRemovalAvailable(Instance $instance): void
     {
-        if ($instance->production_release_started_at !== null || $instance->production_release !== null) {
+        if ($instance->hasProductionRelease()) {
             throw new ResourceOperationException('operation.kind_unavailable',
                 "Instance [{$instance->name}] owns production release containers or storage. Keep its registration until production release teardown is available.", 503);
         }

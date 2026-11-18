@@ -292,6 +292,11 @@ final class Instance extends Model
         return $this->morphMany(Task::class, 'taskable')->topLevel();
     }
 
+    public function hasProductionRelease(): bool
+    {
+        return $this->production_release_started_at !== null || $this->production_release !== null;
+    }
+
     public function usesProductionReleaseLayout(): bool
     {
         return
