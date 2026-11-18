@@ -67,9 +67,6 @@ it('prints the package cache of the plan only when it is passed, as a plain http
     }
 });
 
-it('installs jq for the Gateway role and the Swamp role separately, so a split release can verify and load', function (): void {
-    $catalog = new NodeBootstrapPackageCatalog;
-
-    expect($catalog->forRole(new Node, RoleName::Gateway))->toContain('jq')
-        ->and($catalog->forRole(new Node, RoleName::Swamp))->toContain('jq');
+it('installs jq with the Swamp role alone, which the release Swamp load needs', function (): void {
+    expect((new NodeBootstrapPackageCatalog)->forRole(new Node, RoleName::Swamp))->toContain('jq');
 });

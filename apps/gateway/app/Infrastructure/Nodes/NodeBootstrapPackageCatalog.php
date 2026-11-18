@@ -26,8 +26,7 @@ final class NodeBootstrapPackageCatalog
     public function forRole(Node $node, RoleName $role): array
     {
         return match ($role) {
-            // The release's verify step reads the Gateway status with jq on the Gateway Node.
-            RoleName::Gateway => ['ca-certificates', 'caddy', 'jq', 'logrotate'],
+            RoleName::Gateway => ['ca-certificates', 'caddy', 'logrotate'],
             // dig checks the listener after each publication of private DNS.
             RoleName::Vpn => ['bind9-dnsutils', 'dnsmasq', 'openssl'],
             RoleName::Router => ['caddy', 'openssl'],
