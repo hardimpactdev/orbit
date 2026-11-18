@@ -178,16 +178,30 @@ Deno.test("retired rollout fields are refused rather than silently accepted", as
             "Unrecognized key",
         );
     }
-    // The release fleet has no time window, so the per-Node window policy is gone too.
-    await assertRejects(
-        () =>
-            release.methods.prepare.execute({
-                ...args,
-                intent: { nodes: [{ ...node, ...{ daytime: false } }] },
-            }, context),
-        Error,
-        "Unrecognized key",
-    );
+});
+
+Deno.test("a legacy daytime field is accepted and ignored at any hour", async () => {
+    // Requests admitted before the fleet window was removed still carry it.
+    const { release, context } = fixture();
+    const decide = async (nodes: Record<string, unknown>[]) => {
+        const intent = await release.methods.prepare.execute(
+            { ...args, intent: { nodes } } as Parameters<
+                typeof release.methods.prepare.execute
+            >[0],
+            context,
+        );
+        return await release.methods.gate.execute({
+            ...args,
+            intent,
+            target_node_id: 2,
+            previous: {},
+        }, context);
+    };
+    const plain = await decide([node]);
+    assertEquals([plain.install, plain.result.ok], [true, true]);
+    for (const daytime of [true, false]) {
+        assertEquals(await decide([{ ...node, daytime }]), plain);
+    }
 });
 
 Deno.test("a failed or missing earlier Node keeps later fleet participants pending", async () => {

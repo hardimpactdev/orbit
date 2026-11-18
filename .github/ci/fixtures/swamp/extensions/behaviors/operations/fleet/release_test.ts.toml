@@ -14,6 +14,7 @@ cases = [
   "every child step runs on 209 and only a rollout publishes the observer",
   "full admitted input prepares and every Node publishes at once, at any hour",
   "retired rollout fields are refused rather than silently accepted",
+  "a legacy daytime field is accepted and ignored at any hour",
   "a failed or missing earlier Node keeps later fleet participants pending",
   "missing child output is uncertain and foreign Node output is refused",
   "fleet.rollout omits CLI publication for a Node with no caller",

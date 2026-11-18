@@ -59,7 +59,8 @@ final readonly class ContinueReleaseFleetAction
         $fleet = data_get($release->phases, 'fleet.status');
         $refresh = data_get($release->phases, 'default_refresh.status');
         $seed = data_get($release->phases, 'seed_publication.status');
-        if ($fleet === 'pending'
+        // A release served before the fleet window was removed may still hold `deferred`; continue it. Drop after one release.
+        if (in_array($fleet, ['pending', 'deferred'], true)
             || (in_array($fleet, ['current', 'disabled'], true) && (in_array($refresh, [null, 'pending'], true)
                 || ($refresh === 'current' && in_array($seed, [null, 'pending'], true))))) {
             return $release;
