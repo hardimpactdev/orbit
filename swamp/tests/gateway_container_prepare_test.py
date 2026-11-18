@@ -241,7 +241,7 @@ class BootstrapTest(unittest.TestCase):
             # A forced switch across histories cannot expose the discarded branch's objects.
             (release / "REVISION").write_text(second)
             subprocess.run(["bash", script, mirror, other, release], check=True)
-            self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", second]).returncode, 0)
+            self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", second], check=False).returncode, 0)
             self.assertEqual(git(release, "for-each-ref"), "")
 
     def test_env_projection_tracks_atomic_edits_without_exposing_the_bare_repo(self):
