@@ -148,7 +148,7 @@ def stub(name, args):
             if "gateway:release:cleanup" in command:
                 print('{"generations":[]}')
             elif "-r" in command:
-                print("yes")
+                print("no" if (state / "unconfigured-queue").exists() else "yes")
         elif action == "config" and args[1] == "get":
             machine = args[2]
             if args[3] == "user.orbit.release.commit":
@@ -425,6 +425,13 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
         self.assertTrue((self.state / "former").exists())
         failed.unlink()
+        unconfigured = self.state / "unconfigured-queue"
+        unconfigured.touch()
+        result = self.run_script(self.console, "--recover")
+        self.assertIn("former fallback Horizon was active", result.stderr)
+        self.assert_pending(self.sha)
+        self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
+        unconfigured.unlink()
         heartbeat = self.state / "broken-heartbeat"
         heartbeat.touch()
         self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)

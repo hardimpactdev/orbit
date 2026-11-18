@@ -220,7 +220,12 @@ start_horizons() {
       # Laravel resolves the authoritative Gateway queue in this release.
       # shellcheck disable=SC2016
       configured=$(php "$machine" -r 'require $argv[1]."/vendor/autoload.php"; $app=require $argv[1]."/bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo App\Infrastructure\Gateway\GatewayQueueRedis::configured() ? "yes" : "no";' "$app") || return 1
-      [[ $configured == yes ]] || continue
+      if [[ $configured != yes ]]; then
+        if grep -qxF "$unit" "$journal/horizons"; then
+          fail 'the former fallback Horizon was active but the selected Gateway queue is not configured'
+        fi
+        continue
+      fi
     fi
     run_on "$machine" systemctl enable --now -- "$unit" </dev/null >&2 || return 1
     run_on "$machine" systemctl is-active --quiet -- "$unit" </dev/null || return 1
@@ -269,10 +274,7 @@ finish_forward() {
   # A failed Horizon start leaves the previous consumers and journal intact for retry.
   start_horizons "$candidate" "$(cat "$journal/horizon")"
   prev=$(cat "$journal/machine")
-  /usr/local/libexec/orbit-gateway-release-phase scheduler-window "$sha" "$operation"
-  if [[ $prev == host ]]; then
-    stop_background host
-  else
+  if [[ $prev != host ]]; then
     previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$journal/inventory")
     [[ $prev == "gateway-${previous_sha:0:12}" && $previous_sha != "$sha" ]] || fail 'previous Gateway identity changed'
     exists=$("${incus_cli[@]}" list "$prev" --format json | jq -c --arg name "$prev" 'map(select(.name==$name))|first // {}')
@@ -281,11 +283,12 @@ finish_forward() {
         .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha' <<< "$exists" >/dev/null ||
         fail 'previous Gateway container changed'
       "${incus_cli[@]}" config set "$prev" boot.autostart=false
-      if [[ $(jq -r .status <<< "$exists") != Stopped ]]; then
-        running=true
-        stop_background "$prev"
-      fi
+      if [[ $(jq -r .status <<< "$exists") != Stopped ]]; then running=true; fi
     fi
+  fi
+  if [[ $prev == host || $running == true ]]; then
+    /usr/local/libexec/orbit-gateway-release-phase scheduler-window "$sha" "$operation"
+    stop_background "$prev"
   fi
   # Transfer the scheduler before waiting for long-running jobs or HTTP responses.
   # Preserve desired services across an unhealthy release so a corrective deploy can start them.
