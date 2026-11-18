@@ -58,7 +58,7 @@ sequenceDiagram
   SW->>GN: Install the web build<br/>artifact · digest · rename
   alt Container release
     SW->>GN: Clone the prepared release<br/>seal · snapshot · copy
-    SW->>GN: Sleep preparation<br/>parallel with migration and checks
+    SW->>GN: Sleep preparation<br/>before migration
   else Host PHP-FPM release
     SW->>GN: Snapshot the database<br/>VACUUM INTO
     %%> What it does:
@@ -66,7 +66,7 @@ sequenceDiagram
     %%> On failure:
     %%> - refuses before the copy when it would breach the disk floor
   end
-  SW->>GN: Migrate<br/>artisan migrate --isolated
+  SW->>GN: Migrate<br/>artisan migrate --isolated=1
   %%> What it does:
   %%> - the container candidate applies pending migrations to the shared production database
   %%> - prints the end of the migration's output and its exit code; a failed exec would keep no output

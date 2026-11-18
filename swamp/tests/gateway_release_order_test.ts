@@ -190,6 +190,8 @@ Deno.test("Gateway and AppProd share the clone, handover, compensation and readb
   for (const name of ["Sleep preparation", "Migrate", "Check the Instance candidate"]) {
     assert(find(release, name).dependsOn?.some((edge) => edge.step === clone.name));
   }
+  assert(find(release, "Migrate").dependsOn?.some((edge) =>
+    edge.step === "Sleep preparation" && edge.condition.type === "succeeded"));
   const activate = find(release, "Hand over the release");
   assertEquals(activate.task.workflowIdOrName, "production-release-activate");
   for (const name of ["Sleep preparation", "Check the candidate", "Check the Instance candidate"]) {

@@ -370,7 +370,7 @@ case "$action" in
   migrate)
     if retained; then echo migrate-exit=0; exit; fi
     set +e
-    output=$(artisan "$candidate" migrate --force --isolated --no-interaction 2>&1)
+    output=$(artisan "$candidate" migrate --force --isolated=1 --no-interaction 2>&1)
     result=$?
     set -e
     printf '%s\n' "$output" | tail -c 1500

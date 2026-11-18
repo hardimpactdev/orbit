@@ -200,6 +200,7 @@ jobs:
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Sleep preparation, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
