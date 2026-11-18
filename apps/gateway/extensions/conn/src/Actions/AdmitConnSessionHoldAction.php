@@ -56,7 +56,7 @@ final readonly class AdmitConnSessionHoldAction
             if ($open instanceof Operation) {
                 if ($renews !== null && $open->status === OperationStatus::Queued && $open->attempts === 0
                     && $open->cancel_requested_at === null && ($open->input['renews_pairing_id'] ?? null) === $renews->id) {
-                    app(SwampDispatch::class)->start($open);
+                    app(SwampDispatch::class)->retry($open);
                 }
 
                 return $open;

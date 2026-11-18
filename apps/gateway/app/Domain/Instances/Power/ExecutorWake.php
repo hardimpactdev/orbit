@@ -210,7 +210,11 @@ final readonly class ExecutorWake
     /** Recovers abandoned publication as well as lost completion jobs. */
     public function recoverPendingCompletions(): int
     {
-        return $this->recover($this->completions()->orderByRaw('coalesce(started_at, created_at)'), $this->continueHandoff(...), 'completion');
+        $completions = $this->completions()
+            ->orderByRaw('executor_result is null')
+            ->orderByRaw('coalesce(started_at, created_at)');
+
+        return $this->recover($completions, $this->continueHandoff(...), 'completion');
     }
 
     public function continueHandoff(int $operationId): bool

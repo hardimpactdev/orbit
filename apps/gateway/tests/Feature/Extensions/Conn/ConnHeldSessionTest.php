@@ -13,6 +13,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -24,6 +25,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -363,6 +365,35 @@ describe('renewal', function (): void {
         app(DirectOperation::class)->workflowInputs($retried);
         expect(collect($this->vault->sent)->where('type', 'vault.put'))->toHaveCount(1);
     });
+
+    it('keeps the existing renewal when a duplicate enqueue fails', function (bool $claimed): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $original = holdOperation($this->phone, $this->environment);
+        endHold($original);
+        $pairing = ConnPairing::query()->findOrFail($original->target_id);
+        $admit = app(AdmitConnSessionHoldAction::class);
+        $renewal = $admit->renew($pairing);
+
+        Bus::shouldReceive('dispatch')->once()->with(Mockery::type(StartAdmittedSwampRun::class))
+            ->andReturnUsing(static function () use ($claimed, $renewal): never {
+                if ($claimed) {
+                    $renewal->update(['status' => OperationStatus::Running, 'attempts' => 1, 'state' => ['swamp_run_id' => 'fixture-live-renewal']]);
+                }
+
+                throw new RuntimeException('private duplicate queue error');
+            });
+
+        $retryFailure = null;
+        try {
+            $admit->renew($pairing);
+        } catch (ResourceOperationException $error) {
+            $retryFailure = $error;
+        }
+
+        expect($renewal->refresh())->status->toBe($claimed ? OperationStatus::Running : OperationStatus::Queued)->error_code->toBeNull()
+            ->and($renewal->state['swamp_run_id'] ?? null)->toBe($claimed ? 'fixture-live-renewal' : null)
+            ->and($retryFailure?->errorCode)->toBe('swamp.start_enqueue_failed');
+    })->with(['still queued' => [false], 'claimed and bound' => [true]]);
 
     it('renews a held session within seven days of its end with no device online, then revokes the old one', function (): void {
         endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));

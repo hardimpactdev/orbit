@@ -1049,6 +1049,26 @@ it('keeps a recovered publication receipt when enqueueing fails and retries only
     expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
 });
 
+it('recovers a recorded result despite an older unpublished wake failing to send', function (): void {
+    $instance = executorWakeInstance();
+    $oldest = executorWakePendingCompletion($instance, 20);
+    $completed = executorWakePendingCompletion($instance, 10);
+    executorWakeReply($completed, ['status' => 'done']);
+    $this->publisher->publishing = static function (ExecutorOrderBroadcast $event) use ($oldest): never {
+        expect((int) $event->order->operation)->toBe($oldest->id);
+
+        throw new RuntimeException('Injected publish failure.');
+    };
+
+    executorWakeSweep();
+
+    expect($oldest->refresh()->state[ExecutorWake::CompletionState])->toBe('pending');
+    $job = Queue::pushed(CompleteExecutorWake::class)->sole();
+    expect($job->operationId)->toBe($completed->id);
+    app()->call([$job, 'handle']);
+    expect($completed->refresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
 it('leaves a missing publication pending on sweep failure and recovers after publishing returns', function (): void {
     $instance = executorWakeInstance();
     $operation = executorWakePendingCompletion($instance, 7);

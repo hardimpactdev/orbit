@@ -171,6 +171,7 @@ it('does not inherit the multi-second SQLite busy timeout for a visitor', functi
         $writer->exec('ROLLBACK');
     }
 
+    config(['orbit.executor.wait_ms' => 500]);
     executorWakeVisit($instance)->assertUnauthorized();
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole())->status->toBe(OperationStatus::Running);
 });

@@ -52,9 +52,9 @@ sequenceDiagram
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
     %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
-    %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; a pre-send cancellation wins if no caller has shared it
+    %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; Conn records cancellation of an unshared queued executor wake in the launch cancel transaction, before a publisher can claim it
     %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
-    %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it publishes any missing order for the same Operation
+    %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it recovers recorded results before publishing any missing order for the same Operation
     %%> - record Operation notices locally and hand them to operations-prompt in the background; the request never enqueues a job
     %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
     GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
