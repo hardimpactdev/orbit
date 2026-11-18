@@ -6,11 +6,15 @@ namespace App\Infrastructure\Executor;
 
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Jobs\Operations\CompleteExecutorWake;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -19,7 +23,8 @@ use Throwable;
  * The listener's side of the executor hand-off (ADR 0266 "The path", step 4). The agent view subscriber passes
  * each checked reply line here. A result is recorded on its Operation first, so it is durable (D7), and then
  * pushed to the Valkey list `executor:op:<operation>` for a waiting request (`ExecutorResultWait`). The list
- * holds the owning Node's `accepted` and result lines in arrival order and expires after `ExpirySeconds`. No queue job, HTTP call or Laravel boot sits between the two sides.
+ * holds the owning Node's `accepted` and result lines in arrival order and expires after `ExpirySeconds`.
+ * A first signed wake result also queues completion for callers outside the request bound.
  */
 final readonly class ExecutorResults
 {
@@ -44,7 +49,8 @@ final readonly class ExecutorResults
     /** Hands one reply line from Node `$nodeId`'s agent to the waiting request. Throws when Valkey or the database fails. */
     public function receive(int $nodeId, ExecutorReply $reply, string $route = 'websocket'): void
     {
-        if (! $this->verifyAndRecord($nodeId, $reply, $route)) {
+        $promptCompletion = $this->verifyAndRecord($nodeId, $reply, $route);
+        if ($promptCompletion === null) {
             $this->log->warning('The agent view subscriber dropped an executor reply for an Operation that is not on its Node.', [
                 'node_id' => $nodeId, 'operation_id' => $reply->operation, 'status' => $reply->status,
             ]);
@@ -58,19 +64,32 @@ final readonly class ExecutorResults
             $this->log->warning('The executor reported a failed order.', ['node_id' => $nodeId, 'operation_id' => $reply->operation, 'code' => $reply->reason]);
         }
 
-        $this->queue->push(self::resultKey($reply->operation), $reply->raw, self::ExpirySeconds);
+        try {
+            $this->queue->push(self::resultKey($reply->operation), $reply->raw, self::ExpirySeconds);
+        } finally {
+            if ($promptCompletion) {
+                try {
+                    Bus::dispatch((new CompleteExecutorWake($reply->operation))->afterCommit());
+                } catch (Throwable $exception) {
+                    $this->log->warning('The recorded executor wake could not be queued for prompt completion.', [
+                        'operation_id' => $reply->operation, 'exception_type' => $exception::class,
+                    ]);
+                }
+            }
+        }
     }
 
     /**
      * A replay envelope carries transport evidence, not a result in its own right. Its matching first outcome can recover a lost
      * original; the original wire lines still go to the ordered list.
+     * Null rejects a line, true also prompts wake completion, and false only hands the line to the waiter.
      */
-    private function verifyAndRecord(int $nodeId, ExecutorReply $reply, string $route): bool
+    private function verifyAndRecord(int $nodeId, ExecutorReply $reply, string $route): ?bool
     {
         $owner = Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId);
         $operation = (clone $owner)->first();
         if ($operation === null) {
-            return false;
+            return null;
         }
         $action = match (true) {
             ExecutorWake::owns($operation) => ExecutorPowerIntent::action($operation) ?? 'wake',
@@ -79,27 +98,29 @@ final readonly class ExecutorResults
             default => null,
         };
         if (! in_array($action, ['proof.noop', 'sleep', 'wake', 'discard'], true)) {
-            return false;
+            return null;
         }
         if ($reply->isAccepted()) {
             if ($route === 'websocket' && ExecutorPowerIntent::managed($operation)) {
                 $owner->whereNull('executor_accepted_us')->update(['executor_accepted_us' => (int) now()->format('Uu')]);
             }
 
-            return true;
+            return false;
         }
         $result = $reply->isReplay() ? $reply->first() : $reply;
         if ($result === null) {
-            return ($reply->line['first'] ?? null) === null;
+            return ($reply->line['first'] ?? null) === null ? false : null;
         }
         $line = $result->line;
         if (! self::matches($operation, $action, $line)) {
-            return false;
+            return null;
         }
-        $line = ExecutorPowerIntent::managed($operation) ? [...$line, 'delivery' => $route] : $line;
-        $owner->whereNull('executor_result')->update(['executor_result' => json_encode($line, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu')]);
+        $managed = ExecutorPowerIntent::managed($operation);
+        $line = $managed ? [...$line, 'delivery' => $route] : $line;
+        $recorded = $owner->whereNull('executor_result')->update(['executor_result' => json_encode($line, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu')]);
 
-        return true;
+        return $recorded === 1 && $managed && $route === 'websocket' && $operation->kind === InstanceWake::Kind
+            && $operation->status === OperationStatus::Running;
     }
 
     /** @param array<string, mixed> $line */

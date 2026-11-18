@@ -18,6 +18,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Jobs\Operations\CompleteExecutorWake;
 use App\Jobs\Operations\DispatchExecutorWake;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -72,6 +73,29 @@ it('projects a signed sleep and keeps its engine for the wake after disabling ne
     expect(app(InstanceWake::class)->admitDeferred($instance, 'conn', null)->input[ExecutorPowerIntent::Managed])->toBeTrue();
 });
 
+it('projects the residual-memory safety stop as stopped, with no frozen plan for the next wake', function (): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => InstanceRuntimePowerState::Running]);
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use ($instance): void {
+        powerLine($event, ['status' => 'accepted']);
+        powerLine($event, ['status' => 'done', 'action' => 'sleep', 'target' => (string) $instance->id, 'operation' => $event->order->operation,
+            'receipt' => ['sleep' => 'stopped', 'plan' => 'skipped', 'reason' => 'stopped', 'processes' => 17,
+                'residual_anon_bytes' => 39731200, 'residual_file_bytes' => 11628544, 'swap_bytes' => 0, 'swap_subtree' => 1]]);
+    };
+
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    expect($sleep->refresh())->status->toBe(OperationStatus::Succeeded);
+    expect($sleep->result)->toMatchArray(['sleep' => 'stopped', 'power_state' => 'stopped', 'swap_subtree' => 1]);
+    expect($sleep->result['prepared_restore'])->toMatchArray(['status' => 'skipped', 'reason' => 'stopped',
+        'processes' => 17, 'residual_anon_bytes' => 39731200, 'residual_file_bytes' => 11628544]);
+    $runtime = $instance->runtime()->firstOrFail();
+    expect($runtime->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+    expect(ExecutorPowerIntent::frozenSleep($instance, $runtime))->toBeNull();
+    Queue::assertNotPushed(StartAdmittedSwampRun::class);
+});
+
 it('relays the original signature after the no-accepted cutoff without a second Operation', function (): void {
     $instance = managedPowerFixture();
     $this->travelTo(now()->startOfSecond());
@@ -98,6 +122,40 @@ it('relays the original signature after the no-accepted cutoff without a second 
     expect($wake->refresh()->result['executor']['delivery'])->toBe('ssh');
     expect($wake)->status->toBe(OperationStatus::Succeeded);
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
+    Queue::assertNotPushed(StartAdmittedSwampRun::class);
+});
+
+it('projects a late explicit wake and notifies its follower before the recovery deadline', function (): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => powerLine($event, ['status' => 'accepted']);
+
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+    expect($wake->refresh())->status->toBe(OperationStatus::Running)->executor_result->toBeNull();
+    $recovery = Queue::pushed(CompleteExecutorWake::class)->sole();
+    expect($recovery->delay->getTimestampMs())->toBe(now()->getTimestampMs() + 6000);
+
+    $this->travel(1100)->milliseconds();
+    executorWakeReply($wake, ['status' => 'done', 'repeat' => false]);
+    executorWakeReply($wake, ['status' => 'done', 'repeat' => true]);
+    $prompt = Queue::pushed(CompleteExecutorWake::class, fn (CompleteExecutorWake $job): bool => $job->delay === null)->sole();
+    expect($prompt->operationId)->toBe($wake->id)->and($prompt->queue)->toBe('operations-prompt');
+    expect($wake->refresh()->executor_result)->toMatchArray(['status' => 'done', 'delivery' => 'websocket', 'repeat' => false]);
+    expect(now()->isBefore($recovery->delay))->toBeTrue();
+
+    $prompt->handle(app(ExecutorWake::class));
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull();
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
+    $terminalNotice = fn (BroadcastOperationNotice $job): bool => $job->operationId === $wake->id
+        && $job->channel === 'operation.'.$wake->id && $job->notice['status'] === 'succeeded'
+        && $job->notice['sequence'] === $wake->sequence;
+    expect(Queue::pushed(BroadcastOperationNotice::class, $terminalNotice))->toHaveCount(1);
+
+    $this->travel(6)->seconds();
+    $recovery->handle(app(ExecutorWake::class));
+    expect(Queue::pushed(BroadcastOperationNotice::class, $terminalNotice))->toHaveCount(1);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
@@ -154,15 +212,17 @@ it('starts durable recovery at six seconds and signs only a fresh order for the 
     $this->postJson($path, $request)->assertConflict();
 });
 
-it('does not recover a terminal executor refusal or action failure', function (array $line, string $code): void {
+it('promptly projects a late executor refusal or action failure without recovering it', function (array $line, string $code): void {
     $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
     $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
-    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use ($wake, $line): void {
-        powerLine($event, ['status' => 'accepted']);
-        powerLine($event, ['operation' => $event->order->operation, 'action' => 'wake', 'target' => (string) $wake->target_id, ...$line]);
-    };
-
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => powerLine($event, ['status' => 'accepted']);
     Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    $this->travel(1100)->milliseconds();
+    executorWakeReply($wake, $line);
+    Queue::pushed(CompleteExecutorWake::class, fn (CompleteExecutorWake $job): bool => $job->delay === null)->sole()
+        ->handle(app(ExecutorWake::class));
 
     expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe($code)->lock_key->toBeNull();
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);

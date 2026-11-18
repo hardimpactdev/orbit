@@ -321,6 +321,14 @@ final readonly class ExecutorWake
         });
     }
 
+    public function completeHandoff(Operation $operation): void
+    {
+        $this->complete($operation, expire: true);
+        if ($operation->status->terminal() && $operation->kind === InstanceWake::Kind && ExecutorPowerIntent::managed($operation)) {
+            app(ExecutorWakeNotices::class)->relay($operation->id);
+        }
+    }
+
     private function recoverInSwamp(Operation $operation): void
     {
         $state = $operation->state ?? [];
@@ -388,7 +396,7 @@ final readonly class ExecutorWake
             $this->relay($operationId, max(0.0, ((self::completionDeadline($operation)?->getTimestampMs() ?? 0) - now()->getTimestampMs()) / 1000));
             $operation->refresh();
             if ($operation->executor_result !== null) {
-                $this->complete($operation, expire: true);
+                $this->completeHandoff($operation);
             }
         }
 

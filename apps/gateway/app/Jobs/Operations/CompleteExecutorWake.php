@@ -10,7 +10,7 @@ use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-/** Reads the durable result after the request bound; never holds a request worker or waits on Valkey. */
+/** Projects a recorded result now, or recovers a missing result when the native deadline passes. */
 final class CompleteExecutorWake implements ShouldQueue
 {
     use Queueable;
@@ -35,6 +35,6 @@ final class CompleteExecutorWake implements ShouldQueue
 
             return;
         }
-        $wake->complete($operation, expire: true);
+        $wake->completeHandoff($operation);
     }
 }
