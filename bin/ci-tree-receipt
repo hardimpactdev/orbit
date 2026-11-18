@@ -180,6 +180,17 @@ def verify(api, merged_sha, merged_tree):
     require(selected == [receipt.get('delivery_base')], 'No matching verified PR delivery baseline')
     commit = api.one(f'git/commits/{tested}')
     require(len(commit['parents']) == 2 and commit['parents'][1]['sha'] == head, 'Not the final PR merge checkout')
+    base = selected[0]
+    parent = commit['parents'][0]['sha']
+    for _ in range(20):
+        if parent == base:
+            break
+        older = api.one(f'git/commits/{parent}')['parents']
+        if not older:
+            break
+        parent = older[0]['sha']
+    require(parent == base, 'Delivery baseline is outside the tested first-parent history')
+    delivery_baseline(api, [base])
     require(commit['tree']['sha'] == merged_tree and receipt['tree'] == merged_tree
             and receipt['tested_commit'] == tested, 'Tested tree differs from merged tree')
     require(re.findall(r'Z Docs body SHA256: ([0-9a-f]{64})\r?$', logs['Docs build'], re.M)

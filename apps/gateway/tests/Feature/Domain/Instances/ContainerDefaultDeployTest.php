@@ -1279,7 +1279,11 @@ it('records a failed source read before admission and resumes it after backoff',
         ->andThrow(new ResourceOperationException('project.source_unavailable', 'Temporary source failure.', 502));
     $source->shouldReceive('read')->twice()->ordered()->andReturn(deploySourceRead($commit));
 
-    $first = app(NestedFleetRefresh::class)->advance($commit);
+    $recorded = [];
+    $first = app(NestedFleetRefresh::class)->advance($commit, recordDefault: static function (int $id, array $row) use (&$recorded): void {
+        $recorded[$id] = $row;
+    });
+    expect($recorded)->toBe($first['defaults']);
     expect($first['defaults'][$instance->id])->toMatchArray([
         'status' => 'pending', 'error_code' => 'project.source_unavailable', 'admission_failures' => 1,
     ])->and(app(NestedFleetRefresh::class)->advance($commit, $first))->toBe($first)

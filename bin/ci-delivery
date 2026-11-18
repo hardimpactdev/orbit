@@ -93,6 +93,8 @@ def validate(needs):
             print(f'Waiting for required jobs: {list(pending)}', flush=True)
             time.sleep(15)
     if selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
+        if os.environ.get('PROOF_BASE'):
+            sys.exit('A maintainer must push a repository branch to prove changes carried from undelivered main.')
         pages = json.loads(subprocess.check_output([
             'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
             f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",

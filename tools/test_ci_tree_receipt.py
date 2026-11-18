@@ -44,6 +44,7 @@ class API:
         self.run = dict(id=50, workflow_id=8, path=receipt.WORKFLOW, head_sha=HEAD,
                         event='pull_request', repository={'full_name': REPO}, head_repository={'full_name': REPO},
                         created_at=START, html_url='https://github.com/hardimpactdev/orbit/actions/runs/50')
+        self.main_delivered = True
         self.runs = [self.run]
         self.jobs = [dict(id=i, name=name, run_attempt=1, head_sha=HEAD, status='completed',
                           conclusion='success', started_at=START, completed_at=END)
@@ -75,6 +76,10 @@ class API:
     def rows(self, path, key=None):
         if path.startswith('commits/'):
             return [self.pr]
+        if 'branch=main' in path:
+            return [self.run | {'id': 70, 'event': 'push', 'head_branch': 'main', 'head_sha': BASE}] if self.main_delivered else []
+        if '/70/jobs?' in path:
+            return [self.jobs[0] | {'name': 'Main delivery checks', 'head_sha': BASE}]
         if path.startswith('actions/workflows/'):
             return self.runs
         if '/jobs?' in path:
@@ -118,6 +123,20 @@ class ReceiptTest(unittest.TestCase):
         self.assertEqual(receipt.delivery_baseline(History(), [MAIN, BASE]), BASE)
         with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
             receipt.delivery_baseline(History(), [MAIN])
+
+    def test_a_claimed_baseline_without_verified_main_delivery_blocks_promotion(self):
+        api = API()
+        api.main_delivered = False
+        with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
+            self.verify(api)
+
+    def test_baseline_must_be_in_the_tested_first_parent_history(self):
+        api = API()
+        api.commit['parents'][0]['sha'] = MAIN
+        one = api.one
+        api.one = lambda path: {'parents': []} if path == f'git/commits/{MAIN}' else one(path)
+        with self.assertRaisesRegex(ValueError, 'outside the tested first-parent history'):
+            self.verify(api)
 
     def test_carried_gateway_change_selects_gateway_checks_for_a_docs_pr(self):
         import test_ci_build_plan

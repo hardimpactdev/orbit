@@ -468,7 +468,7 @@ jobs:
         run: composer test -- --fail-on-empty-test-suite
       - name: Check flow charts
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          BASE: ${{ needs.changes.outputs.delivery_base || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: node bin/check-flows
 
   api-reference:
@@ -660,6 +660,7 @@ jobs:
     outputs:
       reuse: ${{ steps.reuse.outputs.reuse }}
       delivery_base: ${{ steps.plan.outputs.delivery_base }}
+      proof_base: ${{ steps.plan.outputs.proof_base }}
       fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}
       fixture_capacity: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_capacity }}
       self_hosted_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.self_hosted_shards }}
@@ -723,7 +724,9 @@ jobs:
             args+=(--pull-request)
             if [ "$PR_BASE_REF" = main ]; then
               BASE="$(python3 bin/ci-tree-receipt baseline)"
-              HEAD="$GITHUB_SHA"
+              if [ "$BASE" != "$(git rev-parse HEAD^1)" ]; then
+                echo "proof_base=$BASE" >> "$GITHUB_OUTPUT"
+              fi
             else
               BASE="$(git rev-parse "$BASE")"
             fi
@@ -736,7 +739,7 @@ jobs:
         id: units
         env:
           BASE: ${{ steps.plan.outputs.delivery_base || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
-          HEAD: ${{ github.event.pull_request.base.ref == 'main' && github.sha || github.event.pull_request.head.sha || github.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT" --plan-json ci-fixture-plan.json
       - name: Publish fixture plan
         if: github.ref != 'refs/heads/main'
@@ -946,6 +949,7 @@ jobs:
         id: report
         env:
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
+          PROOF_BASE: ${{ needs.changes.outputs.proof_base }}
           GH_TOKEN: ${{ github.token }}
           PROOF_CHECK_ELIGIBILITY: 'true'
           PROOF_RECEIPT: ${{ runner.temp }}/proof-receipt.json
@@ -1007,6 +1011,7 @@ jobs:
           # The execution switch selects the proof, as it starts the eligibility and proof jobs: off, no proof gates.
           PROOF_REQUIRED: ${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
           CI_RUN_ID: ${{ github.run_id }}
+          PROOF_BASE: ${{ needs.changes.outputs.proof_base }}
           FORK_PROOF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           # run: a branch of this repository runs the self-hosted shards; fork: a selection fails; none: no other event runs them.
           SELF_HOSTED_FIXTURES: ${{ github.event_name != 'pull_request' && 'none' || github.event.pull_request.head.repo.full_name == github.repository && 'run' || 'fork' }}

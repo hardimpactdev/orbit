@@ -75,9 +75,10 @@ final readonly class NestedFleetRefresh
      * across fleet jobs. An Operation admitted just before a restart is found again by its pinned commit.
      *
      * @param  array<string, mixed>  $previous
+     * @param  (\Closure(int, array<string, mixed>): void)|null  $recordDefault
      * @return array{status: string, defaults: array<int, array<string, mixed>>}
      */
-    public function advance(string $commit, array $previous = []): array
+    public function advance(string $commit, array $previous = [], ?\Closure $recordDefault = null): array
     {
         if (! self::enabled()) {
             return ['status' => 'disabled', 'defaults' => []];
@@ -91,7 +92,10 @@ final readonly class NestedFleetRefresh
         }
         foreach ($this->defaults() as $instance) {
             $row = ValidatedData::object(data_get($previous, 'defaults.'.$instance->id, []));
-            $defaults[$instance->id] ??= $this->advanceDefault($instance, $commit, $row);
+            if (! isset($defaults[$instance->id])) {
+                $defaults[$instance->id] = $this->advanceDefault($instance, $commit, $row);
+                $recordDefault?->__invoke($instance->id, $defaults[$instance->id]);
+            }
         }
         $states = array_column($defaults, 'status');
 
