@@ -15,6 +15,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
+use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -108,6 +109,9 @@ final readonly class NativeNodeRoleRemovalInput
         $units = [];
         $files = [];
         $directories = [];
+        if ($assignment->role === RoleName::AppDev) {
+            $files[] = ['ssh' => $ssh, 'path' => TmpfilesFootprintArtifact::Path];
+        }
         $runtime = $plan['runtime'];
         if (is_array($runtime)) {
             if ($assignment->role === RoleName::Analytics) {

@@ -2143,6 +2143,8 @@ Deno.test({
       commit("swamp/ansible/conn-launch.yml", "Conn launch controller");
       commit("swamp/ansible/t3_copy_rpc.mjs", "Task-turn RPC stdin");
       commit(housekeeping, "updated housekeeping");
+      commit("swamp/ansible/tasks/role-swamp.yml", "updated Swamp role");
+      commit("swamp/ansible/tasks/swamp-binary-retention.yml", "updated Swamp retention");
       f.change((state) => {
         state.digests = { "apps/gateway": "a9" };
         state.pendingMigration = true;
