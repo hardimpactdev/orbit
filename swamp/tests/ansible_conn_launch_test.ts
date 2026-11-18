@@ -6,7 +6,7 @@ const text = (path: string) => Deno.readTextFileSync(new URL(path, import.meta.u
 const play = text("../ansible/conn-launch.yml");
 const helper = text("../ansible/t3_copy_rpc.mjs");
 const workflow = parse(text("../workflows/workflow-operation-conn-launch.yaml")) as {
-    jobs: { steps: { name: string; guard?: string; writes?: boolean }[] }[];
+    jobs: { steps: { name: string; guard?: string; writes?: boolean; task: { inputs: { run?: string } } }[] }[];
 };
 const steps = workflow.jobs[0].steps;
 const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
@@ -25,7 +25,29 @@ Deno.test("the Conn launch workflow stages private input only on the dispatch an
         assertEquals(guard(secret, "conn.launch_dispatch", action, false), true);
     }
     assertEquals(steps.find((step) => step.name === "Hand off or reconcile T3")?.writes, true);
+    assertEquals(steps.find((step) => step.name === "result")?.writes, true);
     assert(text("../manifest.yaml").includes("  - ansible/conn-launch.yml\n"));
+
+    const directory = Deno.makeTempDirSync();
+    try {
+        const run = steps.find((step) => step.name === secret)!.task.inputs.run!;
+        const payload = '{"text":"line 1\\n$line 2"}';
+        const stage = (request: string) => new Deno.Command("sh", {
+            args: ["-c", run],
+            env: { ORBIT_RUN: directory, ORBIT_LAUNCH_REQUEST: request },
+            stdout: "piped",
+            stderr: "piped",
+        }).outputSync();
+        const path = `${directory}/launch.json`;
+        const created = stage(payload);
+        assert(created.success);
+        assertEquals(created.stdout.length + created.stderr.length, 0);
+        assertEquals(Deno.statSync(path).mode! & 0o777, 0o600);
+        assert(!stage("replacement").success);
+        assertEquals(Deno.readTextFileSync(path), payload);
+    } finally {
+        Deno.removeSync(directory, { recursive: true });
+    }
 });
 
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;

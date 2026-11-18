@@ -14,10 +14,6 @@ const Input = z.object({
     intent: z.record(z.string(), z.unknown()),
     path: Path,
 }).strict();
-const LaunchRequestInput = z.object({
-    path: Path,
-    value: z.string().min(1).meta({ sensitive: true }),
-}).strict();
 const Output = z.object({
     path: Path,
     assets: z.string().startsWith("/"),
@@ -179,20 +175,6 @@ export const behavior = {
                 const value = { stdout: JSON.stringify({ outcome: result.failed_phase ? "failed" : "succeeded", ...result }) };
                 await ctx.writeResource("output", "output", value);
                 return value;
-            },
-        },
-        writeLaunchRequest: {
-            description: "Stage the admitted Conn first-message envelope in the run's private folder",
-            arguments: LaunchRequestInput,
-            async execute(raw: z.infer<typeof LaunchRequestInput>) {
-                const args = LaunchRequestInput.parse(raw);
-                const path = args.path.slice(0, args.path.lastIndexOf("/")) + "/launch.json";
-                try {
-                    await Deno.writeTextFile(path, args.value, { mode: 0o600, createNew: true });
-                } catch {
-                    throw new Error("conn.launch_private_input_unavailable");
-                }
-                return {};
             },
         },
         write: {

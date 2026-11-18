@@ -9,7 +9,6 @@ requires = ["ansible"]
 inputs = [
   "swamp/ansible/conn-launch.yml",
   "swamp/ansible/t3_copy_rpc.mjs",
-  "swamp/extensions/behaviors/operations/ansible-input/write.ts",
   "swamp/workflows/workflow-operation-conn-launch.yaml",
 ]
 

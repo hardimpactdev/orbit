@@ -405,9 +405,6 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
-  "operation-conn-launch": {
-   "result": "read-only"
-  },
   "operation-conn-environment-restart": {
    "result": "read-only",
    "cleanup": "idempotent"

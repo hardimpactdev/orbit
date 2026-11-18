@@ -734,7 +734,9 @@ The launch routes in the [API table](#api) return the same snapshot shape. List 
 
 Recheck control authority and the action under lock. Audit which Node requested Cancel or Retry separately from the initiator. The caller-only rule on the existing Conn Operation routes does not change. HTTP snapshots are authoritative. Reverb, if used, only invalidates reads for the same audience and carries no launch payload.
 
-If Cancel wins, settle owned child work before admitting teardown. If a probe times out, wait for proof that its native run ended and that its T3 session can no longer survive. Measure that wait from the recorded native end, not the Gateway's timeout. For a launch-owned clone, use the existing teardown and verify the removal of that exact Instance and its owned resources. A lost teardown response is not a new target or proof of removal; reconcile the recorded child and its effect before admission of any further cleanup attempt. Keep the launch `cancelling` with a sanitized reason when cleanup is blocked or failed, and resume it after restart.
+If Cancel wins, settle owned child work before admitting teardown. If a probe times out, wait for evidence that its native run ended and for the remaining T3 session lifetime to expire. Measure that wait from the recorded native end, not the Gateway's timeout.
+
+For a launch-owned clone, verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart.
 
 Preserve pre-existing Instances and unrelated work. Do not claim ownership from a matching name. Restore a launch-owned wake only when the lifecycle guard proves the Instance still has no other consumer; do not restore a wake the launch joined. Only verified cleanup clears the private prompt on cancellation and ends the launch as `cancelled`.
 

@@ -2,6 +2,7 @@ id: 90ead66d-8285-4ddc-a9fe-decce916975c
 name: operation-conn-launch
 autoContinue: false
 description: Inspect the registered stock T3 workspace or act on its admitted first-message handoff.
+vaults: [orbit-control-inputs]
 queueTimeout: 30
 labels: {role: swamp}
 inputs:
@@ -13,15 +14,14 @@ inputs:
     intent: {type: object}
     execution_secrets:
       type: object
-      properties:
-        dispatch_request:
-          type: object
-          properties:
-            vault: {type: string, const: orbit-control-inputs}
-            key: {type: string, pattern: '^conn-launch-dispatch-[1-9][0-9]*$'}
-          required: [vault, key]
-          additionalProperties: false
-      additionalProperties: false
+      propertyNames: {enum: [dispatch_request]}
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^conn-launch-dispatch-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
@@ -47,7 +47,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "conn-launch-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id) }}'
+          behaviorName: '${{ ("conn-launch-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: timeout 85 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags launch "$ORBIT_ANSIBLE/conn-launch.yml"
@@ -66,12 +66,17 @@ jobs:
         guard: '${{ inputs.kind != "conn.launch_dispatch" || !("dispatch_request" in inputs.execution_secrets) || !(inputs.intent.action in ["launch", "reconcile-launch"]) }}'
         task:
           type: behavior
-          behaviorType: '@nckrtl/ansible-input'
-          behaviorName: ${{ "ansible-input" }}
-          methodName: writeLaunchRequest
+          behaviorType: command/shell
+          behaviorName: conn-launch-private-input
+          methodName: execute
           inputs:
-            path: '${{ steps.input.outputs.path }}'
-            value: '${{ vault.get(inputs.execution_secrets.dispatch_request.vault, inputs.execution_secrets.dispatch_request.key) }}'
+            run: |
+              umask 077
+              set -C
+              printf '%s' "$ORBIT_LAUNCH_REQUEST" > "$ORBIT_RUN/launch.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_LAUNCH_REQUEST: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.dispatch_request.key) }}'
       - name: Hand off or reconcile T3
         labels: {role: swamp}
         writes: true
@@ -79,7 +84,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "conn-launch-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id) }}'
+          behaviorName: '${{ ("conn-launch-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: timeout 85 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags launch "$ORBIT_ANSIBLE/conn-launch.yml"
@@ -93,6 +98,7 @@ jobs:
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
       - name: result
         labels: {role: swamp}
+        writes: true
         dependsOn:
           - {step: Stage the private launch request, condition: {type: always}}
           - {step: Inspect T3, condition: {type: always}}
