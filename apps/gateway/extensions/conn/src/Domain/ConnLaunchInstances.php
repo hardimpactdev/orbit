@@ -10,6 +10,7 @@ use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\InstanceBranchSelection;
 use App\Domain\Instances\InstanceDestroyKind;
+use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
@@ -19,6 +20,7 @@ use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Closure;
+use DateTimeInterface;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use stdClass;
@@ -33,6 +35,7 @@ final readonly class ConnLaunchInstances
         private StartInstanceCompleteAction $complete,
         private StartInstanceDestroyAction $destroy,
         private InstanceWake $wake,
+        private InstanceSleep $sleep,
         private ConnInstanceWorkState $work,
         private ConnAgentActivity $activity,
     ) {}
@@ -64,6 +67,20 @@ final readonly class ConnLaunchInstances
 
             return ['operation' => $operation, 'owned' => $operation->idempotency_key === $key && $operation->triggered_by === $parent->triggered_by];
         });
+    }
+
+    public function wakeRestoration(Operation $launch, Instance $instance): ?Operation
+    {
+        return Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')
+            ->where('target_id', $instance->id)->where('node_id', $launch->node_id)->where('triggered_by', $launch->triggered_by)
+            ->where('idempotency_key', 'like', 'conn-launch:'.$launch->id.':restore-wake:%')->latest('id')->first();
+    }
+
+    public function restoreWake(Operation $launch, Instance $instance, ?Operation $previous): void
+    {
+        $key = self::key($launch, 'restore-wake', predecessor: $previous?->id);
+        $this->keyed(InstanceSleep::Kind, $key,
+            fn (): Operation => $this->sleep->start($instance, $launch->triggered_by, $launch->request_id));
     }
 
     public function observeCompletion(Operation $launch, Instance $instance): ?Operation
@@ -115,13 +132,20 @@ final readonly class ConnLaunchInstances
                 within: fn (Closure $record): Operation => $this->record($launch, ConnLaunchChild::Destroy, $key, $record)));
     }
 
-    private function assertCleanupSafe(Operation $launch, Instance $instance, ?Operation $previous): void
+    public function usedByAnotherLaunch(Operation $launch, Instance $instance, ?DateTimeInterface $since = null): bool
     {
-        $used = Operation::query()->where('kind', OperationKinds::ConnLaunch)->whereKeyNot($launch->id)
+        return Operation::query()->where('kind', OperationKinds::ConnLaunch)->whereKeyNot($launch->id)
             ->whereNot('status', OperationStatus::Cancelled)
             ->where(static fn ($query) => $query->where('input->instance_id', $instance->id)
-                ->orWhere('state->launch_instance_id', $instance->id))->exists();
-        if ($used) {
+                ->orWhere('state->launch_instance_id', $instance->id))
+            ->when($since !== null, static fn ($query) => $query->where(static fn ($used) => $used->whereNull('finished_at')
+                ->orWhere('finished_at', '>=', $since)))
+            ->exists();
+    }
+
+    private function assertCleanupSafe(Operation $launch, Instance $instance, ?Operation $previous): void
+    {
+        if ($this->usedByAnotherLaunch($launch, $instance)) {
             throw new ResourceOperationException('instance.unsaved_work', 'Another Conn launch uses this Instance.', 409);
         }
 

@@ -742,7 +742,9 @@ Use the ordinary Conn workspace check before removing a completed launch-owned c
 
 Verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart.
 
-Preserve pre-existing Instances and unrelated work. Do not claim ownership from a matching name. Restore a launch-owned wake only when the lifecycle guard proves the Instance still has no other consumer; do not restore a wake the launch joined. Only verified cleanup clears the private prompt on cancellation and ends the launch as `cancelled`.
+Preserve pre-existing Instances and unrelated work. Restore a launch-owned wake through native sleep when the lifecycle guard proves the Instance has no other consumer. Keep a shared wake and any Instance with recognized activity since the wake began. A failed activity read keeps cleanup pending.
+
+Only verified cleanup clears the private prompt on cancellation and ends the launch as `cancelled`.
 
 Once `dispatch_committed` is recorded, Cancel answers `409 conn.launch_handoff_committed`, including while the reply is uncertain. Stock T3 can start the agent before it replies, so response receipt is too late for this cutoff. After acceptance, use the normal T3 thread Stop or Remove actions, not launch Cancel.
 

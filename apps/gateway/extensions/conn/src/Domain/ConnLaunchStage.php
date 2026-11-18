@@ -61,6 +61,7 @@ enum ConnLaunchStage: string
             $detail = match ($code) {
                 'operation.target_busy', 'instance.lifecycle_busy' => 'The Instance still has lifecycle work to settle.',
                 'instance.unsaved_work' => 'The Instance has work that teardown must preserve.',
+                'conn.launch_wake_restore_unproven' => 'Orbit has not verified whether the woken Instance can safely sleep.',
                 'swamp.start_uncertain' => 'Swamp has not confirmed whether the owned work ended.',
                 default => null,
             };

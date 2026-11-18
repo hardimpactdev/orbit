@@ -11,6 +11,9 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Power\ContainerIdleSweep;
+use App\Domain\Instances\Power\InstanceSleep;
+use App\Domain\Instances\Power\NodeFileTimes;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecrets;
@@ -637,6 +640,51 @@ describe('launch control and progress', function (): void {
             ->assertJsonPath('data.stages.workspace_server.started_at', $started->toAtomString())
             ->assertJsonPath('data.stages.workspace_server.finished_at', $finished->toAtomString())
             ->assertJsonPath('data.children.destroy_operation_id', null);
+        expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue();
+    });
+
+    it('restores only a launch-owned wake with verified idle evidence', function (): void {
+        $this->instance->update(['status' => InstanceState::Active]);
+        $runtime = InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
+            'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$this->instance->id, 'bridge_address' => '10.253.0.2',
+            'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $wake = app(ConnLaunchState::class)->admitChild($id, ConnLaunchChild::Wake, 'fixture-wake', static fn (Operation $launch): array => [
+            'operation' => launchNativeReceipt($launch, 'instance.wake', 'fixture-wake'), 'owned' => true,
+        ]);
+        $wake->update(['status' => OperationStatus::Succeeded, 'started_at' => now()->subMinute(), 'finished_at' => now()]);
+        callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+        $times = new class implements NodeFileTimes
+        {
+            public bool $readable = false;
+
+            public function read(Node $node, array $paths): ?array
+            {
+                return $this->readable ? array_fill_keys($paths, null) : null;
+            }
+        };
+        app()->instance(ContainerIdleSweep::class, new ContainerIdleSweep($times, app(InstanceSleep::class), []));
+        Http::fake(['http://10.44.0.30:3773/*' => Http::response(['threads' => []])]);
+
+        $settlement = app(ConnLaunchSettlement::class);
+        $launch = Operation::query()->findOrFail($id);
+        $settlement->advance($launch);
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()
+            ->assertJsonPath('data.phase', 'cancelling')->assertJsonPath('data.stages.cleanup.error.code', 'conn.launch_wake_restore_unproven');
+        expect(Operation::query()->where('kind', InstanceSleep::Kind)->count())->toBe(0);
+
+        $times->readable = true;
+        $settlement->advance($launch->refresh());
+        $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->sole();
+        expect($sleep->target_id)->toBe($this->instance->id)->and($sleep->triggered_by)->toBe('node:'.$this->phone->id);
+        $settlement->advance($launch->refresh());
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'cancelling');
+
+        $sleep->update(['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+        $runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+        $settlement->advance($launch->refresh());
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()
+            ->assertJsonPath('data.phase', 'cancelled')->assertJsonPath('data.children.destroy_operation_id', null);
         expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue();
     });
 

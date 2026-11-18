@@ -95,6 +95,10 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
             ['runtime' => $runtime, 'open' => $open] = $this->admissible($instance);
             if ($open !== null) {
+                if (isset($open->state['conn_launch_owner']) && ! isset($open->state['wake_shared'])) {
+                    app(OperationStore::class)->change($open, ['state' => [...$open->state, 'wake_shared' => true]]);
+                }
+
                 return $open;
             }
 
