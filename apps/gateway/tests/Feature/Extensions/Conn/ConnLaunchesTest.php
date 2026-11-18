@@ -409,9 +409,11 @@ describe('launch admission', function (): void {
             callLaunchApi($this->phone, 'POST', 'conn/launches', [...$this->body, 'model_selection' => $selection], $this->key)
                 ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection.model']]]);
         }
-        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$this->body, 'model_selection' => [
-            'instanceId' => 'codex', 'model' => 'valid-model', 'options' => 'invalid',
-        ]], $this->key)->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection.options']]]);
+        foreach (['invalid', [['id' => 'thinking', 'value' => 5]]] as $options) {
+            callLaunchApi($this->phone, 'POST', 'conn/launches', [...$this->body, 'model_selection' => [
+                'instanceId' => 'codex', 'model' => 'valid-model', 'options' => $options,
+            ]], $this->key)->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection.options']]]);
+        }
         expect(launchRecords())->toBe($baseline);
     });
 

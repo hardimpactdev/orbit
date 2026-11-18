@@ -111,11 +111,42 @@ final class CreateConnLaunchRequest extends FormRequest
                     $validator->errors()->add('model_selection', 'The model selection must be an object.');
                 } elseif (! is_string($selection->model ?? null) || preg_match('/\S/u', $selection->model) !== 1) {
                     $validator->errors()->add('model_selection.model', 'The model name is required.');
-                } elseif (isset($selection->options) && ! $selection->options instanceof stdClass && ! is_array($selection->options)) {
-                    $validator->errors()->add('model_selection.options', 'The model options must be an object or an array.');
+                } elseif (! self::providerValid($selection)) {
+                    $validator->errors()->add('model_selection.instanceId', 'The provider instance ID is invalid.');
+                } elseif (! self::optionsValid($selection->options ?? null)) {
+                    $validator->errors()->add('model_selection.options', 'The model options are invalid.');
                 }
             }
         }];
+    }
+
+    private static function providerValid(stdClass $selection): bool
+    {
+        foreach (['instanceId', 'provider'] as $field) {
+            if (property_exists($selection, $field)) {
+                $value = $selection->{$field};
+
+                return is_string($value) && preg_match('/\A[a-zA-Z][a-zA-Z0-9_-]{0,63}\z/D', $value) === 1;
+            }
+        }
+
+        return true; // Without a requested provider, resolve the workspace fallback.
+    }
+
+    private static function optionsValid(mixed $options): bool
+    {
+        if ($options === null || $options instanceof stdClass) {
+            return true; // Stock T3 accepts a legacy options object.
+        }
+
+        return is_array($options) && array_all($options, static function (mixed $option): bool {
+            if (! $option instanceof stdClass || ! is_string($option->id ?? null) || preg_match('/\S/u', $option->id) !== 1) {
+                return false;
+            }
+            $value = $option->value ?? null;
+
+            return is_bool($value) || (is_string($value) && preg_match('/\S/u', $value) === 1);
+        });
     }
 
     private static function checkNumber(string $token): void
