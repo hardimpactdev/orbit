@@ -24,7 +24,8 @@ cases = [
   "the method reads the answered evidence and refuses an unconfirmed resolution before launch",
   "a question whose owner run Orbit could not read is not stored and its run is not stopped or over",
   "a start that printed no status names no end: with no run and a queued readback the turn is possibly sent and holds",
-  "a failure keeps no text of T3 or the provider, only a diagnostic of known shapes",
+  "a failure keeps no text of T3 or the provider and parses nothing from it",
+  "a question without its owner run keeps the turn unended, whatever the list shows",
   "a run status outside T3's known statuses is not named and names no end",
 ]
 file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"

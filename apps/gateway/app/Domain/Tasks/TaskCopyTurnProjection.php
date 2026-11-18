@@ -28,8 +28,11 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
 
     /**
      * What a failed turn's error says, by its code (docs/cli/task/turn.mdx#errors). The worker's own error text is never kept: T3's or a
-     * provider's words may quote the prompt, also from an older worker. Only a diagnostic of known shapes adds to it.
+     * provider's words may quote the prompt, also from an older worker. No sentence says the run ended: Held adds whether the turn holds the group.
      */
+    /** What a failed turn's error adds when its result says the turn has not ended (`ended: false`). */
+    public const string Held = ' Its run may still go on: the group holds until the next turn settles this turn.';
+
     public const array Errors = [
         'tasks.copy_turn_unended' => 'An earlier turn may still run in the copy, or a reviewer left its checkout unclean; nothing was launched.',
         'tasks.copy_turn_model_unoffered' => 'The copy does not offer the thread\'s model; nothing was launched.',
@@ -42,13 +45,9 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
         'tasks.copy_question_unresolved' => 'Orbit could not confirm that the stored questions are resolved in T3; nothing was launched.',
         'tasks.copy_question_answered' => 'The prompt quotes questions that an earlier answer already used; send the prompt again.',
         'tasks.turn_timeout' => 'The turn ran longer than its bound.',
-        'tasks.turn_failed' => 'T3\'s run ended other than done or asking.',
+        'tasks.turn_failed' => 'T3 did not report the run as done or asking for input.',
         'tasks.copy_turn_failed' => 'T3 did not report the turn\'s end.',
     ];
-
-    /** The provider error types a diagnostic may name; the worker reads them from the provider's text (task-copy-turn/mod.ts). */
-    public const array ProviderErrors = ['api_error', 'overloaded_error', 'rate_limit_error', 'invalid_request_error', 'authentication_error',
-        'permission_error', 'not_found_error', 'request_too_large', 'billing_error', 'timeout_error'];
 
     public function input(Operation $operation): array
     {
@@ -162,12 +161,11 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
     }
 
     /**
-     * The error a turn's result keeps: the fixed sentence of its code and the fields of its diagnostic that have a known shape, never
-     * the worker's own text.
+     * The error a turn's result keeps: the fixed sentence of its code, and Held when the turn has not ended, never the worker's text or
+     * anything parsed from it. A code outside Errors, or an error with no code, is `tasks.copy_turn_failed`.
      *
      * @param  array<string, mixed>  $result
-     *                                        A code outside Errors, or an error with no code, is `tasks.copy_turn_failed`.
-     * @return array{error: string|null, error_code?: string, diagnostic?: array{http_status: int|null, retry_after_seconds: int|null, provider_error: string|null}}
+     * @return array{error: string|null, error_code?: string}
      */
     private static function error(array $result): array
     {
@@ -175,15 +173,8 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             return ['error' => null];
         }
         $code = is_string($result['error_code'] ?? null) && array_key_exists($result['error_code'], self::Errors) ? $result['error_code'] : 'tasks.copy_turn_failed';
-        $raw = is_array($result['diagnostic'] ?? null) ? $result['diagnostic'] : [];
-        $status = is_int($raw['http_status'] ?? null) && $raw['http_status'] >= 100 && $raw['http_status'] <= 599 ? $raw['http_status'] : null;
-        $retry = is_int($raw['retry_after_seconds'] ?? null) && $raw['retry_after_seconds'] >= 0 && $raw['retry_after_seconds'] <= 86400 ? $raw['retry_after_seconds'] : null;
-        $type = in_array($raw['provider_error'] ?? null, self::ProviderErrors, true) ? ValidatedData::string($raw['provider_error']) : null;
-        $said = array_filter([$status === null ? null : 'HTTP '.$status, $retry === null ? null : "retry after {$retry} seconds", $type]);
-        $error = self::Errors[$code].($said === [] ? '' : ' ('.implode(', ', $said).')');
 
-        return ['error' => $error, 'error_code' => $code,
-            ...($said === [] ? [] : ['diagnostic' => ['http_status' => $status, 'retry_after_seconds' => $retry, 'provider_error' => $type]])];
+        return ['error' => self::Errors[$code].(($result['ended'] ?? null) === true ? '' : self::Held), 'error_code' => $code];
     }
 
     /**

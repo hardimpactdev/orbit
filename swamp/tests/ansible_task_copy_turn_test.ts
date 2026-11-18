@@ -171,7 +171,7 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
         # 'large' holds questions alone but more than the result can hold: the read says the run may not be stopped.
         asking = ask in ('questions', 'large')
         print(json.dumps({'runs': [{'id': 'run:1', 'status': 'running'}], 'stoppable': ask == 'questions',
-                          'requests': [] if ask == 'none' else [{'request_id': 'request:1', 'kind': 'user_input' if asking else 'approval',
+                          'requests': [] if ask == 'none' else [{'request_id': 'request:1', 'kind': 'user_input' if asking else 'approval', 'run_id': 'run:1',
                                                                   'questions': questions if asking else []}]}), end='')
         sys.exit(0)
     assert rest[5:] == ['interrupt', thread, 'run:1', 'request:1'], rest
@@ -575,6 +575,9 @@ Deno.test({ name: "a run that asks has its question stored before the run is sto
     assert(order.findIndex((args) => args.includes(" interrupt ")) < order.findIndex((args) => args.includes("thread list")), "the read follows the stop");
     // The question stays in the run folder, never in the phase's output.
     assertEquals(asked.output.includes("Which color?"), false);
+    // The turn as Orbit records it: the question stored with its owner run, its run stopped and over, and no error.
+    assertEquals([asked.result.state, asked.result.error, asked.result.error_code, asked.result.ended], ["asking_for_input", null, undefined, true]);
+    assertEquals(asked.result.questions.map((question) => [question.request_id, question.run_id, question.question]), [["request:1", "run:1", "Which color?"]]);
     // A turn that ends other than at a question runs no helper.
     assertEquals(helper((await phase("completed")).calls), []);
 } });

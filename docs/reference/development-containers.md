@@ -2207,9 +2207,17 @@ The Operation's result names:
 
 The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`.
 
-The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds a fixed sentence of its code and a `diagnostic` of known shapes: `http_status`, `retry_after_seconds` only when the text gives the unit, and `provider_error`, taken only from the `type` of a JSON error object and one of a fixed list. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
+The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds the fixed sentence of its code, and nothing parsed from any text. A turn that has not ended adds a fixed sentence that the group holds. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's, and drops any other error field. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
 
-A T3 run status outside T3's known statuses is never named and names no end. A question without its owner run is never stored. The turn records `tasks.copy_question_unread` and `ended: false`, so the next turn settles it. `tasks.copy_review_unrestored` outranks `tasks.copy_question_unread`: an unrestored reviewer turn keeps its code.
+One rule names a turn ended. Nothing launched is ended, unless a reviewer's checkout stays detached. Otherwise only positive evidence ends it:
+
+- T3 lists no thread of the title, or lists it in a state that runs nothing.
+- The start printed a status that ends a run.
+- The stop of a cut run proved its end.
+
+A status that Orbit does not know, in the start or the list, keeps the turn unended. So does a thread that T3 lists active, or a question without its owner run. A T3 run status outside T3's known statuses is never named.
+
+A question without its owner run is never stored. The turn records `tasks.copy_question_unread` and `ended: false`, so the next turn settles it. `tasks.copy_review_unrestored` outranks `tasks.copy_question_unread`: an unrestored reviewer turn keeps its code.
 
 The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run: the folder is mode `0700`, `intent.json` is mode `0600`, and its cleanup removes the folder. The RPC worker drops that staging with the CLI calls.
 

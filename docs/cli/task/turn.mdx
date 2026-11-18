@@ -86,5 +86,5 @@ A turn in a task copy adds these answers and Operation errors:
 | `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
 | `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down or when it refused the start, or could not list its threads to find the one to continue. A refused start's error holds no text of T3. |
 
-A turn's error is the fixed sentence of its code, never T3's or a provider's own text, which may quote the prompt. A `diagnostic` may add an HTTP status, a retry delay in seconds and a provider error type, such as `rate_limit_error`, from the provider's JSON error. A code the Gateway does not know is recorded as `tasks.copy_turn_failed`.
+A turn's error is the fixed sentence of its code, never T3's or a provider's own text, which may quote the prompt. Nothing is parsed from that text; it stays in the turn's private run folder. When the turn has not ended, the error adds that the group holds. A code the Gateway does not know is recorded as `tasks.copy_turn_failed`.
 

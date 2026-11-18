@@ -66,6 +66,8 @@ const Read = z.object({
 const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 /** T3's run statuses that end a run. A run status in neither set is unknown: it names no end and is never echoed. */
 const RunOver = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
+/** The thread states in which T3 runs nothing. A thread state in neither this set nor Active is unknown and names no end. */
+const ThreadOver = new Set([...RunOver, "idle"]);
 export type Evidence = {
     settle?: z.infer<typeof Settle> | null;
     resumed: z.infer<typeof Resumed> | null;
@@ -106,15 +108,6 @@ const AskedQuestion = z.object({
     initial_answer: z.string().nullable(),
     required: z.boolean().nullable(),
 });
-/** The provider error types a diagnostic may name: a fixed vocabulary, never the provider's own words. */
-const ProviderErrors = ["api_error", "overloaded_error", "rate_limit_error", "invalid_request_error", "authentication_error", "permission_error",
-    "not_found_error", "request_too_large", "billing_error", "timeout_error"];
-const Diagnostic = z.object({
-    http_status: z.number().int().min(100).max(599).nullable(),
-    retry_after_seconds: z.number().int().min(0).max(86400).nullable(),
-    provider_error: z.enum(ProviderErrors).nullable(),
-}).strict();
-type Diagnostic = z.infer<typeof Diagnostic>;
 export const Turn = z.object({
     state: z.enum(["done", "asking_for_input", "failed"]),
     error: z.string().nullable(),
@@ -138,47 +131,8 @@ export const Turn = z.object({
     // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
     spent: z.array(z.string()),
     transcript: z.array(Entry),
-    // What a failure's own text named in known shapes; its text is not kept.
-    diagnostic: Diagnostic.optional(),
 });
 export type Turn = z.infer<typeof Turn>;
-
-/**
- * What the result keeps of T3's or a provider's own text: only fields of known shapes. The text itself may quote the turn's prompt,
- * which no redaction catches, so it stays in the private run folder (docs/reference/development-containers.md#turn-evidence).
- */
-export function diagnose(text: string): Diagnostic | null {
-    const status = text.match(/\bHTTP[ /]?(?:\d(?:\.\d)? )?([1-5]\d\d)\b/i) ?? text.match(/\bstatus(?: code)?[:= ]+([1-5]\d\d)\b/i) ?? text.match(/\bAPI Error:? ([1-5]\d\d)\b/)
-        ?? text.match(/\bapi_error_([1-5]\d\d)\b/);
-    // A wait counts only with its unit: seconds as they are, minutes times 60. A bare number is omitted.
-    const retry = text.match(/\bretry[- _]after[:= ]*(\d{1,5}) ?(seconds?|secs?|s|minutes?|mins?)\b/i);
-    const seconds = retry === null ? null : Math.min(Number(retry[1]) * (retry[2].toLowerCase().startsWith("m") ? 60 : 1), 86400);
-    // The provider's error type only from its JSON error object, never from a word anywhere in the text, which may quote input.
-    const type = structuredType(text);
-    const diagnostic = { http_status: status ? Number(status[1]) : null, retry_after_seconds: seconds, provider_error: type };
-    return Object.values(diagnostic).every((value) => value === null) ? null : diagnostic;
-}
-
-/** The `type` of the JSON error object the text carries, as Anthropic's API and Codex print it, when it is a known provider error type. */
-function structuredType(text: string): string | null {
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start < 0 || end <= start) return null;
-    try {
-        const body = JSON.parse(text.slice(start, end + 1));
-        const type = body?.error?.type ?? (body?.type !== "error" ? body?.type : null);
-        return typeof type === "string" && ProviderErrors.includes(type) ? type : null;
-    } catch {
-        return null;
-    }
-}
-
-/** A diagnostic in words, after a fixed message. */
-const said = (diagnostic: Diagnostic | null): string => diagnostic === null ? "" : `: ${[
-    diagnostic.http_status === null ? null : `HTTP ${diagnostic.http_status}`,
-    diagnostic.retry_after_seconds === null ? null : `retry after ${diagnostic.retry_after_seconds} seconds`,
-    diagnostic.provider_error,
-].filter((part) => part !== null).join(", ")}`;
 
 const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     try {
@@ -219,7 +173,7 @@ export function shapeTurn(evidence: Evidence): Turn {
     const turn = shapeRun(evidence);
     if (!evidence.detached || evidence.restore?.restored === true) return turn;
     const run = turn.state === "failed" ? ` The run: ${turn.error}` : "";
-    return { ...turn, state: "failed", ended: false, error: `The checkout was not restored after the reviewer's turn.${run}`, error_code: "tasks.copy_review_unrestored" };
+    return { ...turn, state: "failed", error: `The checkout was not restored after the reviewer's turn.${run}`, error_code: "tasks.copy_review_unrestored" };
 }
 
 /**
@@ -233,15 +187,9 @@ function shapeRun(evidence: Evidence): Turn {
     // The stop of a cut run ended it, or found no run of the thread active.
     const halted = evidence.stop?.stop_exit === 0 ? parse(Halted, evidence.stop.stop) : null;
     const cutEnded = halted !== null && (halted.stopped || halted.run === null);
-    // Over when nothing was launched, when the start printed an end that is not a wait for an answer, when the phase stopped the
-    // run its bound cut, or when T3 holds no thread of this title or holds it in no active state. Anything else may still write in the
-    // checkout.
     const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
-    // A start that printed no status names no end: its run may be queued.
-    const ended = !evidence.launched || (started?.status !== undefined && RunOver.has(started.status)) || cutEnded
-        || (listed !== null && (listed.found === 0 || (listed.found === 1 && listed.status !== null && !Active.has(listed.status))));
     const base = {
-        ended,
+        ended: over(evidence, started?.status, listed, cutEnded),
         t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? null,
         run_id: started?.runId ?? null,
         // The launch mark precedes the send, so it means possibly sent; only a run that T3 reported for the send confirms the launch.
@@ -261,14 +209,13 @@ function shapeRun(evidence: Evidence): Turn {
     if (started?.status === "completed") return { ...base, state: "done", error: null };
     if (started?.status === "waiting") return asked(base, evidence);
     if (started !== null) {
-        const diagnostic = diagnose(started.error ?? "");
-        // T3's run status is one word of its own vocabulary; anything else is not named.
+        // T3's run status is named only from its known vocabulary; its error text stays in the run folder.
         const status = started.status === undefined ? "T3 started no run" : RunOver.has(started.status) || Active.has(started.status)
             ? `T3 run ${started.status}` : "T3 reported a run status Orbit does not know";
-        return { ...base, state: "failed", error: `${status}${said(diagnostic)}`, error_code: "tasks.turn_failed", ...(diagnostic === null ? {} : { diagnostic }) };
+        return { ...base, state: "failed", error: status, error_code: "tasks.turn_failed" };
     }
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
-        const stop = halted?.stopped ? "Orbit stopped its run." : ended ? "Its run has ended." : "Orbit could not stop its run; the next turn stops it.";
+        const stop = halted?.stopped ? "Orbit stopped its run." : base.ended ? "Its run has ended." : "Orbit could not stop its run; the next turn stops it.";
         return { ...base, state: "failed", error: `The turn ran longer than its bound. ${stop}`, error_code: "tasks.turn_timeout" };
     }
     if (evidence.model !== null && !evidence.model.accepted) {
@@ -309,10 +256,30 @@ function shapeRun(evidence: Evidence): Turn {
         };
     }
     const exit = evidence.start === null ? "no exit" : `exit ${evidence.start.start_exit}`;
-    // T3's message ends its stderr; a long one keeps its end.
-    const diagnostic = diagnose(evidence.start?.error ?? "");
-    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit})${said(diagnostic)}.`, error_code: "tasks.copy_turn_failed",
-        ...(diagnostic === null ? {} : { diagnostic }) };
+    // T3's stderr stays in the run folder.
+    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit}).`, error_code: "tasks.copy_turn_failed" };
+}
+
+/**
+ * The one rule for whether the copy is free of this turn. Nothing launched is over, unless a reviewer's checkout stays detached. Else
+ * over only on positive evidence of an end: T3 holds no thread of this title, lists it in a state that runs nothing, the start
+ * printed a status that ends a run, or the stop of a cut run ended it. A status of T3 that Orbit does not know, from the start or the
+ * list, a thread T3 lists active, and a question whose owner run Orbit could not read each keep the turn unended.
+ */
+function over(evidence: Evidence, status: string | undefined, listed: z.infer<typeof Read> | null, cutEnded: boolean): boolean {
+    if (evidence.detached && evidence.restore?.restored !== true) return false;
+    if (!evidence.launched) return true;
+    const shown = listed?.found === 1 ? listed.status : null;
+    if (status !== undefined && !RunOver.has(status) && !Active.has(status)) return false;
+    if (shown !== null && (Active.has(shown) || !ThreadOver.has(shown))) return false;
+    if (status === "waiting" && ownerless(evidence)) return false;
+    return listed?.found === 0 || shown !== null || (status !== undefined && RunOver.has(status)) || cutEnded;
+}
+
+/** Whether the question read names a request without the run that owns it. */
+function ownerless(evidence: Evidence): boolean {
+    const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
+    return read !== null && read.requests.some((request) => !request.run_id);
 }
 
 /**
@@ -334,7 +301,7 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
         required: question.required ?? null,
     })));
     // A request whose owner run Orbit could not read stores no question: the answer turn could not cancel it exactly.
-    const owned = (read?.requests ?? []).every((request) => request.run_id);
+    const owned = !ownerless(evidence);
     const turn = { ...base, questions: owned ? questions : [], state: "asking_for_input" as const };
     if (read !== null && !read.stoppable) {
         return { ...turn, error: "The run waits for something Orbit cannot store whole (an approval, a request without a question, or too much text), "

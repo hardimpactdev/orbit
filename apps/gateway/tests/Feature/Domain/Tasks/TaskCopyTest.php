@@ -2345,7 +2345,8 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($timedOut->error_code)->toBe('tasks.turn_timeout')
             ->and(AgentThread::query()->findOrFail($timedOut->input['thread_id'])->only(['state', 'error']))
-            ->toBe(['state' => AgentThreadState::Failed, 'error' => 'The turn ran longer than its bound.']);
+            // Its run did not stop: the error says the group holds.
+            ->toBe(['state' => AgentThreadState::Failed, 'error' => 'The turn ran longer than its bound.'.TaskCopyTurnProjection::Held]);
     });
 
     it('is stopped by the group\'s cancel before the copy\'s destroy is admitted', function (): void {
@@ -3053,23 +3054,36 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
         expect(copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0]['t3_thread_id'])->toBe($frozen);
     });
 
-    it('keeps no worker error text in the result or on the thread, only the code\'s sentence and a diagnostic of known shapes', function (): void {
+    it('keeps no worker error text or diagnostic in the result or on the thread, only the code\'s sentence', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         $turn = copyTurn($group, ['prompt' => 'Acquire Juniper']);
 
-        // An older worker quotes the whole prompt in its error; a diagnostic field outside its known shape is dropped too.
+        // An older worker quotes the whole prompt in its error and sends a diagnostic: neither is kept.
         $ended = copyTurnEnded($turn, 'failed', ['state' => 'failed', 'error' => 'T3 run failed: Invalid input: Acquire Juniper', 'error_code' => 'tasks.turn_failed',
             'ended' => true, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'launched' => true, 'transcript' => [],
-            'diagnostic' => ['http_status' => 429, 'retry_after_seconds' => 37, 'provider_error' => 'Acquire Juniper']]);
+            'diagnostic' => ['http_status' => 429, 'retry_after_seconds' => 37, 'provider_error' => 'rate_limit_error']]);
 
         $thread = AgentThread::query()->findOrFail($turn->input['thread_id']);
         expect($ended->error_code)->toBe('tasks.turn_failed')
-            ->and($ended->result['error'])->toBe('T3\'s run ended other than done or asking. (HTTP 429, retry after 37 seconds)')
-            ->and($ended->result['diagnostic'])->toBe(['http_status' => 429, 'retry_after_seconds' => 37, 'provider_error' => null])
+            ->and($ended->result['error'])->toBe(TaskCopyTurnProjection::Errors['tasks.turn_failed'])
+            ->and($ended->result)->not->toHaveKey('diagnostic')
             ->and($thread->error)->toBe($ended->result['error'])
             ->and(json_encode([$ended->result, $thread->error], JSON_THROW_ON_ERROR))->not->toContain('Juniper');
+    });
+
+    it('says a failed turn that has not ended holds the group, and claims no end', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+
+        // A start with no status and a queued read back: the worker keeps the turn unended.
+        $queued = copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'T3 started no run', 'error_code' => 'tasks.turn_failed', 'ended' => false,
+            't3_thread_id' => 'mcp:1', 'run_id' => null, 'sent' => true, 'launched' => false, 'transcript' => []]);
+
+        expect($queued->result['error'])->toBe(TaskCopyTurnProjection::Errors['tasks.turn_failed'].TaskCopyTurnProjection::Held)
+            ->and($queued->result['error'])->not->toContain('ended other');
     });
 
     it('stores no question without its owner run from an older worker, and records the turn as unread', function (): void {
