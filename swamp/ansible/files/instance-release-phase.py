@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 """Execute one Swamp release phase against exactly one AppProd Instance."""
 import argparse
-import fcntl
 import hashlib
 import ipaddress
 import json
@@ -10,7 +9,6 @@ import pwd
 import re
 import runpy
 import secrets
-import stat
 import subprocess
 import sys
 import tempfile
@@ -71,15 +69,12 @@ def lock(path, *, shared=False):
         raise Refusal("unrecognized production resource lock")
     if shared and not relative.startswith("legacy-schedules/"):
         raise Refusal("shared access requires a production Schedule lock")
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    publisher = runpy.run_path(str(LIB / "orbit_route_withdraw.py"))
     try:
-        owner = os.fstat(fd)
-        if not stat.S_ISREG(owner.st_mode) or owner.st_uid != os.geteuid() or stat.S_IMODE(owner.st_mode) != 0o600:
-            raise Refusal("unexpected production resource lock ownership")
-        fcntl.flock(fd, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
-        yield
-    finally:
-        os.close(fd)
+        with publisher["release_resource_lock"](path, shared=shared):
+            yield
+    except publisher["WithdrawFailure"] as error:
+        raise Refusal("deployment.resource_busy: cannot acquire the selected production resource") from error
 
 
 def run(args, *, data=None, timeout=150, check=True):

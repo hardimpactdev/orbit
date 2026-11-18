@@ -14,6 +14,7 @@ import os
 import pwd
 import re
 import stat
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -308,7 +309,8 @@ class _Lock:
     """An exclusive lock on one of the Node's publication lock files, taken by util-linux `flock` on an inherited descriptor: the lock
     belongs to the open file description, so it outlives the `flock` process until this context closes the descriptor."""
 
-    def __init__(self, path, run, seconds, busy):
+    def __init__(self, path, run, seconds, busy, *, shared=False):
+        self.shared = shared
         self.path, self.run, self.seconds, self.busy, self.stream = path, run, seconds, busy, None
 
     def __enter__(self):
@@ -324,7 +326,7 @@ class _Lock:
             raise WithdrawFailure("route.publish_lock_invalid", "The lock must be a regular file of the publisher that no group or other may write.")
         # Another writer may have created it with its default umask: from now on only the publisher may open it.
         os.fchmod(self.stream.fileno(), 0o600)
-        rc, _, stderr = self.run(["flock", "--exclusive", "--timeout", f"{max(self.seconds, 0.1):.1f}", "--conflict-exit-code", "75",
+        rc, _, stderr = self.run(["flock", "--shared" if self.shared else "--exclusive", "--timeout", f"{max(self.seconds, 0.1):.1f}", "--conflict-exit-code", "75",
                                   str(self.stream.fileno())], pass_fds=(self.stream.fileno(),))
         if rc != 0:
             self.stream.close()
@@ -335,6 +337,14 @@ class _Lock:
 
     def __exit__(self, *_):
         self.stream.close()
+
+
+def release_resource_lock(path, *, shared=False, seconds=60):
+    """Serialize release state with the same inode checks and FD lifetime as the Caddy publisher."""
+    def acquire(argv, *, pass_fds):
+        result = subprocess.run(argv, pass_fds=pass_fds, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=seconds + 5)
+        return result.returncode, result.stdout, result.stderr
+    return _Lock(path, acquire, seconds, "deployment.resource_busy", shared=shared)
 
 
 def caddy_publication_lock(run, seconds=60, *, path=Path("/etc/caddy/.orbit-publish.lock")):

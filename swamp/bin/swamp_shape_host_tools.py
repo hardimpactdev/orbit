@@ -5,41 +5,6 @@ import ast
 USER_PATTERN = "[a-z_][a-z0-9_-]{0,31}"
 
 
-def production_release_transaction(tree, sources, acquire):
-    """Only the AppProd controller may serialize its own Caddy, reservation and state files."""
-    source = sources.get("ansible/files/instance-release-phase.py")
-    if not source or ast.dump(ast.parse(source)) != ast.dump(tree):
-        return False
-    assignments = [part for part in ast.walk(tree) if isinstance(part, ast.Name)
-                   and isinstance(part.ctx, ast.Store) and part.id == "BASE"]
-    if len(assignments) != 1 or not any(
-        isinstance(part, ast.Assign) and assignments[0] in part.targets
-        and ast.unparse(part.value) == "Path('/var/lib/orbit/production')" for part in tree.body
-    ):
-        return False
-    transaction = next((part for part in tree.body if isinstance(part, ast.FunctionDef) and part.name == "lock"), None)
-    contract = ast.parse(r"""
-@contextmanager
-def lock(path, *, shared=False):
-    relative = path.relative_to(BASE).as_posix()
-    if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|legacy-schedules/[1-9][0-9]*/lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
-        raise Refusal("unrecognized production resource lock")
-    if shared and not relative.startswith("legacy-schedules/"):
-        raise Refusal("shared access requires a production Schedule lock")
-    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-    try:
-        owner = os.fstat(fd)
-        if not stat.S_ISREG(owner.st_mode) or owner.st_uid != os.geteuid() or stat.S_IMODE(owner.st_mode) != 0o600:
-            raise Refusal("unexpected production resource lock ownership")
-        fcntl.flock(fd, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
-        yield
-    finally:
-        os.close(fd)
-
-""").body[0]
-    return transaction is not None and acquire in ast.walk(transaction) and ast.dump(transaction) == ast.dump(contract)
-
-
 def php_runtime_transaction(tree, sources, descriptor, acquire):
     if not sources or not isinstance(descriptor, ast.Call) or not descriptor.args:
         return False

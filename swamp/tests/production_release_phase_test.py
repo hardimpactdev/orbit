@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -40,6 +41,7 @@ class ProductionReleaseTest(unittest.TestCase):
         root = Path(self.stack.enter_context(tempfile.TemporaryDirectory()))
         config = root / "host.json"
         config.write_text(json.dumps({"node_id": 25, "pool": "selected"}))
+        (root / "orbit_route_withdraw.py").symlink_to(SWAMP / "ansible/module_utils/orbit_route_withdraw.py")
         (root / "orbit-release-container").symlink_to(SWAMP / "scripts/release-container.py")
         self.stack.enter_context(patch.object(phase, "BASE", root / "instances"))
         self.stack.enter_context(patch.object(phase, "LIB", root))
@@ -66,20 +68,45 @@ class ProductionReleaseTest(unittest.TestCase):
         with self.assertRaisesRegex(phase.Refusal, "first move"):
             self.r.parse_plan({**self.plan, "legacy": {"project_id": 2, "home": "/home/orbit-app-2", "units": [], "commit": CURRENT}})
 
-    def test_shape_admits_only_the_owned_host_transaction(self):
-        path = "ansible/files/instance-release-phase.py"
-        source = (SWAMP / path).read_text()
-        for code, allowed in [
-            (source, True),
-            (source.replace('Path("/var/lib/orbit/production")', 'Path("/tmp")'), False),
-            (source.replace('os.O_NOFOLLOW | ', ''), False),
-            (source.replace('not re.fullmatch(r"[.]capacity', 'not re.search(r"[.]capacity'), False),
-        ]:
-            with self.subTest(allowed=allowed):
-                output = subprocess.run([sys.executable, SWAMP / "bin/swamp-shape-python.py", "[]", "--source-context"],
-                                        input=json.dumps({"source": code, "sources": {path: code}}),
-                                        text=True, capture_output=True, check=True)
-                self.assertEqual(all(finding["rule"] != "custom-control" for finding in json.loads(output.stdout)), allowed)
+    def test_only_the_owned_host_resource_can_take_a_checked_shared_or_exclusive_lock(self):
+        if not shutil.which("flock"):
+            self.skipTest("requires util-linux flock")
+        import fcntl
+        with self.assertRaisesRegex(phase.Refusal, "unrecognized production resource"):
+            with phase.lock(self.r.root / "foreign"):
+                pass
+        path = self.r.private / "lock"
+        with self.assertRaisesRegex(phase.Refusal, "shared access"):
+            with phase.lock(path, shared=True):
+                pass
+        with phase.legacy_schedule_lock(17, shared=True) as marker:
+            with (marker.parent / "lock").open("rb") as peer:
+                fcntl.flock(peer, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(peer, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with phase.lock(path):
+            with path.open("rb") as peer, self.assertRaises(BlockingIOError):
+                fcntl.flock(peer, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        path.unlink()
+        path.symlink_to(self.r.operation_file)
+        with self.assertRaisesRegex(phase.Refusal, "cannot acquire"):
+            with phase.lock(path):
+                pass
+
+    def test_distributed_role_contains_the_guest_resolvers_entire_local_import_tree(self):
+        files = (SWAMP / "manifest.yaml").read_text().split("additionalFiles:", 1)[1].splitlines()
+        shipped = {line.strip()[2:] for line in files if line.startswith("  - ")}
+        pending = [SWAMP / "ansible/files/instance-release-vp.ts"]
+        seen = set()
+        while pending:
+            module = pending.pop()
+            if module in seen:
+                continue
+            seen.add(module)
+            self.assertIn(str(module.relative_to(SWAMP)), shipped)
+            imports = re.findall(r'from\s+["\']([.][^"\']+)["\']', module.read_text())
+            pending.extend((module.parent / specifier).resolve() for specifier in imports)
+        self.assertEqual(len(seen), 3)
 
     def test_guest_env_preserves_a_tracked_testing_file_in_a_monorepo(self):
         with tempfile.TemporaryDirectory() as base:

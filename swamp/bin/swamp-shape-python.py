@@ -7,7 +7,6 @@ import sys
 from swamp_shape_host_tools import (
     bridge_writer_transaction,
     php_runtime_transaction,
-    production_release_transaction,
 )
 from swamp_shape_polling import (
     external_origin,
@@ -123,7 +122,7 @@ def scan(source, gateway_primitives=(), context=None, phase_seconds=0, phase_ssh
         return None
 
     def host_tool_lock(node):
-        if node is bridge_acquire or production_release_transaction(tree, context or {}, node):
+        if node is bridge_acquire:
             return True
         if len(node.args) != 2:
             return False
