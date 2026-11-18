@@ -34,7 +34,7 @@ def control(node, instance, sha, family, args, api, execute=subprocess.run):
 
 if __name__ == "__main__":
     try:
-        if os.geteuid() != 0 or len(sys.argv) < 6:
+        if os.geteuid() != 0 or len(sys.argv) < 5:
             raise ValueError("expected Node, Instance, commit, family and action")
         sys.exit(control(*sys.argv[1:5], sys.argv[5:], runpy.run_path(str(LIB / "orbit-instance-release-phase"))))
     except (KeyError, ValueError, OSError, subprocess.SubprocessError):
