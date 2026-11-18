@@ -1,6 +1,7 @@
 file = "swamp/tests/production_release_phase_test.py"
 cost = 1
 inputs = [
+  "swamp/ansible/files/instance-control-environment.py",
   "swamp/ansible/files/instance-release-phase.py",
   "swamp/ansible/files/instance-release-guest.py",
   "swamp/scripts/release-container.py",
@@ -23,4 +24,5 @@ cases = [
   "test_swap_and_pool_reservations_cover_other_active_instances",
   "test_untrusted_checkout_paths_cannot_traverse_the_persistent_volume",
   "test_seal_accounts_for_file_content_and_executability_but_excludes_external_storage",
+  "test_sync_checks_actual_keys_and_never_overwrites_tracked_testing_environment",
 ]

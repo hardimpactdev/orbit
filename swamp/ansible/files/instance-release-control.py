@@ -1,10 +1,10 @@
 #!/usr/bin/python3
 """Run one fixed live-control family against the checked serving Instance while holding its switch lock."""
 import os
-from pathlib import Path
 import runpy
 import subprocess
 import sys
+from pathlib import Path
 
 LIB = Path("/usr/local/libexec")
 FAMILIES = {"process", "schedule", "environment"}

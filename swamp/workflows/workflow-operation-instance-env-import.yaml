@@ -15,6 +15,7 @@ inputs:
       properties:
         base: {type: string, pattern: '^/'}
         user: {type: string, pattern: '^[a-z_][a-z0-9_-]{0,31}$'}
+        production_control: {type: object}
         ssh_execution: {type: object}
       required: [base, user, ssh_execution]
       additionalProperties: false
@@ -48,8 +49,8 @@ jobs:
       inputs:
         hosts: name:target
         timeoutSec: 40
-        argv: [/usr/bin/sudo, -n, --, /usr/bin/timeout, '30', /bin/sh, -c, "p=\"$1/.env\"; o=\"$2\"; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then echo \"env.import_source_missing: $p does not exist\" >&2; exit 3; fi; [ -f \"$p\" ] && [ ! -L \"$p\" ] && [ \"$(stat -c %U -- \"$p\")\" = \"$4\" ] && [ \"$(stat -c %s -- \"$p\")\" -le 1048576 ] || { echo \"env.import_source_missing: $p is not a regular file of $4 up to 1 MiB\" >&2; exit 3; }; install -m 600 -o \"$3\" -- \"$p\" \"$o\"", sh, '${{ inputs.intent.base }}',
-          '${{ "/tmp/orbit-env-import-" + run.id + "-node" }}', '${{ inputs.intent.ssh_execution.target.user }}', '${{ inputs.intent.user }}']
+        argv: >-
+          ${{ has(inputs.intent.production_control) ? ["/usr/bin/sudo", "-n", "--", "/usr/local/libexec/orbit-instance-release-control", string(inputs.node_id), string(inputs.intent.production_control.instance_id), inputs.intent.production_control.release, "environment", "stage", run.id, inputs.intent.base, inputs.intent.ssh_execution.target.user] : ["/usr/bin/sudo", "-n", "--", "/usr/bin/timeout", "30", "/bin/sh", "-c", "p=\"$1/.env\"; o=\"$2\"; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then echo \"env.import_source_missing: $p does not exist\" >&2; exit 3; fi; [ -f \"$p\" ] && [ ! -L \"$p\" ] && [ \"$(stat -c %U -- \"$p\")\" = \"$4\" ] && [ \"$(stat -c %s -- \"$p\")\" -le 1048576 ] || { echo \"env.import_source_missing: $p is not a regular file of $4 up to 1 MiB\" >&2; exit 3; }; install -m 600 -o \"$3\" -- \"$p\" \"$o\"", "sh", inputs.intent.base, "/tmp/orbit-env-import-" + run.id + "-node", inputs.intent.ssh_execution.target.user, inputs.intent.user] }}
   - name: 'Copy .env to 209'
     labels: {role: swamp}
     writes: true

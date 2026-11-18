@@ -4,15 +4,20 @@ declare(strict_types=1);
 
 use App\Actions\Instances\ListInstanceReleasesAction;
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Actions\Instances\StartInstanceEnvironmentImportAction;
+use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
 use App\Actions\Instances\StartInstanceRollbackAction;
 use App\Domain\Instances\Deployment\AutomaticDeployFailure;
 use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\Deployment\SharedPaths;
+use App\Domain\Instances\Environment\NativeInstanceEnvironmentImportProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Processes\ProcessOperationSecrets;
+use App\Domain\Schedules\ScheduleTargetResolver;
+use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
@@ -224,6 +229,25 @@ describe('production container deployments', function (): void {
         unset($input['container']);
         $stale->setAttribute('input', $input);
         expect(fn () => app(ProcessLifecycleInput::class)->forOperation($stale))->toThrow(ResourceOperationException::class);
+    });
+
+    it('binds environment sync, import and Schedule creation to the confirmed live release', function (): void {
+        $sha = str_repeat('c', 40);
+        $instance = appProdReleasePlacement($this->prod, 'live-controls');
+        appProdReleaseReceipt(app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, $sha));
+        $target = ProductionContainerRelease::target($instance->refresh());
+        $schedule = app(ScheduleTargetResolver::class)->placement(ScheduleTargetType::Instance, $instance->id);
+        expect($schedule->container)->toBe($target)->and($schedule->workingDirectory)->toBe('/srv/workspace/current')
+            ->and($schedule->user)->toBe('orbit');
+        $import = app(StartInstanceEnvironmentImportAction::class)->execute($instance, true);
+        $projection = app(NativeInstanceEnvironmentImportProjection::class);
+        expect($projection->input($import)['intent'])->toMatchArray(['base' => '/srv/workspace/current', 'user' => 'orbit', 'production_control' => $target]);
+        $import->update(['lock_key' => null, 'status' => 'succeeded']);
+        $sync = app(StartInstanceEnvironmentSyncAction::class)->execute($instance);
+        expect($sync->input['production_control'])->toBe($target)
+            ->and(app(DirectOperation::class)->workflowFor($sync))->toBe('production-environment-sync');
+        $instance->forceFill(['production_release' => ['live' => str_repeat('d', 40)]])->save();
+        expect(fn () => $projection->input($import))->toThrow(ResourceOperationException::class);
     });
 
     it('adopts an existing checkout at the proven serving commit', function (): void {

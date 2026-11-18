@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fence queued host Schedule fires while a legacy project moves into a release."""
-import fcntl
 import hashlib
 import os
 import pwd
 import re
+import runpy
 import subprocess
 import sys
 import uuid
@@ -22,11 +22,9 @@ def main(user, directory, shell, login, limit, schedule, digest):
     data = sys.stdin.buffer.read()
     if hashlib.sha256(data).hexdigest() != digest:
         raise ValueError("invalid Schedule command")
-    guard = Path("/var/lib/orbit/production/legacy-schedules") / account[1]
-    guard.mkdir(mode=0o700, parents=True, exist_ok=True)
-    with (guard / "lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_SH)
-        if (guard / "adopted").exists():
+    api = runpy.run_path("/usr/local/libexec/orbit-instance-release-phase")
+    with api["legacy_schedule_lock"](account[1], shared=True) as adopted:
+        if adopted.exists():
             raise ValueError("Schedule moved to a production release")
         return subprocess.run(["systemd-run", "--quiet", "--wait", "--pipe", "--collect", "--uid=" + user,
                                "-p", "WorkingDirectory=" + directory, "-p", "RuntimeMaxSec=" + limit, "-p", "TimeoutStopSec=5",

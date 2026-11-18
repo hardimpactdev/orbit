@@ -16,6 +16,7 @@ inputs:
         sha: {type: string, pattern: '^[a-f0-9]{40}$'}
         target: {type: string, pattern: '^gateway$|^instance-[1-9][0-9]*$'}
         instance_id: {type: integer, minimum: 1}
+        after_timeout_seconds: {type: integer, minimum: 1, maximum: 90000}
         build_timeout_seconds: {type: integer, minimum: 1, maximum: 90000}
         retained: {type: boolean}
         ssh: {type: object}

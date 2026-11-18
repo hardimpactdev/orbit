@@ -55,7 +55,7 @@ final readonly class ScheduleTargetResolver
                 ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id), lookup: false),
                 ScheduleTargetType::Instance => $this->instance(Instance::query()->with('node')->findOrFail($id), lookup: false),
             };
-            if ($target->container !== null && ! $allowContainer) {
+            if ($target->container !== null && ! isset($target->container['release']) && ! $allowContainer) {
                 throw new ResourceOperationException('schedule.target_unsupported',
                     'Creating container Schedules is not available yet; migrated Schedules support list, show and logs.', 409);
             }

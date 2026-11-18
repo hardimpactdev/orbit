@@ -338,5 +338,40 @@ class ProductionReleaseTest(unittest.TestCase):
             self.assertNotEqual(guest.content_digest(), changed)
 
 
+class LiveEnvironment(unittest.TestCase):
+    def test_sync_checks_actual_keys_and_never_overwrites_tracked_testing_environment(self):
+        import runpy
+        import subprocess
+
+        worker = runpy.run_path(str(Path(__file__).parents[1] / "ansible/files/instance-control-environment.py"))
+        apply = worker["apply"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            subprocess.run(["git", "init", "-q", root], check=True)
+            target = root / ".env"
+            target.write_text("OLD=value\nFOREIGN=keep\n")
+            testing = root / ".env.testing"
+            testing.write_text("tracked\n")
+            subprocess.run(["git", "-C", root, "add", "-f", ".env.testing"], check=True)
+            plan = {"base": str(root), "routes": [], "force": False, "managed_keys": ["OLD", "NEW"],
+                    "content": "NEW=after\n", "testing": "changed", "laravel": False}
+            with self.assertRaisesRegex(ValueError, "would_drop_keys"):
+                apply(plan, root)
+            self.assertIn("FOREIGN", target.read_text())
+            plan["force"] = True
+            self.assertEqual(apply(plan, root), {"environment_changed": True, "testing_status": "skipped_tracked"})
+            self.assertEqual(testing.read_text(), "tracked\n")
+            self.assertEqual(target.read_text(), "NEW=after\n")
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+            self.assertFalse(apply(plan, root)["environment_changed"])
+            self.assertEqual(worker["read_environment"](root, root), b"NEW=after\n")
+            target.unlink()
+            target.symlink_to(testing)
+            with self.assertRaises(OSError):
+                worker["read_environment"](root, root)
+            with self.assertRaises(ValueError):
+                worker["read_environment"](root.parent, root)
+
+
 if __name__ == "__main__":
     unittest.main()

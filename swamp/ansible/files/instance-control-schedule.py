@@ -65,7 +65,11 @@ def main():
         subprocess.run([*incus, *command], check=True, timeout=120, input=content, text=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if action == "destroy":
-        guest("systemctl", "disable", "--now", timer)
+        present = subprocess.run([*incus, "test", "-f", "/etc/systemd/system/" + timer], check=False)
+        if present.returncode == 0:
+            guest("systemctl", "disable", "--now", timer)
+        elif present.returncode != 1:
+            raise ValueError("could not inspect the Schedule timer")
         # A command already running can finish; removing the unit prevents future runs.
         guest("rm", "-f", "--", "/etc/systemd/system/" + timer, "/etc/systemd/system/" + service, script)
         units = []
