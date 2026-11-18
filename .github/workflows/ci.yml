@@ -107,7 +107,7 @@ jobs:
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['gateway-tests']) != 'false' }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 4
+    timeout-minutes: 3
     strategy:
       fail-fast: false
       matrix:

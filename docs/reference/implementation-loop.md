@@ -95,7 +95,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | --- | --- |
 | PHP syntax and Composer | Check frozen agent command references, validate every tracked Composer manifest and run `php -l` on changed PHP files, with at most four workers |
 | Gateway static analysis | Run the complete Gateway PHPStan configuration and collect all Gateway tests |
-| Gateway Pest suite | Run the complete default Gateway suite on `ubuntu-26.04`: four workers, 1 GiB per PHP process and a five-second default per-test limit |
+| Gateway Pest suite | Run the complete default Gateway suite on `ubuntu-26.04` in five shards: every CPU of each runner, 1 GiB per PHP process and a five-second default per-test limit |
 | CLI Pest suite | Run the complete CLI suite on `ubuntu-26.04` in one process with 1 GiB of PHP memory |
 | PHP SDK Pest suite | Run the complete SDK suite on `ubuntu-26.04` in one process; fail on an empty suite and always upload JUnit results |
 | CLI build | Build the existing Linux and macOS CLI binaries through the reusable Orbit CLI Binary workflow |
@@ -521,7 +521,11 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 ### Gateway shards
 
-Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks under the [Web job budget](#ci-budget). Tests for remote programs still run only locally.
+Gateway Pest runs in five hosted shards, `Gateway Pest suite (1/5)` to `(5/5)`. Each shard runs stock `pest --parallel --shard=<n>/5`: Pest starts one worker for each CPU of the runner and gives each worker its own in-memory SQLite database. The shard count is in one place, the `shard` list of the job.
+
+Pest balances the shards by the times in `apps/gateway/tests/.pest/shards.json`. A test file with no time there still runs: Pest spreads such files over the shards in turn and warns that the file is out of date. To record the times again, run `bin/pest-plain vendor/bin/pest --parallel --update-shards` in `apps/gateway` and commit the file. The wrapper gives the workers one temporary directory, which Pest needs to collect their times.
+
+Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks under the [Web job budget](#ci-budget). Tests for remote programs still run only locally.
 
 ### Runner policy during the Swamp migration
 
@@ -937,7 +941,7 @@ Running the checks on a development machine to fill a cache is a rejected altern
 
 ### Gateway Pest gates selected changes
 
-The Gateway default suite runs in one hosted job. Four workers keep setup costs low; there are no shards or quarantined files. The CLI suite has its own hosted job. Other PHP suites remain local checks.
+The Gateway default suite runs in five hosted shards, each on every CPU of its runner, so the suite ends in under a minute. All five must pass. There are no quarantined files. The CLI suite has its own hosted job. Other PHP suites remain local checks.
 
 ### Full suites gate merges
 
@@ -954,6 +958,10 @@ An exception uses a dedicated native PHPUnit class with class-level `#[Large]` a
 `DatabaseRealClientTest` also uses `#[Large]`: each case initializes a private real server, and MySQL initialization and import exceed five seconds. These classes use stock PHPUnit `timeoutForLargeTests`, without an override. Installed PHPUnit supports sizes only on classes, and installed Pest cannot declare sizes. Do not substitute size-named groups or add custom timeout or sizing machinery.
 
 Fix slow cases at their cause: control clocks and transports, share expensive read-only setup, and keep a real subprocess or deadline only when it is the proof. Preserve every behaviour assertion. The WebSocket pong-write deadline proof keeps the real TLS connection and zero-byte writes. Its controlled application clock checks the deadline boundary and expiry without waiting five seconds. Finite local fixture commands may use `Tests\Support\FixtureProcessRunner`, which waits on pipes instead of polling for production cancellation. It rejects streaming and cancellation callbacks; those proofs use the native runner.
+
+Every Gateway test boots its own application from the configuration and the routes that the first test of its process built: `Tests\TestCase` uses Laravel's stock `WithCachedConfig` and `WithCachedRoutes`. A test still gets a fresh container and a private copy of the configuration, so `config([...])` in a test changes that test alone. A test cannot change the environment or a route file and expect the next boot to read it again; set the configuration value or register the route in the test.
+
+The Gateway parses and checks one recipe text once in a process (`RecipeLoader::decode`). A recipe is an immutable value of its bytes, so a changed file is a new text and is parsed again.
 
 Native PHPUnit Feature tests extend `Tests\FeatureTestCase` with the same database and cache traits as Pest's Feature cases. Both use `FeatureTestEnvironment` for storage and process isolation, transport guards, and cleanup. Extension-specific setup remains with its tests.
 
