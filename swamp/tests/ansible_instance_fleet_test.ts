@@ -2113,11 +2113,17 @@ Deno.test({
       git("add", "--", path);
       git("commit", "-qm", "Change a fixture input");
     };
-    const refresh = (due: boolean) => {
+    const refresh = (due: boolean, gatewayChanged = false) => {
       const result = f.run("refresh");
       assert(result.ok, result.output);
-      assertEquals(f.calls().filter((call) => call.includes("/converge ")), due ? [convergeAdmit(2, true)] : []);
+      const calls = f.calls();
+      assertEquals(calls.filter((call) => call.includes("/converge ")), due ? [convergeAdmit(2, true)] : []);
       assertEquals(f.refreshed()!.host, due ? "converged" : "kept");
+      if (gatewayChanged) {
+        assert(ran(calls, parts.migrate));
+        assert(ran(calls, parts.restart));
+        assert(ran(calls, "/doctor"));
+      }
       return JSON.parse(f.state().outer.files[record]);
     };
     try {
@@ -2137,7 +2143,11 @@ Deno.test({
       commit("swamp/ansible/conn-launch.yml", "Conn launch controller");
       commit("swamp/ansible/t3_copy_rpc.mjs", "Task-turn RPC stdin");
       commit(housekeeping, "updated housekeeping");
-      assertEquals(refresh(false).host, calibrated.host);
+      f.change((state) => {
+        state.digests = { "apps/gateway": "a9" };
+        state.pendingMigration = true;
+      });
+      assertEquals(refresh(false, true).host, calibrated.host);
       assertEquals(Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots])), bases);
       commit(`swamp/ansible/unknown/${housekeeping}`, "a new path with the excluded suffix");
       const changed = refresh(true);
