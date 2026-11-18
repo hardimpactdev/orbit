@@ -69,21 +69,24 @@ def lock(path, *, shared=False):
         raise Refusal("unrecognized production resource lock")
     if shared and not relative.startswith("legacy-schedules/"):
         raise Refusal("shared access requires a production Schedule lock")
+    def acquire(arguments, *, pass_fds):
+        result = run(arguments, pass_fds=pass_fds, timeout=65, check=False)
+        return result.returncode, result.stdout, result.stderr
     publisher = runpy.run_path(str(LIB / "orbit_route_withdraw.py"))
     try:
-        with publisher["release_resource_lock"](path, shared=shared):
+        with publisher["release_resource_lock"](path, acquire, shared=shared):
             yield
     except publisher["WithdrawFailure"] as error:
         raise Refusal("deployment.resource_busy: cannot acquire the selected production resource") from error
 
 
-def run(args, *, data=None, timeout=150, check=True):
+def run(args, *, data=None, timeout=150, check=True, pass_fds=()):
     # Keep program text, credentials, private command output and host environment out of run history.
-    if str(args[0]) not in {"incus", "caddy", "curl", "systemctl", "runuser", "tail",
+    if str(args[0]) not in {"incus", "caddy", "curl", "systemctl", "runuser", "tail", "flock",
                             str(LIB / "orbit-instance-release-routes"), str(LIB / "orbit-instance-release-prepare")}:
         raise Refusal("unrecognized production Node executable")
     result = subprocess.run(["/usr/bin/timeout", "--kill-after=5", str(timeout), *args], check=False, input=data, stdin=subprocess.DEVNULL if data is None else None,
-                            text=True, capture_output=True, timeout=timeout + 6)
+                            text=True, capture_output=True, timeout=timeout + 6, pass_fds=pass_fds)
     if check and result.returncode:
         raise Refusal(f"deployment.step_failed: {Path(args[0]).name} exited {result.returncode}")
     return result

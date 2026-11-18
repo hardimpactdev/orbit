@@ -14,7 +14,6 @@ import os
 import pwd
 import re
 import stat
-import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -339,12 +338,9 @@ class _Lock:
         self.stream.close()
 
 
-def release_resource_lock(path, *, shared=False, seconds=60):
+def release_resource_lock(path, run, *, shared=False, seconds=60):
     """Serialize release state with the same inode checks and FD lifetime as the Caddy publisher."""
-    def acquire(argv, *, pass_fds):
-        result = subprocess.run(argv, pass_fds=pass_fds, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=seconds + 5)
-        return result.returncode, result.stdout, result.stderr
-    return _Lock(path, acquire, seconds, "deployment.resource_busy", shared=shared)
+    return _Lock(path, run, seconds, "deployment.resource_busy", shared=shared)
 
 
 def caddy_publication_lock(run, seconds=60, *, path=Path("/etc/caddy/.orbit-publish.lock")):

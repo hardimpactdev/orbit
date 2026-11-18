@@ -151,7 +151,10 @@ class ProductionReleaseTest(unittest.TestCase):
         self.r.state.update(saved_upstream=self.upstream.read_text(), address="10.0.0.8")
         reloads = []
 
-        def command(args):
+        native_run = phase.run
+        def command(args, **kwargs):
+            if args[0] == 'flock':
+                return native_run(args, **kwargs)
             if args[:2] == ["systemctl", "reload"]:
                 reloads.append((self.upstream.read_text(), os.readlink(self.r.root / "live")))
                 if len(reloads) == 1:
