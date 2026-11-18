@@ -5,6 +5,8 @@
 //! - `orbit-agent execute serve` is the long-running executor that `orbit-executor.service` starts at boot.
 //! - `orbit-agent execute relay` is the one relay command, run as `orbit-executor-relay`.
 
+pub mod bus;
+
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -239,7 +241,10 @@ fn serve() -> Result<(), String> {
     let listener = server::bind(Path::new(SOCKET_PATH), relay_user.map(|(_, gid)| gid))
         .map_err(|error| format!("bind {SOCKET_PATH}: {error}"))?;
     log(&format!("serving {SOCKET_PATH}"));
-    server::serve(&listener, &settings, &Arc::new(executor), log);
+    let executor = Arc::new(executor);
+    // Orders also arrive over NATS when the converge wrote the bus's settings (ADR 0271).
+    bus::start(Arc::clone(&settings), Arc::clone(&executor), log);
+    server::serve(&listener, &settings, &executor, log);
     Ok(())
 }
 

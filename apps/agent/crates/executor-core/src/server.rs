@@ -246,47 +246,76 @@ fn answer<R: Run>(
     let wire = read_order(stream, READ_TIMEOUT)?;
     let mut out = stream;
     writeln!(out, "{}", json!({ "status": "accepted" }))?;
-
     let now = now_ms();
+    let from = format!("{caller:?}");
+    let line = match verify(&wire, settings, executor, now, log, &from) {
+        Err(refused) => refused,
+        Ok(verified) => run_line(executor, &verified, now, log, &from),
+    };
+    writeln!(out, "{line}")
+}
+
+/// Runs every stateless check of one order, the target included. A refusal comes back as its result line, ready to send.
+///
+/// # Errors
+///
+/// The refusal's result line: `{"status":"refused","reason":…,"node_clock_ms":…}`.
+pub fn verify<R: Run>(
+    wire: &[u8],
+    settings: &Settings,
+    executor: &Executor<R>,
+    now: u64,
+    log: Log,
+    from: &str,
+) -> Result<order::VerifiedOrder, serde_json::Value> {
     let checks = Checks {
         keys: &settings.keys,
         enabled: &settings.enabled,
         node: &settings.node,
     };
-    let line = match order::check_with_target(&wire, &checks, now, |action, target| {
+    order::check_with_target(wire, &checks, now, |action, target| {
         executor.target_exists(action, target)
-    }) {
-        Err(refusal) => {
-            log(&format!(
-                "refused order from {caller:?}: {}",
-                refusal.code()
-            ));
-            json!({ "status": "refused", "reason": refusal.code(), "node_clock_ms": now })
-        }
-        Ok(verified) => match executor.handle(&verified, now) {
-            Ok(reply) => {
-                let mut value = reply_value(&reply)?;
+    })
+    .map_err(|refusal| {
+        log(&format!("refused order from {from}: {}", refusal.code()));
+        json!({ "status": "refused", "reason": refusal.code(), "node_clock_ms": now })
+    })
+}
+
+/// Runs one verified order through the executor's state (nonce, done record, target lock) and returns its result line:
+/// the result, the stored first result of a repeat, or a state refusal. The socket and the NATS bus send the same line.
+pub fn run_line<R: Run>(
+    executor: &Executor<R>,
+    verified: &order::VerifiedOrder,
+    now: u64,
+    log: Log,
+    from: &str,
+) -> serde_json::Value {
+    match executor.handle(verified, now) {
+        Ok(reply) => match reply_value(&reply) {
+            Ok(mut value) => {
                 value["node_clock_ms"] = now.into();
                 value
             }
-            Err(refusal) => {
-                let first = match &refusal {
-                    StateRefusal::ReplayedNonce { first } => {
-                        first.as_deref().map(reply_value).transpose()?
-                    }
-                    _ => None,
-                };
-                log(&format!(
-                    "refused order {} from {caller:?}: {}{}",
-                    verified.operation(),
-                    refusal.code(),
-                    replay_suffix(&refusal, first.as_ref())
-                ));
-                json!({ "status": "refused", "reason": refusal.code(), "operation": verified.operation(), "first": first, "node_clock_ms": now })
+            Err(error) => {
+                log(&format!("result of {} not encoded: {error}", verified.operation()));
+                json!({ "status": "failed", "code": "executor.result_unencodable", "operation": verified.operation(), "node_clock_ms": now })
             }
         },
-    };
-    writeln!(out, "{line}")
+        Err(refusal) => {
+            let first = match &refusal {
+                StateRefusal::ReplayedNonce { first } => first.as_deref().and_then(|reply| reply_value(reply).ok()),
+                _ => None,
+            };
+            log(&format!(
+                "refused order {} from {from}: {}{}",
+                verified.operation(),
+                refusal.code(),
+                replay_suffix(&refusal, first.as_ref())
+            ));
+            json!({ "status": "refused", "reason": refusal.code(), "operation": verified.operation(), "first": first, "node_clock_ms": now })
+        }
+    }
 }
 
 fn reply_value(reply: &crate::executor::Reply) -> io::Result<serde_json::Value> {
