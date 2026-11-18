@@ -37,7 +37,7 @@ final readonly class FleetReboot
 {
     public const string Kind = 'fleet.reboot';
 
-    /** The window the fleet rollout uses too: 03:00 inclusive to 06:00 exclusive in this zone. */
+    /** The reboot window: 03:00 inclusive to 06:00 exclusive in this zone. The fleet rollout has no window. */
     public const array Window = ['timezone' => 'Europe/Amsterdam', 'start' => '03:00', 'end' => '06:00'];
 
     private const int ControlPath = 5;

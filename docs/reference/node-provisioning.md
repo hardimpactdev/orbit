@@ -546,6 +546,8 @@ Only Nodes with a recorded `ci-runner` assignment that is not being removed carr
 
 `fleet.cli_converge` records one intent for the selected Nodes and starts `operation-fleet-cli-converge`. The Gateway captures the release assets, the public profile and each installing Node's SSH descriptor. For each Node in turn, the `fleet-release-node` child checks on Node 209 that the Node may publish, runs the native `node-cli-install` child from Node 209 over SSH, and records the outcome on Node 209. `fleet.rollout` also publishes the observer binary from Node 209. Nodes without CLI intent roll out their observer without waiting for a CLI release or CLI installation. It never invokes `cli.install` or `cli.self-update` on orbit-agent. [Fleet rollout](/reference/gateway-recovery#fleet-rollout) owns automatic and operator admission.
 
+The check on Node 209 admits a Node at any hour: there is no fleet window. A `daytime` field on a Node, which an older Gateway still sends, is accepted and ignored for one release. It refuses only when an earlier Node did not succeed, so Nodes go one at a time, or when the Node's plan has an error. A busy update or CLI lock defers the Node to a later pass.
+
 `POST /api/v1/fleet/cli/converge` selects the fleet, or the optional `node_ids` list. A selected ineligible Node is rejected. An unpublished release is skipped. Enrollment runs the same `node-cli-install` child only for CLI-eligible Nodes.
 
 | Item | Path or value |
