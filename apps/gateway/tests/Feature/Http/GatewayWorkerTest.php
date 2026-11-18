@@ -77,7 +77,7 @@ describe('a persistent Gateway worker', function (): void {
         expect(app(TaskBroadcasts::class))->not->toBe($first);
     });
 
-    it('delivers each record once to the configured Reverb recipient across worker requests', function (): void {
+    it('delivers each record once and releases the Reverb signing driver at the worker request boundary', function (bool $terminationFails): void {
         $recipients = [
             'original' => new WebSocketCredentials('first-app', 'first-key', bin2hex(random_bytes(16)), '127.0.0.11'),
             'rotated-secret' => new WebSocketCredentials('first-app', 'first-key', bin2hex(random_bytes(16)), '127.0.0.11'),
@@ -127,15 +127,31 @@ describe('a persistent Gateway worker', function (): void {
         });
         $logs = new TestHandler;
         Log::driver()->getLogger()->pushHandler($logs);
-        app('router')->post('/worker-record/{id}', static function (int $id): Response {
+        $workerErrors = [];
+        Event::listen(WorkerErrorOccurred::class, static function (WorkerErrorOccurred $event) use (&$workerErrors): void {
+            $workerErrors[] = $event->exception->getMessage();
+        });
+        $drivers = new ReflectionProperty(BroadcastManager::class, 'drivers');
+        $cachedOnEntry = [];
+        app('router')->post('/worker-record/{id}', static function (int $id) use ($drivers, $terminationFails, &$cachedOnEntry): Response {
+            $cachedOnEntry[] = isset($drivers->getValue(app(BroadcastManager::class))['reverb']);
             app(RecordEventBroadcaster::class)->broadcast(RecordEventType::OperationCreated, $id, []);
+            if ($terminationFails && $id === 11) {
+                app()->terminating(static function (): void {
+                    throw new RuntimeException('Synthetic failure after the deferred Reverb send.');
+                });
+            }
 
             return new Response(null, 204);
         });
 
         $client = Mockery::mock(Client::class);
+        $responseDeliveryCounts = [];
         $client->shouldReceive('respond')->times(4)->withArgs(static fn (RequestContext $context, OctaneResponse $response): bool => $response->response->getStatusCode() === 204
-            && $response->response->getContent() === '' && $response->outputBuffer === '');
+            && $response->response->getContent() === '' && $response->outputBuffer === '')
+            ->andReturnUsing(static function () use (&$received, &$responseDeliveryCounts): void {
+                $responseDeliveryCounts[] = array_sum(array_map(count(...), $received));
+            });
         $client->shouldNotReceive('error');
         app()->instance(Client::class, $client);
         $factory = Mockery::mock(ApplicationFactory::class);
@@ -143,8 +159,10 @@ describe('a persistent Gateway worker', function (): void {
         $worker = new Worker($factory, $client);
         $worker->boot();
 
+        $cachedAfterRequest = [];
         foreach ([11, 12, 13, 14] as $id) {
             $worker->handle(Request::create("/worker-record/$id", 'POST'), new RequestContext);
+            $cachedAfterRequest[] = isset($drivers->getValue($manager)['reverb']);
         }
 
         expect($received)->toBe([
@@ -152,12 +170,16 @@ describe('a persistent Gateway worker', function (): void {
             'rotated-secret' => [['operation.created', ['private-orbit'], 12]],
             'replacement' => [['operation.created', ['private-orbit'], 13]],
         ])->and($secretExposed)->toBeFalse();
+        expect($responseDeliveryCounts)->toBe([0, 1, 2, 3]);
+        expect($workerErrors)->toBe($terminationFails ? ['Synthetic failure after the deferred Reverb send.'] : []);
+        expect($cachedOnEntry)->toBe([false, false, false, false]);
+        expect($cachedAfterRequest)->toBe([false, false, false, false]);
         expect($logs->hasWarningThatContains('Failed to broadcast a record event.'))->toBeFalse();
         $logText = json_encode($logs->getRecords(), JSON_THROW_ON_ERROR);
         foreach ($recipients as $recipient) {
             expect(str_contains($logText, $recipient->appSecret))->toBeFalse();
         }
-    });
+    })->with(['normal termination' => [false], 'termination callback throws' => [true]]);
 
     it('reuses the Reverb connection only for the same endpoint and trusted CA', function (): void {
         $authority = tempnam(sys_get_temp_dir(), 'worker-ca-');
