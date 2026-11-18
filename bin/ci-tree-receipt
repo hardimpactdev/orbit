@@ -176,6 +176,8 @@ def verify(api, merged_sha, merged_tree):
             for name in ('Select build inputs', 'Docs build', 'Web build', 'Required checks')}
     tested = checkout_sha(logs['Select build inputs'])
     require(all(checkout_sha(log) == tested for log in logs.values()), 'Jobs tested different checkouts')
+    targets = re.findall(r'Z PR delivery target: ([^\r\n]+)\r?$', logs['Select build inputs'], re.M)
+    require(targets == ['main'] and receipt.get('base_ref') == 'main', 'The CI run must originally target main')
     selected = re.findall(r'Z PR delivery baseline: ([0-9a-f]{40})\r?$', logs['Select build inputs'], re.M)
     require(selected == [receipt.get('delivery_base')], 'No matching verified PR delivery baseline')
     commit = api.one(f'git/commits/{tested}')
@@ -216,7 +218,7 @@ def record(path):
     require(re.fullmatch('[0-9a-f]{40}', delivery_base), 'Missing delivery baseline')
     require(re.fullmatch('[0-9a-f]{64}', body_hash) and re.fullmatch('[0-9a-f]{64}', digest), 'Missing job evidence')
     receipt = dict(repository=os.environ['GITHUB_REPOSITORY'], pr=event['number'],
-                   head=event['pull_request']['head']['sha'], run=int(os.environ['GITHUB_RUN_ID']),
+                   head=event['pull_request']['head']['sha'], base_ref=event['pull_request']['base']['ref'], run=int(os.environ['GITHUB_RUN_ID']),
                    attempt=int(os.environ['GITHUB_RUN_ATTEMPT']), tested_commit=git('HEAD'), tree=git('HEAD^{tree}'),
                    body_sha256=body_hash, delivery_base=delivery_base, web_id=int(os.environ['WEB_ID']), web_digest=digest,
                    web_attempt=int(os.environ['WEB_ATTEMPT']))

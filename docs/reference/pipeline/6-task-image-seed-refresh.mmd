@@ -12,7 +12,7 @@ sequenceDiagram
   participant SW as Swamp<br/>one run per Node
   participant N as app-dev Node<br/>switched on
   participant C as Default<br/>with inner fleet
-  Note over GW: Advance after fleet current<br/>record each Operation
+  Note over GW: Wait for fleet current<br/>record each Operation
   %%> Triggers:
   %%> - fleet current, when refresh is enabled; the five-minute release tick redrives a missed continuation
   %%> When:

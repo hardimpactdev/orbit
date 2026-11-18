@@ -446,6 +446,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          DOCS_IMPACT_BASE: ${{ needs.changes.outputs.delivery_base || 'HEAD^1' }}
         run: |
           python3 - <<'PYTHON'
           import json, os, subprocess
@@ -457,7 +458,7 @@ jobs:
               raise SystemExit('PR head moved; use the CI run of the new head.')
           Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(pr['body'] or '')
           PYTHON
-          bin/docs-impact --gate --base HEAD^1 --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
+          bin/docs-impact --gate --base "$DOCS_IMPACT_BASE" --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
           digest=$(sha256sum "$RUNNER_TEMP/docs-impact-pr-body.txt" | cut -d' ' -f1)
           echo "Docs body SHA256: $digest"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
@@ -730,6 +731,7 @@ jobs:
             else
               BASE="$(git rev-parse "$BASE")"
             fi
+            echo "PR delivery target: $PR_BASE_REF"
             echo "PR delivery baseline: $BASE"
             echo "delivery_base=$BASE" >> "$GITHUB_OUTPUT"
           fi

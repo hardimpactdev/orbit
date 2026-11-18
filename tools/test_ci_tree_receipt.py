@@ -50,11 +50,11 @@ class API:
                           conclusion='success', started_at=START, completed_at=END)
                      for i, name in enumerate(('Required checks', 'Select build inputs', 'Docs build', 'Web build'), 60)]
         self.logs = {j['id']: checkout(TESTED) for j in self.jobs}
-        self.logs[61] += f'2026-11-13T22:00:32Z PR delivery baseline: {BASE}\n'
+        self.logs[61] += f'2026-11-13T22:00:32Z PR delivery target: main\n2026-11-13T22:00:32Z PR delivery baseline: {BASE}\n'
         self.logs[62] += f'2026-11-13T22:00:35Z Docs body SHA256: {receipt.sha256(BODY.encode())}\n'
         self.web_bytes = archive({'index.html': '<h1>Checked</h1>', 'version.json': json.dumps({'buildId': TESTED}), 'assets/test.js': 'tested code'})
         self.web = self.artifact(100, 'web-pr-50-1', self.web_bytes)
-        self.record = dict(repository=REPO, pr=7, head=HEAD, run=50, attempt=1, tested_commit=TESTED,
+        self.record = dict(repository=REPO, pr=7, head=HEAD, base_ref='main', run=50, attempt=1, tested_commit=TESTED,
                            tree=TREE, body_sha256=receipt.sha256(BODY.encode()), delivery_base=BASE, web_id=100,
                            web_digest=self.web['digest'].split(':')[1], web_attempt=1)
         self.commit = dict(tree={'sha': TREE}, parents=[{'sha': 'e' * 40}, {'sha': HEAD}])
@@ -123,6 +123,12 @@ class ReceiptTest(unittest.TestCase):
         self.assertEqual(receipt.delivery_baseline(History(), [MAIN, BASE]), BASE)
         with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
             receipt.delivery_baseline(History(), [MAIN])
+
+    def test_retargeted_run_cannot_supply_a_main_delivery_receipt(self):
+        api = API()
+        api.logs[61] = api.logs[61].replace('delivery target: main', 'delivery target: staging')
+        with self.assertRaisesRegex(ValueError, 'must originally target main'):
+            self.verify(api)
 
     def test_a_claimed_baseline_without_verified_main_delivery_blocks_promotion(self):
         api = API()
@@ -320,7 +326,7 @@ class ReceiptTest(unittest.TestCase):
     def test_pr_record_binds_real_environment_and_rejects_missing_job_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             event = Path(tmp, 'event.json')
-            event.write_text(json.dumps({'number': 7, 'pull_request': {'head': {'sha': HEAD}}}))
+            event.write_text(json.dumps({'number': 7, 'pull_request': {'head': {'sha': HEAD}, 'base': {'ref': 'main'}}}))
             env = dict(GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
                        GITHUB_REPOSITORY=REPO, GITHUB_RUN_ID='50', GITHUB_RUN_ATTEMPT='2',
                        DOCS_BODY_SHA256=receipt.sha256(BODY.encode()), DELIVERY_BASE=BASE, WEB_ID='100',
@@ -330,7 +336,7 @@ class ReceiptTest(unittest.TestCase):
                     git=lambda a: TESTED if a == 'HEAD' else TREE):
                 receipt.record(path)
                 data = json.loads(path.read_text())
-                self.assertEqual(data, dict(repository=REPO, pr=7, head=HEAD, run=50, attempt=2,
+                self.assertEqual(data, dict(repository=REPO, pr=7, head=HEAD, base_ref='main', run=50, attempt=2,
                     tested_commit=TESTED, tree=TREE, body_sha256=env['DOCS_BODY_SHA256'],
                     delivery_base=BASE, web_id=100, web_digest='e' * 64, web_attempt=1))
                 for key, value in (('WEB_ID', ''), ('WEB_DIGEST', ''), ('WEB_DIGEST', 'sha256:' + 'e' * 64),

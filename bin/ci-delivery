@@ -64,6 +64,8 @@ def validate(needs):
         if eligibility and eligibility['status'] == 'completed' and eligibility['conclusion'] != 'success':
             sys.exit(f"Proof eligibility failed: {eligibility['conclusion']}")
         if proof and proof['status'] == 'completed' and proof['conclusion'] == 'skipped':
+            if os.environ.get('PROOF_BASE'):
+                sys.exit('A carried-change proof must run on the selected range.')
             # A selected proof may skip only with explicit, successful metadata evidence.
             if eligibility and eligibility['status'] == 'completed':
                 if eligibility['run_attempt'] != proof['run_attempt']:

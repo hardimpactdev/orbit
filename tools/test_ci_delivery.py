@@ -197,7 +197,7 @@ class WorkflowGateTest(unittest.TestCase):
 
 
 class ProofGateTest(unittest.TestCase):
-    def run_required(self, *, proof_required=False, fork=False, results=None, statuses=None, snapshots=None):
+    def run_required(self, *, proof_required=False, fork=False, results=None, statuses=None, snapshots=None, proof_base=''):
         needs = needs_for()
         rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1}
                 for name in ('CI proof', 'CI proof eligibility')}
@@ -215,7 +215,7 @@ class ProofGateTest(unittest.TestCase):
             self.assertIn('--paginate', argv)
             return json.dumps([{'jobs': next(snapshots)}]).encode()
         result = None
-        with patch.dict(os.environ, PROOF_REQUIRED=str(proof_required).lower(), FORK_PROOF=str(fork).lower(),
+        with patch.dict(os.environ, PROOF_REQUIRED=str(proof_required).lower(), FORK_PROOF=str(fork).lower(), PROOF_BASE=proof_base,
                         SELF_HOSTED_FIXTURES='fork' if fork else 'run', CI_RUN_ID='123', PROOF_SHA='a' * 40,
                         GH_REPO=REPO, PROOF_RUN_URL_PREFIX=f'https://github.com/{REPO}/actions/runs/'), \
                 patch.object(delivery.subprocess, 'check_output', side_effect=api) as github, \
@@ -271,6 +271,8 @@ class ProofGateTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(github.call_count, 1)
         sleep.assert_not_called()
+        error, _, _ = self.run_required(proof_required=True, snapshots=[rows], proof_base='b' * 40)
+        self.assertIn('must run on the selected range', error)
 
     def test_failed_eligibility_and_unexpected_skip_fail_closed_without_waiting(self):
         for result in ('failure', 'cancelled', 'skipped'):
