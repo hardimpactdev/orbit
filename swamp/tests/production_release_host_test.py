@@ -1,6 +1,9 @@
 """Verify target ownership and route recovery at the AppProd publishing boundary."""
 import importlib.util
 import os
+import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -89,3 +92,20 @@ class ProductionReleaseHostTest(unittest.TestCase):
             self.assertFalse((uploaded / "second").exists())
             self.assertEqual((volume / "neighbor").read_text(), "retained")
             check()
+
+    def test_repreparation_discards_abandoned_sqlite_sidecars_before_installing_the_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            source, target = home / "legacy.sqlite", home / "database.sqlite"
+            with sqlite3.connect(source) as db:
+                db.execute("CREATE TABLE events(value TEXT)")
+                db.execute("INSERT INTO events VALUES ('authoritative')")
+            target.write_bytes(b"previous attempt")
+            for suffix in ("-wal", "-shm", "-journal"):
+                (home / (target.name + suffix)).write_bytes(b"obsolete journal")
+            with source.open("rb") as snapshot:
+                subprocess.run([sys.executable, "-I", "-c", routes.INSTALL_SQLITE, str(target)], stdin=snapshot, check=True)
+            for suffix in ("-wal", "-shm", "-journal"):
+                self.assertFalse((home / (target.name + suffix)).exists())
+            with sqlite3.connect(target) as db:
+                self.assertEqual(db.execute("SELECT value FROM events").fetchall(), [("authoritative",)])

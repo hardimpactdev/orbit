@@ -153,6 +153,28 @@ def shared_snapshot(reader, home, paths, marker, *, guest=None, destination="/sr
         raise ValueError("Legacy shared files changed after preparation: retry the migration while the application is quiescent")
 
 
+# Executed only before the first cutover and before guest workloads start. SQLite's
+# WAL, SHM and rollback journal belong to the discarded DB and must never replay.
+INSTALL_SQLITE = """
+import os, shutil, sys, tempfile
+from pathlib import Path
+target = Path(sys.argv[1])
+with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as staging:
+    incoming = Path(staging.name)
+    try:
+        shutil.copyfileobj(sys.stdin.buffer, staging)
+        staging.flush()
+        os.fsync(staging.fileno())
+        if staging.tell() == 0:
+            raise ValueError('empty SQLite snapshot')
+        for suffix in ('-wal', '-shm', '-journal'):
+            Path(str(target) + suffix).unlink(missing_ok=True)
+        os.replace(incoming, target)
+    finally:
+        incoming.unlink(missing_ok=True)
+"""
+
+
 def copy_shared(plan, instance, machine, phase, operation):
     legacy = plan.get("legacy")
     if not legacy:
@@ -192,8 +214,7 @@ def copy_shared(plan, instance, machine, phase, operation):
             digest = hashlib.file_digest(snapshot, "sha256").hexdigest()
             if phase == "prepare":
                 snapshot.seek(0)
-                subprocess.run([*guest, "sh", "-ec",
-                                'umask 077; t=$(mktemp /srv/shared/.sqlite.XXXXXXXX); trap \'rm -f -- "$t"\' EXIT; cat > "$t"; test -s "$t"; mv -fT "$t" /srv/shared/database.sqlite'],
+                subprocess.run([*guest, "python3", "-I", "-c", INSTALL_SQLITE, "/srv/shared/database.sqlite"],
                                stdin=snapshot, check=True, timeout=900)
                 marker.write_text(digest)
             elif not marker.is_file() or marker.read_text() != digest:
