@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { resolvePhases } from "./phase_code.ts";
 
 type Ssh = { target: { host: string; port: number; user: string; host_keys: string[] }; identity_file: string };
 
@@ -63,11 +64,11 @@ export function admissionValues(intent: unknown): string[] {
 }
 
 /**
- * What the phases read (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): every file written for them, that is
- * the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID, its run folder, the versions of its
- * certificate leaves and the admission time of its Instance bridge) replaced by fixed marks, and their code.
+ * What the phases read besides code (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): every file written for
+ * them, that is the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID, its run folder,
+ * the versions of its certificate leaves and the admission time of its Instance bridge) replaced by fixed marks.
  */
-export async function readDigest(folder: string, operationId: number, code: string[]): Promise<string> {
+export async function runDigest(folder: string, operationId: number): Promise<string> {
     const mark = new RegExp(`operation-${operationId}(?![0-9])`, "g");
     const own = [...new Set(admissionValues(JSON.parse(await Deno.readTextFile(`${folder}/intent.json`))))];
     const rows: string[] = [];
@@ -84,7 +85,28 @@ export async function readDigest(folder: string, operationId: number, code: stri
         }
     };
     await walk(folder);
-    return sha256([...rows, await codeDigest(code)].join("\n"));
+    return sha256(rows.join("\n"));
+}
+
+/** What a role Operation's phases read: the run folder and all their code. */
+export async function readDigest(folder: string, operationId: number, code: string[]): Promise<string> {
+    return sha256([await runDigest(folder, operationId), await codeDigest(code)].join("\n"));
+}
+
+/** The bundle files of each converge phase by relative path and content, or the whole bundle for a phase the resolver cannot bound
+ * (phase_code.ts). The Tool helper and the Tool files it imports are in the tools and roles phases. */
+export async function phaseCodeDigests(code: [string, string, string]): Promise<Record<typeof skippable[number], string>> {
+    const [ansible, helper, tools] = code;
+    const resolved = await resolvePhases(ansible);
+    const digests = {} as Record<typeof skippable[number], string>;
+    for (const phase of skippable) {
+        const resolution = resolved[phase];
+        const rows = resolution.whole ? [await codeDigest([ansible])]
+            : await Promise.all(resolution.files.map(async (file) => `${file}\0${await sha256(await Deno.readFile(`${ansible}/${file}`))}`));
+        if (phase === "tools" || phase === "roles") rows.push(await codeDigest([helper, tools]));
+        digests[phase] = await sha256(rows.join("\n"));
+    }
+    return digests;
 }
 
 /** Each skippable phase's digest, and the phases whose digest equals the one the Node records. The record holds the phases of the last
@@ -93,10 +115,10 @@ const Hex = z.string().regex(/^[0-9a-f]{64}$/);
 const DigestIntent = z.object({ // PHP sends an empty map as an empty list.
     recorded_digests: z.preprocess((value) => Array.isArray(value) && value.length === 0 ? {} : value, z.partialRecord(z.enum([...skippable, ...roleSkippable]), Hex)) });
 
-export async function phaseDigests<Phase extends typeof skippable[number] | typeof roleSkippable[number]>(raw: unknown, read: string, phases: readonly Phase[]) {
+export async function phaseDigests<Phase extends typeof skippable[number] | typeof roleSkippable[number]>(raw: unknown, read: string | Record<Phase, string>, phases: readonly Phase[]) {
     const intent = DigestIntent.parse(raw);
     const digests = {} as Record<Phase, string>;
-    for (const phase of phases) digests[phase] = await sha256(`${phase}\0${read}`);
+    for (const phase of phases) digests[phase] = await sha256(`${phase}\0${typeof read === "string" ? read : read[phase]}`);
     return { digests, unchanged: phases.filter((phase) => intent.recorded_digests[phase] === digests[phase]) };
 }
 
@@ -113,7 +135,7 @@ export async function roleDigests(folder: string, operationId: number, code: str
     return phases;
 }
 
-export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: string[]) {
+export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: [string, string, string]) {
     const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
     const hosts: Record<string, unknown> = {};
     const known = new Set<string>();
@@ -159,8 +181,11 @@ export async function convergeInput(folder: string, operationId: number, builder
         if (!outcome.success) throw new Error('The recorded role input could not be materialized');
         await Deno.chmod(`${path}/vars.yml`, 0o600);
     }
-    // After every file the phases read is written.
-    const phases = await phaseDigests(intent, await readDigest(folder, operationId, code), skippable);
+    // After every file the phases read is written. Each phase reads the whole run folder and only its own code.
+    const run = await runDigest(folder, operationId);
+    const codes = await phaseCodeDigests(code);
+    const reads = Object.fromEntries(await Promise.all(skippable.map(async (phase) => [phase, await sha256(`${run}\n${codes[phase]}`)]))) as Record<typeof skippable[number], string>;
+    const phases = await phaseDigests(intent, reads, skippable);
     await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
     return phases;
 }
