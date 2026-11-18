@@ -64,7 +64,7 @@ The Gateway keeps its one release record and its one Swamp run per release. The 
 | Build the release: worktree, links, `composer install --no-dev` in `apps/cli` and `apps/gateway`, agent manifest, `REVISION`, `config:cache` | `gateway-release-build.sh` | Build in the preparation container, as [Hot](#hot-and-ready) describes |
 | Install the web build into `web/releases/<id>`, with `sudo` for the `caddy` group | `gateway-release-web.sh` | The same checks; the build goes into the preparation container, as [Hot](#hot-and-ready) describes. No `sudo`: the container's own Caddy reads it as `orbit` |
 | — | — | **Release snapshot.** New: snapshot the finished preparation container and clone it as hot before starting FrankenPHP |
-| Snapshot the database with `VACUUM INTO` | `gateway-release-snapshot.sh` | The same script, run in hot through `incus exec`, as [Where the steps run](#where-the-steps-run) says. The database stays on the host |
+| Snapshot the database with `VACUUM INTO` | `gateway-release-snapshot.sh` | Container releases skip this step and migrate the shared production database directly |
 | Migrate with `artisan migrate --force --isolated`, from the new release, while the old serves | inline | The same command, run in hot through `incus exec`, while live serves. See [Migrations](#migrations-across-hot-and-live) |
 | Wait for active Operations (the [release idle guard](/reference/gateway-recovery#release-idle-guard)) | `artisan gateway:release:wait-idle` | Unchanged, run in hot |
 | — | — | **Ready.** New, before the Swamp load, as [Hot](#hot-and-ready) describes |
@@ -106,7 +106,7 @@ The host keeps no release worktree, so it needs a rule for where each script com
 
 - **Source.** Every step takes its script from the commit being released, through `git -C /home/orbit/shared/orbit.git show <sha>:swamp/scripts/<script>`, as the build step already does today. So a release never runs another commit's scripts, and the host needs only Git and the bare repository.
 - **Host steps.** Fetch, push the commit to the preparation container, clone the finished release, the switch, the switch-back, the handover and retire run on the host as the release run's SSH account, with `sudo` for `incus` and Caddy. They use only shell, Git, `incus` and Caddy.
-- **Steps in a container.** Build, web build, snapshot, migrate, the idle guard, ready, the Horizon drain and the document cleanup run through `incus exec` in the preparation container, hot or live, as `orbit`, with the container's PHP. The snapshot step reads the database path from hot's cached configuration, as today's script reads it from the release's, and writes `VACUUM INTO` into `ORBIT_HOME/backups` through the mount. Its disk floor reads the host file system under that mount, which `df` inside the container reports.
+- **Steps in a container.** Build, web build, migrate, the idle guard, ready, the Horizon drain and the document cleanup run through `incus exec` in the preparation container, hot or live, as `orbit`, with the container's PHP.
 - **Offline recovery.** Preparation installs the root-owned entry point `/usr/local/libexec/orbit-gateway-rollback`. Before each traffic switch, the host stages the admitted commit’s recovery program alongside the switch journal, with root as its owner. The entry point holds the release lock and selects the serving commit’s program, or the journaled candidate for `--recover`. It uses the installed host recovery program after a return to PHP-FPM.
 - **Host PHP.** None of the steps above needs PHP on the host. Until slice 7 removes the host path, the host keeps `php8.5` and its FPM pool, for the move and its rollback. After slice 7, the `gateway` role installs no PHP. A role that shares the machine and needs PHP, such as `websocket` for Reverb, installs its own.
 
@@ -118,7 +118,7 @@ The rule of today stays: forward only, expand and contract, run before the switc
 - **A table rebuild blocks live's writers.** SQLite rebuilds a table for many `ALTER TABLE` changes, and the rebuild holds the write lock. While it runs, every write in live waits on the busy timeout. Cost per request: the rebuild's time for each request that writes during it; *about 1 s per 100 MB of table (guess)*. A migration that rebuilds a large table is split, or runs as a background copy in the expand step.
 - **Worker mode keeps connections open.** A live worker keeps its PDO connection across requests. SQLite prepares a statement again when the schema changed, so a migration in hot needs no reload in live. A worker must never hold a read transaction between requests, or the WAL cannot checkpoint while hot migrates; the request end rolls back any open transaction (part 4).
 
-A failed migration leaves live serving and pauses automatic releases with the snapshot's name, as today. A rollback never undoes a migration.
+A failed migration stops the deployment before traffic switches and pauses automatic releases. Repair the production database with a corrective migration or an operator change. Rolling back the application preserves the current database.
 
 ### 2. What stays on the host, and the switch
 
@@ -126,7 +126,7 @@ The container holds only the release: the code, `vendor/`, the web build, the ca
 
 | Part | Where | Why |
 | --- | --- | --- |
-| SQLite database and its WAL | Host `ORBIT_HOME`, mounted into hot, live and old | One database serves every release; a copy per release would split writes. The host's backups and `VACUUM INTO` snapshots keep working unchanged |
+| SQLite database and its WAL | Host `ORBIT_HOME`, mounted into hot, live and old | One database serves every release; a copy per release would split writes. Database backups are independent of container releases |
 | `ORBIT_HOME` keys: SSH identity and known hosts, the WireGuard hub keys, root CA, `gateway.app-key`, the Ed25519 order key of ADR 0266 | Host `ORBIT_HOME`, same mount, so the container holds them | A key must survive every release and stay out of release snapshots. [Security](#5-security) says why the container holds the hub key |
 | `gateway.env` | Host `/home/orbit/shared/gateway.env`, mounted read-only | One env file. Only `config:cache` in a release reads it |
 | `gateway-storage` (file cache, locks, logs, uploads) | Host directory, mounted | File locks and the cache must be the same in hot and live during a deploy |
@@ -278,7 +278,7 @@ Each slice is one pull request. Slices 3 to 7 depend on ADR 0263's build subtask
    - Proof: Pest tests of a peer-only route through a trusted proxy, and of a forged header from an untrusted address.
 3. **Gateway role container setup.** Incus, the pool, `orbitgw0`, the NAT and hairpin rules, the image with only `orbit`, the idmapped mounts, and the site state `host` or `container` that picks the Caddy site's form.
    - Proof: a fixture `gateway` Node converged twice, with no change the second time.
-4. **Hot build and ready.** Every script from `git show` of the commit; update the preparation container, run `composer install`, install the web build and units, cache configuration, snapshot the finished build, clone hot, the database snapshot and migrate in hot, ready on the bridge address before the Swamp load, removal on failure.
+4. **Hot build and ready.** Every script from `git show` of the commit; update the preparation container, run `composer install`, install the web build and units, cache configuration, snapshot the finished build, clone hot, migrate in hot, ready on the bridge address before the Swamp load, removal on failure.
    - Proof: release cases on the nested Gateway; a failed step and a failed readiness leave live unchanged.
 5. **Switch, handover and retire.** The upstream file over every Caddy consumer and the live link; the graceful reload with `grace_period`; the busy-worker drain; the listener overlap with its conditional record; the scheduler's minute guard; `process:*` on live; the SSH socket move and the FrankenPHP match in `SshControlGroup`; `FleetReboot`'s drain and boot check in live; the request-limit setting, unless ADR 0218's limit PR added it; `/usr/local/libexec/orbit-gateway-rollback` with the recovery program staged at the switch; switch-back and retire.
    - Proof: a load loop through a release with one 60-second request across the switch: no failed request, one scheduler tick per minute, no lost wake result.

@@ -191,7 +191,7 @@ jobs:
         - park-preparation
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
-  - name: Snapshot the database
+  - name: Migrate
     labels: {role: swamp}
     writes: true
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
@@ -200,30 +200,6 @@ jobs:
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      methodName: exec
-      behaviorName: '${{ ("release-snapshot-" + inputs.intent.target).split(".").join("-") }}'
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        timeoutSec: 930
-        argv:
-        - /usr/bin/timeout
-        - "900"
-        - /usr/local/libexec/orbit-production-release-phase
-        - '${{ inputs.intent.target }}'
-        - snapshot
-        - '${{ inputs.intent.sha }}'
-        - '${{ string(inputs.operation_id) }}'
-  - name: Migrate
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
-    dependsOn:
-    - {step: Snapshot the database, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

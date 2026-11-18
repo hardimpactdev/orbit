@@ -175,7 +175,6 @@ jobs:
         - '${{ has(inputs.intent.web) ? string(inputs.intent.web.artifact_id) : "" }}'
         - '${{ has(inputs.intent.web) ? string(inputs.intent.web.size) : "" }}'
         - '${{ has(inputs.intent.web) ? inputs.intent.web.digest : "" }}'
-    # VACUUM INTO a private copy before any migration above the disk floor; the newest two stay, and the one a pause names.
   - name: Clone the prepared release
     guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     labels: {role: swamp}
@@ -223,11 +222,8 @@ jobs:
         - '900'
         - '/bin/bash'
         - '-c'
-        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:3}"; fi; shift 3; exec "$@"'
+        - 'if test ! -f /home/orbit/.orbit/gateway-containers.json; then exec "$@"; fi'
         - 'bash'
-        - 'snapshot'
-        - '${{ inputs.intent.sha }}'
-        - '${{ string(inputs.operation_id) }}'
         - '/bin/bash'
         - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-snapshot.sh'
         - '${{ inputs.intent.id }}'

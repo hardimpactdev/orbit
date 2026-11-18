@@ -102,13 +102,15 @@ The archive contains secrets. Do not attach it to a bug report or commit it to G
 
 The Gateway Node keeps Caddy, WireGuard, the SQLite database and the Gateway identity. An unprivileged container runs the application with FrankenPHP in Laravel Octane worker mode. The first move runs the same commit and uses the same database on both sides of the switch.
 
-Keep console access and a verified off-host recovery copy. Check space for the SQLite backup and four containers during a switch. Frozen containers still use storage and swap. Test queue and cache access from the private bridge. A host-loopback address points into the container.
+Keep console access and a verified off-host recovery copy. Check space for four containers during a switch. Frozen containers still use storage and swap. Test queue and cache access from the private bridge. A host-loopback address points into the container.
 
-Before waking preparation, each new build measures the serving workload, free RAM, free swap and free space in the release pool. A capacity refusal reports the resource and the required and available bytes. The build also checks room for the SQLite snapshot on its own filesystem. A later attempt can release the same commit when space is available. See the [production capacity rules](/reference/production-containers#capacity).
+Before waking preparation, each new build measures the serving workload, free RAM, free swap and free space in the release pool. A capacity refusal reports the resource and the required and available bytes. A later attempt can release the same commit when space is available. See the [production capacity rules](/reference/production-containers#capacity).
 
 The admitted commit pins PHP, FrankenPHP and Composer. The Node installs a changed runtime in its own immutable directory and mounts it read-only in preparation. The candidate inherits this mount. The serving and rollback containers keep the runtime selected by their own commits.
 
 Preparation updates the monorepo checkout in place. Composer installs the locked production packages in `apps/gateway`. The Gateway loads two PHP SDK log-stream types through its own autoloader. Its install hook reads SDK and CLI source to generate the API contracts. CI builds `apps/web` with Bun. The release installs that commit's verified web artifact at `/home/orbit/web/current` before cloning. At boot, Incus mounts the candidate’s checkout and web tree read-only. Laravel can write its bootstrap cache and shared storage. Preparation keeps its writable checkout. The candidate serves the web app and the Laravel API together. A container rollback restores both from the retained release.
+
+The candidate runs pending Laravel migrations directly against the production SQLite database before traffic switches. The container release takes no pre-migration database copy. If a migration fails, the previous container keeps serving and the release records the error. Repair the database with a corrective migration or an operator change. A retained container rollback leaves the database at its current state.
 
 The Gateway expects its managed Horizon and scheduler Processes to be named `horizon` and `schedule-work`. Preflight reports a custom name before the move. Record the Process configuration and desired state, recreate it under the expected name, then verify a host release to obtain a current Operation receipt.
 

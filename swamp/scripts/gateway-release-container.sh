@@ -304,17 +304,11 @@ case "$action" in
     if [[ $force != true ]]; then
       git -c safe.directory="$mirror" -C "$mirror" merge-base --is-ancestor "$current" "$sha" || fail "$sha does not descend from live"
     fi
-    # The cache gives the actual SQLite path for both the first move and an established target.
-    # shellcheck disable=SC2016
-    read_database='echo (require $argv[1])["database"]["connections"]["sqlite"]["database"];'
     if [[ -f $inventory ]]; then
       ctl capacity gateway --live="${current:0:12}" >&2
-      database=$(php "gateway-${current:0:12}" -r "$read_database" "$app/bootstrap/cache/config.php")
     else
       ctl capacity gateway --host-gateway >&2
-      database=$(runuser -u orbit -- php8.5 -r "$read_database" "$app/bootstrap/cache/config.php")
     fi
-    ORBIT_GATEWAY_DISK_CHECK="$home" bash <(src swamp/scripts/gateway-release-snapshot.sh) --check "$database" 0
     pinned_runtime=$(release_runtime)
     ctl wake gateway "$operation" >&2
     python3 <(src swamp/ansible/files/gateway-release-guest.py) --runtime "$operation" "$pinned_runtime" >&2
@@ -370,8 +364,8 @@ case "$action" in
     src swamp/scripts/gateway-release-seal.sh | enter "$candidate" /bin/sh -se
     ;;
   snapshot)
-    if retained; then exit 0; fi
-    user "$candidate" env ORBIT_GATEWAY_PHP="$runtime/php/8.5/bin/php" ORBIT_GATEWAY_DISK_CHECK="$home" ORBIT_GATEWAY_RELEASE_APP="$app" bash "$checkout/swamp/scripts/gateway-release-snapshot.sh" "$id"
+    # Older workflow definitions still dispatch this phase during the transition.
+    exit 0
     ;;
   migrate)
     if retained; then echo migrate-exit=0; exit; fi
