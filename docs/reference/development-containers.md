@@ -3288,7 +3288,7 @@ The second is the **inner `base`**. A clean stop keeps the pid file. A `base` ta
 
 **The fleet Node heals itself.** On `nested-app-dev` the [container branch](#instance-host-in-the-fleet) places `/usr/local/sbin/incus-network-pid-heal` (`swamp/ansible/files/incus-network-pid-heal.py`). Incus's drop-in runs it as `ExecStartPre`, before every start of Incus. It keeps a pid file only when every check holds:
 
-- The file is a regular file, not a link.
+- The file is a regular file, not a link, and the heal can read it.
 - It reads as the record Incus writes, with `name: dnsmasq`, a `pid`, a `start_time` and a `boot_id`.
 - Its `boot_id` is the current boot's.
 - The process lives, and its `comm` is `dnsmasq`.

@@ -8,13 +8,14 @@ cases = [
   "test_a_missing_or_linked_root_disk_is_unsafe",
   "test_the_record_of_a_live_dnsmasq_of_its_network_stays",
   "test_each_record_that_fails_one_check_goes",
+  "test_a_file_it_cannot_read_goes_and_the_other_networks_are_still_healed",
   "test_no_link_is_followed",
   "test_a_linked_networks_folder_is_left_alone",
   "test_no_networks_folder_changes_nothing",
   "test_the_incus_drop_in_of_a_fleet_node_runs_the_placed_heal_before_incus",
 ]
 file = "swamp/tests/instance_fleet_runtime_test.py"
-cost = 12
+cost = 13
 # The files it reads: the clear before base, the fleet Node's heal and the task that places it, run as shipped.
 inputs = [
   "swamp/ansible/instance_fleet_runtime.py",
@@ -30,6 +31,7 @@ inputs = [
 "test_a_missing_or_linked_root_disk_is_unsafe" = 1
 "test_the_record_of_a_live_dnsmasq_of_its_network_stays" = 1
 "test_each_record_that_fails_one_check_goes" = 1
+"test_a_file_it_cannot_read_goes_and_the_other_networks_are_still_healed" = 1
 "test_no_link_is_followed" = 1
 "test_a_linked_networks_folder_is_left_alone" = 1
 "test_no_networks_folder_changes_nothing" = 1

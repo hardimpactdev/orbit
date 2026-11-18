@@ -11,7 +11,8 @@ that reads as the record Incus writes (one `key: value` line per top-level key, 
 `name: dnsmasq`, a `pid`, a `start_time` and a `boot_id`, and when that `boot_id` is this boot's, the process lives, its `comm` is
 `dnsmasq` and its command line holds `--interface=<network>` as one whole argument: a daemon restart keeps that dnsmasq and its file.
 Every other file goes. No link is followed: a network folder that is a link is left alone, and a pid file that is a link is unlinked
-itself. It prints `removed <network>` for each removal and never fails the start.
+itself. A pid file it cannot read is no record, so it goes. It prints `removed <network>` for each removal and never fails the
+start.
 """
 import errno
 import os
@@ -72,6 +73,16 @@ def owned(text, network, proc, boot_id):
         return False
 
 
+def read(network_folder):
+    """The pid file's text, or '' when it cannot be read: a file Incus could not read either is no record."""
+    try:
+        descriptor = os.open('dnsmasq.pid', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=network_folder)
+    except OSError:
+        return ''
+    with os.fdopen(descriptor, 'rb') as file:
+        return file.read(65536).decode('utf-8', 'replace')
+
+
 def heal(networks, proc, boot_id):
     folder = open_path(networks)
     if folder is None:
@@ -90,14 +101,12 @@ def heal(networks, proc, boot_id):
                     continue
                 if stat.S_ISDIR(mode):
                     continue
-                if stat.S_ISREG(mode):
-                    descriptor = os.open('dnsmasq.pid', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=network_folder)
-                    with os.fdopen(descriptor, 'rb') as file:
-                        text = file.read(65536).decode('utf-8', 'replace')
-                    if owned(text, network, proc, boot_id):
-                        continue
+                if stat.S_ISREG(mode) and owned(read(network_folder), network, proc, boot_id):
+                    continue
                 os.unlink('dnsmasq.pid', dir_fd=network_folder)
                 removed.append(network)
+            except OSError as error:
+                print(f'heal of {network} failed: {error}', file=sys.stderr)
             finally:
                 os.close(network_folder)
     finally:

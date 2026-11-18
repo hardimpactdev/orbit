@@ -180,6 +180,13 @@ class NetworkPidHealTest(unittest.TestCase):
         self.assertEqual(self.heal(), [f'removed {network}' for network in sorted([*cases, 'br.1'])])
         self.assertEqual(sorted(path.name for path in self.networks.glob('*/dnsmasq.pid')), [])
 
+    def test_a_file_it_cannot_read_goes_and_the_other_networks_are_still_healed(self):
+        unreadable = self.pid_file(incus_record(757), 'aaa0')
+        unreadable.chmod(0)
+        self.pid_file('', 'orbitinst0')
+        self.assertEqual(self.heal(), ['removed aaa0', 'removed orbitinst0'])
+        self.assertFalse(unreadable.exists())
+
     def test_no_link_is_followed(self):
         self.process(757, 'dnsmasq', 'dnsmasq', '--interface=orbitinst0')
         outside = write(self.folder / 'outside/orbitinst0/dnsmasq.pid')
