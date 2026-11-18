@@ -634,7 +634,7 @@ class CiLimitTest(unittest.TestCase):
         workflow = Path(tempfile.mkdtemp(prefix='task-check-ci-')) / 'ci.yml'
         self.addCleanup(shutil.rmtree, workflow.parent, ignore_errors=True)
         workflow.write_text((ROOT / '.github/workflows/ci.yml').read_text().replace(
-            'vendor/bin/pest --parallel --processes=4 ', 'vendor/bin/pest --parallel --processes=4 --default-time-limit=7 '))
+            'vendor/bin/pest --parallel --shard=', 'vendor/bin/pest --parallel --default-time-limit=7 --shard='))
         with patch.dict(check['ci_time_limit'].__globals__, {'CI_WORKFLOW': workflow}):
             self.assertIn('--default-time-limit=7', self.argv('apps/gateway'))
             self.assertNotIn('--default-time-limit=7', self.argv('apps/cli'))
@@ -668,7 +668,7 @@ class CiLimitTest(unittest.TestCase):
         workflow = Path(tempfile.mkdtemp(prefix='task-check-ci-')) / 'ci.yml'
         self.addCleanup(shutil.rmtree, workflow.parent, ignore_errors=True)
         workflow.write_text((ROOT / '.github/workflows/ci.yml').read_text().replace(
-            'vendor/bin/pest --parallel --processes=4 ', 'vendor/bin/pest --parallel --processes=4 --default-time-limit=7 '))
+            'vendor/bin/pest --parallel --shard=', 'vendor/bin/pest --parallel --default-time-limit=7 --shard='))
         with patch.dict(check['ci_time_limit'].__globals__, {'CI_WORKFLOW': workflow}):
             self.assertEqual(self.deliverable_limit('apps/gateway'), 'ci-time-limit: 7\n')
 
