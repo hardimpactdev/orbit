@@ -385,7 +385,7 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
     admitted, unplaced, capacity, not_run = {False: [], True: []}, [], [], []
     # A hosted gap yields only when other changes select it. A change to the file itself runs all of its units.
     direct = {*paths, *inventory_changed, *registry_changed}
-    gaps = [file for file in budget['capacity_gap'] if pool(file) or file not in direct]
+    gaps = [file for file in budget['capacity_gap'] if file not in direct or pool(file)]
     mandatory, reserved = [], {False: [], True: []}
     for file in selected:
         fixture = fixtures[file]
