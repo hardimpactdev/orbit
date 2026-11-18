@@ -11,7 +11,7 @@ covers:
 
 # Instance cloning
 
-Production clone is the sole new host-checkout exception to [container-only admission](/reference/development-containers#container-only-admission) until production containers ship. Existing development checkouts can remain candidates; new development creates are containers. This exception does not enable new host registration.
+Production clone is the sole new host-checkout exception to [container-only admission](/reference/development-containers#container-only-admission) until production containers ship. A Project’s active, seeded container default and existing development checkouts can be candidates. This exception does not enable new host registration.
 
 Cloning turns an active candidate into a new production Instance on an `app-prod` Node. The Gateway reserves the target, copies the candidate's stored environment values and captures public intent. One native Swamp workflow, `operation-instance-clone`, runs on Node 209 and reaches the Nodes through official `@swamp/ssh` and `@swamp/cfgmgmt` actions. The candidate keeps running. The [chart](/cli/instance/clone) shows each step.
 
@@ -31,9 +31,9 @@ The CLI calls `POST /api/v1/instances/{candidate}/clone`. The caller needs acces
 
 ## Candidate rules
 
-The candidate must be active, have a recorded source profile, and keep its recorded branch checked out. Native read steps verify the repository identity, branch, commit, clean working tree and absence of submodules before the clone writes anything. Git hooks and filesystem monitors are disabled. An origin that contains credentials is rejected on the Node before its value can enter native history.
+The candidate must be active, have a recorded source profile, and keep its recorded branch checked out. Native read steps verify the branch, commit, clean working tree and absence of submodules before the clone writes anything on the destination. Git hooks and filesystem monitors are disabled. For an existing checkout, the read also verifies the repository identity and redacts credentials from Git origin output.
 
-A candidate in a container is refused with `operation.kind_unavailable`: the clone reads a checkout. A candidate of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on is refused with the same code (503) before that check, by the checkout entry of the [placement rule](/reference/projects#nested-fleet-setting): a production clone makes a host checkout. See [the default Instance](/reference/development-containers#the-default-instance).
+For a container default, the read runs inside the recorded container as the workspace owner and checks that HEAD matches the Gateway’s recorded seed commit. The development create loads that commit from the Project repository through a bundle, so the workspace does not need a Git origin. Other container Instances and SQLite snapshots from containers are refused with `operation.kind_unavailable`. A candidate of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on is refused with the same code (503) before that check, by the checkout entry of the [placement rule](/reference/projects#nested-fleet-setting): a production clone makes a host checkout. See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Destination checks
 

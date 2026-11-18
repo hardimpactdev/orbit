@@ -4,7 +4,8 @@ target: app-prod
 sources: [gateway]
 baseline: [operations]
 uncovered:
-  production-checkout-exception: "Gateway tests keep production checkout cloning, its retry identity and app-prod placement checks. The candidate remains a checkout. Task-copy end-to-end proof is owed and cannot run in the Amp orb."
+  production-checkout-exception: "Task-copy proof of existing checkout cloning, retry identity and app-prod placement is owed."
+  first-production-from-container-default: "Run project:create, instance:create default, then instance:clone on an isolated app-prod Node. Verify the initial checkout commit, its preview Route, and identical retry. Task-copy proof is owed."
 cases:
   - id: invalid-candidate
     batch: fresh-fleet

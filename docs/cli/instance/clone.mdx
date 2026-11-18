@@ -4,7 +4,7 @@ sidebarTitle: "instance:clone"
 description: "Clone a candidate Instance into a prepared production Instance."
 ---
 
-Production clone is the sole exception to [container-only new Instance admission](/reference/development-containers#container-only-admission) until production containers ship. It still requires a checkout candidate; container candidates remain unavailable.
+Production clone is the sole exception to [container-only new Instance admission](/reference/development-containers#container-only-admission) until production containers ship. A new Project can use its active container default as the candidate. An existing checkout can also be the candidate.
 
 ```bash
 orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--json]
@@ -20,7 +20,7 @@ orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRA
 | --- | --- | --- |
 | `--preview-name=NAME` | prompt | Preview name that Orbit combines with the destination Node's TLD: `shop.com` on a Node with the TLD `prod.orbit` becomes `shop.com.prod.orbit`. A non-web Project gets no Route but still needs the name. |
 | `--branch=BRANCH` | the candidate's branch | Target branch in the Project repository. A branch that does not exist fails the task at the fetch. |
-| `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on the candidate, to seed `database.sqlite`. |
+| `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on a checkout candidate, to seed `database.sqlite`. |
 | `--idempotency-key=KEY` | generated | Reuse a key to retry the same [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final task as JSON, with every step, and nothing while it follows. |
 
@@ -68,7 +68,7 @@ This flow is planned by [ADR 0263](/decisions/0263-run-production-releases-in-ho
 | `instance.production_placement_conflict` | The Project already has a production Instance on the Node. |
 | `route.tld_required` | A web Project's Node has no TLD. |
 | `route.domain_conflict` | Another Route owns the preview domain. |
-| `operation.kind_unavailable` | The Node, or the candidate's Node, is a task VM, a web Project's Node is in an active Cluster, or the candidate has an attached Database connection, or runs in a container. |
+| `operation.kind_unavailable` | The Node, or the candidate's Node, is a task VM, a web Project's Node is in an active Cluster, the candidate has an attached Database connection, or a container candidate is missing a default seed or requests a SQLite snapshot. |
 | `operation.kind_unavailable` | The Project has `nested_fleet` on. Only `instance:create` makes Instances of such a Project, as containers, so Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `instance.clone_database_slug_taken` | The cloned database connection slug is taken by another owner. |
 | `instance.removal_conflict` | The target Instance of this name is being removed. |
