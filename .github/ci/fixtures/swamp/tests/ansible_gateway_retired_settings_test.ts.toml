@@ -1,6 +1,7 @@
 order = 300
 cases = [
   "retired settings leave the Gateway environment; the other lines stay as they were",
+  "host recovery removal requires the committed handover and two retained containers",
 ]
 file = "swamp/tests/ansible_gateway_retired_settings_test.ts"
 cost = 5
@@ -10,5 +11,6 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/gateway-retire.yml",
   "swamp/ansible/tasks/gateway-runtime.yml",
 ]
