@@ -18,7 +18,7 @@ use SensitiveParameter;
 final readonly class ExecutorOrderSigner
 {
     /** The actions the executor allows. The proof and power families; wake joins in slice 5. */
-    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.read', 'ufw.ensure'];
+    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.read', 'ufw.ensure', 'ufw.ensure_rule'];
 
     public const int MaxWireBytes = 4096;
 

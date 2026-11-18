@@ -54,6 +54,10 @@ final class PrimitiveClient
                 $line = $line['first'];
                 $status = $line['status'] ?? null;
             }
+            if ($status === 'applied') {
+                return ['status' => 'applied', 'stdout' => '', 'changes' => (int) ($line['changes'] ?? 0), 'repeat' => (bool) ($line['repeat'] ?? false),
+                    'accepted_ms' => $acceptedMs, 'result_ms' => intdiv(hrtime(true) - $started, 1_000_000)];
+            }
             if ($status === 'output' || $status === 'done') {
                 $stdout = (string) ($line['stdout'] ?? '');
                 if (($line['encoding'] ?? null) === 'gzip+base64') {

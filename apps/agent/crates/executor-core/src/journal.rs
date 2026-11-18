@@ -70,6 +70,11 @@ pub enum Outcome {
         /// `gzip+base64`.
         encoding: String,
     },
+    /// SPIKE: a desired-state primitive converged its target and checked it. The verdict is the whole reply.
+    Applied {
+        /// How many changes it made; 0 means the state was already right.
+        changes: u32,
+    },
 }
 
 /// One journal line.

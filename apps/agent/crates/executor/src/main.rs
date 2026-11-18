@@ -18,6 +18,7 @@ use orbit_executor_core::server::{self, Settings, SOCKET_PATH};
 use orbit_executor_core::{ids::NodeId, relay};
 
 mod ufw;
+mod ufw_rule;
 
 const KEYS_PATH: &str = "/etc/orbit/executor/gateway.pub";
 const ENABLED_PATH: &str = "/etc/orbit/executor/enabled";
@@ -55,6 +56,7 @@ impl Run for Families {
             Action::ProofNoop => Outcome::Done,
             Action::UfwRead => ufw::read(order.input()),
             Action::UfwEnsure => ufw::ensure(order.input()),
+            Action::UfwEnsureRule => ufw_rule::ensure_rule(order.input()),
             Action::Sleep => {
                 let started = std::time::Instant::now();
                 match self

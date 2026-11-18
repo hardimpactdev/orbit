@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Spike\DurableFirewall\FirewallAllowExecutorWorkflow;
 use App\Spike\DurableFirewall\FirewallAllowJob;
 use App\Spike\DurableFirewall\FirewallAllowWorkflow;
+use App\Spike\DurableFirewall\FirewallEnsureRuleJob;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
@@ -19,7 +20,7 @@ use Workflow\V2\WorkflowStub;
 /** SPIKE: start firewall:allow as a Durable Workflow instead of a Swamp run, and time it. */
 final class SpikeFirewallAllowCommand extends Command
 {
-    protected $signature = 'spike:firewall-allow {node} {port} {--protocol=tcp} {--from=any} {--label=dw-spike} {--slow=0} {--no-wait} {--via=ansible : ansible (SSH from the Gateway), executor (Durable Workflow + primitives) or job (plain Horizon job + primitives)}';
+    protected $signature = 'spike:firewall-allow {node} {port} {--protocol=tcp} {--from=any} {--label=dw-spike} {--slow=0} {--no-wait} {--via=ansible : ansible (SSH from the Gateway), executor (Durable Workflow + primitives), job (plain Horizon job + primitives) or rule (one desired-state order)}';
 
     protected $description = 'SPIKE: run firewall:allow through Durable Workflow on Horizon';
 
@@ -35,9 +36,10 @@ final class SpikeFirewallAllowCommand extends Command
             'failed_step' => null, 'error_code' => null])->save();
         $rule->setRelation('node', $node);
 
-        if ($this->option('via') === 'job') {
+        if (in_array($this->option('via'), ['job', 'rule'], true)) {
             $key = 'spike-job-'.Str::lower((string) Str::ulid());
-            FirewallAllowJob::dispatch($key, $input->capture($rule), $node->id, (int) $this->option('slow'));
+            $job = $this->option('via') === 'rule' ? FirewallEnsureRuleJob::class : FirewallAllowJob::class;
+            $job::dispatch($key, $input->capture($rule), $node->id, (int) $this->option('slow'));
             $this->line("job {$key} dispatched in ".round(microtime(true) - $started, 2).' s');
             if ($this->option('no-wait')) {
                 return self::SUCCESS;

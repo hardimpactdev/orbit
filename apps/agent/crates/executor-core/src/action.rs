@@ -28,6 +28,8 @@ pub enum Action {
     UfwRead,
     /// SPIKE primitive: add, insert or delete one typed ufw rule, then read `ufw status numbered`.
     UfwEnsure,
+    /// SPIKE desired-state primitive: converge one rule by Orbit's order and answer in one line.
+    UfwEnsureRule,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -48,7 +50,7 @@ impl Action {
         match self {
             Self::ProofNoop => Family::Proof,
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
-            Self::UfwRead | Self::UfwEnsure => Family::Ufw,
+            Self::UfwRead | Self::UfwEnsure | Self::UfwEnsureRule => Family::Ufw,
         }
     }
 
@@ -57,7 +59,7 @@ impl Action {
         match self {
             Self::ProofNoop => TargetKind::Node,
             Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
-            Self::UfwRead | Self::UfwEnsure => TargetKind::Step,
+            Self::UfwRead | Self::UfwEnsure | Self::UfwEnsureRule => TargetKind::Step,
         }
     }
 
@@ -70,6 +72,7 @@ impl Action {
             Self::Discard => "discard",
             Self::UfwRead => "ufw.read",
             Self::UfwEnsure => "ufw.ensure",
+            Self::UfwEnsureRule => "ufw.ensure_rule",
         }
     }
 }
@@ -90,6 +93,7 @@ impl FromStr for Action {
             "discard" => Ok(Self::Discard),
             "ufw.read" => Ok(Self::UfwRead),
             "ufw.ensure" => Ok(Self::UfwEnsure),
+            "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
             _ => Err(UnknownActionError),
         }
     }
