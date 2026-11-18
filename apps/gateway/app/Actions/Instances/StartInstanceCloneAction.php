@@ -11,8 +11,9 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\Environment\CloneEnvironmentWarnings;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
-use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
@@ -48,13 +49,13 @@ final readonly class StartInstanceCloneAction
         if (($replay = $this->idempotency->replay('instance.clone')) !== null) {
             return $replay;
         }
-        InstancePlacement::checkout($candidate->project);
-        InstanceContainer::assertCheckout($candidate);
 
         return DB::transaction(function () use ($candidate, $data, $caller, $requestId): Operation {
             $candidate->refresh()->loadMissing(['project', 'node']);
+            InstancePlacement::productionClone($candidate);
             $node = Node::query()->findOrFail($data->nodeId);
-            app(NativeInstanceProvisioningIntent::class)->assertCloneSupported($candidate, $data->sqliteSourcePath);
+            $provisioning = app(NativeInstanceProvisioningIntent::class);
+            $runtime = $provisioning->cloneCandidateRuntime($candidate, $data->sqliteSourcePath);
             if ($candidate->status !== InstanceState::Active || $candidate->provisioning_step !== 'active'
                 || $candidate->node->status !== LifecycleStatus::Active || $candidate->node->platform !== 'linux') {
                 throw $this->conflict('instance.clone_candidate_inactive', 'The candidate must be active.');
@@ -94,6 +95,9 @@ final readonly class StartInstanceCloneAction
                     ->where('status', 'succeeded')->orderByDesc('id')->first()
                     ?? throw $this->conflict('instance.clone_retry_conflict', 'The completed clone has no successful admission receipt.');
             }
+            if ($runtime !== null && $runtime->power_state !== InstanceRuntimePowerState::Running) {
+                throw $this->conflict('instance.clone_candidate_inactive', 'Wake the container default before cloning.');
+            }
             if ($target === null && Instance::query()->where('project_id', $candidate->project_id)->where('node_id', $node->id)
                 ->where('production_home', $home)->exists()) {
                 throw $this->conflict('instance.production_placement_conflict', 'The Project already has a production Instance on the selected Node.');
@@ -116,15 +120,18 @@ final readonly class StartInstanceCloneAction
             $input = ['instance_id' => $target->id, 'project_id' => $candidate->project_id, 'candidate_id' => $candidate->id,
                 'repository' => $candidate->project->repository_url, 'repository_identity' => $candidate->project->repository_identity,
                 'branch' => $branch, 'checkout' => $path, 'candidate' => ['node_id' => $candidate->node_id,
-                    'checkout' => $candidate->checkout_path, 'branch' => $candidate->branch,
-                    'repository_identity' => $candidate->project->repository_identity],
+                    'branch' => $candidate->branch, 'repository_identity' => $candidate->project->repository_identity,
+                    ...($runtime === null ? ['checkout' => $candidate->checkout_path] : ['container' => [
+                        'project' => $runtime->incus_project, 'name' => $runtime->container_name,
+                        'workspace' => InstanceHostIntent::Workspace, 'seed_commit' => $runtime->seed_commit,
+                    ]])],
                 'initial_completed' => $target->clone_completed_at !== null, 'sqlite' => $sqlite,
                 // Key-only hints for copied development references; values never enter the input.
                 'warnings' => app(CloneEnvironmentWarnings::class)->detect(app(InstanceEnvironmentStore::class)->values($target), $candidate->node, $home, $node)];
             if ($route !== null) {
                 $input = [...$input, ...$this->previewPlan($route, $target, $node)];
             }
-            $input['direct_provisioning'] = app(NativeInstanceProvisioningIntent::class)->clone($target, $input);
+            $input['direct_provisioning'] = $provisioning->clone($target, $input);
             // Production Process and Schedule definitions become records now; the run installs them, enabled but not started.
             $input['members'] = app(ProcessInstanceOperation::class)->capture($target, 'process.install_instance_definitions')['members'];
             $input['schedule_members'] = app(ScheduleInstanceOperation::class)->capture($target)['members'];

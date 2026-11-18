@@ -309,6 +309,7 @@ export function fixture(instance: "default" | "feature" = "default", dirty = fal
           ORBIT_PROCESS_ENVIRONMENTS: Deno.readTextFileSync(`${folder}/process-environments.json`),
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
           ANSIBLE_NOCOLOR: "1",
+          ANSIBLE_PIPELINING: "true",
           ANSIBLE_HOME: `${folder}/ansible`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ORBIT_RUN: `${folder}/run`,

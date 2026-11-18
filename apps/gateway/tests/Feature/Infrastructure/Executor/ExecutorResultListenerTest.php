@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Problems\ProblemCollector;
 use App\Domain\Problems\ProblemSource;
@@ -39,7 +40,7 @@ beforeEach(function (): void {
         'public_ssh_host' => '10.44.0.8', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:test',
     ]));
     $this->operation = Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => 7,
-        'node_id' => $this->node->id, 'status' => OperationStatus::Running, 'input' => []]);
+        'node_id' => $this->node->id, 'status' => OperationStatus::Running, 'input' => [], 'state' => [ExecutorWake::State => true]]);
     $this->log = new class extends AbstractLogger
     {
         /** @var list<array{string, string, array<string, mixed>}> */
@@ -140,7 +141,7 @@ function executorEvent(int $nodeId, int|string $operation, array|string $line, ?
 
 it('records a result on the Operation first, then pushes it after the accepted line, with a 60 s expiry', function (): void {
     $id = $this->operation->id;
-    $done = ['operation' => (string) $id, 'action' => 'proof.noop', 'target' => '7', 'status' => 'done', 'repeat' => false, 'node_clock_ms' => 1];
+    $done = ['operation' => (string) $id, 'action' => 'wake', 'target' => '7', 'status' => 'done', 'repeat' => false, 'node_clock_ms' => 1];
 
     executorStream($this, [executorEvent($this->node->id, $id, ['status' => 'accepted']), executorEvent($this->node->id, $id, $done)]);
 
@@ -233,7 +234,7 @@ it('reports a refusal even when the push fails', function (): void {
 
 it('records a result once and still pushes a repeat', function (): void {
     $id = $this->operation->id;
-    $first = ['operation' => (string) $id, 'status' => 'done', 'repeat' => false];
+    $first = ['operation' => (string) $id, 'action' => 'wake', 'target' => '7', 'status' => 'done', 'repeat' => false];
 
     executorStream($this, [
         executorEvent($this->node->id, $id, $first),
@@ -247,8 +248,43 @@ it('records a result once and still pushes a repeat', function (): void {
 it('logs a failed push and keeps the loop going', function (): void {
     $this->queue->fails = true;
 
-    executorStream($this, [executorEvent($this->node->id, $this->operation->id, ['status' => 'done'])]);
+    $line = ['status' => 'done', 'operation' => (string) $this->operation->id, 'action' => 'wake', 'target' => '7'];
+    executorStream($this, [executorEvent($this->node->id, $this->operation->id, $line)]);
 
     expect(array_column($this->log->lines, 1))->toContain('The agent view subscriber could not hand off an executor result.')
-        ->and($this->operation->refresh()->executor_result)->toBe(['status' => 'done']);
+        ->and($this->operation->refresh()->executor_result)->toBe($line);
+});
+
+it('keeps bare replay evidence ordered without letting it replace the first result', function (bool $replayFirst): void {
+    $id = $this->operation->id;
+    $done = ['operation' => (string) $id, 'action' => 'wake', 'target' => '7', 'status' => 'done', 'repeat' => false];
+    $replay = ['operation' => (string) $id, 'status' => 'refused', 'reason' => 'replayed_nonce', 'first' => null];
+    $lines = $replayFirst ? [$replay, $done] : [$done, $replay];
+
+    executorStream($this, array_map(fn (array $line): array => executorEvent($this->node->id, $id, $line), $lines));
+
+    expect($this->operation->refresh()->executor_result)->toBe($done)
+        ->and(array_column($this->queue->pushes, 'line'))->toBe(array_map(json_encode(...), $lines));
+})->with([true, false]);
+
+it('records a matching nested first result but no mismatched replay result', function (array $mismatch): void {
+    $id = $this->operation->id;
+    $done = ['operation' => (string) $id, 'action' => 'wake', 'target' => '7', 'status' => 'done', 'repeat' => false];
+    $replay = ['operation' => (string) $id, 'status' => 'refused', 'reason' => 'replayed_nonce', 'first' => [...$done, ...$mismatch]];
+
+    executorStream($this, [executorEvent($this->node->id, $id, $replay)]);
+
+    expect($this->operation->refresh()->executor_result)->toBe($mismatch === [] ? $done : null);
+})->with(['matching' => [[]], 'other operation' => [['operation' => '123456']], 'other action' => [['action' => 'sleep']], 'other target' => [['target' => '8']]]);
+
+it('does not replace the first genuine action failure with a later wrapped success', function (): void {
+    $id = $this->operation->id;
+    $fields = ['operation' => (string) $id, 'action' => 'wake', 'target' => '7', 'repeat' => false];
+    $failed = [...$fields, 'status' => 'failed', 'code' => 'instance.web_unready'];
+    $replay = ['operation' => (string) $id, 'status' => 'refused', 'reason' => 'replayed_nonce', 'first' => [...$fields, 'status' => 'done']];
+
+    executorStream($this, [executorEvent($this->node->id, $id, $failed), executorEvent($this->node->id, $id, $replay)]);
+
+    expect($this->operation->refresh()->executor_result)->toBe($failed)
+        ->and(array_column($this->queue->pushes, 'line'))->toBe([json_encode($failed), json_encode($replay)]);
 });

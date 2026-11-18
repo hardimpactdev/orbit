@@ -20,6 +20,8 @@ sequenceDiagram
   CLI->>GW: instance:register<br/>--project=7
   Note over GW: Check against the facts<br/>path · origin · layout
   %%> Requirements:
+  %%> - a new host registration refuses with instance.container_required (409) before reading checkout facts or recording anything; use instance:create
+  %%> - only a previously registered checkout can repeat the phases below; existing checkout operation and migration remain supported
   %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: only `instance:create` makes Instances of such a Project, as containers; the Gateway checks it before it reads the facts and again when it records the Instance
   alt facts match
     Note over GW: Record the Instance<br/>branch · commit · application

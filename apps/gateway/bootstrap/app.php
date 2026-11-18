@@ -6,6 +6,8 @@ use App\Actions\Doctor\RunDoctorAction;
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Instances\InstanceRemovalReaper;
+use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\ExecutorWakeNotices;
 use App\Domain\Tasks\TaskSchedule;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
@@ -27,6 +29,7 @@ use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
 use App\Jobs\Instances\CheckDevelopmentDeployments;
 use App\Jobs\Operations\PollSwampScheduledResults;
+use App\Jobs\Operations\ReconcileExecutorWakes;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\WebSocket\CloseWebSocketOperations;
 use Illuminate\Console\Scheduling\Schedule;
@@ -80,6 +83,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // forwards cancels and frees the target of a run that nothing proves ended.
         GatewaySchedule::job($schedule, new ReconcileSwampOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
+        GatewaySchedule::job($schedule, new ReconcileExecutorWakes)->everyFiveSeconds()
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && (app(ExecutorWakeNotices::class)->pending() || app(ExecutorWake::class)->hasHandoffs()));
         // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
         GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());

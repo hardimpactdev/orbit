@@ -190,7 +190,8 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `ORBIT_GATEWAY_QUEUE_CONNECTION`, `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | The Redis Database connection and database index of the [Gateway queue](/reference/gateway-queue), which Laravel Horizon works. Empty, the scheduler runs its commands itself. Tests set `ORBIT_GATEWAY_QUEUE_DRIVER=database` to keep the queue in SQLite. |
 | `ORBIT_EXECUTOR_PUBLIC_KEYS` | One or two base64 Ed25519 public keys, comma-separated, that every [executor](/reference/executor) Node pins. Until it is set, converges skip the executor install. See [Rollout](/reference/executor#rollout) |
 | `ORBIT_EXECUTOR_SIGNING_KEY` | The base64 64-byte Ed25519 secret key that signs every [executor](/reference/executor) order, whose public half is one of `ORBIT_EXECUTOR_PUBLIC_KEYS`. Only `orbit` reads it, and it is never printed or logged. See [Rollout](/reference/executor#rollout) |
-| `ORBIT_EXECUTOR_WAIT_MS` | How long a waiting request waits on Valkey for an executor result; default 500. See [The listener and the hand-off](/reference/executor#the-listener-and-the-hand-off). Nothing reads it in a request until slice 6 of ADR 0266 |
+| `ORBIT_EXECUTOR_WAIT_MS` | The [executor wake budget](/reference/executor#the-wake-inside-the-request) in milliseconds, from admission through recording in-bound success. Default 500. The orchestrator sets Gateway Valkey to `hz 100` |
+| `ORBIT_EXECUTOR_WAKE_ENABLED` | Enable [executor container wakes](/reference/executor#the-wake-inside-the-request); default `false`. Requires ADR 0266 slices 5 and 7 before rollout; when enabled, wakes use only the executor |
 | `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT` | Defaults for the `websocket` Node role, with repository `https://github.com/hardimpactdev/orbit-reverb.git`. See [Realtime events with Reverb](/solutions/realtime-reverb). Each Gateway release pins a server commit for the [live registry](/reference/websocket-apps#the-reverb-server). |
 | `TYPESAFE_API_KEY` | Key for the Jev classifier in [Tasks](/reference/tasks). |
 | `ORBIT_TASKS_COPIES_MAX` | How many nested-fleet [task copies](/reference/tasks#task-copy) one Node holds at once; default 1, minimum 0. `task:start` counts at admission. A copy of any other Project does not count. |
@@ -213,7 +214,7 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 The fleet-owned `instances.mailpit` configuration names the main Docker Node Process and SMTP port. It needs no Gateway environment key or contributor setting; [development mail](/reference/development-containers#development-mail) applies only on a Node with that active publication.
 
-`ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default. A nested Gateway of an Instance fleet adds its fleet's `app-dev` Node without it.
+Containers need no environment opt-in or allow list. See [Container-only admission](/reference/development-containers#container-only-admission).
 
 `ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set allow list of nested-fleet Projects, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. List only the Orbit Project, whose container holds an inner fleet, and disposable trial Projects.
 

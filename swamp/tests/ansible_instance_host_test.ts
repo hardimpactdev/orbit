@@ -15,6 +15,7 @@ import {
     nodeAddresses,
     peer,
 } from "./_support/instance_host.ts";
+import { readBoundaries, restore, stages } from "./_support/host_image_boundary.ts";
 
 // Rescue old implementations without ever signalling a reused PID.
 function rescueFixtureChild(folder: string, pidFile: string) {
@@ -341,12 +342,12 @@ time.sleep(60)
 
 Deno.test({
     name:
-        "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing",
+        "a build-list Node gets the Instance project, bridge, folders and image",
     ignore: !hasAnsible,
     async fn() {
         const f = await fixture();
         try {
-            let result = await f.run();
+            const result = await f.run();
             assert(result.ok, result.output);
             const state = f.state();
             const project = state.projects.find((p: { name: string }) =>
@@ -637,9 +638,21 @@ Deno.test({
                 state.instances.map((i: { name: string }) => i.name),
                 [],
             );
+        } finally {
+            f.cleanup();
+        }
+    },
+});
 
+Deno.test({
+    name: "a prepared build-list Node changes nothing and rebuilds no image on a complete host rerun",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            restore(f, readBoundaries()["zfs-finish"]);
             const before = f.calls().length;
-            result = await f.run();
+            const result = await f.run();
             assert(result.ok, result.output);
             assertStringIncludes(result.output, "changed=0");
             // A rerun builds and publishes nothing; only the clone probe runs again.
@@ -648,7 +661,6 @@ Deno.test({
                     c.includes("publish") || c.includes("orbit-instance-build")
                 ),
             );
-
         } finally {
             f.cleanup();
         }
@@ -662,8 +674,7 @@ Deno.test({
     async fn() {
         const f = await fixture();
         try {
-            let result = await f.run();
-            assert(result.ok, result.output);
+            restore(f, readBoundaries()["zfs-finish"]);
             const state = f.state();
             // A Node prepared before these rules: the bridge's dnsmasq answers DNS, and the ACL rejects all that goes to
             // a container. The next converge gives the existing bridge and ACL both.
@@ -681,7 +692,7 @@ Deno.test({
             assert(bridgeAnswersDns(f.state()));
             assert(!bridgeAdmits(f.state(), { source: caddy, port: 8080 }));
             assert(!bridgeAdmits(f.state(), { source: peer, port: 3773 }));
-            result = await f.run();
+            const result = await stages(f)("prepare");
             assert(result.ok, result.output);
             assert(!bridgeAnswersDns(f.state()));
             assert(bridgeAdmits(f.state(), { source: caddy, port: 8080 }));
@@ -732,7 +743,10 @@ Deno.test({
             // The ci-runner converge of a CI Node that hosts proof copies: the Gateway sends no `dev_ports` and no `own_site`.
             const { dev_ports: _devPorts, own_site: _ownSite, ...ci } = f.instances;
             f.write(ci);
-            const result = await f.run();
+            const run = stages(f);
+            const system = await run("system");
+            assert(system.ok, system.output);
+            const result = await run("prepare");
             assert(result.ok, result.output);
             const state = f.state();
             assert(state.networks.some((n: { name: string }) => n.name === "orbitinst0"));

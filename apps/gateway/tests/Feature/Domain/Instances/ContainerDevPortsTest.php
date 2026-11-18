@@ -263,7 +263,7 @@ function ownSiteNode(): Node
     return $node->refresh();
 }
 
-it('renders every WireGuard and LAN site as origin/main did, less only the two task VM matcher lines of each block', function (): void {
+it('keeps the WireGuard and LAN sites equal to the fixture without the task VM matcher and abort', function (): void {
     $node = ownSiteNode();
 
     $caddyfile = ownSiteRender($node, app(RouteCaddySiteSource::class)->fromSites(collect(ownSiteFixtureSites($node))));

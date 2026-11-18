@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Executor;
 
+use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\Activity;
 use App\Models\Node;
@@ -49,8 +51,7 @@ final readonly class ExecutorResults
             return;
         }
 
-        // Reported before the push, so a Valkey failure never hides a refusal.
-        if ($reply->status === 'refused') {
+        if ($reply->status === 'refused' && ! $reply->isReplay()) {
             $this->refused($nodeId, $reply);
         } elseif ($reply->status === 'failed') {
             $this->log->warning('The executor reported a failed order.', ['node_id' => $nodeId, 'operation_id' => $reply->operation, 'code' => $reply->reason]);
@@ -60,18 +61,44 @@ final readonly class ExecutorResults
     }
 
     /**
-     * Checks that the reply comes from the Operation's owning Node. For a terminal reply, it stores the first result.
-     * A copy of a recorded result still goes to Valkey to recover a lost push.
+     * A replay envelope carries transport evidence, not a result in its own right. Its matching first outcome can recover a lost
+     * original; the original wire lines still go to the ordered list.
      */
     private function verifyAndRecord(int $nodeId, ExecutorReply $reply): bool
     {
-        $operation = Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId);
-
-        if (! $reply->isAccepted() && (clone $operation)->whereNull('executor_result')->update(['executor_result' => $reply->raw]) === 1) {
+        $owner = Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId);
+        $operation = (clone $owner)->first();
+        if ($operation === null) {
+            return false;
+        }
+        $action = match (true) {
+            ExecutorWake::owns($operation) && $operation->target_type === 'instance' => 'wake',
+            $operation->kind === OperationKinds::ExecutorProof && $operation->target_type === 'node' && $operation->target_id === $nodeId => 'proof.noop',
+            $operation->kind === OperationKinds::ExecutorPowerProof && $operation->target_type === 'instance' => $operation->input['action'] ?? null,
+            default => null,
+        };
+        if (! in_array($action, ['proof.noop', 'sleep', 'wake', 'discard'], true)) {
+            return false;
+        }
+        if ($reply->isAccepted()) {
             return true;
         }
+        $result = $reply->isReplay() ? $reply->first() : $reply;
+        if ($result === null) {
+            return ($reply->line['first'] ?? null) === null;
+        }
+        $target = (string) $operation->target_id;
+        $line = $result->line;
+        if ($result->status !== 'refused' && ($line['operation'] ?? null) !== (string) $operation->id) {
+            return false;
+        }
+        if (($line['action'] ?? ($result->status === 'refused' ? $action : null)) !== $action
+            || ($line['target'] ?? ($result->status === 'refused' ? $target : null)) !== $target) {
+            return false;
+        }
+        $owner->whereNull('executor_result')->update(['executor_result' => $result->raw, 'executor_result_received_us' => (int) now()->format('Uu')]);
 
-        return $operation->exists();
+        return true;
     }
 
     /**
@@ -93,7 +120,7 @@ final readonly class ExecutorResults
                     'error_message' => sprintf('The executor on Node %d refused the order of Operation %d: %s.', $nodeId, $reply->operation, $reply->reason ?? 'unknown')])]);
             Activity::withoutEvents(static fn (): bool => $activity->save());
         } catch (Throwable $exception) {
-            $this->log->warning('The agent view subscriber could not record an executor refusal.', ['node_id' => $nodeId, 'error' => $exception->getMessage()]);
+            $this->log->warning('The agent view subscriber could not record an executor refusal.', ['node_id' => $nodeId, 'exception_type' => $exception::class]);
         }
     }
 }
