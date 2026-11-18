@@ -1075,7 +1075,7 @@ A managed token, a native Conn token, or a credential of another target on the s
 | `POST /broadcasting/auth` | `socket_id`, `channel_name` | Pusher `auth` for the current generation's channel only |
 | `POST /authority` | `nonce`, `after_revision`: an integer or `null` | The [authority state](#authority-state) |
 | `POST /introspect` | `nonce`, `token`, `peer_address`: the TCP peer of the Conn socket | The [token claims](#token-claims) |
-| `POST /ack` | `revision`, `notice_received_at` or `null`, `fenced_at`, `handlers_closed_at` | `environment_id`, `generation`, `revision`, `acknowledged_at` |
+| `POST /ack` | `revision`, `kind`: `observed` or `recovered`, `notice_received_at`, `fenced_at`, `handlers_closed_at`, `recovered_at` | `environment_id`, `generation`, `revision`, `kind`, `acknowledged_at` |
 
 A `nonce` is 16 to 64 base64url characters that the target draws at random for each request. Every reply of `/authority` and `/introspect` echoes `nonce`, `environment_id` and `generation`. The target accepts a reply only when all three match the one request it has outstanding on that path. It drops a reply whose nonce it already consumed or never sent.
 
@@ -1104,7 +1104,7 @@ The target admits the token only when all of these hold:
 
 - `nonce`, `environment_id` and `generation` match its request and its own provisioning;
 - `revision` is not greater than its applied revision; otherwise it reconciles first and introspects again;
-- `edge_id` is not in its fenced set;
+- `edge_id` is in neither its confirmed nor its provisional fenced set;
 - its authority lease is live;
 - `expires_at` is in the future.
 
@@ -1122,9 +1122,11 @@ Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consu
 4. Mark the edge's managed tokens as revoked at that revision.
 5. Record one owed acknowledgement for each target: its environment UUID, generation, revision and `committed_at`.
 
-After the outermost commit, the Gateway publishes `conn.authority.revoked` on each target's current generation channel. Its data are `environment_id`, `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after this commit, in its own transaction. It checks broader server access and is neither managed enforcement nor its acknowledgement.
+The transaction captures each target's generation with its revision. After the outermost commit, the Gateway publishes `conn.authority.revoked` on the channel of that captured generation, `private-conn-target.{target_id}.{generation}`, and never on another. Its data are `environment_id`, the captured `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`.
 
-A replaced target keeps no notice path: its old subscription is on the old generation's channel, which carries no further notices, and the Gateway signs only the current one.
+When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after this commit, in its own transaction. It checks broader server access and is neither managed enforcement nor its acknowledgement.
+
+A replaced target keeps no notice path: its old subscription is on the old generation's channel, which carries no notice of a later generation, and the Gateway signs only the current one. The owed rows of a replaced generation become `superseded`. They are never recorded as acknowledged, and `/ack` for them refuses with `conn.managed_generation_mismatch`.
 
 ### Authority state
 
@@ -1138,20 +1140,36 @@ A replaced target keeps no notice path: its old subscription is on the old gener
 
 `owed` lists every owed acknowledgement of this generation that is not settled, as `revision` and `edge_ids`.
 
-A target starts with a snapshot after connect or restart. When it applies a snapshot, it fences every edge ID it had admitted that the snapshot does not list, before any dispatch or output resumes. A fenced ID stays fenced for the life of the generation. A listed edge is not yet admitted: it needs a verified introspection like any other.
+A target starts with a snapshot after connect or restart, and takes one to recover from failing closed. It never takes one while managed access is open. Each snapshot runs behind a barrier:
+
+1. Pause managed admission. Callers that arrive wait.
+2. Drop every outstanding introspection: its reply is discarded when it arrives.
+3. Send the snapshot request and apply its reply.
+4. Introspect each waiting caller afresh.
+
+When it applies a snapshot, the target confirms the fence of every edge ID it had admitted that the snapshot does not list, before any dispatch or output resumes. The barrier makes this safe: every admitted ID came from a reply that the Gateway read before the snapshot. A listed edge is not yet admitted: it needs a verified introspection like any other.
+
+The target keeps two fenced sets:
+
+| Set | Filled by | Ends |
+| --- | --- | --- |
+| Provisional | A notice | When verified state for that revision applies |
+| Confirmed | A verified `delta`, `owed` list or snapshot | Never, for the life of the generation |
+
+When verified state for a revision applies, the target moves each of its edge IDs to the confirmed set and closes any of their handlers still open. It then clears each provisional ID of that revision that the verified state does not name. A cleared ID can be admitted again only by a fresh introspection. Clearing never reopens a socket that the fence closed.
 
 It runs one probe at a time for both its timer and Reverb notices. When a greater revision becomes known while a probe runs, it probes again at once.
 
 | The target sees | It does |
 | --- | --- |
-| A notice for its next revision | Fences those edges at once. Other edges keep their live lease while a probe confirms the change. The notice is not proof of what the Gateway committed. |
+| A notice for its next revision | Fences those edges provisionally at once: closes their handlers and refuses their admission. Other edges keep their live lease while a probe confirms the change. |
 | A stale or duplicate notice | Ignores it. A notice only restricts access. |
 | A `current` reply to its outstanding probe | Renews the lease from that probe's send time. |
 | A reply whose nonce it already consumed or never sent | Drops it. It renews nothing. |
 | A revision ahead of its next one, without a contiguous edge list | Blocks every managed admission, dispatch and output until a probe applies the head. |
 | A missing revision, a wrong generation, a failed check, a closed control connection, or an expired lease | Fails closed for all managed access until a fresh snapshot or delta is applied and the lease is live. |
 
-Only an applied HTTPS reply moves the confirmed revision forward, renews the lease or names the edges of a revision. A Reverb message, presence or a WebSocket ping never renews authority.
+A notice is not proof of what the Gateway committed. Only an applied HTTPS reply moves the confirmed revision forward, renews the lease or names the edges of a revision. A Reverb message, presence or a WebSocket ping never renews authority.
 
 ### Lease
 
@@ -1168,7 +1186,9 @@ The target acknowledges one revision at a time. It sends `/ack` for a revision o
 - it learned that revision's edges from a verified `delta` or from `owed`, never from a notice alone;
 - every handler of those edges has ended, and no queued frame of them can be sent.
 
-Bytes already passed to the operating system cannot be recalled. `notice_received_at` is `null` when no notice arrived for that revision. A restarted target has no handlers left, so it acknowledges each `owed` revision once it has applied the snapshot; `fenced_at` and `handlers_closed_at` are then the time it applied it.
+Bytes already passed to the operating system cannot be recalled. `notice_received_at` is `null` when no notice arrived for that revision. An `observed` ACK carries the measured `fenced_at` and `handlers_closed_at`, and `recovered_at` is `null`.
+
+A restarted target observed no close: its handlers ended with the old process. Once it has applied the snapshot, it sends a `recovered` ACK for each `owed` revision. That ACK confirms that no affected handler remains. Its `recovered_at` is the time it applied the snapshot, an upper bound on the close; `fenced_at`, `handlers_closed_at` and `notice_received_at` are `null`. The timing proof leaves `recovered` ACKs out of every fence and close measure.
 
 The Gateway settles only the owed row with the same environment UUID, generation and revision. One ACK never settles another revision. It records `acknowledged_at` and the reported target times on the first valid ACK. An exact retry answers that first result and changes nothing. A lost request leaves the row owed, and the target sends it again while `owed` lists it.
 
@@ -1203,8 +1223,10 @@ The Gateway and the target record these times separately, so the proof can measu
 | `committed_at` | Gateway | The edge-removal transaction |
 | `notice_sent_at` | Gateway | After the Reverb publish returns |
 | `notice_received_at` | Target | On the notice, reported in the ACK; `null` when none arrived |
-| `fenced_at` | Target | When the edge is blocked |
-| `handlers_closed_at` | Target | When the last affected handler ended |
+| `fenced_at` | Target | When the edge is blocked; `null` in a `recovered` ACK |
+| `handlers_closed_at` | Target | When the last affected handler ended; `null` in a `recovered` ACK |
+| `recovered_at` | Target | When a restarted target applied the snapshot; only in a `recovered` ACK, and only an upper bound on the close |
+| `notice_suppressed_at` | Gateway | When the Gateway skipped the notice of a replaced generation |
 | `acknowledged_at` | Gateway | On the first valid ACK of that revision |
 
 The proof reports fault to detection, last confirmed probe send to fence, commit to fence, and fence to ACK, with maximum values for idle and busy runs. It records the clock offset bounds between Gateway and target, from `server_time` and the probe round trip.
