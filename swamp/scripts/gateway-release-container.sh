@@ -94,17 +94,18 @@ clear_switch() {
   rm -f -- "$journal/operation"
   sync -f "$journal"
 }
-# Inventory: live, the stopped rollback release (old) and the releases that passed public verification.
-# An inventory from before verification was recorded trusts the releases it holds.
+# Inventory: live, the stopped rollback release (old), an earlier stopped release kept while live is unverified,
+# and the releases that passed public verification. An inventory from before verification trusts what it holds.
 set_inventory() {
-  local live=$1 old=${2:-} verified=${3-__keep__} tmp retired=false
+  local live=$1 old=${2:-} verified=${3-__keep__} earlier=${4:-} tmp retired=false
   if [[ -f $journal/host-retired ]] || { [[ -f $inventory ]] && jq -e '.host_retired == true' "$inventory" >/dev/null; }; then retired=true; fi
   if [[ $verified == __keep__ ]]; then verified=$(verified_list "$inventory"); fi
   tmp=$(mktemp "$home/.gateway-containers.XXXXXXXX")
-  jq -n --arg live "$live" --arg old "$old" --arg verified "$verified" --argjson retired "$retired" '
+  jq -n --arg live "$live" --arg old "$old" --arg earlier "$earlier" --arg verified "$verified" --argjson retired "$retired" '
     ($verified | split(" ") | map(select(. != ""))) as $known |
-    {version:2,live:$live,old:(if $old == "" then null else $old end),
-     verified:([$live,$old] | map(select(. != "" and ([.] | inside($known)))) | unique),host_retired:$retired}' > "$tmp"
+    {version:2,live:$live,old:(if $old == "" then null else $old end)} +
+    (if $earlier == "" then {} else {earlier:$earlier} end) +
+    {verified:([$live,$old,$earlier] | map(select(. != "" and ([.] | inside($known)))) | unique),host_retired:$retired}' > "$tmp"
   chown orbit:orbit "$tmp"
   chmod 0600 "$tmp"
   mv -fT "$tmp" "$inventory"
@@ -119,7 +120,7 @@ mark_verified() {
   [[ -f $inventory && ! -e $journal/operation ]] || return 0
   [[ $(field '.live') == "$1" ]] || return 0
   is_verified "$1" "$inventory" && return 0
-  set_inventory "$1" "$(field '.old // ""')" "$(verified_list "$inventory") $1"
+  set_inventory "$1" "$(field '.old // ""')" "$(verified_list "$inventory") $1" "$(field '.earlier // ""')"
 }
 record_of() {
   "${incus_cli[@]}" list "$1" --format json | jq -c --arg name "$1" 'map(select(.name==$name))|first // {}'
@@ -146,7 +147,8 @@ discard_legacy() {
       .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.role"]=="candidate" and
       .["user.orbit.release.commit"]==$sha and .["boot.autostart"]=="false")' <<< "$stale" >/dev/null ||
       fail 'legacy rollback is not safely parked'
-    "${incus_cli[@]}" delete "$name" --force
+    # Never delete a dataset another release still depends on; ctl promotes the dependents first.
+    ctl remove gateway "${discarded:0:12}" --force >&2
   fi
   ctl forget gateway "${discarded:0:12}" >&2
 }
@@ -183,7 +185,7 @@ three_containers() {
     ($owned|length) <= 3 and ([$owned[].name] - ($allowed | split(" "))) == []' <<< "$records" >/dev/null
 }
 gateway_slot() {
-  local live='' old='' changed=false legacy
+  local live='' old='' earlier='' changed=false legacy
   [[ ! -e $journal/operation ]] || fail 'finish the interrupted Gateway handover first'
   # An interrupted rollback started old without a journaled switch. Any other phase parks it again first.
   if [[ -f $journal/rollback && ${1:-} != rollback ]]; then park_rollback; fi
@@ -202,14 +204,32 @@ gateway_slot() {
       old=''
       changed=true
     fi
+    earlier=$(field '.earlier // ""')
     if [[ -n $old ]]; then
       [[ $old =~ ^[a-f0-9]{40}$ ]] && [[ $old != "$live" ]] || fail 'invalid Gateway rollback release'
       present "$old" "${1:-}" || { old=''; changed=true; }
     fi
-    if [[ $changed == true ]]; then set_inventory "$live" "$old"; fi
+    if [[ -n $earlier ]]; then present "$earlier" '' || { earlier=''; changed=true; }; fi
+    if [[ $changed == true ]]; then set_inventory "$live" "$old" __keep__ "$earlier"; fi
+    # A forward build needs the preparation slot that an unverified live's earlier release holds.
+    if [[ ${1:-} != rollback && -n $earlier ]]; then settle_slot "$live"; earlier=''; fi
   fi
-  three_containers prepare-gateway "gateway-${live:0:12}" "${old:+gateway-${old:0:12}}" "$candidate" ||
+  three_containers prepare-gateway "gateway-${live:0:12}" "${old:+gateway-${old:0:12}}" "${earlier:+gateway-${earlier:0:12}}" "$candidate" ||
     fail 'another Gateway clone occupies a slot; finish its operation or release its unused clone'
+}
+# Once live has passed a durable public check: delete the earlier release it kept and rebuild preparation.
+settle_slot() {
+  local live=$1 earlier
+  check_release "$live" >&2 || fail 'the serving Gateway release has not passed its public check; roll back to old or deploy a fix once it does'
+  mark_verified "$live"
+  earlier=$(field '.earlier // ""')
+  if [[ -n $earlier ]] && [[ $(record_of "gateway-${earlier:0:12}") != '{}' ]]; then
+    parked "$(record_of "gateway-${earlier:0:12}")" "$earlier" || fail "stopped release ${earlier:0:12} is not parked"
+    ctl remove gateway "${earlier:0:12}" >&2
+  fi
+  if [[ -n $earlier ]]; then ctl forget gateway "${earlier:0:12}" >&2; fi
+  set_inventory "$live" "$(field '.old // ""')"
+  ctl seed gateway "${live:0:12}" "$operation" >&2
 }
 set_upstream() {
   local addr=$1 tmp
@@ -333,22 +353,24 @@ publish_forward() {
   # Retire decides which stopped release stays. Until then the inventory keeps the earlier one.
   earlier=$(jq -r '.old // ""' "$journal/inventory" 2>/dev/null || :)
   if [[ $earlier == "$sha" ]]; then earlier=$(former_sha); fi
-  set_inventory "$sha" "$earlier" "$(verified_list "$journal/inventory")"
+  set_inventory "$sha" "$earlier" "$(verified_list "$journal/inventory")" \
+    "$(jq -r --arg sha "$sha" '.earlier // "" | select(. != $sha)' "$journal/inventory" 2>/dev/null || :)"
 }
 waits=/var/lib/orbit/release-response-wait
 # The former live's web server stopped, but its kernel can still hold response bytes for slow clients, and a
 # container stop drops them. The workflow's bounded Ansible wait writes "<operation> drained|timeout" here. Without
 # it (console rollback, --recover), each retry probes once, and the bound counts from the first probe.
 response_gate() {
-  local machine=$1 record=$waits/$1 probe queued first
+  local machine=$1 record=$waits/$1 probe queued first listing
   if [[ -f $record ]] && [[ $(cut -d' ' -f1 "$record") == "$operation" ]] && grep -qE '^[0-9]+ (drained|timeout)$' "$record"; then return 0; fi
   install -d -m 0700 "$waits"
   # Every connected or closing socket counts; a closed server leaves FIN-WAIT and LAST-ACK sockets with bytes.
   if probe=$(enter "$machine" ss -tanH '( sport = :8080 )' </dev/null); then
     queued=$(awk '$1 != "LISTEN" && $1 != "TIME-WAIT" && $3 > 0 {n++} END {print n+0}' <<< "$probe")
     if [[ $queued == 0 ]]; then printf '%s drained\n' "$operation" > "$record"; return 0; fi
-  elif ! jq -e '.status == "Running"' <<< "$(record_of "$machine")" >/dev/null; then
-    # A probe that fails counts as drained only for a stopped or missing container.
+  elif listing=$("${incus_cli[@]}" list "$machine" --format json) &&
+      jq -e --arg name "$machine" 'all(.[]; .name != $name or .status == "Stopped")' <<< "$listing" >/dev/null; then
+    # A failed probe counts as drained only when a successful Incus lookup shows the container stopped or absent.
     printf '%s drained\n' "$operation" > "$record"
     return 0
   fi
@@ -371,7 +393,7 @@ response_gate() {
 #   4. drain HTTP and Horizon (quiesce) 8. rebuild preparation from the new live
 finish_forward() {
   local mode=${1:-retire} prev previous_sha='' exists='{}' unit service_failed=false running=false http_pid drain_failed=0 enabled
-  local verified=false known current each old='' journal_old='' journal_pending=''
+  local verified=false known current each old='' kept='' journal_old='' journal_earlier=''
   local -a parked_releases=()
   [[ $(field '.live') == "$sha" ]] || fail 'candidate no longer serves'
   if [[ ! -f $journal/operation ]]; then return; fi
@@ -398,10 +420,9 @@ finish_forward() {
     fi
   fi
   if [[ -f $journal/inventory ]]; then
-    # The pending field only exists in inventories written before this protocol.
     journal_old=$(jq -r '.old // empty' "$journal/inventory")
-    journal_pending=$(jq -r '.pending // empty' "$journal/inventory")
-    for each in "$journal_old" "$journal_pending"; do
+    journal_earlier=$(jq -r '.earlier // empty' "$journal/inventory")
+    for each in "$journal_old" "$journal_earlier"; do
       [[ -n $each ]] && [[ $each != "$sha" ]] && [[ $each != "$previous_sha" ]] || continue
       [[ $each =~ ^[a-f0-9]{40}$ ]] || fail 'invalid earlier rollback identity'
       if [[ $(record_of "gateway-${each:0:12}") != '{}' ]]; then parked_releases[${#parked_releases[@]}]=$each; else ctl forget gateway "${each:0:12}" >&2; fi
@@ -439,9 +460,10 @@ finish_forward() {
     wait "$http_pid" || drain_failed=1
     [[ $drain_failed == 0 ]] || fail 'former Gateway is still draining'
     # A rollback starts old with its units as they are. Only the selected live consumes jobs or runs the scheduler.
-    # systemd exits 1 when no unit file matches, as on a replay after the units were disabled.
-    enabled=$({ enter "$prev" systemctl list-unit-files --state=enabled --type=service --plain --no-legend \
-      'orbit-process-*-horizon.service' 'orbit-process-*-schedule-work.service' orbit-gateway-horizon.service || :; } </dev/null | awk '{print $1}')
+    # systemd exits 1 when no unit file matches a pattern. List every enabled service, let a failed listing
+    # stop the phase, and filter here, so a replay after the units were disabled finds an empty match.
+    listing=$(enter "$prev" systemctl list-unit-files --state=enabled --type=service --plain --no-legend </dev/null)
+    enabled=$(awk '$1 ~ /^(orbit-process-[0-9]+-(horizon|schedule-work)|orbit-gateway-horizon)\.service$/ {print $1}' <<< "$listing")
     printf '%s\n' "$enabled" | sort -u - "$journal/horizons" | while IFS= read -r unit; do
       [[ -z $unit ]] || enter "$prev" systemctl disable -- "$unit" </dev/null >&2
     done
@@ -457,22 +479,29 @@ finish_forward() {
     ctl retire gateway "${previous_sha:0:12}" "$operation" >&2
     rm -f -- "$waits/$prev"
   fi
+  # Only a verified live deletes what it replaces and rebuilds preparation. An unverified live keeps the earlier
+  # releases, at most two beside it, until a later public check or a rollback frees the slot.
   for each in "${parked_releases[@]}"; do
     [[ $each != "$old" ]] || continue
+    if [[ $verified != true ]]; then
+      [[ -z $kept ]] || fail 'more than two stopped Gateway releases would remain'
+      kept=$each
+      continue
+    fi
     parked "$(record_of "gateway-${each:0:12}")" "$each" || fail "stopped release ${each:0:12} is not parked"
-    "${incus_cli[@]}" delete "gateway-${each:0:12}"
+    ctl remove gateway "${each:0:12}" >&2
     ctl forget gateway "${each:0:12}" >&2
   done
   touch "$journal/host-retired"
   if [[ $verified == true ]]; then known="$known $sha"; fi
-  set_inventory "$sha" "$old" "$known"
-  # Preparation is rebuilt from the new live after every switch: seed replaces one cloned from another release.
-  ctl seed gateway "$id" "$operation" >&2
+  set_inventory "$sha" "$old" "$known" "$kept"
+  # Preparation is rebuilt from the verified live after every switch: seed replaces one cloned from another release.
+  if [[ $verified == true ]]; then ctl seed gateway "$id" "$operation" >&2; fi
   cp "$journal/operation" "$journal/last-operation"
   sync -f "$journal"
   clear_switch
   [[ $service_failed == false ]] || fail 'Gateway selected; a background service needs a corrective deployment'
-  [[ $verified == true ]] || fail 'Gateway selected but its public check failed. Roll back to old, or fix the cause and run --recover'
+  [[ $verified == true ]] || fail 'Gateway selected but its public check failed. Roll back to old, or fix the cause and run --recover; it keeps the earlier releases until then'
 }
 
 case "$action" in
@@ -668,6 +697,13 @@ case "$action" in
   public-ready)
     check_release "$sha"
     mark_verified "$sha"
+    ;;
+  settle)
+    # Without an open handover: once live passes its public check, free the slot an unverified live kept.
+    [[ ! -e $journal/operation && $(field '.live') == "$sha" ]] || fail 'finish the Gateway handover first'
+    if [[ -f $journal/rollback ]]; then park_rollback; fi
+    gateway_slot rollback
+    settle_slot "$sha"
     ;;
   recover)
     ctl resume gateway "$id" "$operation" >&2

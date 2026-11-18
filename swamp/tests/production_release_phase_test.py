@@ -244,9 +244,12 @@ class ProductionReleaseTest(unittest.TestCase):
 
     def test_recovery_retire_stops_after_the_bound_with_bytes_still_queued(self):
         self.r.link(NEXT)
-        self.r.state.update(verified=True, quiesced_previous=True, response_wait_since=1)
+        self.r.state.update(verified=True, quiesced_previous=True)
         running = {"status": "Running", "config": {"boot.autostart": "false"}}
         waits = self.r.root / "waits"
+        waits.mkdir()
+        # The workflow's wait recorded its first probe long ago; recovery keeps that start instead of a fresh one.
+        (waits / self.r.container(CURRENT)).write_text("300 waiting 1\n")
         busy = CompletedProcess([], 0, stdout="FIN-WAIT-1 0 2048 a:8080 b:1\n")
         with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "identity", return_value=running), \
                 patch.object(self.r, "discard"), patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), \
@@ -254,6 +257,32 @@ class ProductionReleaseTest(unittest.TestCase):
             self.r.retire()
         primitive.assert_called_once()
         self.assertEqual((waits / self.r.container(CURRENT)).read_text(), "300 timeout\n")
+
+    def test_a_failed_probe_with_a_running_container_stays_busy(self):
+        self.r.link(NEXT)
+        self.r.state.update(verified=True, quiesced_previous=True)
+        waits = self.r.root / "waits"
+        failed = CompletedProcess([], 1, stdout="", stderr="exec: ss: not found")
+        self.r.ctl["instance"] = lambda name: {"name": name, "status": "Running"}
+        with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "guest", return_value=failed), \
+                self.assertRaisesRegex(phase.Refusal, "queued response bytes"):
+            self.r.response_gate(self.r.container(CURRENT))
+        self.r.ctl["instance"] = lambda name: {"name": name, "status": "Stopped"}
+        with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "guest", return_value=failed):
+            self.r.response_gate(self.r.container(CURRENT))
+        self.assertEqual((waits / self.r.container(CURRENT)).read_text(), "300 drained\n")
+
+    def test_a_reversed_candidate_that_may_have_served_drains_before_it_is_removed(self):
+        self.r.state.update(action="deploy", candidate_attempted=True, switch_started=True, artifact="sha256:" + "f" * 64)
+        self.r.ctl["instance"] = lambda name: {"name": name, "status": "Running"}
+        order = []
+        with patch.object(self.r, "reverse"), patch.object(self.r, "check_selection"), patch.object(self.r, "park"), \
+                patch.object(self.r, "free_capacity"), patch.object(self.r, "guest"), \
+                patch.object(self.r, "response_gate", side_effect=lambda name: order.append("gate " + name)), \
+                patch.object(self.r, "discard", side_effect=lambda sha, owned_build: order.append("discard")), \
+                patch.object(self.r, "incus", return_value=CompletedProcess([], 0, stdout="[]")):
+            self.r.release_unused()
+        self.assertEqual(order, ["gate " + self.r.name, "discard"])
 
     def test_rollback_cleanup_leaves_an_already_parked_old_alone(self):
         self.r.state.update(action="rollback", rollback_awake=True, sha=OLD)

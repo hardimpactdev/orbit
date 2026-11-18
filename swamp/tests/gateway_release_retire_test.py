@@ -68,19 +68,31 @@ class GatewayReleaseRetire(GatewayReleaseFixture):
         self.assert_at_most_three()
 
     def test_two_failed_releases_in_a_row_keep_the_verified_rollback_target(self):
-        # The serving release never verified. The new one fails too: the earlier verified old stays, the former goes.
+        # The serving release never verified and the new one fails too: the verified earlier release stays old, the
+        # unverified former live stays parked beside it, and preparation waits for a verification.
         self.unverified_live_with_earlier_old([EARLIER])
-        self.assertFalse((self.state / "former").exists())
+        self.assert_parked("former", self.old)
         self.assertTrue((self.state / "earlier").exists())
-        self.assertTrue((self.state / "prep").exists())
-        self.inventory_is(self.sha, EARLIER, verified=(EARLIER,))
+        self.assertFalse((self.state / "prep").exists())
+        self.inventory_is(self.sha, EARLIER, verified=(EARLIER,), earlier=self.old)
 
-    def test_a_failed_release_keeps_only_the_most_recent_verified_former_live(self):
+    def test_a_failed_release_keeps_every_earlier_release_until_live_verifies(self):
+        # Verified A served and verified B was old. C takes traffic and fails its public check: A and B both stay,
+        # three containers, and nothing rebuilds preparation.
         self.unverified_live_with_earlier_old([self.old, EARLIER])
         self.assert_parked("former", self.old)
+        self.assertTrue((self.state / "earlier").exists())
+        self.assertFalse((self.state / "prep").exists())
+        self.inventory_is(self.sha, self.old, verified=(self.old, EARLIER), earlier=EARLIER)
+        # The next build refuses while C still fails; once C verifies, --recover frees the slot and rebuilds preparation.
+        self.assertIn("has not passed its public check", self.direct("build", "false", "{}", "false").stderr)
+        (self.state / f"broken-public-container-{self.sha}").unlink()
+        self.assert_ok(self.run_script(self.console, "--recover"))
         self.assertFalse((self.state / "earlier").exists())
+        self.assert_parked("former", self.old)
         self.assertTrue((self.state / "prep").exists())
-        self.inventory_is(self.sha, self.old, verified=(self.old,))
+        self.inventory_is(self.sha, self.old, verified=(self.sha, self.old))
+        self.assert_at_most_three()
 
     def test_a_failed_second_release_never_makes_an_unverified_former_live_old(self):
         # Nothing ever verified, and the new release fails its public check too: old stays empty.
@@ -90,8 +102,9 @@ class GatewayReleaseRetire(GatewayReleaseFixture):
         self.assert_ok(self.switch())
         self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
         self.assertIn("public check failed", self.run_script(self.phase, "retire", self.sha, OPERATION).stderr)
-        self.assertFalse((self.state / "former").exists())
-        self.inventory_is(self.sha, None)
+        # Nothing is verified: old stays empty, and the unverified former live waits as the earlier release.
+        self.assert_parked("former", self.old)
+        self.inventory_is(self.sha, None, earlier=self.old)
         self.assert_at_most_three()
 
     def test_a_verified_candidate_keeps_the_verified_earlier_old_over_an_unverified_former(self):

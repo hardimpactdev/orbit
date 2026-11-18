@@ -1,23 +1,29 @@
-"""Run the response wait playbook against a stubbed former live: it waits for drained send queues across closing sockets,
-treats a failed probe as busy unless the container is gone, records the outcome and logs a reached bound."""
+"""Run the response wait playbook against a stubbed former live. It waits for drained send queues across closing sockets,
+counts a failed probe as busy unless Incus reports the container stopped, keeps the first start of the bound for every later
+path and records the outcome."""
 import json
 import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAYBOOK = ROOT / "swamp/ansible/release-response-wait.yml"
-# Each call prints the listener, a TIME-WAIT socket and the closing connections left in the counter file, then one fewer.
+# `incus list` reports the container status; `incus exec … ss` prints the listener, a TIME-WAIT socket and the closing
+# connections left in the counter file, then one fewer.
 INCUS = """#!/bin/sh
 state="$FIXTURE_STATE"
-echo "$*" >> "$state/calls"
-case "$(cat "$state/mode")" in
-  error) echo "Error: websocket: close 1006" >&2; exit 1 ;;
-  gone) echo "Error: Instance is not running" >&2; exit 1 ;;
+case " $* " in
+  *" list "*)
+    status=$(cat "$state/status")
+    if [ "$status" = absent ]; then echo '[]'; else echo "[{\\"name\\": \\"gateway-aaaaaaaaaaaa\\", \\"status\\": \\"$status\\"}]"; fi
+    exit 0 ;;
 esac
+echo "$*" >> "$state/calls"
+if [ "$(cat "$state/mode")" = error ]; then echo "exec: ss: not found" >&2; exit 1; fi
 left=$(cat "$state/busy")
 echo "LISTEN     0      4096   10.1.0.3:8080   0.0.0.0:*"
 echo "TIME-WAIT  0      0      10.1.0.3:8080   10.1.0.1:6001"
@@ -29,7 +35,7 @@ if [ "$(cat "$state/mode")" = drain ] && [ "$left" -gt 0 ]; then echo $((left-1)
 
 @unittest.skipUnless(shutil.which("ansible-playbook"), "the pinned Ansible toolchain is not installed")
 class ReleaseResponseWait(unittest.TestCase):
-    def play(self, mode, busy):
+    def play(self, mode, busy, status="Running", record=None, seconds=3):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "bin").mkdir()
@@ -38,22 +44,28 @@ class ReleaseResponseWait(unittest.TestCase):
             incus.chmod(0o755)
             (root / "busy").write_text(str(busy))
             (root / "mode").write_text(mode)
+            (root / "status").write_text(status)
+            (root / "calls").touch()
+            records = root / "records"
+            if record is not None:
+                records.mkdir()
+                (records / "gateway-aaaaaaaaaaaa").write_text(record)
             (root / "intent.json").write_text(json.dumps({"container": "gateway-aaaaaaaaaaaa", "operation": 42,
                                                           "ssh_execution": {"target": {}, "identity_file": "/dev/null"}}))
             (root / "inventory").write_text("[release_node]\nlocalhost ansible_connection=local\n")
             result = subprocess.run(
-                ["ansible-playbook", "-i", root / "inventory", PLAYBOOK, "--start-at-task", "Read web sockets that still hold queued bytes",
-                 "-e", "ansible_become=false", "-e", "wait_retries=4", "-e", "wait_delay=0", "-e", f"record_dir={root / 'records'}",
+                ["ansible-playbook", "-i", root / "inventory", PLAYBOOK, "--start-at-task", "Read this Operation's wait record",
+                 "-e", "ansible_become=false", "-e", f"wait_seconds={seconds}", "-e", "wait_delay=1", "-e", f"record_dir={records}",
                  "-e", "ansible_python_interpreter=" + shutil.which("python3")],
                 env={**os.environ, "PATH": f"{root / 'bin'}:{os.environ['PATH']}", "ORBIT_RUN": str(root), "FIXTURE_STATE": str(root),
                      "ANSIBLE_CONFIG": str(ROOT / "swamp/ansible/ansible.cfg"), "ANSIBLE_FORCE_COLOR": "0"},
-                capture_output=True, text=True, timeout=120, check=False)
+                capture_output=True, text=True, timeout=180, check=False)
             calls = (root / "calls").read_text().splitlines()
-            record = root / "records/gateway-aaaaaaaaaaaa"
-            return result, calls, record.read_text() if record.exists() else None
+            saved = records / "gateway-aaaaaaaaaaaa"
+            return result, calls, saved.read_text() if saved.exists() else None
 
     def test_a_slow_reader_after_the_server_closed_is_waited_for(self):
-        result, calls, record = self.play("drain", 2)
+        result, calls, record = self.play("drain", 2, seconds=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(calls), 3)
         self.assertTrue(all("exec gateway-aaaaaaaaaaaa -- ss -tanH" in call for call in calls))
@@ -63,17 +75,27 @@ class ReleaseResponseWait(unittest.TestCase):
     def test_a_reached_bound_is_logged_recorded_and_never_fails_retire(self):
         result, calls, record = self.play("stuck", 1)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(len(calls), 5)
+        self.assertGreaterEqual(len(calls), 2)
         self.assertIn("gateway.release_response_wait_timeout: gateway-aaaaaaaaaaaa", result.stdout)
         self.assertEqual(record, "42 timeout\n")
 
-    def test_a_failed_probe_is_not_drained_unless_the_container_is_gone(self):
+    def test_a_failed_probe_stays_busy_until_the_bound_unless_incus_reports_the_container_stopped(self):
         result, calls, record = self.play("error", 0)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(len(calls), 5)
+        self.assertGreaterEqual(len(calls), 2)
         self.assertEqual(record, "42 timeout\n")
-        result, calls, record = self.play("gone", 0)
+        for status in ("Stopped", "absent"):
+            result, calls, record = self.play("error", 0, status=status)
+            self.assertEqual(calls, [])
+            self.assertEqual(record, "42 drained\n")
+
+    def test_the_first_start_is_kept_so_a_later_path_never_restarts_the_bound(self):
+        result, calls, record = self.play("stuck", 1, record=f"42 waiting {int(time.time()) - 1000}\n", seconds=600)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(len(calls), 1)
+        self.assertEqual(record, "42 timeout\n")
+        result, calls, record = self.play("drain", 3, record="42 drained\n")
+        self.assertEqual(calls, [])
         self.assertEqual(record, "42 drained\n")
 
 

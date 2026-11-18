@@ -259,8 +259,7 @@ def demote(target, operation, commit):
         raise ValueError("release.container_still_active")
     if instance("prepare-" + target) is not None:
         # Another preparer already holds the slot. This build never served, so it goes.
-        incus("delete", name, "--force")
-        power(name, "discard")
+        remove(record, force=True)
         return name
     halt(record, operation)
     # Units the switch enabled before it failed must not start in preparation. Read the stopped container itself.
@@ -285,16 +284,18 @@ def seed(target, revision, operation):
     live = release(target, revision)
     snapshot = "seed-" + operation
     prep = instance(name)
-    if prep is not None and prep["config"].get(PREFIX + "seeded-from") not in (None, live["config"][PREFIX + "commit"]):
+    stale = prep is not None and prep["config"].get(PREFIX + "seeded-from") not in (None, live["config"][PREFIX + "commit"])
+    if prep is None or stale:
+        # Refuse a pool that would copy files before anything changes.
+        require_clone_copy(live)
+    if stale:
         # Preparation is always a clone of the current live. One cloned from another release is replaced.
         owned(prep, {"target": target, "role": "prepare"})
         halt(prep, operation)
-        incus("delete", name)
-        power(name, "discard")
+        remove(prep)
         prep = None
     if prep is None:
         gateway_slots(target)
-        require_clone_copy(live)
         snapshots = json.loads(incus("snapshot", "list", live["name"], "--format", "json"))
         if not any(entry["name"] == snapshot for entry in snapshots):
             incus("snapshot", "create", live["name"], snapshot)
@@ -346,8 +347,8 @@ def datasets(record):
 def require_clone_copy(record):
     """A seed must be a ZFS clone. With zfs.clone_copy false or rebase, Incus would send the files instead."""
     info = pool_info(record)
-    if info["driver"] == "zfs" and info["config"].get("zfs.clone_copy", "true") != "true":
-        raise ValueError("release.pool_copies_files: set zfs.clone_copy=true on the release pool; a seed never copies files")
+    if info["driver"] != "zfs" or info["config"].get("zfs.clone_copy", "true") != "true":
+        raise ValueError("release.pool_copies_files: the release pool needs the zfs driver with zfs.clone_copy=true; a seed never copies files")
 
 
 def gateway_slots(target):
@@ -395,6 +396,39 @@ def prune(root):
         owned_name = re.fullmatch(re.escape(prefix) + r"(prepare-gateway|gateway-[0-9a-f]{12})@deleted-[^@/]+", snapshot)
         if owned_name and clones.strip() in ("", "-"):
             zfs("destroy", snapshot)
+
+
+def free_dependents(record):
+    """Move the ZFS origin role off a release before it is deleted, without copying a file.
+
+    After a promotion the preparer, or a release promoted from it, can be the origin of live and old. Incus cannot
+    destroy such a dataset; it would move it to deleted/ and keep its blocks for ever. Promoting each dependent clone,
+    newest origin first, moves the snapshots it needs onto it. Only snapshots Incus already forgot may move."""
+    root = datasets(record)
+    if root is None:
+        return
+    prefix = root + "/containers/" + PROJECT + "_"
+    dataset = prefix + record["name"]
+    for _ in range(64):
+        listing = zfs("list", "-H", "-p", "-t", "snapshot", "-o", "name,createtxg,clones", "-d", "1", dataset)
+        rows = [line.split("\t") for line in listing.splitlines() if line.strip()]
+        dependents = [(int(txg), clones.split(",")) for _snap, txg, clones in rows if clones.strip() not in ("", "-")]
+        if not dependents:
+            return
+        limit, clones = max(dependents)
+        if any(not clone.startswith(prefix) for clone in clones):
+            raise ValueError("release.foreign_clone: a dataset outside the release containers depends on " + record["name"])
+        if any("@deleted-" not in snap for snap, txg, _clones in rows if int(txg) <= limit):
+            raise ValueError("release.recorded_snapshot_would_move: delete the Incus snapshots of " + record["name"] + " first")
+        zfs("promote", clones[0])
+    raise ValueError("release.dependents_remain: " + record["name"])
+
+
+def remove(record, force=False):
+    """Delete a release container only once no other release depends on its dataset."""
+    free_dependents(record)
+    incus("delete", record["name"], *(["--force"] if force else []))
+    power(record["name"], "discard")
 
 
 def clear_wanted(name):
@@ -551,6 +585,10 @@ def main(argv):
     seeding.add_argument("target", type=matches(OWNER))
     seeding.add_argument("revision", type=matches(REVISION))
     seeding.add_argument("operation", type=matches(OPERATION))
+    removal = commands.add_parser("remove")
+    removal.add_argument("target", type=matches(OWNER))
+    removal.add_argument("revision", type=matches(REVISION))
+    removal.add_argument("--force", action="store_true")
     resting = commands.add_parser("rest")
     resting.add_argument("target", type=matches(OWNER))
     resting.add_argument("operation", type=matches(OPERATION))
@@ -576,6 +614,12 @@ def main(argv):
         return seed(args.target, args.revision, args.operation)
     if args.action == "rest":
         return rest(args.target, args.operation)
+    if args.action == "remove":
+        record = release(args.target, args.revision)
+        if record["config"].get("boot.autostart") == "true":
+            raise ValueError("release.container_still_active")
+        remove(record, force=args.force)
+        return record["name"]
     if args.action in ("wake", "sleep"):
         record = preparer(args.target)
         if args.action == "wake":

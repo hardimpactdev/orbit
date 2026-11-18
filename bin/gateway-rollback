@@ -21,9 +21,14 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     if [[ $id == --recover ]]; then
         if [[ ! -f $journal/operation ]]; then
             # A rollback that stopped before its switch was journaled parks old again.
-            test -f "$journal/rollback" || fail "there is no interrupted handover"
-            read -r operation started < "$journal/rollback"
-            exec "$phase" release-unused "$started" "$operation"
+            if [[ -f $journal/rollback ]]; then
+                read -r operation started < "$journal/rollback"
+                exec "$phase" release-unused "$started" "$operation"
+            fi
+            # An unverified live keeps an earlier release in the preparation slot; once it verifies, free the slot.
+            inventory=$base/.orbit/gateway-containers.json
+            [[ -n $(jq -r '.earlier // ""' "$inventory") ]] || fail "there is no interrupted handover"
+            exec "$phase" settle "$(jq -er '.live' "$inventory")" "$(cat "$journal/last-operation")"
         fi
         operation=$(cat "$journal/operation")
         candidate=$(cat "$journal/candidate")

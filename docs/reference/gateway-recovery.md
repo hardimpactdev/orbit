@@ -143,21 +143,24 @@ Retire is one ordered list of steps. Each checks state, then acts or skips, so a
 
 1. It starts Horizon on the new live. It checks the new live through the public name and records the result in the inventory's `verified` list.
 2. It moves the scheduler and the background units. It waits for the former live's HTTP requests and Horizon jobs, then disables its Horizon and scheduler units.
-3. A separate workflow step waits until no connected or closing socket in the former live has queued send bytes. Ansible checks every second, up to 600 times. It records `drained` or `timeout`.
-4. Without that record, retire probes once per retry, as in console rollback and `--recover`. The bound counts from the first probe.
-5. It stops the former live with `boot.autostart=false`.
-6. old becomes the most recent verified former live, else none. Every other stopped release is deleted.
+3. A separate workflow step records the start of the wait. Ansible then checks every second for queued send bytes on the former live's connected or closing sockets. It records `drained`, or `timeout` after 600 seconds.
+4. A failed probe counts as busy. Only a successful Incus lookup that shows the container stopped or absent ends the wait early.
+5. Without that outcome, retire probes once per retry, as in console rollback and `--recover`. The bound counts from the recorded start.
+6. It stops the former live with `boot.autostart=false`.
+7. old becomes the most recent verified former live, else none.
+8. If the new live passed its public check, every other stopped release is deleted. Otherwise the other release stays as `earlier`.
 
 Then preparation returns:
 
-1. It rebuilds preparation from a snapshot of the release that serves. Preparation stays stopped, without the live address reservation, boot mounts or enabled units.
-2. A preparer cloned from another release is replaced.
-3. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
-4. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
+1. Only a new live that passed its public check rebuilds preparation, from a snapshot of the release that serves.
+2. Preparation stays stopped, without the live address reservation, boot mounts or enabled units.
+3. A preparer cloned from another release is replaced.
+4. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
+5. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
 
-The seed refuses a pool whose `zfs.clone_copy` is not `true`, because Incus would then copy files. It refuses to promote while a snapshot that Incus still records would move. It refuses a fourth Gateway container. Until its cleanup and promotion finish, the preparer is marked unfinished: no release wakes it, and the next build repeats the seed.
+The seed refuses a pool without the zfs driver or whose `zfs.clone_copy` is not `true`, because Incus would then copy files. Before any release container is deleted, its dependent clones are promoted off it, so Incus never parks a dataset in `deleted/`. It refuses to promote while a snapshot that Incus still records would move. It refuses a fourth Gateway container. Until its cleanup and promotion finish, the preparer is marked unfinished: no release wakes it, and the next build repeats the seed.
 
-If the new live fails its public check, the release fails after retire. Roll back to old, or deploy a corrective commit. Retire also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
+If the new live fails its public check, the release fails after retire. Old and `earlier` fill the slots, three containers with live. Roll back to old, or fix the cause and run `--recover`: once live passes its public check, it deletes `earlier` and rebuilds preparation. The next build does the same first. Retire also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
 
 If the selected Horizon unit cannot start, inspect its journal in the selected container. Orbit keeps the outgoing workers and the handover journal. Repair the reported dependency, configuration or service in place and rerun `--recover`. For an emergency code patch, use a temporary systemd override on the affected Horizon unit to mount the corrected file read-only from a writable path in that container. Commit the same patch and deploy the forward release after the journal clears. The correction then lives in the sealed release. The temporary override stays in the stopped old until the next release replaces it.
 

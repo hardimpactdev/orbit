@@ -17,16 +17,6 @@ contexts:
       stdout_lines:
       - "LISTEN     0      4096   10.1.0.3:8080   0.0.0.0:*"
       - "ESTAB      0      0      10.1.0.3:8080   10.1.0.1:51240"
-  response-wait-stopped:
-    web_sockets:
-      rc: 1
-      stderr: "Error: Instance is not running"
-      stdout_lines: []
-  response-wait-probe-error:
-    web_sockets:
-      rc: 1
-      stderr: "Error: websocket: close 1006"
-      stdout_lines: []
   fleet-command-current:
     fleet_gateway_commands:
       stdout: "list  List commands\ngateway:known-hosts:sync  Restore recorded pins\n"
@@ -1295,16 +1285,6 @@ cases:
   field: vars.queued
   context: response-wait-drained
   expected: 0
-- file: release-response-wait.yml
-  task: Wait for queued response bytes in the former live
-  field: vars.gone
-  context: response-wait-stopped
-  expected: true
-- file: release-response-wait.yml
-  task: Wait for queued response bytes in the former live
-  field: vars.gone
-  context: response-wait-probe-error
-  expected: false
 - file: tasks/role-swamp.yml
   task: Check Swamp units
   field: loop

@@ -1,7 +1,8 @@
 ---
 # Wait until the former live holds no queued response bytes on its web port, before retire stops its container.
-# Bound: 600 retries 1 second apart, under the step's `timeout 660`. The outcome, drained or timeout, is recorded
-# on the Node for this Operation; retire refuses to stop the former live without it. A timeout never fails retire.
+# Bound: 600 seconds from the first probe of this Operation, checked every second under the step's `timeout 720`.
+# The start and the outcome are recorded on the Node for this Operation; retire refuses to stop the former live without
+# the outcome, and reuses the start. A timeout never fails retire.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -24,37 +25,67 @@
   become: true
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
-    wait_retries: 600
+    # The bound counts from the first probe of this Operation, which the record keeps for every later path.
+    wait_seconds: 600
+    wait_retries: 900
     wait_delay: 1
     record_dir: /var/lib/orbit/release-response-wait
+    record: "{{ record_dir }}/{{ intent.container }}"
     # Connected and closing sockets whose Send-Q, the third column, is not empty. A server that already closed
     # leaves FIN-WAIT, CLOSING and LAST-ACK sockets that still hold bytes.
     queued: "{{ web_sockets.stdout_lines | reject('match', '^\\s*(LISTEN|TIME-WAIT)\\s') | map('regex_replace', '^\\s*\\S+\\s+\\S+\\s+(\\d+).*$', '\\1') | map('int') | select('gt', 0) | list | length }}"
-    # A failed probe counts as drained only when Incus says the container is not running or does not exist.
-    gone: "{{ web_sockets.rc != 0 and (web_sockets.stderr is search('not running|[Nn]ot [Ff]ound')) }}"
-    drained: "{{ gone | bool or (web_sockets.rc == 0 and queued | int == 0) }}"
+    # Only a probe that ran and showed no queued bytes drains. A failed probe is busy until the bound.
+    drained: "{{ web_sockets.rc == 0 and queued | int == 0 }}"
+    elapsed: "{{ (now().timestamp() | int) - (wait_start | int) }}"
   tasks:
-    - name: Read web sockets that still hold queued bytes
+    - name: Read this Operation's wait record
+      ansible.builtin.slurp:
+        src: "{{ record }}"
+      register: wait_record
+      failed_when: false
+    - name: Keep the outcome or the first start of this Operation's wait
+      ansible.builtin.set_fact:
+        wait_words: "{{ (wait_record.content | b64decode).split() if wait_record.content is defined else [] }}"
+    - name: Skip a wait this Operation already finished
+      ansible.builtin.meta: end_host
+      when: wait_words[:1] == [intent.operation | string] and wait_words[1:2] in [['drained'], ['timeout']]
+    - name: Read the former live's state from Incus
       ansible.builtin.command:
-        argv: [incus, --force-local, --project, orbit-releases, exec, "{{ intent.container }}", --,
+        argv: [incus, --force-local, --project, orbit-releases, list, "{{ intent.container }}", --format, json]
+      register: former_state
+      changed_when: false
+    - name: Choose the start of the bound
+      ansible.builtin.set_fact:
+        wait_start: "{{ wait_words[2] if wait_words[:2] == [intent.operation | string, 'waiting'] else (now().timestamp() | int) }}"
+        # A successful lookup that shows the container stopped or absent needs no wait.
+        former_gone: "{{ former_state.stdout | from_json | selectattr('name', 'equalto', intent.container) | rejectattr('status', 'equalto', 'Stopped') | list | length == 0 }}"
+    - name: Create the response wait records
+      ansible.builtin.file:
+        path: "{{ record_dir }}"
+        state: directory
+        mode: "0700"
+    - name: Record the start before the first probe
+      ansible.builtin.copy:
+        dest: "{{ record }}"
+        content: "{{ intent.operation }} waiting {{ wait_start }}\n"
+        mode: "0600"
+    - name: Read web sockets that still hold queued bytes
+      when: not former_gone | bool
+      ansible.builtin.command:
+        argv: [timeout, "10", incus, --force-local, --project, orbit-releases, exec, "{{ intent.container }}", --,
                ss, -tanH, "( sport = :8080 )"]
       register: web_sockets
       changed_when: false
       failed_when: false
       retries: "{{ wait_retries }}"
       delay: "{{ wait_delay }}"
-      until: drained | bool
+      until: drained | bool or elapsed | int >= wait_seconds | int
     - name: Report the reached bound and continue to retire
-      when: not drained | bool
+      when: not former_gone | bool and not drained | bool
       ansible.builtin.debug:
-        msg: "gateway.release_response_wait_timeout: {{ intent.container }} still had queued response bytes after {{ wait_retries }} checks"
-    - name: Create the response wait records
-      ansible.builtin.file:
-        path: "{{ record_dir }}"
-        state: directory
-        mode: "0700"
+        msg: "gateway.release_response_wait_timeout: {{ intent.container }} still had queued response bytes after {{ elapsed }} seconds"
     - name: Record the outcome for retire
       ansible.builtin.copy:
-        dest: "{{ record_dir }}/{{ intent.container }}"
-        content: "{{ intent.operation }} {{ 'drained' if drained | bool else 'timeout' }}\n"
+        dest: "{{ record }}"
+        content: "{{ intent.operation }} {{ 'drained' if former_gone | bool or drained | bool else 'timeout' }}\n"
         mode: "0600"

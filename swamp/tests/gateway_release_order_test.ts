@@ -217,7 +217,7 @@ Deno.test("Gateway and AppProd share the clone, handover, compensation and readb
     edge.condition.conditions?.some((condition) => condition.type === "failed")));
   const wait = find(handover, "Wait for queued responses");
   assertEquals(wait.allowFailure, true);
-  assert(JSON.stringify(wait.task).includes("timeout 660"));
+  assert(JSON.stringify(wait.task).includes("timeout 720"));
   const retire = find(handover, "Retire the previous live");
   assertEquals(retire.dependsOn, [
     { step: quiesce.name, condition: { type: "succeeded" } },

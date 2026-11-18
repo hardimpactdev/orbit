@@ -20,7 +20,7 @@ cases = [
   "test_retire_keeps_the_former_stopped_and_replaces_the_earlier_old_only_then",
   "test_a_missing_former_live_keeps_the_earlier_old",
   "test_two_failed_releases_in_a_row_keep_the_verified_rollback_target",
-  "test_a_failed_release_keeps_only_the_most_recent_verified_former_live",
+  "test_a_failed_release_keeps_every_earlier_release_until_live_verifies",
   "test_a_failed_second_release_never_makes_an_unverified_former_live_old",
   "test_a_verified_candidate_keeps_the_verified_earlier_old_over_an_unverified_former",
   "test_a_missing_old_is_forgotten_instead_of_blocking_releases",
@@ -33,7 +33,7 @@ cases = [
 "test_retire_keeps_the_former_stopped_and_replaces_the_earlier_old_only_then" = 3
 "test_a_missing_former_live_keeps_the_earlier_old" = 3
 "test_two_failed_releases_in_a_row_keep_the_verified_rollback_target" = 3
-"test_a_failed_release_keeps_only_the_most_recent_verified_former_live" = 3
+"test_a_failed_release_keeps_every_earlier_release_until_live_verifies" = 3
 "test_a_failed_second_release_never_makes_an_unverified_former_live_old" = 3
 "test_a_verified_candidate_keeps_the_verified_earlier_old_over_an_unverified_former" = 3
 "test_a_missing_old_is_forgotten_instead_of_blocking_releases" = 3

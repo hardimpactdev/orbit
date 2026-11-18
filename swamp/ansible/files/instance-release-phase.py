@@ -904,16 +904,20 @@ class Release:
                       if len(line.split()) > 2 and line.split()[0] not in ("LISTEN", "TIME-WAIT") and int(line.split()[2]) > 0]
             drained = not queued
         else:
-            # A failed probe counts as drained only for a stopped or missing container.
+            # A failed probe counts as drained only when a successful Incus lookup shows the container stopped or absent.
             item = self.ctl["instance"](machine)
-            drained = item is None or item["status"] != "Running"
-        first = self.state.setdefault("response_wait_since", int(time.time()))
-        self.persist(response_wait_since=first)
+            drained = item is None or item["status"] == "Stopped"
+        # The bound counts from the first probe of this Operation, the one the workflow's wait records or this one.
+        RESPONSE_WAITS.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if words[:2] == [str(self.operation), "waiting"]:
+            first = int(words[2])
+        else:
+            first = int(time.time())
+            atomic(record, f"{self.operation} waiting {first}\n")
         if not drained and time.time() - first < RESPONSE_WAIT_SECONDS:
             raise Refusal(f"deployment.response_wait: {machine} still has queued response bytes; retry to keep waiting")
         if not drained:
             print(f"deployment.response_wait_timeout: {machine} still had queued response bytes; it stops now", file=sys.stderr)
-        RESPONSE_WAITS.mkdir(mode=0o700, parents=True, exist_ok=True)
         atomic(record, f"{self.operation} {'drained' if drained else 'timeout'}\n")
 
     @staticmethod
@@ -974,6 +978,11 @@ class Release:
                 self.guest(self.name, "systemctl", "stop", "orbit-frankenphp.service")
                 self.primitive("retire", self.sha[:12], self.operation)
         elif self.state.get("candidate_attempted") and self.sha not in (self.inventory["live"], self.inventory["old"]):
+            if self.state.get("switch_started") and self.ctl["instance"](self.name) is not None:
+                # The candidate may have served between the route switch and its reversal. Its web server already
+                # stopped in reverse(); its queued response bytes drain before the container goes.
+                self.guest(self.name, "systemctl", "disable", "--now", "orbit-frankenphp.service", check=False)
+                self.response_gate(self.name)
             self.discard(self.sha, owned_build=True)
             snapshot = "built-" + str(self.operation)
             snapshots = json.loads(self.incus("snapshot", "list", self.prep, "--format", "json").stdout)

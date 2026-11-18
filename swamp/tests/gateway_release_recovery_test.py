@@ -53,6 +53,9 @@ elif action == "demote":
         if not (state / "prep").exists():
             (state / "prep").write_text("Stopped")
         event("demote " + target)
+elif action == "remove" and (state / key).exists():
+    (state / key).unlink()
+    event("delete " + key)
 elif action == "rest" and (state / "prep").exists():
     (state / "prep").write_text("Stopped")
 """
@@ -111,9 +114,12 @@ def stub(name, args):
         unit = args[-1]
         active = state / f"{machine}-{unit}"
         if action == "list-unit-files":
-            # systemd 259 exits 1 when no unit file matches; nothing here stays enabled after a drain.
+            # systemd 259 exits 1 when no unit file matches a pattern. Without patterns it lists what is enabled.
             event(f"systemctl list-unit-files {unit}")
-            return 1
+            if any(arg.endswith(".service") for arg in args):
+                return 1
+            print("ssh.service enabled enabled\norbit-gateway-web.service enabled enabled")
+            return 0
         if action == "list-units" and "--state=active,activating,deactivating" in args:
             prefix = f"{machine}-"
             for service in sorted(state.glob(f"{prefix}*horizon.service")):
@@ -430,9 +436,11 @@ esac
         self.assertTrue(counts, "no container change was recorded")
         self.assertLessEqual(max(counts), 3, counts)
 
-    def inventory_is(self, live, old, verified=()):
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": live, "old": old,
-                                                                 "verified": sorted(verified), "host_retired": True})
+    def inventory_is(self, live, old, verified=(), earlier=None):
+        expected = {"version": 2, "live": live, "old": old, "verified": sorted(verified), "host_retired": True}
+        if earlier is not None:
+            expected["earlier"] = earlier
+        self.assertEqual(json.loads(self.inventory.read_text()), expected)
 
     def assert_parked(self, key, sha):
         self.assertEqual((self.state / key).read_text(), "Stopped")

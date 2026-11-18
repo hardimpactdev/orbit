@@ -381,9 +381,11 @@ class ReleaseTest(unittest.TestCase):
 
     def test_a_seed_refuses_a_pool_that_would_copy_files_and_a_fourth_container(self):
         live = {"name": "gateway-" + SHA[:12], "expanded_devices": {"root": {"pool": "orbit-releases"}}}
-        for value in ("false", "rebase"):
-            pool = json.dumps({"driver": "zfs", "config": {"source": "tank/r", "zfs.clone_copy": value}})
-            with patch.object(release.subprocess, "check_output", return_value=pool), self.assertRaisesRegex(ValueError, "copies_files"):
+        for pool in ({"driver": "zfs", "config": {"source": "tank/r", "zfs.clone_copy": "false"}},
+                     {"driver": "zfs", "config": {"source": "tank/r", "zfs.clone_copy": "rebase"}},
+                     {"driver": "dir", "config": {"source": "/var/lib/incus/storage-pools/r"}}):
+            with patch.object(release.subprocess, "check_output", return_value=json.dumps(pool)), \
+                    self.assertRaisesRegex(ValueError, "copies_files"):
                 release.require_clone_copy(live)
         with patch.object(release.subprocess, "check_output", return_value=json.dumps({"driver": "zfs", "config": {"source": "t"}})):
             release.require_clone_copy(live)
@@ -392,6 +394,44 @@ class ReleaseTest(unittest.TestCase):
             release.gateway_slots("gateway")
         with patch.object(release, "incus", return_value=json.dumps(three[:2])):
             release.gateway_slots("gateway")
+
+    def test_a_release_is_deleted_only_after_its_dependent_clones_are_promoted_off_it(self):
+        prep = {"name": "prepare-gateway", "expanded_devices": {"root": {"pool": "orbit-releases"}}}
+        root = "tank/r/containers/orbit-releases_"
+        live, old = root + "gateway-" + SHA[:12], root + "gateway-" + "b" * 12
+        listings = [
+            # The preparer is the origin of live (newer snapshot) and old (older snapshot).
+            f"{root}prepare-gateway@deleted-old\t5\t{old}\n{root}prepare-gateway@deleted-seed\t9\t{live}\n",
+            # Promoting live moved both snapshots onto it; nothing depends on the preparer any more.
+            "",
+        ]
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command[1:])
+            stdout = listings.pop(0) if command[1] == "list" else ""
+            return subprocess.CompletedProcess(command, 0, stdout=stdout)
+        pool = json.dumps({"driver": "zfs", "config": {"source": "tank/r"}})
+        with patch.object(release.subprocess, "run", side_effect=run), patch.object(release.subprocess, "check_output", return_value=pool), \
+                patch.object(release, "incus") as incus, patch.object(release, "power") as power_call:
+            release.remove(prep)
+        self.assertEqual([c for c in calls if c[0] == "promote"], [["promote", live]])
+        incus.assert_called_once_with("delete", "prepare-gateway")
+        power_call.assert_called_once_with("prepare-gateway", "discard")
+
+    def test_removal_refuses_to_move_a_recorded_snapshot_or_feed_a_foreign_clone(self):
+        prep = {"name": "prepare-gateway", "expanded_devices": {"root": {"pool": "orbit-releases"}}}
+        root = "tank/r/containers/orbit-releases_"
+        pool = json.dumps({"driver": "zfs", "config": {"source": "tank/r"}})
+        for listing, error in ((f"{root}prepare-gateway@snapshot-backup\t3\t{root}gateway-{SHA[:12]}\n", "recorded_snapshot_would_move"),
+                               (f"{root}prepare-gateway@deleted-x\t3\ttank/other/clone\n", "foreign_clone")):
+            def run(command, listing=listing, **kwargs):
+                return subprocess.CompletedProcess(command, 0, stdout=listing)
+            with self.subTest(error=error), patch.object(release.subprocess, "run", side_effect=run), \
+                    patch.object(release.subprocess, "check_output", return_value=pool), patch.object(release, "incus") as incus, \
+                    self.assertRaisesRegex(ValueError, error):
+                release.remove(prep)
+            incus.assert_not_called()
 
     def test_a_preparer_with_an_unfinished_seed_never_wakes(self):
         prep = self.gateway("prepare-gateway", "prepare", operation="13", **{"seeded-from": SHA, "seed-ready": "false"})

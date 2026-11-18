@@ -31,6 +31,8 @@ cases = [
   "test_detach_refuses_a_seed_snapshot_that_incus_still_records_and_skips_other_drivers",
   "test_detach_refuses_to_move_a_snapshot_incus_still_records",
   "test_a_seed_refuses_a_pool_that_would_copy_files_and_a_fourth_container",
+  "test_a_release_is_deleted_only_after_its_dependent_clones_are_promoted_off_it",
+  "test_removal_refuses_to_move_a_recorded_snapshot_or_feed_a_foreign_clone",
   "test_a_preparer_with_an_unfinished_seed_never_wakes",
   "test_a_promoted_preparer_is_detached_once_and_prune_runs_after_an_old_is_deleted",
   "test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build",

@@ -178,7 +178,7 @@ jobs:
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
   # The former live's web server stopped. Its kernel can still hold response bytes for slow clients, and a container
-  # stop would drop them. Ansible's own retries (600, 1 second apart) wait under `timeout 660` and record the outcome;
+  # stop would drop them. Ansible's own retries, one second apart, wait up to 600 seconds from the recorded first probe under `timeout 720`;
   # retire refuses to stop the former live without that record, and a reached bound only logs.
   - name: Write the response wait input
     labels: {role: swamp}
@@ -205,7 +205,7 @@ jobs:
       behaviorName: '${{ ("release-response-wait-" + inputs.intent.target).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: timeout 660 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/release-response-wait.yml"
+        run: timeout 720 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/release-response-wait.yml"
         env:
           ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
           ORBIT_RUN_ID: '${{ run.id }}'
