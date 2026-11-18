@@ -1,7 +1,7 @@
 """A release consumes the Process edits that arrived after it was admitted."""
 import importlib.util
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("horizons", Path(__file__).parents[1] / "scripts/gateway-release-horizons.py")
 module = importlib.util.module_from_spec(spec)
