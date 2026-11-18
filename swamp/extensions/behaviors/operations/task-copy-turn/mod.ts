@@ -193,7 +193,8 @@ function shapeRun(evidence: Evidence): Turn {
     const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
     const base = {
         ended: over(evidence, started?.status, listed, cutEnded),
-        t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? null,
+        // The thread the turn targeted stays named when the last read failed: a later turn settles that thread by its ID.
+        t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? evidence.read?.thread_id ?? null,
         run_id: started?.runId ?? null,
         // The launch mark precedes the send, so it means possibly sent; only a run that T3 reported for the send confirms the launch.
         sent: evidence.launched,

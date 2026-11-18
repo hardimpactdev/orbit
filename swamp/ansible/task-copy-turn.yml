@@ -191,11 +191,13 @@
           changed_when: false
           no_log: true
         # Each earlier turn's thread: the one of its captured ID, whatever its title; only a turn with no captured ID, the one of its title.
+        # An admitted ID is one T3 was never seen to receive: the CLI made its own, so that turn too is found by its title.
         - name: Match the earlier turns' threads
           ansible.builtin.set_fact:
             settle_mine: >-
-              {% set mine = {} %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set _ = mine.update({entry.operation_id
-              | string: settle_listed | selectattr('threadId', 'equalto', entry.t3_thread_id) | list if entry.t3_thread_id | default(none) is string
+              {% set mine = {} %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set captured = none if entry.admitted
+              | default(false) is true else entry.t3_thread_id | default(none) %}{% set _ = mine.update({entry.operation_id | string: settle_listed
+              | selectattr('threadId', 'equalto', captured) | list if captured is string
               else settle_listed | selectattr('title', 'equalto', entry.title) | list}) %}{% endfor %}{{ mine }}
           no_log: true
         # Each recorded run of a turn that may have sent, on its captured thread, once: the helper reads it and stops it only while it goes
@@ -205,8 +207,8 @@
             settle_running: >-
               {% set running = [] %}{% for entry in intent.turn.settle if settle_listed is not none and entry.sent | default(true) is not false
               and entry.run_id | default(none) is string and entry.run_id not in running | map(attribute='run') %}{% set mine = settle_mine[entry.operation_id
-              | string] %}{% set thread = entry.t3_thread_id if entry.t3_thread_id | default(none) is string else (mine[0].threadId if mine | length == 1
-              else none) %}{% if thread is not none %}{% set _ = running.append({'thread': thread, 'run': entry.run_id}) %}{% endif %}{% endfor %}{{ running }}
+              | string] %}{% set captured = none if entry.admitted | default(false) is true else entry.t3_thread_id | default(none) %}{% set thread
+              = captured if captured is string else (mine[0].threadId if mine | length == 1 else none) %}{% if thread is not none %}{% set _ = running.append({'thread': thread, 'run': entry.run_id}) %}{% endif %}{% endfor %}{{ running }}
           no_log: true
         - name: Stop the earlier runs
           ansible.builtin.command:
@@ -230,8 +232,9 @@
           ansible.builtin.set_fact:
             settle_over: >-
               {% set over = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_mine[entry.operation_id
-              | string] %}{% if entry.sent | default(true) is false or (entry.run_id in settle_ended if entry.run_id | default(none) is string
-              else ((mine | length == 0 and entry.t3_thread_id | default(none) is not string) or (mine | length == 1 and mine[0].status in thread_over)))
+              | string] %}{% set captured = none if entry.admitted | default(false) is true else entry.t3_thread_id | default(none) %}{% if entry.sent
+              | default(true) is false or (entry.run_id in settle_ended if entry.run_id | default(none) is string
+              else ((mine | length == 0 and captured is not string) or (mine | length == 1 and mine[0].status in thread_over)))
               %}{% set _ = over.append(entry.operation_id) %}{% endif %}{% endfor %}{{ over }}
             settle_stopped: >-
               {% set stopped = [] %}{% for entry in intent.turn.settle if entry.run_id | default(none) is string

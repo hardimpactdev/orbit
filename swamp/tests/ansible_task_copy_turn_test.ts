@@ -12,7 +12,7 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
-const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, answered: [] as string[], settle: [] as { operation_id: number; title: string; branch: string | null; t3_thread_id?: string; run_id?: string; sent?: boolean }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
+const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, answered: [] as string[], settle: [] as { operation_id: number; title: string; branch: string | null; t3_thread_id?: string; admitted?: boolean; run_id?: string; sent?: boolean }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
 // What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
@@ -632,6 +632,17 @@ Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer t
 } });
 
 const earlier = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: null, t3_thread_id: "earlier", run_id: "run:earlier" };
+
+Deno.test({ name: "an earlier turn passed with its admitted thread ID is found by its title, never by that ID", ignore: !available, async fn() {
+    // An admitted UUID passed for the RPC path is not one T3 was seen to receive: the CLI finds that turn by its title, never by the UUID.
+    const admitted = { operation_id: 9, title: earlier.title, branch: null, t3_thread_id: "4b0e7d1c-5d2a-4f43-9a51-0c3f2b7e8a10" };
+    const titled = await phase("completed", { settle: [{ ...admitted, admitted: true }] }, "clean", "questions", "completed");
+    assertEquals([titled.ok, titled.settle!.settled], [true, [9]]);
+    const held = await phase("completed", { settle: [{ ...admitted, admitted: true }] }, "clean", "questions", "running", { T3_STOP: "refuse" });
+    assertEquals([held.ok, held.settle!.open, held.launched], [false, [9], false]);
+    const observed = await phase("completed", { settle: [admitted] }, "clean", "questions", "completed");
+    assertEquals([observed.ok, observed.settle!.open], [false, [9]]);
+} });
 
 Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing", ignore: !available, async fn() {
     // A cut wait whose run T3 later completed, and a run whose stop failed and that later ended, are settled; the turn runs.

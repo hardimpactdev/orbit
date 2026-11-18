@@ -162,8 +162,9 @@ final readonly class TaskCopyTurn
      * What a turn passes of an earlier turn that may still run (docs/reference/development-containers.md#earlier-turns): its thread, its
      * frozen message ID and the SHA-256 digest of its frozen message body, never the body, the run it recorded, whether it was sent, the
      * requests it answered and the run that owned them. A turn with no result counts as possibly sent; a result from before `sent` names
-     * it as `launched`. The thread is only an ID that T3 holds: an admitted or provisional ID, which T3 never received, names none, so
-     * the phase finds that turn's thread by its title.
+     * it as `launched`. A turn that reported no thread and froze an admitted ID passes that ID marked `admitted`: the RPC target
+     * creates the thread with it, but no T3 was seen to receive it, so the CLI phase finds that turn's thread by its title. A provisional
+     * ID names none.
      *
      * @return array<string, mixed>
      */
@@ -171,14 +172,18 @@ final readonly class TaskCopyTurn
     {
         $intent = ValidatedData::object($turn->input['turn']);
         $result = $turn->result ?? [];
+        $reported = self::nonEmpty($result['t3_thread_id'] ?? null);
+        $admitted = $reported === null && array_key_exists('t3_thread_id', $intent) && ($intent['admission'] ?? null) === self::Admitted
+            ? self::nonEmpty($intent['t3_thread_id']) : null;
 
         return ['operation_id' => $turn->id, 'title' => ValidatedData::string($intent['title']),
             'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch']),
-            // The thread that turn reported, else the one it froze while T3 held it, else, for a turn admitted before the freeze, its row's
-            // while T3 holds it: a cancelled turn records no report on the row.
-            't3_thread_id' => self::nonEmpty($result['t3_thread_id'] ?? null) ?? (array_key_exists('t3_thread_id', $intent)
+            // The thread that turn reported, else the one it froze while T3 held it or admitted, else, for a turn admitted before the
+            // freeze, its row's while T3 holds it: a cancelled turn records no report on the row.
+            't3_thread_id' => $reported ?? $admitted ?? (array_key_exists('t3_thread_id', $intent)
                 ? (self::held($intent['admission'] ?? null) ? self::nonEmpty($intent['t3_thread_id']) : null)
                 : self::heldId(AgentThread::query()->find(ValidatedData::integer($turn->input['thread_id'])))),
+            'admitted' => $admitted !== null,
             'message_id' => is_string($intent['message_id'] ?? null) ? $intent['message_id'] : null,
             'digest' => hash('sha256', ValidatedData::string($intent['prompt'])),
             'run_id' => is_string($result['run_id'] ?? null) ? $result['run_id'] : null,

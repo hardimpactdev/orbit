@@ -2918,7 +2918,7 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
 
         $prompt = $answer->input['turn']['prompt'];
         expect($next->input['turn']['settle'])->toBe([['operation_id' => $answer->id, 'title' => $answer->input['turn']['title'], 'branch' => null,
-            't3_thread_id' => 'mcp:1', 'message_id' => $answer->input['turn']['message_id'], 'digest' => hash('sha256', $prompt), 'run_id' => 'run:2',
+            't3_thread_id' => 'mcp:1', 'admitted' => false, 'message_id' => $answer->input['turn']['message_id'], 'digest' => hash('sha256', $prompt), 'run_id' => 'run:2',
             'sent' => true, 'answered' => ['request:1'], 'answered_run' => 'run:1']])
             ->and(json_encode($next->input['turn']['settle'], JSON_THROW_ON_ERROR))->not->toContain('Blue.')
             // A possibly sent answer keeps the questions it answers.
@@ -3048,11 +3048,26 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
-        // A new thread's admitted UUID, which T3 never received: the earlier turn names no thread, so the phase finds it by its title.
+        // A new thread's admitted UUID, which no T3 was seen to receive: the earlier turn passes it marked admitted, so the RPC path can
+        // reconcile it and the CLI phase still finds that thread by its title.
         $first = copyTurn($group);
         copyTurnEnded($first, 'cancelled', []);
         expect($first->input['turn']['admission'])->toBe('admitted')
-            ->and(copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0]['t3_thread_id'])->toBeNull();
+            ->and(Arr::only(copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0], ['t3_thread_id', 'admitted', 'sent', 'message_id']))
+            ->toBe(['t3_thread_id' => $first->input['turn']['t3_thread_id'], 'admitted' => true, 'message_id' => $first->input['turn']['message_id'], 'sent' => true])
+            ->and(Str::isUuid($first->input['turn']['t3_thread_id']))->toBeTrue();
+    });
+
+    it('marks a reported thread as not admitted, also when the turn froze an admitted UUID', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $first = copyTurn($group);
+        copyTurnEnded($first, 'failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false,
+            't3_thread_id' => $first->input['turn']['t3_thread_id'], 'run_id' => null, 'sent' => true, 'launched' => false, 'transcript' => []]);
+
+        expect(Arr::only(copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0], ['t3_thread_id', 'admitted']))
+            ->toBe(['t3_thread_id' => $first->input['turn']['t3_thread_id'], 'admitted' => false]);
     });
 
     it('names the thread a continued earlier turn froze from a reported ID, and that turn\'s answered owner run', function (): void {

@@ -25,6 +25,7 @@ cases = [
   "the start evidence keeps stderr only when the start failed, and only its last 4096 characters",
   "a run that asks has its question stored before the run is stopped, and the thread is read back after",
   "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored",
+  "an earlier turn passed with its admitted thread ID is found by its title, never by that ID",
   "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing",
   "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing",
   "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched",
@@ -34,7 +35,7 @@ cases = [
   "a failed or unreadable answered resolution launches nothing and names the resolution failure",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 1125
+cost = 1155
 # Hosted runs 43621397546 (Sabre) and 43633174432 (PR): largest completed case time + 25%, rounded up + 1s.
 # Reviewer-detach has only censored hosted receipts: its 138s body cost (120s before task 5402 added one phase run) is an ESTIMATE until a complete hosted run.
 # The Conn Server case (ADR 0258) has no hosted receipt: its 17s is an ESTIMATE over a 7.4s local run (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
@@ -44,7 +45,7 @@ cost = 1125
 # Task 5873: the ID readback case's 30s is local 20s plus headroom, and the settle-over case's 80s is an ESTIMATE over a local 57s run now that it
 # reads each recorded run through the helper (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
-slices = 32
+slices = 33
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -85,6 +86,7 @@ inputs = [
   "the start evidence keeps stderr only when the start failed, and only its last 4096 characters" = 22
   "a run that asks has its question stored before the run is stopped, and the thread is read back after" = 27
   "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored" = 92
+  "an earlier turn passed with its admitted thread ID is found by its title, never by that ID" = 30
   "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing" = 80
   "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing" = 100
   "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched" = 138

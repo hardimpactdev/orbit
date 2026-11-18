@@ -2127,7 +2127,9 @@ No target makes this check today. Item 4 supplies it. Until it lands, the worker
 
 #### Earlier turns
 
-The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) stops the thread's current active run. That run may be a person's by then. So under this contract, capture passes, for each unsettled turn, its thread ID, its frozen message ID, the SHA-256 digest of its frozen message body, any run ID it recorded, its `sent` and its `answered` list. A turn with no result counts as possibly sent. Each entry of `turn.settle` holds `t3_thread_id`, `message_id`, `digest`, `run_id`, `sent` and `answered`. A turn admitted before `message_id` has `message_id: null`. A result from before `sent` gives it from `launched`.
+The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) stops the thread's current active run. That run may be a person's by then. So under this contract, capture passes, for each unsettled turn, its thread ID, its frozen message ID, the SHA-256 digest of its frozen message body, any run ID it recorded, its `sent` and its `answered` list. A turn with no result counts as possibly sent. Each entry of `turn.settle` holds `t3_thread_id`, `admitted`, `message_id`, `digest`, `run_id`, `sent` and `answered`. A turn admitted before `message_id` has `message_id: null`. A result from before `sent` gives it from `launched`.
+
+The thread ID is the one the turn reported. The worker reports the thread it targeted even when its last read of T3 fails. A turn with no report and an admitted ID passes that ID with `admitted: true`: it may have been sent, so the target can find the thread by it. No T3 was seen to hold that ID, so the CLI driver still finds such a turn's thread by its title.
 
 An earlier turn whose result says `sent: false` has no message and no run to find. Only its marked checkout holds it. The worker restores and verifies that checkout, then names the turn settled.
 

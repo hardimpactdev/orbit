@@ -47,6 +47,7 @@
     "an answered request that stays pending refuses the turn before launch or reviewer checkout": 8,
     "a failed or unreadable answered resolution launches nothing and names the resolution failure": 19,
     "a turn cut by its bound stops no run, since Orbit cannot name its run, and holds": 27,
-    "rule (a): the turn's thread is read back and continued by its ID whatever its title; a title is used only without an ID": 20
+    "rule (a): the turn's thread is read back and continued by its ID whatever its title; a title is used only without an ID": 20,
+    "an earlier turn passed with its admitted thread ID is found by its title, never by that ID": 12
   }
 }

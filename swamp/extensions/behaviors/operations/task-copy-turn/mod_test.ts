@@ -115,6 +115,12 @@ Deno.test("a wait that the bound killed is tasks.turn_timeout, records the threa
     assertEquals(turn(124, "", { read: { ...read, thread_id: null, found: 0, status: null, show_exit: null, show: "" } }).ended, true);
 });
 
+Deno.test("a cut turn whose last thread list failed keeps the thread it targeted, so the next turn settles that thread by its ID", () => {
+    const unread = turn(124, "", { read: { list_exit: 1, thread_id: thread, found: 0, status: null, show_exit: null, show: "" } });
+    assertEquals([unread.state, unread.error_code, unread.ended, unread.t3_thread_id], ["failed", "tasks.turn_timeout", false, thread]);
+    assertEquals(turn(124, "", { read: { list_exit: null, thread_id: null, found: 0, status: null, show_exit: null, show: "" } }).t3_thread_id, null);
+});
+
 Deno.test("a wait that the bound killed and whose run the phase stopped is over and holds nothing, still failing tasks.turn_timeout", () => {
     const halted = (answer: unknown, stop_exit = 0) => ({ stop_exit, stop: JSON.stringify(answer) });
     for (const exit of [124, 137]) {

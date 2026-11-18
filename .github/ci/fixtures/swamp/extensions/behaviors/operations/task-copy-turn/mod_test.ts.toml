@@ -7,6 +7,7 @@ cases = [
   "a question Orbit could not read is not stopped and not over; a stop that failed says so and is not over",
   "a run that ends other than done or asking fails the turn with T3's status",
   "a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is",
+  "a cut turn whose last thread list failed keeps the thread it targeted, so the next turn settles that thread by its ID",
   "a wait that the bound killed and whose run the phase stopped is over and holds nothing, still failing tasks.turn_timeout",
   "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
   "a continued turn reads like a new one, and one whose thread T3 does not hold is tasks.copy_thread_missing with nothing launched",
