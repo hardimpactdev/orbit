@@ -1,6 +1,7 @@
 order = 1300
 cases = [
   "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
+  "test_git_reads_bind_to_the_checkout_with_a_colon_in_the_parent_path",
   "test_existing_owner_registration_refuses_without_reading_candidate_git",
   "test_prunable_gone_registration_and_independent_checkouts_do_not_block",
   "test_broken_gitdir_and_commondir_into_target_are_confirmed",
@@ -14,7 +15,7 @@ cases = [
   "test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies",
 ]
 file = "swamp/tests/instance_destroy_git_test.py"
-cost = 18
+cost = 19
 slices = false
 inputs = [
   "swamp/ansible/instance/destroy-git.py",
@@ -22,6 +23,7 @@ inputs = [
 ]
 [case_costs]
 "test_confirmed_registered_and_moved_dependents_are_found_even_with_force" = 1
+"test_git_reads_bind_to_the_checkout_with_a_colon_in_the_parent_path" = 1
 "test_existing_owner_registration_refuses_without_reading_candidate_git" = 1
 "test_prunable_gone_registration_and_independent_checkouts_do_not_block" = 1
 "test_broken_gitdir_and_commondir_into_target_are_confirmed" = 1

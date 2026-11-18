@@ -1,6 +1,7 @@
 """Read-only admission guard with real Git and unprivileged filesystem failures. No playbook launches."""
 import json
 import os
+import runpy
 import shutil
 import subprocess
 import sys
@@ -8,6 +9,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 PROGRAM = ROOT / 'swamp/ansible/instance/destroy-git.py'
@@ -52,6 +54,32 @@ class DestroyGitTest(unittest.TestCase):
             self.assertEqual(result, {'outcome': 'inspected', 'data': {'dependents': [{'path': str(path), 'instance_ids': [69]}]}})
             self.assertEqual(self.snapshot(), before)
             self.assertEqual(self.git(path, 'rev-parse', 'HEAD'), self.git(self.owner, 'rev-parse', 'HEAD'))
+
+    def test_git_reads_bind_to_the_checkout_with_a_colon_in_the_parent_path(self):
+        parent = self.root / 'project:fixture'
+        parent.mkdir()
+        owner, linked = parent / 'owner', parent / 'linked'
+        self.git(self.root, 'clone', '-q', str(self.owner), str(owner))
+        self.git(owner, 'worktree', 'add', '-q', '--detach', str(linked))
+        inspect = runpy.run_path(str(PROGRAM))['inspect']
+
+        with patch.object(subprocess, 'run', wraps=subprocess.run) as git:
+            self.assertEqual(inspect(str(owner), []), ([{'path': str(linked), 'instance_ids': []}], None, []))
+            self.assertEqual(inspect(str(linked), [{'path': str(owner), 'id': 69}]), ([], owner / '.git', []))
+
+        commands = [call.args[0] for call in git.call_args_list]
+        self.assertEqual([args[args.index('-C'):][:4] for args in commands], [
+            ['-C', str(checkout), '--git-dir=.git', '--work-tree=.']
+            for checkout in (owner, owner, linked, linked, owner)
+        ])
+
+        (owner / '.git').chmod(0)
+        try:
+            self.assertEqual(self.read(target=owner), {'outcome': 'refused', 'data': {
+                'error_code': 'instance.remove_refused', 'path': str(owner), 'cause': 'unreadable', 'instance_ids': [],
+            }})
+        finally:
+            (owner / '.git').chmod(0o700)
 
     def test_existing_owner_registration_refuses_without_reading_candidate_git(self):
         self.git(self.owner, 'worktree', 'add', '-q', '--detach', str(self.linked))
@@ -221,6 +249,7 @@ class DestroyGitTest(unittest.TestCase):
 
     def test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies(self):
         import hashlib
+
         import yaml
         text = (ROOT / 'swamp/workflows/workflow-operation-instance-destroy.yaml').read_text()
         workflow = yaml.safe_load(text)
