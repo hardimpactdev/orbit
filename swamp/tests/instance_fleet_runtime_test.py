@@ -111,6 +111,14 @@ class FleetRuntimeTest(unittest.TestCase):
         self.assertTrue(through_folder.exists())
         self.assertFalse(os.path.lexists(linked / 'dnsmasq.pid'))
 
+    def test_a_later_unsafe_entry_keeps_the_report_of_what_went(self):
+        networks = self.disk('nested-app-dev') / NETWORKS
+        cleared = write(networks / 'aaa0/dnsmasq.pid')
+        os.symlink(self.folder, networks / 'zzz0')
+        self.assertEqual(self.run_script('nested-app-dev'),
+                         {'removed': ['nested-app-dev/aaa0'], 'skipped': [], 'unsafe': ['nested-app-dev']})
+        self.assertFalse(cleared.exists())
+
     def test_a_missing_or_linked_root_disk_is_unsafe(self):
         elsewhere = self.folder / 'elsewhere-rootfs'
         write(elsewhere / NETWORKS / 'orbitinst0/dnsmasq.pid')
@@ -122,29 +130,37 @@ class FleetRuntimeTest(unittest.TestCase):
 
 
 BOOT = '20d9f9ee-6d10-4997-bf71-7cd558d8c898'
+PID = 757
+START = 79850479
 
 
-def incus_record(pid, boot=BOOT, name='dnsmasq'):
-    """A pid record as Incus writes it, its args continued on indented lines."""
-    return (f'name: {name}\nargs: [--keep-in-foreground, --strict-order, --bind-interfaces, --except-interface=lo,\n'
-            f'  --pid-file=, --no-ping, --interface=orbitinst0]\napparmor: ""\ncwd: ""\npid: {pid}\nstart_time: 79271055\n'
-            f'boot_id: {boot}\nuid: 0\ngid: 0\nset_groups: false\nsysprocattr: null\n')
+def incus_record(**change):
+    """The pid record Incus writes for orbitinst0's live dnsmasq (757), with `change` applied to its top-level lines."""
+    fields = {'name': 'dnsmasq', 'args': '[--keep-in-foreground, --strict-order, --bind-interfaces, --except-interface=lo,\n'
+              '  --pid-file=, --no-ping, --interface=orbitinst0]', 'apparmor': '""', 'cwd': '""', 'pid': str(PID),
+              'start_time': str(START), 'boot_id': BOOT, 'uid': '0', 'gid': '0', 'set_groups': 'false', 'sysprocattr': 'null'}
+    fields.update(change)
+    return ''.join(f'{key}: {value}\n' for key, value in fields.items() if value is not None)
 
 
 class NetworkPidHealTest(unittest.TestCase):
+    """One network, orbitinst0, and one live dnsmasq of it (757): each negative case changes one thing."""
+
     def setUp(self):
         self.folder = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ['rm', '-rf', str(self.folder)])
         self.networks = self.folder / 'networks'
         self.proc = self.folder / 'proc'
         self.boot = write(self.folder / 'boot_id', BOOT + '\n')
+        self.process()
 
-    def process(self, pid, comm, *args):
-        write(self.proc / str(pid) / 'comm', comm + '\n')
-        write(self.proc / str(pid) / 'cmdline', ''.join(arg + '\0' for arg in args))
+    def process(self, comm='dnsmasq', start=START, interface='--interface=orbitinst0'):
+        write(self.proc / str(PID) / 'comm', comm + '\n')
+        write(self.proc / str(PID) / 'stat', f'{PID} ({comm}) S 1 {PID} {PID} 0 -1 4194560 ' + ' '.join(['0'] * 12) + f' {start} 4096 0\n')
+        write(self.proc / str(PID) / 'cmdline', ''.join(arg + '\0' for arg in ['dnsmasq', '--keep-in-foreground', interface, '--listen-address=10.253.1.1']))
 
-    def pid_file(self, content, network='orbitinst0'):
-        return write(self.networks / network / 'dnsmasq.pid', content)
+    def pid_file(self, content):
+        return write(self.networks / 'orbitinst0/dnsmasq.pid', content)
 
     def heal(self):
         done = subprocess.run([sys.executable, '-I', str(HEAL), str(self.networks), str(self.proc), str(self.boot)],
@@ -152,53 +168,63 @@ class NetworkPidHealTest(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout.splitlines()
 
-    def test_the_record_of_a_live_dnsmasq_of_its_network_stays(self):
-        self.process(757, 'dnsmasq', 'dnsmasq', '--keep-in-foreground', '--interface=orbitinst0', '--listen-address=10.253.1.1')
-        live = self.pid_file(incus_record(757))
+    def test_the_record_of_the_live_dnsmasq_of_its_network_stays(self):
+        live = self.pid_file(incus_record())
         self.assertEqual(self.heal(), [])
-        self.assertEqual(live.read_text(), incus_record(757))
+        self.assertEqual(live.read_text(), incus_record())
 
-    def test_each_record_that_fails_one_check_goes(self):
-        self.process(757, 'dnsmasq', 'dnsmasq', '--interface=orbitinst0')
-        self.process(758, 'sleep', 'sleep', '--interface=orbitinst0')
-        self.process(759, 'dnsmasq', 'dnsmasq', '--interface=br01')
+    def test_a_record_that_fails_one_check_goes(self):
         cases = {
             'empty': '',
-            'no_newline_end': incus_record(757)[:-1],
-            'malformed': 'pid: 757\n{not yaml\n' + incus_record(757).split('\n', 1)[1],
-            'duplicate_key': incus_record(757) + 'pid: 757\n',
-            'other_name': incus_record(757, name='other'),
-            'no_start_time': incus_record(757).replace('start_time: 79271055\n', ''),
-            'other_boot': incus_record(757, boot='00000000-0000-0000-0000-000000000000'),
-            'dead_pid': incus_record(4242),
-            'not_dnsmasq': incus_record(758),
+            'invalid yaml': incus_record(sysprocattr='['),
+            'no mapping': '- name: dnsmasq\n',
+            'other name': incus_record(name='other'),
+            'pid not an integer': incus_record(pid='"757"'),
+            'stale start_time': incus_record(start_time='stale'),
+            'other start_time': incus_record(start_time='1'),
+            'no start_time': incus_record(start_time=None),
+            'other boot': incus_record(boot_id='00000000-0000-0000-0000-000000000000'),
+            'dead pid': incus_record(pid='4242'),
+            'not utf-8': '\udcff',
         }
-        for network, content in cases.items():
-            self.pid_file(content.replace('--interface=orbitinst0', f'--interface={network}'), network)
-        # A live dnsmasq whose interface only matches as a pattern: `br.1` names another network than `br01`.
-        self.pid_file(incus_record(759), 'br.1')
-        self.assertEqual(self.heal(), [f'removed {network}' for network in sorted([*cases, 'br.1'])])
-        self.assertEqual(sorted(path.name for path in self.networks.glob('*/dnsmasq.pid')), [])
+        for case, content in cases.items():
+            with self.subTest(case=case):
+                path = self.networks / 'orbitinst0/dnsmasq.pid'
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content.encode('utf-8', 'surrogateescape'))
+                self.assertEqual(self.heal(), ['removed orbitinst0'])
+                self.assertFalse(path.exists())
 
-    def test_a_file_it_cannot_read_goes_and_the_other_networks_are_still_healed(self):
-        unreadable = self.pid_file(incus_record(757), 'aaa0')
+    def test_a_process_that_fails_one_check_loses_the_record(self):
+        for case, process in {'not dnsmasq': {'comm': 'sleep'}, 'started later': {'start': START + 1},
+                              'other interface': {'interface': '--interface=orbitinst01'},
+                              'pattern only': {'interface': '--interface=orbitinstX'}}.items():
+            with self.subTest(case=case):
+                self.process(**process)
+                self.pid_file(incus_record())
+                self.assertEqual(self.heal(), ['removed orbitinst0'])
+        self.process()
+        self.pid_file(incus_record().replace('orbitinst0', 'orbit.nst0'))
+        (self.networks / 'orbitinst0').rename(self.networks / 'orbit.nst0')
+        self.assertEqual(self.heal(), ['removed orbit.nst0'])
+
+    def test_a_file_it_cannot_read_goes(self):
+        unreadable = self.pid_file(incus_record())
         unreadable.chmod(0)
-        self.pid_file('', 'orbitinst0')
-        self.assertEqual(self.heal(), ['removed aaa0', 'removed orbitinst0'])
+        self.assertEqual(self.heal(), ['removed orbitinst0'])
         self.assertFalse(unreadable.exists())
 
     def test_no_link_is_followed(self):
-        self.process(757, 'dnsmasq', 'dnsmasq', '--interface=orbitinst0')
         outside = write(self.folder / 'outside/orbitinst0/dnsmasq.pid')
         self.networks.mkdir()
         os.symlink(outside.parent, self.networks / 'linked0')
-        linked_file = self.networks / 'orbitinst0'
-        linked_file.mkdir()
-        os.symlink(write(self.folder / 'outside/record', incus_record(757)), linked_file / 'dnsmasq.pid')
+        (self.networks / 'orbitinst0').mkdir()
+        record = write(self.folder / 'outside/record', incus_record())
+        os.symlink(record, self.networks / 'orbitinst0/dnsmasq.pid')
         self.assertEqual(self.heal(), ['removed orbitinst0'])
         self.assertTrue(outside.exists())
-        self.assertEqual((self.folder / 'outside/record').read_text(), incus_record(757))
-        self.assertFalse(os.path.lexists(linked_file / 'dnsmasq.pid'))
+        self.assertEqual(record.read_text(), incus_record())
+        self.assertFalse(os.path.lexists(self.networks / 'orbitinst0/dnsmasq.pid'))
 
     def test_a_linked_networks_folder_is_left_alone(self):
         outside = write(self.folder / 'outside/orbitinst0/dnsmasq.pid')
@@ -209,12 +235,10 @@ class NetworkPidHealTest(unittest.TestCase):
     def test_no_networks_folder_changes_nothing(self):
         self.assertEqual(self.heal(), [])
 
-    def test_the_incus_drop_in_of_a_fleet_node_runs_the_placed_heal_before_incus(self):
-        tasks = (ANSIBLE / 'tasks/instance-fleet-node.yml').read_text()
-        placed = re.search(r"dest: (\S+)\n    content: \"\{\{ lookup\('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.py'\) \}\}", tasks)
-        self.assertIsNotNone(placed)
-        self.assertIn(f'      ExecStartPre={placed.group(1)}\n', tasks)
-        self.assertIn('mode: "0755"', tasks[placed.end():placed.end() + 120])
+    def test_the_fleet_start_sends_the_heal_to_each_nested_instance_host(self):
+        tasks = (ANSIBLE / 'tasks/instance-fleet-start.yml').read_text()
+        self.assertIn("lookup('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.py')", tasks)
+        self.assertIn("'ensure'", tasks)
         self.assertTrue(HEAL.read_text().startswith('#!/usr/bin/python3 -I\n'))
 
 

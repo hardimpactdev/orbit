@@ -70,14 +70,13 @@ def instance(name):
     return found['status'], found['expanded_devices']['root']['pool']
 
 
-def clear_disk(pools, pool, name):
-    """The networks whose pid file went from the root disk of `name` in `pool`. Unsafe when a part cannot be checked safely."""
-    removed = []
+def clear_disk(pools, pool, name, removed):
+    """Add each network whose pid file went from the root disk of `name` in `pool` to `removed`, also when a later part is Unsafe."""
     top = os.open(pools, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     disk = walk(top, [pool, 'containers', name, 'rootfs'], missing_ok=False)
     folder = walk(disk, FOLDERS, missing_ok=True)
     if folder is None:
-        return removed
+        return
     try:
         for network in sorted(os.listdir(folder)):
             # A network folder that is a link may hold a pid file that this cannot reach safely: the disk is unsafe.
@@ -87,6 +86,9 @@ def clear_disk(pools, pool, name):
             if not stat.S_ISDIR(mode):
                 continue
             network_folder = open_folder(folder, network)
+            # Gone between its read and its open: nothing of it is left to clear.
+            if network_folder is None:
+                continue
             try:
                 mode = os.stat(PID_FILE, dir_fd=network_folder, follow_symlinks=False).st_mode
                 if not stat.S_ISDIR(mode):
@@ -98,7 +100,6 @@ def clear_disk(pools, pool, name):
                 os.close(network_folder)
     finally:
         os.close(folder)
-    return removed
 
 
 def clear(pools, names):
@@ -109,10 +110,12 @@ def clear(pools, names):
         if status != 'Stopped':
             skipped.append(name)
             continue
+        cleared = []
         try:
-            removed += [f'{name}/{network}' for network in clear_disk(pools, pool, name)]
+            clear_disk(pools, pool, name, cleared)
         except Unsafe:
             unsafe.append(name)
+        removed += [f'{name}/{network}' for network in cleared]
     return {'removed': removed, 'skipped': skipped, 'unsafe': unsafe}
 
 

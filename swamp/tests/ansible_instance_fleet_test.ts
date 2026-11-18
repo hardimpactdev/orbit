@@ -113,6 +113,8 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   Deno.copyFileSync(new URL("instance_shape_tools.py", root), `${folder}/instance_shape_tools.py`);
   Deno.copyFileSync(new URL("instance_fleet_shrink.py", root), `${folder}/instance_fleet_shrink.py`);
   Deno.copyFileSync(new URL("instance_fleet_runtime.py", root), `${folder}/instance_fleet_runtime.py`);
+  Deno.mkdirSync(`${folder}/files`);
+  Deno.copyFileSync(new URL("files/incus-network-pid-heal.py", root), `${folder}/files/incus-network-pid-heal.py`);
   Deno.writeTextFileSync(`${folder}/play.yml`, [
     "- name: Run one phase of the fleet step",
     "  hosts: localhost",
@@ -493,6 +495,52 @@ Deno.test({
       assertStringIncludes(failed.output, "Instance host groups unavailable");
       assert(!f.calls().some((call) => call.includes("usermod")));
     } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a fleet start heals a pre-fix nested Instance host, running or just started: it places the heal, removes the empty pid file, and repeats unchanged",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { host: false });
+    const pid = "/var/lib/incus/networks/orbitinst0/dnsmasq.pid";
+    const heal = "incus exec nested-app-dev -- python3 -I -c <incus-network-pid-heal.py> ensure";
+    f.scopePhase("start", [
+      "Name the fleet commands", "Read the state of the nested containers", "Start the nested containers", "Check that the nested containers started",
+      "Read which nested Nodes are Instance hosts", "Heal the network pid files of nested Instance hosts",
+    ]);
+    // A guest of a copied seed made before the heal: it autostarted with an empty pid file and no heal, and runs.
+    f.change((state) => {
+      for (const name of names) state.containers[name].status = "Running";
+      state.containers["nested-app-dev"].files["/etc/orbit/instance-fleet-node"] = "Instance host\n";
+      state.containers["nested-app-dev"].files[pid] = "";
+    });
+    try {
+      const first = f.run("start");
+      assert(first.ok, first.output);
+      assertEquals(f.calls().filter((call) => call.includes("incus-network-pid-heal")), [heal]);
+      const files = f.state().containers["nested-app-dev"].files;
+      assertEquals(files[pid], undefined);
+      assertEquals(files["/etc/systemd/system/incus.service.d/60-network-pid-heal.conf"], "[Service]\nExecStartPre=/usr/local/sbin/incus-network-pid-heal\n");
+      assertEquals(files["/usr/local/sbin/incus-network-pid-heal"], Deno.readTextFileSync(new URL("files/incus-network-pid-heal.py", root)).replace(/\n$/, ""));
+      assert(first.changed > 0);
+      const again = f.run("start");
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0);
+      // The same guest stopped, as a resume finds it: the start boots it and heals it after.
+      f.change((state) => {
+        state.containers["nested-app-dev"].status = "Stopped";
+        state.containers["nested-app-dev"].files[pid] = "";
+      });
+      f.calls();
+      const resumed = f.run("start");
+      assert(resumed.ok, resumed.output);
+      const calls = f.calls();
+      assert(calls.indexOf("incus start nested-app-dev") < calls.indexOf(heal), calls.join("\n"));
+      assertEquals(f.state().containers["nested-app-dev"].files[pid], undefined);
+    } finally {
+      f.cleanup();
+    }
   },
 });
 

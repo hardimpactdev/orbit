@@ -14,7 +14,11 @@ const args = [...Deno.args];
 // instance_fleet_runtime.py's first argument is the inner pools folder.
 const shrinkScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && ["check", "run"].includes(args[9]);
 const runtimeScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && args[9] === "/var/lib/incus/storage-pools";
-const recorded = args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)]
+// The heal sent into a nested Instance host (`incus exec <name> -- python3 -I -c <script> ensure`) is recorded by its name too.
+const healScript = args[5] === "incus" && args[6] === "exec" && args[8] === "--" && args[9] === "python3" && args[10] === "-I" && args[11] === "-c"
+  && args[13] === "ensure";
+const recorded = healScript ? [...args.slice(0, 12), "<incus-network-pid-heal.py>", ...args.slice(13)]
+  : args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)]
   : args[5] === "python3" && args[6] === "-I" && args[7] === "-c"
   ? [...args.slice(0, 8), shrinkScript ? "<instance_fleet_shrink.py>" : runtimeScript ? "<instance_fleet_runtime.py>" : "<instance_shape_tools.py>",
     ...args.slice(9)] : args;
@@ -90,6 +94,27 @@ if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c" && ["
   const result = state.shrinkResult ?? { shrink: "ran", relinked: 345, dedupe: "ran" };
   if (result.shrink === "ran") state.shrink = { due: false, reason: "current" };
   done(JSON.stringify(result));
+}
+
+// incus-network-pid-heal.py `ensure` in a nested Instance host: it places itself (its standard input) and its drop-in when they differ,
+// and removes each empty `dnsmasq.pid` of the inner Incus's networks, as a pid file no live dnsmasq owns.
+if (healScript) {
+  const found = container(args[7]);
+  found.files ??= {};
+  const source = await new Response(Deno.stdin.readable).text();
+  const dropIn = "[Service]\nExecStartPre=/usr/local/sbin/incus-network-pid-heal\n";
+  const placed = found.files["/usr/local/sbin/incus-network-pid-heal"] !== source
+    || found.files["/etc/systemd/system/incus.service.d/60-network-pid-heal.conf"] !== dropIn;
+  found.files["/usr/local/sbin/incus-network-pid-heal"] = source;
+  found.files["/etc/systemd/system/incus.service.d/60-network-pid-heal.conf"] = dropIn;
+  const removed: string[] = [];
+  for (const [path, content] of Object.entries(found.files)) {
+    const network = path.match(/^\/var\/lib\/incus\/networks\/([^/]+)\/dnsmasq\.pid$/)?.[1];
+    if (network === undefined || content !== "") continue;
+    delete found.files[path];
+    removed.push(network);
+  }
+  done(JSON.stringify({ placed, removed, restarted: removed.length > 0 }));
 }
 
 // instance_fleet_runtime.py in the Instance container: it removes each `dnsmasq.pid` of the inner Incus's networks from the files of the
