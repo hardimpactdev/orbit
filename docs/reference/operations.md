@@ -152,7 +152,7 @@ An open Operation of a kind that left the registry, such as the removed `task_vm
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. A maintainer must update the provisional row once repository installs have native history.
 
-`fleet.rollout` has a provisional 600 seconds. Its first successes deferred every Node outside the maintenance window in seconds, so a budget derived from them cut off the first real visit at three minutes. One visit of seven Nodes, four of them converged, took 187 seconds; a whole fleet converging at that pace, times 1.5, rounds up to 600. A maintainer must update the provisional row once windowed visits have history.
+`fleet.rollout` has a provisional 600 seconds. Its first successes deferred every Node outside the maintenance window in seconds, so a budget derived from them cut off the first real visit at three minutes. One visit of seven Nodes, four of them converged, took 187 seconds; a whole fleet converging at that pace, times 1.5, rounds up to 600. Since 2026-11-18 the rollout visits every Node right after a release, so a maintainer must update the provisional row once those visits have history.
 
 `fleet.reboot` has a provisional 10,800 seconds, the length of its window: a pass never starts a Node it cannot drain and reboot before the window closes. A maintainer must update the provisional row once passes have history.
 

@@ -95,8 +95,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Runs that finished in Swamp are read once a minute and projected; Swamp's commit feed needs a v3 datastore.
         GatewaySchedule::job($schedule, new PollSwampScheduledResults)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured() && app(SwampScheduledResults::class)->enabled());
-        // Stage 8: a verified release admits the fleet rollout (release projection). Nodes outside the daytime set wait for the
-        // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
+        // Stage 8: a verified release admits the fleet rollout at once (release projection). A daily pass also catches
+        // membership changes, agent drift and late CLI releases between releases.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => GatewayQueueRedis::configured() && (config()->boolean('fleet.rollout') || NestedFleetRefresh::enabled()));
         // ADR 0253: the nightly drained reboot pass, admitted after the rollout in the same window; it waits while the rollout runs.

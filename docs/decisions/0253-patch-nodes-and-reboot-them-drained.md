@@ -15,7 +15,7 @@ In progress.
 Nick decided the four open points on 2026-11-09, each as recommended:
 
 1. `app-prod`, the `vpn` hub, the Gateway and Node 209 reboot automatically in the window.
-2. The window is 03:00 to 06:00 Europe/Amsterdam, shared with the fleet rollout.
+2. The window is 03:00 to 06:00 Europe/Amsterdam. It was shared with the fleet rollout until 2026-11-18, when the rollout lost its window and started right after each release.
 3. The drain budget is 15 minutes. Work on the control path that is still running then is cut, and its caller starts it again.
 4. A busy task or CI host is deferred, never cut. An overdue alert follows after 3 days.
 

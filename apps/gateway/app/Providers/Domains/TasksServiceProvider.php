@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Actions\Tasks\InstallSwampReaderCredentialAction;
+use App\Domain\Activity\ActivityInputRedaction;
 use App\Domain\Tasks\SwampReaderAssistance;
+use App\Domain\Tasks\TaskTurnActivityRedaction;
 use App\Infrastructure\AgentView\StreamWebSocketClient;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\Tasks\SwampReaderEnvironment;
@@ -15,6 +17,7 @@ final class TasksServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->tag([TaskTurnActivityRedaction::class], ActivityInputRedaction::class);
         $this->app->bind(InstallSwampReaderCredentialAction::class, fn ($app): InstallSwampReaderCredentialAction => new InstallSwampReaderCredentialAction(
             $app->make(GatewayReleaseLock::class),
             $app->make(SwampReaderEnvironment::class),
