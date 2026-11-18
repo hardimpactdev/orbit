@@ -182,12 +182,12 @@ class ProductionReleaseTest(unittest.TestCase):
         self.assertEqual((other.root / "upstream.caddy").read_text(), "reverse_proxy 10.0.0.9:8080\n")
         other.check_selection(OLD)
 
-    def test_the_earlier_rollback_survives_a_failed_swap_reclaim(self):
+    def test_the_earlier_rollback_survives_a_failed_stop_of_the_previous_live(self):
         self.r.link(NEXT)
         self.r.state["verified"] = True
         with patch.object(self.r, "guest"), patch.object(self.r, "identity"), \
-                patch.object(self.r, "primitive", side_effect=ValueError("reclaim")), patch.object(self.r, "discard") as discard:
-            with self.assertRaisesRegex(ValueError, "reclaim"):
+                patch.object(self.r, "primitive", side_effect=ValueError("release.container_not_stopped")), patch.object(self.r, "discard") as discard:
+            with self.assertRaisesRegex(ValueError, "not_stopped"):
                 self.r.retire()
             discard.assert_not_called()
 

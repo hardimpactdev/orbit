@@ -1,7 +1,7 @@
 ---
 title: "ADR 0263: Run production releases in hot, live and old containers"
 sidebarTitle: "0263 Production containers"
-description: "Planned app-prod integration. Each Instance has a permanent off-traffic preparation container. Deploy there, clone the completed build, switch to the ready clone, and retain the drained previous live in swap for rollback."
+description: "Planned app-prod integration. Each Instance has a permanent off-traffic preparation container. Deploy there, clone the completed build, switch to the ready clone, and keep the drained previous live stopped for rollback."
 ---
 
 # ADR 0263: Run production releases in hot, live and old containers
@@ -10,7 +10,7 @@ A production Instance keeps one stable record: its id, Routes, environment, depl
 
 - **Hot** is a fresh filesystem clone of the completed build in this Instance’s preparation container. It starts its web server and passes readiness before it receives traffic.
 - **Live** serves the Instance's Routes and runs its workers and Schedules.
-- **Old** is the release before live. It freezes to swap for rollback after its requests and jobs drain. The next verified deploy can retire it.
+- **Old** is the release before live. It stays stopped for rollback, and the next deploy's retire removes it.
 
 When hot is ready, Caddy points the Routes at it in one reload, and hot becomes live. The [production containers](/reference/production-containers) page is the contract and holds every number and path.
 
@@ -22,9 +22,13 @@ Gateway and production Instance Operations now enter the same Swamp release work
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles). Production uses the container machinery of development: images, ZFS clones, snapshots, the runtime folder, the bridge and the egress proxy. Each old production path below goes when its replacement is built.
 
-### Why old stays frozen
+### Why old stays stopped
 
-<a id="why-old-stays-stopped"></a>The previous live finishes requests and hands over workers and timers before it freezes. The kernel reclaims its memory to swap. A rollback normally resumes the same processes. A reboot loses those processes but preserves the release filesystem, so rollback can cold-start the exact release.
+The owner decided that the previous live stays stopped as old, and that the next deploy's retire removes it:
+
+- A rollback starts old, checks it as ready and switches to it, in seconds, with no build.
+- A stopped old holds no memory or swap. Retire never depends on the Node's swap, so a release cannot fail after its switch for lack of it.
+- Without old, the only way back after the handover is a new build.
 
 ## Context
 
@@ -85,7 +89,7 @@ The Gateway uses the same release operations for its own target. Each production
 
 <a id="3-one-shared-database-migrations-run-in-hot-before-the-switch"></a>
 
-Every release uses the Instance’s shared production database. Its `migrate` step runs once in the preparation container before activation while live still serves. Every migration follows expand and contract.
+Every release uses the Instance’s shared production database. Its `migrate` step runs once in the preparation container before activation while live still serves. Every migration is expand-only: a release adds what its code needs, and a later release contracts what no live or old release still reads. So the stopped old keeps running on the current database, and a rollback never restores data. Reviewers reject a destructive migration.
 
 - The code of live must work on the schema after the migration. A change that live cannot read is split over two deploys: the first expands, and the second contracts once no live or old release uses the old shape.
 - A migration changes only the schema, or changes data with raw queries. It never loads application models or domain code, because those belong to the new code and the data still belongs to the old. A migration is tested against the schema of the last released commit.
@@ -98,9 +102,9 @@ Before the switch, check the clone’s full commit and artifact digest. Verify F
 
 **Switch.** The Node's Caddy site of each Route of the Instance imports one upstream file of the Instance. The [switch](/reference/production-containers#switch) replaces that file and the live link together and reloads Caddy once. Caddy's graceful reload lets each request in progress on the previous live finish. A failed reload puts the previous files back, so live serves unchanged. A Cluster Route needs no Router change.
 
-**Handover.** After the new Route is verified, move timers and Processes and run the new live’s after-activation steps. Wait for the previous live’s in-flight work, disable its autostart and freeze it as old. Remove the earlier old only after its replacement is retained. See [Handover](/reference/production-containers#handover).
+**Handover.** After the new Route is verified, move timers and Processes and run the new live’s after-activation steps. Wait for the previous live’s in-flight work, disable its autostart and stop it as old with `incus stop`. Remove the earlier old only after its replacement is retained. See [Handover](/reference/production-containers#handover).
 
-**Rollback.** Wake old, or cold-start it after a Node reboot. Apply the current environment, verify its private health and switch traffic. Drain and freeze the rolled-away live; a second rollback goes forward again. The preparation container stays asleep. Rollback fetches no code, runs no deployment steps, pauses automatic deploys and blocks the rolled-away commit. Without a retained release it refuses with `rollback.release_not_retained`. A deeper rollback is a deploy of the selected revision.
+**Rollback.** Start the stopped old. Apply the current environment, verify its private health and switch traffic. Drain and stop the rolled-away live as old; a second rollback goes forward again. Rollback uses the current database as it is. The preparation container stays asleep. Rollback fetches no code, runs no deployment steps, pauses automatic deploys and blocks the rolled-away commit. Without a retained release it refuses with `rollback.release_not_retained`. A deeper rollback is a deploy of the selected revision.
 
 ### 5. Workers, Schedules and Reverb run only in live
 
@@ -215,7 +219,7 @@ During every case except the sleep case, a load loop sends a request to the heal
 | Uploads survive | An upload before a deploy, one in hot's time and one after a rollback | The files in the volume | Every upload reads back from live after each deploy and rollback; the Passport keys did not change |
 | WebSocket | The page stays open through a deploy | Reconnect time, and the event after the switch | The client reconnects by itself and gets the event |
 | Checkout migration | A second fixture Instance runs as a checkout with uploads and both Schedules. `instance:migrate` moves it; then it deploys once | Failed requests, the volume, the fires | No failed request; every upload is in the volume; a file that live changed keeps live's version; one fire a minute; the deploy removes the home |
-| Disk | Deploy five revisions using one preparation container | Peak pool use, swap and retained releases | Old and preparation retain only their measured swap; retired containers and transient snapshot names are pruned |
+| Disk | Deploy five revisions using one preparation container | Peak pool use, swap and retained releases | Old is stopped and holds no swap; preparation retains only its measured swap; retired containers and transient snapshot names are pruned |
 
 The proof passes when every case passes in one run, in this order, on one build. A failed case is fixed in its subtask, and the whole run repeats. No case waits for a soak window or an approval.
 
@@ -240,7 +244,7 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 - **Undo a migration on rollback.** Older code can need a data recovery that only the application knows. Rollback selects code only.
 - **Remove the previous live after the handover.** A rollback after the drain would need a new build, and the disk gain is small: Incus keeps a removed container's dataset while a clone still depends on it.
 - **A default memory limit per release container.** The owner wants a busy release to use the Node's memory. An Instance can still set a limit.
-- **Keep old running with its working set resident.** Freezing after the drain preserves its processes for normal rollback and returns most working memory to the Node.
+- **Keep old running, or frozen to swap.** A running old holds memory for a rollback that a start of a stopped container serves in seconds. A freeze needs swap and a memory reclaim check after the switch, so a Node without swap would fail the release after its traffic already moved.
 - **Keep more releases or snapshots.** Each kept release holds a ZFS chain and disk. A pinned deploy of an earlier commit covers the rare deeper rollback.
 - **Publish an image of each release for rollback.** Publishing an image copies files.
 - **Units enabled in every release container.** A start of old for a rollback would start its workers and timers while live still runs its own.
@@ -256,7 +260,7 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 - One busy release container can use all of the Node's memory unless its Instance sets a limit. The owner accepts this.
 - A deploy never stops traffic: live serves until the switch, and the switch is one Caddy reload. The PHP-FPM restart of today goes.
 - A failed build, migration or readiness check never touches live. Hot is removed.
-- Every migration must be expand and contract, and every queued job payload must stay readable by the release before it. This is a rule for each Project, not something Orbit can check.
+- Every migration must be expand-only, with the contract in a later release, and every queued job payload must stay readable by the release before it. This is a rule for each Project, not something Orbit can check.
 - A rollback goes back one release in seconds, as long as old exists. A deeper rollback is a deploy of an earlier commit.
 - Between deploys each Instance retains preparation, live and previous live once one exists. Preparation and previous live sleep; a deploy briefly adds the candidate as a fourth root disk.
 - The operation removes the transient build snapshot after the independent clone exists. Incus retains underlying storage blocks while any release still references them.

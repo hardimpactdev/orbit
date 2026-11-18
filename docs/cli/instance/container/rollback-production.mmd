@@ -11,10 +11,10 @@ sequenceDiagram
   GW->>GW: Hold the Instance<br/>confirm its rollback commit
   GW->>SW: Start production-release<br/>private Operation input
   SW->>N: Confirm current live<br/>check retained commit
-  SW->>N: Wake retained container<br/>apply current environment
+  SW->>N: Start stopped old container<br/>apply current environment
   SW->>N: Check candidate readiness
   SW->>N: Switch Instance Routes<br/>hand over Processes and Schedules
-  SW->>N: Drain and freeze old live<br/>retain it for rollback
+  SW->>N: Drain and stop old live<br/>retain it stopped for rollback
   SW->>N: Read live and old commits
   SW-->>GW: Verified release receipt<br/>Node, Instance, commit and digest
   GW-->>CLI: Record the result<br/>verified live and rollback commits

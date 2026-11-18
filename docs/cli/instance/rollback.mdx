@@ -50,7 +50,7 @@ For a container release, the result records the selected commit only after the N
 
 ### Production release containers
 
-Pass the previous release shown by `instance:release:list`. The shared `production-release` workflow wakes and verifies that container with the current environment, switches this Instance’s Routes, then retains the former live as rollback. The full SHA or the 12-character name from the list identifies the retained release.
+Pass the previous release shown by `instance:release:list`. The shared `production-release` workflow starts that stopped container, verifies it with the current environment, switches this Instance’s Routes, then stops the former live as the new rollback release. It uses the current database as it is. The full SHA or the 12-character name from the list identifies the retained release.
 
 <div className="flow-at" data-chart="instance/container/rollback-production"></div>
 

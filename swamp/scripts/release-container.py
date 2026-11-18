@@ -111,12 +111,13 @@ def capacity(target, live, host_gateway):
 
 def capacity_estimate(preparation, served, pool):
     prep_need, prep_resident, prep_swap = preparation
-    live_need, live_resident, live_swap = served
+    live_need, live_resident, _live_swap = served
     working = max(prep_need, live_need)
     # Keep live available while preparation and hot overlap. Existing resident memory and
-    # swap slots are already excluded from the Node's free counts.
+    # swap slots are already excluded from the Node's free counts. Only preparation is
+    # reclaimed to swap; retire stops the drained live, so it needs none.
     ram = 2 * working - prep_resident + max(0, live_need - live_resident) + 1024**3
-    swap = working - prep_swap + live_need - live_swap
+    swap = working - prep_swap
     meminfo = {}
     for line in Path("/proc/meminfo").read_text().splitlines():
         key, values = line.split(":", 1)
@@ -184,6 +185,26 @@ def sleep(record, operation):
         power(record["name"], "restore", operation)
         raise ValueError("release.memory_not_reclaimed")
     return receipt
+
+
+def stop(record, operation):
+    """Park a drained former live on disk. It holds no memory or swap, and only an explicit rollback starts it."""
+    name = record["name"]
+    if record["config"].get("boot.autostart") != "false":
+        incus("config", "set", name, "boot.autostart=false")
+    if record["status"] == "Frozen":
+        # Thaw first; Incus cannot shut down a frozen container cleanly.
+        power(name, "restore", operation)
+    if record["status"] != "Stopped":
+        try:
+            incus("stop", name, "--timeout", "120", timeout=180)
+        except subprocess.CalledProcessError:
+            # The handover already drained its requests and workers. A guest that ignores
+            # the shutdown must not hold the release open.
+            incus("stop", name, "--force", timeout=180)
+    if instance(name)["status"] != "Stopped":
+        raise ValueError("release.container_not_stopped")
+    return {"name": name, "outcome": "stopped"}
 
 
 def candidate(target, operation, commit, artifact):
@@ -338,7 +359,7 @@ def main(argv):
     if args.action == "address":
         return wait_address(record)
     if args.action == "retire":
-        return sleep(record, args.operation)
+        return stop(record, args.operation)
     name = wake(record, args.operation)
     if record["status"] == "Stopped":
         wait_address(record, refresh=True)

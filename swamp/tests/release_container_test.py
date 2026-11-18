@@ -49,7 +49,7 @@ class ReleaseTest(unittest.TestCase):
         live = {"name": "instance-8-" + SHA[:12], "status": "Running", "expanded_config": {"limits.memory": "2GiB"},
                 "state": {"memory": {"usage": gib, "swap_usage": 0, "total": 2 * gib}}}
         args = ["capacity", "instance-8", "--live", SHA[:12]]
-        for ram, swap, disk, shortage in [(6, 3, 10, None), (5, 3, 10, "ram"), (6, 2, 10, "swap"), (6, 3, 9, "pool")]:
+        for ram, swap, disk, shortage in [(6, 1, 10, None), (5, 1, 10, "ram"), (6, 0, 10, "swap"), (6, 1, 9, "pool")]:
             meminfo = f"MemAvailable: {ram * gib // 1024} kB\nSwapFree: {swap * gib // 1024} kB"
             pool = json.dumps({"space": {"total": disk * gib, "used": 0}})
             with self.subTest(shortage=shortage), patch.object(release, "preparer", return_value=prep), \
@@ -59,7 +59,7 @@ class ReleaseTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, f"deployment.node_capacity: {shortage} needs"):
                         release.main(args)
                 else:
-                    self.assertEqual(release.main(args)["required_bytes"], {"ram": 6 * gib, "swap": 3 * gib, "pool": 10 * gib})
+                    self.assertEqual(release.main(args)["required_bytes"], {"ram": 6 * gib, "swap": gib, "pool": 10 * gib})
                 self.assertEqual(query.call_args.args[0][-1], "/1.0/storage-pools/selected-pool/resources")
                 power.assert_not_called()
 
@@ -216,6 +216,36 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(release.candidate("gateway", "13", SHA, DIGEST), clone["name"])
             self.assertEqual([call.args[0] for call in incus.call_args_list], ["snapshot", "snapshot", "snapshot", "copy", "snapshot", "start"])
 
+
+    def test_retire_stops_the_former_live_without_freezing_or_swap(self):
+        name = "instance-8-" + SHA[:12]
+        running = {**record(name, "candidate", commit=SHA), "config": {**record(name, "candidate", commit=SHA)["config"], "boot.autostart": "true"}}
+        stopped = {**running, "status": "Stopped"}
+        with patch.object(release, "instance", side_effect=[running, stopped]), patch.object(release, "incus") as incus, \
+                patch.object(release, "power") as power_call, patch.object(release, "Path") as path:
+            self.assertEqual(release.main(["retire", "instance-8", SHA[:12], "14"]), {"name": name, "outcome": "stopped"})
+        self.assertEqual(incus.call_args_list, [call("config", "set", name, "boot.autostart=false"),
+                                                call("stop", name, "--timeout", "120", timeout=180)])
+        power_call.assert_not_called()
+        path.assert_not_called()
+
+    def test_retire_thaws_a_frozen_release_and_forces_a_stuck_shutdown(self):
+        name = "gateway-" + SHA[:12]
+        frozen = {**record(name, "candidate", status="Frozen", commit=SHA, target="gateway")}
+        frozen["config"]["boot.autostart"] = "false"
+        error = subprocess.CalledProcessError(1, ["incus", "stop"])
+        with patch.object(release, "instance", side_effect=[frozen, {**frozen, "status": "Stopped"}]), \
+                patch.object(release, "incus", side_effect=[error, ""]) as incus, patch.object(release, "power") as power_call:
+            release.main(["retire", "gateway", SHA[:12], "14"])
+        power_call.assert_called_once_with(name, "restore", "14")
+        self.assertEqual(incus.call_args_list, [call("stop", name, "--timeout", "120", timeout=180), call("stop", name, "--force", timeout=180)])
+
+    def test_resume_cold_starts_a_stopped_retained_release(self):
+        stopped = {**record("instance-8-" + SHA[:12], "candidate", status="Stopped", commit=SHA)}
+        with patch.object(release, "incus") as incus, patch.object(release, "power", return_value={"outcome": "restored", "state_after": "running"}) as power_call:
+            self.assertEqual(release.wake(stopped, "14"), stopped["name"])
+        incus.assert_called_once_with("start", stopped["name"])
+        self.assertEqual(power_call.call_count, 2)
 
     def test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build(self):
         with patch.object(release, "instance", return_value=record("prepare-instance-8", "prepare")), patch.object(release, "power") as power_call:

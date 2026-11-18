@@ -6,7 +6,7 @@ description: "In progress. An idle production live sleeps after one hour and wak
 
 # ADR 0265: Sleep idle production containers
 
-A production Instance's live release container sleeps when it is idle, by the same rule as a development container: the same idle window, sweep, Operations, reasons and dry run. The whole container sleeps, with no Process left out, and it wakes fully ready, with the fast wake and the [prepared restore](/reference/prepared-restore) of [ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes). Hot stays awake through readiness. The release operation freezes old after its drain. A visitor never sees a progress page: Caddy holds the request while live wakes.
+A production Instance's live release container sleeps when it is idle, by the same rule as a development container: the same idle window, sweep, Operations, reasons and dry run. The whole container sleeps, with no Process left out, and it wakes fully ready, with the fast wake and the [prepared restore](/reference/prepared-restore) of [ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes). Hot stays awake through readiness. The release operation stops old after its drain. A visitor never sees a progress page: Caddy holds the request while live wakes.
 
 ## Status
 
@@ -67,15 +67,13 @@ The switch never waits for a wake: the new live just passed readiness. The switc
 
 A wake reads the live link after it takes the power lock, and acts only on the container that the link names. A wake that finds no marker after the switch ends with `wake: already_running` and never resumes or starts the previous live.
 
-After a verified switch, handover resumes a sleeping previous live to drain requests, Processes and timers. Once those units finish, retire freezes the drained container as old and reclaims its working memory to swap.
+After a verified switch, handover resumes a sleeping previous live to drain requests, Processes and timers. Once those units finish, retire stops the drained container as old.
 
-Rollback wakes old from swap or cold-starts it after a reboot. After readiness, switch and handover, the drained former live becomes the frozen rollback release.
+Rollback starts the stopped old. After readiness, switch and handover, the drained former live stops as the new rollback release.
 
-### 4. Retain old for a swap-backed rollback
+### 4. Old stays stopped, never frozen
 
-<a id="4-old-stays-stopped-never-frozen"></a>
-
-The release operation freezes old and measures swap use. Rollback resumes that container and checks it against the current configuration and database. The retained filesystem supports a normal boot if previous memory was lost. The idle sweep excludes old (`not_live`).
+Old is stopped, so it holds no memory and no swap. A rollback boots it and checks it against the current configuration and database. The sweep never acts on old (`not_live`).
 
 ### 5. A production sleep never stops live
 
@@ -126,7 +124,7 @@ Production joins the sweep under the existing values of `ORBIT_HIBERNATION_CONTA
 The live proof of ADR 0263 changes:
 
 - **One fire.** Each Schedule fires once each minute, except while the Node reboots. While live sleeps, a container timer skips its minutes; a native cron Schedule still fires each minute, because each fire wakes live.
-- **Sleep and wake, new.** The load loop pauses, and live sleeps after its idle window. The proof measures how long Caddy holds a visit, and checks that a due native Schedule wakes live and runs once, that the worker resumes and runs the queued jobs, and that no request fails. Then a deploy and a rollback each run while live sleeps: no request fails, the previous live drains and freezes as old, and each job runs once. Last, the Node reboots while live sleeps: live boots awake, the boot removes the marker, the Gateway records `running` and starts a fresh watch, and the first request gets the app with no wake.
+- **Sleep and wake, new.** The load loop pauses, and live sleeps after its idle window. The proof measures how long Caddy holds a visit, and checks that a due native Schedule wakes live and runs once, that the worker resumes and runs the queued jobs, and that no request fails. Then a deploy and a rollback each run while live sleeps: no request fails, the previous live drains and stops as old, and each job runs once. Last, the Node reboots while live sleeps: live boots awake, the boot removes the marker, the Gateway records `running` and starts a fresh watch, and the first request gets the app with no wake.
 
 ## Rejected alternatives
 

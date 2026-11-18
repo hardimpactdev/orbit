@@ -2,7 +2,7 @@
 title: "Production containers"
 covers:
   - swamp/scripts/release-container.py
-description: "Build each production Instance release in its off-traffic preparation container, clone the finished build, switch traffic to the ready clone, and freeze the previous release for rollback."
+description: "Build each production Instance release in its off-traffic preparation container, clone the finished build, switch traffic to the ready clone, and keep the previous release stopped for rollback."
 ---
 
 # Production containers
@@ -29,9 +29,9 @@ Each release container has one release state.
 | --- | --- | --- |
 | `hot` | A clone of this deploy’s sealed build in the preparation container | FrankenPHP for private readiness only |
 | `live` | The release that serves | FrankenPHP for every Route of the Instance, the Processes, the container timers and the Schedule fires |
-| `old` | The previous live release, frozen after drain | No work. It retains its filesystem for a cold start after reboot |
+| `old` | The previous live release, stopped after drain with `boot.autostart=false` | No work and no memory. A rollback starts it from its filesystem |
 
-The permanent preparation container has no release state and receives no traffic. After two successful deploys, the Instance retains three containers between deploys: preparation and old sleep in swap, and live serves. A deploy temporarily adds hot, for four containers until retire removes the earlier old. The first deploy has no previous live.
+The permanent preparation container has no release state and receives no traffic. After two successful deploys, the Instance retains three containers between deploys: preparation sleeps in swap, old is stopped, and live serves. A deploy temporarily adds hot, for four containers until retire removes the earlier old. The first deploy has no previous live.
 
 ## Records
 
@@ -125,7 +125,7 @@ A native Schedule fire reads the live link when it starts and runs its command i
 
 ## Retire
 
-Retire starts only after verification through the Route. It waits for requests, Processes and native Schedule fires in the previous live to drain, within their operation limits. It disables autostart, freezes that container as old and reclaims its memory to swap. Only then may it remove the earlier old and its power data.
+Retire starts only after verification through the Route. It waits for requests, Processes and native Schedule fires in the previous live to drain, within their operation limits. It disables autostart and stops that container as old with `incus stop`. A stuck shutdown is forced after 120 seconds, because its work has drained. Retire needs no swap, so it cannot fail the release for lack of it. Only then may it remove the earlier old and its power data.
 
 Incus keeps the removed container's dataset while a ZFS clone still depends on it, so the removal frees disk only when no later release needs its blocks.
 
@@ -133,18 +133,18 @@ Incus keeps the removed container's dataset while a ZFS clone still depends on i
 
 `instance:rollback <instance>` returns to old. The planned chart is `docs/cli/instance/container/rollback-production.mmd`.
 
-1. Wake old from swap, or cold-start its retained filesystem after a Node reboot. Its workers and timers remain disabled. Apply the current environment and refresh runtime configuration before readiness.
+1. Start the stopped old from its retained filesystem. Its workers and timers remain disabled. Apply the current environment and refresh runtime configuration before readiness.
 2. Verify the retained release identity and run its private [readiness checks](#ready). Rollback needs no build or new snapshot.
 3. The [switch](#switch) and the [handover](#handover) run as in a deploy.
-4. [Retire](#retire) freezes the drained, rolled-away live as old. Both release filesystems are retained.
+4. [Retire](#retire) stops the drained, rolled-away live as old. Both release filesystems are retained.
 
-A rollback runs no deploy step, fetches no code and rolls back no shared data. It pauses automatic deploys and blocks the rolled-away commit, as [Pause](/reference/deployments#pause) describes. Without an old release it refuses with `rollback.release_not_retained`. A deeper rollback uses `instance:deploy --commit` and builds the selected revision in the preparation container.
+A rollback runs no deploy step, fetches no code and rolls back no shared data. It uses the current database as it is, which expand-only migrations make safe. It pauses automatic deploys and blocks the rolled-away commit, as [Pause](/reference/deployments#pause) describes. Without an old release it refuses with `rollback.release_not_retained`. A deeper rollback uses `instance:deploy --commit` and builds the selected revision in the preparation container.
 
 A rollback has no capacity check. No deploy runs beside it, so old runs in the place that hot takes during a deploy.
 
 | Failed boundary | Serves | Old |
 | --- | --- | --- |
-| Wake, readiness or switch | Live, with the previous upstream restored after a failed switch | Retained and returned to sleep after recovery |
+| Start, readiness or switch | Live, with the previous upstream restored after a failed switch | Retained and stopped again after recovery |
 | Handover or retire | Old, as the new live | Is live. The Gateway records the release states that the run reached |
 
 ## Sleep and wake
@@ -155,7 +155,7 @@ A rollback has no capacity check. No deploy runs beside it, so old runs in the p
 | --- | --- |
 | `hot` | Never (`not_live`). It exists only during a deploy, and the open Operation keeps the Instance awake too |
 | `live` | After an idle hour, when no reason keeps it awake |
-| `old` | The release workflow freezes old after drain. The idle sweep ignores it (`not_live`) |
+| `old` | Never. The release workflow stops old after drain. The idle sweep ignores it (`not_live`) |
 
 **Swap.** Every release container gets `memory.swap.max` 0 while it runs, also without a memory limit. A sleep opens swap, and a wake closes it again.
 
@@ -182,7 +182,7 @@ A failed wake is stored as in development. While it is stored, Caddy answers `50
 
 The [switch](#switch) removes the asleep marker in the same step as it replaces the upstream file and the live link, once the Caddy reload succeeded. A failed switch keeps the marker, or puts it back.
 
-The switch, the visitor wake and the handover serialize against the Instance’s live selection. The new live starts a new idle window. The handover first resumes a sleeping previous live to stop its units and drain requests, then freezes it for rollback.
+The switch, the visitor wake and the handover serialize against the Instance’s live selection. The new live starts a new idle window. The handover first resumes a sleeping previous live to stop its units and drain requests, then stops it for rollback.
 
 ## Database
 
@@ -194,11 +194,11 @@ After changing an attachment's route, deploy the Instance to install and verify 
 
 Every release container uses the Instance's one shared database. Migrations run during the preparation build before the switch, so live's code must work on the migrated schema:
 
-- Each schema change follows expand and contract. A change that live cannot read is split over two deploys.
+- Each migration is expand-only. A release adds what its code needs; a later release contracts what no live or old release still reads. A change that live or old cannot read is split over two deploys. Reviewers reject a destructive migration, such as a dropped or renamed column or table.
 - A migration changes the schema, or changes data with raw queries. It never loads application models or domain code. It is tested against the schema of the last released commit.
 - Queued job payloads follow the same rule across one release. A worker of the previous release can read a new job, and so can old after a rollback.
 
-Orbit never undoes a migration: not after a failed deploy and not on rollback.
+Orbit never undoes a migration: not after a failed deploy and not on rollback. The stopped old runs on the current database, so a rollback never restores data.
 
 PowerSync replicates from the shared database on the Services Node. A deploy or rollback never changes a Process on the Services Node, never drops or changes a replication slot or a publication, and changes a published table only by expand and contract. The app's PowerSync token and upload endpoints keep answering across the switch.
 
@@ -217,9 +217,9 @@ A release has no default memory limit. Each preparation and release container re
 Before changing the preparation container, a deploy or [migration](#a-checkout-production-instance) checks the available memory, swap and pool space. A refusal is `deployment.node_capacity`.
 
 - Available memory covers the build and candidate overlap, a live wake and 1 GiB of headroom.
-- The pool has at least 10 GiB free, and the Node’s free swap covers the working sets it will reclaim from preparation and the drained release.
+- The pool has at least 10 GiB free, and the Node’s free swap covers the working set it will reclaim from preparation. The drained release is stopped and needs no swap.
 
-Estimate each container’s need using its configured limit or the measured working set of the current release. Include the previous live’s recorded pre-freeze use when a visit or the handover could resume it. During a migration include the serving checkout’s PHP-FPM pool and Processes.
+Estimate each container’s need using its configured limit or the measured working set of the current release. Include the previous live’s working set while the handover drains it. During a migration include the serving checkout’s PHP-FPM pool and Processes.
 
 The automatic tick retries that failure at its [backoff](/reference/deployments#failures-of-automatic-deployments) times, but it does not count toward the three failures that block a commit: the cause is the Node, not the commit. A commit that waits 30 minutes raises the stalled-commit alert.
 
