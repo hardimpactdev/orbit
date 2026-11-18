@@ -31,23 +31,26 @@ final readonly class RemoveNodeAccessAction
         $this->requireActive($serving);
 
         // The deletion and its hooks commit together before any fallible side effect, so no committed deletion misses a hook.
-        $wasDeleted = DB::transaction(function () use ($consumer, $serving): bool {
-            $deleted = NodeAccess::query()
-                ->where('consumer_node_id', $consumer->id)
-                ->where('serving_node_id', $serving->id)
-                ->delete() === 1;
+        // A failure there or in a hook's after-commit work still revokes Metrics access, so an open Grafana session is checked again.
+        try {
+            $wasDeleted = DB::transaction(function () use ($consumer, $serving): bool {
+                $deleted = NodeAccess::query()
+                    ->where('consumer_node_id', $consumer->id)
+                    ->where('serving_node_id', $serving->id)
+                    ->delete() === 1;
 
-            if ($deleted) {
-                foreach ($this->hooks as $hook) {
-                    $hook->removed($consumer, $serving);
+                if ($deleted) {
+                    foreach ($this->hooks as $hook) {
+                        $hook->removed($consumer, $serving);
+                    }
                 }
+
+                return $deleted;
+            });
+        } finally {
+            if ($this->access->isGatewayNode($serving)) {
+                $this->metricsAccess->revoke();
             }
-
-            return $deleted;
-        });
-
-        if ($this->access->isGatewayNode($serving)) {
-            $this->metricsAccess->revoke();
         }
 
         $selfLockout = $wasDeleted && $caller->is($consumer) && $this->access->isGatewayNode($serving);

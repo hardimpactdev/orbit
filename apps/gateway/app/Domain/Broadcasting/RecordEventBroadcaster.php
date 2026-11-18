@@ -63,8 +63,10 @@ final class RecordEventBroadcaster
      */
     public function broadcast(RecordEventType $type, int|string $id, array $data, string $channel = 'orbit'): void
     {
-        $this->afterCommit(function () use ($type, $id, $data, $channel): void {
-            $this->deliver(new RecordBroadcast($type, $id, $data, $channel), ['type' => $type->value, 'id' => $id]);
+        DB::afterCommit(function () use ($type, $id, $data, $channel): void {
+            // The envelope, with its `at`, is made at the commit; only its delivery waits for the response.
+            $event = new RecordBroadcast($type, $id, $data, $channel);
+            $this->whenSending(fn () => $this->deliver($event, ['type' => $type->value, 'id' => $id]));
         });
     }
 
@@ -77,17 +79,25 @@ final class RecordEventBroadcaster
      */
     public function afterCommit(Closure $work): void
     {
-        DB::afterCommit(function () use ($work): void {
-            if (self::$immediate > 0 || request()->route() === null) {
-                $work();
+        DB::afterCommit(fn () => $this->whenSending($work));
+    }
 
-                return;
-            }
+    /**
+     * Runs committed work at once outside a request, or after the response inside one.
+     *
+     * @param  Closure(): void  $work
+     */
+    private function whenSending(Closure $work): void
+    {
+        if (self::$immediate > 0 || request()->route() === null) {
+            $work();
 
-            // A terminating callback added while the application terminates still runs, in order, so a broadcast
-            // that a terminating callback causes is not lost.
-            app()->terminating($work);
-        });
+            return;
+        }
+
+        // A terminating callback added while the application terminates still runs, in order, so a broadcast
+        // that a terminating callback causes is not lost.
+        app()->terminating($work);
     }
 
     /**

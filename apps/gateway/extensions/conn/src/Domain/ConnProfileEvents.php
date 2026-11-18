@@ -14,7 +14,9 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Models\ConnProfileBinding;
+use Throwable;
 
 /**
  * Tells the Nodes bound to a profile its committed document version over Reverb
@@ -81,18 +83,33 @@ final readonly class ConnProfileEvents
         }
     }
 
-    /** For `GET /me`: issues a new key for a key older than 5 minutes or ended, and returns the binding. */
+    /**
+     * For `GET /me`: issues a new key for a key 5 minutes old or more, or ended, and returns the binding. A current key
+     * needs no write, so that read takes no write lock; a due key is checked again under the lock before it is replaced.
+     */
     public function renew(Node $node): ?ConnProfileBinding
     {
+        $binding = ConnProfileBinding::query()->where('node_id', $node->id)->first();
+
+        if ($binding === null || ! self::renewalDue($binding)) {
+            return $binding;
+        }
+
         return DB::transaction(function () use ($node): ?ConnProfileBinding {
             $binding = ConnProfileBinding::query()->where('node_id', $node->id)->lockForUpdate()->first();
 
-            if ($binding !== null && ($binding->event_key_issued_at === null || $binding->event_key_issued_at->lte(Carbon::now()->subMinutes(self::RenewalMinutes)))) {
+            if ($binding !== null && self::renewalDue($binding)) {
                 $this->replace($binding);
             }
 
             return $binding;
         });
+    }
+
+    private static function renewalDue(ConnProfileBinding $binding): bool
+    {
+        return $binding->event_key === null || $binding->event_key_issued_at === null
+            || $binding->event_key_issued_at->lte(Carbon::now()->subMinutes(self::RenewalMinutes));
     }
 
     /**
@@ -112,16 +129,18 @@ final readonly class ConnProfileEvents
         }
 
         $this->broadcaster->afterCommit(function () use ($audience, $profileId, $version): void {
-            if (! $this->extensions->enabled('conn')) {
-                return;
-            }
-
             foreach ($audience as $captured) {
-                if ($this->stillCurrent($captured['id'], $captured['key'], $profileId)) {
-                    $this->broadcaster->deliver(
-                        new NamedBroadcast('conn-profile.'.$captured['key'], self::Event, ['profile_id' => $profileId, 'version' => $version]),
-                        ['type' => self::Event, 'id' => $profileId],
-                    );
+                // A notice never fails the committed write, nor the notices of the other recipients.
+                try {
+                    // The switch is read for each recipient, so a switch-off stops every send that has not started.
+                    if ($this->extensions->enabled('conn') && $this->stillCurrent($captured['id'], $captured['key'], $profileId)) {
+                        $this->broadcaster->deliver(
+                            new NamedBroadcast('conn-profile.'.$captured['key'], self::Event, ['profile_id' => $profileId, 'version' => $version]),
+                            ['type' => self::Event, 'id' => $profileId],
+                        );
+                    }
+                } catch (Throwable $exception) {
+                    Log::warning('conn.profile_event_failed', ['profile_id' => $profileId, 'binding_id' => $captured['id'], 'exception' => $exception->getMessage()]);
                 }
             }
         });
@@ -133,13 +152,18 @@ final readonly class ConnProfileEvents
      */
     private function stillCurrent(int $bindingId, string $key, int $profileId): bool
     {
-        $binding = ConnProfileBinding::query()->with('node')->find($bindingId);
+        $binding = ConnProfileBinding::query()->find($bindingId);
 
         if ($binding === null || $binding->conn_profile_id !== $profileId || $binding->event_key !== $key || ! self::current($binding)) {
             return false;
         }
 
-        $node = $binding->node;
+        $node = Node::query()->find($binding->node_id);
+
+        // A Node deleted since the binding was read takes its binding with it.
+        if ($node === null) {
+            return false;
+        }
 
         if ($node->status !== LifecycleStatus::Active || ! $this->access->hasAnyAccess($node)) {
             DB::transaction(function () use ($bindingId, $key): void {

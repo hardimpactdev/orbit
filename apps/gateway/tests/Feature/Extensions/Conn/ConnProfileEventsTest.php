@@ -13,6 +13,7 @@ use App\Domain\WebSocket\WebSocketCredentials;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,7 @@ use Orbit\Extensions\Conn\Actions\BindConnNodeProfileAction;
 use Orbit\Extensions\Conn\Domain\ConnAttachedThreads;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
 use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
+use Orbit\Extensions\Conn\Domain\ConnProfileEvents;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 use Orbit\Extensions\Conn\Models\ConnProfileBinding;
@@ -147,6 +149,16 @@ describe('subscription', function (): void {
         'a presence form of the key' => fn (): string => 'presence-conn-profile.'.profile_event_key($this->phone),
     ]);
 
+    it('refuses the current channel with spaces around it, because only the exact name is signed', function (string $form): void {
+        $channel = ' '.profile_event_channel($this->phone).' ';
+        $response = $form === 'json'
+            ? profile_event_auth($this->phone, $channel)
+            : test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->withHeader('Accept', 'application/json')
+                ->post('/api/v1/conn/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => $channel]);
+
+        $response->assertForbidden()->assertJsonPath('error.code', 'broadcast.channel_forbidden');
+    })->with(['json', 'form']);
+
     it('refuses an ended key, a replaced key and a caller with no binding', function (): void {
         $channel = profile_event_channel($this->phone);
 
@@ -247,19 +259,71 @@ describe('keys', function (): void {
             ->execute($this->phone, $gateway, $this->phone);
         $metrics = new class implements MetricsAccessRevoker
         {
+            public bool $fails = false;
+
+            public int $calls = 0;
+
             public function revoke(): void
             {
-                throw new RuntimeException('Metrics is unreachable');
+                $this->calls++;
+
+                if ($this->fails) {
+                    throw new RuntimeException('Metrics is unreachable');
+                }
             }
         };
 
         expect(fn () => $remove([app(ConnNodeAccessRemoval::class), $failing], $metrics))->toThrow(RuntimeException::class, 'a later hook fails');
-        expect(profile_event_key($this->phone))->toBe($before)
+        expect($metrics->calls)->toBe(1)
+            ->and(profile_event_key($this->phone))->toBe($before)
             ->and(NodeAccess::query()->where('consumer_node_id', $this->phone->id)->where('serving_node_id', $gateway->id)->exists())->toBeTrue();
 
+        $metrics->fails = true;
         expect(fn () => $remove([app(ConnNodeAccessRemoval::class)], $metrics))->toThrow(RuntimeException::class, 'Metrics is unreachable');
         expect(profile_event_key($this->phone))->not->toBe($before)
             ->and(NodeAccess::query()->where('consumer_node_id', $this->phone->id)->where('serving_node_id', $gateway->id)->exists())->toBeFalse();
+    });
+
+    it('still revokes Metrics access when a hook\'s after-commit work fails after the deletion committed', function (): void {
+        $gateway = profile_event_node('gateway', '10.44.0.2');
+        NodeRole::withoutEvents(fn () => $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']));
+        $this->phone->accessibleNodes()->attach($gateway->id);
+        $afterCommit = new class implements NodeAccessRemovalHook
+        {
+            public function removed(Node $consumer, Node $serving): void
+            {
+                DB::afterCommit(static fn () => throw new RuntimeException('the revoke admission fails'));
+            }
+        };
+        $metrics = new class implements MetricsAccessRevoker
+        {
+            public int $calls = 0;
+
+            public function revoke(): void
+            {
+                $this->calls++;
+            }
+        };
+
+        expect(fn () => new RemoveNodeAccessAction(app(NodeAccessAuthorizer::class), $metrics, [app(ConnNodeAccessRemoval::class), $afterCommit])
+            ->execute($this->phone, $gateway, $this->phone))->toThrow(RuntimeException::class, 'the revoke admission fails');
+
+        expect($metrics->calls)->toBe(1)
+            ->and(NodeAccess::query()->where('consumer_node_id', $this->phone->id)->where('serving_node_id', $gateway->id)->exists())->toBeFalse();
+    });
+
+    it('reads a current key on GET /me without starting a write transaction', function (): void {
+        $transactions = 0;
+        Event::listen(TransactionBeginning::class, function () use (&$transactions): void {
+            $transactions++;
+        });
+
+        $binding = app(ConnProfileEvents::class)->renew($this->phone);
+        expect($transactions)->toBe(0)->and($binding?->event_key)->toBe(profile_event_key($this->phone));
+
+        Carbon::setTestNow(Carbon::now()->addMinutes(5));
+        $renewed = app(ConnProfileEvents::class)->renew($this->phone);
+        expect($transactions)->toBe(1)->and($renewed?->event_key)->not->toBe($binding?->event_key);
     });
 
     it('replaces the key on node:access:remove even when access remains', function (): void {
@@ -393,6 +457,37 @@ describe('publication', function (): void {
 
         expect($this->profile->fresh()->settings_version)->toBe(3)
             ->and(collect(profile_events_sent())->pluck('payload.version')->all())->toBe([2, 2, 3, 3]);
+    });
+
+    it('stops the sends that have not started when the extension is switched off during a delivery', function (): void {
+        Event::swap(Event::getFacadeRoot()->dispatcher);
+        $sent = [];
+        Event::listen(NamedBroadcast::class, static function (NamedBroadcast $event) use (&$sent): void {
+            $sent[] = $event->channel;
+            app(ExtensionStore::class)->set('conn', false);
+        });
+
+        profile_event_write($this->profile);
+
+        expect($sent)->toHaveCount(1);
+    });
+
+    it('treats a Node deleted during the final check as ineligible and still notifies the next recipient', function (): void {
+        // The write's audience capture reads both bindings; the final check then reads the phone's binding first.
+        $reads = 0;
+        $phone = $this->phone->id;
+        ConnProfileBinding::retrieved(static function (ConnProfileBinding $binding) use (&$reads, $phone): void {
+            if (++$reads === 3 && $binding->node_id === $phone) {
+                Node::query()->whereKey($phone)->delete();
+            }
+        });
+
+        profile_event_write($this->profile);
+
+        expect($this->profile->fresh()->settings_version)->toBe(2)
+            ->and(Node::query()->find($phone))->toBeNull()
+            ->and(profile_events_sent())->toBe([['channel' => 'private-conn-profile.'.profile_event_key($this->desktop), 'event' => 'conn.profile.updated',
+                'payload' => ['profile_id' => $this->profile->id, 'version' => 2]]]);
     });
 
     it('logs a failed broadcast and keeps the accepted write', function (): void {

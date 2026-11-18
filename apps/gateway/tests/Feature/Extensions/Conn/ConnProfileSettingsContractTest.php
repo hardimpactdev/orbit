@@ -416,3 +416,11 @@ describe('sidebarHiddenThreads', function (): void {
             ->and($read['sections']['sidebarHiddenThreads']['updated_by'])->toBe('phone');
     });
 });
+
+it('publishes the profile channel refusal in the Conn auth route\'s 403 answer', function (): void {
+    $spec = json_decode((string) file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $responses = $spec['paths']['/api/v1/conn/broadcasting/auth']['post']['responses'];
+
+    expect($responses['403']['description'])->toContain('broadcast.channel_forbidden')->toContain('node_access.required')
+        ->and(array_keys($responses['200']['content']['application/json']['schema']['properties']))->toBe(['auth']);
+});

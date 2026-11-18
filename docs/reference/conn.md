@@ -287,7 +287,7 @@ After a profile write commits, the Gateway tells the Nodes bound to that profile
 **Generation.** The key is the binding's generation. A socket receives events only while its key is current. A key ends when the Gateway replaces it, and at the latest 15 minutes after it was issued. The Gateway replaces the key in a write transaction on the binding row:
 
 - **Bind.** Every successful `PUT /me/profile`, also to the profile the Node already has.
-- **Renewal.** `GET /me` and `PUT /me/profile` issue a new key for a key older than 5 minutes or ended.
+- **Renewal.** `GET /me` and `PUT /me/profile` issue a new key once a key is 5 minutes old or has ended. A younger key is only read.
 - **Edge removal.** Conn's existing `NodeAccessRemovalHook` replaces the key on every `node:access:remove` of the Node's edges, whatever access remains.
 - **Serving Node removal.** Conn's existing `NodeRemovalHook` replaces the key of every Node with an edge to the removed Node, before the cascade deletes those edges.
 - **Observed lapse.** A send that finds the Node not `active`, or failing the [collection rule](#access), replaces the key.
