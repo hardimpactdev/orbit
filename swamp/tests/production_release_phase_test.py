@@ -204,6 +204,24 @@ class ProductionReleaseTest(unittest.TestCase):
         discard.assert_called_once_with(OLD)
         self.assertTrue(self.r.state["parked_previous"])
 
+    def test_quiesce_stops_the_previous_web_server_once_and_retire_then_only_stops_the_container(self):
+        self.r.link(NEXT)
+        self.r.state["verified"] = True
+        running = {"status": "Running", "config": {"boot.autostart": "false"}}
+        with patch.object(self.r, "guest") as guest, patch.object(self.r, "identity", return_value=running), \
+                patch("builtins.print") as printed:
+            self.r.quiesce()
+            self.r.quiesce()
+        guest.assert_called_once_with(self.r.container(CURRENT), "systemctl", "disable", "--now", "orbit-frankenphp.service")
+        printed.assert_called_with(self.r.container(CURRENT))
+        self.assertTrue(self.r.state["quiesced_previous"])
+        with patch.object(self.r, "guest") as guest, patch.object(self.r, "identity", return_value=running), \
+                patch.object(self.r, "primitive") as primitive, patch.object(self.r, "discard"), \
+                patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"):
+            self.r.retire()
+        guest.assert_not_called()
+        primitive.assert_called_once_with("retire", CURRENT[:12], self.r.operation)
+
     def test_rollback_cleanup_leaves_an_already_parked_old_alone(self):
         self.r.state.update(action="rollback", rollback_awake=True, sha=OLD)
         self.r.sha = OLD

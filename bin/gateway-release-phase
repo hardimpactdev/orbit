@@ -42,7 +42,7 @@ check_recovery() {
 }
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|build|build-checked|web|clone|park-preparation|switch|recover|start-horizon|retire|settle|cleanup-versions|release-unused)
+  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|build|build-checked|web|clone|park-preparation|switch|recover|start-horizon|quiesce|retire|settle|cleanup-versions|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9</home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
@@ -80,7 +80,7 @@ case "$phase" in
     [[ ! -e $journal/operation ]] || { echo 'Finish the interrupted Gateway handover with --recover first' >&2; exit 1; }
     if [[ $phase != check-load || -f $inventory ]]; then check_recovery; fi
     ;;
-  switch|recover|start-horizon|retire)
+  switch|recover|start-horizon|quiesce|retire)
     check_recovery
     if [[ -e $journal/operation || $phase == recover ]]; then
       [[ -f $journal/operation && -f $journal/candidate &&
@@ -115,7 +115,7 @@ if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconci
 fi
 if [[ $phase == build-checked ]]; then phase=build; fi
 case "$phase" in
-  build|web|clone|switch|recover|start-horizon|retire|settle|park-preparation|release-unused) ;;
+  build|web|clone|switch|recover|start-horizon|quiesce|retire|settle|park-preparation|release-unused) ;;
   migrate|ready|wait-idle|cleanup|cleanup-versions|snapshot|public-ready) check_recovery ;;
   *) echo "Unknown Gateway release phase: $phase" >&2; exit 64 ;;
 esac

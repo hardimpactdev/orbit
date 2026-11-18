@@ -302,7 +302,8 @@
    "Read the serving release": "read-only"
   },
   "production-release-activate": {
-   "Verify the serving release": "read-only"
+   "Verify the serving release": "read-only",
+   "Wait for queued responses": "read-only"
   },
   "operation-gateway-release": {
    "Wait for active Operations": "read-only"

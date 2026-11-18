@@ -125,7 +125,9 @@ A native Schedule fire reads the live link when it starts and runs its command i
 
 ## Retire
 
-Retire starts only after verification through the Route. It waits for requests, Processes and native Schedule fires in the previous live to drain, within their operation limits. It disables autostart and stops that container as old with `incus stop`. A stuck shutdown is forced after 120 seconds, because its work has drained. Retire needs no swap, so it cannot fail the release for lack of it. Only then may it remove the earlier old and its power data.
+Retire starts only after verification through the Route. It waits for requests, Processes and native Schedule fires in the previous live to drain, within their operation limits. It stops the web server first.
+
+A separate workflow step then waits, up to 600 one-second checks, until no web connection in that container still has queued send bytes. A reached bound is logged and never fails the release. Then retire disables autostart and stops the container as old with `incus stop`. A stuck shutdown is forced after 120 seconds, because its work has drained. Retire needs no swap, so it cannot fail the release for lack of it. Only then may it remove the earlier old and its power data.
 
 Incus keeps the removed container's dataset while a ZFS clone still depends on it, so the removal frees disk only when no later release needs its blocks.
 

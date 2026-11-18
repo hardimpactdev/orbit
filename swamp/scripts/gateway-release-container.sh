@@ -364,7 +364,7 @@ publish_forward() {
 # After the switch: verify the new live, delete what it replaces, drain the former live, park or delete it,
 # then recreate preparation. Never more than three Gateway containers, also on retry and --recover.
 finish_forward() {
-  local prev previous_sha='' exists='{}' unit service_failed=false running=false http_pid drain_failed=0 enabled
+  local mode=${1:-retire} prev previous_sha='' exists='{}' unit service_failed=false running=false http_pid drain_failed=0 enabled
   local verified=false known current each first='' second='' trusted journal_old='' journal_pending=''
   local -a keep=() earlier=() order=()
   [[ $(field '.live') == "$sha" ]] || fail 'candidate no longer serves'
@@ -463,6 +463,12 @@ finish_forward() {
       printf '%s\n' "$enabled" | sort -u - "$journal/horizons" | while IFS= read -r unit; do
         [[ -z $unit ]] || enter "$prev" systemctl disable -- "$unit" </dev/null >&2
       done
+    fi
+    # The quiesce phase ends here. The workflow then waits, bounded, until no response bytes are queued in the
+    # former live, and the retire phase repeats the checks above before it stops the container.
+    if [[ $mode == quiesce ]]; then
+      if [[ $exists != '{}' ]]; then printf '%s\n' "$prev"; fi
+      return 0
     fi
     if [[ $exists != '{}' ]]; then
       # Stop, never freeze: a stopped release holds no memory or swap until a rollback starts it.
@@ -711,6 +717,7 @@ case "$action" in
     artisan "$candidate" operations:check-cleanup --json || rc=$?
     case $rc in 0|75) ;; *) exit "$rc" ;; esac
     ;;
+  quiesce) finish_forward quiesce ;;
   retire) finish_forward ;;
   prune|prune-pending) : ;;
   *) fail "unknown phase $action" ;;

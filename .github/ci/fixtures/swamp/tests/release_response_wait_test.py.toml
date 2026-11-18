@@ -1,0 +1,14 @@
+file = "swamp/tests/release_response_wait_test.py"
+cost = 12
+host_programs = ["ansible-playbook"]
+inputs = [
+  "swamp/ansible/release-response-wait.yml",
+  "swamp/ansible/ansible.cfg",
+]
+cases = [
+  "test_retire_waits_until_the_send_queues_drain",
+  "test_a_reached_bound_is_logged_and_never_fails_retire",
+]
+[case_costs]
+"test_retire_waits_until_the_send_queues_drain" = 6
+"test_a_reached_bound_is_logged_and_never_fails_retire" = 6

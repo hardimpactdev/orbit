@@ -25,7 +25,7 @@ SHA = re.compile(r"[0-9a-f]{40}")
 DOMAIN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 UNIT = re.compile(r"orbit-(?:process-[1-9][0-9]*-[a-z0-9-]+[.]service|schedule-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}[.](?:service|timer))")
 PHASES = ("build", "clone", "park-preparation", "ready", "switch", "public-ready", "switch-back", "after",
-          "retire", "release-unused", "readback", "recover")
+          "quiesce", "retire", "release-unused", "readback", "recover")
 
 
 class Refusal(ValueError):
@@ -892,6 +892,20 @@ class Release:
     def parked(record):
         return record["status"] == "Stopped" and record["config"].get("boot.autostart") == "false"
 
+    def quiesce(self):
+        """Stop the previous live's web server and print its container, so the workflow can wait for queued bytes."""
+        if not self.state.get("verified"):
+            raise Refusal("deployment.not_ready: refusing to retire before public verification")
+        previous = self.state["previous"]
+        if not previous or self.state.get("parked_previous"):
+            return
+        if not self.state.get("quiesced_previous"):
+            if not self.parked(self.identity(previous)):
+                # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
+                self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
+            self.persist(quiesced_previous=True)
+        print(self.container(previous))
+
     def retire(self):
         if not self.state.get("verified"):
             raise Refusal("deployment.not_ready: refusing to retire before public verification")
@@ -900,8 +914,9 @@ class Release:
         if previous and not self.state.get("parked_previous"):
             # A retry after a completed stop finds the container already parked; a stopped guest takes no exec.
             if not self.parked(self.identity(previous)):
-                # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
-                self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
+                if not self.state.get("quiesced_previous"):
+                    # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
+                    self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
                 self.primitive("retire", previous[:12], self.operation)
             self.persist(parked_previous=True)
         if old and old not in (self.sha, previous):

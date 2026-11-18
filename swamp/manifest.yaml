@@ -145,6 +145,7 @@ additionalFiles:
   - ansible/tasks/instance-migrate-link-result.yml
   - ansible/tasks/instance-migrate-process-ready.yml
   - ansible/schedule-logs.yml
+  - ansible/release-response-wait.yml
   - ansible/tasks/instance-migrate-phase.yml
   - ansible/tasks/instance-migrate-schedules.yml
   - ansible/tasks/instance-migrate-schedule-check.yml

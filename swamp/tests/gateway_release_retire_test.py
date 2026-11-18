@@ -186,5 +186,20 @@ class GatewayReleaseRetire(GatewayReleaseFixture):
         self.assert_at_most_three()
 
 
+    def test_quiesce_stops_the_former_web_server_and_names_the_container_for_the_response_wait(self):
+        self.serving_former()
+        self.assert_ok(self.switch())
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        result = self.run_script(self.phase, "quiesce", self.sha, OPERATION)
+        self.assert_ok(result)
+        self.assertEqual(result.stdout.strip(), self.retained)
+        self.assertFalse((self.state / f"{self.retained}-orbit-gateway-web.service").exists())
+        self.assertNotEqual((self.state / "former").read_text(), "Stopped")
+        self.assertTrue((self.journal / "operation").exists())
+        self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
+        self.assert_parked("former", self.old)
+        self.assertFalse((self.journal / "operation").exists())
+        self.assert_at_most_three()
+
 if __name__ == "__main__":
     unittest.main()

@@ -210,9 +210,20 @@ Deno.test("Gateway and AppProd share the clone, handover, compensation and readb
   assertEquals(find(handover, "Start Horizon").dependsOn, [
     { step: "Switch the release", condition: { type: "succeeded" } },
   ]);
-  const retire = find(handover, "Retire the previous live");
-  assert(retire.dependsOn?.some((edge) => edge.step === verify.name &&
+  // Quiesce stops the former web server; a bounded Ansible wait for queued response bytes runs before retire stops
+  // the container, and a timeout there never blocks retire.
+  const quiesce = find(handover, "Quiesce the previous live");
+  assert(quiesce.dependsOn?.some((edge) => edge.step === verify.name &&
     edge.condition.conditions?.some((condition) => condition.type === "failed")));
+  const wait = find(handover, "Wait for queued responses");
+  assertEquals(wait.allowFailure, true);
+  assert(JSON.stringify(wait.task).includes("timeout 660"));
+  const retire = find(handover, "Retire the previous live");
+  assertEquals(retire.dependsOn, [
+    { step: quiesce.name, condition: { type: "succeeded" } },
+    { step: "Write the response wait input", condition: { type: "always" } },
+    { step: wait.name, condition: { type: "always" } },
+  ]);
   assertEquals(find(handover, "Check deprecated operation versions").dependsOn, [
     { step: retire.name, condition: { type: "succeeded" } },
   ]);

@@ -13,6 +13,7 @@ inputs = [
   "swamp/ansible/module_utils/orbit_route_withdraw.py",
 ]
 cases = [
+  "test_quiesce_stops_the_previous_web_server_once_and_retire_then_only_stops_the_container",
   "test_all_private_identities_are_bound_before_a_guest_operation",
   "test_only_the_owned_host_resource_can_take_a_checked_shared_or_exclusive_lock",
   "test_distributed_role_contains_the_guest_resolvers_entire_local_import_tree",

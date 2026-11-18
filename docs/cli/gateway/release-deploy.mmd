@@ -99,8 +99,10 @@ sequenceDiagram
       AC->>GN: Start Horizon<br/>on the selected release
     end
     opt Container Gateway
-      AC->>GN: Retire the previous live<br/>drain HTTP and Horizon
-      AC->>GN: Stop it as old<br/>recreate preparation
+      AC->>GN: Quiesce the previous live<br/>drain HTTP and Horizon
+      AC->>GN: Wait for queued responses<br/>Ansible retries · bounded
+      AC->>GN: Retire the previous live<br/>stop it as old
+      AC->>GN: Recreate preparation<br/>clone · promote
       AC->>GN: Check deprecated<br/>operation versions
     end
     opt Failed host PHP-FPM check

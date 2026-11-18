@@ -151,7 +151,7 @@ jobs:
         - after
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
-  - name: Retire the previous live
+  - name: Quiesce the previous live
     labels: {role: swamp}
     writes: true
     guard: '${{ inputs.kind == "gateway.release" ? steps["Start Horizon"].status != "succeeded" : steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
@@ -159,6 +159,68 @@ jobs:
     - {step: Verify the serving release, condition: {type: or, conditions: [{type: succeeded}, {type: failed}]}}
     - {step: Start Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Run after activation steps, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-quiesce-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 930
+        argv:
+        - /usr/bin/timeout
+        - "900"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - quiesce
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  # The former live's web server stopped. Its kernel can still hold response bytes for slow clients, and a container
+  # stop would drop them. Ansible's own retries (600, 1 second apart) wait under `timeout 660`; a reached bound only logs.
+  - name: Write the response wait input
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Quiesce the previous live"].status != "succeeded" || steps["Quiesce the previous live"].outputs.stdout.trim() == "" }}'
+    dependsOn:
+    - {step: Quiesce the previous live, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: '${{ "ansible-input" }}'
+      methodName: write
+      inputs:
+        intent: '${{ {"ssh_execution": inputs.intent.ssh, "container": steps["Quiesce the previous live"].outputs.stdout.trim()} }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+  - name: Wait for queued responses
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn:
+    - {step: Write the response wait input, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("release-response-wait-" + inputs.intent.target).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 660 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/release-response-wait.yml"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_RUN_ID: '${{ run.id }}'
+          ORBIT_ANSIBLE: '${{ steps["Write the response wait input"].outputs.assets }}'
+          ANSIBLE_CONFIG: '${{ steps["Write the response wait input"].outputs.assets + "/ansible.cfg" }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_FORCE_COLOR: '0'
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Retire the previous live
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps["Quiesce the previous live"].status != "succeeded" }}'
+    dependsOn:
+    - {step: Quiesce the previous live, condition: {type: succeeded}}
+    - {step: Write the response wait input, condition: {type: always}}
+    - {step: Wait for queued responses, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

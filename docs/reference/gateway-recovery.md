@@ -144,10 +144,15 @@ Retire runs in this order, with at most three containers at each step:
 1. It checks the new live through the public name and records the result in the inventory's `verified` list. A successful public check outside a handover records it too.
 2. If the new live is verified, it deletes the earlier old. Only a verified former live replaces it.
 3. An unverified former live is deleted after its drain. The earlier old then stays.
-4. It waits for the former live's HTTP requests and Horizon jobs, disables its Horizon and scheduler units, and stops it with `boot.autostart=false`.
-5. It recreates preparation from a snapshot of the new live, stopped, without the live address reservation, boot mounts or enabled units.
-6. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
-7. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
+4. It waits for the former live's HTTP requests and Horizon jobs and disables its Horizon and scheduler units.
+5. A separate workflow step waits until no web connection in the former live still has queued send bytes. Ansible checks every second, up to 600 times. A reached bound is logged and retire continues.
+6. Retire then stops the former live with `boot.autostart=false`.
+
+Then preparation returns:
+
+1. It recreates preparation from a snapshot of the new live, stopped, without the live address reservation, boot mounts or enabled units.
+2. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
+3. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
 
 The seed refuses a pool whose `zfs.clone_copy` is not `true`, because Incus would then copy files. It refuses to promote while a snapshot that Incus still records would move. It refuses a fourth Gateway container. Until its cleanup and promotion finish, the preparer is marked unfinished: no release wakes it, and the next build repeats the seed.
 

@@ -1,0 +1,45 @@
+---
+# Wait until the former live holds no queued response bytes on its web port, before retire stops its container.
+# Bound: 600 retries 1 second apart, under the step's `timeout 660`. A reached bound is logged and never fails retire.
+- name: Pin the Node and address it
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: release_node
+  tasks:
+    - name: Address the Node
+      when: intent.container | length > 0
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Wait for queued response bytes in the former live
+  hosts: release_node
+  gather_facts: false
+  become: true
+  vars:
+    intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
+    wait_retries: 600
+    wait_delay: 1
+    # Connections whose Send-Q, the second column, is not empty.
+    queued: "{{ web_sockets.stdout_lines | map('regex_replace', '^\\s*\\S+\\s+(\\d+).*$', '\\1') | map('int') | select('gt', 0) | list | length }}"
+  tasks:
+    - name: Read established web connections that still hold queued bytes
+      ansible.builtin.command:
+        argv: [incus, --force-local, --project, orbit-releases, exec, "{{ intent.container }}", --,
+               ss, -tnH, state, established, "( sport = :8080 )"]
+      register: web_sockets
+      changed_when: false
+      failed_when: false
+      retries: "{{ wait_retries }}"
+      delay: "{{ wait_delay }}"
+      # A stopped or missing container holds no connection.
+      until: web_sockets.rc != 0 or queued | int == 0
+    - name: Report the reached bound and continue to retire
+      when: web_sockets.rc == 0 and queued | int > 0
+      ansible.builtin.debug:
+        msg: "gateway.release_response_wait_timeout: {{ intent.container }} still had {{ queued }} connections with queued bytes after {{ wait_retries }} checks"
