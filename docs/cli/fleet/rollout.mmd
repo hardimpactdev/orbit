@@ -34,7 +34,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - no other rollout is running
   loop each Node, in risk order
-    Note over SW: Check earlier Nodes succeeded<br/>gate
+    Note over SW: Earlier Nodes succeeded<br/>gate
     %%> Why:
     %%> - one Node at a time: a Node acts only after every earlier Node succeeded
     %%> - every Node goes at any hour; a busy publication lock defers the Node to a later pass, it is not a failure
