@@ -72,6 +72,8 @@ cases = [
   "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line",
   "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema",
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
+  "on a btrfs inner pool base is taken of the frozen running fleet after one readiness wait, a reset clears its pid file, and a failed snapshot still thaws it",
+  "a directory pool, an unreadable pool read or a due shrink takes base with the fleet stopped",
   "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three",
   "a start after base that fails fails the refresh and writes no record",
   "every refresh reads the services once and names only the one that is down, among active ones",
@@ -176,6 +178,8 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 6 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema" = 49
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 27
+  "on a btrfs inner pool base is taken of the frozen running fleet after one readiness wait, a reset clears its pid file, and a failed snapshot still thaws it" = 40 # ESTIMATE: local 39s on a runner where the grants unit (27) took 33s, scaled, plus 20%
+  "a directory pool, an unreadable pool read or a due shrink takes base with the fleet stopped" = 90 # ESTIMATE: local 91s on a runner where the grants unit (27) took 33s, scaled, plus 20%
   "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three" = 35 # ESTIMATE: local 16s x 2.1, rounded up, plus 1s
   "a start after base that fails fails the refresh and writes no record" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
   "every refresh reads the services once and names only the one that is down, among active ones" = 6 # ESTIMATE: local 2s x 2.1, rounded up, plus 1s

@@ -234,6 +234,12 @@ if (command[0] === "incus") {
     Object.assign(state.network.config, pairs(inner.slice(3)));
     done();
   }
+  // The inner storage pools: `poolDriver` is the driver of the one pool (a directory pool unless a test says otherwise);
+  // `poolsUnreadable` makes the read fail.
+  if (inner[0] === "query" && inner[1] === "/1.0/storage-pools?recursion=1") {
+    if (state.poolsUnreadable) fail("Failed to list storage pools");
+    done([{ name: "inner", driver: state.poolDriver ?? "dir", status: "Created" }]);
+  }
   if (inner[0] === "query") {
     const [route, query] = inner[1].slice("/1.0/instances/".length).split("?");
     const [name, part] = route.split("/");
@@ -262,6 +268,15 @@ if (command[0] === "incus") {
       else found.status = "Running";
     }
     if (errors.length > 0) fail(errors.join("; "));
+    done();
+  }
+  // `pause` freezes running containers and `resume` thaws frozen ones, several in one call, as in Incus.
+  if (inner[0] === "pause" || inner[0] === "resume") {
+    const found = inner.slice(1).map(container);
+    if (found.length === 0) fail("No instance named");
+    const from = inner[0] === "pause" ? "Running" : "Frozen";
+    if (found.some((value) => value.status !== from)) fail(inner[0] === "pause" ? "The instance isn't running" : "The instance isn't frozen");
+    for (const value of found) value.status = inner[0] === "pause" ? "Frozen" : "Running";
     done();
   }
   if (inner[0] === "start" || inner[0] === "stop") {
@@ -304,6 +319,8 @@ if (command[0] === "incus") {
     found.files ??= {};
     if (verb === "create") {
       if (found.snapshots[snapshot]) fail("Snapshot already exists");
+      // `failSnapshot`: the names whose snapshot fails.
+      if (state.failSnapshot?.includes(name)) fail("Failed to create snapshot");
       found.snapshots[snapshot] = { config: copy(found.config), devices: copy(found.devices), files: copy(found.files), links: copy(found.links ?? {}), taken: found.status };
     } else if (verb === "delete") {
       if (!found.snapshots[snapshot]) fail("Snapshot not found");

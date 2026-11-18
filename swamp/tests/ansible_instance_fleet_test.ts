@@ -708,8 +708,10 @@ Deno.test({
     try {
       assert(f.run("start").ok);
       f.calls();
-      // A device Orbit owns went missing while the fleet ran: the refresh puts it back before it takes base.
+      // A device Orbit owns went missing while the fleet ran: the refresh puts it back before it takes base, with the fleet stopped
+      // although the inner pool is btrfs.
       f.change((state) => delete state.containers["nested-app-prod"].devices["apparmor-off"]);
+      f.change((state) => state.poolDriver = "btrfs");
       // The inner bridge's dnsmasq wrote its pid file on nested-app-dev's disk: base never holds it.
       f.change((state) => state.containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"] = "pid: 4242\n");
       const refreshed = f.run("refresh");
@@ -748,6 +750,9 @@ Deno.test({
         ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
         // The shrink check: no package changed since the last shrink, so it adds nothing to `base`.
         shrinkCall + "check " + shrinkArgs,
+        // The converge ran after the files were read: they are read again before base, and the pool driver once.
+        ...reads,
+        "incus query /1.0/storage-pools?recursion=1",
         // `base` is due for all three, so readiness waits until they run again.
         ...names.map((name) => `incus stop ${name} --timeout 90`),
         "incus list --format csv --columns ns",
@@ -776,6 +781,7 @@ Deno.test({
         recordWrite,
       ]);
       assertKeyUntouched(calls, refreshed.output);
+      assertEquals(f.refreshed()?.base_mode, "stopped");
       const state = f.state();
       assertEquals(state.operations.map((operation: { node: number }) => operation.node), [1, 3, 2]);
       assertEquals(calls.filter((call) => call.includes("/doctor")).length, 1);
@@ -2596,6 +2602,89 @@ Deno.test({
       assertEquals(f.refreshed()?.base_containers, ["nested-gateway"]);
     } finally {
       f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "on a btrfs inner pool base is taken of the frozen running fleet after one readiness wait, a reset clears its pid file, and a failed snapshot still thaws it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => grantsDue(Object.assign(state, { poolDriver: "btrfs" })));
+      // The inner bridge's dnsmasq runs on nested-app-dev: a `base` of the running fleet holds its pid file, and the reset clears it.
+      f.change((state) => state.containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"] = "pid: 4242\n");
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      const base = calls.slice(calls.indexOf("incus query /1.0/storage-pools?recursion=1"));
+      // Readiness first, on the running fleet; then the old base goes, and the freeze, the snapshot and the thaw follow one another.
+      assertEquals(base.filter((call) => readyCalls.includes(call) || /^incus (stop|start|pause|resume|snapshot) /.test(call)), [
+        ...readyCalls,
+        "incus snapshot delete nested-gateway base",
+        "incus pause nested-gateway",
+        "incus snapshot create nested-gateway base",
+        "incus resume nested-gateway",
+      ]);
+      assert(!calls.some((call) => call.includes("instance_fleet_runtime.py")), calls.join("\n"));
+      assertEquals(calls.filter((call) => call.includes("/doctor")).length, 1);
+      const result = f.refreshed();
+      assertEquals([result?.base, result?.base_mode, result?.base_containers], ["retaken", "running", ["nested-gateway"]]);
+      assertEquals(Object.keys(result?.seconds as Record<string, number>), ["gateway", "converge", "ready", "base", "tools"]);
+      const state = f.state();
+      assertEquals(state.containers["nested-gateway"].snapshots.base.taken, "Frozen");
+      assertEquals(names.map((name) => state.containers[name].status), ["Running", "Running", "Running"]);
+      // The reset restores that base and clears its pid file before the start.
+      f.intent((intent) => intent.container.clone = { t3: { unit: "t3.service" } });
+      const reset = f.run("reset");
+      assert(reset.ok, reset.output);
+      assertEquals(f.state().containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"], undefined);
+      // A snapshot that fails still thaws the fleet, and fails the refresh with no record: the run restores the old seed.
+      f.change((state) => {
+        grantsDue(state);
+        state.digests = { "apps/gateway": "a1", swamp: "e3" };
+        state.failSnapshot = ["nested-gateway"];
+      });
+      const failed = f.run("refresh");
+      assert(!failed.ok, failed.output);
+      assert(f.calls().includes("incus resume nested-gateway"));
+      assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      assertEquals(f.state().outer.files[record], undefined);
+      f.change((state) => delete state.failSnapshot);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+/** The grants reload changed the nested Gateway's disk: its `base` alone is due, and nothing else differs. */
+const grantsDue = (state: Record<string, unknown>) => Object.assign(state, { grantsChanged: 2, digests: { "apps/gateway": "a1", swamp: "e2" } });
+
+Deno.test({
+  name: "a directory pool, an unreadable pool read or a due shrink takes base with the fleet stopped",
+  ignore: !hasAnsible,
+  fn() {
+    // Each of these takes the stopped path for the same due base.
+    for (const [why, edit] of [
+      ["a directory pool", (state: Record<string, unknown>) => state.poolDriver = "dir"],
+      ["an unreadable pool read", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", poolsUnreadable: true })],
+      ["a due shrink", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", shrink: { due: true, reason: "packages" } })],
+    ] as [string, (state: Record<string, unknown>) => void][]) {
+      const g = refreshedOnce();
+      try {
+        g.change((state) => {
+          grantsDue(state);
+          edit(state);
+        });
+        const refreshed = g.run("refresh");
+        assert(refreshed.ok, `${why}: ${refreshed.output}`);
+        const calls = g.calls();
+        assert(calls.includes("incus stop nested-gateway --timeout 90") && !calls.some((call) => call.startsWith("incus pause")), `${why}: ${calls.join("\n")}`);
+        assertEquals(g.refreshed()?.base_mode, "stopped", why);
+      } finally {
+        g.cleanup();
+      }
     }
   },
 });

@@ -2841,11 +2841,11 @@ A refresh always checks fleet readiness. For work it can skip, it compares input
 | Prepare the Instance host | The separate `host` digest | On an eligible `nested-app-dev`, when the host digest differs, is missing from the record, or cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
-| Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
+| Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken after no read or after the converge. See [How `base` is taken](#how-base-is-taken) |
 | Wait for the state mounts, check the nested Gateway's services (one read), read the fleet's devices and keys, readiness | None | Every run |
 | Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens; the record keeps the oldest | With the Club key, when the record's oldest token is missing or older than 20 days. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
 | Install the recipe's Swamp on the nested Gateway, restart Swamp on it | None: every run reads the recipe's release and the binary that serve runs | With the Club key, when serve does not run the recipe's release, or a read fails. See [The pinned Swamp](#the-pinned-swamp) |
-| Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
+| Retake `base`: of the running fleet, or stopped with the rules applied | See below | Only when the fleet's disks changed |
 | Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate`, and four packages | The tools of these pins are not complete, or a package is missing. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
@@ -2918,7 +2918,7 @@ A due converge still prepares inputs and runs its final checks, even when all it
 
 Below the 2,000,000 [ID map size](#instance-host-in-the-fleet), `nested-app-dev` cannot build its Instance image. There the refresh converges it with the base scope, as before, and its software and role state in `base` stay as they were. A proof needs a default at 2,000,000 when its converge or role-add cases run on `nested-app-dev`.
 
-A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
+A reset of a fleet restores `base` of all three containers in seconds. On the directory pool, taking `base` was the slow part: about 32 s for each container, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 
 | What changed | `base` retaken for |
 | --- | --- |
@@ -2926,7 +2926,7 @@ A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `
 | The nested Gateway's tokens were reminted | The nested Gateway, whose disk holds the tokens and `.env` |
 | A converge reported a changed task on a Node | That Node and the nested Gateway, whose database records the converge |
 | A nested container has no `base` | That container |
-| The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three, with the rules applied on the stopped fleet |
+| The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three; after a difference, with the rules applied on the stopped fleet |
 
 The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that reloaded grants comes up on the new grants.
 
@@ -2942,9 +2942,30 @@ The nested Gateway's serve loads the workflows of the checkout as they change, w
 
 Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It holds run records, outputs, an audit log and caches built from the checkout. These are records, not inputs. After a reset, serve builds the caches again.
 
+#### How `base` is taken
+
+A btrfs snapshot of a running container is atomic. So on the btrfs pool `inner` of the [inner volume](#the-inner-volume), the refresh takes `base` of the running fleet. It deletes the old `base` of each target, freezes the targets in one `incus pause`, snapshots each, and thaws them in one `incus resume`. Nothing stops, boots or waits again. The thaw runs also when a snapshot fails; the refresh then fails, and the run restores the old seed. The one readiness wait of the run comes before the freeze, so `base` holds a ready fleet.
+
+The freeze gives the set one point in time across the containers, as a stop did. It lasts as long as Incus takes to snapshot the targets: about 0.4 s for the freeze and the thaw, plus 1.3 to 2 s for each app container and about 5 s for `nested-gateway`. The btrfs snapshot itself takes 0.04 s. Incus spends the rest of that time in its own snapshot step for each container (measured in task copy 3717 on 2026-11-18).
+
+The refresh stops the targets as before, and takes `base` of the stopped fleet, when:
+
+- an inner pool is not btrfs, such as the directory pool of a default made before the inner volume. There a snapshot of a running container is a file copy.
+- the pools cannot be read. The refresh reads them once, with `incus query /1.0/storage-pools?recursion=1`.
+- a fleet rule or file differed on the running fleet. The rules are written with the three stopped.
+- a [shrink](#the-inner-machines-stay-small) is due. The relink and the dedupe need the three stopped.
+
+The result says which way ran: `base_mode` is `running`, `stopped`, or `none` when `base` stays.
+
+A running fleet is not compared again before its snapshot. So a run whose converge ran after it read the fleet files reads them again before `base`, on the running fleet. A file that differs there makes `base` due for all three, with the fleet stopped.
+
+A `base` of the running fleet holds the live pid file of each network of the nested Incus, such as `orbitinst0` on `nested-app-dev`. The [reset](#no-stale-network-pid-file) is the only place that restores `base`. It clears those files after the restore and before the start. A `base` of the stopped fleet holds none: the refresh clears them before that snapshot.
+
+On the copy that measured it, a refresh that retook `base` of `nested-gateway` and `nested-app-dev` spent 9 to 10 s on `base` against 59 to 66 s with the stop, start and second readiness wait. The whole refresh took 32 s against 89 to 95 s.
+
 With only some containers stopped, the rules only compare. A rule that differs on a running container fails the refresh, so the refresh never writes to a container whose `base` it keeps. Each container to retake stops; the others keep running. While the nested Gateway is stopped, the agents of the other two lose it and connect again after its start, as after the restart of its services.
 
-After `base` the refresh starts what stopped and waits for readiness, its one readiness wait in that case. If nothing changed, the fleet keeps running, `base` stays, and the refresh waits for readiness before the tools.
+After a `base` of the stopped fleet, the refresh starts what stopped and waits for readiness, its one readiness wait in that case. After a `base` of the running fleet, or when nothing changed, the fleet keeps running, and the refresh waits for readiness before `base` and the tools.
 
 If that start fails, the refresh fails and the run restores the old seed. The new `base` snapshots are inside the outer container's disk, so the restore takes them back too. The default then runs on the old seed's commit with the old seed's fleet, as before the run. Existing copies are clones of older seeds and stay as they are. New copies clone the restored seed until the next release.
 
@@ -3284,7 +3305,7 @@ An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, a
 
 Two copies can hold such a file. The first is the **copied seed**. A task copy starts from a copy of the running default Instance container, which holds the live disks of its nested containers. When the pid file's last write had not reached the disk, the copy holds it empty, and the guest's autostart boots with it.
 
-The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back.
+The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back. A `base` of the [running fleet](#how-base-is-taken) holds the live file of the running dnsmasq; after a restore no dnsmasq owns it.
 
 **The fleet start heals each nested Instance host.** After it starts the nested containers, the [fleet start](#the-fleet-step) runs `swamp/ansible/files/incus-network-pid-heal.py` in each nested Node marked as an Instance host, whether it ran already or just started. The run places the heal at `/usr/local/sbin/incus-network-pid-heal`, with the drop-in `incus.service.d/60-network-pid-heal.conf` that runs it as `ExecStartPre` before every later start of Incus.
 
