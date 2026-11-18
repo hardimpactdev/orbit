@@ -120,13 +120,14 @@ The Gateway expects its managed Horizon and scheduler Processes to be named `hor
 4. From the verified host release, run `sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>`. This moves the same commit and preserves the database.
 5. Check `/up`, `orbit gateway:status` and an authenticated peer request through the public Gateway name. Check the background workers.
 6. If the move was interrupted, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` at the Node console. Inspect the selected commit, public traffic and background services.
-7. Release the next forward commit. Check that preparation is frozen and that the former live disappears after its HTTP requests and Horizon jobs finish. Converge the Gateway role to retire host PHP-FPM and restore the previous automation setting.
+7. Release the next forward commit. Check that preparation sleeps and the former live disappears after HTTP and Horizon drain.
+8. Converge the Gateway role to retire host PHP-FPM. Restore the previous automation setting.
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
 An established Gateway has a sleeping preparation container and a serving container. It can hold one more container during deployment. Orbit finishes an interrupted handover before allocating another candidate. It updates preparation in place, seals it, freezes it and takes a filesystem clone. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
 
-The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch forward. A failed public check reports a failed release. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal, then deploy a corrective commit. Once the old Horizon workers and HTTP connections have drained, Orbit removes the former release and checks which deprecated Operation versions are safe to retire.
+The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch forward. A failed public check reports a failed release. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal, then deploy a corrective commit. Once the old Horizon workers and HTTP connections have drained, Orbit removes the former release and checks which closed Operation versions have finished their work.
 
 ## Release layout
 

@@ -294,7 +294,7 @@ Each slice is one pull request. Slices 3 to 7 depend on ADR 0263's build subtask
 - A Gateway request no longer pays the Laravel boot. The wake path and the API paths gain the most.
 - Gateway code must be safe in a long-lived worker. A singleton, a static cache or a shutdown function that holds a request's data is a defect, and tests refuse the known shapes.
 - A release changes no PHP, unit or file on the host except the upstream file and the live link. A failed build, migration or readiness check never touches live's code. A migration that ran stays, as today.
-- Operational recovery finishes the durable switch. A later corrective deployment uses the same preparation checkout.
+- Operational recovery finishes the durable switch. A corrective deployment uses the same preparation checkout.
 - A migration that rebuilds a large SQLite table blocks live's writes while it runs. That was true before; worker mode does not change it.
 - During a release, two Gateways run on the Node, and their workers hold memory twice for the drain.
 - The first command to each Node after a switch opens a new SSH connection.
