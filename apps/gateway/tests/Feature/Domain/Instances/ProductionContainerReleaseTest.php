@@ -5,14 +5,23 @@ declare(strict_types=1);
 use App\Actions\Instances\ListInstanceReleasesAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Instances\StartInstanceRollbackAction;
+use App\Domain\Instances\Deployment\AutomaticDeployFailure;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
+use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Processes\ProcessLifecycleInput;
+use App\Domain\Processes\ProcessOperationAdmission;
+use App\Domain\Processes\ProcessOperationSecrets;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
+use App\Models\InstanceDeployStep;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -54,7 +63,7 @@ function appProdReleasePlacement(Node $node, string $name, ?string $legacy = nul
     return $instance;
 }
 
-function appProdReleaseReceipt(Operation $operation, array $overrides = [], string $status = 'succeeded'): Operation
+function appProdReleaseReceipt(Operation $operation, array $overrides = [], string $status = 'succeeded', array $failure = []): Operation
 {
     $run = 'native-release-'.$operation->id;
     $operation->forceFill(['state' => [...$operation->state, 'swamp_run_id' => $run]])->save();
@@ -64,7 +73,7 @@ function appProdReleaseReceipt(Operation $operation, array $overrides = [], stri
 
     return app(DirectOperation::class)->projection($operation)->apply($operation, ['run_id' => $run,
         'status' => $status, 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
-        'error_code' => $status === 'failed' ? 'deployment.after_activation_failed' : null, 'result' => ['receipt' => json_encode($receipt, JSON_THROW_ON_ERROR)]]);
+        'failure' => $failure, 'error_code' => $status === 'failed' ? 'deployment.after_activation_failed' : null, 'result' => ['receipt' => json_encode($receipt, JSON_THROW_ON_ERROR)]]);
 }
 
 describe('production container deployments', function (): void {
@@ -98,6 +107,8 @@ describe('production container deployments', function (): void {
         foreach (['DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => '/home/orbit-app-'.$instance->project_id.'/database.sqlite'] as $key => $value) {
             InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => $key, 'env_value' => $value]);
         }
+        $instance->project->update(['type' => 'laravel-app', 'root' => null]);
+        $instance->unsetRelation('project');
         $sha = str_repeat('f', 40);
         $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, $sha);
         $frames = new ArrayObject;
@@ -124,10 +135,95 @@ describe('production container deployments', function (): void {
             ->and($private)->toMatchArray(['sha' => $sha, 'instance_id' => $instance->id, 'operation_id' => $operation->id, 'node_id' => $instance->node_id, 'expected_live' => null, 'legacy' => null])
             ->and($private['environment'])->toContain('APP_NAME=', '/srv/shared/database.sqlite')->not->toContain('/home/orbit-app-')
             ->and($private['routes'][0]['domain'])->toBe('private-material.test')
+            ->and($private['routes'][0]['web_root'])->toBe('public')->and($private['shared_paths'])->toBe(['storage'])
             ->and(json_encode([$inputs, $operation->input], JSON_THROW_ON_ERROR))->not->toContain('APP_NAME=');
         $instance->update(['deployment_branch' => 'changed']);
         expect(fn () => $direct->workflowInputs($operation))->toThrow(ResourceOperationException::class)
             ->and(count($frames))->toBe(1);
+    });
+
+    it('admits configured shared paths on a fresh placement and still uses them for rollback', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'persistent-uploads');
+        $instance->update(['shared_paths' => ['uploads', 'var/media']]);
+        expect(SharedPaths::forProduction($instance))->toBe(['uploads', 'var/media']);
+        $deploy = app(StartInstanceDeployAction::class);
+        $a = str_repeat('a', 40);
+        appProdReleaseReceipt($deploy->execute($instance, 'operator', null, $a));
+        appProdReleaseReceipt($deploy->execute($instance, 'operator', null, str_repeat('b', 40)));
+        $rollback = app(StartInstanceRollbackAction::class)->execute($instance, substr($a, 0, 12), 'operator', null);
+        $input = $rollback->input['production_release'];
+        expect($input['retained'])->toBeTrue()->and($input['sha'])->toBe($a);
+        $instance->refresh()->update(['shared_paths' => ['other']]);
+        expect(fn () => app(DirectOperation::class)->workflowInputs($rollback))->toThrow(ResourceOperationException::class);
+    });
+
+    it('bounds best-effort results to the admitted steps and allows their full execution time', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'long-steps');
+        foreach (['one', 'two', 'three', 'last'] as $index => $name) {
+            InstanceDeployStep::query()->create(['instance_id' => $instance->id, 'name' => $name,
+                'command' => 'true', 'phase' => $name === 'last' ? 'after_activation' : 'before_activation',
+                'timeout_seconds' => 900, 'position' => $index, 'required' => $name !== 'one']);
+        }
+        $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, str_repeat('a', 40));
+        expect($operation->input['production_release'])->toMatchArray(['build_timeout_seconds' => 5160, 'after_timeout_seconds' => 980])
+            ->and($operation->input['run_budget_seconds'])->toBe(7040);
+        appProdReleaseReceipt($operation, ['best_effort_steps' => [
+            ['name' => 'one', 'phase' => 'before_activation', 'exit_code' => 42],
+            ['name' => 'two', 'phase' => 'before_activation', 'exit_code' => 99],
+            ['name' => 'one', 'phase' => 'after_activation', 'exit_code' => 1],
+        ]]);
+        expect(InstanceDeployment::findOrFail($operation->state['deployment_id'])->best_effort_steps)->toBe([['name' => 'one', 'exit_code' => 42]]);
+    });
+
+    it('lets automatic deploy retry capacity refusal and preserves other failed chart steps', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'capacity-failure');
+        $sha = str_repeat('b', 40);
+        $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, $sha);
+        appProdReleaseReceipt($operation, ['live' => null], 'failed', ['detail' => 'deployment.node_capacity: release pool is full', 'failed_step' => 'Build the Instance release']);
+        $row = InstanceDeployment::findOrFail($operation->state['deployment_id']);
+        expect($row->error_code)->toBe('deployment.node_capacity')->and($row->failed_step)->toBe('preparation')
+            ->and(AutomaticDeployFailure::isTransient($row))->toBeTrue();
+        $other = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, $sha);
+        appProdReleaseReceipt($other, ['live' => null], 'failed', ['failed_step' => 'Check the Instance candidate']);
+        $row = InstanceDeployment::findOrFail($other->state['deployment_id']);
+        expect($row->failed_step)->toBe('Check the Instance candidate')->and(AutomaticDeployFailure::isTransient($row))->toBeFalse();
+    });
+
+    it('never falls back to host control during an uncertain first switch and restores it only with a matching receipt', function (): void {
+        $sha = str_repeat('b', 40);
+        $instance = appProdReleasePlacement($this->prod, 'legacy-resume', $sha);
+        $deploy = app(StartInstanceDeployAction::class);
+        $operation = $deploy->execute($instance, 'operator', null);
+        $target = fn () => ProductionContainerRelease::target($instance->refresh());
+        expect($target)->toThrow(ResourceOperationException::class);
+        appProdReleaseReceipt($operation, ['live' => null, 'legacy_restored' => true, 'legacy_commit' => str_repeat('e', 40)], 'failed');
+        expect($target)->toThrow(ResourceOperationException::class);
+        $retry = $deploy->execute($instance, 'operator', null);
+        appProdReleaseReceipt($retry, ['live' => null, 'legacy_restored' => true, 'legacy_commit' => $sha], 'failed');
+        expect($target())->toBeNull()->and($instance->production_release_started_at)->toBeNull();
+    });
+
+    it('targets only the verified serving container for ordinary Process controls', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'process-control');
+        $sha = str_repeat('d', 40);
+        appProdReleaseReceipt(app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, $sha));
+        $process = Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $instance->id,
+            'name' => 'worker', 'runtime' => 'systemd', 'working_directory' => $instance->checkout_path,
+            'runtime_config' => ['command' => ['php', 'artisan', 'queue:work']], 'desired_state' => 'running',
+            'restart_policy' => 'always', 'status' => 'active']);
+        $admission = app(ProcessOperationAdmission::class);
+        $update = $admission->execute($process, 'update');
+        $selected = $update->input['container'];
+        expect($selected)->toMatchArray(['project' => 'orbit-releases', 'instance_id' => $instance->id,
+            'node_id' => $instance->node_id, 'release' => $sha, 'name' => 'instance-'.$instance->id.'-'.substr($sha, 0, 12)]);
+        $secret = app(ProcessOperationSecrets::class)->resolve($update, $process->id, '', 'installation')->value;
+        expect($secret['content'])->toContain('WorkingDirectory=/srv/workspace/current', 'User=orbit');
+        expect(fn () => app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, str_repeat('f', 40)))->toThrow(ResourceOperationException::class);
+        $stale = clone $update;
+        $input = $stale->input;
+        unset($input['container']);
+        $stale->setAttribute('input', $input);
+        expect(fn () => app(ProcessLifecycleInput::class)->forOperation($stale))->toThrow(ResourceOperationException::class);
     });
 
     it('adopts an existing checkout at the proven serving commit', function (): void {

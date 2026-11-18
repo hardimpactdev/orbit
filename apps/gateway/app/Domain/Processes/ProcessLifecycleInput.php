@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Routes\NativeCaddyPublicationInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
@@ -51,6 +52,14 @@ final readonly class ProcessLifecycleInput
         $node = Node::query()->findOrFail($operation->node_id);
         if ($operation->target_type !== 'process' || $operation->target_id !== ($input['process_id'] ?? null)) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Process intent does not match its target.', 422);
+        }
+        $process = Process::query()->findOrFail($operation->target_id);
+        if (Instance::isMorphType($process->owner_type)) {
+            $owner = Instance::query()->findOrFail($process->owner_id);
+            $selected = ProductionContainerRelease::target($owner);
+            if (($selected !== null || isset(ValidatedData::object($input['container'] ?? [])['release'])) && ($input['container'] ?? null) !== $selected) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'This Process Operation belongs to a different serving release.', 409);
+            }
         }
         $material = in_array($operation->kind, ['process.create', 'process.update'], true)
             ? ValidatedData::object($this->secrets->resolve($operation, $operation->target_id, '', 'installation')->value) : null;

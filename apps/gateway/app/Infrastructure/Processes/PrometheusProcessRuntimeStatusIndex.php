@@ -120,8 +120,14 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     {
         $owners = $processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type))->pluck('owner_id')->unique()->all();
         $runtimes = InstanceRuntime::query()->whereIn('instance_id', $owners)->with('instance.node')->get()->keyBy('instance_id');
+        $releases = Instance::query()->whereIn('id', $owners)->where(fn ($query) => $query->whereNotNull('production_release_started_at')->orWhereNotNull('production_release'))->with('node')->get()->keyBy('id');
         $pairs = [];
         foreach ($processes as $process) {
+            if (Instance::isMorphType($process->owner_type) && ($instance = $releases->get($process->owner_id)) instanceof Instance) {
+                $pairs[] = ['instance' => $instance, 'process' => $process];
+
+                continue;
+            }
             if (GatewayReleaseHost::hasProcess($process) && $process->owner instanceof Node && GatewayReleaseHost::target($process->owner) !== null) {
                 $pairs[] = ['instance' => $process->owner, 'process' => $process];
 

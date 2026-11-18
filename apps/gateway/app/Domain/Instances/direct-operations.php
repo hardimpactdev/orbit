@@ -72,7 +72,9 @@ return [
             'captures' => ['size' => ['job' => 'import', 'step' => 'Read .env into the vault', 'field' => 'size'],
                 'sha256' => ['job' => 'import', 'step' => 'Read .env into the vault', 'field' => 'sha256']]],
         'projection' => NativeInstanceEnvironmentImportProjection::class],
-    'instance.sync_environment' => ['workflow' => 'operation-instance-environment', 'workflow_inputs' => true,
+    'instance.sync_environment' => ['workflow' => 'operation-instance-environment', 'alternate_workflows' => ['production-environment-sync'], 'workflow_inputs' => true,
+        'alternate_results' => ['production-environment-sync' => ['job' => 'environment', 'step' => 'Apply the live environment', 'native' => true,
+            'captures' => ['receipt' => ['job' => 'environment', 'step' => 'Apply the live environment', 'field' => 'stdout']]]],
         // The file behavior reports `compliant` for a file it left in place and `applied` for one it wrote.
         'terminal_result' => ['job' => 'environment', 'step' => 'Check the written file', 'native' => true, 'captures' => [
             'environment_write' => ['job' => 'environment', 'step' => 'Write .env, .env.testing-0', 'field' => 'status'],

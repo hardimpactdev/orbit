@@ -20,6 +20,37 @@ use App\Support\ValidatedData;
 
 final readonly class ProductionContainerUnits
 {
+    public static function directory(Instance $instance): string
+    {
+        return '/srv/workspace/current'.ProductionApplicationPaths::suffix($instance->root ?? $instance->project->root);
+    }
+
+    public static function placed(Process $record, Instance $instance): Process
+    {
+        $process = clone $record;
+        $checkout = '/srv/workspace/current';
+        $directory = self::directory($instance);
+        $name = $process->name;
+        $paths = array_filter([$instance->checkout_path => $checkout, ($instance->production_home ?? '').'/current' => $checkout],
+            fn ($v, $k): bool => $k !== '' && $k !== '/current', ARRAY_FILTER_USE_BOTH);
+        $config = $process->runtime_config;
+        $commands = app(ContainerProcessCommands::class);
+        $php = $instance->selected_php_version ?? $instance->project->php_version ?? '8.5';
+        $argv = $commands->names(ValidatedData::stringList($config['command'] ?? []), $php, $name);
+        $config['command'] = $commands->resolve($argv, $php, $name);
+        array_walk_recursive($config['command'], static function (string &$arg) use ($paths): void {
+            $arg = strtr($arg, $paths);
+        });
+        $config['environment_file'] = $directory.'/.env';
+        $process->runtime_config = $config;
+        $process->working_directory = strtr($process->working_directory ?? $directory, $paths);
+        if ($process->working_directory !== $checkout && ! str_starts_with($process->working_directory, $checkout.'/')) {
+            throw new ResourceOperationException('deployment.process_unsupported', 'A production container Process must run inside its checkout.', 409);
+        }
+
+        return $process;
+    }
+
     /** @return array{units:list<array<string,mixed>>,processes:list<array{unit:string,desired:string}>,timers:list<string>,host_units:list<string>} */
     public function forInstance(Instance $instance): array
     {
@@ -36,17 +67,7 @@ final readonly class ProductionContainerUnits
             }
             $name = $renderer->unitName($process);
             $host[] = $name;
-            $config = $process->runtime_config;
-            $config['command'] = app(ContainerProcessCommands::class)->resolve(ValidatedData::stringList($config['command'] ?? []), $instance->selected_php_version ?? $instance->project->php_version, $name, hostPaths: true);
-            array_walk_recursive($config['command'], static function (string &$arg) use ($paths): void {
-                $arg = strtr($arg, $paths);
-            });
-            $config['environment_file'] = $directory.'/.env';
-            $process->runtime_config = $config;
-            $process->working_directory = strtr($process->working_directory ?? $directory, $paths);
-            if ($process->working_directory !== $checkout && ! str_starts_with($process->working_directory, $checkout.'/')) {
-                throw new ResourceOperationException('deployment.process_unsupported', 'A production container Process must run inside its checkout.', 409);
-            }
+            $process = self::placed($process, $instance);
             $content = $renderer->render($process, $target);
             $path = $renderer->environmentPath($process, $target);
             $units[] = ['name' => $name, 'content' => $content, 'desired' => $process->desired_state->value,

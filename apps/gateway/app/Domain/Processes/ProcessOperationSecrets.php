@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
+use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Operations\OperationSecretSource;
 use App\Domain\Operations\OperationSecretValue;
@@ -39,6 +40,12 @@ final readonly class ProcessOperationSecrets implements OperationSecretSource
     {
         $process = Process::query()->findOrFail($id);
         $target = $this->targets->forInstallation($process);
+        if (isset($target->container['release']) && $target->instance !== null) {
+            if (($operation->input['container'] ?? null) !== $target->container) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'The serving Instance release changed after Process admission.', 409);
+            }
+            $process = ProductionContainerUnits::placed($process, $target->instance);
+        }
         if ($process->id !== $operation->target_id || $operation->target_type !== 'process' || $process->id !== ($operation->input['process_id'] ?? null) || $target->node->id !== $operation->node_id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The secret reference does not belong to this Process.', 422);
         }

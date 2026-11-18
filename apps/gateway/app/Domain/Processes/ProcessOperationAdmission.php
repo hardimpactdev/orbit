@@ -8,6 +8,7 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Nodes\GatewayRuntimeFiles;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Shared\LifecycleStatus;
@@ -37,7 +38,7 @@ final readonly class ProcessOperationAdmission
                 throw new ResourceOperationException('process.removing', "Process [{$process->name}] is being removed: the Project removed its definition.", 409);
             }
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
-            if (is_array($input['container'] ?? null) && isset($input['container']['instance_id']) && in_array($verb, ['create', 'update', 'destroy'], true)) {
+            if (is_array($input['container'] ?? null) && isset($input['container']['instance_id']) && ! isset($input['container']['release']) && in_array($verb, ['create', 'update', 'destroy'], true)) {
                 // A container Instance takes its Processes from the Project's development definitions, which a deployment installs.
                 app(ContainerProcessChange::class)->assertAdmissible($process, $verb, $namedInstanceId);
             }
@@ -77,6 +78,12 @@ final readonly class ProcessOperationAdmission
      */
     public function inputForTarget(Process $process, string $verb, ProcessTarget $target, ?ManagedUserAccount $account = null, bool $created = false, bool $preserveRecord = false, ?Node $caller = null): array
     {
+        if (isset($target->container['release']) && $target->instance !== null) {
+            if ($process->runtime !== ProcessRuntime::Systemd) {
+                throw new ResourceOperationException('process.target_unsupported', 'Production release containers use systemd Processes.', 409);
+            }
+            $process = ProductionContainerUnits::placed($process, $target->instance);
+        }
         $systemd = $process->runtime === ProcessRuntime::Systemd;
         $hostVite = $target->container === null && $process->isVpDev();
         $templateAccount = $account === null && $systemd && ! $process->isVpDev() && $target->certificateScope !== null;

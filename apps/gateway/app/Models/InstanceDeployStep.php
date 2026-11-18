@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $phase
  * @property string $command
  * @property int $timeout_seconds
+ * @property bool $required
  * @property int $position
  * @property-read Instance $instance
  */
@@ -33,6 +34,7 @@ final class InstanceDeployStep extends Model
         'name',
         'phase',
         'command',
+        'required',
         'timeout_seconds',
         'position',
     ];
@@ -48,6 +50,7 @@ final class InstanceDeployStep extends Model
     {
         return [
             'timeout_seconds' => 'integer',
+            'required' => 'boolean',
             'position' => 'integer',
         ];
     }

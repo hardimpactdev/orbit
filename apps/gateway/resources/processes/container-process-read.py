@@ -19,6 +19,10 @@ def pair(project, container, unit):
 
 def read_command(project, container, unit, lines=None):
     if project == "orbit-releases":
+        owner = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)/([0-9a-f]{40})", container)
+        if owner and re.fullmatch(r"orbit-process-[1-9][0-9]*-[a-z0-9-]+\.service", unit):
+            return ["sudo", "-n", "--", "/usr/local/libexec/orbit-instance-release-control", *owner.groups(),
+                    "process", "logs" if lines else "status", unit] + ([lines] if lines else [])
         if not re.fullmatch(r"[0-9a-f]{40}", container) or not re.fullmatch(
             r"orbit-process-[1-9][0-9]*-(?:schedule-work|horizon)\.service", unit
         ):

@@ -140,6 +140,9 @@ final readonly class StartInstanceDeployAction
             if ($development || ! $operation->wasRecentlyCreated) {
                 return $operation;
             }
+            if ($instance->production_release_started_at === null) {
+                $instance->forceFill(['production_release_started_at' => now()])->saveOrFail();
+            }
             // The running row pauses automatic deployment now, not when the run ends.
             $row = $this->history->start($instance, $triggeredBy, callerNodeId: $callerNodeId);
             $operation->forceFill(['state' => [...($operation->state ?? []), 'deployment_id' => $row->id]])->save();

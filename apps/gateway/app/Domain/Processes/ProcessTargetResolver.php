@@ -6,6 +6,8 @@ namespace App\Domain\Processes;
 
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
+use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
@@ -187,6 +189,13 @@ final readonly class ProcessTargetResolver
     private function instanceContext(Instance $instance, bool $allowRemovingRole = false): ProcessTarget
     {
         $this->ensureLinux($instance->node);
+        $release = ProductionContainerRelease::target($instance);
+        if ($release !== null) {
+            $directory = ProductionContainerUnits::directory($instance);
+
+            return new ProcessTarget($instance->node, 'orbit', $directory, instance: $instance,
+                environmentFile: $directory.'/.env', container: $release);
+        }
 
         // An Instance in a container runs its Processes as `www-data` units in the container, with the workspace's .env
         // (docs/reference/development-containers.md#processes).

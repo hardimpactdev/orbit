@@ -34,6 +34,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $retained_git_at
  * @property string|null $source_prepare_id
  * @property string|null $production_user
+ * @property Carbon|null $production_release_started_at
  * @property array{live:string,old:?string,artifact:string}|null $production_release
  * @property string|null $production_home
  * @property string|null $production_php_service
@@ -417,6 +418,7 @@ final class Instance extends Model
             'vp_environment' => 'array',
             'shared_paths' => 'array',
             'production_release' => 'array',
+            'production_release_started_at' => 'immutable_datetime',
             'vite_port' => 'integer',
             'ssr_port' => 'integer',
             'clone_candidate_id' => 'integer',

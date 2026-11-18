@@ -46,6 +46,9 @@ final readonly class StartInstanceRollbackAction
             if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceRollback)) !== null) {
                 return $existing;
             }
+            if ($instance->production_release === null && $instance->production_release_started_at !== null) {
+                throw new ResourceOperationException('deployment.selection_unconfirmed', 'Reconcile the first production release before selecting a rollback.', 409);
+            }
             if ($instance->production_release !== null) {
                 $old = $instance->production_release['old'];
                 if ($old === null || ! in_array($release, [substr($old, 0, 12), $old], true)) {

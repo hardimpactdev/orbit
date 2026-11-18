@@ -6,6 +6,7 @@ namespace App\Infrastructure\Processes;
 
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Logs\LogReadLimit;
@@ -106,6 +107,14 @@ final readonly class ContainerProcessInspection
             return [$target['project'], $target['release'], app(SystemdProcessRenderer::class)->unitName($process)];
         }
         InstanceMigration::assertSettled($instance);
+        $target = ProductionContainerRelease::target($instance);
+        if ($target !== null) {
+            if (! Instance::isMorphType($process->owner_type) || $process->owner_id !== $instance->id || $process->runtime !== ProcessRuntime::Systemd) {
+                $this->unavailable();
+            }
+
+            return [$target['project'], $target['node_id'].'/'.$target['instance_id'].'/'.$target['release'], app(SystemdProcessRenderer::class)->unitName($process)];
+        }
         $runtime = $instance->runtime;
         if ($instance->id < 1 || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $instance->id
             || $process->runtime !== ProcessRuntime::Systemd || $instance->node->status !== LifecycleStatus::Active
