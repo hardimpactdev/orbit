@@ -423,9 +423,13 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 3. It settles dead records and stops if this creates a pause.
 4. It reads the current release and its `REVISION`. An invalid layout stops the tick.
 5. It reads the repository origin locally with `git --git-dir <shared>/orbit.git config --get remote.origin.url`.
-6. It asks GitHub for the newest first-parent main commit that descends from the current release and has passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit). These checks certify a green PR run of the exact landed tree and promotion of the web artifact.
-7. It respects a manual pin and the retry delay. While fleet convergence, default refresh or seed distribution is pending or deferred, it records the candidate and waits. The same tick requeues the existing continuation if necessary.
-8. It admits the [Swamp run](#release-as-a-swamp-run) with trigger `auto`. A terminal downstream failure remains visible. A newer eligible revision can fix it forward.
+6. It asks GitHub for the newest first-parent main commit that descends from the current release and passes both delivery checks.
+7. It requeues any pending fleet, default or seed work and waits for the serving cycle to settle.
+8. It respects a manual pin and the retry delay, then admits the [Swamp run](#release-as-a-swamp-run) with trigger `auto`.
+
+The [green checks](/reference/github-app#find-the-newest-green-commit) certify a tested landed tree and a promoted web artifact. The tick records the candidate while it waits for the serving cycle.
+
+If the CLI delivery is still unavailable after its publication and compatible-ancestor window, the fleet phase fails. A newer eligible revision can fix a terminal downstream failure forward.
 
 `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and check, by default `main` and `Required checks`. A retryable failure waits 10 minutes between attempts, up to three attempts. Waiting for agent delivery spends no retry budget.
 

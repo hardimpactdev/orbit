@@ -576,10 +576,10 @@ jobs:
         run: echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - name: Publish web build
         id: web-artifact
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ github.event_name == 'pull_request' && format('web-pr-{0}-{1}', github.run_id, github.run_attempt) || format('web-dist-{0}', github.sha) }}
+          name: web-pr-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/web/dist
           include-hidden-files: true
           if-no-files-found: error
@@ -701,10 +701,9 @@ jobs:
         id: plan
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
-          REUSE: ${{ steps.reuse.outputs.reuse }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
         run: |
-          if [ "$REUSE" = true ]; then
+          if [ "$MAIN" = true ]; then
             python3 - <<'PYTHON'
           import json, os, runpy
           jobs = runpy.run_path('bin/ci-build-plan')['JOBS']
@@ -716,18 +715,17 @@ jobs:
           fi
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
-          if [ "$MAIN" = true ]; then args+=(--main); fi
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--pull-request); fi
           python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
       - name: Select fixture units
-        if: steps.reuse.outputs.reuse != 'true'
+        if: github.ref != 'refs/heads/main'
         id: units
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT" --plan-json ci-fixture-plan.json
       - name: Publish fixture plan
-        if: steps.reuse.outputs.reuse != 'true'
+        if: github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-fixture-plan
@@ -735,7 +733,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Publish runner case selection
-        if: steps.reuse.outputs.reuse != 'true'
+        if: github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: proof-selection-${{ github.event.pull_request.head.sha || github.sha }}
@@ -963,8 +961,8 @@ jobs:
       tests: ${{ fromJSON(needs.changes.outputs.swamp_checks).tests }}
       base-ref: ${{ needs.changes.outputs.swamp_base_ref }}
     secrets:
-      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
-      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
     name: Gateway release inputs
     needs: changes
@@ -1036,25 +1034,21 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [ci-policy, php, gateway-static, gateway-tests, gateway-real-clients, cli, cli-static, cli-tests, sdk-static, sdk-tests, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures, self-hosted-fixtures]
+    needs: [ci-policy, changes, gateway-release]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Require the selected merged-tree jobs and fixtures
+      - name: Require promoted PR evidence and main release inputs
         env:
-          NEEDS: ${{ toJSON(needs) }}
-          PROOF_REQUIRED: 'false'
-          # Main runs no self-hosted fixture; the pull request ran them.
-          SELF_HOSTED_FIXTURES: none
+          POLICY: ${{ needs.ci-policy.result }}
+          CHANGES: ${{ needs.changes.result }}
+          REUSE: ${{ needs.changes.outputs.reuse }}
+          RELEASE: ${{ needs.gateway-release.result }}
         run: |
-          python3 - <<'PYTHON'
-          import json, os, runpy
-          needs = json.loads(os.environ['NEEDS'])
-          runpy.run_path('bin/ci-delivery')['validate'](needs)
-          PYTHON
+          if [[ "$POLICY" != success || "$CHANGES" != success || "$REUSE" != true || "$RELEASE" != success ]]; then
+            echo "::error::Main delivery requires verified PR evidence, its promoted web build and a passing CI policy."
+            exit 1
+          fi
 
   main-required:
     name: ${{ github.ref == 'refs/heads/main' && 'Required checks' || 'Main required checks' }}
@@ -1083,35 +1077,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 bin/ci-queue
-      - name: Verify main CI delivery for the Gateway and link fixture report
+      - name: Verify main delivery for the Gateway
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ github.run_id }}
         run: python3 bin/ci-delivery verify --sha "$GITHUB_SHA"
 
-  fixture-report:
-    name: Main fixture report
-    needs: [changes, fixtures]
-    if: always() && needs.changes.outputs.reuse != 'true' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    runs-on: ubuntu-26.04
-    timeout-minutes: 2
-    permissions:
-      contents: read
-      actions: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Report completed main fixtures and causal merged PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NEEDS: ${{ toJSON(needs) }}
-        run: python3 bin/ci-delivery report
-
   cli-release:
     name: Start the CLI release
-    # Independent fixture reports never gate publication.
     needs: delivery
     if: always() && needs.delivery.result == 'success' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     runs-on: ubuntu-26.04

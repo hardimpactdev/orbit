@@ -14,20 +14,22 @@ use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
+use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /** Advances the serving release's ordered pass by one admission. The existing queue job observes terminal Operations. */
@@ -53,7 +55,7 @@ final readonly class ContinueReleaseFleetAction
         $cli = config('fleet.rollout') && array_any($this->members(), CliConvergePlan::required(...))
             ? app(DesiredFleetState::class)->current()->cli : null;
 
-        return DB::transaction(function () use ($release, $cli): ?int {
+        $delay = DB::transaction(function () use ($release, $cli): ?int {
             $release = GatewayRelease::query()->lockForUpdate()->findOrFail($release->id);
             if ($this->current()?->id !== $release->id) {
                 return null;
@@ -140,19 +142,35 @@ final readonly class ContinueReleaseFleetAction
                 return null;
             }
             $this->save($release, $phase, 'current');
-            if ($phase['status'] === 'current') {
-                return null;
-            }
-            DB::afterCommit(static function () use ($release): void {
-                try {
-                    app(NestedFleetRefresh::class)->admitAll((string) $release->sha);
-                } catch (Throwable) {
-                    Log::warning('Could not queue nested-fleet refresh after fleet convergence.', ['release' => $release->id]);
-                }
-            });
 
             return null;
         });
+        if ($delay !== null || data_get($release->refresh()->phases, 'fleet.status') !== 'current') {
+            return $delay;
+        }
+
+        try {
+            app(GatewayReleaseLock::class)->run(function () use ($release): void {
+                if ($this->current()?->id !== $release->id || GatewayRelease::query()->where('outcome', GatewayRelease::Running)->exists()) {
+                    return;
+                }
+                $release->refresh();
+                $refresh = app(NestedFleetRefresh::class)->advance((string) $release->sha);
+                $phases = [...$release->phases, 'default_refresh' => $refresh];
+                if ($refresh['status'] === 'current') {
+                    $phases['seed_publication'] = app(ProofSeeds::class)->releasePublication((string) $release->sha);
+                }
+                $release->forceFill(['phases' => $phases])->save();
+            });
+        } catch (GatewayReleaseException $busy) {
+            if ($busy->errorCode !== 'gateway.release_in_progress') {
+                throw $busy;
+            }
+
+            return 15;
+        }
+
+        return null;
     }
 
     /** @return list<Node> */
@@ -300,6 +318,10 @@ final readonly class ContinueReleaseFleetAction
         }
         if ($needsDelivery($recorded)) {
             if ($cli !== null && ! $cli->isAvailable()) {
+                if ($release->created_at?->lte(now()->subSeconds(DesiredFleetState::FallbackAfterSeconds))) {
+                    throw new ResourceOperationException('fleet.cli_delivery_unavailable', 'No verified CLI delivery is available for the release.', 409);
+                }
+
                 return 60;
             }
             $row['agent'] = 'pending';

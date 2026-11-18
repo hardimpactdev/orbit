@@ -32,7 +32,7 @@ def git(value):
 class GitHub:
     def __init__(self, repository):
         self.repository = repository
-        # Leave runner time for checkout and artifact upload. Failure uses normal CI.
+        # Leave runner time for checkout and artifact upload.
         self.deadline = time.monotonic() + 25
 
     def raw(self, path):
@@ -188,14 +188,11 @@ def attempt(destination):
             target = destination / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
-    except Exception as error:
-        # Reuse is optional. Unexpected API shapes also take the normal checks.
+    except (AttributeError, KeyError, OSError, TypeError, ValueError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
+        message = f'Main delivery blocked after {time.monotonic() - started:.2f}s: {error}'
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-            summary.write(f'Normal main CI after {time.monotonic() - started:.2f}s: {error}\n')
-        print(f'Normal main CI: {error}')
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-            output.write('reuse=false\n')
-        return
+            summary.write(message + '\n')
+        raise SystemExit(message) from error
     Path(os.environ['RUNNER_TEMP'], 'main-tree-receipt.json').write_text(json.dumps(receipt, sort_keys=True) + '\n')
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
         summary.write(f"Receipt verification and extraction: {time.monotonic() - started:.2f}s. "

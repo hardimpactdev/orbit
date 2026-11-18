@@ -73,6 +73,9 @@ final readonly class AdmitSwampGatewayReleaseAction
         if ($previous === null) {
             throw new GatewayReleaseException('deploy', 'gateway.release_not_adopted', 'The Gateway is not running from a release. Run gateway:release:adopt first.');
         }
+        if ($trigger === 'auto' && GatewayReleaseCommit::id($commit) === $previous) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The automatic release candidate already serves.');
+        }
         $gateway = GatewayCommandNode::find() ?? throw new GatewayReleaseException('deploy', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists.', 500);
         $delivery = $this->agent->fetch($commit, $gateway);
         $web = $this->web->select($commit);

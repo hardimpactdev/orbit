@@ -173,7 +173,7 @@ class ReceiptTest(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 self.verify(api)
 
-    def test_actual_checkout_tree_wins_over_claims_and_merge_behind_main_runs_normally(self):
+    def test_actual_checkout_tree_wins_over_claims_and_merge_behind_main_is_refused(self):
         api = API()
         api.commit['tree']['sha'] = 'f' * 40
         with self.assertRaisesRegex(ValueError, 'tree differs'):
@@ -187,7 +187,7 @@ class ReceiptTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'final PR merge'):
             self.verify(api)
 
-    def test_forged_or_unavailable_receipt_falls_back(self):
+    def test_forged_or_unavailable_receipt_is_refused(self):
         for key, value in (('pr', 8), ('head', 'f' * 40), ('run', 51), ('attempt', 2)):
             api = API()
             api.record[key] = value
@@ -210,13 +210,14 @@ class ReceiptTest(unittest.TestCase):
                 z.writestr('index.html', 'b')
             dict(receipt.files(buf.getvalue()))
 
-    def test_api_error_uses_normal_ci_without_setting_reuse(self):
+    def test_api_error_blocks_delivery_without_setting_reuse(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GITHUB_EVENT_NAME='push',
                 GITHUB_REF='refs/heads/main', GITHUB_REPOSITORY=REPO, GITHUB_SHA=MAIN,
                 GITHUB_OUTPUT=tmp + '/output', GITHUB_STEP_SUMMARY=tmp + '/summary'), patch.dict(receipt.attempt.__globals__,
                     verify=lambda *a: (_ for _ in ()).throw(ValueError('API unavailable')), git=lambda a: MAIN if a == 'HEAD' else TREE):
-            receipt.attempt(Path(tmp) / 'web')
-            self.assertEqual(Path(tmp, 'output').read_text(), 'reuse=false\n')
+            with self.assertRaisesRegex(SystemExit, 'Main delivery blocked'):
+                receipt.attempt(Path(tmp) / 'web')
+            self.assertFalse(Path(tmp, 'output').exists())
             self.assertFalse(Path(tmp, 'web').exists())
 
     def test_successful_attempt_writes_only_verified_files_and_traceable_receipt(self):
@@ -233,7 +234,7 @@ class ReceiptTest(unittest.TestCase):
             self.assertEqual(json.loads(Path(tmp, 'main-tree-receipt.json').read_text())['source_artifact_digest'], api.web['digest'])
             self.assertIn(TESTED, Path(tmp, 'summary').read_text())
 
-    def test_null_repository_metadata_uses_normal_ci(self):
+    def test_null_repository_metadata_blocks_delivery(self):
         for field in ('head_repository', 'repository'):
             api = API()
             api.run[field] = None
@@ -248,9 +249,10 @@ class ReceiptTest(unittest.TestCase):
                 GITHUB_OUTPUT=tmp + '/output', GITHUB_STEP_SUMMARY=tmp + '/summary'), \
              patch.dict(receipt.attempt.__globals__, verify=lambda *a: (_ for _ in ()).throw(AttributeError('unexpected API shape')),
                         git=lambda a: MAIN if a == 'HEAD' else TREE):
-            receipt.attempt(Path(tmp) / 'web')
-            self.assertEqual(Path(tmp, 'output').read_text(), 'reuse=false\n')
-            self.assertIn('Normal main CI after', Path(tmp, 'summary').read_text())
+            with self.assertRaisesRegex(SystemExit, 'Main delivery blocked'):
+                receipt.attempt(Path(tmp) / 'web')
+            self.assertFalse(Path(tmp, 'output').exists())
+            self.assertIn('Main delivery blocked after', Path(tmp, 'summary').read_text())
 
     def test_pr_record_binds_real_environment_and_rejects_missing_job_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -274,26 +276,22 @@ class ReceiptTest(unittest.TestCase):
                         receipt.record(path)
 
     def test_real_workflow_reuse_selects_no_tests_and_still_checks_delivery(self):
-        from test_ci_delivery import delivery, needs_for
         from test_ci_build_plan import plan
         self.assertTrue(plan.select(['docs/a.md'], pull_request=True)['jobs']['web'])
         select = next(s for s in JOBS['changes']['steps'] if s.get('id') == 'plan')
-        script = select['run']
         with tempfile.TemporaryDirectory() as tmp:
-            env = os.environ | dict(REUSE='true', GITHUB_OUTPUT=tmp + '/output')
-            subprocess.run(['bash', '-eu', '-c', script], env=env, cwd=ROOT, check=True)
+            env = os.environ | dict(MAIN='true', GITHUB_OUTPUT=tmp + '/output')
+            subprocess.run(['bash', '-eu', '-c', select['run']], env=env, cwd=ROOT, check=True)
             outputs = dict(line.split('=', 1) for line in Path(tmp, 'output').read_text().splitlines())
         self.assertFalse(any(json.loads(outputs['jobs']).values()))
-        needs = needs_for()
-        needs['changes']['outputs'].update(outputs, fixture_shards='[]', fixture_capacity='[]')
-        for name in needs:
-            if name not in ('changes', 'ci-policy', 'gateway-release'):
-                needs[name]['result'] = 'skipped'
-        with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
-            delivery.validate(copy.deepcopy(needs))
-            needs['gateway-release']['result'] = 'failure'
-            with self.assertRaises(SystemExit):
-                delivery.validate(needs)
+        guard = JOBS['delivery']['steps'][0]['run']
+        success = dict(POLICY='success', CHANGES='success', REUSE='true', RELEASE='success')
+        for missing in (None, *success):
+            failed = {missing: ''} if missing else {}
+            with self.subTest(missing=missing):
+                result = subprocess.run(['bash', '-eu', '-c', guard],
+                                        env=os.environ | success | failed, capture_output=True, text=True)
+                self.assertEqual(result.returncode, bool(missing))
         self.assertIn("github.ref == 'refs/heads/main'", next(s for s in JOBS['changes']['steps'] if s.get('id') == 'reuse')['if'])
         self.assertEqual(JOBS['changes']['permissions'], {'contents': 'read', 'actions': 'read', 'pull-requests': 'read'})
         self.assertEqual(JOBS['gateway-release']['name'], 'Gateway release inputs')

@@ -1,4 +1,4 @@
-"""Main delivery and PR Required share the selected-fixture gate."""
+"""PR checks gate merges. Main delivery gates publication and release."""
 import copy
 import importlib.machinery
 import importlib.util
@@ -28,12 +28,12 @@ JOB = dict(id=43, name=delivery.DELIVERY, run_attempt=1, head_sha=SHA,
            status='completed', conclusion='success', html_url=RUN['html_url'] + '/job/43')
 
 
-def needs_for(name='delivery'):
-    needs = {name: {'result': 'success'} for name in JOBS[name]['needs']}
+def needs_for():
+    needs = {name: {'result': 'success'} for name in JOBS['required']['needs']}
     selected = {name: True for name in needs if name not in ('changes', 'ci-policy', 'gateway-release', 'fixtures', 'self-hosted-fixtures')}
     needs['changes']['outputs'] = dict(jobs=json.dumps(selected), gateway_release='true',
                                       fixture_shards='[{"name":"01"}]',
-                                      fixture_capacity='[{"file":"overfull"}]' if name == 'fixture-report' else '[]',
+                                      fixture_capacity='[]',
                                       self_hosted_shards='[]')
     if 'self-hosted-fixtures' in needs:
         needs['self-hosted-fixtures']['result'] = 'skipped'
@@ -56,11 +56,10 @@ class DeliveryGateTest(unittest.TestCase):
         with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
             delivery.validate(needs)
 
-    def test_main_and_pr_require_the_same_jobs_without_waiting_for_report_or_fullset(self):
-        self.assertEqual(set(JOBS['delivery']['needs']), set(JOBS['required']['needs']))
-        self.assertIn('fixtures', JOBS['delivery']['needs'])
-        self.assertNotIn('fixture-report', JOBS['delivery']['needs'])
-        self.assertNotIn('required', JOBS['delivery']['needs'])
+    def test_main_delivery_uses_only_policy_and_promoted_pr_evidence(self):
+        self.assertEqual(set(JOBS['delivery']['needs']), {'ci-policy', 'changes', 'gateway-release'})
+        self.assertIn('fixtures', JOBS['required']['needs'])
+        self.assertIn('self-hosted-fixtures', JOBS['required']['needs'])
         self.assertIn("github.ref == 'refs/heads/main'", JOBS['delivery']['if'])
         self.assertIn('workflow_dispatch', JOBS['delivery']['if'])
         self.assertEqual(JOBS['cli-release']['needs'], 'delivery')
@@ -182,11 +181,11 @@ class DeliveryGateTest(unittest.TestCase):
 
 class WorkflowGateTest(unittest.TestCase):
     def test_both_wrappers_pass_needs_to_the_shared_validator(self):
-        for name in ('required', 'delivery'):
+        for name in ('required',):
             job = JOBS[name]
             step = next(step for step in job['steps'] if 'NEEDS' in step.get('env', {}))
             code = step['run'].split("python3 - <<'PYTHON'\n", 1)[1].rsplit('PYTHON', 1)[0]
-            needs = needs_for(name)
+            needs = needs_for()
             with self.subTest(wrapper=name), patch.dict(os.environ, NEEDS=json.dumps(needs)), \
                     patch('runpy.run_path', return_value={'validate': Mock()}) as load:
                 exec(code, {})
@@ -309,10 +308,8 @@ class EvidenceTest(unittest.TestCase):
         github.jobs.return_value = {delivery.DELIVERY: JOB} if jobs is None else jobs
         return github
 
-    def test_report_publication_failure_does_not_invalidate_passed_delivery(self):
-        github = self.github(jobs={delivery.DELIVERY: JOB, 'Fixtures (01)': JOB | dict(conclusion='success'),
-                                   delivery.REPORT: JOB | dict(status='completed', conclusion='failure')})
-        self.assertEqual(delivery.delivery_evidence(github, SHA, '42')[0], RUN)
+    def test_cli_publication_requires_exact_main_delivery(self):
+        self.assertEqual(delivery.delivery_evidence(self.github(), SHA, '42')[0], RUN)
         source = (ROOT / '.github/workflows/orbit-cli-release.yml').read_text()
         resolve = yaml.safe_load(source)['jobs']['resolve']
         condition = resolve['if']
@@ -357,124 +354,22 @@ class EvidenceTest(unittest.TestCase):
             delivery.delivery_evidence(github, SHA, '42')
         github.jobs.assert_not_called()
 
-    def test_summary_links_source_and_pending_or_red_report(self):
-        summary = delivery.release_summary(RUN, {})
+    def test_summary_links_source_and_delivery(self):
+        summary = delivery.release_summary(RUN, {delivery.DELIVERY: JOB})
         self.assertIn(RUN['html_url'], summary)
-        self.assertIn('Main fixture report: pending', summary)
-        report = JOB | dict(name=delivery.REPORT, conclusion='failure')
-        self.assertIn(f'[Main fixture report: failure]({JOB["html_url"]})',
-                      delivery.release_summary(RUN, {delivery.REPORT: report}))
+        self.assertIn(f'[{delivery.DELIVERY}]({JOB["html_url"]})', summary)
 
-
-class FixtureReportTest(unittest.TestCase):
-    def pr(self, **fields):
-        return dict(number=12, merged_at='2026-11-11', merge_commit_sha=SHA,
-                    base={'ref': 'main', 'repo': {'full_name': REPO}}) | fields
-
-    def test_attribution_requires_exact_main_merged_sha_in_this_repository(self):
-        prs = [self.pr(), self.pr(number=13, merge_commit_sha='b' * 40),
-               self.pr(number=14, merged_at=None), self.pr(number=15, base={'ref': 'topic'}),
-               self.pr(number=16, base={'ref': 'main', 'repo': {'full_name': 'fork/orbit'}})]
-        self.assertEqual(delivery.causal_prs([prs, [self.pr()]], REPO, SHA), [12])
-
-    def test_failure_cancel_capacity_and_missing_selection_are_red_with_links(self):
-        for outcome, capacity, selection in [('failure', '[]', 'success'), ('cancelled', '[]', 'success'),
-                                               ('success', '[{"file":"overfull"}]', 'success'),
-                                               ('skipped', '[]', 'failure')]:
-            needs = needs_for('fixture-report')
-            needs['changes']['result'] = selection
-            needs['changes']['outputs']['fixture_capacity'] = capacity
-            needs['fixtures']['result'] = outcome
-            job = JOB | dict(name='Fixtures (01)', conclusion=outcome)
-            body, passed = delivery.fixture_summary(needs, SHA, RUN['html_url'], {job['name']: job}, [12])
-            self.assertFalse(passed)
-            for value in (SHA, RUN['html_url'], JOB['html_url'], outcome, '#12', 'exact merge SHA'):
-                self.assertIn(value, body)
-
-    def test_empty_matrix_skips_only_without_capacity_and_success_stays_green(self):
-        needs = needs_for('fixture-report')
-        needs['changes']['outputs'].update(fixture_capacity='[]', fixture_shards='[]')
-        needs['fixtures']['result'] = 'skipped'
-        body, passed = delivery.fixture_summary(needs, SHA, RUN['html_url'], {}, [])
-        self.assertTrue(passed)
-        self.assertIn('no PR comment is written', body)
-        needs['changes']['outputs']['fixture_shards'] = '[{"name":"01"}]'
-        self.assertFalse(delivery.fixture_summary(needs, SHA, RUN['html_url'], {}, [])[1])
-        needs['fixtures']['result'] = 'success'
-        self.assertTrue(delivery.fixture_summary(needs, SHA, RUN['html_url'], {}, [])[1])
-
-    def test_report_updates_bot_comment_on_rerun_and_fails_after_writing_red_evidence(self):
-        github = Mock(repository=REPO)
-        github.jobs.return_value = {delivery.REPORT: JOB | dict(name=delivery.REPORT)}
-        marker = f'<!-- orbit-main-fixtures:{SHA} -->'
-        def request(path, data=None):
-            if '/pulls?' in path:
-                return [[self.pr(), self.pr(number=13, merge_commit_sha='b' * 40)]]
-            if path == 'issues/12/comments?per_page=100':
-                return [[dict(id=100, body=marker, user={'login': 'github-actions[bot]'}),
-                         dict(id=101, body=marker, user={'login': 'contributor'})]]
-            self.assertEqual(path, 'issues/comments/100')
-            self.assertIn(SHA, data['body'])
-            return [{}]
-        github.request.side_effect = request
-        with tempfile.TemporaryDirectory() as scratch:
-            summary = Path(scratch) / 'summary.md'
-            with patch.dict(os.environ, GITHUB_REF='refs/heads/main', GITHUB_EVENT_NAME='push',
-                            GITHUB_SHA=SHA, GITHUB_RUN_ID='42', GITHUB_STEP_SUMMARY=str(summary),
-                            NEEDS=json.dumps(needs_for('fixture-report'))):
-                for _ in range(2):
-                    with self.assertRaisesRegex(ValueError, 'Main fixtures failed'):
-                        delivery.report(github)
-                self.assertIn('Capacity errors', summary.read_text())
-        self.assertEqual(sum(call.args[0] == 'issues/comments/100' for call in github.request.call_args_list), 2)
-        self.assertFalse(any('issues/13/' in call.args[0] for call in github.request.call_args_list))
-
-    def test_write_job_is_main_only_has_no_untrusted_code_or_release_dependents(self):
-        job = JOBS['fixture-report']
-        self.assertEqual(job['needs'], ['changes', 'fixtures'])
-        self.assertEqual(job['timeout-minutes'], 2)
-        self.assertIn("github.ref == 'refs/heads/main'", job['if'])
-        self.assertEqual(job['permissions']['pull-requests'], 'write')
-        self.assertNotIn('pull_request_target', CI)
-        self.assertNotIn('continue-on-error', str(job))
-        self.assertFalse(job['steps'][0]['with']['persist-credentials'])
-        github = Mock(repository=REPO)
-        with patch.dict(os.environ, GITHUB_EVENT_NAME='pull_request', GITHUB_REF='refs/pull/1/merge'):
-            with self.assertRaisesRegex(ValueError, 'only in main CI'):
-                delivery.report(github)
-        github.request.assert_not_called()
-
-    def test_report_api_error_is_visible_and_fails_the_job(self):
-        github = Mock(repository=REPO)
-        github.request.side_effect = delivery.subprocess.CalledProcessError(1, ['gh', 'api'])
-        with tempfile.TemporaryDirectory() as scratch:
-            summary = Path(scratch) / 'summary.md'
-            with patch.dict(os.environ, GITHUB_REPOSITORY=REPO, GITHUB_REF='refs/heads/main',
-                            GITHUB_EVENT_NAME='push', GITHUB_SHA=SHA, GITHUB_RUN_ID='42',
-                            GITHUB_STEP_SUMMARY=str(summary)), \
-                    patch.object(delivery, 'GitHub', return_value=github), \
-                    patch('sys.argv', ['ci-delivery', 'report']):
-                with self.assertRaises(SystemExit):
-                    delivery.main()
-            self.assertIn('CI report failed:', summary.read_text())
-
-    def test_comment_writes_use_nonpaginated_post_and_patch(self):
-        for path, method in (('issues/12/comments', 'POST'), ('issues/comments/100', 'PATCH')):
-            with self.subTest(method=method), \
-                 patch.object(delivery.subprocess, 'check_output', return_value=b'{"id": 100}') as command:
-                result = delivery.GitHub(REPO).request(path, {'body': 'fixture evidence'})
-                argv = command.call_args.args[0]
-                self.assertNotIn('--paginate', argv)
-                self.assertNotIn('--slurp', argv)
-                self.assertEqual(argv, ['gh', 'api', f'repos/{REPO}/{path}',
-                                        '--method', method, '--input', '-'])
-                self.assertEqual(json.loads(command.call_args.kwargs['input']), {'body': 'fixture evidence'})
-                self.assertLessEqual(command.call_args.kwargs['timeout'], 20)
-                self.assertEqual(result, [{'id': 100}])
+    def test_docs_publication_requires_exact_main_delivery(self):
+        docs = yaml.safe_load((ROOT / '.github/workflows/docs-site.yml').read_text())
+        publish = docs['jobs']['publish']
+        verify = next(step for step in publish['steps'] if step.get('name') == 'Require exact main delivery evidence')
+        self.assertEqual(verify['env']['SOURCE_RUN_ID'], '${{ github.event.workflow_run.id }}')
+        self.assertEqual(verify['run'], 'python3 bin/ci-delivery verify --sha "$SOURCE"')
+        self.assertLess(publish['steps'].index(verify), len(publish['steps']) - 1)
 
     def test_get_requests_keep_paginated_page_shape(self):
         with patch.object(delivery.subprocess, 'check_output', return_value=b'[[{"id": 1}], [{"id": 2}]]') as command:
-            result = delivery.GitHub(REPO).request('issues/12/comments?per_page=100')
+            result = delivery.GitHub(REPO).request('actions/runs/42/jobs?per_page=100')
             self.assertIn('--paginate', command.call_args.args[0])
             self.assertIn('--slurp', command.call_args.args[0])
             self.assertEqual(result, [[{'id': 1}], [{'id': 2}]])

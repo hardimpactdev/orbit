@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Actions\Instances\StartInstanceDeployAction;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
+use App\Models\Operation;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -20,6 +23,12 @@ use Throwable;
 final readonly class NestedFleetRefresh
 {
     public const string Trigger = 'release';
+
+    private const int Attempts = 3;
+
+    private const int RetryMinutes = 10;
+
+    private const array DeferredRefusals = ['operation.target_busy', 'instance.clone_in_flight'];
 
     /** The line of a default whose admission failed with an error that is no refusal. */
     public const string AdmissionFailed = 'operation.admission_failed';
@@ -57,6 +66,66 @@ final readonly class NestedFleetRefresh
         Log::info('Nested-fleet refresh admissions.', ['commit' => $commit, 'defaults' => $results]);
 
         return $results;
+    }
+
+    /**
+     * Continue the verified release from durable Operation and seed records. The release lock serializes callers
+     * across fleet jobs. An Operation admitted just before a restart is found again by its pinned commit.
+     *
+     * @return array{status: string, defaults: array<int, array<string, mixed>>}
+     */
+    public function advance(string $commit): array
+    {
+        if (! self::enabled()) {
+            return ['status' => 'disabled', 'defaults' => []];
+        }
+        $defaults = [];
+        foreach ($this->defaults() as $instance) {
+            $defaults[$instance->id] = $this->advanceDefault($instance, $commit);
+        }
+        $states = array_column($defaults, 'status');
+
+        return [
+            'status' => in_array('pending', $states, true) ? 'pending' : (in_array('failed', $states, true) ? 'failed' : 'current'),
+            'defaults' => $defaults,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function advanceDefault(Instance $instance, string $commit): array
+    {
+        $attempts = Operation::query()->where('kind', OperationKinds::InstanceDeploy)
+            ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)
+            ->where('triggered_by', self::Trigger)->where('input->commit', $commit)->latest('id')->limit(self::Attempts)->get();
+        $last = $attempts->first();
+        $receipt = $last === null ? [] : ['operation_id' => $last->id];
+        if ($last !== null && (! $last->status->terminal() || $last->lock_key !== null)) {
+            return ['status' => 'pending', ...$receipt];
+        }
+        $runtime = $instance->runtime;
+        if ($runtime?->seed_commit === $commit && $runtime->seed_taken_at !== null) {
+            return ['status' => 'current', 'commit' => $commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(), ...$receipt];
+        }
+        if ($last !== null) {
+            if ($last->status === OperationStatus::Succeeded) {
+                return ['status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$receipt];
+            }
+            if ($attempts->count() >= self::Attempts) {
+                return ['status' => 'failed', 'error_code' => $last->error_code, ...$receipt];
+            }
+            if ($last->finished_at?->gt(now()->subMinutes(self::RetryMinutes))) {
+                return ['status' => 'pending', 'error_code' => $last->error_code, ...$receipt];
+            }
+        }
+        try {
+            $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit);
+
+            return ['status' => 'pending', 'operation_id' => $operation->id];
+        } catch (ResourceOperationException $refused) {
+            $status = in_array($refused->errorCode, self::DeferredRefusals, true) ? 'pending' : 'failed';
+
+            return ['status' => $status, 'error_code' => $refused->errorCode, ...$receipt];
+        }
     }
 
     /** @return list<Instance> */

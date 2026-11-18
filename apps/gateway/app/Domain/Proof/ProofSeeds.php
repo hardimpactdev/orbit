@@ -21,6 +21,7 @@ use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\ProofSeed;
 use App\Support\ValidatedData;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -273,8 +274,14 @@ final readonly class ProofSeeds
                 'run_budget_seconds' => self::budgetSeconds(count($targets))];
 
             // The default's row orders this admission with a deployment's hold of the seed ({@see self::hold()}).
-            return DB::transaction(static function () use ($source, $input, $trigger): Operation {
+            return DB::transaction(function () use ($source, $input, $trigger): ?Operation {
                 Instance::query()->whereKey($source->instance_id)->lockForUpdate()->firstOrFail();
+                $current = $this->source();
+                if ($current === null || $current->instance_id !== $source->instance_id
+                    || $current->seed_commit !== $input['commit'] || $current->seed_taken_at?->toIso8601String() !== $input['taken_at']
+                    || array_diff($input['targets'], array_map(static fn (Node $node): int => $node->id, $this->ready($current, holding: false))) !== []) {
+                    return null;
+                }
                 if (self::claimedByDeployment($source->instance_id)) {
                     throw new ResourceOperationException(self::Held, 'A deployment of the default holds its seed or waits for it.', 409);
                 }
@@ -350,11 +357,60 @@ final readonly class ProofSeeds
         if ($moved) {
             return $this->admit('seed_copy');
         }
-        $tried = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $source->instance_id)
-            ->where('input->commit', $source->seed_commit)->where('input->taken_at', $source->seed_taken_at?->toIso8601String())->get(['input'])
-            ->flatMap(static fn (Operation $copy): array => ValidatedData::integerList($copy->input['targets']))->unique()->all();
 
-        return $this->admit('seed_copy', array_values($tried));
+        return $this->admit('seed_copy', $this->tried($this->copies($source)));
+    }
+
+    /**
+     * The proof Nodes currently eligible for this exact seed, with the Operations that published it.
+     * A missing admission is recoverable. The existing copy policy leaves a failed target for its next
+     * converge or the next seed.
+     *
+     * @return array{status: string, operation_ids: list<int>, published_nodes: list<int>, pending_nodes: list<int>}
+     */
+    public function releasePublication(string $commit): array
+    {
+        $source = $this->source();
+        if ($source === null || $source->seed_commit !== $commit) {
+            return ['status' => 'not_required', 'operation_ids' => [], 'published_nodes' => [], 'pending_nodes' => []];
+        }
+        $copies = $this->copies($source);
+        $behind = array_map(static fn (Node $node): int => $node->id, $this->ready($source, holding: false));
+        $published = array_map(static fn (Node $node): int => $node->id, $this->ready($source, holding: true));
+        $ids = array_values(array_map(static fn (Operation $copy): int => $copy->id, $copies->all()));
+        $status = 'current';
+        if ($copies->contains(static fn (Operation $copy): bool => ! $copy->status->terminal() || $copy->lock_key !== null)) {
+            $status = 'pending';
+        } elseif ($behind !== []) {
+            $tried = $this->tried($copies);
+            if (array_diff($behind, $tried) === []) {
+                $status = 'failed';
+            } else {
+                $status = 'pending';
+                if (($copy = $this->admit('seed_copy', $tried)) !== null) {
+                    $ids[] = $copy->id;
+                }
+            }
+        }
+
+        return ['status' => $status, 'operation_ids' => $ids, 'published_nodes' => $published, 'pending_nodes' => $behind];
+    }
+
+    /** @return Collection<int, Operation> */
+    private function copies(InstanceRuntime $source): Collection
+    {
+        return Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $source->instance_id)
+            ->where('input->commit', $source->seed_commit)->where('input->taken_at', $source->seed_taken_at?->toIso8601String())
+            ->orderBy('id')->get();
+    }
+
+    /**
+     * @param  Collection<int, Operation>  $copies
+     * @return list<int>
+     */
+    private function tried(Collection $copies): array
+    {
+        return array_values($copies->flatMap(static fn (Operation $copy): array => ValidatedData::integerList($copy->input['targets']))->unique()->all());
     }
 
     /**

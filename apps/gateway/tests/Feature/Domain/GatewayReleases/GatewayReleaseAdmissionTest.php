@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\AdmitSwampGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
+use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseException;
@@ -15,12 +16,14 @@ use App\Domain\GitHub\GreenCommit;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -90,6 +93,34 @@ it('records a refused automatic attempt, so the resolver leaves the commit out',
         ->and($excluded)->toBe([ReleaseC])
         ->and($second['result'])->toBe('up_to_date')
         ->and(GatewayRelease::query()->count())->toBe(1);
+});
+
+it('requeues the serving cycle after a restart and waits before admitting the latest eligible commit', function (): void {
+    Queue::fake();
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/releases/'.substr(ReleaseA, 0, 12).'/apps/gateway'));
+    $release = GatewayRelease::query()->create(['sha' => ReleaseA, 'trigger' => 'auto', 'outcome' => 'verified',
+        'phases' => ['fleet' => ['status' => 'current'], 'default_refresh' => ['status' => 'current']], 'duration_ms' => 0]);
+    $this->mock(GreenCommitResolver::class)->shouldReceive('resolve')->twice()
+        ->andReturn(new GreenCommit(ReleaseC, new GitHubCheckRun('Required checks', 'success', null)));
+    releaseAgent(static fn (): never => throw new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', 'Publishing.', 503, sha: ReleaseC));
+
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray([
+        'result' => 'waiting_for_release_cycle', 'sha' => ReleaseC, 'record' => $release->id,
+    ]);
+    Queue::assertPushed(AdmitFleetRollout::class, fn (AdmitFleetRollout $job): bool => $job->releaseId === $release->id);
+    expect(GatewayRelease::query()->count())->toBe(1);
+
+    $release->update(['phases' => [...$release->phases, 'seed_publication' => ['status' => 'current']]]);
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray([
+        'result' => 'waiting_for_agent_delivery', 'sha' => ReleaseC,
+    ])->and(GatewayRelease::query()->count())->toBe(1);
+});
+
+it('refuses to admit a duplicate automatic operation for the serving commit', function (): void {
+    releaseAgent(static fn (): never => throw new LogicException('An already serving revision needs no delivery.'));
+    expect(fn () => app(AdmitSwampGatewayReleaseAction::class)->execute(ReleaseA, trigger: 'auto'))
+        ->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_in_progress'))
+        ->and(GatewayRelease::query()->count())->toBe(0);
 });
 
 it('refuses an admission when another release went live during its checks', function (): void {

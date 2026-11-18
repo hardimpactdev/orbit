@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\GatewayReleases;
 
+use App\Actions\Fleet\ContinueReleaseFleetAction;
+use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -18,13 +20,14 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 use Throwable;
 
 /**
- * One tick of automatic Gateway releases, run every minute by the Gateway scheduler
+ * One tick of automatic Gateway releases, run every five minutes by the Gateway scheduler
  * ([Automatic releases](/reference/gateway-recovery#automatic-releases)).
  *
  * The tick exits quietly when automatic releases are disabled or paused, when a requested release
@@ -111,6 +114,17 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('no_deployed_release', errorCode: 'gateway.release_current_incomplete', message: "The current release [{$current}] has no readable REVISION.");
         }
 
+        $cycle = $this->pendingCycle($deployed);
+        if ($cycle !== null) {
+            try {
+                GatewaySchedule::dispatch(new AdmitFleetRollout($cycle->id));
+            } catch (Throwable $exception) {
+                report($exception);
+
+                return $this->stalled($deployed, 'source_unavailable', $cycle->id, 'gateway.release_cycle_dispatch_failed', 'Could not queue the serving release continuation.');
+            }
+        }
+
         try {
             $repository = $this->source->repository();
             $green = $this->resolver->resolve(
@@ -124,6 +138,10 @@ final readonly class RunAutomaticGatewayReleaseAction
             $errorCode = $exception instanceof GatewayReleaseException ? $exception->errorCode : 'gateway.release_source_unavailable';
 
             return $this->stalled($deployed, 'source_unavailable', null, $errorCode, $exception->getMessage());
+        }
+
+        if ($cycle !== null) {
+            return $this->automation->recordTick('waiting_for_release_cycle', $green->sha ?? $deployed, $cycle->id);
         }
 
         if (! $green instanceof GreenCommit) {
@@ -258,6 +276,25 @@ final readonly class RunAutomaticGatewayReleaseAction
             $this->source->checkName,
         ), 'head:'.$state['head'], 'branch_head_unreleased');
         $this->automation->branchHeadAlerted();
+    }
+
+    /** A serving release owns its downstream work until it settles or needs a forward fix. */
+    private function pendingCycle(string $deployed): ?GatewayRelease
+    {
+        $release = app(ContinueReleaseFleetAction::class)->current();
+        if ($release === null || $release->sha !== $deployed) {
+            return null;
+        }
+        $fleet = data_get($release->phases, 'fleet.status');
+        $refresh = data_get($release->phases, 'default_refresh.status');
+        $seed = data_get($release->phases, 'seed_publication.status');
+        if (in_array($fleet, ['pending', 'deferred'], true)
+            || ($fleet === 'current' && (in_array($refresh, [null, 'pending'], true)
+                || ($refresh === 'current' && in_array($seed, [null, 'pending'], true))))) {
+            return $release;
+        }
+
+        return null;
     }
 
     /** A commit that just failed for a transient reason waits before the next attempt. */
