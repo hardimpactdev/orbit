@@ -105,7 +105,8 @@ final class GatewayReleaseOutput
         $steps = [];
 
         foreach ($record->phases as $step => $phase) {
-            $outcome = is_array($phase) && is_string($phase['outcome'] ?? null) ? $phase['outcome'] : 'done';
+            $field = $step === 'fleet' ? 'status' : 'outcome';
+            $outcome = is_array($phase) && is_string($phase[$field] ?? null) ? $phase[$field] : 'done';
             $steps[] = $step.' '.$outcome;
         }
 

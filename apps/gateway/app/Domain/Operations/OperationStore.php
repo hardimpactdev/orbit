@@ -46,6 +46,7 @@ final readonly class OperationStore
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         try {
             $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition, $lockKey): Operation {
+                app(NodeWorkAdmission::class)->check($kind, $nodeId, $input);
                 $operation = Operation::query()->create([
                     'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
                     'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId, 'lock_key' => $lockKey,

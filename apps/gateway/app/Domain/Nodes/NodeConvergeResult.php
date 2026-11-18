@@ -29,7 +29,7 @@ final class NodeConvergeResult
         if (! is_array($value)) {
             self::invalid();
         }
-        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'browser_trust', 'error_code', 'cleanup_complete', 'failure', 'digests']));
+        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'browser_trust', 't3_restart_deferred', 'error_code', 'cleanup_complete', 'failure', 'digests']));
         $rules = [
             'failure' => ['sometimes', 'required', 'array:task,host,reason,rc'],
             'failure.task' => ['present_with:failure', 'nullable', 'string', 'min:1', 'max:120', 'regex:/\A[\x20-\x7e]+\z/D'],
@@ -53,6 +53,8 @@ final class NodeConvergeResult
             'tools.*.status' => ['required', Rule::in(['installed', 'failed'])],
             'tools.*.installed_version' => ['present', 'nullable', 'string', 'max:255', 'not_regex:/[\x00-\x20\x7f]/'],
             // Each Instance container without Chromium's trust store and why (docs/reference/development-containers.md#trust).
+            't3_restart_deferred' => ['sometimes', 'array', 'list', 'max:1000'],
+            't3_restart_deferred.*' => ['required', 'string', 'distinct', 'regex:/\A[a-z0-9-]{1,63}\/[A-Za-z0-9-]{1,63}\z/D'],
             'browser_trust' => ['present', 'array', 'list', 'max:1000'],
             'browser_trust.*' => ['required', 'array:container,reason'],
             'browser_trust.*.container' => ['required', 'string', 'regex:/\A[a-z0-9-]{1,63}\/[A-Za-z0-9-]{1,63}\z/D'],
@@ -69,6 +71,9 @@ final class NodeConvergeResult
             self::invalid();
         }
         $rows = array_map(ValidatedData::object(...), is_array($raw['phases'] ?? null) ? $raw['phases'] : []);
+        if (($raw['t3_restart_deferred'] ?? []) !== [] && $rows[3]['status'] !== 'succeeded') {
+            self::invalid();
+        }
         $elapsed = $raw['elapsed_seconds'];
         if ((! is_int($elapsed) && ! is_float($elapsed)) || ! is_finite((float) $elapsed)
             || ! is_int($raw['changed']) || ! is_bool($raw['cleanup_complete'])) {
