@@ -1,25 +1,10 @@
 #!/bin/sh
-# Runs as root inside a fresh Gateway release clone before it starts application workloads.
+# The clone's boot mounts protect its checkout and web build. Fix only their parent and the env link's parent.
 set -eu
-home=${1:-/home/orbit}
-for path in "$home" "$home/orbit" "$home/web"; do
+home=/home/orbit
+for path in "$home" "$home/shared"; do
     test -d "$path" && test ! -L "$path" || exit 1
 done
-# The service can still create its own cache directories and digest in HOME.
-# Sticky ownership prevents it from renaming or replacing the root-owned release trees.
-chown root:orbit "$home"
+chown root:orbit "$home" "$home/shared"
 chmod 1770 "$home"
-# Keep the read-only environment link fixed while the storage mount remains writable.
-test -d "$home/shared" && test ! -L "$home/shared"
-chown root:orbit "$home/shared"
 chmod 0750 "$home/shared"
-find -P "$home/orbit" "$home/web" -xdev \
-    \( -path "$home/orbit/apps/gateway/bootstrap/cache" -o \
-       -path "$home/orbit/apps/cli/bootstrap/cache" -o \
-       -path "$home/orbit/apps/cli/storage" \) -type d -prune -o \
-    -exec chown -h root:orbit {} +
-find -P "$home/orbit" "$home/web" -xdev \
-    \( -path "$home/orbit/apps/gateway/bootstrap/cache" -o \
-       -path "$home/orbit/apps/cli/bootstrap/cache" -o \
-       -path "$home/orbit/apps/cli/storage" \) -type d -prune -o \
-    \( -type d -o -type f \) -exec chmod g+rX,go-w {} +

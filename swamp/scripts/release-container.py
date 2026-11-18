@@ -14,6 +14,16 @@ from pathlib import Path
 PROJECT = "orbit-releases"
 ADDRESS_TIMEOUT = 15  # Same deadline as one private HTTP readiness probe.
 PREFIX = "user.orbit.release."
+# Bind the writable Laravel cache first. The recursive checkout bind keeps that submount writable.
+# All sources are relative to the cloned root filesystem, including on a cold start.
+GATEWAY_MOUNTS = "\n".join(
+    f"lxc.mount.entry = {path} {path} none {options},relative 0 0"
+    for path, options in (
+        ("home/orbit/orbit/apps/gateway/bootstrap/cache", "bind"),
+        ("home/orbit/orbit", "rbind,ro"),
+        ("home/orbit/web", "bind,ro"),
+    )
+)
 OWNER = re.compile(r"gateway|instance-[1-9][0-9]*")
 SHA = re.compile(r"[0-9a-f]{40}")
 REVISION = re.compile(r"[0-9a-f]{12}")
@@ -195,8 +205,9 @@ def candidate(target, operation, commit, artifact):
             snapshots = json.loads(incus("snapshot", "list", source, "--format", "json"))
             sealed = next((entry for entry in snapshots if entry["name"] == snapshot), None)
         owned(sealed, {**seal, "role": "prepare"})
+        mounts = ["--config", "raw.lxc=" + GATEWAY_MOUNTS] if target == "gateway" else []
         incus("copy", source + "/" + snapshot, name, "--config", "boot.autostart=false",
-              "--config", PREFIX + "role=candidate", "--stateless")
+              "--config", PREFIX + "role=candidate", *mounts, "--stateless")
         existing = instance(name)
     owned(existing, candidate_identity)
     # A successful clone owns its root disk independently. Removing the transient snapshot also
