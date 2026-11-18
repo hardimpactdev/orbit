@@ -13,6 +13,7 @@
         "php": "^8.5",
         "ext-curl": "*",
         "ext-intl": "*",
+        "basis-company/nats": "^1.2.6",
         "composer/semver": "^3.4",
         "laravel/ai": "^1.0@dev",
         "laravel/framework": "^13.0",
