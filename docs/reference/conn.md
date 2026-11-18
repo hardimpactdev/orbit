@@ -1081,7 +1081,7 @@ A `nonce` is 16 to 64 base64url characters that the target draws at random for e
 
 ### Caller route
 
-`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The body accepts no scopes: `reader` maps to `orchestration:read` and `terminal:read`. The response holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
+`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The body accepts no scopes: `reader` maps to `orchestration:read` and `terminal:read`. The response (201) holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
 
 The token expires 15 minutes after issue and has no renewal; the caller asks for a new one. This lifetime is a lab choice. It does not bound enforcement: revocation ends a token at once, whatever its expiry.
 
@@ -1245,6 +1245,51 @@ The preflight ran in the group's task copy against its nested fleet, with a disp
 It did not show credential isolation. It checked selected environment variable names, `/etc/orbit` and a listing of `/root` without hidden files. It did not check hidden files, `/home/agent` or mounted inputs.
 
 It proved no enforcement. The nested fleet had no Conn registration and one edge, from the operator Node to the Gateway Node, so no second clean caller and no direct edge to the serving Node. The copy had no Rust toolchain, so no Conn target ran.
+
+### Gateway receipts
+
+The Gateway side ran on 2026-11-18 in task copy `task-5868` (Instance 3705) against its nested fleet, at source `b569d2663`. The nested Gateway served that checkout with the switch on for the run only. The target was a scripted Bun process on the nested `app-dev` Node, not Rust Conn. It drove the real routes with a 1 s probe and a 3 s lease, and served a small managed ingress with RPC and long streams. The preflight's fixture container was gone, so the script ran on the serving Node's host. All machines share one host clock, so the times compare directly.
+
+The fixtures: target 1 for a lab environment row with no T3 server, on Node 3 (`app-dev`, 10.45.0.2). Caller A was Node 4 (`app-prod`, 10.45.0.3) and caller B was Node 2 (`operator`, 10.45.0.10). Both got direct edges through `node:access:add`. Caller C was Node 1 (the Gateway Node, 10.45.0.1), with no direct edge. Edges were removed with `node:access:remove`.
+
+Times below are seconds within 15:46 to 15:48 UTC.
+
+#### Revocation
+
+Caller C asked for a token and got `conn.managed_direct_edge_required`.
+
+Revision 1 removed edge 2 while A and B held streams. The Gateway committed at 34.334135 and sent the notice at 34.344220. The target received it and fenced at 34.343. It verified the handlers closed at 34.387 and its `observed` ACK settled at 34.413930.
+
+A's stream closed 9 ms after the commit. B's stream ran on, and B's token still introspected. A's old token then got `conn.managed_token_invalid`, and a new token request got `conn.managed_direct_edge_required`.
+
+Adding A's edge again gave the new edge ID 4. The old token stayed refused. A new token was admitted on edge 4.
+
+#### Recovery
+
+For revision 2 the target dropped the notice. Its next probe fenced at 17.521, 36 ms after the commit. The `observed` ACK has `notice_received_at` `null`.
+
+For revision 3 the target sent no ACK, and the row stayed owed. After a restart, the snapshot listed `owed: [3]`. The target sent a `recovered` ACK 25 ms later. An exact retry returned the first result. An ACK of revision 99 got `conn.managed_ack_unknown`.
+
+Revision 4 was not acknowledged before rotation to generation 2. The old process's next probe got `conn.managed_target_identity` 0.67 s after enrolment returned. Generation 2 started with `owed: []`. An ACK of revision 4 got `conn.managed_generation_mismatch`. B's generation 1 token got `conn.managed_token_invalid`.
+
+#### Authority loss
+
+The rotation was a clean loss: the old process failed closed on the refused probe and closed B's stream.
+
+For a silent loss, the serving Node dropped its traffic to the Gateway. The target failed closed 2.42 s after the fault, 44.5 ms after its lease ended, and closed B's stream. A snapshot recovered it 0.37 s after the fault ended. B came back only through a fresh introspection.
+
+The teardown removal of edge 3 committed revision 5 and sent its notice. The target was already stopped, so the row stays owed: enforcement unconfirmed.
+
+Teardown removed both lab edges, the target and environment rows, every lab credential and token file, and the switch. It turned Conn off again in the nested Gateway. No live Node, edge or grant changed.
+
+The Rust target proof still has to show:
+
+- the Rust fence on real RPC, terminal and preview streams;
+- media tickets, including a stale one;
+- the managed ingress refusing native credentials;
+- the caller's address, seen through the NAT-mode proxy from a container;
+- target egress through a product route instead of the serving host;
+- fence, close and ACK times under busy load.
 
 ### Limits
 
