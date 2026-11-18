@@ -19,6 +19,8 @@ OLD = "b" * 40
 OPERATION = "42"
 HORIZON = "orbit-gateway-horizon.service"
 CANDIDATE = f"gateway-{SHA[:12]}"
+RETAINED = f"gateway-{OLD[:12]}"
+MANAGED_HORIZON = "orbit-process-71-horizon.service"
 HEADER = struct.Struct("!BBHHBB")
 
 
@@ -54,18 +56,29 @@ def stub(name, args):
         url = args[-1]
         if url.startswith("https:"):
             selected = (state / "site").read_text()
-            event(f"public {selected}")
-            if selected == "host" and (state / "broken-public").exists():
+            host = selected == "host"
+            upstream = root / "caddy/orbit-gateway-upstream.caddy"
+            version = (root / "home/orbit/REVISION").read_text().strip() if host else (
+                OLD if "10.1.0.3" in upstream.read_text() else SHA
+            )
+            event(f"public {selected} {version}")
+            if (host and (state / "broken-public").exists()) or (state / f"broken-public-{selected}-{version}").exists():
                 return 22
+            if url.endswith("/status"):
+                interrupt(f"during {selected} public status")
+                if (state / f"wrong-public-{version}").exists():
+                    version = OLD if version == SHA else SHA
+        else:
+            version = OLD if "10.1.0.3" in url else SHA
         if url.endswith("/status"):
-            version = os.environ["FIXTURE_SHA"] if url.startswith("https:") else OLD if "10.1.0.3" in url else SHA
             print(json.dumps({"data": {"status": "ok", "version": version}}))
     elif name == "systemctl":
         unit = args[-1]
         active = state / f"{machine}-{unit}"
         if action == "list-units" and "--state=active,activating,deactivating" in args:
-            if (state / f"{machine}-{HORIZON}").exists():
-                print(f"{HORIZON} loaded active running")
+            prefix = f"{machine}-"
+            for service in sorted(state.glob(f"{prefix}*horizon.service")):
+                print(f"{service.name.removeprefix(prefix)} loaded active running")
         elif action == "show" and "KillMode" in args:
             interrupt(f"before {machine} drain")
             print("KillMode=mixed\nSendSIGKILL=no")
@@ -179,7 +192,7 @@ class GatewayReleaseRecovery(unittest.TestCase):
         (self.state / f"host-{HORIZON}").touch()
 
         self.env = {**os.environ, "PATH": f"{self.stubs}:{os.environ['PATH']}",
-                    "FIXTURE_ROOT": str(self.root), "FIXTURE_SHA": SHA,
+                    "FIXTURE_ROOT": str(self.root),
                     "FIXTURE_TEST": str(Path(__file__).resolve())}
         self.env.pop("ORBIT_GATEWAY_RELEASE_LOCK_HELD", None)
         self.env.pop("ORBIT_RELEASE_BASE", None)
@@ -192,7 +205,8 @@ class GatewayReleaseRecovery(unittest.TestCase):
         self.move = self.copy("bin/gateway-container-move", self.root / "move")
         self.rollback = self.copy("bin/gateway-rollback", self.libexec / "orbit-gateway-rollback-host")
         self.console = self.copy("bin/gateway-container-rollback", self.root / "console")
-        self.copy("bin/gateway-release-phase", self.libexec / "orbit-gateway-release-phase").write_text(
+        self.phase = self.libexec / "orbit-gateway-release-phase"
+        self.copy("bin/gateway-release-phase", self.phase).write_text(
             self.source("bin/gateway-release-phase").replace("shift 3", """shift 3
 case "$phase" in
   build) echo '{}'; exit ;;
@@ -234,8 +248,8 @@ esac"""))
         path.chmod(0o755)
         return path
 
-    def run_script(self, script, *args, interrupt="", sha=SHA):
-        env = {**self.env, "FIXTURE_INTERRUPT": interrupt, "FIXTURE_SHA": sha}
+    def run_script(self, script, *args, interrupt=""):
+        env = {**self.env, "FIXTURE_INTERRUPT": interrupt}
         return subprocess.run(
             [script, *args], check=False, env=env, start_new_session=True, capture_output=True, text=True, timeout=45,
         )
@@ -279,6 +293,72 @@ esac"""))
         self.assertEqual(json.loads(self.inventory.read_text())["live"], SHA)
         self.assertTrue(self.upstream.exists())
         self.assertFalse((self.journal / "operation").exists())
+
+    def retained_releases(self):
+        self.assert_ok(self.run_move())
+        inventory = json.loads(self.inventory.read_text())
+        self.inventory.write_text(json.dumps({**inventory, "old": OLD}))
+
+    def assert_pending(self, sha):
+        self.assertTrue((self.journal / "operation").exists(), "the switch has no recovery marker")
+        self.assertEqual((self.journal / "operation").read_text().strip(), OPERATION)
+        self.assertEqual((self.journal / "candidate").read_text().strip(), sha)
+        self.assertTrue((self.journal / f"rollback-{sha}").exists())
+
+    def test_native_failed_promotion_verifies_the_previous_release_before_acknowledging(self):
+        self.retained_releases()
+        (self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").touch()
+        self.assert_ok(self.run_script(self.phase, "switch", OLD, OPERATION, SHA[:12], HORIZON))
+        self.assertEqual(set((self.journal / "horizons").read_text().splitlines()), {HORIZON, MANAGED_HORIZON})
+        (self.state / f"broken-public-container-{OLD}").touch()
+        result = self.run_script(self.phase, "public-ready", OLD, OPERATION)
+        self.assertNotEqual(result.returncode, 0)
+        wrong = self.state / f"wrong-public-{SHA}"
+        wrong.touch()
+        result = self.run_script(self.phase, "switch-back", OLD, OPERATION)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("gateway.release_switched_back", result.stderr)
+        self.assert_pending(OLD)
+        self.assertFalse((self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").exists())
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], OLD)
+
+        wrong.unlink()
+        result = self.run_script(self.console, "--recover", interrupt="during container public status")
+        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+        self.assert_pending(OLD)
+        result = self.run_script(self.phase, "switch-back", OLD, OPERATION)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("gateway.release_switched_back", result.stderr)
+        self.assertFalse((self.journal / "operation").exists())
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], SHA)
+        self.assertTrue((self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").exists())
+
+    def test_offline_rollback_journals_the_original_units_before_draining(self):
+        self.retained_releases()
+        (self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").touch()
+        result = self.run_script(self.console, OLD[:12], interrupt=f"after {CANDIDATE} drain")
+        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+        self.assert_pending(OLD)
+        self.assertEqual(set((self.journal / "horizons").read_text().splitlines()), {HORIZON, MANAGED_HORIZON})
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], SHA)
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assertTrue((self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").exists())
+        self.assertFalse((self.journal / "operation").exists())
+
+    def test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail(self):
+        self.retained_releases()
+        (self.state / f"broken-public-container-{OLD}").touch()
+        unavailable = self.state / f"broken-public-container-{SHA}"
+        unavailable.touch()
+        result = self.run_script(self.console, OLD[:12])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("restored previous traffic", result.stderr)
+        self.assert_pending(OLD)
+        self.assertFalse((self.state / f"{CANDIDATE}-{HORIZON}").exists())
+        self.assertFalse((self.state / f"{RETAINED}-{HORIZON}").exists())
+        unavailable.unlink()
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assert_container_serves()
 
     def test_first_move_recovers_before_drain(self):
         self.listener()
@@ -364,6 +444,14 @@ esac"""))
         self.assert_interrupted(self.run_script(self.console, "--host", interrupt="after host switch"))
         self.assertEqual((self.state / "site").read_text(), "host")
         self.assertTrue(self.inventory.exists())
+        unavailable = self.state / f"broken-public-container-{SHA}"
+        unavailable.touch()
+        result = self.run_script(self.console, "--recover")
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_pending(SHA)
+        self.assertTrue((self.journal / "host-fallback/inventory").exists())
+        self.assertFalse((self.state / f"{CANDIDATE}-{HORIZON}").exists())
+        unavailable.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
 
@@ -372,14 +460,18 @@ esac"""))
         self.assert_ok(self.run_move())
         self.assert_interrupted(self.run_script(self.console, "--host", interrupt="after candidate deletion"))
         self.assertTrue((self.journal / "host-fallback/verified").exists())
+        unavailable = self.state / "broken-public"
+        unavailable.touch()
+        result = self.run_script(self.console, "--recover")
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_pending(SHA)
+        unavailable.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_host_serves()
 
     def test_healthy_retained_container_rollback(self):
-        self.assert_ok(self.run_move())
-        inventory = json.loads(self.inventory.read_text())
-        self.inventory.write_text(json.dumps({**inventory, "old": OLD}))
-        self.assert_ok(self.run_script(self.console, OLD[:12], sha=OLD))
+        self.retained_releases()
+        self.assert_ok(self.run_script(self.console, OLD[:12]))
         self.assertEqual(json.loads(self.inventory.read_text())["live"], OLD)
         self.assertEqual(json.loads(self.inventory.read_text())["old"], SHA)
         self.assertEqual((self.state / "site").read_text(), "container")

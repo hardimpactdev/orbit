@@ -69,11 +69,11 @@ The Gateway keeps its one release record and its one Swamp run per release. The 
 | Wait for active Operations (the [release idle guard](/reference/gateway-recovery#release-idle-guard)) | `artisan gateway:release:wait-idle` | Unchanged, run in hot |
 | — | — | **Ready.** New, before the Swamp load, as [Hot](#hot-and-ready) describes |
 | Load Swamp on the Swamp Node | child workflow | Unchanged |
-| Drain Horizon | `gateway-release-drain.sh` | The same rule (stop the unit, wait for its whole control group to empty), run in live through `incus exec` |
+| Drain Horizon | `gateway-release-drain.sh` | Part of the lock-held container switch. Save the active Horizon units in the durable journal, then stop them and wait for their control groups to empty |
 | Switch: both links, PHP-FPM reload, restart of every service under the application | `gateway-release-switch.sh` → `bin/gateway-rollback` | **Switch.** The host replaces one Caddy upstream file and the live link, and reloads Caddy once. No unit on the host restarts |
 | Verify `/up` and the status version through `https://gateway.orbit` | inline | Unchanged, through the public name, right after the switch |
-| Switch back after a failed verify | `gateway-release-switch-back.sh` | Put the previous upstream file and live link back and reload Caddy once. The previous live still runs, so this starts nothing |
-| Start Horizon, always | inline | Start Horizon in whichever container is live at the end, always. The rest of the [handover](#3-long-running-parts-and-their-switch) follows |
+| Switch back after a failed verify | `gateway-release-switch-back.sh` | Restore the previous upstream and verify that Caddy serves the previous release before restoring its workers and clearing the journal |
+| Start Horizon, always on PHP-FPM | inline | Start Horizon after public verification. Switch-back and console recovery restore the previous release's workers. The rest of the [handover](#3-long-running-parts-and-their-switch) follows |
 | Admit nested-fleet refresh | Gateway fleet admission | The Gateway admits refresh after the [fleet is current](/reference/gateway-recovery#fleet-rollout), or after verification when fleet rollout is off |
 | Resume document cleanup | `artisan gateway:release:cleanup` | Unchanged, run in live |
 | Prune old releases | `gateway-release-prune.sh` | **Retire.** After requests drain, freeze the former live, reclaim its memory to swap and retire the earlier old container |
@@ -175,16 +175,16 @@ ADR 0263's one rule holds, with one exception. A release container's units are e
 The order of a release around the switch:
 
 1. Start the listener in hot.
-2. Drain Horizon in live.
-3. Switch, and verify through the public name. A failed verify switches back.
-4. Start Horizon in whichever container is live now.
+2. Record the active Horizon units under the release lock, then drain them.
+3. Switch Caddy and verify through the public name. After a failed verification, switch back and verify the previous release through Caddy before clearing the journal.
+4. Start Horizon on the verified release.
 5. Move the scheduler and the hibernator timer to the live container.
 6. Stop the listener in the container that is not live.
 7. Resume the release cleanups, then retire.
 
 Each part, with its cost:
 
-- **Horizon and its queues.** As today: drain Horizon in live before the switch, switch, then start Horizon in the new live, always. The drain stops the unit and waits for its control group to empty, up to the drain. Jobs that requests dispatch during the drain wait in Valkey, and a job finishes on the release that started it. Cost: no request waits for the drain, because live serves until the switch. Queued jobs wait up to the drain, as today.
+- **Horizon and its queues.** The switch records and drains Horizon in live. Start Horizon on the new live after public verification, or restore the previous workers during recovery. The drain stops the unit and waits for its control group to empty, up to the drain. Jobs that requests dispatch during the drain wait in Valkey, and a job finishes on the release that started it. Cost: no request waits for the drain, because live serves until the switch. Queued jobs wait up to the drain, as today.
 - **Scheduler** (`schedule:work`). Stop it in the previous live, then start it in the new live. The handover never runs in the last 2 s or the first 2 s of a minute, so no minute fires twice or is skipped. The release cleanups pause and resume by generation, as today. Cost: none per request. A minute's tick starts up to 2 s late during a release (guess).
 - **Runtime hibernator.** A container timer, enabled only in live. Cost: none.
 - **ADR 0266 result listener** (`orbit:agent-view`). It starts in the new live **before** the switch and stops in the previous live after it, so one listener always runs.

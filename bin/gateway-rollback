@@ -58,14 +58,9 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     trap 'rc=$?; if (( rc )); then candidate release-unused || :; fi' EXIT
     candidate build true '{}' true >/dev/null
     candidate ready
-    candidate drain "$horizon"
-    if ! candidate switch "${live:0:12}" "$horizon" >/dev/null; then
-        candidate start-horizon "$horizon"
-        fail "traffic switch failed"
-    fi
+    candidate switch "${live:0:12}" "$horizon" >/dev/null || fail "traffic switch failed"
     if ! candidate public-ready; then
         candidate restore
-        candidate start-horizon "$horizon"
         fail "rollback verification failed; restored previous traffic"
     fi
     candidate start-horizon "$horizon"

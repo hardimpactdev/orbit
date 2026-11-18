@@ -197,6 +197,7 @@ restore_container() {
     fi
     fail 'Caddy could not restore the verified previous release'
   fi
+  check_release "$previous_sha" || fail "public Gateway did not verify restored release $previous_sha"
   install -o orbit -g orbit -m 0600 "$saved_inventory" "$inventory.restore"
   mv -fT "$inventory.restore" "$inventory"
 }
@@ -219,10 +220,9 @@ restore_switch() {
   start_background "$previous"
   if [[ $previous != host ]]; then
     "${incus_cli[@]}" config set "$previous" boot.autostart=true
-  else
-    sync -f "$home" /etc/caddy
   fi
   "${incus_cli[@]}" config set "$candidate" boot.autostart=false
+  sync -f "$home" /etc/caddy
 }
 finish_host_fallback() {
   rm -f -- "$inventory" "$upstream"
@@ -377,13 +377,6 @@ case "$action" in
           Illuminate\Support\Facades\Redis::connection("gateway")->ping();
       }' "$app"
     ;;
-  drain)
-    previous=$(field '.live')
-    prev=gateway-${previous:0:12}
-    [[ $prev != "$candidate" ]] || exit 0
-    horizon=$1
-    if [[ -n $horizon ]] && unit_wanted "$horizon"; then enter "$prev" /bin/sh "$checkout/swamp/scripts/gateway-release-drain.sh" "$horizon"; fi
-    ;;
   switch)
     expected=$1
     if [[ ${ORBIT_GATEWAY_INITIAL_MOVE:-0} == 1 && ! -f $inventory ]]; then
@@ -448,6 +441,7 @@ case "$action" in
       [[ $action == restore && $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
         fail 'there is no matching host rollback to recover'
       if [[ -f $host_fallback/verified ]]; then
+        check_release "$sha" || fail "public Gateway did not verify restored release $sha"
         finish_host_fallback
       else
         reverse_host_fallback

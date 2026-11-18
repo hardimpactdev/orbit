@@ -119,9 +119,9 @@ Host rollback checks the PHP-FPM listener and its release before draining the co
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
-Once established, each target has three containers. A release wakes preparation, installs the exact commit and web archive, and clones the sealed result. Preparation can sleep while the candidate starts. The existing container serves until the candidate passes its private check. After switching Caddy, the public check and drain must succeed before the former live is frozen for rollback. Orbit then removes the older rollback.
+Once established, each target has three containers. A release wakes preparation, installs the exact commit and web archive, and clones the sealed result. Preparation can sleep while the candidate starts. The existing container serves while the candidate passes its private check. Under the release lock, Orbit records the active Horizon units in the switch journal, drains them, then switches Caddy. The candidate must pass the public check before Orbit freezes the former live for rollback. Orbit then removes the older rollback.
 
-Use `orbit gateway:release:rollback` to select the retained release. Recovery wakes that container or cold starts it after a Node reboot. It keeps the current database and skips the build, web download and migration. If a switch was interrupted and the Gateway or Swamp is unavailable, use `sudo /usr/local/libexec/orbit-gateway-rollback --recover` from the Node console. For an ordinary offline rollback, pass the retained 12-digit release ID to the same helper. Verify the public Gateway address after recovery.
+Use `orbit gateway:release:rollback` to select the retained release. Recovery wakes that container or cold starts it after a Node reboot. It keeps the current database and skips the build, web download and migration. If a switch was interrupted and the Gateway or Swamp is unavailable, use `sudo /usr/local/libexec/orbit-gateway-rollback --recover` from the Node console. For an ordinary offline rollback, pass the retained 12-digit release ID to the same helper. Recovery checks `/up` and the restored release's version through Caddy at `https://gateway.orbit` before clearing the journal. If recovery fails or is interrupted, fix the reported problem and run `--recover` again.
 
 ## Release layout
 
@@ -413,7 +413,7 @@ On a prepared Gateway Node, run the root-owned recovery helper. Use the first 12
 sudo /usr/local/libexec/orbit-gateway-rollback <id>
 ```
 
-If a traffic switch was interrupted, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` first. It restores the previous route and background services using the switch journal. To undo the initial container move while the host is still the recovery target, use `--host`. Check the public Gateway address and the scheduler and Horizon units after recovery.
+If a traffic switch was interrupted, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` first. It restores the previous route and background services using the switch journal. A failed public check leaves the journal in place for another recovery attempt. To undo the initial container move while the host is still the recovery target, use `--host`. Check the public Gateway address and the scheduler and Horizon units after recovery.
 
 On a host deployment **before container preparation**, use the host release script:
 

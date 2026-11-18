@@ -57,6 +57,49 @@ Deno.test("the sealed web build precedes clone; sleep can start in parallel with
   assert(release.find((step) => step.name === "Snapshot the database")?.dependsOn?.some((edge) => edge.step === clone.name));
 });
 
+Deno.test("only host PHP-FPM drains Horizon before the switch", async () => {
+  const drain = activate.find((step) => step.name === "Drain Horizon")!;
+  assertEquals(drain.guard, '${{ inputs.intent.horizon_unit == "" }}');
+  assertEquals(activate.find((step) => step.name === "Switch the release")?.dependsOn, [{
+    step: drain.name,
+    condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] },
+  }]);
+  const start = activate.find((step) => step.name === "Start Horizon")!;
+  const scratch = await Deno.makeTempDir();
+  const inventory = `${scratch}/inventory`;
+  const hostDrain = `${scratch}/host-drain.sh`;
+  const unit = "orbit-process-71-horizon.service";
+  try {
+    await Deno.writeTextFile(hostDrain, 'printf "drain %s" "$1"\n');
+    await Deno.writeTextFile(`${scratch}/systemctl`, '#!/bin/sh\nprintf "%s %s" "$1" "$2"\n', { mode: 0o700 });
+    await Deno.writeTextFile(`${scratch}/sudo`, '#!/bin/sh\nprintf "%s" "$3"\n', { mode: 0o700 });
+    async function invoke(step: Step, verified: boolean) {
+      const [shell, option, script, ...args] = step.task.inputs!.argv!;
+      const substitutions = new Map([
+        ["/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-drain.sh", hostDrain],
+        ["/usr/bin/systemctl", `${scratch}/systemctl`],
+        ["${{ inputs.intent.horizon_unit }}", unit],
+        ['${{ "Verify the Gateway" in steps && steps["Verify the Gateway"].status == "succeeded" ? "true" : "false" }}', String(verified)],
+      ]);
+      const result = await new Deno.Command(shell, {
+        args: [option, script.replace("/home/orbit/.orbit/gateway-containers.json", inventory),
+          ...args.map((argument) => substitutions.get(argument) ?? argument)],
+        env: { PATH: `${scratch}:${Deno.env.get("PATH")}` },
+      }).output();
+      assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+      return new TextDecoder().decode(result.stdout);
+    }
+    assertEquals(await invoke(drain, false), `drain ${unit}`);
+    assertEquals(await invoke(start, false), `start ${unit}`);
+    await Deno.writeTextFile(inventory, "{}");
+    assertEquals(await invoke(drain, false), "");
+    assertEquals(await invoke(start, false), "");
+    assertEquals(await invoke(start, true), "start-horizon");
+  } finally {
+    await Deno.remove(scratch, { recursive: true });
+  }
+});
+
 Deno.test("only a verified public switch retires the former live container; pruning follows the handover", () => {
   const horizon = activate.find((step) => step.name === "Start Horizon")!;
   assertEquals(horizon.dependsOn?.map(({ step, condition }) => [step, condition.type]), [
@@ -64,8 +107,9 @@ Deno.test("only a verified public switch retires the former live container; prun
     ["Verify the Gateway", "always"], ["Switch back", "always"],
   ]);
   const argv = horizon.task.inputs?.argv!;
-  assert(argv[2].includes('exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"'));
+  assert(argv[2].includes('test "$5" != true || exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"'));
   assertEquals(argv[4], "start-horizon");
+  assertEquals(argv[8], '${{ "Verify the Gateway" in steps && steps["Verify the Gateway"].status == "succeeded" ? "true" : "false" }}');
   assertEquals(argv.slice(-3), ["/usr/bin/systemctl", "start", "${{ inputs.intent.horizon_unit }}"]);
   const retire = activate.find((step) => step.name === "Retire the previous live")!;
   assertEquals(retire.allowFailure, undefined);

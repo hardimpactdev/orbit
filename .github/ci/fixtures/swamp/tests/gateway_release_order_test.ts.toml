@@ -4,6 +4,7 @@ cases = [
   "Swamp load requires the bounded DB busy guard, including forced releases",
   "the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release",
   "the sealed web build precedes clone; sleep can start in parallel with candidate preparation",
+  "only host PHP-FPM drains Horizon before the switch",
   "only a verified public switch retires the former live container; pruning follows the handover",
   "failure cleanup runs after every handover outcome",
   "failed web installation cannot migrate even when its clone is skipped",

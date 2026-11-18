@@ -77,25 +77,27 @@ sequenceDiagram
     Note over SW: Hand over the release<br/>gateway-release-activate
     %%> Why:
     %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
-    AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
+    opt the Gateway serves through host PHP-FPM
+      AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
+      %%> What it does:
+      %%> - waits for the unit's whole control group to empty, up to the drain limit
+      %%> On failure:
+      %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the stop policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time
+    end
+    AC->>GN: Switch the release<br/>journal · drain · reload Caddy
     %%> What it does:
-    %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
-    %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
-    %%> On failure:
-    %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
-    AC->>GN: Switch the release<br/>reload host Caddy
-    %%> Why:
-    %%> - Caddy points to the verified clone; the preparation container stays off traffic
+    %%> - for a container switch, save the active Horizon units under the release lock before stopping them, then point Caddy at the privately verified clone
+    %%> - for a host PHP-FPM release, switch the links and reload PHP-FPM
     AC->>GN: Verify the Gateway<br/>/up · status version
     opt the check failed
-      AC->>GN: Switch back<br/>gateway-rollback previous
+      AC->>GN: Switch back<br/>restore · verify previous release
+      %%> On failure:
+      %%> - container recovery keeps its journal until the previous release passes through Caddy and its services are restored
     end
-    AC->>GN: Start Horizon<br/>always · also after a failure
-    %%> Why:
-    %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
-    %%> - starting a running unit changes nothing
-    %%> Decided by the orchestrator, for review:
-    %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
+    AC->>GN: Start Horizon<br/>verified container or host PHP-FPM
+    %%> What it does:
+    %%> - after container verification, start Horizon on the new live release. A successful switch-back restores the previous release's workers
+    %%> - on host PHP-FPM, start Horizon even after a failed drain or switch
     opt switch verified and Horizon started
       AC->>GN: Retire the previous live<br/>drain · freeze · reclaim to swap
       AC->>GN: Prune old releases<br/>remove displaced rollback

@@ -10,11 +10,14 @@ cases = [
   "test_host_rollback_recovers_after_drain_before_switch",
   "test_host_rollback_recovers_after_switch_before_verification",
   "test_host_rollback_completes_cleanup_after_verified_switch",
+  "test_native_failed_promotion_verifies_the_previous_release_before_acknowledging",
+  "test_offline_rollback_journals_the_original_units_before_draining",
+  "test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail",
   "test_healthy_retained_container_rollback",
   "test_ordinary_fpm_release_and_rollback",
 ]
 file = "swamp/tests/gateway_release_recovery_test.py"
-cost = 72
+cost = 100
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-container-rollback",
@@ -37,7 +40,10 @@ inputs = [
 "test_host_rollback_restores_container_on_public_failure" = 8
 "test_host_rollback_recovers_before_drain" = 7
 "test_host_rollback_recovers_after_drain_before_switch" = 7
-"test_host_rollback_recovers_after_switch_before_verification" = 7
-"test_host_rollback_completes_cleanup_after_verified_switch" = 7
+"test_host_rollback_recovers_after_switch_before_verification" = 9
+"test_host_rollback_completes_cleanup_after_verified_switch" = 8
+"test_native_failed_promotion_verifies_the_previous_release_before_acknowledging" = 10
+"test_offline_rollback_journals_the_original_units_before_draining" = 7
+"test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail" = 8
 "test_healthy_retained_container_rollback" = 8
 "test_ordinary_fpm_release_and_rollback" = 3

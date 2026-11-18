@@ -30,7 +30,8 @@ jobs:
 - name: activate
   labels: {role: swamp}
   steps:
-    # Horizon's running jobs finish on the release they started on. The unit stops the master with SIGTERM, never sends SIGKILL and
+    # Container releases drain under the switch lock after recording the active units.
+    # On PHP-FPM, Horizon's running jobs finish on the release they started on. The unit stops the master with SIGTERM, never sends SIGKILL and
     # waits as long as the drain allows (GatewayHorizon::stopDirectives), so the stop returns when the unit's whole control group
     # is empty. A unit without that policy would kill a running job, so the step refuses it. When the drain runs out, systemd
     # times out twice and leaves the unit failed, so the step allows twice the drain and then checks that the unit is inactive.
@@ -59,14 +60,10 @@ jobs:
         sudo: true
         timeoutSec: ${{ inputs.intent.horizon_drain_seconds + inputs.intent.horizon_drain_seconds + 60 }}
         argv:
-        - '/bin/bash'
+        - '/bin/sh'
         - '-c'
-        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"; fi; shift 4; exec "$@"'
-        - 'bash'
-        - 'drain'
-        - '${{ inputs.intent.sha }}'
-        - '${{ string(inputs.operation_id) }}'
-        - '${{ inputs.intent.horizon_unit }}'
+        - 'test -f /home/orbit/.orbit/gateway-containers.json || exec "$@"'
+        - 'sh'
         - '/bin/sh'
         - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-drain.sh'
         - '${{ inputs.intent.horizon_unit }}'
@@ -166,8 +163,8 @@ jobs:
         - '/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-switch-back.sh'
         - '${{ inputs.intent.id }}'
         - '${{ inputs.intent.previous }}'
-    # Always, also after a failed drain, switch or check: the drain stopped Horizon, so every end of the run starts it again, on
-    # the release that is live. Starting a running unit changes nothing.
+    # PHP-FPM always restarts Horizon after its drain. A container switch starts
+    # workers after public verification, or restores the previous workers during recovery.
   - name: Start Horizon
     labels: {role: swamp}
     writes: true
@@ -189,12 +186,13 @@ jobs:
         argv:
         - '/bin/bash'
         - '-c'
-        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"; fi; test -n "$4" || exit 0; shift 4; exec "$@"'
+        - 'if test -f /home/orbit/.orbit/gateway-containers.json; then test "$5" != true || exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"; exit 0; fi; test -n "$4" || exit 0; shift 5; exec "$@"'
         - 'bash'
         - 'start-horizon'
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
         - '${{ inputs.intent.horizon_unit }}'
+        - '${{ "Verify the Gateway" in steps && steps["Verify the Gateway"].status == "succeeded" ? "true" : "false" }}'
         - '/usr/bin/systemctl'
         - 'start'
         - '${{ inputs.intent.horizon_unit }}'
