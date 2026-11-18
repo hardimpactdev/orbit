@@ -1486,7 +1486,7 @@ Deno.test({
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped",
         converge_reasons: { gateway: { reason: "unchanged" }, "app-dev": { reason: "unchanged" }, "app-prod": { reason: "unchanged" } },
-        converge_nodes: [], host: "kept", changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
+        converge_nodes: [], host: "kept", changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_mode: "none", base_containers: [], record: "present", tools: "present",
         tools_reason: "current", shrink: "skipped", shrink_reason: "current", swamp: "pinned", swamp_reason: "pinned",
         swamp_version: "20261114.210101.0-sha.537e03d1", seconds: undefined });
       // Nothing changed in the nested containers' packages: one shrink check, no shrink run.
