@@ -60,6 +60,68 @@ def release(target, revision):
     return record
 
 
+def memory_use(record):
+    memory = (record.get("state") or {}).get("memory") or {}
+    resident, swap = memory.get("usage", 0), memory.get("swap_usage", 0)
+    if min(resident, swap) < 0 or (resident + swap == 0 and record["status"] != "Stopped"):
+        raise ValueError("cannot measure " + record["name"])
+    # Incus resolves byte and percentage limits against the Node in the state API.
+    limit = memory.get("total", 0) if record["expanded_config"].get("limits.memory") else 0
+    return max(resident + swap, limit), resident, swap
+
+
+def host_gateway_memory():
+    output = subprocess.check_output([
+        "systemctl", "show", "-p", "Id,WorkingDirectory,ActiveState,MemoryCurrent",
+        "php8.5-fpm.service", "orbit-*.service",
+    ], text=True)
+    total = 0
+    for block in output.strip().split("\n\n"):
+        unit = dict(line.split("=", 1) for line in block.splitlines())
+        if unit.get("ActiveState") != "active":
+            continue
+        if (unit["Id"] == "php8.5-fpm.service"
+                or unit.get("WorkingDirectory", "").rstrip("/") == "/home/orbit/orbit/apps/gateway"):
+            total += int(unit["MemoryCurrent"])
+    if total <= 0:
+        raise ValueError("could not measure the serving host Gateway")
+    return total, total, 0
+
+
+def capacity(target, live, host_gateway):
+    prep = preparer(target)
+    if host_gateway and target != "gateway":
+        raise ValueError("host PHP-FPM measurement applies only to the Gateway migration")
+    served = host_gateway_memory() if host_gateway else memory_use(release(target, live))
+    prep_need, prep_resident, prep_swap = memory_use(prep)
+    live_need, live_resident, live_swap = served
+    working = max(prep_need, live_need)
+    if working <= 0:
+        raise ValueError("cannot estimate candidate memory")
+    # Keep live available while preparation and hot overlap. Existing resident memory and
+    # swap slots are already excluded from the Node's free counts.
+    ram = 2 * working - prep_resident + max(0, live_need - live_resident) + 1024**3
+    swap = working - prep_swap + live_need - live_swap
+    meminfo = {}
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        key, values = line.split(":", 1)
+        if key in ("MemAvailable", "SwapFree"):
+            meminfo[key] = int(values.split()[0]) * 1024
+    pool = prep["expanded_devices"]["root"]["pool"]
+    if not re.fullmatch(r"[a-zA-Z0-9_.-]+", pool):
+        raise ValueError("invalid preparation pool")
+    pool_info = subprocess.check_output(
+        ["incus", "--force-local", "query", f"/1.0/storage-pools/{pool}/resources"], text=True, timeout=30,
+    )
+    space = json.loads(pool_info)["space"]
+    available = {"ram": meminfo["MemAvailable"], "swap": meminfo["SwapFree"], "pool": space["total"] - space["used"]}
+    required = {"ram": ram, "swap": swap, "pool": 10 * 1024**3}
+    for resource, need in required.items():
+        if available[resource] < need:
+            raise ValueError(f"{resource} needs {need} bytes, {available[resource]} available")
+    return {"required_bytes": required, "available_bytes": available}
+
+
 def power(name, action, operation=None):
     arguments = [
         "--unit=orbit-instance-power-" + name, "--wait", "--pipe", "--collect", "--quiet",
@@ -221,7 +283,18 @@ def main(argv):
         if command == "candidate":
             action.add_argument("commit", type=matches(SHA))
             action.add_argument("artifact", type=matches(DIGEST))
+    admission = commands.add_parser("capacity")
+    admission.add_argument("target", type=matches(OWNER))
+    serving = admission.add_mutually_exclusive_group(required=True)
+    serving.add_argument("--live", type=matches(REVISION))
+    serving.add_argument("--host-gateway", action="store_true")
     args = parser.parse_args(argv)
+    if args.action == "capacity":
+        try:
+            return capacity(args.target, args.live, args.host_gateway)
+        except (KeyError, ValueError, OSError, subprocess.SubprocessError) as error:
+            code = "gateway.release_node_capacity" if args.target == "gateway" else "deployment.node_capacity"
+            raise ValueError(f"{code}: {error}") from error
     if args.action == "candidate":
         return candidate(args.target, args.operation, args.commit, args.artifact)
     if args.action in ("wake", "sleep"):

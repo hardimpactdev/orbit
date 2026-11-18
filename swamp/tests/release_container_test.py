@@ -41,6 +41,40 @@ def addressed_candidate(**interfaces):
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_capacity_refuses_each_shortage_before_mutating_a_release(self):
+        gib = 1024**3
+        prep = {"name": "prepare-instance-8", "status": "Frozen", "expanded_config": {},
+                "state": {"memory": {"usage": 0, "swap_usage": gib}},
+                "expanded_devices": {"root": {"pool": "selected-pool"}}}
+        live = {"name": "instance-8-" + SHA[:12], "status": "Running", "expanded_config": {"limits.memory": "2GiB"},
+                "state": {"memory": {"usage": gib, "swap_usage": 0, "total": 2 * gib}}}
+        args = ["capacity", "instance-8", "--live", SHA[:12]]
+        for ram, swap, disk, shortage in [(6, 3, 10, None), (5, 3, 10, "ram"), (6, 2, 10, "swap"), (6, 3, 9, "pool")]:
+            meminfo = f"MemAvailable: {ram * gib // 1024} kB\nSwapFree: {swap * gib // 1024} kB"
+            pool = json.dumps({"space": {"total": disk * gib, "used": 0}})
+            with self.subTest(shortage=shortage), patch.object(release, "preparer", return_value=prep), \
+                    patch.object(release, "release", return_value=live), patch.object(Path, "read_text", return_value=meminfo), \
+                    patch("subprocess.check_output", return_value=pool) as query, patch.object(release, "power") as power:
+                if shortage:
+                    with self.assertRaisesRegex(ValueError, f"deployment.node_capacity: {shortage} needs"):
+                        release.main(args)
+                else:
+                    self.assertEqual(release.main(args)["required_bytes"], {"ram": 6 * gib, "swap": 3 * gib, "pool": 10 * gib})
+                self.assertEqual(query.call_args.args[0][-1], "/1.0/storage-pools/selected-pool/resources")
+                power.assert_not_called()
+
+    def test_first_gateway_build_counts_host_fpm_and_gateway_processes(self):
+        services = [
+            ("php8.5-fpm.service", "", "active", "6000"),
+            ("orbit-process-4.service", "/home/orbit/orbit/apps/gateway", "active", "1234"),
+            ("orbit-process-5.service", "/other/app", "active", "15000"),
+            ("orbit-process-6.service", "/home/orbit/orbit/apps/gateway", "inactive", "[not set]"),
+        ]
+        output = "\n\n".join(f"Id={name}\nWorkingDirectory={cwd}\nActiveState={active}\nMemoryCurrent={memory}"
+                               for name, cwd, active, memory in services)
+        with patch("subprocess.check_output", return_value=output):
+            self.assertEqual(release.host_gateway_memory(), (7234, 7234, 0))
+
     def test_address_is_reserved_once_and_cannot_silently_drift_after_boot(self):
         ip = "10.123.45.67"
         nic = {"type": "nic", "network": "orbitgw0"}

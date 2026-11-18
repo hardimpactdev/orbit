@@ -102,6 +102,10 @@ The Gateway Node keeps Caddy, WireGuard, the SQLite database and the Gateway ide
 
 Keep console access and a verified off-host recovery copy. Check space for the SQLite backup and four containers during a switch. Frozen containers still use storage and swap. Test queue and cache access from the private bridge. A host-loopback address points into the container.
 
+Before waking preparation, each new build measures the serving workload, free RAM, free swap and free space in the release pool. A capacity refusal reports the resource and the required and available bytes. The build also checks room for the SQLite snapshot on its own filesystem. A later attempt can release the same commit when space is available. See the [production capacity rules](/reference/production-containers#capacity).
+
+The admitted commit pins PHP, FrankenPHP and Composer. The Node installs a changed runtime in its own immutable directory and mounts it read-only in preparation. The candidate inherits this mount. The serving and rollback containers keep the runtime selected by their own commits.
+
 The Gateway expects its managed Horizon and scheduler Processes to be named `horizon` and `schedule-work`. Preflight reports a custom name before the move. Record the Process configuration and desired state, recreate it under the expected name, then verify a host release to obtain a current Operation receipt.
 
 1. Run `orbit gateway:auto-release:disable`. Wait for any active release to finish.

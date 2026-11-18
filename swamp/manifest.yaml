@@ -144,6 +144,7 @@ additionalFiles:
   - ansible/tasks/instance-create-setup-step.yml
   - ansible/operation-node-add.yml
   - ansible/gateway-bootstrap.yml
+  - ansible/gateway-container-runtime.yml
   - ansible/gateway-container-prepare.yml
   - ansible/tasks/role-prerequisites.yml
   - ansible/tasks/apt-proxy.yml

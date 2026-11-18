@@ -168,6 +168,28 @@ def admission_lock():
         yield
 
 
+def apply_playbook(name, plan):
+    playbook = "/opt/orbit/ansible/venv/bin/ansible-playbook"
+    if not Path(playbook).is_file():
+        raise ValueError("install the managed Orbit Ansible runtime first")
+    with tempfile.NamedTemporaryFile("w", prefix="orbit-gateway-release-", dir="/run") as variables:
+        json.dump({"release_host": plan}, variables)
+        variables.flush()
+        env = {**os.environ, "ANSIBLE_CONFIG": str(ANSIBLE / "ansible.cfg")}
+        subprocess.run([playbook, "-i", "localhost,", "-c", "local", "-e", "@" + variables.name,
+                        str(ANSIBLE / name)], cwd=ANSIBLE, env=env, check=True, stdout=sys.stderr)
+
+
+def release_runtime():
+    plan = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/recipe.json").read_text()))
+    path = Path(plan["runtime_dir"])
+    if not path.exists():
+        apply_playbook("gateway-container-runtime.yml", plan)
+    if not all(os.access(path / tool, os.X_OK) for tool in ("php/8.5/bin/php", "php/8.5/bin/frankenphp", "bin/composer")):
+        raise ValueError("selected immutable Gateway runtime is incomplete")
+    print(path)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -184,20 +206,16 @@ def main():
     if args.check:
         print("Gateway storage, swap, image, queue endpoint and network passed preflight.")
         return
-    playbook = "/opt/orbit/ansible/venv/bin/ansible-playbook"
-    if not Path(playbook).is_file():
-        raise ValueError("install the managed Orbit Ansible runtime first")
-    with admission_lock(), tempfile.NamedTemporaryFile("w", prefix="orbit-gateway-release-", dir="/run") as variables:
-        json.dump({"release_host": plan}, variables)
-        variables.flush()
-        env = {**os.environ, "ANSIBLE_CONFIG": str(ANSIBLE / "ansible.cfg")}
-        subprocess.run([playbook, "-i", "localhost,", "-c", "local", "-e", "@" + variables.name,
-                        str(ANSIBLE / "gateway-container-prepare.yml")], cwd=ANSIBLE, env=env, check=True)
+    with admission_lock():
+        apply_playbook("gateway-container-prepare.yml", plan)
 
 
 if __name__ == "__main__":
     try:
-        main()
+        if sys.argv[1:] == ["--release-runtime"]:
+            release_runtime()
+        else:
+            main()
     except subprocess.CalledProcessError as error:
         sys.exit(f"Gateway preparation failed at {error.cmd[0]} (exit {error.returncode}).")
     except (OSError, KeyError, ValueError) as error:

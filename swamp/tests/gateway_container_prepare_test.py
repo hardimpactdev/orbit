@@ -67,6 +67,27 @@ class BootstrapTest(unittest.TestCase):
         recipe["instances"]["runtime"]["composer"]["artifacts"]["amd64"]["sha256"] = "0" * 64
         self.assertNotEqual(plan["runtime_dir"], prep.runtime_plan(recipe)["runtime_dir"])
 
+    def test_runtime_selection_updates_only_the_owned_preparer_and_verifies_the_active_mount(self):
+        old = "/opt/orbit-gateway-runtime/" + "a" * 16
+        new = "/opt/orbit-gateway-runtime/" + "b" * 16
+        record = {"config": {"user.orbit.release.role": "prepare", "user.orbit.release.target": "gateway",
+                             "user.orbit.release.operation": "17"},
+                  "devices": {"runtime": {"path": guest.RUNTIME, "type": "disk", "readonly": "true", "source": old}}}
+        with patch.object(guest, "info", return_value=record), patch.object(guest, "incus") as incus, \
+                patch.object(guest, "guest", return_value="a  tool") as read, patch("subprocess.check_output", return_value="a  tool"):
+            with self.assertRaisesRegex(ValueError, "preparation_changed"):
+                guest.select_runtime("16", new)
+            incus.assert_not_called()
+            guest.select_runtime("17", new)
+            incus.assert_called_once_with("config", "device", "set", "prepare-gateway", "runtime", "source=" + new)
+            self.assertEqual(read.call_count, 3)
+            incus.reset_mock()
+            record["devices"]["runtime"]["source"] = new
+            read.return_value = "b  tool"
+            with self.assertRaisesRegex(ValueError, "did not mount"):
+                guest.select_runtime("17", new)
+            incus.assert_not_called()
+
     def test_host_loopback_queue_is_rejected_before_guest_provisioning(self):
         for ip in ("127.0.0.1", "::1", "0.0.0.0"):
             with self.assertRaisesRegex(ValueError, "loopback"):

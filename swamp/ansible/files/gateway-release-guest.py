@@ -30,7 +30,7 @@ def guest(*args):
 
 def info():
     return json.loads(subprocess.check_output(
-        ["incus", "--force-local", "query", "/1.0/instances/prepare-gateway?project=orbit-releases"],
+        ["incus", "--force-local", "query", f"/1.0/instances/{PREP}?project=orbit-releases"],
         text=True, stdin=subprocess.DEVNULL))
 
 
@@ -46,6 +46,26 @@ def disk(name, src, dst, shift, readonly):
             *(f"{k}={v}" for k, v in spec.items() if k != "type"))
     elif current != spec:
         raise ValueError(f"preparer has a different {name} mount")
+
+
+def select_runtime(operation, source):
+    current = info()
+    config = current["config"]
+    if (config.get("user.orbit.release.target") != "gateway" or config.get("user.orbit.release.role") != "prepare"
+            or config.get("user.orbit.release.operation") != operation):
+        raise ValueError("release.preparation_changed")
+    device = current["devices"].get("runtime", {})
+    expected = {"type": "disk", "path": RUNTIME, "readonly": "true", "source": device.get("source")}
+    immutable = r"/opt/orbit-gateway-runtime/[0-9a-f]{16}"
+    if device != expected or not all(re.fullmatch(immutable, path or "") for path in (source, device.get("source"))):
+        raise ValueError("unexpected Gateway runtime mount")
+    if device["source"] != source:
+        incus("config", "device", "set", PREP, "runtime", "source=" + source)
+    # Check the live bind before Composer uses it. A stale mount could have the same PHP version.
+    for tool in ("php/8.5/bin/php", "php/8.5/bin/frankenphp", "bin/composer"):
+        selected = subprocess.check_output(["sha256sum", source + "/" + tool], text=True).split()[0]
+        if guest("sha256sum", RUNTIME + "/" + tool).split()[0] != selected:
+            raise ValueError("preparation did not mount the selected Gateway runtime")
 
 
 ACCOUNT = r"""
@@ -174,6 +194,9 @@ def main(plan):
 
 if __name__ == "__main__":
     try:
-        main(json.loads(sys.argv[1]))
+        if sys.argv[1:2] == ["--runtime"]:
+            select_runtime(*sys.argv[2:])
+        else:
+            main(json.loads(sys.argv[1]))
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
         sys.exit(str(error))

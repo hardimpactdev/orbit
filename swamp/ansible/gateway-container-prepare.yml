@@ -1,11 +1,13 @@
 ---
 # Invoked only after bin/gateway-container-prepare checks the operator's explicit storage and network selections.
+- name: Materialize the selected release runtime
+  ansible.builtin.import_playbook: gateway-container-runtime.yml
+
 - name: Prepare the Gateway release host
   hosts: localhost
   gather_facts: false
   vars:
     container_host: { incus: "{{ release_host.incus }}" }
-    cache: /var/cache/orbit/gateway-runtime
   tasks:
     - name: Install the pinned Incus packages
       ansible.builtin.include_tasks: tasks/incus-install.yml
@@ -30,34 +32,8 @@
         owner: root
         group: root
       loop:
-        - "{{ cache }}"
-        - /opt/orbit-gateway-runtime
         - /etc/caddy/orbit-gateway-modes
         - /etc/orbit
-
-    - name: Fetch the pinned PHP build and Composer
-      ansible.builtin.include_tasks: tasks/artifact-fetch.yml
-      vars:
-        artifact:
-          urls: ["{{ item.url }}"]
-          path: "{{ cache }}/{{ item.sha256 }}"
-          sha256: "{{ item.sha256 }}"
-      loop: "{{ [release_host.php, release_host.composer] }}"
-      loop_control: { label: "{{ item.sha256 }}" }
-
-    - name: Publish an immutable runtime directory
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          temp=$(mktemp -d /opt/orbit-gateway-runtime/.build.XXXXXXXX)
-          trap 'rm -rf -- "$temp"' EXIT
-          mkdir -p "$temp/php/8.5" "$temp/bin"
-          tar -xzf "{{ cache }}/{{ release_host.php.sha256 }}" --no-same-owner -C "$temp/php/8.5"
-          test -x "$temp/php/8.5/bin/php" && test -x "$temp/php/8.5/bin/frankenphp"
-          install -m 0755 "{{ cache }}/{{ release_host.composer.sha256 }}" "$temp/bin/composer"
-          chmod 0755 "$temp"
-          mv -T "$temp" "{{ release_host.runtime_dir }}"
-        creates: "{{ release_host.runtime_dir }}"
 
     - name: Install the host release entry points
       ansible.builtin.copy:
