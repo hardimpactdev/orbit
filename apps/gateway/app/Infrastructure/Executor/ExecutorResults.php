@@ -66,6 +66,10 @@ final readonly class ExecutorResults
             $this->log->warning('The executor reported a failed order.', ['node_id' => $nodeId, 'operation_id' => $reply->operation, 'code' => $reply->reason]);
         }
 
+        if ($route === 'ssh') {
+            return;
+        }
+
         try {
             $this->queue->push(self::resultKey($reply->operation), $reply->raw, self::ExpirySeconds);
         } finally {
@@ -149,6 +153,22 @@ final readonly class ExecutorResults
         }
 
         return self::matches($operation, $action, $line) ? $line : null;
+    }
+
+    /** @param array<string, mixed>|null $line */
+    public static function succeeded(?array $line): bool
+    {
+        return in_array($line['status'] ?? null, ['done', 'partial'], true);
+    }
+
+    /** @param array<string, mixed> $line */
+    public static function failureCode(array $line): string
+    {
+        return match (true) {
+            ($line['status'] ?? null) === 'refused' => 'executor.order_refused',
+            is_string($line['code'] ?? null) => $line['code'],
+            default => 'executor.power_failed',
+        };
     }
 
     /**

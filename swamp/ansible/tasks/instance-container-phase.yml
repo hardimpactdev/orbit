@@ -150,7 +150,7 @@
   tags: [start]
   when: >-
     phase == 'start' and intent.signed_power | default(false) | bool and
-    (intent.marker is defined or start_found == 'Frozen')
+    (intent.marker is defined or start_found == 'Frozen' or intent.executor_lifecycle_phase | default('') == 'resume')
   block:
     - name: Deliver the signed wake order
       ansible.builtin.include_tasks: { file: executor-power-relay.yml, apply: {tags: [start]} }
@@ -187,7 +187,7 @@
   tags: [start]
   when: >-
     phase == 'start' and intent.signed_power | default(false) | bool and
-    intent.marker is not defined and start_found == 'Stopped'
+    intent.marker is not defined and start_found == 'Stopped' and executor_receipt is not defined
   ansible.builtin.include_tasks: { file: executor-power-relay.yml, apply: {tags: [start]} }
   vars:
     executor_phase: boot
@@ -1423,6 +1423,14 @@
   tags: [start]
   when: phase == 'start' and intent.asleep_marker is defined
   ansible.builtin.file: { path: "{{ intent.asleep_marker }}", state: absent }
+
+- name: Record the verified boot after the admitted resume found a stopped container
+  tags: [start]
+  when: >-
+    phase == 'start' and intent.asleep_marker is defined and start_found == 'Stopped'
+    and executor_receipt.code | default('') == 'instance.container_stopped'
+  ansible.builtin.set_fact:
+    wake_result: { wake: started }
 
 # Only migration holds cutover for a stable Process. Create, deploy, start and direct process.* keep their own checks.
 - name: Check each moved running Process before cutover

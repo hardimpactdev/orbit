@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Swamp;
 
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationStartRefusal;
@@ -157,12 +158,12 @@ final readonly class StartSwampRun
 
                 return false;
             }
-            if ($operation->cancel_requested_at !== null) {
+            if ($operation->cancel_requested_at !== null && ! ExecutorWake::managedDeliveryStarted($operation)) {
                 app(OperationStore::class)->change($operation, ['status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null, 'lock_key' => null]);
 
                 return false;
             }
-            app(OperationStore::class)->change($operation, ['status' => OperationStatus::Running, 'started_at' => now(), 'error_code' => null]);
+            app(OperationStore::class)->change($operation, ['status' => OperationStatus::Running, 'started_at' => now(), 'error_code' => null, 'cancel_requested_at' => null]);
 
             return true;
         });

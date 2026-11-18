@@ -77,8 +77,9 @@
          else {} }}
     executor_carried: >-
       {{ {} if not intent.signed_power | default(false) | bool
-         else {'executor': executor_receipt} if executor_receipt is defined
-         else {'executor': (lookup('ansible.builtin.file', club_key_result_file) | from_json).executor}
+         else {'executor': executor_receipt, 'wake': wake_result.wake | default(none)} if executor_receipt is defined
+         else ((lookup('ansible.builtin.file', club_key_result_file) | from_json) | dict2items
+               | selectattr('key', 'in', ['executor', 'wake']) | items2dict)
            if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).executor | default(none) is mapping
          else {} }}
   tasks:

@@ -7,7 +7,6 @@ namespace App\Domain\Instances\Power;
 use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Executor\SignedExecutorOrder;
 use App\Domain\Instances\InstanceRuntimePowerState;
-use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -18,6 +17,8 @@ use LogicException;
 final class ExecutorPowerIntent
 {
     public const string Managed = 'signed_power';
+
+    public const string LifecyclePhase = 'executor_lifecycle_phase';
 
     public static function enabled(): bool
     {
@@ -40,13 +41,18 @@ final class ExecutorPowerIntent
 
     public static function frozenSleep(Instance $instance, InstanceRuntime $runtime): ?Operation
     {
-        if ($runtime->power_state !== InstanceRuntimePowerState::Stopped) {
-            return null;
-        }
-        $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->where('status', OperationStatus::Succeeded)->latest('id')->first();
+        return $runtime->power_state === InstanceRuntimePowerState::Stopped ? ContainerResume::frozenSleep($instance) : null;
+    }
 
-        return ($sleep?->result['sleep'] ?? null) === 'frozen' ? $sleep : null;
+    /** @return array{signed_power?: true, executor_lifecycle_phase?: 'resume'|'boot'} */
+    public static function lifecycle(Instance $instance, InstanceRuntime $runtime): array
+    {
+        $sleep = self::frozenSleep($instance, $runtime);
+        if ($sleep === null ? ! self::enabled() : ! self::managed($sleep)) {
+            return [];
+        }
+
+        return [self::Managed => true, self::LifecyclePhase => $sleep === null ? 'boot' : 'resume'];
     }
 
     public static function action(Operation $operation, string $phase = 'power'): ?string
@@ -56,12 +62,17 @@ final class ExecutorPowerIntent
         }
         $deployment = $operation->input['deployment'] ?? null;
         $removal = $operation->input['container_destroy'] ?? null;
+        $lifecycle = match ($operation->kind) {
+            InstanceStart::Kind => $operation->input,
+            'instance.deploy' => is_array($deployment) ? $deployment : [],
+            default => [],
+        };
+        $admittedPhase = $lifecycle[self::LifecyclePhase] ?? null;
 
         return match (true) {
             $phase === 'power' && self::managed($operation) && $operation->kind === InstanceSleep::Kind => 'sleep',
             $phase === 'power' && self::managed($operation) && $operation->kind === InstanceWake::Kind => 'wake',
-            $operation->kind === InstanceStart::Kind && self::managed($operation),
-            $operation->kind === 'instance.deploy' && is_array($deployment) && ($deployment[self::Managed] ?? false) === true => match ($phase) {
+            ($lifecycle[self::Managed] ?? false) === true && $admittedPhase === $phase => match ($admittedPhase) {
                 'resume' => 'wake',
                 'boot' => 'discard',
                 default => null,
@@ -79,6 +90,7 @@ final class ExecutorPowerIntent
         $container = $operation->input['container'] ?? (is_array($deployment) ? ($deployment['container'] ?? null) : null);
         $powerCheck = match (true) {
             $action === 'sleep' && ($operation->input['route'] ?? false) === true => 'route',
+            $action === 'wake' && $phase === 'resume' => 'resume',
             $action === 'wake' && is_array($container) && array_key_exists('web_config', $container) && $container['web_config'] === null => 'no_web',
             default => null,
         };
@@ -97,5 +109,17 @@ final class ExecutorPowerIntent
         }
 
         return null;
+    }
+
+    /** @param array<string, mixed>|null $receipt */
+    public static function lifecycleError(mixed $raw, ?array $receipt, bool $verifiedBoot): ?string
+    {
+        if ($raw === null || ExecutorResults::succeeded($receipt)
+            || ($verifiedBoot && ($receipt['action'] ?? null) === 'wake'
+                && ($receipt['status'] ?? null) === 'failed' && ($receipt['code'] ?? null) === 'instance.container_stopped')) {
+            return null;
+        }
+
+        return $receipt === null ? 'executor.result_unproven' : ExecutorResults::failureCode($receipt);
     }
 }

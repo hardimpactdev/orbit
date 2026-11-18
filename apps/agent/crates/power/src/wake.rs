@@ -293,6 +293,8 @@ pub enum WebProbe {
     Required,
     /// The container has no web unit.
     NotConfigured,
+    /// A start or deploy owns readiness and the asleep marker after resume.
+    Lifecycle,
 }
 
 impl Power {
@@ -395,7 +397,9 @@ impl Power {
         {
             return Err(invalid("instance.web_unready"));
         }
-        remove(&self.markers.join(format!("app-instance-{id}.asleep")))?;
+        if probe_web != WebProbe::Lifecycle {
+            remove(&self.markers.join(format!("app-instance-{id}.asleep")))?;
+        }
         receipt.total_us = micros(started);
         Ok(receipt)
     }

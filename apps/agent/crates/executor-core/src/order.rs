@@ -101,6 +101,8 @@ pub enum PowerCheck {
     Route,
     /// Wake an Instance that has no web unit without probing its app port.
     NoWeb,
+    /// Resume for a deploy or start. The workflow owns readiness and the marker.
+    Resume,
 }
 
 /// An order that passed every stateless check. Only [`check`] makes one.
@@ -280,7 +282,7 @@ pub fn check_with_target(
         (payload.power_check, action),
         (PowerCheck::Default, _)
             | (PowerCheck::Route, Action::Sleep)
-            | (PowerCheck::NoWeb, Action::Wake)
+            | (PowerCheck::NoWeb | PowerCheck::Resume, Action::Wake)
     ) {
         return Err(OrderRefusal::BadPayload);
     }

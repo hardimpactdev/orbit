@@ -77,6 +77,7 @@ impl Run for Families {
                         Outcome::Failed {
                             code: match error.to_string().as_str() {
                                 code @ ("instance.container_frozen_unmanaged"
+                                | orbit_executor_power::SLEEP_INCOMPLETE
                                 | orbit_executor_power::ROUTE_UNREADY
                                 | orbit_executor_power::READERS_BUSY) => code,
                                 _ => "instance.container_freeze_failed",
@@ -88,10 +89,10 @@ impl Run for Families {
             }
             Action::Wake => {
                 let started = std::time::Instant::now();
-                let probe = if order.power_check() == PowerCheck::NoWeb {
-                    orbit_executor_power::WebProbe::NotConfigured
-                } else {
-                    orbit_executor_power::WebProbe::Required
+                let probe = match order.power_check() {
+                    PowerCheck::NoWeb => orbit_executor_power::WebProbe::NotConfigured,
+                    PowerCheck::Resume => orbit_executor_power::WebProbe::Lifecycle,
+                    _ => orbit_executor_power::WebProbe::Required,
                 };
                 match self.0.wake(order.target().as_str(), probe) {
                     Ok(receipt) => {
@@ -125,7 +126,7 @@ impl Run for Families {
                     }
                 }
             }
-            Action::Discard => match self.0.discard(order.target().as_str()) {
+            Action::Discard => match self.0.discard_stopped(order.target().as_str()) {
                 Ok(()) => Outcome::Done,
                 Err(error) => Outcome::Failed {
                     code: if error.to_string() == orbit_executor_power::READERS_BUSY {

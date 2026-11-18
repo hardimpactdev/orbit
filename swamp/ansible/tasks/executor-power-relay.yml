@@ -42,9 +42,7 @@
 
 - name: Require a terminal executor line
   ansible.builtin.assert:
-    that:
-      - executor_relay.rc | default(1) == 0
-      - executor_relay.stdout_lines | default([]) | length == 2
+    that: executor_relay.stdout_lines | default([]) | length == 2
     fail_msg: executor.relay_transport
     quiet: true
 

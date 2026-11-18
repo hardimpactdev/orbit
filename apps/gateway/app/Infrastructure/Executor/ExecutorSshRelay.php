@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Executor;
 
+use App\Domain\Instances\Power\ExecutorWakeBudget;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -12,6 +13,8 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Operation;
+
+use function Illuminate\Support\defer;
 
 final readonly class ExecutorSshRelay
 {
@@ -22,7 +25,7 @@ final readonly class ExecutorSshRelay
         private ExecutorResults $results,
     ) {}
 
-    public function send(Operation $operation, #[\SensitiveParameter] string $wire, float $timeout): void
+    public function send(Operation $operation, #[\SensitiveParameter] string $wire, float $timeout, ?ExecutorWakeBudget $budget = null): void
     {
         if ($operation->node_id === null) {
             return;
@@ -38,8 +41,17 @@ final readonly class ExecutorSshRelay
             return;
         }
         foreach (explode("\n", $result->stdout) as $line) {
-            if (($reply = ExecutorReply::fromEvent(['operation' => (string) $operation->id, 'line' => $line])) !== null) {
-                $this->results->receive($node->id, $reply, 'ssh');
+            if (($reply = ExecutorReply::fromEvent(['operation' => (string) $operation->id, 'line' => $line])) !== null && ! $reply->isAccepted()) {
+                $record = fn () => $this->results->receive($node->id, $reply, 'ssh');
+                if ($budget === null) {
+                    $record();
+                } elseif ($budget->write(static function () use ($record): bool {
+                    $record();
+
+                    return true;
+                }) === null) {
+                    defer($record, always: true);
+                }
             }
         }
     }

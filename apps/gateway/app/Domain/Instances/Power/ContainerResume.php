@@ -115,9 +115,13 @@ final readonly class ContainerResume
     /** The sleep that froze the Instance's container while that freeze still holds; see frozenBySleep(). */
     public static function frozenSleep(Instance $instance): ?Operation
     {
-        $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->orderByDesc('id')->first();
-        if ($sleep?->status !== OperationStatus::Succeeded || ($sleep->result['sleep'] ?? null) !== 'frozen') {
+        $sleeps = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)->latest('id');
+        $sleep = (clone $sleeps)->first();
+        if ($sleep !== null && ExecutorPowerIntent::managed($sleep) && $sleep->status === OperationStatus::Failed && $sleep->error_code !== InstanceSleep::IncompleteFreeze) {
+            $sleep = $sleeps->where(fn ($query) => $query->where('status', OperationStatus::Succeeded)->orWhere('error_code', InstanceSleep::IncompleteFreeze))->first();
+        }
+        if ($sleep === null || ($sleep->error_code !== InstanceSleep::IncompleteFreeze
+            && ($sleep->status !== OperationStatus::Succeeded || ($sleep->result['sleep'] ?? null) !== 'frozen'))) {
             return null;
         }
         $found = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)

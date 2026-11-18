@@ -47,6 +47,7 @@ final readonly class ContainerDeployOutcome
         $payload = ['commit' => null, 'failed_step' => null, 'started' => true, 'club_key' => $file['club_key'] ?? null];
         if (is_array($file['executor'] ?? null)) {
             $payload['executor'] = $file['executor'];
+            $payload['wake'] = ($file['wake'] ?? null) === 'started' ? 'started' : null;
         }
         $bestEffort = self::bestEffortSteps($steps, $admittedSteps);
         if ($bestEffort !== []) {

@@ -58,7 +58,7 @@ final readonly class InstanceWake extends InstancePower
     /** The container sleeps frozen: its runtime records it stopped and its last sleep froze it (ContainerResume::frozenBySleep). */
     private static function frozen(InstanceRuntime $runtime, Instance $instance): bool
     {
-        return $runtime->power_state === InstanceRuntimePowerState::Stopped && ContainerResume::frozenBySleep($instance);
+        return ExecutorPowerIntent::frozenSleep($instance, $runtime) !== null;
     }
 
     /** A nested-fleet default that no sleep froze starts only through its deployment, which brings back its Club key and fleet. */
@@ -201,7 +201,7 @@ final readonly class InstanceWake extends InstancePower
         if (ExecutorPowerIntent::forInstance($instance, $runtime)) {
             return app(ExecutorWake::class)->admit($instance, [...$input, ExecutorPowerIntent::Managed => true], $caller, $requestId);
         }
-        if (ExecutorWake::enabled() && ! ExecutorPowerIntent::enabled()) {
+        if (ExecutorWake::enabled() && ExecutorPowerIntent::frozenSleep($instance, $runtime) === null) {
             return app(ExecutorWake::class)->admit($instance, $input, $caller, $requestId);
         }
 

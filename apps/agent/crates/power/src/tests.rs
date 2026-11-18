@@ -424,6 +424,20 @@ fn swap_full_resumes_a_nested_fleet_and_never_stops_it() {
 }
 
 #[test]
+fn a_capture_failure_after_freeze_reports_incomplete_sleep() {
+    let (_dir, power, api) = fixture();
+    fs::remove_file(api.root.join("memory.stat")).expect("remove stats to interrupt capture");
+
+    let error = power
+        .sleep_with(&api, "2", "op1")
+        .expect_err("incomplete sleep");
+    assert_eq!(error.to_string(), "instance.container_sleep_incomplete");
+    assert_eq!(api.instance.lock().expect("instance").status, "frozen");
+    assert!(power.markers.join("app-instance-2.asleep").exists());
+    assert!(power.state.join("2/limits.json").exists());
+}
+
+#[test]
 fn a_refused_incus_freeze_restores_all_original_swap_limits() {
     struct RefuseFreeze<'a>(&'a Fake);
     impl Api for RefuseFreeze<'_> {
@@ -464,35 +478,76 @@ fn caddy_admin_requires_the_full_loopback_authority() {
         let request = lines.next().expect("request line").expect("read request");
         let host = lines.next().expect("host header").expect("read authority");
         let _end = lines.next().expect("blank line").expect("read terminator");
-        let response: &[u8] =
-            if request == "GET /config/ HTTP/1.0" && host == format!("Host: {address}") {
-                b"HTTP/1.0 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-2.asleep\"]}"
-            } else {
-                b"HTTP/1.0 403 Forbidden\r\n\r\n"
-            };
+        let response: &[u8] = if request == "GET /config/ HTTP/1.0"
+            && host == format!("Host: {address}")
+        {
+            b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}]}"
+        } else {
+            b"HTTP/1.0 403 Forbidden\r\n\r\n"
+        };
         stream.write_all(response).expect("write response");
     });
 
     let response = caddy_config(address).expect("Caddy admin response");
     server.join().expect("fixture server ended");
-    assert!(route_checks(&response, b"app-instance-2.asleep"));
+    assert!(route_checks(
+        &response,
+        Path::new("/markers/app-instance-2.asleep")
+    ));
 }
 
 #[test]
 fn caddy_must_have_the_exact_markers_matcher_in_its_loaded_config() {
-    let instance_marker = b"app-instance-2.asleep";
+    let instance_marker = Path::new("/markers/app-instance-2.asleep");
     assert!(route_checks(
-        b"HTTP/1.1 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-2.asleep\"]}",
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}]}",
         instance_marker,
     ));
     assert!(!route_checks(
-        b"HTTP/1.1 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-20.asleep\"]}",
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-20.asleep\"]}}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep.old\"]}}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-2.asleep\"]}",
         instance_marker,
     ));
     assert!(!route_checks(
         b"HTTP/1.1 503\r\n\r\n/app-instance-2.asleep",
         instance_marker
     ));
+}
+
+#[test]
+fn lifecycle_resume_does_not_need_the_old_app_and_leaves_the_marker() {
+    let (_dir, power, api) = fixture();
+    power.sleep_with(&api, "2", "op1").expect("freeze");
+    assert!(api.instance.lock().expect("instance").address.is_none());
+    power
+        .wake_checked(&api, "2", WebProbe::Lifecycle)
+        .expect("resume without the app");
+    assert_eq!(api.instance.lock().expect("instance").status, "running");
+    assert!(power.markers.join("app-instance-2.asleep").exists());
+    assert_eq!(
+        read(&api.root.join("memory.swap.max")).expect("restored swap limit"),
+        "0"
+    );
+}
+
+#[test]
+fn signed_discard_cannot_delete_the_state_of_a_frozen_target() {
+    let (_dir, power, api) = fixture();
+    power.sleep_with(&api, "2", "op1").expect("freeze");
+    assert!(power.discard_stopped_with(&api, "2").is_err());
+    assert!(power.state.join("2/limits.json").exists());
+    api.instance.lock().expect("instance").status = "stopped".to_owned();
+    power
+        .discard_stopped_with(&api, "2")
+        .expect("discard after stop");
+    assert!(!power.state.join("2/limits.json").exists());
 }
 
 #[test]

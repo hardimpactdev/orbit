@@ -71,7 +71,7 @@ final readonly class InstanceDeploymentIntent
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
                 // The container is frozen with the rest of the intent; the run adds only the pinned commit.
                 'container' => $runtime !== null ? app(InstanceContainer::class)->intent($instance, $runtime) : null,
-                ...($runtime !== null && ExecutorPowerIntent::forInstance($instance, $runtime) ? [ExecutorPowerIntent::Managed => true] : []),
+                ...($runtime === null ? [] : ExecutorPowerIntent::lifecycle($instance, $runtime)),
                 ...($fleet === null ? [] : ['fleet' => $fleet]),
             ];
         }

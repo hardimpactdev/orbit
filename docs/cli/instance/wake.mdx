@@ -89,3 +89,5 @@ For a nested-fleet clone:
 | `executor.wake_refused` | Executor wakes are enabled and the Node refused the order. The Operation keeps the refusal reason. |
 | `executor.wake_failed` | Executor wakes are enabled and the Node reported a failure. The Operation keeps the executor result. |
 | `executor.wake_timeout` | No executor result confirmed the wake before its queued completion. The Node may still finish; a later result does not reopen the Operation. |
+| `executor.sign_failed` | The Gateway could not sign an order. Nothing was sent. |
+| `executor.result_unknown` | Recovery ended without an executor receipt. The Instance stays fenced until the Node's outcome is verified. |

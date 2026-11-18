@@ -200,19 +200,26 @@ abstract readonly class InstancePower implements DirectOperationProjection
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
-        $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
-        $kept = $this->kept($phase);
-        $action = ExecutorPowerIntent::action($operation);
-        $receipt = $action === null ? null : ExecutorResults::matchingReceipt($operation, $action, $phase['executor'] ?? null);
-        if ($action !== null && $succeeded && ! $this->provesSignedSuccess($receipt, $phase)) {
-            $succeeded = false;
-            $data['status'] = OperationStatus::Failed->value;
-            $phase['error_code'] = 'executor.result_unproven';
-        }
-        $endedBefore = in_array($operation->status->value, OperationStatus::terminalValues(), true);
-
-        $operation = DB::transaction(function () use ($operation, $data, $phase, $succeeded, $kept, $receipt): Operation {
+        [$operation, $endedBefore] = DB::transaction(function () use ($operation, $data): array {
+            $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $endedBefore = $operation->status->terminal();
+            $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
+            $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
+            $kept = $this->kept($phase);
+            $action = ExecutorPowerIntent::action($operation);
+            $receipt = $action === null ? null : ExecutorResults::matchingReceipt($operation, $action, $operation->executor_result ?? $phase['executor'] ?? null);
+            if ($action !== null && $succeeded && ! $this->provesSignedSuccess($receipt, $phase)) {
+                $succeeded = false;
+                $data['status'] = OperationStatus::Failed->value;
+                $phase['error_code'] = $receipt === null || ExecutorResults::succeeded($receipt)
+                    ? 'executor.result_unproven' : ExecutorResults::failureCode($receipt);
+            }
+            if ($receipt !== null && ! $succeeded && ! ExecutorResults::succeeded($receipt)) {
+                $code = ExecutorResults::failureCode($receipt);
+                if ($code !== 'instance.container_stopped' || ($phase['error_code'] ?? null) !== InstanceWake::NestedStopped) {
+                    $phase['error_code'] = $code;
+                }
+            }
             $result = $succeeded ? $this->result($operation) : array_intersect_key($phase, ['error_code' => true]);
             if ($receipt !== null) {
                 if ($succeeded) {
@@ -220,18 +227,24 @@ abstract readonly class InstancePower implements DirectOperationProjection
                 } else {
                     $result['executor'] = $receipt;
                 }
-                Operation::query()->whereKey($operation->id)->whereNull('executor_result')->update([
-                    'executor_result' => json_encode($receipt, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu'),
-                ]);
+                if (! $endedBefore && $operation->executor_result === null) {
+                    $operation->forceFill(['executor_result' => $receipt, 'executor_result_received_us' => (int) now()->format('Uu')])->save();
+                }
+            }
+            if ($action === 'sleep') {
+                $kept = [];
+                if (! $succeeded && InstanceSleep::isIncompleteFreeze($receipt)) {
+                    $result += ['sleep' => 'incomplete', 'power_state' => InstanceRuntimePowerState::Stopped->value];
+                }
             }
             $operation = app(DirectOperation::class)->project($operation,
                 [...$data, 'error_code' => $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null)],
-                [...$result, ...$kept]);
-            if ($this->reached($operation)) {
+                $action === null ? [...$result, ...$kept] : [...$kept, ...$result]);
+            if (! $endedBefore && ($this->reached($operation) || ($action === 'sleep' && InstanceSleep::isIncompleteFreeze($receipt)))) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
             }
 
-            return $operation;
+            return [$operation, $endedBefore];
         });
         if (! $endedBefore && in_array($operation->status->value, OperationStatus::terminalValues(), true)) {
             $this->ended($operation);
@@ -245,6 +258,6 @@ abstract readonly class InstancePower implements DirectOperationProjection
      */
     protected function provesSignedSuccess(?array $receipt, array $phase): bool
     {
-        return in_array($receipt['status'] ?? null, ['done', 'partial'], true);
+        return ExecutorResults::succeeded($receipt);
     }
 }

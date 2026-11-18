@@ -6,7 +6,6 @@ namespace App\Actions\Operations;
 
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
-use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
@@ -36,8 +35,7 @@ final readonly class CancelOperationAction
             if ($operation->status->terminal()) {
                 return;
             }
-            if (ExecutorWake::owns($operation) && ExecutorPowerIntent::managed($operation)
-                && $operation->status === OperationStatus::Running && ! isset($operation->state[ExecutorWake::Recovery])) {
+            if (ExecutorWake::managedDeliveryStarted($operation)) {
                 throw new ResourceOperationException('executor.already_started', 'The signed power action has started and cannot be cancelled.', 409);
             }
             if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)

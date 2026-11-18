@@ -5,7 +5,7 @@ const shipped = new URL("../ansible/tasks/executor-power-relay.yml", import.meta
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const outcome = { status: "done", operation: "41", target: "7", action: "sleep", receipt: { sleep: "frozen" } };
 
-async function relay(lines: string[], unboundFirst = false) {
+async function relay(lines: string[], unboundFirst = false, exitCode = 0) {
     const folder = Deno.makeTempDirSync();
     const calls: { path: string; method: string; data: unknown }[] = [];
     const signer = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
@@ -24,6 +24,7 @@ async function relay(lines: string[], unboundFirst = false) {
 test "$*" = '-n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay' || exit 21
 test "$(cat)" = 'fixture-opaque-input' || exit 22
 cat '${folder}/reply'
+exit ${exitCode}
 `, { mode: 0o700 });
         Deno.writeTextFileSync(`${folder}/fixture.yml`, `---
 - name: Run the shipped relay phase
@@ -84,6 +85,11 @@ Deno.test({ name: "a crossed delivery uses the executor's first matching receipt
 
 Deno.test({ name: "an executor refusal is not a successful or lost delivery", ignore: !available, async fn() {
     assertEquals(await relay([accepted, JSON.stringify({ status: "refused", reason: "wrong_node" })]), { code: "executor.order_refused" });
+} });
+
+Deno.test({ name: "a terminal reply wins over a relay process error after delivery", ignore: !available, async fn() {
+    assertEquals(await relay([accepted, JSON.stringify({ status: "refused", reason: "wrong_node" })], false, 1),
+        { code: "executor.order_refused" });
 } });
 
 Deno.test({ name: "a missing terminal line or mismatched target is a transport failure", ignore: !available, async fn() {

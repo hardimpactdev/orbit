@@ -24,6 +24,8 @@ const RESIDUAL_ANON: u64 = 32 << 20;
 const UNMANAGED: &str = "instance.container_frozen_unmanaged";
 /// The published route must already recognize the asleep marker.
 pub const ROUTE_UNREADY: &str = "instance.sleep_route_unready";
+/// Sleep failed after making the container unavailable; keep the state for this engine to wake.
+pub const SLEEP_INCOMPLETE: &str = "instance.container_sleep_incomplete";
 /// A sleep or discard waits this long for a stalled restore reader of its target, then refuses.
 const READER_BOUND: Duration = Duration::from_secs(10);
 /// The refusal when a stalled restore reader of the target outlives [`READER_BOUND`].
@@ -221,6 +223,9 @@ impl Power {
         if result.is_err() && !had_marker {
             self.clear_failed_sleep_marker(api, id, &marker);
         }
+        if result.is_err() && marker.exists() && self.state.join(id).join("limits.json").exists() {
+            return Err(invalid(SLEEP_INCOMPLETE));
+        }
         result
     }
 
@@ -261,6 +266,25 @@ impl Power {
             remove(&base.join(name))?;
         }
         File::open(base)?.sync_all()
+    }
+
+    /// Discard on a signed order only after Incus proves the target is stopped or absent.
+    ///
+    /// # Errors
+    /// Returns a power state or local I/O error. On refusal the saved limits and plan stay intact.
+    pub fn discard_stopped(&self, id: &str) -> io::Result<()> {
+        self.discard_stopped_with(&self.incus, id)
+    }
+
+    fn discard_stopped_with(&self, api: &dyn Api, id: &str) -> io::Result<()> {
+        if !valid_id(id)
+            || api
+                .instance(id)?
+                .is_some_and(|instance| instance.status != "stopped")
+        {
+            return Err(invalid("instance.power_discard_failed"));
+        }
+        self.discard(id)
     }
 
     fn readers(&self, id: &str) -> std::sync::Arc<pool::Readers> {
@@ -649,11 +673,7 @@ fn stopped_receipt(started: Instant) -> Receipt {
 
 fn caddy_checks(marker: &Path) -> bool {
     let result = caddy_config(([127, 0, 0, 1], 2019).into());
-    result.is_ok_and(|bytes| {
-        marker
-            .file_name()
-            .is_some_and(|name| route_checks(&bytes, name.as_encoded_bytes()))
-    })
+    result.is_ok_and(|bytes| route_checks(&bytes, marker))
 }
 
 fn caddy_config(address: SocketAddr) -> io::Result<Vec<u8>> {
@@ -667,11 +687,50 @@ fn caddy_config(address: SocketAddr) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn route_checks(response: &[u8], marker_name: &[u8]) -> bool {
-    (response.starts_with(b"HTTP/1.0 200 ") || response.starts_with(b"HTTP/1.1 200 "))
-        && response
-            .windows(marker_name.len() + 1)
-            .any(|part| part[0] == b'/' && &part[1..] == marker_name)
+fn route_checks(response: &[u8], marker: &Path) -> bool {
+    if !response.starts_with(b"HTTP/1.0 200 ") && !response.starts_with(b"HTTP/1.1 200 ") {
+        return false;
+    }
+    let Some((root, filename)) = marker
+        .parent()
+        .and_then(Path::to_str)
+        .zip(marker.file_name().and_then(|name| name.to_str()))
+    else {
+        return false;
+    };
+    let Some(headers) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n") else {
+        return false;
+    };
+    serde_json::from_slice(&response[headers + 4..])
+        .is_ok_and(|config| matches_marker(&config, root, &format!("/{filename}")))
+}
+
+fn matches_marker(config: &serde_json::Value, root: &str, file: &str) -> bool {
+    match config {
+        serde_json::Value::Object(object) => {
+            object
+                .get("match")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|matchers| {
+                    matchers.iter().any(|matcher| {
+                        let files = &matcher["file"];
+                        files["root"].as_str() == Some(root)
+                            && files["try_files"].as_array().is_some_and(|candidates| {
+                                candidates
+                                    .iter()
+                                    .any(|candidate| candidate.as_str() == Some(file))
+                            })
+                    })
+                })
+                || object
+                    .values()
+                    .any(|value| matches_marker(value, root, file))
+        }
+        serde_json::Value::Array(values) => {
+            values.iter().any(|value| matches_marker(value, root, file))
+        }
+        _ => false,
+    }
 }
 
 fn valid_id(id: &str) -> bool {

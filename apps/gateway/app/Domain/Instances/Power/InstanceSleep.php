@@ -22,6 +22,8 @@ use Illuminate\Support\Str;
  */
 final readonly class InstanceSleep extends InstancePower
 {
+    public const string IncompleteFreeze = 'instance.container_sleep_incomplete';
+
     public const string Kind = 'instance.sleep';
 
     /** The closed reason codes of a `skipped` or `unsupported` plan (docs/reference/prepared-restore.md#wake). */
@@ -86,6 +88,12 @@ final readonly class InstanceSleep extends InstancePower
         $measured = $receipt['receipt'] ?? null;
 
         return is_array($measured) && in_array($measured['sleep'] ?? null, ['frozen', 'stopped'], true);
+    }
+
+    /** @param array<string, mixed>|null $receipt */
+    public static function isIncompleteFreeze(?array $receipt): bool
+    {
+        return ($receipt['status'] ?? null) === 'failed' && ($receipt['code'] ?? null) === self::IncompleteFreeze;
     }
 
     protected function open(Instance $instance, bool $join): ?Operation
