@@ -66,17 +66,35 @@ jobs:
         guard: '${{ inputs.kind != "conn.launch_dispatch" || !("dispatch_request" in inputs.execution_secrets) || !(inputs.intent.action in ["launch", "reconcile-launch"]) }}'
         task:
           type: behavior
-          behaviorType: command/shell
+          behaviorType: '@swamp/ssh'
           behaviorName: conn-launch-private-input
-          methodName: execute
+          methodName: exec
+          globalArgs:
+            name: conn-launch-private-input
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.staging_ssh.target.user }}
+              port: ${{ inputs.intent.staging_ssh.target.port }}
+              identityFile: ${{ inputs.intent.staging_ssh.identity_file }}
+            hosts:
+              - name: staging
+                address: ${{ inputs.intent.staging_ssh.target.host }}
+                transport: {hostKeys: '${{ inputs.intent.staging_ssh.target.host_keys }}'}
           inputs:
-            run: |
-              umask 077
-              set -C
-              printf '%s' "$ORBIT_LAUNCH_REQUEST" > "$ORBIT_RUN/launch.json"
-            env:
-              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
-              ORBIT_LAUNCH_REQUEST: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.dispatch_request.key) }}'
+            hosts: name:staging
+            sudo: true
+            timeoutSec: 15
+            argv:
+              - /usr/sbin/runuser
+              - -u
+              - orbit
+              - --
+              - /bin/sh
+              - -c
+              - 'umask 077; set -C; exec /bin/cat > "$1"'
+              - orbit-conn-launch
+              - '${{ "/tmp/orbit-ansible-" + run.id + "/launch.json" }}'
+            stdin: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.dispatch_request.key) }}'
       - name: Hand off or reconcile T3
         labels: {role: swamp}
         writes: true

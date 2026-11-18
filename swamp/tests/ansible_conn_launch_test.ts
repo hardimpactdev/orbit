@@ -6,12 +6,12 @@ const text = (path: string) => Deno.readTextFileSync(new URL(path, import.meta.u
 const play = text("../ansible/conn-launch.yml");
 const helper = text("../ansible/t3_copy_rpc.mjs");
 const workflow = parse(text("../workflows/workflow-operation-conn-launch.yaml")) as {
-    jobs: { steps: { name: string; guard?: string; writes?: boolean; task: { inputs: { run?: string } } }[] }[];
+    jobs: { steps: { name: string; guard?: string; writes?: boolean; task: { inputs: { argv?: string[]; stdin?: string } } }[] }[];
 };
 const steps = workflow.jobs[0].steps;
 const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
 
-Deno.test("the Conn launch workflow stages private input only on the dispatch and recovery paths", () => {
+Deno.test("the Conn launch workflow stages private input only on the dispatch and recovery paths", async () => {
     const guard = (name: string, kind: string, action: string, hasDispatch: boolean) => cel.evaluate(
         steps.find((step) => step.name === name)!.guard!.slice(3, -2).trim(),
         { inputs: { kind, intent: { action }, execution_secrets: hasDispatch ? { dispatch_request: {} } : {} } },
@@ -30,20 +30,32 @@ Deno.test("the Conn launch workflow stages private input only on the dispatch an
 
     const directory = Deno.makeTempDirSync();
     try {
-        const run = steps.find((step) => step.name === secret)!.task.inputs.run!;
-        const payload = '{"text":"line 1\\n$line 2"}';
-        const stage = (request: string) => new Deno.Command("sh", {
-            args: ["-c", run],
-            env: { ORBIT_RUN: directory, ORBIT_LAUNCH_REQUEST: request },
-            stdout: "piped",
-            stderr: "piped",
-        }).outputSync();
+        const carrier = steps.find((step) => step.name === secret)!.task.inputs;
+        assert(carrier.stdin?.includes('vault.get("orbit-control-inputs",'));
+        const argv = carrier.argv!;
         const path = `${directory}/launch.json`;
-        const created = stage(payload);
+        const payload = JSON.stringify({ text: "line 1\n$line 2 " + "é".repeat(70_000) });
+        const stage = async (request: string) => {
+            const process = new Deno.Command(argv[4], {
+                args: [...argv.slice(5, -1), path],
+                stdin: "piped",
+                stdout: "piped",
+                stderr: "piped",
+            }).spawn();
+            const writer = process.stdin.getWriter();
+            try {
+                await writer.write(new TextEncoder().encode(request));
+                await writer.close();
+            } catch {
+                // An existing run file makes the shell exit before reading stdin.
+            }
+            return await process.output();
+        };
+        const created = await stage(payload);
         assert(created.success);
         assertEquals(created.stdout.length + created.stderr.length, 0);
         assertEquals(Deno.statSync(path).mode! & 0o777, 0o600);
-        assert(!stage("replacement").success);
+        assert(!(await stage("replacement")).success);
         assertEquals(Deno.readTextFileSync(path), payload);
     } finally {
         Deno.removeSync(directory, { recursive: true });

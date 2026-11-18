@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
+use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Shared\ResourceOperationException;
@@ -33,15 +34,17 @@ final readonly class ConnLaunchNativeProjection implements DirectOperationProjec
     {
         $intent = ValidatedData::object($operation->input['intent']);
         $node = Node::query()->findOrFail($operation->node_id);
+        $intent['ssh_execution'] = $this->ssh->forNode($node);
         $secrets = [];
         if ($operation->kind === ConnLaunchDispatchSource::Kind) {
+            $intent['staging_ssh'] = $this->ssh->forNode(SwampNode::node());
             $launchId = ValidatedData::integer($operation->input['launch_operation_id']);
             $source = $this->source->resolve($operation, $launchId, '', ConnLaunchDispatchSource::Field);
             $value = json_encode($source->value, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
             $secrets[ConnLaunchDispatchSource::Field] = $this->swamp->executionCopy(self::Vault, self::executionCopyKey($operation), $value);
         }
 
-        return ['intent' => [...$intent, 'ssh_execution' => $this->ssh->forNode($node)], 'execution_secrets' => $secrets];
+        return ['intent' => $intent, 'execution_secrets' => $secrets];
     }
 
     public function apply(Operation $operation, array $data): Operation
