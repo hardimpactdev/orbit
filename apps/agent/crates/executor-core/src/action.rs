@@ -24,6 +24,10 @@ pub enum Action {
     Wake,
     /// Drop a stopped or replaced Instance's prepared state.
     Discard,
+    /// SPIKE primitive: read `ufw status numbered`.
+    UfwRead,
+    /// SPIKE primitive: add, insert or delete one typed ufw rule, then read `ufw status numbered`.
+    UfwEnsure,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -34,6 +38,8 @@ pub enum TargetKind {
     Node,
     /// An Instance in the local Incus.
     Instance,
+    /// SPIKE: a Gateway-chosen step key; it only scopes idempotency, so any valid id passes.
+    Step,
 }
 
 impl Action {
@@ -42,6 +48,7 @@ impl Action {
         match self {
             Self::ProofNoop => Family::Proof,
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
+            Self::UfwRead | Self::UfwEnsure => Family::Ufw,
         }
     }
 
@@ -50,6 +57,7 @@ impl Action {
         match self {
             Self::ProofNoop => TargetKind::Node,
             Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
+            Self::UfwRead | Self::UfwEnsure => TargetKind::Step,
         }
     }
 
@@ -60,6 +68,8 @@ impl Action {
             Self::Sleep => "sleep",
             Self::Wake => "wake",
             Self::Discard => "discard",
+            Self::UfwRead => "ufw.read",
+            Self::UfwEnsure => "ufw.ensure",
         }
     }
 }
@@ -78,6 +88,8 @@ impl FromStr for Action {
             "sleep" => Ok(Self::Sleep),
             "wake" => Ok(Self::Wake),
             "discard" => Ok(Self::Discard),
+            "ufw.read" => Ok(Self::UfwRead),
+            "ufw.ensure" => Ok(Self::UfwEnsure),
             _ => Err(UnknownActionError),
         }
     }
@@ -111,6 +123,8 @@ pub enum Family {
     Proof,
     /// Whole-container sleep, wake and discard.
     Power,
+    /// SPIKE: typed ufw primitives.
+    Ufw,
 }
 
 /// The family name is unknown to this executor.
@@ -126,6 +140,7 @@ impl Family {
         match raw {
             "proof" => Some(Self::Proof),
             "power" => Some(Self::Power),
+            "ufw" => Some(Self::Ufw),
             _ => None,
         }
     }

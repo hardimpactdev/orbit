@@ -1,0 +1,25 @@
+---
+# SPIKE: apply a list of ufw argv lists on one Node, then read `ufw status numbered`.
+# An empty list is a plain read. Each change is one argv, so no shell and no copied script.
+- name: Converge ufw on the target
+  hosts: target
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Change the rules
+      ansible.builtin.command:
+        argv: "{{ item }}"
+      loop: "{{ ufw_commands }}"
+      changed_when: true
+    - name: Read the rules
+      ansible.builtin.command:
+        argv: [timeout, "30", /usr/sbin/ufw, status, numbered]
+      register: ufw_status
+      changed_when: false
+    - name: Hand the rules to the Gateway
+      ansible.builtin.copy:
+        content: "{{ ufw_status.stdout }}"
+        dest: "{{ ufw_out }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false

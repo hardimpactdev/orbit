@@ -18,7 +18,7 @@ use SensitiveParameter;
 final readonly class ExecutorOrderSigner
 {
     /** The actions the executor allows. The proof and power families; wake joins in slice 5. */
-    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard'];
+    public const array Actions = ['proof.noop', 'sleep', 'wake', 'discard', 'ufw.read', 'ufw.ensure'];
 
     public const int MaxWireBytes = 4096;
 
@@ -55,13 +55,13 @@ final readonly class ExecutorOrderSigner
      * @throws InvalidArgumentException when the Operation has no id or `node_id`, the action is unknown, the target is not the
      *                                  executor's form, or the order passes 4 KB.
      */
-    public function sign(Operation $operation, string $action, string $target): SignedExecutorOrder
+    public function sign(Operation $operation, string $action, string $target, array $input = []): SignedExecutorOrder
     {
         $node = self::nodeOf($operation);
         $id = self::idOf($operation);
         $nonce = bin2hex(random_bytes(16));
         $expiresMs = (int) Carbon::now()->getTimestampMs() + self::ExpiresAfterMs;
-        $payload = self::payload($action, (string) $node, $target, $id, $nonce, $expiresMs);
+        $payload = self::payload($action, (string) $node, $target, $id, $nonce, $expiresMs, $input);
         $wire = base64_encode($payload).'.'.base64_encode(sodium_crypto_sign_detached($payload, $this->secretKey));
         if (strlen($wire) > self::MaxWireBytes) {
             throw new InvalidArgumentException('An executor order may not pass '.self::MaxWireBytes.' bytes.');
@@ -101,7 +101,7 @@ final readonly class ExecutorOrderSigner
     }
 
     /** The signed payload's exact bytes. */
-    public static function payload(string $action, string $node, string $target, string $operation, string $nonce, int $expiresMs): string
+    public static function payload(string $action, string $node, string $target, string $operation, string $nonce, int $expiresMs, array $input = []): string
     {
         if (! in_array($action, self::Actions, strict: true)) {
             throw new InvalidArgumentException("Unknown executor action [{$action}].");
@@ -119,6 +119,8 @@ final readonly class ExecutorOrderSigner
             'operation' => $operation,
             'nonce' => $nonce,
             'expires_ms' => $expiresMs,
+            // SPIKE (ADR 0267 order shape): a typed input, only when the action takes one.
+            ...($input === [] ? [] : ['input' => $input]),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 }

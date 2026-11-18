@@ -117,6 +117,34 @@ return [
             'timeout' => 150,
             'nice' => 0,
         ],
+        // SPIKE (Durable Workflow): workflow tasks only replay history and schedule the next step, so they are short.
+        'dw-workflow' => [
+            'connection' => 'gateway',
+            'queue' => ['dw-workflow'],
+            'balance' => false,
+            'minProcesses' => 1,
+            'maxProcesses' => 2,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 0,
+            'timeout' => 60,
+            'nice' => 0,
+        ],
+        // SPIKE (Durable Workflow): activities run Ansible against Nodes and may take minutes.
+        'dw-activity' => [
+            'connection' => 'gateway',
+            'queue' => ['dw-activity'],
+            'balance' => false,
+            'minProcesses' => 1,
+            'maxProcesses' => 4,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 0,
+            'timeout' => 900,
+            'nice' => 0,
+        ],
     ],
     // The same supervisors in every environment.
     'environments' => [
@@ -126,6 +154,8 @@ return [
             'operations' => [],
             'operation-starts' => [],
             'operations-prompt' => [],
+            'dw-workflow' => [],
+            'dw-activity' => [],
         ],
     ],
     'watch' => [],

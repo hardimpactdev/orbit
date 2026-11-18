@@ -62,6 +62,12 @@ pub enum Outcome {
         /// The failure's code.
         code: String,
     },
+    /// SPIKE: a primitive finished and returns what it read, such as `ufw status numbered`. Stored like any outcome,
+    /// so a repeat returns the same output.
+    Output {
+        /// The primitive's output.
+        stdout: String,
+    },
 }
 
 /// One journal line.

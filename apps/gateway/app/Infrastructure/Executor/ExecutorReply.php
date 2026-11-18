@@ -21,7 +21,7 @@ final readonly class ExecutorReply
     public const string Accepted = 'accepted';
 
     /** @var list<string> The statuses of a result line. `partial` arrives with the wake (slice 5). */
-    public const array Results = ['done', 'partial', 'failed', 'refused'];
+    public const array Results = ['done', 'partial', 'failed', 'refused', 'output'];
 
     /** @param array<string, mixed> $line */
     private function __construct(

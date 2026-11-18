@@ -85,6 +85,9 @@ struct Payload {
     operation: OperationId,
     nonce: Nonce,
     expires_ms: u64,
+    /// SPIKE (ADR 0267 order shape): the action's public typed input. The action checks it against its own schema.
+    #[serde(default)]
+    input: serde_json::Value,
 }
 
 /// An order that passed every stateless check. Only [`check`] makes one.
@@ -95,6 +98,7 @@ pub struct VerifiedOrder {
     operation: OperationId,
     nonce: Nonce,
     expires_ms: u64,
+    input: serde_json::Value,
 }
 
 impl VerifiedOrder {
@@ -107,7 +111,14 @@ impl VerifiedOrder {
             operation: key.operation.clone(),
             nonce,
             expires_ms: 0,
+            // SPIKE: the journal does not keep the input, so a recovered primitive refuses its input.
+            input: serde_json::Value::Null,
         }
+    }
+
+    /// The action's typed input, unchecked; `Null` when the order carries none.
+    pub fn input(&self) -> &serde_json::Value {
+        &self.input
     }
 
     /// The allowlisted action.
@@ -258,6 +269,7 @@ pub fn check_with_target(
     let target_exists = match action.target_kind() {
         TargetKind::Node => payload.target.as_str() == checks.node.as_str(),
         TargetKind::Instance => target_exists(action, &payload.target),
+        TargetKind::Step => true,
     };
     if !target_exists {
         return Err(OrderRefusal::UnknownTarget);
@@ -274,6 +286,7 @@ pub fn check_with_target(
         operation: payload.operation,
         nonce: payload.nonce,
         expires_ms: payload.expires_ms,
+        input: payload.input,
     })
 }
 

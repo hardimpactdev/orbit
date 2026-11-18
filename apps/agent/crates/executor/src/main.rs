@@ -17,6 +17,8 @@ use orbit_executor_core::order::{PinnedKeys, VerifiedOrder};
 use orbit_executor_core::server::{self, Settings, SOCKET_PATH};
 use orbit_executor_core::{ids::NodeId, relay};
 
+mod ufw;
+
 const KEYS_PATH: &str = "/etc/orbit/executor/gateway.pub";
 const ENABLED_PATH: &str = "/etc/orbit/executor/enabled";
 const NODE_PATH: &str = "/etc/orbit/executor/node";
@@ -51,6 +53,8 @@ impl Run for Families {
     fn run(&self, order: &VerifiedOrder) -> Outcome {
         match order.action() {
             Action::ProofNoop => Outcome::Done,
+            Action::UfwRead => ufw::read(order.input()),
+            Action::UfwEnsure => ufw::ensure(order.input()),
             Action::Sleep => {
                 let started = std::time::Instant::now();
                 match self
