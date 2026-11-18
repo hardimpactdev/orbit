@@ -7,9 +7,11 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 PROJECT = "orbit-releases"
+ADDRESS_TIMEOUT = 15  # Same deadline as one private HTTP readiness probe.
 PREFIX = "user.orbit.release."
 OWNER = re.compile(r"gateway|instance-[1-9][0-9]*")
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -27,15 +29,15 @@ def matches(pattern):
     return check
 
 
-def incus(*args):
+def incus(*args, timeout=900):
     return subprocess.run(
         ["incus", "--force-local", "--project", PROJECT, *args], capture_output=True,
-        text=True, check=True, timeout=900,
+        text=True, check=True, timeout=timeout,
     ).stdout
 
 
-def instance(name):
-    records = json.loads(incus("list", name, "--format", "json"))
+def instance(name, timeout=900):
+    records = json.loads(incus("list", name, "--format", "json", timeout=timeout))
     return next((record for record in records if record["name"] == name), None)
 
 
@@ -143,15 +145,17 @@ def candidate(target, operation, commit, artifact):
 
 
 def address(record):
-    network = (record["state"].get("network") or {}).get("eth0", {})
-    values = [entry["address"] for entry in network.get("addresses", [])
-              if entry["family"] == "inet" and entry["scope"] == "global"]
-    if len(values) != 1 or not ipaddress.IPv4Address(values[0]).is_private:
-        raise ValueError("release.container_address_unavailable")
-    ip = values[0]
     nic = record["expanded_devices"].get("eth0", {})
     if nic.get("type") != "nic" or not nic.get("network"):
         raise ValueError("release.container_address_requires_managed_bridge")
+    network = ((record.get("state") or {}).get("network") or {}).get("eth0", {})
+    values = [entry["address"] for entry in network.get("addresses", [])
+              if entry["family"] == "inet" and entry["scope"] == "global"]
+    if not values:
+        return None
+    if len(values) != 1 or not ipaddress.IPv4Address(values[0]).is_private:
+        raise ValueError("release.container_address_unavailable")
+    ip = values[0]
     reservation = nic.get("ipv4.address")
     if reservation and reservation != ip:
         raise ValueError("release.container_address_changed")
@@ -160,6 +164,27 @@ def address(record):
         action = "set" if "eth0" in record["devices"] else "override"
         incus("config", "device", action, record["name"], "eth0", "ipv4.address=" + ip)
     return ip
+
+
+def wait_address(record, *, refresh=False):
+    deadline = time.monotonic() + ADDRESS_TIMEOUT
+    name = record["name"]
+    identity = {key: record["config"][PREFIX + key] for key in ("target", "role", "commit")}
+    reservation = record["expanded_devices"].get("eth0", {}).get("ipv4.address")
+    while (remaining := deadline - time.monotonic()) > 0:
+        if refresh:
+            record = owned(instance(name, timeout=remaining), identity)
+        if record["status"] != "Running":
+            raise ValueError("release.candidate_not_running")
+        if reservation and record["expanded_devices"].get("eth0", {}).get("ipv4.address") != reservation:
+            raise ValueError("release.container_address_changed")
+        ip = address(record)
+        if ip:
+            return ip
+        # Incus may report Running while the guest still has neither eth0 nor its private DHCP lease.
+        time.sleep(max(0, min(1, deadline - time.monotonic())))
+        refresh = True
+    raise ValueError("release.container_address_unavailable")
 
 
 def main(argv):
@@ -197,10 +222,13 @@ def main(argv):
         return name
     record = release(args.target, args.revision)
     if args.action == "address":
-        return address(record)
+        return wait_address(record)
     if args.action == "retire":
         return sleep(record, args.operation)
-    return wake(record, args.operation)
+    name = wake(record, args.operation)
+    if record["status"] == "Stopped":
+        wait_address(record, refresh=True)
+    return name
 
 
 if __name__ == "__main__":

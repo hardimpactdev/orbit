@@ -44,6 +44,36 @@ class ReleaseTest(unittest.TestCase):
                 release.address(item)
             incus.assert_not_called()
 
+    def test_cold_resume_waits_for_the_previously_reserved_address(self):
+        name = "instance-8-" + SHA[:12]
+        ip = "10.2.3.4"
+        stopped = {**record(name, "candidate", commit=SHA, status="Stopped"),
+                   "expanded_devices": {"eth0": {"type": "nic", "network": "orbitgw0", "ipv4.address": ip}}}
+        waiting = {**stopped, "status": "Running", "state": {"network": {}}}
+        ready = {**waiting, "state": {"network": {"eth0": {"addresses": [
+            {"family": "inet", "scope": "global", "address": ip}]}}}}
+        with patch.object(release, "instance", side_effect=[stopped, waiting, ready]), \
+                patch.object(release, "wake", return_value=name), patch.object(release.time, "sleep") as sleep:
+            self.assertEqual(release.main(["resume", "instance-8", SHA[:12], "14"]), name)
+            sleep.assert_called_once()
+
+    def test_wait_for_address_times_out_only_on_absence_and_refuses_ambiguity(self):
+        ip = "10.2.3.4"
+        built = {**record("instance-8-" + SHA[:12], "candidate", commit=SHA),
+                 "expanded_devices": {"eth0": {"type": "nic", "network": "orbitgw0", "ipv4.address": ip}},
+                 "state": None}
+        with patch.object(release.time, "monotonic", side_effect=[0, 0, 0, release.ADDRESS_TIMEOUT]), \
+                patch.object(release.time, "sleep") as sleep:
+            with self.assertRaisesRegex(ValueError, "address_unavailable"):
+                release.wait_address(built)
+            sleep.assert_called_once()
+        for ips, error in ((["10.2.3.5"], "address_changed"), ([ip, "10.2.3.5"], "address_unavailable")):
+            built["state"] = {"network": {"eth0": {"addresses": [
+                {"family": "inet", "scope": "global", "address": value} for value in ips]}}}
+            with patch.object(release.time, "sleep") as sleep, self.assertRaisesRegex(ValueError, error):
+                release.wait_address(built)
+            sleep.assert_not_called()
+
     def test_one_operation_uses_the_same_candidate_without_a_second_copy(self):
         owner = "instance-8"
         name = owner + "-" + SHA[:12]
