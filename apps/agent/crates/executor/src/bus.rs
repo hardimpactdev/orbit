@@ -1,10 +1,11 @@
-//! The executor on NATS JetStream (ADR 0271): it pulls this Node's orders from its durable consumer, checks each one
+//! The executor on NATS `JetStream` (ADR 0271): it pulls this Node's orders from its durable consumer, checks each one
 //! exactly as the socket does, reads the content the order names, runs it, publishes the receipt, and acknowledges the
-//! order only after JetStream stored the receipt. An order that is never acknowledged comes back after the consumer's
+//! order only after `JetStream` stored the receipt. An order that is never acknowledged comes back after the consumer's
 //! acknowledgement wait, and the journal answers it as a repeat. While an order runs, the bus sends progress
 //! acknowledgements, so a short wait never redelivers a step that still runs. The order signature stays the boundary: a
 //! NATS server cannot forge an order.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,8 +38,7 @@ struct Config {
 fn slots() -> usize {
     let affinity = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let listed = std::fs::read_to_string("/proc/cpuinfo")
-        .map(|text| text.lines().filter(|line| line.starts_with("processor")).count())
-        .unwrap_or(affinity);
+        .map_or(affinity, |text| text.lines().filter(|line| line.starts_with("processor")).count());
     affinity.min(listed.max(1)).saturating_mul(2).clamp(2, 8)
 }
 
@@ -164,7 +164,7 @@ impl Job {
         }
     }
 
-    /// Publishes the receipt to `orbit.receipts.<node>` and waits until JetStream stored it.
+    /// Publishes the receipt to `orbit.receipts.<node>` and waits until `JetStream` stored it.
     async fn publish_receipt(&self, line: &serde_json::Value, dedup: &str) -> bool {
         let body = serde_json::json!({"node": self.node, "line": line}).to_string();
         let mut headers = async_nats::HeaderMap::new();
@@ -246,7 +246,11 @@ pub fn valid_digest(digest: &str) -> bool {
 /// The lowercase hex SHA-256 of some bytes.
 #[must_use]
 pub fn hex_digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+    Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut hex, byte| {
+        // Writing to a String cannot fail.
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    })
 }
 
 fn short_digest(bytes: &[u8]) -> String {
