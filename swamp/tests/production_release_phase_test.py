@@ -6,7 +6,6 @@ import re
 import shutil
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
@@ -72,26 +71,21 @@ class ProductionReleaseTest(unittest.TestCase):
         if not shutil.which("flock"):
             self.skipTest("requires util-linux flock")
         import fcntl
-        with self.assertRaisesRegex(phase.Refusal, "unrecognized production resource"):
-            with phase.lock(self.r.root / "foreign"):
-                pass
+        with self.assertRaisesRegex(phase.Refusal, "unrecognized production resource"), phase.lock(self.r.root / "foreign"):
+            pass
         path = self.r.private / "lock"
-        with self.assertRaisesRegex(phase.Refusal, "shared access"):
-            with phase.lock(path, shared=True):
-                pass
-        with phase.legacy_schedule_lock(17, shared=True) as marker:
-            with (marker.parent / "lock").open("rb") as peer:
-                fcntl.flock(peer, fcntl.LOCK_SH | fcntl.LOCK_NB)
-                with self.assertRaises(BlockingIOError):
-                    fcntl.flock(peer, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        with phase.lock(path):
-            with path.open("rb") as peer, self.assertRaises(BlockingIOError):
-                fcntl.flock(peer, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        with self.assertRaisesRegex(phase.Refusal, "shared access"), phase.lock(path, shared=True):
+            pass
+        with phase.legacy_schedule_lock(17, shared=True) as marker, (marker.parent / "lock").open("rb") as peer:
+            fcntl.flock(peer, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                fcntl.flock(peer, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with phase.lock(path), path.open("rb") as peer, self.assertRaises(BlockingIOError):
+            fcntl.flock(peer, fcntl.LOCK_SH | fcntl.LOCK_NB)
         path.unlink()
         path.symlink_to(self.r.operation_file)
-        with self.assertRaisesRegex(phase.Refusal, "cannot acquire"):
-            with phase.lock(path):
-                pass
+        with self.assertRaisesRegex(phase.Refusal, "cannot acquire"), phase.lock(path):
+            pass
 
     def test_distributed_role_contains_the_guest_resolvers_entire_local_import_tree(self):
         files = (SWAMP / "manifest.yaml").read_text().split("additionalFiles:", 1)[1].splitlines()
