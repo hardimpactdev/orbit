@@ -127,6 +127,8 @@ The Gateway expects its managed Horizon and scheduler Processes to be named `hor
 7. Release the next forward commit. Check that the former live stops as old after HTTP and Horizon drain, and that preparation returns. Until then the Gateway has no old to roll back to.
 8. Converge the Gateway role to retire host PHP-FPM. Restore the previous automation setting.
 
+A failed Operation cleanup check at the end of the move does not fail it. Cleanup Tasks wait for the next verified release.
+
 The installed phase dispatcher accepts commits that carry recovery protocol 4 or later. Protocol 4 keeps a stopped old, journals a rollback before old starts and stops a former live only after the response wait. A dispatcher from before it strands the stopped old and any interrupted handover. Converge the Gateway's container helpers first, then release.
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
@@ -171,6 +173,8 @@ The following layout describes the host deployment used before the first contain
 A Gateway in the release layout runs from immutable releases instead of an in-place checkout. Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
 
 The Gateway reads the current link and the release inventory itself, as the Gateway account, without the agent. So status, deploy, and rollback answer also when the Gateway's own agent is older than its code, or the release has no agent manifest. The read validates each prepared release's `REVISION`, reports incomplete directories with their modification times, and orders retained releases by preparation time with the release ID as the tie-breaker. It also reports whether the serving application supersedes the caller's running application. It writes nothing, and a layout entry that another account owns refuses the read.
+
+For a container Gateway the read also returns the stopped `old` and `earlier` releases and the `verified` list. [Operation cleanup Tasks](/reference/operations#operation-versions-across-a-gateway-release) use them.
 
 | Path | Content |
 | --- | --- |

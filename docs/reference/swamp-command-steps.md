@@ -120,6 +120,10 @@ Queued projection explicitly fails on permanent or unexpected errors, including 
 
 A result-reporting declaration may name one `fallback` step of the same job. When `step` was skipped, the fallback's status and its stdout are the result. When `step` ran, the fallback is not read. `instance.create` reads `finish`, or `clone-register` when a ready clone skipped `finish`. A native declaration takes no `fallback`.
 
+### Gateway release checks
+
+After a container Gateway handover, `gateway-operation-cleanup` uses the existing release phase on the selected Gateway to capture its workflow declarations. The step also files cleanup Tasks under the release lock. The release tolerates a failed scan or filing; the next verified release's step retries the [version review](/reference/operations#operation-versions-across-a-gateway-release).
+
 ### Read Swamp's run data instead of a result step
 
 The binding [result transport contract](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md#result-transport) distinguishes native results from Ansible result-file carriers. A kind using native results declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:

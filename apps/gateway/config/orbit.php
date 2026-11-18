@@ -26,6 +26,8 @@ $gatewayPath = static fn (string $path): string => str_starts_with($path, '/') ?
 return [
     'recipe_snapshot_cache' => env('ORBIT_RECIPE_SNAPSHOT_CACHE'),
     'ssh_mux_directory' => env('ORBIT_GATEWAY_SSH_MUX'),
+    // Set by the Gateway release container runtime. A container Gateway decides serving from the host inventory.
+    'gateway_container' => (bool) env('ORBIT_GATEWAY_CONTAINER', false),
     // The pinned agent and its command contract (docs/reference/node-agent.md#commands).
     'agent' => [
         'contract' => $gatewayPath((string) env('ORBIT_AGENT_CONTRACT', 'resources/agent/frozen-commands.json')),

@@ -284,30 +284,22 @@ jobs:
         - prune
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
-  - name: Check deprecated operation versions
+  - name: Record eligible versions for cleanup Tasks
+    allowFailure: true
     labels: {role: swamp}
     writes: true
     guard: '${{ inputs.kind != "gateway.release" }}'
+    # Only a confirmed handover files cleanup Tasks: retire's own probe can pass after a failed public check.
     dependsOn:
-    - {step: Retire the previous live, condition: {type: succeeded}}
+    - {step: Confirm the Gateway handover, condition: {type: succeeded}}
     task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      methodName: exec
-      behaviorName: '${{ ("release-check-versions-" + inputs.intent.target).split(".").join("-") }}'
-      globalArgs: *ssh
+      type: workflow
+      workflowIdOrName: gateway-operation-cleanup
       inputs:
-        hosts: name:target
-        sudo: true
-        timeoutSec: 330
-        argv:
-        - /usr/bin/timeout
-        - "300"
-        - /usr/local/libexec/orbit-production-release-phase
-        - '${{ inputs.intent.target }}'
-        - cleanup-versions
-        - '${{ inputs.intent.sha }}'
-        - '${{ string(inputs.operation_id) }}'
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        sha: '${{ inputs.intent.sha }}'
+        ssh: '${{ inputs.intent.ssh }}'
   - name: Confirm the Gateway handover
     labels: {role: swamp}
     guard: '${{ inputs.kind != "gateway.release" || steps["Switch the release"].status != "succeeded" }}'
