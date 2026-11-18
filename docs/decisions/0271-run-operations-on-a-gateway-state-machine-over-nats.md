@@ -40,15 +40,17 @@ The Node work of a container clone fitted 19 primitives, each on one resource. N
 
 ## Decision
 
+The Gateway owns every migrated Operation kind from admission to its projection. `orbit-executor` owns each primitive on its Node. NATS carries everything between them. The owner's decisions N1–N7 bind the design; the sections after them state how each part works.
+
 ### The owner's decisions
 
 - **N1. The Gateway orchestrates.** An Operation of a migrated kind is a state machine in the Gateway. No job or worker stays open while a Node works. Receipts drive every transition.
 - **N2. NATS JetStream is the machine bus.** Orders, receipts and content travel over NATS. Reverb stays the channel for people and apps: Conn and the web UI send commands over HTTP and receive progress over Reverb.
 - **N3. Typed primitives on one resource kind.** A primitive acts on one kind of resource that exists on any Linux host, such as a firewall rule, a file, a unit, an Incus instance or a dotenv file. It never acts on an Orbit concept such as an Instance or a Route. Where the resource allows it, the primitive is desired state: it reads the resource, changes only what differs, and answers how many changes it made. Orbit's knowledge (what, in which order, with which content) lives in the Gateway's PHP. No script is sent to a Node or written per flow.
 - **N4. One kind at a time.** An Operation kind moves as a whole, in one pull request, after its proof passes. Swamp keeps every other kind until it moves.
-- **N5. Two processes, both root, for now.** The observer and the executor stay separate processes with separate NATS users. Only the executor publishes receipts. Both run as root, as Swamp's SSH does today. Hardening (an unprivileged observer, sealed receipts) comes later, and these seams keep it a configuration change.
+- **N5. Two processes, both root.** The observer and the executor stay separate processes with separate NATS users. Only the executor publishes receipts. Both run as root, as Swamp's SSH does today. A separate decision may harden them, with an unprivileged observer and sealed receipts. These seams keep that a configuration change.
 - **N6. Content travels over NATS.** A file's bytes reach a Node through the NATS KV bucket `CONTENT`, keyed by Node and SHA-256. The signed order names only the hash. There is no HTTP side channel.
-- **N7. One agent, two processes.** `orbit-agent` is one binary in one release artifact with one pin, installed on every Node. It runs as two processes: `orbit-agent observe` (the observer, `orbit-agent.service`) and `orbit-agent execute serve` (the executor, `orbit-executor.service`). Each process has its own NATS user. The per-role allowlist `/etc/orbit/executor/enabled` still decides which primitive families run; a Node whose roles enable none runs the executor with nothing enabled.
+- **N7. One agent, two processes.** `orbit-agent` is one binary in one release artifact with one pin, installed on every Node. It runs as two processes: `orbit-agent` (the observer, `orbit-agent.service`) and `orbit-agent execute serve` (the executor, `orbit-executor.service`). Each process has its own NATS user. The file `/etc/orbit/executor/enabled` lists the primitive families that the Node's roles allow. A Node whose roles allow none runs the executor with an empty list.
 
 ### The state machine
 
@@ -81,7 +83,7 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 
 ### What this changes
 
-- **ADR 0267 P2 and P10** (the executor is a separate binary, installed only where a role needs it): under N7 the executor is a mode of the one `orbit-agent` binary, installed on every Node, and the per-role allowlist alone gates its families. One crate per family stays.
+- **ADR 0267 P2 and P10** (the executor is a separate binary, installed only where a role needs it): under N7 the executor is a mode of the one `orbit-agent` binary, installed on every Node. Only the list of allowed families varies by role. One crate per family stays.
 - **ADR 0267 P1** (orders over the WebSocket): orders, receipts and content go over NATS. The observer's relay goes away.
 - **ADR 0267 P3** (the executor test): the test is one Node, idempotent by Operation, a fixed name and one resource kind. A primitive may run longer than seconds within its budget, with progress acknowledgements.
 - **ADR 0267 P4 and P8** (Swamp keeps multi-Node work; `instance.clone` is one action): the state machine runs migrated kinds, multi-Node ones included. The clone's Node part is a composition of primitives, not one action.
@@ -118,7 +120,7 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 
 ## Affects
 
-- Components: apps/gateway, apps/agent, apps/docs, swamp (Ansible role for `nats-server`)
+- Components: apps/gateway, apps/docs
 - ADRs: [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor), [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor)
-- Detail: [Executor](/reference/executor), [Operations](/reference/operations), and a new reference page for the state machine and NATS
+- Detail: [Executor](/reference/executor), [Operations](/reference/operations), and a new reference page for the state machine and NATS. The Node agent (`apps/agent`) and Swamp's Ansible role for `nats-server` change with them
 - Verify: the executor's and Gateway's tests for the state machine, the bus and each primitive; the contract test; the fault proofs on the nested fleet; the `firewall:allow` proof cases
