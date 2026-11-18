@@ -26,6 +26,30 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
     /** The most characters of the agent's reply that a turn's result holds. */
     public const int ReplyLimit = 16384;
 
+    /**
+     * What a failed turn's error says, by its code (docs/cli/task/turn.mdx#errors). The worker's own error text is never kept: T3's or a
+     * provider's words may quote the prompt, also from an older worker. Only a diagnostic of known shapes adds to it.
+     */
+    public const array Errors = [
+        'tasks.copy_turn_unended' => 'An earlier turn may still run in the copy, or a reviewer left its checkout unclean; nothing was launched.',
+        'tasks.copy_turn_model_unoffered' => 'The copy does not offer the thread\'s model; nothing was launched.',
+        'tasks.copy_turn_model_unverified' => 'Orbit could not verify the thread\'s model in the copy; nothing was launched.',
+        'tasks.copy_thread_missing' => 'T3 in the copy holds no single thread to continue; nothing was launched.',
+        'tasks.copy_tree_dirty' => 'The checkout had changes or no branch, so the reviewer could not be put on the candidate.',
+        'tasks.copy_review_unrestored' => 'The checkout was not restored after the reviewer\'s turn.',
+        'tasks.copy_question_unread' => 'The run asked, but Orbit could not read its question with the run that owns it, so it did not stop the run.',
+        'tasks.copy_question_unstopped' => 'Orbit stored the question but could not stop the run that asked.',
+        'tasks.copy_question_unresolved' => 'Orbit could not confirm that the stored questions are resolved in T3; nothing was launched.',
+        'tasks.copy_question_answered' => 'The prompt quotes questions that an earlier answer already used; send the prompt again.',
+        'tasks.turn_timeout' => 'The turn ran longer than its bound.',
+        'tasks.turn_failed' => 'T3\'s run ended other than done or asking.',
+        'tasks.copy_turn_failed' => 'T3 did not report the turn\'s end.',
+    ];
+
+    /** The provider error types a diagnostic may name; the worker reads them from the provider's text (task-copy-turn/mod.ts). */
+    public const array ProviderErrors = ['api_error', 'overloaded_error', 'rate_limit_error', 'invalid_request_error', 'authentication_error',
+        'permission_error', 'not_found_error', 'request_too_large', 'billing_error', 'timeout_error'];
+
     public function input(Operation $operation): array
     {
         return ['intent' => $operation->input, 'execution_secrets' => []];
@@ -47,6 +71,13 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
                 $result['effort'] = $thread->effort;
                 $result['agent_id'] = $thread->id;
                 $result['reply'] = self::reply($operation->target_id, $thread->id, $result['transcript'] ?? null);
+                // A question without the run that owns it could never be cancelled exactly: it is not stored, and the turn did not read it.
+                if (array_filter(is_array($result['questions'] ?? null) ? $result['questions'] : [],
+                    static fn (mixed $question): bool => ! is_array($question) || ! is_string($question['run_id'] ?? null) || $question['run_id'] === '') !== []) {
+                    $result = [...$result, 'questions' => [], 'error_code' => 'tasks.copy_question_unread', 'error' => ''];
+                    $data['status'] = ($data['status'] ?? null) === 'succeeded' ? 'failed' : ($data['status'] ?? null);
+                }
+                $result = [...array_diff_key($result, ['diagnostic' => true]), ...self::error($result)];
             }
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
                 $data['error_code'] = $result['error_code'];
@@ -128,13 +159,37 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
     }
 
     /**
+     * The error a turn's result keeps: the fixed sentence of its code and the fields of its diagnostic that have a known shape, never
+     * the worker's own text.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array{error: string|null, diagnostic?: array{http_status: int|null, retry_after_seconds: int|null, provider_error: string|null}}
+     */
+    private static function error(array $result): array
+    {
+        if (($result['error'] ?? null) === null && ! isset($result['error_code'])) {
+            return ['error' => null];
+        }
+        $code = is_string($result['error_code'] ?? null) ? $result['error_code'] : null;
+        $raw = is_array($result['diagnostic'] ?? null) ? $result['diagnostic'] : [];
+        $status = is_int($raw['http_status'] ?? null) && $raw['http_status'] >= 100 && $raw['http_status'] <= 599 ? $raw['http_status'] : null;
+        $retry = is_int($raw['retry_after_seconds'] ?? null) && $raw['retry_after_seconds'] >= 0 && $raw['retry_after_seconds'] <= 86400 ? $raw['retry_after_seconds'] : null;
+        $type = in_array($raw['provider_error'] ?? null, self::ProviderErrors, true) ? ValidatedData::string($raw['provider_error']) : null;
+        $said = array_filter([$status === null ? null : 'HTTP '.$status, $retry === null ? null : "retry after {$retry} seconds", $type]);
+        $error = ($code === null ? 'The copy turn failed.' : self::Errors[$code] ?? 'The copy turn failed.').($said === [] ? '' : ' ('.implode(', ', $said).')');
+
+        return $said === [] ? ['error' => $error] : ['error' => $error, 'diagnostic' => ['http_status' => $status, 'retry_after_seconds' => $retry, 'provider_error' => $type]];
+    }
+
+    /**
      * @param  list<string>  $ids
      * @return list<string>
      */
     private static function requestSet(array $ids): array
     {
-        $ids = array_values(array_unique($ids));
-        sort($ids);
+        // As strings: a default sort compares numeric strings as numbers, so "01" and "1" would not order alike.
+        $ids = array_values(array_unique($ids, SORT_STRING));
+        sort($ids, SORT_STRING);
 
         return $ids;
     }

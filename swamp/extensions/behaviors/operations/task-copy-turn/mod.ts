@@ -79,8 +79,6 @@ export type Evidence = {
     stop: z.infer<typeof Stop> | null;
     read: z.infer<typeof Read> | null;
     restore: z.infer<typeof Restore> | null;
-    // The admitted prompt from the run's intent: free text that quotes it stays out of the result.
-    prompt?: string | null;
 };
 const Started = z.object({
     threadId: z.string().min(1),
@@ -107,6 +105,15 @@ const AskedQuestion = z.object({
     initial_answer: z.string().nullable(),
     required: z.boolean().nullable(),
 });
+/** The provider error types a diagnostic may name: a fixed vocabulary, never the provider's own words. */
+const ProviderErrors = ["api_error", "overloaded_error", "rate_limit_error", "invalid_request_error", "authentication_error", "permission_error",
+    "not_found_error", "request_too_large", "billing_error", "timeout_error"];
+const Diagnostic = z.object({
+    http_status: z.number().int().min(100).max(599).nullable(),
+    retry_after_seconds: z.number().int().min(0).max(86400).nullable(),
+    provider_error: z.enum(ProviderErrors).nullable(),
+}).strict();
+type Diagnostic = z.infer<typeof Diagnostic>;
 export const Turn = z.object({
     state: z.enum(["done", "asking_for_input", "failed"]),
     error: z.string().nullable(),
@@ -130,24 +137,30 @@ export const Turn = z.object({
     // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
     spent: z.array(z.string()),
     transcript: z.array(Entry),
+    // What a failure's own text named in known shapes; its text is not kept.
+    diagnostic: Diagnostic.optional(),
 });
 export type Turn = z.infer<typeof Turn>;
 
-/** The shortest run of the prompt's characters that counts as a quote of it. */
-const QuoteChars = 24;
-
 /**
- * T3's or a provider's own text, as the result may hold it: redacted, and omitted whole when it quotes the turn's prompt, which
- * redaction does not catch (docs/reference/development-containers.md#turn-evidence).
+ * What the result keeps of T3's or a provider's own text: only fields of known shapes. The text itself may quote the turn's prompt,
+ * which no redaction catches, so it stays in the private run folder (docs/reference/development-containers.md#turn-evidence).
  */
-function unquoted(text: string, prompt: string | null | undefined): string {
-    const redacted = redactText(text);
-    if (!prompt || prompt.length < QuoteChars) return redacted;
-    for (let start = 0; start + QuoteChars <= redacted.length; start++) {
-        if (prompt.includes(redacted.slice(start, start + QuoteChars))) return "[omitted: the text quotes the turn's prompt]";
-    }
-    return redacted;
+export function diagnose(text: string): Diagnostic | null {
+    const status = text.match(/\bHTTP[ /]?(?:\d(?:\.\d)? )?([1-5]\d\d)\b/i) ?? text.match(/\bstatus(?: code)?[:= ]+([1-5]\d\d)\b/i)
+        ?? text.match(/\bapi_error_([1-5]\d\d)\b/);
+    const retry = text.match(/\bretry[- _]after[:= ]*(\d{1,5})\b/i);
+    const type = ProviderErrors.find((name) => new RegExp(`\\b${name}(?:_\\d{3})?\\b`).test(text)) ?? null;
+    const diagnostic = { http_status: status ? Number(status[1]) : null, retry_after_seconds: retry ? Math.min(Number(retry[1]), 86400) : null, provider_error: type };
+    return Object.values(diagnostic).every((value) => value === null) ? null : diagnostic;
 }
+
+/** A diagnostic in words, after a fixed message. */
+const said = (diagnostic: Diagnostic | null): string => diagnostic === null ? "" : `: ${[
+    diagnostic.http_status === null ? null : `HTTP ${diagnostic.http_status}`,
+    diagnostic.retry_after_seconds === null ? null : `retry after ${diagnostic.retry_after_seconds} seconds`,
+    diagnostic.provider_error,
+].filter((part) => part !== null).join(", ")}`;
 
 const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     try {
@@ -230,9 +243,10 @@ function shapeRun(evidence: Evidence): Turn {
     if (started?.status === "completed") return { ...base, state: "done", error: null };
     if (started?.status === "waiting") return asked(base, evidence);
     if (started !== null) {
-        const detail = unquoted(started.error ?? "", evidence.prompt).slice(0, ErrorChars);
-        const status = started.status === undefined ? "T3 started no run" : `T3 run ${started.status}`;
-        return { ...base, state: "failed", error: `${status}${detail === "" ? "" : `: ${detail}`}`, error_code: "tasks.turn_failed" };
+        const diagnostic = diagnose(started.error ?? "");
+        // T3's run status is one word of its own vocabulary; anything else is not named.
+        const status = started.status === undefined ? "T3 started no run" : /^[a-z_]{1,32}$/.test(started.status) ? `T3 run ${started.status}` : "T3 run ended";
+        return { ...base, state: "failed", error: `${status}${said(diagnostic)}`, error_code: "tasks.turn_failed", ...(diagnostic === null ? {} : { diagnostic }) };
     }
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
         const stop = halted?.stopped ? "Orbit stopped its run." : ended ? "Its run has ended." : "Orbit could not stop its run; the next turn stops it.";
@@ -277,8 +291,9 @@ function shapeRun(evidence: Evidence): Turn {
     }
     const exit = evidence.start === null ? "no exit" : `exit ${evidence.start.start_exit}`;
     // T3's message ends its stderr; a long one keeps its end.
-    const refusal = unquoted(evidence.start?.error?.trim() ?? "", evidence.prompt).slice(-ErrorChars);
-    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit})${refusal === "" ? "" : `: ${refusal}`}.`, error_code: "tasks.copy_turn_failed" };
+    const diagnostic = diagnose(evidence.start?.error ?? "");
+    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit})${said(diagnostic)}.`, error_code: "tasks.copy_turn_failed",
+        ...(diagnostic === null ? {} : { diagnostic }) };
 }
 
 /**
@@ -315,8 +330,9 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
     }
     const stopped = evidence.interrupt?.interrupt_exit === 0 ? parse(Stopped, evidence.interrupt.interrupt) : null;
     if (stopped?.interrupted !== true) {
-        const why = stopped?.error ?? (evidence.interrupt === null ? "no stop ran" : `exit ${evidence.interrupt.interrupt_exit}`);
-        return { ...turn, error: `Orbit could not stop the run that asks: ${unquoted(why, evidence.prompt).slice(0, ErrorChars)}`, error_code: "tasks.copy_question_unstopped" };
+        // The helper's own error stays in the run folder: only how the stop ended is named.
+        const why = stopped !== null ? "T3 refused or did not end the stop" : evidence.interrupt === null ? "no stop ran" : `exit ${evidence.interrupt.interrupt_exit}`;
+        return { ...turn, error: `Orbit could not stop the run that asks: ${why}`, error_code: "tasks.copy_question_unstopped" };
     }
     return { ...turn, error: null };
 }
@@ -332,7 +348,6 @@ async function evidence<T>(path: string, limit: number, schema: z.ZodType<T>): P
     }
 }
 
-const Intent = z.object({ turn: z.object({ prompt: z.string() }) });
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 const Result = z.object({ successful: z.boolean(), turn: Turn });
 
@@ -360,7 +375,6 @@ export const behavior = {
                     stop: await evidence(args.folder + "/stop.json", 65536, Stop),
                     read: await evidence(args.folder + "/read.json", ReadBytes, Read),
                     restore: await evidence(args.folder + "/restore.json", 1024, Restore),
-                    prompt: (await evidence(args.folder + "/intent.json", StartBytes, Intent))?.turn.prompt ?? null,
                 }));
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };

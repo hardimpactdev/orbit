@@ -3052,4 +3052,52 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
 
         expect(copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0]['t3_thread_id'])->toBe($frozen);
     });
+
+    it('keeps no worker error text in the result or on the thread, only the code\'s sentence and a diagnostic of known shapes', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group, ['prompt' => 'Acquire Juniper']);
+
+        // An older worker quotes the whole prompt in its error; a diagnostic field outside its known shape is dropped too.
+        $ended = copyTurnEnded($turn, 'failed', ['state' => 'failed', 'error' => 'T3 run failed: Invalid input: Acquire Juniper', 'error_code' => 'tasks.turn_failed',
+            'ended' => true, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'launched' => true, 'transcript' => [],
+            'diagnostic' => ['http_status' => 429, 'retry_after_seconds' => 37, 'provider_error' => 'Acquire Juniper']]);
+
+        $thread = AgentThread::query()->findOrFail($turn->input['thread_id']);
+        expect($ended->error_code)->toBe('tasks.turn_failed')
+            ->and($ended->result['error'])->toBe('T3\'s run ended other than done or asking. (HTTP 429, retry after 37 seconds)')
+            ->and($ended->result['diagnostic'])->toBe(['http_status' => 429, 'retry_after_seconds' => 37, 'provider_error' => null])
+            ->and($thread->error)->toBe($ended->result['error'])
+            ->and(json_encode([$ended->result, $thread->error], JSON_THROW_ON_ERROR))->not->toContain('Juniper');
+    });
+
+    it('stores no question without its owner run from an older worker, and records the turn as unread', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $older = copyTurnAsked('mcp:1');
+        $older['questions'] = array_map(static fn (array $question): array => Arr::except($question, 'run_id'), $older['questions']);
+
+        $asked = copyTurnEnded(copyTurn($group), 'succeeded', $older);
+
+        expect($asked->status)->toBe(OperationStatus::Failed)->and($asked->error_code)->toBe('tasks.copy_question_unread')
+            ->and($asked->result['questions'])->toBe([])
+            ->and(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull()
+            // The next turn has nothing to answer.
+            ->and(copyTurn($group, ['prompt' => 'Blue.'])->input['turn']['answered'])->toBe([]);
+    });
+
+    it('matches spent request IDs as strings, in any order', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $question = copyTurnAsked('mcp:1')['questions'][0];
+        $asked = copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnAsked('mcp:1'), 'questions' => [[...$question, 'request_id' => '01'], [...$question, 'request_id' => '1']]]);
+
+        copyTurnEnded(copyTurn($group, ['thread' => 'new']), 'failed', ['state' => 'failed', 'error' => 'Answered.', 'error_code' => 'tasks.copy_question_answered',
+            'ended' => true, 't3_thread_id' => null, 'run_id' => null, 'sent' => false, 'launched' => false, 'spent' => ['1', '01'], 'transcript' => []]);
+
+        expect(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull();
+    });
 });

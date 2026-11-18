@@ -2205,9 +2205,9 @@ The Operation's result names:
 - one fixed outcome code;
 - the reviewer's checkout and restore, as [Calls](#calls) describes.
 
-The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`. T3's or a provider's error text that quotes the prompt is left out of the result.
+The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`. The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds a fixed sentence of its code and a `diagnostic` of known shapes: `http_status`, `retry_after_seconds` and `provider_error`, one of a fixed list of provider error types. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's.
 
-The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run, mode `0600`, and its cleanup removes it. The RPC worker drops that staging with the CLI calls.
+The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run: the folder is mode `0700`, `intent.json` is mode `0600`, and its cleanup removes the folder. The RPC worker drops that staging with the CLI calls.
 
 The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. The archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The CLI driver already shapes it so, and the projection drops a user message's text that an older worker still sends. The stock CLI gives no message ID or time: under it, an entry's ID is the run ID and the message's index, and its time is empty. The Gateway already holds the admitted prompt in the Operation's input.
 

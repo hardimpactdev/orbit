@@ -1158,7 +1158,7 @@ Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does n
 
 When the catalog omits a Codex model or cannot be read, the copy sends one bounded, tool-free request through the Codex configuration it uses for turns. The provider must return a usable response for the exact requested model. The probe leaves the cached catalog alone.
 
-For other drivers, without a readable catalog the model check is skipped. The provider can still reject the model in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
+For other drivers, without a readable catalog the model check is skipped. The provider can still reject the model in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed`. The error keeps no text of T3, which may quote the prompt.
 
 ### Archive finished threads
 

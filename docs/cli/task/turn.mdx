@@ -82,7 +82,9 @@ A turn in a task copy adds these answers and Operation errors:
 | `tasks.copy_question_unread` | The Operation's error: the run asked, but Orbit could not read the question, so it did not stop the run. The group holds. |
 | `tasks.copy_question_unstopped` | The Operation's error: Orbit stored the question but could not stop the run that asked. The result keeps the question, and the group holds. |
 | `tasks.copy_question_unresolved` | The Operation's error: Orbit could not confirm that the previous turn's stored question requests are resolved. Nothing was launched; the thread keeps its questions. |
-| `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. The error says whether Orbit stopped its run; a run that did not stop is stopped by the next turn. |
+| `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. `ended` says whether its run stopped; a run that did not stop is stopped by the next turn. |
 | `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
-| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down or when it refused the start, or could not list its threads to find the one to continue. A refused start ends the error with T3's own message. |
+| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down or when it refused the start, or could not list its threads to find the one to continue. A refused start's error holds no text of T3. |
+
+A turn's error is the fixed sentence of its code, never T3's or a provider's own text, which may quote the prompt. A `diagnostic` may add an HTTP status, a retry delay in seconds and a provider error type, such as `rate_limit_error`.
 
