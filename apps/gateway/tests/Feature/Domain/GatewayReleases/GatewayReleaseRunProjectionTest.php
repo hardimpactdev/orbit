@@ -12,10 +12,10 @@ use Illuminate\Support\Facades\Queue;
 uses(LazilyRefreshDatabase::class);
 
 /** Ends one admitted `gateway.release` run with the given native terminal and returns its record. */
-function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = []): GatewayRelease
+function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = [], string $trigger = 'auto'): GatewayRelease
 {
     $sha = str_repeat('ab', 20);
-    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
+    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => $trigger, 'outcome' => GatewayRelease::Running,
         'force' => false, 'phases' => [], 'duration_ms' => 0]);
     $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release', 'target_id' => $record->id,
         'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6)],
@@ -34,6 +34,15 @@ it('records a succeeded run as verified with the version the fleet rollout reads
     expect($record->outcome)->toBe('verified')
         ->and($record->snapshot_path)->toBe('/home/orbit/.orbit/backups/pre.sqlite')
         ->and($record->phases['verify'])->toBe(['outcome' => 'passed', 'status' => 'ok', 'version' => str_repeat('ab', 20)]);
+});
+
+it('commits the manual pin decision with the verified record', function (): void {
+    Queue::fake();
+    $record = endReleaseRun('succeeded', trigger: 'deploy');
+
+    expect($record->outcome)->toBe('verified')
+        ->and($record->phases['newest_green']['outcome'])->toBe('unknown');
+    Queue::assertPushed(AdmitFleetRollout::class, fn (AdmitFleetRollout $job): bool => $job->releaseId === $record->id);
 });
 
 it('records a failed check that the run switched back from as switched back', function (): void {

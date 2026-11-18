@@ -142,6 +142,17 @@ if (command[0] === "sh" && command[1] === "-c" && command[2].includes('cat > "$1
 }
 // The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail. `swamp`, or a
 // path under `swamp/`, that `digests` does not name has the ID `c3`.
+if (command[0] === "git" && command.includes("ls-tree")) {
+  if (state.hostCheckout) {
+    const result = new Deno.Command("git", { args: ["-C", state.hostCheckout, ...command.slice(command.indexOf("ls-tree"))] }).outputSync();
+    if (!result.success) fail("cannot read the Instance host checkout");
+    done(new TextDecoder().decode(result.stdout).trimEnd());
+  }
+  if (state.digestsFail) fail("fatal: not a git repository");
+  const id = (digit: string) => digit.repeat(40);
+  done([`040000 tree ${id("e")}\tapps/gateway/resources/machine-software`, `100644 blob ${id("5")}\tapps/gateway/resources/machine-software/recipe.json`,
+    `040000 tree ${id("c")}\tswamp/ansible`, `100644 blob ${id("3")}\tswamp/ansible/shared.yml`].join("\n"));
+}
 if (command[0] === "git" && command.includes("rev-parse")) {
   if (state.digestsFail) fail("fatal: not a git repository");
   const digests: Record<string, string> = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1" }) };

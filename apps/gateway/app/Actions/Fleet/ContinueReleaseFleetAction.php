@@ -7,6 +7,7 @@ namespace App\Actions\Fleet;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Fleet\FleetReleaseLag;
@@ -14,20 +15,22 @@ use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
+use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /** Advances the serving release's ordered pass by one admission. The existing queue job observes terminal Operations. */
@@ -46,28 +49,69 @@ final readonly class ContinueReleaseFleetAction
         return $release !== null && isset($release->phases['fleet']) ? $release : null;
     }
 
+    /** A serving release owns its downstream work until it settles or needs a forward fix. */
+    public function pending(string $deployed): ?GatewayRelease
+    {
+        $release = $this->current();
+        if ($release === null || $release->sha !== $deployed) {
+            return null;
+        }
+        $fleet = data_get($release->phases, 'fleet.status');
+        $refresh = data_get($release->phases, 'default_refresh.status');
+        $seed = data_get($release->phases, 'seed_publication.status');
+        if (in_array($fleet, ['pending', 'deferred'], true)
+            || (in_array($fleet, ['current', 'disabled'], true) && (in_array($refresh, [null, 'pending'], true)
+                || ($refresh === 'current' && in_array($seed, [null, 'pending'], true))))) {
+            return $release;
+        }
+
+        return null;
+    }
+
     /** Seconds before the admission job should continue, or null when it can end. */
     public function execute(GatewayRelease $release): ?int
     {
-        // A cold catalog can wait on GitHub and the cache lock. Pin its answer before taking the SQLite writer.
-        $cli = config('fleet.rollout') && array_any($this->members(), CliConvergePlan::required(...))
-            ? app(DesiredFleetState::class)->current()->cli : null;
+        try {
+            return app(GatewayReleaseLock::class)->run(function () use ($release): ?int {
+                // Resolve the catalog before taking the SQLite writer, while this pass owns the release lock.
+                $desired = app(DesiredFleetState::class);
+                $cli = config('fleet.rollout') && array_any($this->members(), CliConvergePlan::required(...))
+                    ? $desired->current()->cli : null;
+                $exhausted = $cli !== null && ! $cli->isAvailable()
+                    && ($cli->reason === CliReleaseUnavailableReason::ReleaseUnverified || $desired->cliFallbackExhausted((string) $release->sha));
 
-        return DB::transaction(function () use ($release, $cli): ?int {
+                return $this->advance($release, $cli, $exhausted);
+            });
+        } catch (GatewayReleaseException $busy) {
+            if ($busy->errorCode !== 'gateway.release_in_progress') {
+                throw $busy;
+            }
+
+            return 15;
+        }
+    }
+
+    private function advance(GatewayRelease $release, ?DesiredCliReleaseData $cli, bool $cliUnavailable): ?int
+    {
+        $delay = DB::transaction(function () use ($release, $cli, $cliUnavailable): ?int {
             $release = GatewayRelease::query()->lockForUpdate()->findOrFail($release->id);
             if ($this->current()?->id !== $release->id) {
                 return null;
             }
             $phase = ValidatedData::object($release->phases['fleet']);
+            if (GatewayRelease::query()->where('outcome', GatewayRelease::Running)->exists()) {
+                return 30;
+            }
+            if (($phase['status'] ?? null) === 'current' && (data_get($release->phases, 'default_refresh.status') === 'pending'
+                || data_get($release->phases, 'seed_publication.status') === 'pending')) {
+                return null;
+            }
             $members = $this->members();
             $this->preserveHostBaselines($release->previous_release_id, $members);
             if (! config('fleet.rollout')) {
                 $this->save($release, $phase, 'disabled');
 
                 return null;
-            }
-            if (GatewayRelease::query()->where('outcome', GatewayRelease::Running)->exists()) {
-                return 30;
             }
             $root = app(GatewayServingHost::class)->nodeId();
             if ($root !== null) {
@@ -108,7 +152,7 @@ final readonly class ContinueReleaseFleetAction
                     }
                 }
                 try {
-                    $delay = $this->visit($release, $node, $row, $inputs, $host, $cli);
+                    $delay = $this->visit($release, $node, $row, $inputs, $host, $cli, $cliUnavailable);
                     if ($delay !== null) {
                         $this->save($release, $phase, 'pending');
 
@@ -140,18 +184,40 @@ final readonly class ContinueReleaseFleetAction
                 return null;
             }
             $this->save($release, $phase, 'current');
-            if ($phase['status'] === 'current') {
-                return null;
-            }
-            DB::afterCommit(static function () use ($release): void {
-                try {
-                    app(NestedFleetRefresh::class)->admitAll((string) $release->sha);
-                } catch (Throwable) {
-                    Log::warning('Could not queue nested-fleet refresh after fleet convergence.', ['release' => $release->id]);
-                }
-            });
 
             return null;
+        });
+        if ($delay !== null) {
+            return $delay;
+        }
+        $current = $this->current();
+        if ($current?->id !== $release->id || ! in_array(data_get($current->phases, 'fleet.status'), ['current', 'disabled'], true)) {
+            return null;
+        }
+        $previous = ValidatedData::object($current->phases['default_refresh'] ?? []);
+        $defaults = (array) ($previous['defaults'] ?? []);
+        $refresh = app(NestedFleetRefresh::class)->advance((string) $current->sha, $previous,
+            static function (int $id, array $result) use ($current, &$defaults): void {
+                if (($defaults[$id] ?? null) === $result) {
+                    return;
+                }
+                $defaults[$id] = $result;
+                $current->forceFill(['phases' => [...$current->phases, 'default_refresh' => ['status' => 'pending', 'defaults' => $defaults]]])->save();
+            });
+
+        return DB::transaction(function () use ($current, $refresh): ?int {
+            // The database writer orders publication and its receipt with the default's seed projection.
+            $phases = [...$current->phases, 'default_refresh' => $refresh];
+            if ($refresh['status'] === 'current' && data_get($phases, 'seed_publication.status') !== 'current') {
+                $phases['seed_publication'] = app(ProofSeeds::class)->releasePublication((string) $current->sha, $refresh['defaults']);
+            }
+            if ($refresh['status'] === 'disabled' && data_get($phases, 'seed_publication.status') === 'pending') {
+                $publication = ValidatedData::object($phases['seed_publication']);
+                $phases['seed_publication'] = [...$publication, 'status' => 'disabled'];
+            }
+            $current->forceFill(['phases' => $phases])->save();
+
+            return $refresh['status'] === 'pending' || data_get($phases, 'seed_publication.status') === 'pending' ? 60 : null;
         });
     }
 
@@ -204,7 +270,7 @@ final readonly class ContinueReleaseFleetAction
     }
 
     /** @param array<string,mixed> $row */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host, ?DesiredCliReleaseData $cli): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host, ?DesiredCliReleaseData $cli, bool $cliUnavailable): ?int
     {
         $recorded = $node->release_inputs ?? [];
         if (($recorded['host'] ?? null) !== $host) {
@@ -300,6 +366,10 @@ final readonly class ContinueReleaseFleetAction
         }
         if ($needsDelivery($recorded)) {
             if ($cli !== null && ! $cli->isAvailable()) {
+                if ($cliUnavailable) {
+                    throw new ResourceOperationException('fleet.cli_delivery_unavailable', 'No verified CLI delivery is available for the release.', 409);
+                }
+
                 return 60;
             }
             $row['agent'] = 'pending';

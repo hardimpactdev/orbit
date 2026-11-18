@@ -6,6 +6,7 @@ use App\Actions\Doctor\RunDoctorAction;
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Instances\InstanceRemovalReaper;
+use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Instances\Power\ExecutorWakeNotices;
 use App\Domain\Tasks\TaskSchedule;
@@ -97,7 +98,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Stage 8: a verified release admits the fleet rollout (release projection). Nodes outside the daytime set wait for the
         // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
-            ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.rollout'));
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && (config()->boolean('fleet.rollout') || NestedFleetRefresh::enabled()));
         // ADR 0253: the nightly drained reboot pass, admitted after the rollout in the same window; it waits while the rollout runs.
         GatewaySchedule::job($schedule, new AdmitFleetReboot)->dailyAt('03:06')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.reboot'));

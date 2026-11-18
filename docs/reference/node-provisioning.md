@@ -586,6 +586,8 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
 
+On Linux app-dev Nodes, Orbit manages `/etc/tmpfiles.d/orbit.conf`. At boot, systemd creates `/dev/shm/orbit/hibernation` with owner `root:caddy` and mode `0755`. Removing the app-dev role withdraws the file.
+
 A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses host-wide inputs.
 
 [Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
@@ -752,6 +754,8 @@ The fleet phase reconciles the checkout’s scoped Swamp grants before candidate
 ## Gateway bootstrap prerequisites
 
 A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow (`swamp/workflows/workflow-gateway-bootstrap.yaml`), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
+
+The Swamp role installs `jq`, which a release's Swamp load uses on the Swamp Node. The release's verify step also runs `jq` on the Gateway Node, and the Gateway role does not install it yet: a Gateway without the Swamp role needs `jq` installed by hand.
 
 The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
 

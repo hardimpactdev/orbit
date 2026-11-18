@@ -2589,7 +2589,17 @@ A real Node gets no parent, so its Squid configuration, its table and its intent
 
 Measured by hand on a task copy on 2026-11-17, with Squid 7.7 on `nested-app-dev`, its product configuration and its table: without a parent, a `GET` of `http://archive.ubuntu.com/ubuntu/dists/resolute/InRelease` and a `CONNECT` to `example.com:443` each got 503 at once. With the parent, both succeeded.
 
-**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has a separate `host` digest. It covers the machine-software recipe under `apps/gateway/resources/machine-software`, `nested-app-dev`'s host intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, folders and Incus, without the admission time), and the `swamp/ansible` tree except the following files. The first three belong to the Swamp role. The last two run from the controller checkout during Conn launches or task turns.
+
+- `swamp/ansible/tasks/role-swamp.yml`
+- `swamp/ansible/tasks/swamp-housekeeping.yml`
+- `swamp/ansible/tasks/swamp-binary-retention.yml`
+- `swamp/ansible/conn-launch.yml`
+- `swamp/ansible/t3_copy_rpc.mjs`
+
+No other path is excluded. Shared, new and unclassified files in the tree still count. A missing host record, a changed digest or a failed read of a required host input makes the host due. A failed read leaves no host digest in the record. When the host is due, `nested-app-dev` joins the due converges with its `app-dev` role, not just the base scope. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+
+The app-dev role creates its wake marker directory in `/dev/shm`. Its systemd-tmpfiles rule recreates the directory at boot with owner `root:caddy` and mode `0755`, including after a base retake restarts the nested Node.
 
 When only the host part is due, the base digest of `nested-app-dev` did not change, and its converge reason is `host_due`.
 
@@ -2821,13 +2831,14 @@ The checkout moves under the running nested Gateway, with its old schema and pro
 
 #### What a refresh skips
 
-A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
+A refresh always checks fleet readiness. For work it can skip, it compares input digests with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
 
 | Part | Digest | When it runs |
 | --- | --- | --- |
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
 | Default converge of each nested Node | One digest per Node: the `swamp` files a default converge reads, the nested Gateway's digest of that Node's default intent, and the fleet intent | For that Node: its digest cannot be read, the record holds none, its digest differs, or its last converge is more than 7 days old |
+| Prepare the Instance host | The separate `host` digest | On an eligible `nested-app-dev`, when the host digest differs, is missing from the record, or cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
@@ -2880,6 +2891,8 @@ A digest cannot be read when the Node's intent cannot be built, when the read fa
 
 `unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
 
+A change only to the five files excluded from the host digest does not make `nested-app-dev` due. It still counts for any part that reads those files, such as the nested Gateway's grants digest when the Club key is present. If no other work changes a nested disk and no other snapshot rule applies, `base` stays as it was.
+
 A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself.
 
 The intent holds no token or signed URL. Two values are new at each capture. They belong to the Operation and are not inputs, so the hash leaves them out: the version of a role's certificate leaf, which names the leaf's folder, and the admission time of the Instance bridge. Like an admission, the read first gives an app-dev Node its Instance bridge when it has none yet, and then rolls it back. So a healthy Node always has a digest. The Operation id and the agent verifier live in the execution copies, which are not part of it.
@@ -2895,13 +2908,13 @@ The list also leaves out two imports of the behavior file, `write.ts`. A converg
 
 The cover test fails when the converge workflow calls such a method, or when an imported name is used outside its method. Before this cut, two refreshes on 14 November 2026 converged the three Nodes for nothing (Operations 21867 and 22223, 120 s and 108 s, no task changed): one for a change in `public_output.ts`, one for a line in the clone part of `write.ts`.
 
-The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). An unreadable digest makes that Node due and is not recorded, so the next refresh tries it again. A read failure that affects inputs common to all three makes all three due. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
 
 The due Nodes converge one at a time: the nested Gateway first, which holds the hub, then `nested-app-prod`, then `nested-app-dev`. A default converge has a network, so it holds the hub's reservation, and the nested Gateway refuses any second converge beside it ([node:converge](/cli/node/converge)). The seven Ansible plays still lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`).
 
 The refresh admits the next Node only when the one before it has ended. A failed or refused converge stops the converges: the Nodes after it do not converge, and the error names the Node that failed. The run then restores the old seed.
 
-A converge that changes nothing still reads every phase, so a due converge costs time even on an unchanged Node. Only a digest that changed, or a converge older than 7 days, makes a Node due.
+A due converge still prepares inputs and runs its final checks, even when all its skippable phases match the record.
 
 Below the 2,000,000 [ID map size](#instance-host-in-the-fleet), `nested-app-dev` cannot build its Instance image. There the refresh converges it with the base scope, as before, and its software and role state in `base` stay as they were. A proof needs a default at 2,000,000 when its converge or role-add cases run on `nested-app-dev`.
 
@@ -2916,6 +2929,8 @@ A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `
 | The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three, with the rules applied on the stopped fleet |
 
 The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that reloaded grants comes up on the new grants.
+
+The digest rules change only which work is due. They do not decide which containers get `base` or change how Orbit takes, distributes or restores the default's seed. When a role task changes `nested-app-dev`, the refresh still retakes `base` there and on the nested Gateway, so the role change survives a reset.
 
 A migration is not such a writer. The migrate that applies one changes the nested Gateway's database, but `base` keeps the schema of the refresh that last took it. A reset restores `base` and then migrates the nested Gateway forward to its checkout, and restarts its services when a migration applied. Laravel's migrations run forward only, and the code is the checkout's.
 
@@ -3063,7 +3078,7 @@ The first seed of every run, the `seed` phase of "Prepare the container", was al
 
 After a restore, the run starts the restored fleet and waits for readiness. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
-| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
+| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Automatic release waits for refresh and seed distribution before admitting the next release |
 
 It replaces the removed task VM refresh and its kind `task_vm.image_refresh`. [Old paths](/reference/old-paths) tracks the remaining fleet residue, not another refresh runtime. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
 
@@ -3124,6 +3139,10 @@ A CI Node is ready when the Gateway records, from its last `ci-runner` converge,
 One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add or converge admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
 
 So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
+
+The automatic release tick advances the recorded fleet, default and seed phases. It resumes the existing Operations after a restart and verifies the default seed commit before it checks CI Node copies. An admission blocked by active work stays pending. A failed refresh Operation or temporary source-read failure retries after ten minutes, up to three attempts for the release commit.
+
+The tick recovers a missing seed-copy admission from the current seed and the recorded attempts. Publication tracks the seed commit and timestamp recorded by refresh. A source that moved fails that publication phase. A Node that failed a copy keeps its recorded seed and follows the existing retry rules above. The release records a terminal failed phase and a newer eligible revision can fix it forward.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 
