@@ -56,6 +56,20 @@ final readonly class TaskCopyTurn
         .'--form-string "title=$TITLE" -F \'body=<pr-body.md\' "$ORBIT_COPY_API/pull-request" (set TITLE to the title first). A second send replaces the text. '
         .'Orbit opens the pull request with it once the work is done; when the pull request is open already, the next publish of this check updates its title and body with it. If you do not approve, send nothing.';
 
+    /**
+     * How a copy thread's external_id came to be (docs/reference/development-containers.md#admission). Capture sets a UUID and marks it
+     * `admitted`: T3 may not hold it yet. A turn that reports that same ID back makes it `confirmed`. A reported ID that replaced the row's
+     * ID, or any report on a row made before the mark, makes it `overwritten`.
+     */
+    public const string Admitted = 'admitted';
+
+    public const string Confirmed = 'confirmed';
+
+    public const string Overwritten = 'overwritten';
+
+    /** A row made before the mark whose ID no turn reported: it still holds the UUID that capture set, which T3 never received. */
+    public const string Provisional = 'provisional';
+
     public function __construct(private TaskOperations $operations, private TaskCheckedCandidate $candidates) {}
 
     public function start(Task $group, TaskTurnData $data, string $caller, ?string $request): Operation
@@ -93,9 +107,7 @@ final readonly class TaskCopyTurn
         $thread = $data->thread === 'new' ? null : $current;
         // An earlier turn that may still run is settled first, by this turn's own phase in the copy (docs/cli/task/copy-turn.mmd).
         // A reviewer's turn names the task branch its checkout goes back to, should the copy still hold its detach.
-        $settle = array_map(static fn (Operation $turn): array => ['operation_id' => $turn->id,
-            'title' => ValidatedData::string(ValidatedData::object($turn->input['turn'])['title']),
-            'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch'])], self::unsettled($group));
+        $settle = array_map(self::earlier(...), self::unsettled($group));
         $candidate = null;
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
@@ -112,7 +124,7 @@ final readonly class TaskCopyTurn
             $options = $agent['options'];
             $thread = AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
-                'driver' => self::Driver, 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(),
+                'driver' => self::Driver, 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(), 'external_id_admission' => self::Admitted,
                 'role' => $role->value, 'model' => $agent['model'], 'effort' => $agent['effort'], 'provider_instance' => $provider,
             ]);
         }
@@ -137,11 +149,52 @@ final readonly class TaskCopyTurn
             'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
                 // A new thread's model options: T3 runs its every turn with them (InstanceContainer::providerOptions).
                 'options' => $options, 'candidate' => $candidate, 'settle' => $settle,
+                // The thread as T3 is to know it, and the turn's own message ID, fixed before any send (docs/reference/development-containers.md#stable-ids).
+                't3_thread_id' => $thread->external_id, 'admission' => self::admission($thread), 'message_id' => (string) Str::uuid(),
                 'answered' => $provider === null ? array_values(array_unique(array_map(
                     static fn (array $question): string => ValidatedData::string($question['request_id']), $thread->questions ?? []))) : [],
                 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
         ];
+    }
+
+    /**
+     * What a turn passes of an earlier turn that may still run (docs/reference/development-containers.md#earlier-turns): its thread, its
+     * frozen message ID and the SHA-256 digest of its frozen message body, never the body, the run it recorded, whether it was sent and
+     * the requests it answered. A turn with no result counts as possibly sent; a result from before `sent` names it as `launched`.
+     *
+     * @return array<string, mixed>
+     */
+    private static function earlier(Operation $turn): array
+    {
+        $intent = ValidatedData::object($turn->input['turn']);
+        $result = $turn->result ?? [];
+
+        return ['operation_id' => $turn->id, 'title' => ValidatedData::string($intent['title']),
+            'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch']),
+            't3_thread_id' => AgentThread::query()->find(ValidatedData::integer($turn->input['thread_id']))?->external_id,
+            'message_id' => is_string($intent['message_id'] ?? null) ? $intent['message_id'] : null,
+            'digest' => hash('sha256', ValidatedData::string($intent['prompt'])),
+            'run_id' => is_string($result['run_id'] ?? null) ? $result['run_id'] : null,
+            'sent' => ($result['sent'] ?? $result['launched'] ?? true) !== false,
+            'answered' => array_values(array_map(ValidatedData::string(...), is_array($intent['answered'] ?? null) ? $intent['answered'] : []))];
+    }
+
+    /**
+     * How the thread's external_id came to be: its mark, or for a row made before the mark, `provisional` while no copy turn of it
+     * reported a T3 thread ID and `overwritten` once one did.
+     */
+    public static function admission(AgentThread $thread): string
+    {
+        if ($thread->external_id_admission !== null) {
+            return $thread->external_id_admission;
+        }
+        $reported = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $thread->task_group_id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->get()
+            ->contains(static fn (Operation $turn): bool => ($turn->input['thread_id'] ?? null) === $thread->id
+                && is_string($turn->result['t3_thread_id'] ?? null) && $turn->result['t3_thread_id'] !== '');
+
+        return $reported ? self::Overwritten : self::Provisional;
     }
 
     /**

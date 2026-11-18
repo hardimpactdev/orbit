@@ -111,9 +111,9 @@ async function state(rpc) {
     const all = projection.runs.map((run) => ({ id: run.id, status: run.status }));
     return {
         all,
-        owners: new Map(pending.map((request) => [request.id, projection.nodes.find((node) => node.id === request.nodeId)?.runId])),
         runs: all.filter((run) => !Over.has(run.status)),
         requests: pending.map((request) => ({ request_id: request.id, kind: request.kind,
+            run_id: projection.nodes.find((node) => node.id === request.nodeId)?.runId ?? null,
             questions: (items.find((item) => item.requestId === request.id)?.questions ?? []).map(question) })),
     };
 }
@@ -373,7 +373,7 @@ try {
         const wanted = [...new Set(stored.split("\n"))].sort();
         const before = await state(rpc);
         const asking = before.requests.map((request) => request.request_id).sort();
-        const { error, after } = live(before, runId) && stoppable(before) && before.requests.every((request) => before.owners.get(request.request_id) === runId)
+        const { error, after } = live(before, runId) && stoppable(before) && before.requests.every((request) => request.run_id === runId)
             && JSON.stringify(asking) === JSON.stringify(wanted)
             ? await interrupt(rpc, runId, "Orbit ended the turn at its question; the answer comes as the next turn.")
             : { error: "The run no longer waits for the stored questions: it was answered, or it asks something else.", after: await state(rpc) };

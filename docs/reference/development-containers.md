@@ -2069,7 +2069,8 @@ Reads need `orchestration:read`. Writes need `orchestration:operate`. Neither sc
 
 `TaskCopyTurn::capture` admits each turn under the group's lock, as it does today. It names the copy, the role's `AgentThread` and the thread's `external_id`:
 
-- **New thread.** Capture sets a UUID as `external_id` and marks it admitted. `thread.create` uses that exact ID. The target must not choose another.
+- **New thread.** Capture sets a UUID as `external_id` and marks it admitted: `external_id_admission` is `admitted`. `thread.create` uses that exact ID. The target must not choose another.
+- **Confirmed.** A turn that reports that same ID back makes it `confirmed`. Capture names the ID as `turn.t3_thread_id` and its standing as `turn.admission`.
 - **Established thread.** The turn uses an admitted `external_id`. The worker never looks a thread up by its title.
 - **Binding.** Before dispatch, the worker confirms the target's environment ID and its one admitted workspace project for `/srv/workspace`. A thread of another environment or project is refused.
 
@@ -2080,11 +2081,13 @@ Rows made before this contract need one rule. Today `capture` sets a UUID, but `
 | Provisional | No turn of the thread reported a `t3_thread_id`. The row still holds the UUID that capture set, which T3 never received | The next turn creates the thread with that UUID and marks it admitted |
 | Overwritten | A turn reported a `t3_thread_id` | Refused with `tasks.copy_thread_missing`. The turn launches nothing |
 
+`TaskCopyTurn::admission` reads the standing. A row from before the mark has a null `external_id_admission`; it is `provisional` while no copy turn of the thread reported a `t3_thread_id`, and `overwritten` after. A reported ID that differs from the row's ID, or any report on a row without the mark, sets `overwritten`.
+
 The provenance of an overwritten ID is not guaranteed. A first turn reports the ID that the helper made, but a continued turn reports the ID of a title match, and a person's thread with the same title passes that match. The row does not say which happened, so every overwritten row is refused, and the caller starts a new thread with `--thread=new`.
 
 #### Stable IDs
 
-Capture fixes, in the intent, one command ID per step, the thread ID and the message ID. It also freezes the create body: project, title, provider instance, model and options. The message body is frozen too. Before any send of a step, a retry sends the same IDs and the same bodies. Once a step may have been sent, every retry of it only reads.
+Capture fixes, in the intent, one command ID per step, the thread ID and the message ID (`turn.message_id`). It also freezes the create body: project, title, provider instance, model and options. The message body is frozen too. Before any send of a step, a retry sends the same IDs and the same bodies. Once a step may have been sent, every retry of it only reads.
 
 The worker counts the turn as launched only when `getThreadProjection` shows the admitted message and exactly one run that the target started from that message ID. It records that run ID. A message that may have been sent but has no confirmed run is only possibly sent. The result keeps the two apart:
 
@@ -2124,7 +2127,7 @@ No target makes this check today. Item 4 supplies it. Until it lands, the worker
 
 #### Earlier turns
 
-The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) stops the thread's current active run. That run may be a person's by then. So under this contract, capture passes, for each unsettled turn, its thread ID, its frozen message ID, the SHA-256 digest of its frozen message body, any run ID it recorded, its `sent` and its `answered` list. A turn with no result counts as possibly sent.
+The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) stops the thread's current active run. That run may be a person's by then. So under this contract, capture passes, for each unsettled turn, its thread ID, its frozen message ID, the SHA-256 digest of its frozen message body, any run ID it recorded, its `sent` and its `answered` list. A turn with no result counts as possibly sent. Each entry of `turn.settle` holds `t3_thread_id`, `message_id`, `digest`, `run_id`, `sent` and `answered`. A turn admitted before `message_id` has `message_id: null`. A result from before `sent` gives it from `launched`.
 
 An earlier turn whose result says `sent: false` has no message and no run to find. Only its marked checkout holds it. The worker restores and verifies that checkout, then names the turn settled.
 
@@ -2141,7 +2144,7 @@ A recorded run ID must equal the run that the link finds. Otherwise the earlier 
 
 Settling keeps today's order. First the worker proves that the earlier run ended. Then, for a reviewer's turn whose detach mark is set, it restores the checkout and verifies it, only when the restore is safe as [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) says. Only then does it name the turn settled. A reviewer's run that ended over a checkout not yet restored leaves the turn unsettled. A reviewer's turn without the mark is settled once its run is over, as today.
 
-An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears the thread's stored questions when their request IDs are exactly the spent ones. It does not wait for the earlier Operation, which is not recorded a second time.
+An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears a thread's stored questions when every one of their request IDs is spent. It does not wait for the earlier Operation, which is not recorded a second time.
 
 The current turn froze its prompt at capture, so it may quote those spent questions as the question it answers. When its own `answered` list holds a spent request, it launches nothing and fails with `tasks.copy_question_answered`. The caller sends its prompt again. The next capture composes it without the spent questions.
 
@@ -2150,7 +2153,7 @@ The current turn froze its prompt at capture, so it may quote those spent questi
 The flow of [A question ends the turn](#a-question-ends-the-turn) stays, on the new calls:
 
 1. A run started from the turn's message waits. Every pending request must be a complete user-input question, and each request's node must belong to that run.
-2. The worker stores the questions, bounded, with each request ID and the owner run ID.
+2. The worker stores the questions, bounded, with each request ID and the owner run ID, as each question's `run_id`.
 3. It reads the projection again. The same request IDs must still be pending, with the same owner run.
 4. It interrupts that run and waits for proof that the run ended. Only then is the turn `asking_for_input` and over.
 
@@ -2204,7 +2207,7 @@ The Operation's result names:
 
 The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the run folder, the logs or Activity.
 
-The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. Today it holds user messages too, so the prompt. Under this contract, the archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The Gateway already holds the admitted prompt in the Operation's input.
+The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. The archive keeps assistant text, bounded and redacted; the CLI driver already shapes it so. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The Gateway already holds the admitted prompt in the Operation's input.
 
 #### Proof and removal
 

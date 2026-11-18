@@ -9,7 +9,8 @@ const show = JSON.stringify({
     messages: [{ role: "user", runId: run, text: "Subtask: Doctor note" }, { role: "assistant", runId: run, text: "Committed d867aba2." }],
 });
 const transcript: { id: string; kind: "message"; label: string; text: string; at: string }[] = [
-    { id: `${run}:0`, kind: "message", label: "user", text: "Subtask: Doctor note", at: "" },
+    // A user message keeps only its ID, author and time: the prompt stays out of the archive.
+    { id: `${run}:0`, kind: "message", label: "user", text: "", at: "" },
     { id: `${run}:1`, kind: "message", label: "assistant", text: "Committed d867aba2.", at: "" },
 ];
 const started = (status: string, error: string | null = null) =>
@@ -17,23 +18,23 @@ const started = (status: string, error: string | null = null) =>
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
 const none = { resumed: null, review: null, model: null, detached: false, ask: null, interrupt: null, stop: null, restore: null };
 // The provider instance and model as T3 showed them, and no question.
-const named = { launched: true, provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
-const unlaunched = { launched: false, provider_instance: null, model: null, questions: [], settled: [] };
-const unnamed = { launched: true, provider_instance: null, model: null, questions: [], settled: [] };
+const named = { sent: true, launched: true, spent: [], provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
+const unlaunched = { sent: false, launched: false, spent: [], provider_instance: null, model: null, questions: [], settled: [] };
+const unnamed = { sent: true, launched: true, spent: [], provider_instance: null, model: null, questions: [], settled: [] };
 // As `t3_copy_rpc.mjs read` printed it on a stock T3 0.1.7 server, 2026-11-14: one request with two questions.
 const request = "runtime-request:provider:claudeAgent:native-request:toolu_01TbF9dLFChexV5BVoUsSdii";
 const asked = {
     runs: [{ id: run, status: "running" }],
-    requests: [{ request_id: request, kind: "user_input", questions: [
+    requests: [{ request_id: request, kind: "user_input", run_id: run, questions: [
         { id: "Which color?", header: "Color", question: "Which color?", options: [{ label: "Red", description: "Choose red" }, { label: "Blue", description: "Choose blue" }], multiSelect: false },
         { id: "Which shape?", header: "Shape", question: "Which shape?", options: [{ label: "Circle", description: "Choose circle", value: "circle" }], allowCustomAnswer: true, required: true },
     ] }],
     stoppable: true,
 };
 const questions = [
-    { request_id: request, id: "Which color?", header: "Color", question: "Which color?", options: [{ label: "Red", description: "Choose red", value: null }, { label: "Blue", description: "Choose blue", value: null }],
+    { request_id: request, run_id: run, id: "Which color?", header: "Color", question: "Which color?", options: [{ label: "Red", description: "Choose red", value: null }, { label: "Blue", description: "Choose blue", value: null }],
         multi_select: false, allow_custom_answer: null, initial_answer: null, required: null },
-    { request_id: request, id: "Which shape?", header: "Shape", question: "Which shape?", options: [{ label: "Circle", description: "Choose circle", value: "circle" }],
+    { request_id: request, run_id: run, id: "Which shape?", header: "Shape", question: "Which shape?", options: [{ label: "Circle", description: "Choose circle", value: "circle" }],
         multi_select: false, allow_custom_answer: true, initial_answer: null, required: true },
 ];
 const ask = { ask_exit: 0, ask: JSON.stringify(asked) };
@@ -67,7 +68,7 @@ Deno.test("an earlier turn still running launches nothing and fails tasks.copy_t
 Deno.test("a free-text question with no options is stored whole, so the run it stopped asks for input and is over", () => {
     const free = { ...asked, requests: [{ request_id: request, kind: "user_input", questions: [{ id: "Why?", header: "", question: "Why does it fail?", options: [] }] }] };
     const stored = turn(2, started("waiting"), { ask: { ask_exit: 0, ask: JSON.stringify(free) }, interrupt: stopped, read: { ...read, status: "interrupted" } });
-    assertEquals([stored.state, stored.error, stored.ended, stored.questions], ["asking_for_input", null, true, [{ request_id: request, id: "Why?", header: "",
+    assertEquals([stored.state, stored.error, stored.ended, stored.questions], ["asking_for_input", null, true, [{ request_id: request, run_id: null, id: "Why?", header: "",
         question: "Why does it fail?", options: [], multi_select: false, allow_custom_answer: null, initial_answer: null, required: null }]]);
 });
 
@@ -136,7 +137,8 @@ Deno.test("a phase cut before the start's end is over only when nothing was laun
     assertEquals(shapeTurn({ ...none, launched: false, start: null, read: null }).ended, true);
     assertEquals(shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } }), {
         state: "failed", error: "T3 did not report the turn's end (exit 1).", error_code: "tasks.copy_turn_failed", ended: true, t3_thread_id: null, run_id: null, ...unnamed,
-        transcript: [],
+        // The launch mark says only that the send may have reached T3; with no run reported, the turn is possibly sent, not launched.
+        launched: false, transcript: [],
     });
     assertEquals(shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: null, found: 0, status: null, show_exit: null, show: "" } }).ended, false);
     // T3 made the thread but refused its run: the listed thread is idle.
@@ -224,9 +226,9 @@ Deno.test("a detached reviewer checkout without a restore holds the group whatev
     assertEquals([restored.error_code, restored.ended], ["tasks.turn_failed", true]);
 });
 
-Deno.test("a message without a run id keeps the transcript", () => {
+Deno.test("a message without a run id keeps the transcript; a user message keeps only its ID, author and time", () => {
     const shown = JSON.stringify({ thread: { threadId: thread, status: "completed" }, messages: [{ role: "user", text: "Hello" }] });
-    assertEquals(turn(0, started("completed"), { read: { ...read, show: shown } }).transcript, [{ id: "run:0", kind: "message", label: "user", text: "Hello", at: "" }]);
+    assertEquals(turn(0, started("completed"), { read: { ...read, show: shown } }).transcript, [{ id: "run:0", kind: "message", label: "user", text: "", at: "" }]);
 });
 
 Deno.test("transcript text is redacted and bounded to the newest entries", () => {

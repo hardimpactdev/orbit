@@ -168,7 +168,7 @@ Deno.test({ name: "the read prints every pending question in the result step's s
         const state = waiting([{ id: "r1", kind: "user_input", status: "pending" }], { r1: [color, { id: "Why?", question: "Why does it fail?" }] });
         const read = await helper(state, ["read", thread]);
         assertEquals(read.code, 0, read.stderr);
-        assertEquals(read.out, { runs: [{ id: run, status: "running" }], stoppable: true, requests: [{ request_id: "r1", kind: "user_input", questions: [
+        assertEquals(read.out, { runs: [{ id: run, status: "running" }], stoppable: true, requests: [{ request_id: "r1", kind: "user_input", run_id: run, questions: [
             { id: "Which color?", header: "Color", question: "Which color?", options: [{ label: "Red", description: "Choose red" }], multiSelect: false },
             { id: "Why?", header: "", question: "Why does it fail?", options: [] },
         ] }] });

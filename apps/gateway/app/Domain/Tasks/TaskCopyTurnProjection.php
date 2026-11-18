@@ -94,7 +94,11 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
         $state = AgentThreadState::tryFrom(is_string($result['state'] ?? null) ? $result['state'] : '');
         $result = [...$result, 'state' => in_array($state, [AgentThreadState::Done, AgentThreadState::AskingForInput], true) ? $state->value : AgentThreadState::Failed->value];
         if (is_string($result['t3_thread_id'] ?? null) && $result['t3_thread_id'] !== '') {
-            AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)->update(['external_id' => $result['t3_thread_id']]);
+            // Only the admitted ID that T3 reported back is confirmed; a reported ID that replaced it, or a report on a row from before the
+            // mark, leaves an ID of no proven provenance (docs/reference/development-containers.md#admission).
+            $record = AgentThread::query()->where('task_group_id', $operation->target_id)->findOrFail($thread);
+            $record->update(['external_id' => $result['t3_thread_id'], 'external_id_admission' => $record->external_id === $result['t3_thread_id']
+                && in_array($record->external_id_admission, [TaskCopyTurn::Admitted, TaskCopyTurn::Confirmed], true) ? TaskCopyTurn::Confirmed : TaskCopyTurn::Overwritten]);
             // The extensions record the copy's new thread under the title the turn gave it (docs/reference/extensions.md#plug-in-points).
             $instance = Instance::query()->find(ValidatedData::integer($operation->input['instance_id']));
             $title = ValidatedData::object($operation->input['turn'])['title'];
@@ -104,7 +108,16 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             }
         }
         self::recordThread($operation->target_id, $thread, $result);
-        // Only a turn that launched T3 on the thread replaces what it asked: one that launched nothing leaves the question open.
+        // An earlier answer turn's confirmed run used its answer: a thread whose every stored request is spent asks nothing any more
+        // (docs/reference/development-containers.md#earlier-turns).
+        $spent = array_map(ValidatedData::string(...), is_array($result['spent'] ?? null) ? array_values($result['spent']) : []);
+        if ($spent !== []) {
+            AgentThread::query()->where('task_group_id', $operation->target_id)->whereNotNull('questions')->get()
+                ->filter(static fn (AgentThread $asked): bool => array_diff(array_column($asked->questions ?? [], 'request_id'), $spent) === [])
+                ->each(static fn (AgentThread $asked): bool => $asked->update(['questions' => null]));
+        }
+        // Only a turn whose run T3 confirmed replaces what the thread asked: one that launched nothing, or was only possibly sent, leaves
+        // the question open.
         if (($result['launched'] ?? null) === true) {
             $questions = $result['state'] === AgentThreadState::AskingForInput->value && is_array($result['questions'] ?? null) && $result['questions'] !== []
                 ? array_values(array_map(ValidatedData::object(...), $result['questions'])) : null;

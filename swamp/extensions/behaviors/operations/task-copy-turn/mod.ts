@@ -46,9 +46,10 @@ const Question = z.object({
     required: z.boolean().optional(),
 });
 const Run = z.object({ id: z.string(), status: z.string() });
-// What `t3_copy_rpc.mjs read` prints: the runs that are not over, every pending request with its questions, and whether the phase may
-// stop the run on them (questions only, stored whole).
-const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ request_id: z.string(), kind: z.string(), questions: z.array(Question) })),
+// What `t3_copy_rpc.mjs read` prints: the runs that are not over, every pending request with its owner run and its questions, and
+// whether the phase may stop the run on them (questions only, stored whole).
+const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ request_id: z.string(), kind: z.string(), run_id: z.string().nullish(),
+    questions: z.array(Question) })),
     stoppable: z.boolean() });
 // What `t3_copy_rpc.mjs interrupt` prints once the run ended or its wait for that did.
 const Stopped = z.object({ interrupted: z.boolean(), error: z.string().nullable(), runs: z.array(Run), pending: z.number().int() });
@@ -93,6 +94,8 @@ const Shown = z.object({
 const Entry = z.object({ id: z.string(), kind: z.literal("message"), label: z.string(), text: z.string(), at: z.string() });
 const AskedQuestion = z.object({
     request_id: z.string(),
+    // The run that owns the request: only that run's question is cancelled when the answer comes.
+    run_id: z.string().nullable(),
     id: z.string(),
     header: z.string(),
     question: z.string(),
@@ -111,7 +114,9 @@ export const Turn = z.object({
     ended: z.boolean(),
     t3_thread_id: z.string().nullable(),
     run_id: z.string().nullable(),
-    // Whether the phase launched T3 on the thread: a turn that launched nothing leaves the thread as it was.
+    // Whether the turn's message may have reached T3, and whether T3 confirmed the run it started from it. A turn sent but not launched
+    // is possibly sent: it keeps the thread's stored questions (docs/reference/development-containers.md#stable-ids).
+    sent: z.boolean(),
     launched: z.boolean(),
     // The thread's provider instance and model as T3 shows them; the Gateway records the ones the thread started with instead.
     provider_instance: z.string().nullable(),
@@ -120,6 +125,8 @@ export const Turn = z.object({
     questions: z.array(AskedQuestion),
     // The earlier turns whose run this turn's phase found over, with a reviewer's detach undone.
     settled: z.array(z.number().int()),
+    // The stored request IDs that an earlier answer turn's confirmed run used. The CLI driver proves no earlier run, so it names none.
+    spent: z.array(z.string()),
     transcript: z.array(Entry),
 });
 export type Turn = z.infer<typeof Turn>;
@@ -133,14 +140,18 @@ const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     }
 };
 
-/** Message text only: T3's CLI gives no tool items and no token use. Newest entries first within the bound. */
+/**
+ * Message text only: T3's CLI gives no tool items and no token use. Newest entries first within the bound. A user message keeps only its
+ * ID, author and time: redaction does not catch an ordinary private prompt, and the Gateway holds the prompt in the turn's input.
+ */
 function transcript(shown: z.infer<typeof Shown> | null): Turn["transcript"] {
     const entries: Turn["transcript"] = [];
     let size = 0;
     const messages = shown?.messages ?? [];
     for (let index = messages.length - 1; index >= 0; index--) {
         const message = messages[index];
-        const entry = { id: `${message.runId ?? "run"}:${index}`, kind: "message" as const, label: message.role, text: redactText(message.text), at: "" };
+        const entry = { id: `${message.runId ?? "run"}:${index}`, kind: "message" as const, label: message.role,
+            text: message.role === "assistant" ? redactText(message.text) : "", at: "" };
         size += new TextEncoder().encode(JSON.stringify(entry)).length;
         if (size > TranscriptBytes) {
             entries.unshift({ id: "orbit-truncated", kind: "message", label: "system", text: "[Transcript truncated: older entries omitted from the recorded turn.]", at: "" });
@@ -183,11 +194,14 @@ function shapeRun(evidence: Evidence): Turn {
         ended,
         t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? null,
         run_id: started?.runId ?? null,
-        launched: evidence.launched,
+        // The launch mark precedes the send, so it means possibly sent; only a run that T3 reported for the send confirms the launch.
+        sent: evidence.launched,
+        launched: evidence.launched && (started?.runId ?? null) !== null,
         provider_instance: shown?.thread.providerInstanceId ?? null,
         model: shown?.thread.model ?? null,
         questions: [],
         settled: evidence.settle?.settled ?? [],
+        spent: [],
         transcript: transcript(shown),
     };
     if (evidence.settle && evidence.settle.open.length > 0) {
@@ -256,6 +270,7 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
     const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
     const questions = (read?.requests ?? []).flatMap((request) => request.questions.map((question) => ({
         request_id: request.request_id,
+        run_id: request.run_id ?? null,
         id: question.id,
         header: redactText(question.header),
         question: redactText(question.question),
@@ -298,7 +313,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.17.1",
+    version: "2026.11.18.1",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
