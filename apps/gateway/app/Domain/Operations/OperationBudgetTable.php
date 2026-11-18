@@ -87,7 +87,7 @@ final class OperationBudgetTable
         'instance.migrate' => 5700,
         // No native run yet. Basis: the legacy rollback deadline of 900 s (docs/reference/deployments.md#deploy) and the chart's
         // budget. Replace with the 14-day p95 after the first success.
-        'instance.rollback' => 900,
+        'instance.rollback' => 'run_budget_seconds',
         'node.prepare_php_packages' => 3600,
         'node.remove' => 2100,
         'node.role_add' => 2700,
@@ -125,7 +125,7 @@ final class OperationBudgetTable
      *
      * @var array<string,int>
      */
-    public const array UncapturedSeconds = ['proof.command' => 3600, 'instance.seed_copy' => 7800];
+    public const array UncapturedSeconds = ['proof.command' => 3600, 'instance.seed_copy' => 7800, 'instance.rollback' => 900];
 
     /** The longest fixed budget. Serve cuts a run at this length, so it must not be shorter than a fixed budget below. */
     public static function longestFixedSeconds(): int

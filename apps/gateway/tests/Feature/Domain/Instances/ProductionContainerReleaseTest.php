@@ -171,7 +171,7 @@ describe('production container deployments', function (): void {
         }
         $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, str_repeat('a', 40));
         expect($operation->input['production_release'])->toMatchArray(['build_timeout_seconds' => 5160, 'after_timeout_seconds' => 980])
-            ->and($operation->input['run_budget_seconds'])->toBe(7040);
+            ->and($operation->input['run_budget_seconds'])->toBe(13940);
         appProdReleaseReceipt($operation, ['best_effort_steps' => [
             ['name' => 'one', 'phase' => 'before_activation', 'exit_code' => 42],
             ['name' => 'two', 'phase' => 'before_activation', 'exit_code' => 99],
@@ -248,6 +248,60 @@ describe('production container deployments', function (): void {
             ->and(app(DirectOperation::class)->workflowFor($sync))->toBe('production-environment-sync');
         $instance->forceFill(['production_release' => ['live' => str_repeat('d', 40)]])->save();
         expect(fn () => $projection->input($import))->toThrow(ResourceOperationException::class);
+    });
+
+    it('projects only this Instance’s attached private SQL publications, including same-port databases', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'sql-placement');
+        $other = appProdReleasePlacement($this->prod, 'sql-sibling');
+        $secret = 'private-fixture-password';
+        $serverProcess = \App\Models\Process::query()->create(['owner_type' => Node::class, 'owner_id' => $this->prod->id,
+            'name' => 'postgres', 'runtime' => 'docker', 'runtime_config' => ['ports' => ['10.44.0.7:55432:5432']],
+            'desired_state' => 'running', 'restart_policy' => 'always', 'status' => 'active']);
+        $server = \App\Models\DatabaseServer::query()->create(['slug' => 'local-pg', 'driver' => 'pgsql', 'node_id' => $this->prod->id,
+            'tag' => '18', 'port' => 55432, 'root_password' => 'fixture', 'status' => 'active', 'process_id' => $serverProcess->id]);
+        $values = [];
+        foreach (['DB', 'REPORT'] as $prefix) {
+            $database = strtolower($prefix).'_owner';
+            $connection = \App\Models\DatabaseConnection::query()->forceCreate(['slug' => str_replace('_', '-', $database), 'driver' => 'pgsql',
+                'node_id' => $this->prod->id, 'database_server_id' => $server->id, 'host' => '127.0.0.1', 'port' => 55432,
+                'database' => $database, 'username' => $database, 'password' => $secret]);
+            \App\Models\DatabaseConnectionTarget::query()->create(['instance_id' => $instance->id, 'database_connection_id' => $connection->id,
+                'prefix' => $prefix, 'network' => 'wireguard']);
+            $fields = app(\App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection::class)->project($connection, $prefix)['values'];
+            foreach ($fields as $key => $value) {
+                InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => $key, 'env_value' => $value]);
+            }
+            $values += $fields;
+        }
+        $endpoints = app(\App\Domain\Instances\Environment\ProductionDatabaseEndpoints::class);
+        expect(fn () => $endpoints->project($other->id, $values))->toThrow(ResourceOperationException::class)
+            ->and(fn () => $endpoints->project($instance->id, [...$values, 'DB_PASSWORD' => 'override']))->toThrow(ResourceOperationException::class)
+            ->and(fn () => $endpoints->project($instance->id, [...$values, 'DATABASE_URL' => 'override']))->toThrow(ResourceOperationException::class);
+        $run = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null, str_repeat('e', 40));
+        $files = app(\App\Domain\Instances\Environment\NativeInstanceEnvironmentSync::class)->admittedFiles($run);
+        expect($files['sql'])->toHaveCount(2)->and($files['sql'][0]['host'])->toBe('10.44.0.7')
+            ->and($files['sql'][0]['listen'])->not->toBe($files['sql'][1]['listen'])
+            ->and($files['sql'][0]['password'])->toBe($secret)
+            ->and($files['content'])->toContain($files['sql'][0]['listen'], $files['sql'][1]['listen'])
+            ->and(json_encode($run->input, JSON_THROW_ON_ERROR))->not->toContain($secret, '127.0.0.1');
+        $serverProcess->update(['runtime_config' => ['ports' => ['127.0.0.1:55432:5432']]]);
+        expect(fn () => $endpoints->project($instance->id, $values))->toThrow(ResourceOperationException::class)
+            ->and(fn () => app(\App\Domain\Instances\Environment\NativeInstanceEnvironmentSync::class)->admittedFiles($run))->toThrow(ResourceOperationException::class);
+    });
+
+    it('refuses an unmanaged database before it admits the first switch', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'unmanaged-sql', str_repeat('a', 40));
+        foreach (['DB_HOST' => 'private-host', 'DB_PASSWORD' => 'private-sentinel'] as $name => $value) {
+            InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => $name, 'env_value' => $value]);
+        }
+        try {
+            app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+            $this->fail('The unmanaged SQL endpoint was admitted.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('deployment.database_endpoint_unconfirmed')
+                ->and($error->getMessage())->not->toContain('private-host', 'private-sentinel');
+        }
+        expect($instance->refresh()->production_release_started_at)->toBeNull()->and($instance->production_release)->toBeNull();
     });
 
     it('adopts an existing checkout at the proven serving commit', function (): void {
