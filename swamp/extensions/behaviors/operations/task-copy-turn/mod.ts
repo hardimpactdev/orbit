@@ -52,12 +52,15 @@ const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ reques
     stoppable: z.boolean() });
 // What `t3_copy_rpc.mjs interrupt` prints once the run ended or its wait for that did.
 const Stopped = z.object({ interrupted: z.boolean(), error: z.string().nullable(), runs: z.array(Run), pending: z.number().int() });
-// What `t3_copy_rpc.mjs stop` prints: whether the thread's active run stopped, its id and its last state; no run when none was active.
-const Halted = z.object({ stopped: z.boolean(), run: z.string().nullable(), state: z.string().nullable() });
+// What `t3_copy_rpc.mjs stop` prints: whether it stopped the run, whether its last readback shows that exact run in a status that ends
+// it, the run's id and that status.
+const Halted = z.object({ stopped: z.boolean(), over: z.boolean(), run: z.string().nullable(), state: z.string().nullable() });
 const Read = z.object({
     list_exit: z.number().int().nullable(),
+    // The thread the turn sent to, which the read looked for by its ID; null when the turn made no thread and the read looked for its title.
+    thread_id: z.string().nullable().optional(),
     found: z.number().int(),
-    // The status `t3 thread list` gives the thread of this turn's title.
+    // The status `t3 thread list` gives the thread of this turn.
     status: z.string().nullable(),
     show_exit: z.number().int().nullable(),
     show: z.string(),
@@ -184,9 +187,9 @@ export function shapeTurn(evidence: Evidence): Turn {
 function shapeRun(evidence: Evidence): Turn {
     const started = evidence.start === null ? null : parse(Started, evidence.start.start);
     const shown = evidence.read?.show_exit === 0 ? parse(Shown, evidence.read.show) : null;
-    // The stop of a cut run ended it, or found no run of the thread active.
+    // The stop of a cut run read that exact run in a status that ends it.
     const halted = evidence.stop?.stop_exit === 0 ? parse(Halted, evidence.stop.stop) : null;
-    const cutEnded = halted !== null && (halted.stopped || halted.run === null);
+    const cutEnded = halted?.over === true;
     const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
     const base = {
         ended: over(evidence, started?.status, listed, cutEnded),
@@ -272,8 +275,8 @@ function shapeRun(evidence: Evidence): Turn {
  * | 5 | The start printed a status that ends a run | true |
  * | 6 | The start printed any other status: one of a run still going, such as `running` or `queued`, or one Orbit does not know | false |
  * | 7 | The stop of the run its bound cut proved its end | true |
- * | 8 | With no status of its run: T3 holds no thread of the title, or lists it in a state that runs nothing | true |
- * | 9 | Anything else: a thread listed active or in an unknown state, or no list | false |
+ * | 8 | With no status of its run: T3 lists the thread the turn sent to, by its ID, in a state that runs nothing, or, for a turn that made no thread, holds none of its title | true |
+ * | 9 | Anything else: a thread listed active or in an unknown state, a thread of the turn's ID that T3 does not list, or no list | false |
  */
 export function over(evidence: Evidence, status: string | undefined, listed: z.infer<typeof Read> | null, cutEnded: boolean): boolean {
     if (evidence.detached && evidence.restore?.restored !== true) return false;
@@ -283,7 +286,8 @@ export function over(evidence: Evidence, status: string | undefined, listed: z.i
     // A status Orbit does not know, or one of a run still going: only the run's own end ends it, never its thread's state.
     if (status !== undefined) return false;
     if (cutEnded) return true;
-    return listed?.found === 0 || (listed?.found === 1 && listed.status !== null && ThreadOver.has(listed.status));
+    // A thread T3 does not list proves nothing about a run sent to it; only a turn that made no thread is looked for by title.
+    return (listed?.found === 0 && (listed.thread_id ?? null) === null) || (listed?.found === 1 && listed.status !== null && ThreadOver.has(listed.status));
 }
 
 /** How far a run that asks got: its question unread (or without its owner run), stored but its run not stopped, or stored and stopped. */

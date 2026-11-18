@@ -18,8 +18,9 @@ const acceptedProjection = () => ({ thread: { id: launchRequest.threadId, projec
 type LaunchProjection = ReturnType<typeof acceptedProjection>;
 
 type Request = { id: string; kind: string; status: string; responseCapability?: { type: "message" | "live" }; runId?: string; ownerless?: boolean };
-// `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends.
-type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck"; respond?: "refuse" | "stuck" | "raced";
+// `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends,
+// `vanish` accepts it and the projection then omits the run, which is still active.
+type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck" | "vanish"; vanished?: boolean; respond?: "refuse" | "stuck" | "raced";
     projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[]; launchProjection?: LaunchProjection; dropLaunchReply?: boolean;
     launchReadFails?: boolean; servedEnvironment?: string; config?: unknown; bounded?: unknown;
     history?: Record<string, unknown>; historyReads?: string[]; replaceStateInPlace?: boolean };
@@ -71,7 +72,7 @@ function serve(state: Server) {
             } else if (frame.tag === "orchestration.getThreadProjection" && state.launchProjection !== undefined) {
                 value = state.launchProjection;
             } else if (frame.tag === "orchestration.getThreadProjection") {
-                value = { nodes: state.requests.filter((r) => !r.ownerless).map((r) => ({ id: `node:${r.id}`, runId: r.runId ?? run })), thread: { id: thread }, runs: [{ id: run, status: state.runStatus }], runtimeRequests: state.requests.map((r) => ({ ...r, nodeId: `node:${r.id}` })),
+                value = { nodes: state.requests.filter((r) => !r.ownerless).map((r) => ({ id: `node:${r.id}`, runId: r.runId ?? run })), thread: { id: thread }, runs: state.vanished ? [] : [{ id: run, status: state.runStatus }], runtimeRequests: state.requests.map((r) => ({ ...r, nodeId: `node:${r.id}` })),
                     turnItems: Object.entries(state.questions).map(([requestId, questions]) => ({ type: "user_input_request", requestId, questions })) };
             } else {
                 state.commands.push(frame.payload);
@@ -86,7 +87,8 @@ function serve(state: Server) {
                     socket.send(JSON.stringify({ _tag: "Exit", requestId: frame.id, exit: { _tag: "Failure", cause: { _tag: "Fail", error: "run is not interruptible" } } }) + "\n");
                     return;
                 }
-                if (frame.payload.type === "run.interrupt" && state.interrupt !== "stuck") {
+                if (frame.payload.type === "run.interrupt" && state.interrupt === "vanish") state.vanished = true;
+                if (frame.payload.type === "run.interrupt" && state.interrupt !== "stuck" && state.interrupt !== "vanish") {
                     state.runStatus = "interrupted";
                     state.requests = state.requests.map((pending) => ({ ...pending, status: pending.responseCapability?.type === "message" ? pending.status : "cancelled" }));
                 }
@@ -203,6 +205,10 @@ Deno.test({ name: "the stop ends the run only while it waits for exactly the sto
     // Two stored questions, in any order, are the set the run waits for.
     const two = waiting([{ id: "r2", kind: "user_input", status: "pending" }, { id: "r1", kind: "user_input", status: "pending" }], { r1: [color], r2: [color] });
     assertEquals((await helper(two, ["interrupt", thread, run, "r1\nr2"])).out!.interrupted, true);
+    // T3 accepts the interrupt, but the projection after it omits the run, which is still active: that is no proof of its end.
+    const vanishing = { ...waiting([{ id: "r1", kind: "user_input", status: "pending" }], { r1: [color] }), interrupt: "vanish" as const };
+    const unproven = await helper(vanishing, ["interrupt", thread, run, "r1"]);
+    assertEquals([unproven.code, unproven.out!.interrupted, unproven.out!.error, vanishing.runStatus], [0, false, null, "running"]);
 } });
 
 Deno.test({ name: "a session issue that prints no JSON fails without quoting it and still revokes the session it names", ignore: !available, async fn() {
@@ -215,31 +221,35 @@ Deno.test({ name: "the stop ends exactly the named run through the same interrup
     ignore: !available, async fn() {
         const state = waiting([], {});
         const stopped = await helper(state, ["stop", thread, run]);
-        assertEquals([stopped.code, stopped.out, stopped.revoked], [0, { stopped: true, run, state: "interrupted" }, ["session-1"]]);
+        assertEquals([stopped.code, stopped.out, stopped.revoked], [0, { stopped: true, over: true, run, state: "interrupted" }, ["session-1"]]);
         assertEquals([state.commands.length, state.commands[0].type, state.commands[0].threadId, state.commands[0].runId], [1, "run.interrupt", thread, run]);
         // A run that asks is stopped too: its turn is over in Orbit, whatever the run waits for.
         const asking = waiting([{ id: "a1", kind: "approval", status: "pending" }], {});
-        assertEquals((await helper(asking, ["stop", thread, run])).out, { stopped: true, run, state: "interrupted" });
+        assertEquals((await helper(asking, ["stop", thread, run])).out, { stopped: true, over: true, run, state: "interrupted" });
         // T3 is already done with the run: nothing is sent.
         const over = { ...waiting([], {}), runStatus: "completed" };
         const idle = await helper(over, ["stop", thread, run]);
-        assertEquals([idle.code, idle.out, over.commands, idle.revoked], [0, { stopped: false, run: null, state: "completed" }, [], ["session-1"]]);
+        assertEquals([idle.code, idle.out, over.commands, idle.revoked], [0, { stopped: false, over: true, run, state: "completed" }, [], ["session-1"]]);
         // Another run is active on the thread, but not the named one: nothing is stopped, and the answer says the run was not found.
         const other = waiting([], {});
         const refused = await helper(other, ["stop", thread, "orbit-run-A"]);
-        assertEquals([refused.code, refused.out!.stopped, refused.out!.run, other.commands], [0, false, "orbit-run-A", []]);
+        assertEquals([refused.code, refused.out!.stopped, refused.out!.over, refused.out!.run, other.commands], [0, false, false, "orbit-run-A", []]);
+        // An accepted interrupt whose readback omits the run is not over: the run is still active, and the turn holds.
+        const vanishing = { ...waiting([], {}), interrupt: "vanish" as const };
+        const unproven = await helper(vanishing, ["stop", thread, run]);
+        assertEquals([unproven.code, unproven.out, vanishing.commands.length, vanishing.runStatus], [0, { stopped: false, over: false, run, state: null }, 1, "running"]);
     } });
 
 Deno.test({ name: "a stop that T3 refuses, or a run that does not end within the deadline, answers stopped: false with the run's last state",
     ignore: !available, async fn() {
         const refusing = { ...waiting([], {}), interrupt: "refuse" as const };
         const refused = await helper(refusing, ["stop", thread, run]);
-        assertEquals([refused.code, refused.out, refusing.commands.length, refused.revoked], [0, { stopped: false, run, state: "running" }, 1, ["session-1"]]);
+        assertEquals([refused.code, refused.out, refusing.commands.length, refused.revoked], [0, { stopped: false, over: false, run, state: "running" }, 1, ["session-1"]]);
         // The wait ends inside the phase's 60 s bound, so the answer is always written.
         const stuck = { ...waiting([], {}), interrupt: "stuck" as const };
         const began = Date.now();
         const kept = await helper(stuck, ["stop", thread, run]);
-        assertEquals([kept.code, kept.out, kept.revoked], [0, { stopped: false, run, state: "running" }, ["session-1"]]);
+        assertEquals([kept.code, kept.out, kept.revoked], [0, { stopped: false, over: false, run, state: "running" }, ["session-1"]]);
         assert(Date.now() - began < 60000, `the stop took ${Date.now() - began} ms`);
     } });
 

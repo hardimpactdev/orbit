@@ -109,29 +109,35 @@ Deno.test("a wait that the bound killed is tasks.turn_timeout, records the threa
     // The run ended inside the kill grace: T3 lists the thread as completed.
     assertEquals([turn(124, "").ended, turn(124, "").error], [true, "The turn ran longer than its bound. Its run has ended."]);
     assertEquals(turn(124, "", { read: { ...read, status: null } }).ended, false);
+    // The read looked for the thread the turn sent to by its ID: a thread T3 does not list proves nothing, so the turn holds. Only a
+    // turn that made no thread, read by its title, is over when T3 holds none.
+    assertEquals(turn(124, "", { read: { ...read, thread_id: thread, found: 0, status: null, show_exit: null, show: "" } }).ended, false);
+    assertEquals(turn(124, "", { read: { ...read, thread_id: null, found: 0, status: null, show_exit: null, show: "" } }).ended, true);
 });
 
 Deno.test("a wait that the bound killed and whose run the phase stopped is over and holds nothing, still failing tasks.turn_timeout", () => {
     const halted = (answer: unknown, stop_exit = 0) => ({ stop_exit, stop: JSON.stringify(answer) });
     for (const exit of [124, 137]) {
         // The read back follows the stop: T3 lists the stopped thread interrupted.
-        const cut = turn(exit, "", { read: { ...read, status: "interrupted" }, stop: halted({ stopped: true, run, state: "interrupted" }) });
+        const cut = turn(exit, "", { read: { ...read, status: "interrupted" }, stop: halted({ stopped: true, over: true, run, state: "interrupted" }) });
         assertEquals([cut.state, cut.error_code, cut.ended, cut.error], ["failed", "tasks.turn_timeout", true, "The turn ran longer than its bound. Orbit stopped its run."]);
     }
     // Another run that T3 lists active on the thread after the stop neither holds nor ends this turn: the stop proved this run's end.
-    assertEquals(turn(124, "", { read: { ...read, status: "running" }, stop: halted({ stopped: true, run, state: "interrupted" }) }).ended, true);
-    // The stop found no active run: the run ended on its own.
-    const idle = turn(124, "", { read: { ...read, status: "idle" }, stop: halted({ stopped: false, run: null, state: null }) });
+    assertEquals(turn(124, "", { read: { ...read, status: "running" }, stop: halted({ stopped: true, over: true, run, state: "interrupted" }) }).ended, true);
+    // The stop read the run already over: it ended on its own.
+    const idle = turn(124, "", { read: { ...read, status: "idle" }, stop: halted({ stopped: false, over: true, run, state: "completed" }) });
     assertEquals([idle.ended, idle.error], [true, "The turn ran longer than its bound. Its run has ended."]);
-    // A stop that T3 refused, one cut by its own bound, or an answer that is no stop's, leaves the run going: the next turn stops it.
-    for (const stop of [halted({ stopped: false, run, state: "running" }), halted({}, 124), { stop_exit: 0, stop: "not json" }, halted({ interrupted: true })]) {
+    // A stop that T3 refused, one cut by its own bound, an accepted interrupt whose readback omits the run, or an answer that is no
+    // stop's, leaves the run going: the next turn stops it.
+    for (const stop of [halted({ stopped: false, over: false, run, state: "running" }), halted({}, 124), { stop_exit: 0, stop: "not json" }, halted({ interrupted: true }),
+        halted({ stopped: false, over: false, run, state: null }), halted({ stopped: false, run: null, state: null })]) {
         const held = turn(124, "", { read: { ...read, status: "running" }, stop });
         assertEquals([held.error_code, held.ended, held.error], ["tasks.turn_timeout", false,
             "The turn ran longer than its bound. Orbit did not stop its run; the turn holds until its run is over."], JSON.stringify(stop));
     }
     // A cut reviewer whose run stopped and whose checkout was restored is free.
     const reviewer = turn(124, "", { review: { ready: true, error_code: null }, detached: true, restore: { restored: true }, read: { ...read, status: "interrupted" },
-        stop: halted({ stopped: true, run, state: "interrupted" }) });
+        stop: halted({ stopped: true, over: true, run, state: "interrupted" }) });
     assertEquals([reviewer.error_code, reviewer.ended], ["tasks.turn_timeout", true]);
 });
 
@@ -389,7 +395,7 @@ Deno.test("a run status outside T3's known statuses is not named and names no en
 
 Deno.test("ended follows the rows of over(), judged on this turn's run", () => {
     const ownerless = { ...asked, requests: asked.requests.map(({ run_id: _, ...rest }) => rest) };
-    const halted = { stop_exit: 0, stop: JSON.stringify({ stopped: true, run, state: "interrupted" }) };
+    const halted = { stop_exit: 0, stop: JSON.stringify({ stopped: true, over: true, run, state: "interrupted" }) };
     const failedList = { list_exit: 1, found: 0, status: null, show_exit: null, show: "" };
     const rows: [string, boolean, Evidence][] = [
         ["1 unrestored reviewer checkout, run completed", false, { ...none, launched: true, detached: true, restore: { restored: false }, start: { start_exit: 0, start: started("completed") }, read }],
@@ -408,6 +414,10 @@ Deno.test("ended follows the rows of over(), judged on this turn's run", () => {
         ["7 cut run's stop proved, list failed", true, { ...none, launched: true, start: { start_exit: 124, start: "" }, stop: halted, read: failedList }],
         ["8 no status, thread idle", true, { ...none, launched: true, start: { start_exit: 0, start: JSON.stringify({ threadId: thread }) }, read: { ...read, status: "idle" } }],
         ["8 no status, no thread of the title", true, { ...none, launched: true, start: { start_exit: 1, start: "" }, read: { ...read, found: 0, status: null } }],
+        ["9 cut run's interrupt accepted, readback omits it, thread running", false, { ...none, launched: true, start: { start_exit: 124, start: "" },
+            stop: { stop_exit: 0, stop: JSON.stringify({ stopped: false, over: false, run, state: null }) }, read: { ...read, status: "running" } }],
+        ["9 no status, T3 lists no thread of the turn's ID", false, { ...none, launched: true, start: { start_exit: 124, start: "" },
+            read: { ...read, thread_id: thread, found: 0, status: null, show_exit: null, show: "" } }],
         ["9 no status, thread queued", false, { ...none, launched: true, start: { start_exit: 0, start: JSON.stringify({ threadId: thread }) }, read: { ...read, status: "queued" } }],
         ["9 no status, thread paused", false, { ...none, launched: true, start: { start_exit: 1, start: "" }, read: { ...read, status: "paused" } }],
         ["9 no status, no list", false, { ...none, launched: true, start: { start_exit: 1, start: "" }, read: failedList }],
@@ -415,10 +425,11 @@ Deno.test("ended follows the rows of over(), judged on this turn's run", () => {
     for (const [row, ended, evidence] of rows) assertEquals(shapeTurn(evidence).ended, ended, row);
 });
 
-Deno.test("the settle in the phase knows the same thread states that run nothing as the result step", () => {
+Deno.test("the phase knows the same run and thread states that run nothing as the result step", () => {
     const phase = Deno.readTextFileSync(new URL("../../../../ansible/task-copy-turn.yml", import.meta.url));
-    const listed = phase.match(/settle_terminal: \[([^\]]*)\]/)![1].split(",").map((state) => state.trim().replace(/'/g, ""));
-    assertEquals(listed.sort(), [...ThreadOver].sort());
+    const list = (name: string) => phase.match(new RegExp(`${name}: \\[([^\\]]*)\\]`))![1].split(",").map((state) => state.trim().replace(/'/g, "")).sort();
+    assertEquals(list("thread_over"), [...ThreadOver].sort());
+    assertEquals(list("run_over"), [...ThreadOver].filter((state) => state !== "idle").sort());
 });
 
 Deno.test("a question that another run owns is not stored, and the turn holds", () => {

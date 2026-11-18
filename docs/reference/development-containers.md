@@ -2363,17 +2363,25 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 
 ### Hold after a turn that may still run
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A run cut by the turn's bound is stopped in the same phase, through T3's own RPC, and its turn is over once that stop ended the run or found none active. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports, or a cut turn whose stop failed.
+One rule decides when a turn's run is over.
 
-One rule settles a turn that is not over: T3 lists its thread in no active state, or none of its title. For a reviewer's turn, its detach must also be undone. Only a turn's phase can read that, so the next turn settles it:
+A thread is named only by its captured T3 thread ID, whatever its title. Only a turn with no ID that T3 holds is found by its title. A new thread's admitted UUID is such an ID, because T3 never received it.
+
+A run is over only when a readback shows that exact run ID in a status that ends it. An accepted interrupt is no proof. A run that T3 does not show is no proof either, and neither is a thread that T3 does not list. The turn then holds. A turn with no recorded run, such as one cut by its bound, is over when T3 lists its thread in a state that runs nothing.
+
+Nothing that needs the run over happens before it ends. That covers the reviewer's restore, the clearing of the detach mark, the settle and `ended: true`.
+
+A turn is over when nothing was launched, or when the start printed an end of its run. A run that asks is over once the helper read it interrupted. A run cut by the turn's bound is not stopped, since the start printed no run ID: its turn is over once T3 lists its thread in no active state. Until then a reviewer's checkout stays detached and its mark set. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports.
+
+The same rule settles a turn that is not over. For a reviewer's turn, its detach must also be undone. Only a turn's phase can read that, so the next turn settles it:
 
 - The Gateway puts every turn that is not settled into the next turn's intent, with its title. A reviewer's turn adds the task branch.
 - Each of these turns is over in Orbit: it timed out, was cancelled or was lost.
 - The result names the settled turns. The Gateway counts them settled from then on.
 
-The phase lists T3's threads first. A thread that T3 still shows active is stopped with `t3_copy_rpc.mjs stop`, which interrupts its active run and waits for its end. A run that stopped, or a thread with no active run, has ended. The phase writes which turns it found settled, and names each run it stopped.
+The phase lists T3's threads first. For each recorded run, `t3_copy_rpc.mjs stop` reads that exact run on the captured thread. It leaves a run that T3 shows over alone, and interrupts a run that still goes on, then waits for its end. It answers `over` only when its last read shows the run in a status that ends it. A turn with no recorded run is judged by its thread's listed state. A turn that sent nothing has no run. The phase writes which turns it found settled, and names each run it stopped.
 
-When a stop fails, the earlier turn is not settled. The phase touches nothing and launches nothing, and fails with `tasks.copy_turn_unended`. The work in the copy stays.
+When a stop fails or proves no end, the earlier turn is not settled. The phase touches nothing and launches nothing, and fails with `tasks.copy_turn_unended`. The work in the copy stays.
 
 A reviewer's detach marks the copy with the ref `refs/orbit/review-detach`, at the tip the branch had. Only a verified restore clears the mark. The phase restores the checkout only when the mark is set, every earlier run is over, and the checkout is still detached. The restore is a reset, a clean and a checkout of the task branch. The checkout must then be clean on that branch at the mark's tip, and the phase clears the mark.
 

@@ -11,6 +11,7 @@ cases = [
   "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so",
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing",
   "a turn cut by its bound stops no run, since Orbit cannot name its run, and holds",
+  "rule (a): the turn's thread is read back and continued by its ID whatever its title; a title is used only without an ID",
   "an intent outside the admitted shape runs nothing in the copy",
   "a thread list that is not JSON reads as no thread, and the start's end is still written",
   "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start",
@@ -33,15 +34,17 @@ cases = [
   "a failed or unreadable answered resolution launches nothing and names the resolution failure",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 1085
+cost = 1125
 # Hosted runs 43621397546 (Sabre) and 43633174432 (PR): largest completed case time + 25%, rounded up + 1s.
 # Reviewer-detach has only censored hosted receipts: its 138s body cost (120s before task 5402 added one phase run) is an ESTIMATE until a complete hosted run.
 # The Conn Server case (ADR 0258) has no hosted receipt: its 17s is an ESTIMATE over a 7.4s local run (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # The stop cases (task 5402) have no hosted receipt: the settle cases' 70s and 100s and the cut-run stop's 60s are ESTIMATES over local runs of 19s
 # alone, 57.3s and 40.7s two units at a time (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # The Codex create case (task 5645) has no hosted receipt: its 40s is an ESTIMATE over a 19s local run of its three phases, until a hosted run.
+# Task 5873: the ID readback case's 30s is local 20s plus headroom, and the settle-over case's 80s is an ESTIMATE over a local 57s run now that it
+# reads each recorded run through the helper (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
-slices = 31
+slices = 32
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -68,6 +71,7 @@ inputs = [
   "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so" = 97
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 33
   "a turn cut by its bound stops no run, since Orbit cannot name its run, and holds" = 60
+  "rule (a): the turn's thread is read back and continued by its ID whatever its title; a title is used only without an ID" = 30
   "an intent outside the admitted shape runs nothing in the copy" = 32
   "a thread list that is not JSON reads as no thread, and the start's end is still written" = 19
   "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start" = 40
@@ -81,7 +85,7 @@ inputs = [
   "the start evidence keeps stderr only when the start failed, and only its last 4096 characters" = 22
   "a run that asks has its question stored before the run is stopped, and the thread is read back after" = 27
   "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored" = 92
-  "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing" = 70
+  "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing" = 80
   "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing" = 100
   "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched" = 138
   "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing" = 5

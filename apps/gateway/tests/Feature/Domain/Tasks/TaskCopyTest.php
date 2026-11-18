@@ -1643,10 +1643,10 @@ function copyTurnDone(string $thread): array
         'model' => 'claude-opus-5-5', 'questions' => [], 'transcript' => []];
 }
 
-/** The shaped turn of a run in T3 thread THREAD that asked one question and whose run Orbit stopped. */
-function copyTurnAsked(string $thread): array
+/** The shaped turn of a run RUN in T3 thread THREAD that asked one question, which RUN owns, and whose run Orbit stopped. */
+function copyTurnAsked(string $thread, string $run = 'run:1'): array
 {
-    return [...copyTurnDone($thread), 'state' => 'asking_for_input', 'questions' => [['request_id' => 'request:1', 'run_id' => 'run:1', 'id' => 'Which color?', 'header' => 'Color',
+    return [...copyTurnDone($thread), 'run_id' => $run, 'state' => 'asking_for_input', 'questions' => [['request_id' => 'request:1', 'run_id' => $run, 'id' => 'Which color?', 'header' => 'Color',
         'question' => 'Which color?', 'options' => [['label' => 'Red', 'description' => 'Choose red', 'value' => null], ['label' => 'Blue', 'description' => 'Choose blue', 'value' => null]],
         'multi_select' => false, 'allow_custom_answer' => null, 'initial_answer' => null, 'required' => null]]];
 }
@@ -2919,7 +2919,7 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
         $prompt = $answer->input['turn']['prompt'];
         expect($next->input['turn']['settle'])->toBe([['operation_id' => $answer->id, 'title' => $answer->input['turn']['title'], 'branch' => null,
             't3_thread_id' => 'mcp:1', 'message_id' => $answer->input['turn']['message_id'], 'digest' => hash('sha256', $prompt), 'run_id' => 'run:2',
-            'sent' => true, 'answered' => ['request:1']]])
+            'sent' => true, 'answered' => ['request:1'], 'answered_run' => 'run:1']])
             ->and(json_encode($next->input['turn']['settle'], JSON_THROW_ON_ERROR))->not->toContain('Blue.')
             // A possibly sent answer keeps the questions it answers.
             ->and(AgentThread::query()->findOrFail($answer->input['thread_id'])->questions)->toBe(copyTurnAsked('mcp:1')['questions']);
@@ -3044,16 +3044,33 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
             ->and(Arr::only($settle[0], ['operation_id', 't3_thread_id', 'run_id']))->toBe(['operation_id' => $cancelled->id, 't3_thread_id' => 'mcp:real', 'run_id' => 'run:9']);
     });
 
-    it('names the thread that an earlier turn froze when its result reported none', function (): void {
+    it('names the thread that an earlier turn froze when its result reported none, only while T3 held that ID', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
+        // A new thread's admitted UUID, which T3 never received: the earlier turn names no thread, so the phase finds it by its title.
         $first = copyTurn($group);
-        $frozen = $first->input['turn']['t3_thread_id'];
         copyTurnEnded($first, 'cancelled', []);
-        AgentThread::query()->findOrFail($first->input['thread_id'])->update(['external_id' => 'mcp:later']);
+        expect($first->input['turn']['admission'])->toBe('admitted')
+            ->and(copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0]['t3_thread_id'])->toBeNull();
+    });
 
-        expect(copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0]['t3_thread_id'])->toBe($frozen);
+    it('names the thread a continued earlier turn froze from a reported ID, and that turn\'s answered owner run', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        // The question is owned by run:question; the answer turn launched run:answer and was cut.
+        copyTurnEnded(copyTurn($group), 'succeeded', copyTurnAsked('mcp:1', 'run:question'));
+        $answer = copyTurn($group, ['prompt' => 'Blue.']);
+        copyTurnEnded($answer, 'failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false,
+            't3_thread_id' => null, 'run_id' => 'run:answer', 'sent' => true, 'launched' => true, 'transcript' => []]);
+        AgentThread::query()->findOrFail($answer->input['thread_id'])->update(['external_id' => 'mcp:later']);
+
+        $settle = copyTurn($group, ['thread' => 'new'])->input['turn']['settle'][0];
+
+        expect($answer->input['turn']['admission'])->toBe('overwritten')
+            ->and(Arr::only($settle, ['t3_thread_id', 'run_id', 'answered', 'answered_run']))
+            ->toBe(['t3_thread_id' => 'mcp:1', 'run_id' => 'run:answer', 'answered' => ['request:1'], 'answered_run' => 'run:question']);
     });
 
     it('keeps no worker error text or diagnostic in the result or on the thread, only the code\'s sentence', function (): void {

@@ -160,8 +160,10 @@ final readonly class TaskCopyTurn
 
     /**
      * What a turn passes of an earlier turn that may still run (docs/reference/development-containers.md#earlier-turns): its thread, its
-     * frozen message ID and the SHA-256 digest of its frozen message body, never the body, the run it recorded, whether it was sent and
-     * the requests it answered. A turn with no result counts as possibly sent; a result from before `sent` names it as `launched`.
+     * frozen message ID and the SHA-256 digest of its frozen message body, never the body, the run it recorded, whether it was sent, the
+     * requests it answered and the run that owned them. A turn with no result counts as possibly sent; a result from before `sent` names
+     * it as `launched`. The thread is only an ID that T3 holds: an admitted or provisional ID, which T3 never received, names none, so
+     * the phase finds that turn's thread by its title.
      *
      * @return array<string, mixed>
      */
@@ -172,15 +174,28 @@ final readonly class TaskCopyTurn
 
         return ['operation_id' => $turn->id, 'title' => ValidatedData::string($intent['title']),
             'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch']),
-            // The thread that turn reported, else the one it froze, else, for a turn admitted before the freeze, its row's: a cancelled turn
-            // records no report on the row.
-            't3_thread_id' => self::nonEmpty($result['t3_thread_id'] ?? null) ?? self::nonEmpty($intent['t3_thread_id'] ?? null)
-                ?? AgentThread::query()->find(ValidatedData::integer($turn->input['thread_id']))?->external_id,
+            // The thread that turn reported, else the one it froze while T3 held it, else, for a turn admitted before the freeze, its row's
+            // while T3 holds it: a cancelled turn records no report on the row.
+            't3_thread_id' => self::nonEmpty($result['t3_thread_id'] ?? null) ?? (array_key_exists('t3_thread_id', $intent)
+                ? (self::held($intent['admission'] ?? null) ? self::nonEmpty($intent['t3_thread_id']) : null)
+                : self::heldId(AgentThread::query()->find(ValidatedData::integer($turn->input['thread_id'])))),
             'message_id' => is_string($intent['message_id'] ?? null) ? $intent['message_id'] : null,
             'digest' => hash('sha256', ValidatedData::string($intent['prompt'])),
             'run_id' => is_string($result['run_id'] ?? null) ? $result['run_id'] : null,
             'sent' => ($result['sent'] ?? $result['launched'] ?? true) !== false,
-            'answered' => array_values(array_map(ValidatedData::string(...), is_array($intent['answered'] ?? null) ? $intent['answered'] : []))];
+            'answered' => array_values(array_map(ValidatedData::string(...), is_array($intent['answered'] ?? null) ? $intent['answered'] : [])),
+            'answered_run' => self::nonEmpty($intent['answered_run'] ?? null)];
+    }
+
+    /** Whether a thread ID of this standing is one T3 holds: a turn reported it. */
+    private static function held(mixed $admission): bool
+    {
+        return in_array($admission, [self::Confirmed, self::Overwritten], true);
+    }
+
+    private static function heldId(?AgentThread $thread): ?string
+    {
+        return $thread instanceof AgentThread && self::held(self::admission($thread)) ? self::nonEmpty($thread->external_id) : null;
     }
 
     /**
