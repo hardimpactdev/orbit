@@ -1,5 +1,5 @@
-import { assertEquals } from "jsr:@std/assert@1";
-import { branchAvailable, profileRead } from "./assets.ts";
+import { assertEquals, assertRejects } from "jsr:@std/assert@1";
+import { behavior, branchAvailable, profileRead } from "./assets.ts";
 const out = (stdout: string) => ({ stdout, exitCode: 0 });
 Deno.test("source refuses occupied branches before target preparation and keeps unrelated branches available", async () => {
     const root = await Deno.makeTempDir();
@@ -75,4 +75,55 @@ Deno.test("the clone profile read reports partial, unsafe and composer checkouts
         profileRead("regular\nfile\n{}", { project_type: "monorepo" }),
         { kind: "none" },
     );
+});
+
+Deno.test("clone validates the recorded container seed and the checkout origin", async () => {
+  const commit = "a".repeat(40);
+  const intent = {
+    branch: "main",
+    repository_identity: "github.com/example/tool",
+  };
+  const observations = {
+    branch: out("main"),
+    commit: out(commit),
+    status: out(""),
+    submodules: out(""),
+  };
+  const checkout = {
+    ...observations,
+    intent,
+    origin: out("https://github.com/example/tool.git"),
+  };
+  const container = {
+    ...observations,
+    intent: { ...intent, container: { seed_commit: commit } },
+    origin: {},
+  };
+  const { execute } = behavior.methods.cloneCandidate;
+  const results: unknown[] = [];
+  const context = {
+    writeResource: async (_spec: string, _name: string, value: unknown) =>
+      results.push(value),
+  };
+
+  await execute(checkout, context);
+  await execute(container, context);
+  assertEquals(results, [{ commit }, { commit }]);
+
+  for (
+    const input of [
+      { ...checkout, origin: out("https://github.com/example/other.git") },
+      { ...container, commit: out("b".repeat(40)) },
+      { ...container, branch: out("other") },
+      { ...container, status: out("?? local-file") },
+      { ...container, submodules: out("unexpected submodule") },
+    ]
+  ) {
+    await assertRejects(
+      () => execute(input, context),
+      Error,
+      "instance.clone_candidate_source_invalid",
+    );
+  }
+  assertEquals(results.length, 2);
 });

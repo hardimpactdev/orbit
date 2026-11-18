@@ -6,6 +6,7 @@ namespace App\Domain\Executor;
 
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Models\Operation;
+use Closure;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,8 @@ use Throwable;
  */
 final readonly class ExecutorOrderPublisher
 {
-    public function __construct(private RealtimeConnection $realtime) {}
+    /** @param (Closure():float)|null $clock */
+    public function __construct(private RealtimeConnection $realtime, private ?Closure $clock = null) {}
 
     /**
      * Publishes the order of this Operation on the channel of the Operation's `node_id`.
@@ -31,7 +33,23 @@ final readonly class ExecutorOrderPublisher
      * @throws InvalidArgumentException when the Operation has no `node_id`, or the order belongs to another Operation.
      * @throws RuntimeException|Throwable when no websocket role is active or the serving Reverb refused the event.
      */
-    public function publish(Operation $operation, SignedExecutorOrder $order): void
+    public function publish(Operation $operation, SignedExecutorOrder $order, ?float $boundSeconds = null): void
+    {
+        if ($boundSeconds === null) {
+            $this->send($operation, $order, null);
+
+            return;
+        }
+        $original = config('broadcasting');
+        try {
+            $this->send($operation, $order, $this->monotonic() + $boundSeconds);
+        } finally {
+            config(['broadcasting' => $original]);
+            Broadcast::purge('reverb');
+        }
+    }
+
+    private function send(Operation $operation, SignedExecutorOrder $order, ?float $deadline): void
     {
         $nodeId = ExecutorOrderSigner::nodeOf($operation);
         if ($order->operation !== ExecutorOrderSigner::idOf($operation)) {
@@ -46,29 +64,38 @@ final readonly class ExecutorOrderPublisher
 
         try {
             $this->realtime->configureBroadcasting($connections[0]);
+            $this->limit($deadline);
             event($event);
         } catch (Throwable $exception) {
             $servingFailure = $exception;
         }
 
         foreach (array_slice($connections, 1) as $connection) {
+            if ($deadline !== null && $deadline - $this->monotonic() < 0.001) {
+                break;
+            }
             if ($this->realtime->oldServerSkipped($connection)) {
                 continue;
             }
 
+            $attempted = false;
             try {
                 $this->realtime->configureBroadcasting($connection, oldServer: true);
+                $this->limit($deadline);
                 Broadcast::purge('reverb');
                 $broadcaster = Broadcast::connection('reverb');
                 if (! $broadcaster instanceof Broadcaster) {
                     throw new RuntimeException('The reverb broadcaster is unavailable.');
                 }
+                $attempted = true;
                 $broadcaster->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
                 $this->realtime->recordOldServer($connection, true);
             } catch (Throwable $exception) {
                 // The order's wire form is a signed, short-lived credential: log only the Node and the Operation.
-                Log::warning('Failed to publish an executor order to the old websocket server.', ['node' => $nodeId, 'operation' => $order->operation, 'exception' => $exception->getMessage()]);
-                $this->realtime->recordOldServer($connection, false);
+                Log::warning('Failed to publish an executor order to the old websocket server.', ['node' => $nodeId, 'operation' => $order->operation, 'exception_type' => $exception::class]);
+                if ($attempted) {
+                    $this->realtime->recordOldServer($connection, false);
+                }
             }
         }
 
@@ -80,5 +107,28 @@ final readonly class ExecutorOrderPublisher
         if ($servingFailure !== null) {
             throw $servingFailure;
         }
+    }
+
+    /** Pusher overrides Guzzle's request timeout, so cap both and discard any client built before the cap. */
+    private function limit(?float $deadline): void
+    {
+        if ($deadline === null) {
+            return;
+        }
+        $left = $deadline - $this->monotonic();
+        if ($left < 0.001) {
+            throw new RuntimeException('The executor publish budget ended.');
+        }
+        config([
+            'broadcasting.connections.reverb.options.timeout' => $left,
+            'broadcasting.connections.reverb.client_options.timeout' => $left,
+            'broadcasting.connections.reverb.client_options.connect_timeout' => $left,
+        ]);
+        Broadcast::purge('reverb');
+    }
+
+    private function monotonic(): float
+    {
+        return $this->clock === null ? hrtime(true) / 1e9 : ($this->clock)();
     }
 }
