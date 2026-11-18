@@ -302,7 +302,8 @@ const record = "/var/lib/orbit/fleet-refresh.json";
 /** What a base converge reads from `swamp/` (fleet-converge-inputs.json): their Git object IDs join the `converge` digest. */
 const convergeInputs: string[] = JSON.parse(Deno.readTextFileSync(new URL("fleet-converge-inputs.json", root))).inputs;
 const recordReads = [`cat ${record}`,
-  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp/ansible HEAD:apps/gateway/resources/machine-software HEAD:swamp`];
+  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp`];
+const hostTreeRead = "git -c safe.directory=* -c core.quotePath=true -C /srv/workspace ls-tree -r -t --full-tree HEAD -- swamp/ansible apps/gateway/resources/machine-software";
 /** After the migrate, the nested Gateway prints the digest of each Node's base converge intent; it admits and writes nothing. */
 const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --host app-dev gateway app-dev app-prod";
 /** With the Club key every refresh reads the nested Gateway's Swamp tokens: names and dates, no secret. */
@@ -1439,6 +1440,7 @@ Deno.test({
       assertEquals(calls, [
         `test -s ${clubKey}`,
         ...recordReads,
+        hostTreeRead,
         recordRemove,
         ...mountReads,
         ...swampReads,
@@ -1838,6 +1840,8 @@ function pythonJson(value: unknown): string {
   return JSON.stringify(value);
 }
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+const fixtureHostDigest = (intent = "4".repeat(64)) => sha256(`host ${sha256(pythonJson([`100644 blob ${"5".repeat(40)}\tapps/gateway/resources/machine-software/recipe.json`,
+  `100644 blob ${"3".repeat(40)}\tswamp/ansible/shared.yml`]))} ${intent}`);
 /** A time as the record keeps the oldest token's creation: `YYYYMMDDHHMMSS`, UTC. */
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
@@ -1857,8 +1861,7 @@ function seededRecord(converged: number | number[], fleet = fixtureFleet, tokens
     ...Object.fromEntries(convergedKeys.map((key, index) => [key, String(times[index])])),
     grants: sha256("a1 c3"),
     rules: sha256(pythonJson(fleetFiles)),
-    // The Instance host: the `swamp/ansible` tree and the machine-software recipe.
-    host: sha256("host c3 e5 " + "4".repeat(64)),
+    host: fixtureHostDigest(),
     tokens,
   };
 }
@@ -2095,6 +2098,61 @@ Deno.test({
 });
 
 Deno.test({
+  name: "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    const checkout = Deno.makeTempDirSync();
+    const git = (...args: string[]) => {
+      const result = new Deno.Command("git", { args: ["-C", checkout, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args] }).outputSync();
+      assert(result.success, new TextDecoder().decode(result.stderr));
+    };
+    const commit = (path: string, text: string) => {
+      Deno.mkdirSync(`${checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
+      Deno.writeTextFileSync(`${checkout}/${path}`, text);
+      git("add", "--", path);
+      git("commit", "-qm", "Change a fixture input");
+    };
+    const refresh = (due: boolean) => {
+      const result = f.run("refresh");
+      assert(result.ok, result.output);
+      assertEquals(f.calls().filter((call) => call.includes("/converge ")), due ? [convergeAdmit(2, true)] : []);
+      assertEquals(f.refreshed()!.host, due ? "converged" : "kept");
+      return JSON.parse(f.state().outer.files[record]);
+    };
+    try {
+      git("init", "-q");
+      const housekeeping = "swamp/ansible/tasks/swamp-housekeeping.yml";
+      commit(housekeeping, "stock housekeeping");
+      commit("swamp/ansible/tasks/instance-fleet-node.yml", "stock roles");
+      commit("apps/gateway/resources/machine-software/recipe.json", "stock recipe");
+      f.change((state) => {
+        state.hostCheckout = checkout;
+        const previous = JSON.parse(state.outer.files[record]);
+        delete previous.host;
+        state.outer.files[record] = JSON.stringify(previous);
+      });
+      const calibrated = refresh(true);
+      const bases = Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots]));
+      commit(housekeeping, "updated housekeeping");
+      assertEquals(refresh(false).host, calibrated.host);
+      assertEquals(Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots])), bases);
+      commit(`swamp/ansible/unknown/${housekeeping}`, "a new path with the excluded suffix");
+      const changed = refresh(true);
+      assert(changed.host && changed.host !== calibrated.host);
+      f.change((state) => state.hostCheckout = `${checkout}/missing`);
+      const unreadable = refresh(true);
+      assertEquals(unreadable.host, undefined);
+      assertEquals(unreadable.converge_gateway, calibrated.converge_gateway);
+      assertEquals(unreadable.converge_app_prod, calibrated.converge_app_prod);
+    } finally {
+      f.cleanup();
+      Deno.removeSync(checkout, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
   name: "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s",
   ignore: !hasAnsible,
   fn() {
@@ -2115,7 +2173,7 @@ Deno.test({
       assertStringIncludes(refreshed.output, "FAILED - RETRYING: [localhost]: Wait for the converge of each due nested Node (360 retries left)");
       assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
       assertEquals([f.refreshed()!.host, f.state().roleConverges, f.state().convergeRunning], ["converged", [2], { 2: 0 }]);
-      assertEquals(JSON.parse(f.state().outer.files[record]).host, sha256("host c3 e5 " + "5".repeat(64)));
+      assertEquals(JSON.parse(f.state().outer.files[record]).host, fixtureHostDigest("5".repeat(64)));
     } finally {
       f.cleanup();
     }
