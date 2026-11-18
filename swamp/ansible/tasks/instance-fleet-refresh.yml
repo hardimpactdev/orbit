@@ -261,7 +261,7 @@
   changed_when: false
   failed_when: false
 # The Instance host on nested-app-dev (docs/reference/development-containers.md#instance-host-in-the-fleet): its `app-dev` role converge
-# runs the container branch when what that branch reads changed. That is the `swamp/ansible` files apart from the Swamp-only tasks,
+# runs the container branch when what that branch reads changed. That is the `swamp/ansible` files apart from the listed Swamp-role and controller-only files,
 # the machine-software recipe, and
 # nested-app-dev's branch intent as the nested Gateway renders it (`host` of the read above: the image definition, the folders, Incus
 # and the rest, without the admission time). A test, a workflow or other Gateway code rebuilds nothing. Only a default whose ID map
@@ -277,7 +277,7 @@
           {%- set path = row.split('\t', 1)[-1] -%}
           {%- if row.startswith('040000 tree ') -%}
             {%- if path in fleet_host_roots -%}{%- set _ = roots.append(path) -%}{%- endif -%}
-          {%- elif path not in fleet_converge_inputs.instance_host.swamp_only -%}
+          {%- elif path not in fleet_converge_inputs.instance_host.outside_host -%}
             {%- set _ = files.append(row) -%}
           {%- endif -%}
         {%- endfor -%}

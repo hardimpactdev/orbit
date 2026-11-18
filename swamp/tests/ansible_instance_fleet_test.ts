@@ -2134,6 +2134,8 @@ Deno.test({
       });
       const calibrated = refresh(true);
       const bases = Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots]));
+      commit("swamp/ansible/conn-launch.yml", "Conn launch controller");
+      commit("swamp/ansible/t3_copy_rpc.mjs", "Task-turn RPC stdin");
       commit(housekeeping, "updated housekeeping");
       assertEquals(refresh(false).host, calibrated.host);
       assertEquals(Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots])), bases);
