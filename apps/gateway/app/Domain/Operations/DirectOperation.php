@@ -167,6 +167,19 @@ final readonly class DirectOperation
         return $this->definition($kind, $version)['child_versions'] ?? [];
     }
 
+    /** @return array<string,int> */
+    public function pinnedChildVersions(Operation $parent): array
+    {
+        $version = OperationVersions::pinned($parent);
+        $pins = $parent->child_versions;
+        // The earlier v1 Gateway wrote [] for Conn launches before it knew their fixed children.
+        if ($pins === null || ($pins === [] && $parent->kind === OperationKinds::ConnLaunch && $version === 1)) {
+            return $this->childVersions($parent->kind, $version);
+        }
+
+        return $pins;
+    }
+
     /** @return array<string,array<int,array<string,int>>> */
     public function dependencyGraph(): array
     {

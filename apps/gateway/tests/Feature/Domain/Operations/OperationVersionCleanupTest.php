@@ -19,6 +19,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -148,4 +149,33 @@ it('counts every affected row beyond one chunk and excludes unrelated work', fun
     DB::table('operations')->insert([...$rows[0], 'kind' => 'unrelated.work']);
     operationVersionsForTest(['proof.verify' => ['deprecated' => [1]]]);
     expect(app(OperationVersionCleanup::class)->check()['versions'][0]['outstanding'])->toBe(1005);
+});
+
+it('rolls back an interrupted ledger migration and replays a committed migration without rebuilding the ledger', function (): void {
+    $ledger = require database_path('migrations/2027_03_08_000004_pin_operation_versions.php');
+    $launch = require database_path('migrations/2027_03_08_000005_fence_conn_launch_retries.php');
+    $launch->down();
+    $ledger->down();
+    $row = DB::table('operations')->insertGetId(['kind' => 'proof.command', 'target_type' => 'node', 'target_id' => $this->node->id,
+        'node_id' => $this->node->id, 'input' => '{}', 'state' => '{}', 'status' => 'queued']);
+    DB::statement('CREATE TABLE fixture_ledger_references (operation_id integer REFERENCES operations(id) ON DELETE CASCADE)');
+    DB::table('fixture_ledger_references')->insert(['operation_id' => $row]);
+    $interrupt = true;
+    DB::connection()->beforeExecuting(function (string $sql) use (&$interrupt): void {
+        if ($interrupt && str_contains($sql, 'CREATE TRIGGER IF NOT EXISTS operations_version_immutable')) {
+            $interrupt = false;
+            throw new RuntimeException('fixture.ledger_interrupted');
+        }
+    });
+    expect(fn () => $ledger->up())->toThrow(RuntimeException::class, 'fixture.ledger_interrupted');
+    expect(Schema::hasColumn('operations', 'operation_version'))->toBeFalse()
+        ->and(Schema::hasTable('deprecated_operation_versions'))->toBeFalse();
+    $ledger->up();
+    $ledger->up(); // SQLite committed, then the process died before Laravel logged the migration.
+    expect(DB::table('operations')->where('id', $row)->value('operation_version'))->toBe(1)
+        ->and((int) DB::table('fixture_ledger_references')->value('operation_id'))->toBe($row);
+    $launch->up();
+    $ledger->up();
+    $fence = DB::table('sqlite_schema')->where('name', 'operations_version_admission')->value('sql');
+    expect($fence)->toContain('launch_retry_requests.application.id');
 });

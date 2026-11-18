@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerModelRoute;
@@ -1746,10 +1747,37 @@ describe('launch control and progress', function (): void {
         $legacy = Operation::query()->create(['kind' => OperationKinds::ConnLaunch, 'operation_version' => 1, 'child_versions' => [],
             'target_type' => 'conn_profile', 'target_id' => $this->profile->id, 'node_id' => $this->host->id,
             'input' => ['launch_id' => $this->key], 'state' => [], 'status' => OperationStatus::Waiting]);
+        $previous = DB::table('sqlite_schema')->whereIn('name', ['operations_version_immutable', 'operations_version_admission'])->orderBy('name')->pluck('sql')->all();
+        DB::statement("CREATE TRIGGER fixture_abort_launch_backfill BEFORE UPDATE OF child_versions ON operations
+            BEGIN SELECT RAISE(ABORT, 'fixture.launch_backfill_interrupted'); END");
+        expect(fn () => $migration->up())->toThrow(QueryException::class, 'fixture.launch_backfill_interrupted');
+        expect($legacy->refresh()->child_versions)->toBe([])->and(DB::table('sqlite_schema')
+            ->whereIn('name', ['operations_version_immutable', 'operations_version_admission'])->orderBy('name')->pluck('sql')->all())->toBe($previous)
+            ->and(DB::table('sqlite_schema')->where('name', 'operations_version_launch_retry')->exists())->toBeFalse();
+        DB::statement('DROP TRIGGER fixture_abort_launch_backfill');
+        $migration->up();
         $migration->up();
         expect($legacy->refresh()->child_versions)->toBe(OperationKinds::CoordinatorChildren[OperationKinds::ConnLaunch])
             ->and($legacy->input['launch_id'])->toBe($this->key)->and($legacy->status)->toBe(OperationStatus::Waiting);
         expect(fn () => $legacy->update(['child_versions' => []]))->toThrow(QueryException::class, 'operation.version_immutable');
+    });
+
+    it('retains the eight fixed v1 child pins for an earlier Gateway that admits a launch after backfill', function (): void {
+        $row = ['kind' => OperationKinds::ConnLaunch, 'operation_version' => 1, 'child_versions' => [],
+            'target_type' => 'conn_profile', 'target_id' => $this->profile->id, 'node_id' => $this->host->id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Waiting];
+        $launch = Operation::query()->create($row);
+        upgradeLaunchChildVersions(OperationKinds::ConnLaunchInspect);
+        expect(fn () => Operation::query()->create($row))->toThrow(QueryException::class, 'operation.version_deprecated');
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeFalse();
+        expect(app(DirectOperation::class)->pinnedChildVersions($launch))->toBe(OperationKinds::CoordinatorChildren[OperationKinds::ConnLaunch]);
+        $child = app(StartOperationAction::class)->execute(OperationKinds::ConnLaunchInspect, 'instance', $this->instance->id,
+            $this->host->id, ['launch_operation_id' => $launch->id], 'test', null, start: false, parent: $launch);
+        expect($child->operation_version)->toBe(1)->and($child->parent_operation_id)->toBe($launch->id);
+        $launch->update(['status' => OperationStatus::Succeeded]);
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeFalse();
+        $child->update(['status' => OperationStatus::Succeeded]);
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeTrue();
     });
 
     it('runs the old launch inspect and dispatch handlers after their versions close', function (): void {

@@ -104,7 +104,7 @@ final readonly class OperationStore
     private function childVersion(Operation $parent, string $kind, array $input): int
     {
         $record = Operation::query()->lockForUpdate()->findOrFail($parent->id);
-        $children = $record->child_versions ?? app(DirectOperation::class)->childVersions($record->kind, OperationVersions::pinned($record));
+        $children = app(DirectOperation::class)->pinnedChildVersions($record);
         $retry = Arr::get($record->state ?? [], 'launch_retry_requests.application.id');
         $applicationRetry = $record->kind === OperationKinds::ConnLaunch && $record->status === OperationStatus::Succeeded && $kind === 'instance.complete'
             && is_string($retry) && $this->idempotency->key === 'conn-launch:'.$record->id.':complete:'.$retry;

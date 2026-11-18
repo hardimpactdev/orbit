@@ -13,7 +13,6 @@ use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
-use App\Domain\Operations\OperationVersions;
 use App\Domain\Schedules\ScheduleFires;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -230,7 +229,7 @@ final readonly class SwampCommandStep
     {
         $declarations = [];
         $direct = app(DirectOperation::class);
-        foreach ($operation->child_versions ?? $direct->childVersions($operation->kind, OperationVersions::pinned($operation)) as $kind => $version) {
+        foreach ($direct->pinnedChildVersions($operation) as $kind => $version) {
             $definition = $direct->definition($kind, $version);
             // A kind records its child runs through its own projection, or through the child projection it declares beside it.
             if ($definition === null) {
