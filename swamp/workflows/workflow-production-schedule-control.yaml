@@ -42,7 +42,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "app-prod-schedule-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("app-prod-schedule-" + string(inputs.intent.target.instance_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
         name: '${{ "app-prod-schedule-ssh-" + string(inputs.node_id) }}'

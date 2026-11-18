@@ -14,6 +14,8 @@ Every command that manages remote resources sends its request to the active Gate
 
 [Instance attachment commands](/cli/instance/database-add), [environment commands](/cli/env), and [`node:role:list`](/cli/node/role-list) check required inputs before they load the active Gateway profile. A missing or invalid selector therefore reports the command family's input error even when no Gateway profile exists. Commands that need a numeric ID use the shared positive-integer check. They may add the stable error code to the human explanation without changing the JSON error envelope.
 
+After an offline rollback, `orbit gateway:release:deploy <serving-full-sha> --reconcile` reloads the workflows for the release that serves traffic.
+
 ## Commands
 
 | Command | Result |

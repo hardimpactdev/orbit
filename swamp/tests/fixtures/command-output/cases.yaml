@@ -2617,6 +2617,10 @@ cases:
   expected: false
 
 non_command_output:
+- file: tasks/production-container-process.yml
+  task: Check the serving production Instance Process
+  field: ansible.builtin.assert.that[2]
+  reason: Checks that the admitted unit name carries the admitted Process ID.
 - file: tasks/gateway-swamp-pin.yml
   task: Remove the other Swamp releases
   field: loop

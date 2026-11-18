@@ -24,6 +24,8 @@ Swamp runs production commands as the admitted `orbit-app-<ProjectID>` account. 
 
 The production home is planned to go: [Production containers](/reference/production-containers) ([ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers)) runs each release in its own container on the `app-prod` Node.
 
+An AppProd deployment builds in that Instance’s permanent preparation container, then promotes a verified clone. The prior live drains and freezes for rollback. A deploy step is required by default. Set `--required=false` to record its failure and continue. Both step phases run from the repository root. See [production containers](/reference/production-containers).
+
 ## The production home
 
 Each production Instance has a home, `/home/<production-user>`, with these paths.

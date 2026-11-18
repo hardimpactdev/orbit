@@ -2,6 +2,7 @@
 title: "Update and recover a Gateway"
 description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, find the request logs, receive release alerts, and follow the fleet rollout."
 covers:
+  - swamp/scripts/release-container.py
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
@@ -17,6 +18,8 @@ covers:
 This guide helps an operator keep Gateway state safe during a source update and recover when an update fails. It uses the installation layout from the [Quickstart](/quickstart). Test the procedure on a disposable copy before you rely on it for important data.
 
 Node convergence applies its recorded network part after the other footprint parts. A matching network digest and live state leave WireGuard untouched.
+
+A preflight refusal with `gateway.release_node_capacity` means the container build would exceed the Node’s memory, swap, or disk allowance. Add the required capacity and repeat preflight before attempting the move.
 
 ## Gateway request logs
 

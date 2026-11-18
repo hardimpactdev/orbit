@@ -24,7 +24,7 @@ cases = [
   "test_ordinary_fpm_release_and_rollback",
 ]
 file = "swamp/tests/gateway_release_recovery_test.py"
-cost = 145
+cost = 290
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-container-rollback",
@@ -40,25 +40,25 @@ inputs = [
   "swamp/workflows/workflow-gateway-release-activate.yaml",
 ]
 [case_costs]
-"test_first_move_recovers_before_drain" = 5
-"test_first_move_recovers_after_drain_before_switch" = 5
-"test_first_move_recovers_after_caddy_switch" = 5
-"test_host_rollback_refuses_broken_listener_before_drain" = 5
-"test_host_rollback_refuses_wrong_served_commit_before_drain" = 5
-"test_host_rollback_restores_container_on_public_failure" = 8
-"test_host_rollback_recovers_before_drain" = 7
-"test_host_rollback_recovers_after_drain_before_switch" = 7
-"test_host_rollback_recovers_after_switch_before_verification" = 9
-"test_host_rollback_completes_cleanup_after_verified_switch" = 8
-"test_incompatible_retained_helper_and_workflow_are_refused_before_rollback" = 5
-"test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper" = 5
-"test_native_failed_promotion_verifies_the_previous_release_before_acknowledging" = 10
-"test_offline_rollback_journals_the_original_units_before_draining" = 7
-"test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail" = 10
-"test_healthy_retained_container_rollback" = 8
-"test_ordinary_fpm_release_and_rollback" = 3
-"test_matching_earlier_container_switch_recovers_only_after_public_verification" = 10
-"test_earlier_first_move_recovers_before_inventory_and_blocks_new_offline_rollback" = 6
-"test_first_move_and_host_rollback_preserve_a_stopped_registered_process" = 5
-"test_switch_rebuilds_the_candidate_after_configuration_changes_at_readiness" = 6
-"test_reconciliation_fences_offline_rollback_until_its_own_finalizer" = 6
+"test_first_move_recovers_before_drain" = 10
+"test_first_move_recovers_after_drain_before_switch" = 10
+"test_first_move_recovers_after_caddy_switch" = 10
+"test_host_rollback_refuses_broken_listener_before_drain" = 10
+"test_host_rollback_refuses_wrong_served_commit_before_drain" = 10
+"test_host_rollback_restores_container_on_public_failure" = 16
+"test_host_rollback_recovers_before_drain" = 14
+"test_host_rollback_recovers_after_drain_before_switch" = 14
+"test_host_rollback_recovers_after_switch_before_verification" = 18
+"test_host_rollback_completes_cleanup_after_verified_switch" = 16
+"test_incompatible_retained_helper_and_workflow_are_refused_before_rollback" = 10
+"test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper" = 10
+"test_native_failed_promotion_verifies_the_previous_release_before_acknowledging" = 20
+"test_offline_rollback_journals_the_original_units_before_draining" = 14
+"test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail" = 20
+"test_healthy_retained_container_rollback" = 16
+"test_ordinary_fpm_release_and_rollback" = 6
+"test_matching_earlier_container_switch_recovers_only_after_public_verification" = 20
+"test_earlier_first_move_recovers_before_inventory_and_blocks_new_offline_rollback" = 12
+"test_first_move_and_host_rollback_preserve_a_stopped_registered_process" = 10
+"test_switch_rebuilds_the_candidate_after_configuration_changes_at_readiness" = 12
+"test_reconciliation_fences_offline_rollback_until_its_own_finalizer" = 12

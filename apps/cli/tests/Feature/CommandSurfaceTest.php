@@ -753,6 +753,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             [
                 'command' => null,
                 'phase' => 'before_activation',
+                'required' => null,
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
@@ -766,6 +767,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             [
                 'command' => null,
                 'phase' => null,
+                'required' => null,
                 'timeout' => null,
                 'before' => null,
                 'after' => null,

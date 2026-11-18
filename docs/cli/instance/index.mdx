@@ -19,6 +19,8 @@ A Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on get
 
 [Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/instance-cloning), [Instance transfer](/reference/instance-transfer), [Instance removal](/reference/instance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
 
+On an AppProd Node, `instance:deploy` promotes a verified release clone. Use `instance:release:list` to find the retained release for `instance:rollback`. See [production containers](/reference/production-containers).
+
 ## Commands
 
 Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, these name its checkout and the last commit that deployed there. Read them before creating a linked worktree for `instance:register`; use that commit rather than a newer `origin/main`. Human tables keep their existing columns.

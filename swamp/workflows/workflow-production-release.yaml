@@ -60,9 +60,9 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-fetch-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-fetch-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: &ssh
-        name: '${{ "production-release-ssh-" + string(inputs.node_id) + "-" + string(inputs.operation_id) }}'
+        name: '${{ ("production-release-ssh-" + string(inputs.node_id) + "-" + inputs.intent.target).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.ssh.target.user }}'
@@ -95,7 +95,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-build-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-build-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -113,7 +113,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-build-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-build-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -138,7 +138,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-web-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-web-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -159,7 +159,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-clone-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-clone-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -177,7 +177,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-park-preparation-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-park-preparation-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -204,7 +204,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-snapshot-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-snapshot-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -228,7 +228,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-migrate-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-migrate-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -257,7 +257,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-wait-idle-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-wait-idle-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -284,7 +284,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-ready-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-ready-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -312,7 +312,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-ready-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-ready-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -357,7 +357,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-activation-workflow-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-activation-workflow-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -425,7 +425,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-release-unused-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-release-unused-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target
@@ -450,7 +450,7 @@ jobs:
       type: behavior
       behaviorType: '@swamp/ssh'
       methodName: exec
-      behaviorName: '${{ "release-readback-" + string(inputs.operation_id) }}'
+      behaviorName: '${{ ("release-readback-" + inputs.intent.target).split(".").join("-") }}'
       globalArgs: *ssh
       inputs:
         hosts: name:target

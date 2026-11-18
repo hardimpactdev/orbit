@@ -44,6 +44,8 @@ The Gateway attempts `project-documents:cleanup:work` every five minutes without
 
 The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30 days daily. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the configurable cutoffs.
 
+A recurring Schedule for a containerized AppProd Instance resolves its serving release at each fire. A manual change or fire binds to the confirmed release under the same lock as cutover. A queued host fire cannot start on a checkout after migration.
+
 ## Execution
 
 Retained Schedule log reads and Node-timer account resolution read the Node's stored [`accounts` fact](/reference/node-agent#facts) while its agent is online. An absent or non-current fact, an unlisted user, or an invalid account entry returns `schedule.target_unavailable`. Account resolution contacts no Node.

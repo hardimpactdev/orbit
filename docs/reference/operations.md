@@ -32,6 +32,8 @@ Removing a [Node service target record](/reference/processes-and-schedules#node-
 
 Automatic release role convergence reserves the Node against Instance and task Operations that participate on it. Admission refuses a conflict with `operation.target_busy`. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
 
+Containerized AppProd deployments and rollbacks capture their build and activation budgets on the Operation. A failed cutover can still return a verified serving commit. The Gateway records that observed selection before an operator retries.
+
 ## Instance failure alerts
 
 Every `instance.create`, `instance.complete` or `instance.deploy` Operation that enters `failed` or `interrupted` sends an immediate notification after the state transaction commits. This includes failures before source resolution and automatic deployments. A terminal replay does not send another notification. Cancelled and successful Operations do not alert.

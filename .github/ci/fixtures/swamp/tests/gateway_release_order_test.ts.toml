@@ -1,6 +1,5 @@
 order = 770
 cases = [
-  "Gateway and AppProd share the clone, handover, compensation and readback boundaries",
   "no release step admits a task VM image refresh: the VM refresh triggers are gone",
   "container rollback checks the retained Git object before workflow load",
   "Swamp load requires the bounded DB busy guard, including forced releases",
@@ -12,6 +11,7 @@ cases = [
   "failed web installation cannot migrate even when its clone is skipped",
   "cleanup resumes only after scheduler handover or switch-back has ended",
   "serving reconciliation brackets the retained workflow load with read-only checks",
+  "Gateway and AppProd share the clone, handover, compensation and readback boundaries",
 ]
 file = "swamp/tests/gateway_release_order_test.ts"
 cost = 1
