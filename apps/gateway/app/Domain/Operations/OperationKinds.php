@@ -62,6 +62,13 @@ final readonly class OperationKinds
 
     public const string ConnLaunchDispatch = 'conn.launch_dispatch';
 
+    /** The exact native Operations each v1 Gateway coordinator can admit later, including cancellation and recovery. */
+    public const array CoordinatorChildren = [
+        self::ProofRun => ['proof.command' => 1],
+        self::ConnLaunch => [self::ConnLaunchInspect => 1, self::ConnLaunchDispatch => 1, 'instance.create' => 1,
+            'instance.wake' => 1, 'instance.start' => 1, 'instance.complete' => 1, 'instance.sleep' => 1, 'instance.destroy' => 1],
+    ];
+
     public const array PrivateConnKinds = [self::ConnLaunch, self::ConnLaunchInspect, self::ConnLaunchDispatch];
 
     public const string ProofVerify = 'proof.verify';

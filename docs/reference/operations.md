@@ -2,11 +2,10 @@
 title: "Operations"
 description: "How the Gateway runs a long operation as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
-  - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
+  - apps/gateway/config/operation_versions.php
+  - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**,Console/Commands/CheckOperationCleanupCommand.php}
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php,Jobs/Operations/**}
-  - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/database/migrations/2026_12_28_000000_add_operation_idempotency_keys.php
-  - apps/gateway/database/migrations/*route_publication_holds*.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_28_000000_add_operation_idempotency_keys,*route_publication_holds*,*pin_operation_versions,*fence_conn_launch_retries}.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
@@ -35,6 +34,8 @@ Native terminal projection reads Swamp history and any private result material o
 Removing a [Node service target record](/reference/processes-and-schedules#node-service-target-records) returns an already completed `instance.node_service_detach` Operation. This record-only operation works after a successful migration and performs no network, environment or runtime change. It still refuses an active lifecycle operation or an unfinished failed migration with a retained runtime.
 
 Automatic release role convergence reserves the Node against Instance and task Operations that participate on it. Admission refuses a conflict with `operation.target_busy`. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
+
+Containerized AppProd deployments and rollbacks capture their build and activation budgets on the Operation. A failed cutover can still return a verified serving commit. The Gateway records that observed selection before an operator retries.
 
 ## Instance failure alerts
 
@@ -306,6 +307,16 @@ These summaries come from the Gateway's recorded events, without another native 
 
 `result` depends on the kind. For `instance.deploy` and `instance.rollback` it is `{ deployment_id, release, selected_release, commit }`, where `deployment_id` is the [deployment history row](/reference/deployments#history) that holds the full log.
 
+### Operation versions across a Gateway release
+
+Orbit pins an Operation version when it admits the request. Existing records use version 1. Each kind selects its current version in `apps/gateway/config/operation_versions.php`. New admissions use that version. A queued, running or waiting Operation keeps its original workflow, private inputs and result handler.
+
+Swamp records a numeric `version` on a workflow. A child step selects its workflow by name or UUID at execution. A resume looks up the registered definition again. Publish incompatible definitions under separate names and UUIDs, including child workflows they call. Keep their grants, behaviors and Gateway handlers available while either version has work. [Swamp workflow schema](https://github.com/swamp-club/swamp/blob/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/workflows/workflow.ts#L98-L126) · [Child lookup](https://github.com/swamp-club/swamp/blob/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/workflows/execution_service.ts#L7998-L8005)
+
+First deploy version-aware workers with version 1 active. Publish replacement definitions before selecting them for new requests. Put the previous declaration under `retained` while admitted work can still use it. List its version under `deprecated` to close it to new admissions.
+
+Before publishing traffic, the switch uses `--fence-only` to close admissions durably. After cutover and drain, the release runs `php artisan operations:check-cleanup --json` on the serving Gateway. The hook checks the SQLite ledger and reports the outstanding count for each closed version. Exit 75 means work remains. Run the hook again before removing a definition and its handlers in a cleanup release. Exit 0 with `eligible: true` for that kind and version confirms its tracked work has settled.
+
 ### Record coordination and native children
 
 `DirectOperation` is the active writer for native work. `OperationKinds::supports()` reports `secret_outputs`, not the old child receipt and completion capabilities. The previous executor's worker callbacks, claims, leases and child polling routes are not an admission or recovery interface.
@@ -315,6 +326,8 @@ An Operation that coordinates records need not bind a Swamp run of its own. For 
 For a [Conn launch](/reference/conn#durable-launches-v1), advance only stored facts, safe receipts and native admissions under the parent row lock. Use the owning admission and projection of each child. In that transaction, record each child's exact key, ID, kind, target and ownership before reading its outcome. Start admitted machine work after commit through the existing native path. A child keeps its own Instance or Node hold, not a second parent hold on the same target. Observe a joined child without claiming it or changing its lifecycle.
 
 Use one repeatable Conn settlement in the existing `ReconcileSwampOperations` pass, beside the proof watcher, to recover missed admissions, results and cleanup. Native results and other terminal paths can request that same settlement after commit. Do not lock the parent synchronously from inside a child's terminal transaction. Terminal writes can come from native projection, start refusal, cancel-before-start or timeout; none proves by itself that a partial machine effect is gone. Read/control can consume the same stored facts without waiting for an RPC. Do not add a queue, a worker callback or another polling loop.
+
+The launch pins the versions of its inspect, dispatch and owned Instance work at admission. A shared wake or an ordinary completion that it joins keeps its own version and owner. A published launch with an application retry already recorded retains its completion handler until the retry settles. Once cleanup marks that version eligible for removal, the published launch refuses a new retry that needs it.
 
 For an ordinary clone, `DevelopmentInstanceCreateProjection` releases create's Instance hold and admits completion in the same transaction. A launch-owned create must not admit a completion that bypasses the launch's cancel fence. Use the same completion admission under the launch lock; keep the ordinary create handoff unchanged. The private command is bound to its native run through declared private material, not the public parent or child input. The launch's read/control rules also apply wherever generic Operations or events would otherwise expose or cancel its parent.
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Doctor\Intent;
 
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\InstanceState;
@@ -23,13 +24,17 @@ final readonly class RuntimeDoctorIntent
      */
     public function execute(Node $node): array
     {
-        $processes = Process::query()->with('owner')->where(function ($query) use ($node): void {
+        $inContainer = GatewayReleaseHost::inventory($node) !== null;
+        $processes = Process::query()->with('owner')->where(function ($query) use ($node, $inContainer): void {
             $query->where(function ($query) use ($node): void {
                 // A container Instance's units live in its container, out of the Node agent's sight.
                 $query->whereIn('owner_type', Instance::morphTypes())->whereIn('owner_id', Instance::query()->select('id')->where('node_id', $node->id)->where('status', '!=', InstanceState::Removing)
                     ->whereNotIn('id', InstanceRuntime::query()->select('instance_id')));
-            })->orWhere(function ($query) use ($node): void {
+            })->orWhere(function ($query) use ($node, $inContainer): void {
                 $query->where('owner_type', Node::class)->where('owner_id', $node->id);
+                if ($inContainer) {
+                    $query->whereNot(fn ($q) => $q->where('runtime', 'systemd')->whereIn('name', GatewayReleaseHost::Processes));
+                }
             });
         })->orderBy('id')->get()->map(function (Process $process): array {
             $runtime = $process->runtime->value;

@@ -72,6 +72,7 @@ final readonly class SystemdProcessRenderer
             );
         }
 
+        $productionContainer = $target->container !== null && $target->instance?->placedOnAppProd() === true;
         $ownEnvironment = $this->stringMap($runtimeConfig['environment'] ?? []);
         $supplyDevServerOrigin = $process->isVpDev() && ! array_key_exists('DEV_SERVER_ORIGIN', $ownEnvironment);
         // The Process's own value wins, including an empty one.
@@ -102,11 +103,11 @@ final readonly class SystemdProcessRenderer
             'Type=simple',
             "User={$user}",
             // In an Instance container, as FrankenPHP: group `www-data`, files shared with the group, and the runtime folder's programs.
-            ...($target->container === null ? [] : ['Group='.InstanceHostIntent::AppUser, 'UMask=0007']),
+            ...($target->container === null ? [] : ['Group='.($productionContainer ? $target->user : InstanceHostIntent::AppUser), 'UMask=0007']),
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory ?? throw new InvalidArgumentException('Systemd requires a working directory.')),
             ...($target->container === null || $target->instance === null
                 ? ['Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin']
-                : ['Environment=HOME='.InstanceHostIntent::AppHome, 'Environment=PATH='.InstanceContainer::path($target->instance->project)]),
+                : ['Environment=HOME='.($productionContainer ? '/home/orbit' : InstanceHostIntent::AppHome), 'Environment=PATH='.InstanceContainer::path($target->instance->project)]),
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
             ...($this->managedEnvironment($process, $target) === [] ? [] : ['EnvironmentFile='.$this->environmentPath($process, $target)]),

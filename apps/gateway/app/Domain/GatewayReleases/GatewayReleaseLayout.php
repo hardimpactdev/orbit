@@ -53,6 +53,20 @@ final readonly class GatewayReleaseLayout
         return dirname($this->currentPath());
     }
 
+    /** Host-owned release selection, also visible at the same path inside every release container. */
+    public function containerInventoryPath(): string
+    {
+        return $this->basePath().'/.orbit/gateway-containers.json';
+    }
+
+    public function usesContainers(): bool
+    {
+        $path = $this->containerInventoryPath();
+        clearstatcache(true, $path);
+
+        return file_exists($path) || is_link($path);
+    }
+
     public function releasesPath(): string
     {
         return $this->basePath().'/releases';

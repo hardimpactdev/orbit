@@ -112,6 +112,34 @@ export function material(raw: z.infer<typeof Captured>) {
         ".nvmrc": present(raw.nvmrc),
     };
 }
+export function verifyVpCli(runtime: VpRuntime, stdout: string) {
+    const version = valid(
+        stdout.trim().split(/\r?\n/, 1)[0].replace(
+            /^vp\s+/,
+            "",
+        ),
+    );
+    if (
+        version === null || !gte(version, runtime.vp_version)
+    ) throw new Error("deployment.vp_store_failed");
+}
+export function verifyVpInventory(runtime: VpRuntime, stdout: string) {
+    const list = z.object({
+        node: z.array(z.object({ version: z.string() })),
+        package_managers: z.record(
+            z.string(),
+            z.array(z.object({ version: z.string() })),
+        ),
+    }).parse(JSON.parse(stdout));
+    if (
+        !list.node.some((row) => row.version === runtime.node_version) ||
+        !list.package_managers[runtime.package_manager]?.some(
+            (row) =>
+                row.version ===
+                    runtime.package_manager_version,
+        )
+    ) throw new Error("deployment.vp_store_failed");
+}
 export const behavior = {
     type: "@nckrtl/instance-vp-requirements",
     version: "2026.11.03.2",
@@ -235,15 +263,7 @@ export const behavior = {
                 },
                 ctx: Context,
             ) => {
-                const version = valid(
-                    args.observation.stdout.trim().split(/\r?\n/, 1)[0].replace(
-                        /^vp\s+/,
-                        "",
-                    ),
-                );
-                if (
-                    version === null || !gte(version, args.runtime.vp_version)
-                ) throw new Error("deployment.vp_store_failed");
+                verifyVpCli(args.runtime, args.observation.stdout);
                 const result = { ready: true as const, runtime: args.runtime };
                 await ctx.writeResource("result", "result", result);
                 return result;
@@ -260,23 +280,7 @@ export const behavior = {
                 },
                 ctx: Context,
             ) => {
-                const list = z.object({
-                    node: z.array(z.object({ version: z.string() })),
-                    package_managers: z.record(
-                        z.string(),
-                        z.array(z.object({ version: z.string() })),
-                    ),
-                }).parse(JSON.parse(args.inventory.stdout));
-                if (
-                    !list.node.some((row) =>
-                        row.version === args.runtime.node_version
-                    ) ||
-                    !list.package_managers[args.runtime.package_manager]?.some(
-                        (row) =>
-                            row.version ===
-                                args.runtime.package_manager_version,
-                    )
-                ) throw new Error("deployment.vp_store_failed");
+                verifyVpInventory(args.runtime, args.inventory.stdout);
                 const result = { ready: true as const, runtime: args.runtime };
                 await ctx.writeResource("result", "result", result);
                 return result;

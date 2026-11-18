@@ -475,6 +475,11 @@ class RegistrySelectionTest(unittest.TestCase):
 
 
 class TableTest(unittest.TestCase):
+    def test_release_container_source_selects_its_fixture(self):
+        budget, fixtures, defaults = units.configuration()
+        result = units.plan(['swamp/scripts/release-container.py'], budget, fixtures, defaults)
+        self.assertIn('swamp/tests/release_container_test.py', scheduled(result))
+
     def test_writes_audit_is_owned_by_controls_and_never_scheduled_as_a_fixture(self):
         file = 'swamp/tests/writes_declared_test.ts'
         budget, fixtures, defaults = units.configuration()

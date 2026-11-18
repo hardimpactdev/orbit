@@ -25,11 +25,15 @@ use App\Console\Commands\RuntimeHibernatorCommand;
 use App\Console\Commands\ServePrivateDnsCommand;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Infrastructure\Broadcasting\ReverbBroadcaster;
+use App\Infrastructure\Gateway\ResetGatewayWorkerRequest;
 use App\Models\Instance;
 use App\Support\ValidatedData;
 use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Octane\Events\RequestTerminated;
+use Laravel\Octane\Events\WorkerErrorOccurred;
 
 final class ApplicationServiceProvider extends ServiceProvider
 {
@@ -56,6 +60,8 @@ final class ApplicationServiceProvider extends ServiceProvider
             RuntimeHibernatorCommand::class,
             ServePrivateDnsCommand::class,
         ]);
+        Event::listen([RequestTerminated::class, WorkerErrorOccurred::class], ResetGatewayWorkerRequest::class);
+
         $cache = config('cache');
         if (! is_array($cache)) {
             throw new \UnexpectedValueException('The Gateway cache configuration is invalid.');

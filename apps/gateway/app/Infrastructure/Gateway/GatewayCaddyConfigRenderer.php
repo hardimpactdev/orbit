@@ -24,8 +24,18 @@ final readonly class GatewayCaddyConfigRenderer
 {
     public const string ROOT_CA_PATH = '/etc/caddy/orbit-cert-current/root-ca.pem';
 
-    public function render(string $hostname, string $wireguardIp, string $checkoutPath, string $webRoot): string
+    public function render(string $hostname, string $wireguardIp, string $checkoutPath, string $webRoot, bool $prepared = false): string
     {
+        if ($prepared) {
+            return <<<CADDYFILE
+                {$hostname}, {$wireguardIp} {
+                    bind {$wireguardIp}
+                    tls /etc/caddy/orbit-cert-current/gateway.pem /etc/caddy/orbit-cert-current/gateway.key
+                    encode zstd gzip
+                    import /etc/caddy/orbit-gateway-handlers.caddy {$wireguardIp}
+                }
+                CADDYFILE.PHP_EOL;
+        }
         $rootCa = self::ROOT_CA_PATH;
 
         return <<<CADDYFILE

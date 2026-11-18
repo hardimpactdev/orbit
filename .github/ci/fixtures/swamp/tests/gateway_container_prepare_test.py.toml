@@ -1,0 +1,25 @@
+file = "swamp/tests/gateway_container_prepare_test.py"
+cost = 3
+inputs = [
+  "bin/gateway-container-prepare",
+  "bin/gateway-container-environment",
+  "bin/gateway-container-rollback",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "swamp/ansible/files/gateway-release-guest.py",
+  "swamp/ansible/files/gateway-release-infrastructure.py",
+  "swamp/scripts/gateway-release-checkout.sh",
+]
+cases = [
+  "test_network_must_be_private_and_disjoint_except_its_existing_bridge",
+  "test_storage_requires_space_for_the_observed_build_and_active_free_swap",
+  "test_only_a_complete_stock_archive_matches_its_admitted_digest",
+  "test_runtime_uses_the_repositorys_pinned_arch_specific_builds",
+  "test_runtime_selection_updates_only_the_owned_preparer_and_verifies_the_active_mount",
+  "test_host_loopback_queue_is_rejected_before_guest_provisioning",
+  "test_stock_and_existing_resources_cannot_be_adopted_with_wrong_ownership",
+  "test_a_failed_guest_account_check_cannot_expose_any_private_device",
+  "test_preparation_fences_an_open_switch_before_first_inventory",
+  "test_offline_recovery_selects_the_journaled_live_or_host_program",
+  "test_release_checkout_keeps_only_admitted_history_for_cold_fleet_cli_resolution",
+  "test_env_projection_tracks_atomic_edits_without_exposing_the_bare_repo",
+]

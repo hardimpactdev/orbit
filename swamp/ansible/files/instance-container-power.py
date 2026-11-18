@@ -56,6 +56,9 @@ RECEIPTS_KEPT = 16
 
 PROJECTS = ("orbit-instances", "orbit-instances-nested")
 NESTED_PROJECT = "orbit-instances-nested"
+RELEASE_PROJECT = "orbit-releases"
+RELEASE_OWNER = r"(?:gateway|instance-[1-9][0-9]*)"
+RELEASE_CONTAINER = re.compile(rf"(?:prepare-{RELEASE_OWNER}|{RELEASE_OWNER}-[0-9a-f]{{12}})")
 SPECIAL_MAPPINGS = ("[vvar]", "[vvar_vclock]", "[vdso]", "[vsyscall]")
 PRIMITIVES = ("cgroup_v2", "proc_maps", "proc_pagemap", "pidfd_open", "process_madvise", "process_vm_readv")
 REASONS = ("no_plan", "plan_invalid", "plan_stale", "unsupported", "placement_unproven", "bound_processes", "bound_ranges",
@@ -207,7 +210,7 @@ class Host:
         return project == NESTED_PROJECT or os.path.exists(self.fleet_node)
 
     def instance_dir(self, instance_id):
-        return os.path.join(self.state, "instances", str(instance_id))
+        return os.path.join(self.state, "releases" if isinstance(instance_id, str) else "instances", str(instance_id))
 
     def container_cgroup(self, project, name):
         """The container's cgroup relative to the cgroup root, as Incus names it."""
@@ -975,7 +978,11 @@ def parse_intent(raw, instance_id, operation_id):
         raise Refused("intent fields")
     if intent["instance_id"] != instance_id or intent["operation_id"] != operation_id:
         raise Refused("intent ids")
-    if intent["incus_project"] not in PROJECTS or intent["incus_name"] != f"instance-{instance_id}":
+    if isinstance(instance_id, str):
+        if (not RELEASE_CONTAINER.fullmatch(instance_id) or intent["incus_project"] != RELEASE_PROJECT
+                or intent["incus_name"] != instance_id or intent["web"] is not None):
+            raise Refused("intent release target")
+    elif intent["incus_project"] not in PROJECTS or intent["incus_name"] != f"instance-{instance_id}":
         raise Refused("intent target")
     web = intent["web"]
     if web is not None:
@@ -1346,8 +1353,14 @@ def parse_args(argv):
 
     if argv == ["capabilities"]:
         return "capabilities", None, None, False
+    if len(argv) == 5 and argv[0] in ("prepare", "restore", "residual") and argv[1] == "--release" and argv[3] == "--operation":
+        if not RELEASE_CONTAINER.fullmatch(argv[2]):
+            raise Refused("release container")
+        return argv[0], argv[2], number(argv[4]), False
     if len(argv) == 5 and argv[0] in ("prepare", "restore", "residual") and argv[1] == "--instance" and argv[3] == "--operation":
         return argv[0], number(argv[2]), number(argv[4]), False
+    if len(argv) == 3 and argv[:2] == ["discard", "--release"] and RELEASE_CONTAINER.fullmatch(argv[2]):
+        return "discard", argv[2], None, False
     if argv[:2] == ["discard", "--instance"] and len(argv) in (3, 4) and (len(argv) == 3 or argv[3] == "--plan-only"):
         return "discard", number(argv[2]), None, len(argv) == 4
     raise Refused("arguments")
@@ -1375,7 +1388,7 @@ def run(host, argv, stdin, unit):
         raw = stdin.read(MAX_INPUT + 1) if stdin is not None else b""
         intent = parse_intent(raw, instance_id, operation_id) if raw.strip() or command == "prepare" else None
         os.umask(0o077)
-        ensure_dir(os.path.join(host.state, "instances"))
+        ensure_dir(os.path.dirname(host.instance_dir(instance_id)))
         body = (prepare if command == "prepare" else restore)(host, instance_id, operation_id, intent)
     result = {"schema_version": SCHEMA_VERSION, "command": command, "instance_id": instance_id,
               "operation_id": operation_id, "outcome": None, "error_code": None, **body}

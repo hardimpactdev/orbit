@@ -260,7 +260,7 @@ final readonly class ProofRunIntent
                     'assignments' => $stored, 'run_budget_seconds' => ProofBatchPlan::budget($stored),
                     'caller_node_id' => $proof->input['caller_node_id'] ?? null, 'ci_pool' => ($proof->input['ci_pool'] ?? false) === true,
                     'group_id' => $group->id, 'instance_id' => $copy->id, 'node_id' => $copy->node_id,
-                ], ProofGroup::Trigger, null));
+                ], ProofGroup::Trigger, null, parent: $current));
                 $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'instance_id' => $copy->id, 'operation_id' => $run->id, 'assignments' => $assignments];
             }
             $this->recordRuns($proof, $current, $intent, $runs, $batches);

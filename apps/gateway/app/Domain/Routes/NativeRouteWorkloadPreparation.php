@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Routes;
 
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
@@ -39,6 +40,13 @@ final readonly class NativeRouteWorkloadPreparation
         $instance->loadMissing(['node', 'project']);
         $common = ['node_id' => $instance->node_id, 'instance_id' => $instance->id,
             ...app(NativeCaddyPublicationInput::class)->connectionForNode($instance->node)];
+        if ($instance->hasProductionRelease()) {
+            ProductionContainerRelease::target($instance);
+            // Caddy uses this Instance's durable upstream. The selected container owns its web roots and PHP runtime.
+            $phase = ['source_access' => null, 'served_roots' => null, 'runtime' => null];
+
+            return [...$common, 'prepare' => $phase, 'selected' => $phase, 'restore' => $phase];
+        }
         if (! $instance->placedOnAppProd()) {
             if ($before === null) {
                 throw new ResourceOperationException('route.workload_before_required', 'Development workload preparation requires its recorded prior Route.', 409);

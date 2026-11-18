@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Fleet;
 
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeWireGuardHubInput;
@@ -134,7 +135,7 @@ final readonly class FleetReboot
      * reboot also starts `systemd-networkd` again, so the hub's networkd drop-in takes effect.
      *
      * @param  list<string>  $roles
-     * @param  array{horizon: string, scheduler: string}|null  $gateway
+     * @param  array{horizon: string, scheduler: string, release?:string}|null  $gateway
      * @return list<string>
      */
     private static function services(Node $node, array $roles, ?array $gateway): array
@@ -142,11 +143,11 @@ final readonly class FleetReboot
         $hub = in_array(RoleName::Vpn->value, $roles, true)
             ? ['wg-quick@orbit.service', ...(NodeWireGuardHubInput::source($node) === null ? [] : [NodeWireGuardHubInput::SourceUnit])] : [];
 
-        return array_values(array_filter(['orbit-agent.service', ...($gateway === null ? [] : [$gateway['scheduler'], $gateway['horizon']]), ...$hub],
+        return array_values(array_filter(['orbit-agent.service', ...($gateway === null || isset($gateway['release']) ? [] : [$gateway['scheduler'], $gateway['horizon']]), ...$hub],
             static fn (string $unit): bool => $unit !== ''));
     }
 
-    /** @return array{horizon: string, scheduler: string} The units the drain stops and the check finds running again. */
+    /** @return array{horizon: string, scheduler: string, release?:string} The units the drain stops and the check finds running again. */
     private static function gatewayUnits(Node $node): array
     {
         $unit = static function (string $name, string $fallback) use ($node): string {
@@ -155,7 +156,9 @@ final readonly class FleetReboot
             return $process instanceof Process ? new SystemdProcessRenderer()->unitName($process) : $fallback;
         };
 
-        return ['horizon' => $unit('horizon', GatewayQueueRedis::configured() ? 'orbit-gateway-horizon.service' : ''),
+        $target = GatewayReleaseHost::target($node);
+
+        return [...($target === null ? [] : ['release' => $target['release']]), 'horizon' => $unit('horizon', GatewayQueueRedis::configured() ? 'orbit-gateway-horizon.service' : ''),
             'scheduler' => $unit('schedule-work', 'orbit-gateway-schedule.service')];
     }
 

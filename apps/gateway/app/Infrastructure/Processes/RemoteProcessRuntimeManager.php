@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Domain\AppDev\ViteProcessLifecycle;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
@@ -138,6 +139,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     public function status(#[SensitiveParameter] Process $process): string
     {
         $target = $this->targets->forInspection($process);
+        if (GatewayReleaseHost::hasProcess($process) && GatewayReleaseHost::target($target->node) !== null) {
+            return app(ContainerProcessInspection::class)->states([['instance' => $target->node, 'process' => $process]])[$process->id]['runtime_status'];
+        }
         if ($target->container !== null) {
             return app(ContainerProcessInspection::class)->states([['instance' => $target->instance ?? throw new \LogicException('A container target requires an Instance.'), 'process' => $process]])[$process->id]['runtime_status'];
         }
@@ -149,6 +153,9 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     public function logs(#[SensitiveParameter] Process $process, int $lines): string
     {
         $target = $this->targets->forInspection($process);
+        if (GatewayReleaseHost::hasProcess($process) && GatewayReleaseHost::target($target->node) !== null) {
+            return app(ContainerProcessInspection::class)->logs($target->node, $process, $lines);
+        }
         if ($target->container !== null) {
             return app(ContainerProcessInspection::class)->logs($target->instance ?? throw new \LogicException('A container target requires an Instance.'), $process, $lines);
         }
