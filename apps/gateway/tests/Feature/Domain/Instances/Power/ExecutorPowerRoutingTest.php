@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Executor\ExecutorOrderBroadcast;
+use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
@@ -292,13 +293,18 @@ it('permits a stopped wake only when its recovery actually boots the ordinary co
         ->toBe($path === 'started' ? InstanceRuntimePowerState::Running : InstanceRuntimePowerState::Stopped);
 })->with(['started', 'already_running']);
 
-it('does not sign the other lifecycle action for the same bound run', function (string $kind, string $phase, string $wrong): void {
+it('signs only the lifecycle action admitted for the bound run', function (string $kind, string $phase, string $wrong): void {
     $instance = managedPowerFixture();
     $swamp = containerDefaultNode('swamp-worker', '10.44.0.8', listed: false);
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     $intent = ['signed_power' => true, 'executor_lifecycle_phase' => $phase];
-    $operation = app(StartOperationAction::class)->execute($kind, 'instance', $instance->id, $instance->node_id,
-        $kind === 'instance.deploy' ? ['deployment' => $intent] : $intent, 'cli', null, start: false);
+    $input = match ($kind) {
+        'instance.deploy' => ['deployment' => $intent],
+        'instance.destroy', 'instance.unregister' => ['container_destroy' => app(ContainerInstanceDestroy::class)->capture($instance)],
+        default => $intent,
+    };
+    $operation = app(StartOperationAction::class)->execute($kind, 'instance', $instance->id, $instance->node_id, $input,
+        'cli', null, start: false);
     $run = (string) Str::uuid();
     $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
     $path = '/api/v1/direct-operations/'.$operation->id.'/executor/sign';
@@ -313,6 +319,9 @@ it('does not sign the other lifecycle action for the same bound run', function (
     'resume start' => [InstanceStart::Kind, 'resume', 'boot'],
     'resume deploy' => ['instance.deploy', 'resume', 'boot'],
     'boot deploy' => ['instance.deploy', 'boot', 'resume'],
+    'boot start' => [InstanceStart::Kind, 'boot', 'resume'],
+    'destroy' => ['instance.destroy', 'removal', 'boot'],
+    'unregister' => ['instance.unregister', 'removal', 'boot'],
 ]);
 
 it('projects the SSH refusal even if notifying the waiter fails', function (): void {
@@ -366,19 +375,20 @@ it('keeps the signed sleep outcome instead of an outer frozen claim', function (
     expect($sleep->refresh()->result['sleep'])->toBe('stopped');
 });
 
-it('rejects a successful start wrapper carrying an executor refusal', function (): void {
+it('rejects a successful signed resume wrapper with no successful executor receipt', function (?string $verdict, string $code): void {
     $instance = managedPowerFixture();
     $operation = app(StartOperationAction::class)->execute(InstanceStart::Kind, 'instance', $instance->id, $instance->node_id,
         ['signed_power' => true, 'executor_lifecycle_phase' => 'resume'], 'cli', null, start: false);
     $run = (string) Str::uuid();
     $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
+    $phase = $verdict === null ? [] : ['executor' => ['status' => $verdict, 'reason' => 'unknown_target',
+        'operation' => (string) $operation->id, 'action' => 'wake', 'target' => (string) $instance->id]];
     app(InstanceStart::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->toIso8601String(),
-        'finished_at' => now()->toIso8601String(), 'result' => ['executor' => ['status' => 'refused', 'reason' => 'unknown_target',
-            'operation' => (string) $operation->id, 'action' => 'wake', 'target' => (string) $instance->id]]]);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
-        ->and($operation->result['executor']['status'])->toBe('refused');
+        'finished_at' => now()->toIso8601String(), 'result' => $phase]);
+    expect($operation->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe($code);
+    expect($operation->result['executor']['status'] ?? null)->toBe($verdict);
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
-});
+})->with(['refused' => ['refused', 'executor.order_refused'], 'missing' => [null, 'executor.result_unproven']]);
 
 it('keeps an accepted action fenced while its Swamp recovery is queued', function (): void {
     $instance = managedPowerFixture();

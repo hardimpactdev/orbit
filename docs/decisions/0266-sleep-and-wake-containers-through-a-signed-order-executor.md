@@ -120,6 +120,8 @@ An explicit signed wake queues delivery and follows its Operation, like Conn. On
 
 Engine choice stays on the Operation after admission, including across a setting change. The signed engine is off by default. Before disabling it for handback, stop admitting signed sleeps, drain signed Operations, and wake Instances that still have a Rust sleep plan with the signed engine. Do not hand a frozen Rust plan to Python or a Python plan to Rust. A stopped container has no resumable memory; its ordinary lifecycle may boot it after the applicable guard and cleanup.
 
+A start or deploy admitted to resume a signed freeze requires a matching executor receipt. An already-running container that needs no resume or discard can still take its usual lifecycle path without a receipt.
+
 So every sleep and wake, whatever the caller (WebSocket, SSH fallback, Swamp run, deploy, start, destroy), goes through one executor with one journal.
 
 ### What this supersedes and changes

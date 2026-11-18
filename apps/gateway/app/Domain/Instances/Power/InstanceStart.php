@@ -89,7 +89,7 @@ final readonly class InstanceStart implements DirectOperationProjection
         $errorCode = $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null);
         $raw = $phase['executor'] ?? null;
         $receipt = ExecutorPowerIntent::lifecycleReceipt($operation, $raw);
-        if ($succeeded && ($errorCode = ExecutorPowerIntent::lifecycleError($raw, $receipt, ($phase['wake'] ?? null) === 'started')) !== null) {
+        if ($succeeded && ($errorCode = ExecutorPowerIntent::lifecycleError($operation, $raw, $receipt, ($phase['wake'] ?? null) === 'started')) !== null) {
             $succeeded = false;
             $data['status'] = OperationStatus::Failed->value;
         }

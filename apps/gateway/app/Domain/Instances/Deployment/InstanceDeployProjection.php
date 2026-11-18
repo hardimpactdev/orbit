@@ -108,7 +108,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $facts['fleet_refresh'] = $payload['fleet_refresh'];
             }
             $receipt = ExecutorPowerIntent::lifecycleReceipt($locked, $payload['executor'] ?? null);
-            if ($status === 'succeeded' && ($failure = ExecutorPowerIntent::lifecycleError($payload['executor'] ?? null, $receipt, ($payload['wake'] ?? null) === 'started')) !== null) {
+            if ($status === 'succeeded' && ($failure = ExecutorPowerIntent::lifecycleError($locked, $payload['executor'] ?? null, $receipt, ($payload['wake'] ?? null) === 'started')) !== null) {
                 $status = 'failed';
                 $data = [...$data, 'status' => $status, 'error_code' => $failure];
                 unset($payload['started']);

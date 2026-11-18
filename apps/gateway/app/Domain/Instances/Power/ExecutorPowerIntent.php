@@ -112,9 +112,9 @@ final class ExecutorPowerIntent
     }
 
     /** @param array<string, mixed>|null $receipt */
-    public static function lifecycleError(mixed $raw, ?array $receipt, bool $verifiedBoot): ?string
+    public static function lifecycleError(Operation $operation, mixed $raw, ?array $receipt, bool $verifiedBoot): ?string
     {
-        if ($raw === null || ExecutorResults::succeeded($receipt)
+        if (($raw === null && self::action($operation, 'resume') === null) || ExecutorResults::succeeded($receipt)
             || ($verifiedBoot && ($receipt['action'] ?? null) === 'wake'
                 && ($receipt['status'] ?? null) === 'failed' && ($receipt['code'] ?? null) === 'instance.container_stopped')) {
             return null;
