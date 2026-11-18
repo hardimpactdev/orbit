@@ -110,7 +110,7 @@ An available release is kept for its commit for 30 days, because a published rel
 
 ### Fallback to an ancestor release
 
-Sometimes a green commit never gets its CLI release. After a newer commit reached `main`, GitHub refuses to tag the older commit when its workflow files differ from the tip's ([Commits without a release](/reference/cli-binaries#commits-without-a-release)). Without a fallback, the fleet would wait until a newer commit is merged and released.
+Sometimes a green commit never gets its CLI release. After a newer commit reached `main`, GitHub refuses to tag the older commit when its workflow files differ from the tip's ([Commits without a release](/reference/cli-binaries#commits-without-a-release)). If a complete fallback search finds no compatible release, or the commit’s release fails provenance verification, the fleet phase fails and keeps its evidence. A newer eligible commit can then release.
 
 When the commit's release stays `release_missing`, `release_mismatch`, or `release_incomplete` for 30 minutes, the Gateway names the newest published release of an ancestor instead:
 
@@ -256,7 +256,7 @@ The CLI prints it at most once every 24 hours, and only when standard error is a
 `orbit self-update` has these limits.
 
 - It replaces only the CLI. A Node gets `orbit-agent` from the Gateway through [install on mismatch](/reference/node-agent#install-on-mismatch).
-- The fleet rollout re-applies the Gateway-rendered footprint, such as the Caddyfile or the `tmpfiles` rule, over SSH.
+- Node convergence applies the [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint). On app-dev this includes the tmpfiles rule that restores the wake marker directory at boot.
 - The fleet rollout publishes the [managed PHP request and upload limits](/reference/php-runtime#request-and-upload-limits) through the Node footprint. Changed modules reload valid active FPM masters.
 - Nothing runs it on an operator machine automatically. The operator runs it after the notice.
 - No agent signal triggers it.

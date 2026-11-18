@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutAlerts;
@@ -33,6 +35,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\Cluster;
 use App\Models\GatewayRelease;
@@ -43,7 +46,6 @@ use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
@@ -335,7 +337,6 @@ function copyRolloutHostTree(string $path): void
 
 it('requires host approval for a network child task change before fleet work or default refresh', function (?string $child): void {
     Queue::fake();
-    Log::spy();
     $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     config(['instances.nested_fleet_refresh' => true]);
     $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
@@ -371,12 +372,13 @@ it('requires host approval for a network child task change before fleet work or 
     expect(Operation::query()->count())->toBe(0);
     if ($child === null) {
         expect($fleet['status'])->toBe('current');
-        Log::shouldHaveReceived('info')->with('Nested-fleet refresh admissions.', ['commit' => RolloutCommit, 'defaults' => []])->once();
+        expect($release->phases['default_refresh'])->toBe(['status' => 'current', 'defaults' => []])
+            ->and($release->phases['seed_publication']['status'])->toBe('not_required');
     } else {
         expect($fleet['status'])->toBe('failed')
             ->and($fleet['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed')
             ->and($dev->refresh()->release_inputs['host'])->toBe($inputs->host($previous));
-        Log::shouldNotHaveReceived('info', ['Nested-fleet refresh admissions.', Mockery::any()]);
+        expect($release->phases)->not->toHaveKey('default_refresh');
     }
 })->with([
     'unchanged control' => [null],
@@ -428,6 +430,33 @@ it('preserves every prior host approval before an early halt and across a supers
         ->and(Operation::query()->count())->toBe(0);
 });
 
+it('serializes fleet work and continues recorded refresh when rollout is disabled', function (): void {
+    Queue::fake();
+    config(['fleet.rollout' => false, 'instances.nested_fleet_refresh' => true]);
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'disabled', 'nodes' => []]]]);
+    $fleet = app(ContinueReleaseFleetAction::class);
+    $lock = app(GatewayReleaseLock::class);
+
+    expect($lock->run(fn (): ?int => $fleet->execute($release)))->toBe(15)
+        ->and($release->refresh()->phases)->not->toHaveKey('default_refresh');
+    expect($fleet->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('disabled')
+        ->and($release->phases['default_refresh']['status'])->toBe('current')
+        ->and($release->phases['seed_publication']['status'])->toBe('not_required');
+});
+
+it('stops seed continuation when default refresh is turned off', function (): void {
+    Queue::fake();
+    config(['fleet.rollout' => false, 'instances.nested_fleet_refresh' => false]);
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'disabled', 'nodes' => []],
+        'seed_publication' => ['status' => 'pending', 'operation_ids' => [41]]]]);
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['seed_publication'])->toBe(['status' => 'disabled', 'operation_ids' => [41]]);
+});
+
 it('detects membership, agent pin drift and late CLI publication on the daily pass after fleet current', function (string $change): void {
     Queue::fake();
     $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
@@ -440,7 +469,7 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
     $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
     app()->instance(AgentDelivery::class, $delivery);
     $dev = Node::query()->findOrFail($this->nodes['dev']);
-    if ($change === 'late CLI') {
+    if (in_array($change, ['late CLI', 'missing CLI', 'unverified CLI'], true)) {
         $dev->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
     }
     $inputs = app(ReleaseNodeInputs::class);
@@ -461,6 +490,33 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => $rows]]]);
 
+    if ($change === 'unverified CLI') {
+        Cache::flush();
+        $this->mock(CliReleaseCatalog::class)->shouldReceive('find')->once()
+            ->andReturn(DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::ReleaseUnverified));
+        expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBeNull()
+            ->and($release->refresh()->phases['fleet']['status'])->toBe('failed')
+            ->and($release->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.cli_delivery_unavailable')
+            ->and(Operation::query()->count())->toBe(0);
+
+        return;
+    }
+
+    if ($change === 'missing CLI') {
+        $release->forceFill(['created_at' => now()])->save();
+        file_put_contents($this->base.'/cli.json', '{"number":9001}');
+        Cache::flush();
+        $fleet = app(ContinueReleaseFleetAction::class);
+        expect($fleet->execute($release))->toBe(60);
+        $this->travel(30)->minutes();
+        expect($fleet->execute($release))->toBeNull()
+            ->and($release->refresh()->phases['fleet']['status'])->toBe('failed')
+            ->and($release->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.cli_delivery_unavailable')
+            ->and(Operation::query()->count())->toBe(0);
+
+        return;
+    }
+
     $job = new AdmitFleetRollout()->withFakeQueueInteractions();
     app()->call([$job, 'handle']);
     $job->assertReleased(10);
@@ -472,7 +528,7 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
     if ($change === 'late CLI') {
         expect($operation->input['nodes'][0]['release']['version'])->toBe($this->cli);
     }
-})->with(['membership', 'agent drift', 'late CLI']);
+})->with(['membership', 'agent drift', 'late CLI', 'missing CLI', 'unverified CLI']);
 
 it('fingerprints a state.py-only change on the CI runner and leaves another role stable', function (): void {
     $node = Node::query()->findOrFail($this->nodes['dev']);

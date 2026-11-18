@@ -14,13 +14,13 @@ covers:
 
 # Instance containers
 
-**Partly built; development host preparation and first-default creation still use the [build list](#the-build-list).** Task groups run only in [task copies](/reference/tasks#task-copy), and proofs run in copies with a nested fleet. Every new Instance should be a container, but universal Instance admission is not delivered: Nodes outside the build list can still create checkout defaults, and registration and production cloning still admit host checkouts. Existing checkout Instances need migration. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) owns the remaining transition and acceptance.
+Every new development Instance is a container. Orbit [refuses new host registration](#container-only-admission) and keeps production clone as the sole exception until production containers ship. Existing checkout Instances and their migration remain supported. Task groups and proofs use container copies. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) owns the remaining transition and acceptance.
 
 | Part | Delivered state |
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
-| Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start, and a copy's [reset](#reset). Planned: rebuild |
+| Default create and deploy, clone, forced non-default destroy, checkout migration | Built for app-dev Nodes; no build list |
+| [Nested fleet](#nested-fleet) | Built on switched-on Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start, and a copy's [reset](#reset). Planned: rebuild |
 | [Sleep and wake](#sleep-and-wake) | Built: the commands, the wake on a Route visit, and the idle sleep, which is off until the operator turns it on. Planned: the wake from Conn and tasks |
 | Task copies and command proofs on their nested fleet | Built; merge-base proof replay is [not ported](/reference/old-paths#the-task-vm-proof-run). No VM runtime remains for a parity comparison |
 | Production containers | [Planned](/reference/production-containers) |
@@ -34,7 +34,7 @@ A task runs in such a container too. There is no separate task container: the sa
 
 ## Charts
 
-The container flows keep the existing Instance kinds. Their charts sit one folder below the command charts. Checkout admission still exists outside the container path; task VM admission does not.
+The container flows keep the existing Instance kinds. Their charts sit one folder below the command charts. Only production clone admits a new host checkout; task VM admission is removed.
 
 | Flow | Chart |
 | --- | --- |
@@ -51,7 +51,7 @@ The container flows keep the existing Instance kinds. Their charts sit one folde
 
 ## Nodes
 
-Container host preparation is enabled for `app-dev` Nodes on the [build list](#the-build-list). The container-only switch for every Node remains unfinished. Task VMs are removed, not waiting for that switch.
+Container host preparation applies to every `app-dev` Node. Task VMs are removed.
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
@@ -59,7 +59,7 @@ A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets th
 
 ### Prepare a Node
 
-This part is built. The `app-dev` role converge of a Node on the [build list](#the-build-list) runs a container branch. The Gateway sends the branch's intent only for such a Node, so every other Node gets the same intent as before. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; that part is the target design of [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every `app-dev` role converge runs the container branch. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) owns that placement. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 - **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
 - **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
@@ -121,7 +121,7 @@ Refresh errors stay in the journal. A writer that acquired the lock also records
 
 The converge creates no Instance. Each existing `app-dev` Node needs one converge of its Instance host role. It reconciles the attached-target union and moves existing NICs to the proxy ACL. Running containers keep working, with no restart.
 
-A Node on the build list gets the Instance project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules. Its CI project and places stay separate. The Instance host setup applies the Node's ZFS ARC budget.
+An app-dev Node gets the Instance project `orbit-instances`, bridge `orbitinst0`, pool `orbit-instances` and `orbit:instances-*` input rules. Its CI project and places stay separate. The Instance host setup applies the Node's ZFS ARC budget.
 
 Before it changes anything, the converge refuses a bridge range that another interface of the Node holds, with `instance.host_unavailable`. The Gateway only knows the bridges it records, not one an operator made, such as a CI bridge.
 
@@ -133,9 +133,13 @@ The admission of the first converge allocates before any read. When that bridge 
 
 T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. The Node records the last T3 port it gave. A new runtime takes the first free port after it and wraps from 3999 to 3800, so a port freed by a destroy is given again only after the Node has used every other free port. A client that saved the destroyed server under its address therefore does not meet a new server there at once. When every port is held, the reservation fails with `instance.host_unavailable` (409).
 
-### The build list
+### Container-only admission
 
-The Gateway setting `instances.container_nodes` controls container host preparation and first-default creation: `ORBIT_INSTANCES_CONTAINER_NODES` is a JSON list of Node ids, such as `[12]`, empty by default. A malformed list fails with `instance.container_nodes_invalid` (500). A clone of an existing container default follows that default's runtime and placement rather than this first-default gate. Removing the build list belongs to the [universal container switch](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance), not a delivered behavior. On the nested Gateway of an Instance fleet, which has the fleet marker, the fleet's own `app-dev` Node is included too: the [Instance host in the fleet](#instance-host-in-the-fleet).
+Every new development Instance is a container. There is no `instances.container_nodes` setting or `ORBIT_INSTANCES_CONTAINER_NODES` opt-in. Create the Project's container `default` first, then clone it on its Node. A missing default refuses with `instance.default_missing`. If the default is a host checkout, Orbit refuses to create another Instance with `instance.container_required` (409); migrate the default first. An unprepared Node refuses rather than creating a host checkout.
+
+New [`instance:register`](/cli/instance/register) admissions refuse with `instance.container_required` (409) before reading checkout facts or creating records. Retries of existing registered checkouts remain available. Existing checkout Instances keep their operations and [`instance:migrate`](/cli/instance/migrate); create retries do not convert them. Their PHP-FPM pools stay until a live inventory permits retirement.
+
+[`instance:clone`](/cli/instance/clone) into production is the sole new-checkout exception until [production containers](/reference/production-containers) ship. It accepts an existing checkout or the Project’s active, running container default with a recorded seed as the candidate, and requires an app-prod destination. The exception belongs to production clone admission, not a general host-runtime switch.
 
 The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 10 ([Production Instances](#production-instances)).
 
@@ -1176,7 +1180,7 @@ A separate job publishes the Route, certificate and DNS. Swamp runs jobs in leve
 
 #### What is built
 
-The first default Instance and its deployments are built for the Nodes of the [build list](#the-build-list). A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. The one exception is a proof copy on a CI Node: it clones that Node's [seed](#the-seed-on-each-ci-node). Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
+The first default Instance and its deployments run on app-dev Nodes. A Project has one `default` Instance in the whole fleet, and every clone of it is made on its Node. The one placement exception is a proof copy on a CI Node: it clones that Node's [seed](#the-seed-on-each-ci-node). Deployment admission refreshes the Project’s [source facts at the deployed commit](/reference/deployments#container-source-facts).
 
 A proof copy's runtime still names the default as its clone source, so the default keeps its runtime while the copy exists. The database refuses a clone on another Node than its default, unless that Node's `proof_seeds` row holds the default's current seed: the same commit and the same time taken (`seed_commit`, `seed_taken_at`).
 
@@ -1450,7 +1454,7 @@ A value set by hand in the default's `.env` after its last deployment reaches cl
 
 #### What is built for clones
 
-Clones are built for the Nodes of the [build list](#the-build-list).
+Clones run on their container default's Node, except proof copies on CI seed holders.
 
 | Part | What Orbit does |
 | --- | --- |
@@ -1890,11 +1894,11 @@ Orbit skips `.git` and installed dependency contents. A `vendor` directory besid
 
 #### What is built for the move
 
-The move is built for the Nodes of the [build list](#the-build-list).
+The move remains available on app-dev Nodes without a build-list opt-in.
 
 | Part | What Orbit does |
 | --- | --- |
-| Admission | An active checkout Instance on a Node of the build list, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
+| Admission | An active checkout Instance on an app-dev Node, with no Route beside its own. Otherwise `instance.migrate_unsupported` |
 | Non-default | The Project default is on the same Node; source identity and T3 registration are required. Conn and model routing are optional. No migrated default or seed is needed |
 | Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
@@ -2230,11 +2234,11 @@ A Project setting turns on a nested fleet. Each Instance container of that Proje
 
 Built: placement, host preparation, the start guards, the readers below and the [nested-fleet image](#the-nested-fleet-image). The [fleet step](#the-fleet-step) is built. The deployment of the default calls it in the [refresh after a release](#refresh-after-a-release), and the create of a clone calls it to [start its fleet](#a-clone-starts-its-fleet).
 
-Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a [build-list](#the-build-list) Node with nested-fleet hosting on. A proof copy can also be on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
+Every Instance of a Project with `nested_fleet` on is a container in the nested Incus project, on a Node with nested-fleet hosting on. A proof copy can also be on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). One placement rule in the Gateway refuses every other result before any record, and it also chooses the Incus project. [Nested fleet setting](/reference/projects#nested-fleet-setting) has the rule. The sections from [The fleet](#the-fleet) on describe the target design.
 
 ### The container
 
-An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. A Node prepares that project, its profile and two kernel modules only when it is on the build list and its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, or when it is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
+An Instance container with a nested fleet lives in its own Incus project on the Node, `orbit-instances-nested`, which allows what the fleet needs. `orbit-instances` keeps refusing it. An app-dev Node prepares that project, its profile and two kernel modules when its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on, as does a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). It shares the pool, the bridge, the ACLs and the egress proxy with `orbit-instances`. The container is unprivileged and sets these keys:
 
 | Key | Value | Why |
 | --- | --- | --- |
@@ -2523,7 +2527,7 @@ The start guard admits the copy's volume with exactly the keys above. A failed c
 
 ### Instance host in the fleet
 
-`nested-app-dev` runs real Instance containers, a third level below the host: Node, then the Instance container, then `nested-app-dev`, then an Instance. The nested Gateway leads it as an `app-dev` Node on its build list, so `instance:create`, sleep, wake and destroy of a Project clone run through the nested Gateway and its Swamp. Proof cases that need an Instance host in the proof fleet use it ([ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request)).
+`nested-app-dev` runs real Instance containers, a third level below the host: Node, then the Instance container, then `nested-app-dev`, then an Instance. The nested Gateway leads it as an `app-dev` Node, so `instance:create`, sleep, wake and destroy of a Project clone run through the nested Gateway and its Swamp. Proof cases that need an Instance host in the proof fleet use it ([ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request)).
 
 What the host needs, measured by hand on a task copy at 1,165,536 on 2026-11-16:
 
@@ -2545,7 +2549,7 @@ The shared folders were measured by hand with Incus 6.0.5 on 2026-11-16. A read-
 
 So the host needs the 2,000,000 size of [The ID map size](#the-id-map-size). The inner Incus then hands `nested-app-dev` 1,000,000 IDs, its own Incus keeps base 65,536 with 934,464 IDs, and `(1,000,000 − 131,072) / 65,536` gives 13 isolated Instances. 2,165,536 would be wrong: the outer range crosses the floor again.
 
-The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested Gateway with the [fleet marker](#fleet-rules) counts the fleet's `app-dev` Node, the Node at `nested-app-dev`'s address, as on its [build list](#the-build-list). It sends that Node's `app-dev` intent `instances.fleet_node`, so the [container branch](/reference/compute-drivers#prepare-an-instance-container-host) runs on it in this order:
+The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested Gateway with the [fleet marker](#fleet-rules) recognizes its fleet's app-dev Node by `nested-app-dev`'s address. It sends that Node's `app-dev` intent `instances.fleet_node`, so the [container branch](/reference/compute-drivers#prepare-an-instance-container-host) runs on it in this order:
 
 1. It writes the drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false`. The Incus there cannot load AppArmor profiles; the Incus one level up still confines `nested-app-dev`.
 2. It installs Incus from the recipe's pinned packages.
@@ -2585,7 +2589,17 @@ A real Node gets no parent, so its Squid configuration, its table and its intent
 
 Measured by hand on a task copy on 2026-11-17, with Squid 7.7 on `nested-app-dev`, its product configuration and its table: without a parent, a `GET` of `http://archive.ubuntu.com/ubuntu/dists/resolute/InRelease` and a `CONNECT` to `example.com:443` each got 503 at once. With the parent, both succeeded.
 
-**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has a separate `host` digest. It covers the machine-software recipe under `apps/gateway/resources/machine-software`, `nested-app-dev`'s host intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, folders and Incus, without the admission time), and the `swamp/ansible` tree except the following files. The first three belong to the Swamp role. The last two run from the controller checkout during Conn launches or task turns.
+
+- `swamp/ansible/tasks/role-swamp.yml`
+- `swamp/ansible/tasks/swamp-housekeeping.yml`
+- `swamp/ansible/tasks/swamp-binary-retention.yml`
+- `swamp/ansible/conn-launch.yml`
+- `swamp/ansible/t3_copy_rpc.mjs`
+
+No other path is excluded. Shared, new and unclassified files in the tree still count. A missing host record, a changed digest or a failed read of a required host input makes the host due. A failed read leaves no host digest in the record. When the host is due, `nested-app-dev` joins the due converges with its `app-dev` role, not just the base scope. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+
+The app-dev role creates its wake marker directory in `/dev/shm`. Its systemd-tmpfiles rule recreates the directory at boot with owner `root:caddy` and mode `0755`, including after a base retake restarts the nested Node.
 
 When only the host part is due, the base digest of `nested-app-dev` did not change, and its converge reason is `host_due`.
 
@@ -2817,13 +2831,14 @@ The checkout moves under the running nested Gateway, with its old schema and pro
 
 #### What a refresh skips
 
-A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
+A refresh always checks fleet readiness. For work it can skip, it compares input digests with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
 
 | Part | Digest | When it runs |
 | --- | --- | --- |
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
 | Default converge of each nested Node | One digest per Node: the `swamp` files a default converge reads, the nested Gateway's digest of that Node's default intent, and the fleet intent | For that Node: its digest cannot be read, the record holds none, its digest differs, or its last converge is more than 7 days old |
+| Prepare the Instance host | The separate `host` digest | On an eligible `nested-app-dev`, when the host digest differs, is missing from the record, or cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
@@ -2876,9 +2891,11 @@ A digest cannot be read when the Node's intent cannot be built, when the read fa
 
 `unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
 
+A change only to the five files excluded from the host digest does not make `nested-app-dev` due. It still counts for any part that reads those files, such as the nested Gateway's grants digest when the Club key is present. If no other work changes a nested disk and no other snapshot rule applies, `base` stays as it was.
+
 A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself.
 
-The intent holds no token or signed URL. Two values are new at each capture. They belong to the Operation and are not inputs, so the hash leaves them out: the version of a role's certificate leaf, which names the leaf's folder, and the admission time of the Instance bridge. Like an admission, the read first gives a build-list Node its Instance bridge when it has none yet, and then rolls it back. So a healthy Node always has a digest. The Operation id and the agent verifier live in the execution copies, which are not part of it.
+The intent holds no token or signed URL. Two values are new at each capture. They belong to the Operation and are not inputs, so the hash leaves them out: the version of a role's certificate leaf, which names the leaf's folder, and the admission time of the Instance bridge. Like an admission, the read first gives an app-dev Node its Instance bridge when it has none yet, and then rolls it back. So a healthy Node always has a digest. The Operation id and the agent verifier live in the execution copies, which are not part of it.
 
 The list holds the four include groups of the playbook: roles, software, Tools and the network. A default intent selects each of them that the Node records.
 
@@ -2891,13 +2908,13 @@ The list also leaves out two imports of the behavior file, `write.ts`. A converg
 
 The cover test fails when the converge workflow calls such a method, or when an imported name is used outside its method. Before this cut, two refreshes on 14 November 2026 converged the three Nodes for nothing (Operations 21867 and 22223, 120 s and 108 s, no task changed): one for a change in `public_output.ts`, one for a line in the clone part of `write.ts`.
 
-The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). An unreadable digest makes that Node due and is not recorded, so the next refresh tries it again. A read failure that affects inputs common to all three makes all three due. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
 
 The due Nodes converge one at a time: the nested Gateway first, which holds the hub, then `nested-app-prod`, then `nested-app-dev`. A default converge has a network, so it holds the hub's reservation, and the nested Gateway refuses any second converge beside it ([node:converge](/cli/node/converge)). The seven Ansible plays still lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`).
 
 The refresh admits the next Node only when the one before it has ended. A failed or refused converge stops the converges: the Nodes after it do not converge, and the error names the Node that failed. The run then restores the old seed.
 
-A converge that changes nothing still reads every phase, so a due converge costs time even on an unchanged Node. Only a digest that changed, or a converge older than 7 days, makes a Node due.
+A due converge still prepares inputs and runs its final checks, even when all its skippable phases match the record.
 
 Below the 2,000,000 [ID map size](#instance-host-in-the-fleet), `nested-app-dev` cannot build its Instance image. There the refresh converges it with the base scope, as before, and its software and role state in `base` stay as they were. A proof needs a default at 2,000,000 when its converge or role-add cases run on `nested-app-dev`.
 
@@ -2912,6 +2929,8 @@ A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `
 | The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three, with the rules applied on the stopped fleet |
 
 The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that reloaded grants comes up on the new grants.
+
+The digest rules change only which work is due. They do not decide which containers get `base` or change how Orbit takes, distributes or restores the default's seed. When a role task changes `nested-app-dev`, the refresh still retakes `base` there and on the nested Gateway, so the role change survives a reset.
 
 A migration is not such a writer. The migrate that applies one changes the nested Gateway's database, but `base` keeps the schema of the refresh that last took it. A reset restores `base` and then migrates the nested Gateway forward to its checkout, and restarts its services when a migration applied. Laravel's migrations run forward only, and the code is the checkout's.
 
@@ -3059,7 +3078,7 @@ The first seed of every run, the `seed` phase of "Prepare the container", was al
 
 After a restore, the run starts the restored fleet and waits for readiness. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
-| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
+| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Automatic release waits for refresh and seed distribution before admitting the next release |
 
 It replaces the removed task VM refresh and its kind `task_vm.image_refresh`. [Old paths](/reference/old-paths) tracks the remaining fleet residue, not another refresh runtime. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
 
@@ -3120,6 +3139,10 @@ A CI Node is ready when the Gateway records, from its last `ci-runner` converge,
 One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add or converge admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
 
 So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
+
+The automatic release tick advances the recorded fleet, default and seed phases. It resumes the existing Operations after a restart and verifies the default seed commit before it checks CI Node copies. An admission blocked by active work stays pending. A failed refresh Operation or temporary source-read failure retries after ten minutes, up to three attempts for the release commit.
+
+The tick recovers a missing seed-copy admission from the current seed and the recorded attempts. Publication tracks the seed commit and timestamp recorded by refresh. A source that moved fails that publication phase. A Node that failed a copy keeps its recorded seed and follows the existing retry rules above. The release records a terminal failed phase and a newer eligible revision can fix it forward.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 
@@ -3424,7 +3447,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the Project's [container server](#container-server). Nothing is recorded |
 | `projects.agent_instructions_too_large` | 422 | `instance:create` or `task:start` of a clone while the Project's [agent instructions](#agent-instructions) hold more than 32 files or 32 KiB. Nothing is recorded |
 | `projects.agent_instructions_invalid` | 422 | `instance:create` or `task:start` of a clone while an agent instruction file breaks a rule of [What counts](#what-counts). Nothing is recorded |
-| `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
+| `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on an app-dev Node |
 | `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or submodule changes block retirement. Names 20 paths and total counts |
 | `instance.migrate_git_filter_unsupported` | 409 | A tracked path uses a clean/smudge filter; use an unfiltered checkout without changing source data |
 | `instance.migrate_git_intent_to_add` | 409 | Stage the intent-to-add contents or remove those index entries before retrying |
@@ -3460,11 +3483,11 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.nested_fleet_stopped` | 409 | A wake found a nested-fleet container stopped. Nothing booted; the marker stays. A clone's next wake takes its start; a default starts by its deployment |
 | `instance.sleep_route_unready` | 409 | `instance:sleep` while Caddy's loaded site of the Instance lacks the asleep check. Nothing changed |
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
-| `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
-| `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it. |
+| `instance.container_required` | 409 | New host registration or a new non-default whose default is a checkout; create or migrate the container default first |
+| `instance.host_unavailable` | 409 | A Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it. |
 | `instance.nested_root_size_invalid` | 503 | `ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE` is not a size in GiB of at least 40 GiB (see [The root disk](#the-root-disk)). Nothing changed |
 | `instance.nested_fleet_host_unavailable` | 409 | A new nested-fleet Instance on a Node that hosts no nested fleets: its switch is off, and it is no CI-only Node that its `ci-runner` converge prepared ([Nested fleet setting](/reference/projects#nested-fleet-setting)) |
-| `instance.nested_fleet_container_required` | 409 | A new nested-fleet Instance would not be a container: the Node is off the build list, or the default is a host checkout. Not reachable yet |
+| `instance.nested_fleet_container_required` | 409 | A nested-fleet create retry would use an existing host checkout |
 | `instance.nested_fleet_image_unavailable` | 502 | The create of a nested-fleet default while the Node records a failed build of the [nested-fleet image](#the-nested-fleet-image). Orbit makes no container; converge the Node again |
 | `instance.ci_hold_unavailable` | 502 | A proof copy's Node has no [hold script](/reference/node-provisioning#proof-places-on-a-ci-node). Orbit makes no container; the detail names the Node. Converge its `ci-runner` role |
 | `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |

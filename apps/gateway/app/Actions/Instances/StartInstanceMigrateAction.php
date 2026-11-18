@@ -12,7 +12,6 @@ use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\InstanceMigration\MigrateSchedules;
-use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceEgress;
@@ -166,8 +165,8 @@ final readonly class StartInstanceMigrateAction
         if ($instance->runtime()->exists() && ! InstanceMigration::pending($instance)) {
             throw $this->unsupported("Instance [{$instance->name}] already runs in a container.");
         }
-        if (! $instance->placedOnAppDev() || ! app(ContainerNodes::class)->includes($node)) {
-            throw $this->unsupported('Only a development checkout Instance on a Node of the build list moves into a container.');
+        if (! $instance->placedOnAppDev()) {
+            throw $this->unsupported('Only a development checkout Instance moves into a container.');
         }
         if ($instance->status === InstanceState::Removing || $instance->removalMember()->exists() || InstanceMigration::running($instance)
             || Operation::query()->where('kind', 'instance.deploy')->where('target_type', 'instance')->where('target_id', $instance->id)

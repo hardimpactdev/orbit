@@ -127,8 +127,11 @@ def report(code, output, sha, key, allow_trust_skip=False):
     return outcome, lines, receipt
 
 
-def run(sha, key, orbit, diagnostic=None):
-    child = subprocess.Popen([orbit, 'proof:run', sha, '--json', '--idempotency-key', key],
+def run(sha, key, orbit, diagnostic=None, base=None):
+    args = [orbit, 'proof:run', sha, '--json', '--idempotency-key', key]
+    if base:
+        args.extend(('--base', base))
+    child = subprocess.Popen(args,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     # A cancelled job gets SIGINT, then SIGTERM. Orbit cancels its run on both.
     for name in (signal.SIGINT, signal.SIGTERM):
@@ -151,6 +154,9 @@ def main():
     sha = os.environ.get('PROOF_SHA', '')
     if not SHA.fullmatch(sha):
         sys.exit('PROOF_SHA must be the full lowercase commit SHA of the pull request head.')
+    base = os.environ.get('PROOF_BASE') or None
+    if base is not None and not SHA.fullmatch(base):
+        sys.exit('PROOF_BASE must be a full lowercase commit SHA.')
     key = f"ci-proof.{os.environ.get('GITHUB_RUN_ID', 'local')}.{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"
     check_eligibility = os.environ.get('PROOF_CHECK_ELIGIBILITY') == 'true'
     # Re-read after the self-hosted runner queue. Errors fail, rather than becoming an ineligible result.
@@ -170,7 +176,8 @@ def main():
             sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
         diagnostic = {}
         try:
-            code, output = run(sha, key, orbit, diagnostic=diagnostic)
+            code, output = (run(sha, key, orbit, diagnostic=diagnostic, base=base) if base
+                            else run(sha, key, orbit, diagnostic=diagnostic))
         except OSError as error:
             code, output = 127, '{}'
             diagnostic['transport_error'] = str(error)
@@ -182,6 +189,15 @@ def main():
                 receipt['result'] = find_result(json.loads(output))
             except ValueError:
                 receipt['result'] = None
+    if base is not None:
+        receipt['base'] = base
+        try:
+            result = find_result(json.loads(output)) if allowed else None
+        except ValueError:
+            result = None
+        if outcome != 'passed' or not result or result.get('commit') != sha or result.get('outcome') != 'passed':
+            outcome = receipt['outcome'] = 'failed'
+            lines.append('The selected carried changes need a passing range proof with cases on this head.')
     text = '\n'.join([f"## Proof run of `{sha[:12]}`: {outcome}", '', 'Proof base refresh does not yet reconverge nested Node OS state; the snapshot can retain enrollment-era policy.', '', *lines, ''])
     print(text)
     if os.environ.get('GITHUB_STEP_SUMMARY'):

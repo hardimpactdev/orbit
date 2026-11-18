@@ -32,7 +32,7 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
-In a terminal, the CLI shows the run's steps as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. On a host checkout, create runs these steps on the Node, in order. Steps 1 and 2 run together as the `checkout` phase and step 5 runs as the `setup` phase. A failed setup step stops the run, and its name is in the failed step's log.
+In a terminal, the CLI shows the run's steps as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. New Instances follow [Container creation](#container-creation). Only a retry of an existing host checkout runs the host steps below, in order. Steps 1 and 2 run together as the `checkout` phase and step 5 runs as the `setup` phase. A failed setup step stops the run, and its name is in the failed step's log.
 
 1. Clone the repository and check out the branch. Orbit mints a read token for this one repository, valid one hour. The token is never part of a command line and is removed from the Node after the clone.
 2. Write `.env` from the Project's env template, with `APP_URL`, a new `APP_KEY` and the database keys. The file has mode 0640 and group `orbit-env`. An owned MySQL or PostgreSQL database also gets `.env.testing`.
@@ -46,9 +46,11 @@ A host checkout's run has 60 seconds, plus the setup step timeouts, 30 seconds f
 
 A clone's create captures its Route publication at its admission; a Route that cannot be captured, such as a Cluster Route without a recorded Router (`cluster.router_required`), refuses the create before anything is recorded. A Project that serves no web pages has no Route and takes no `--domain` (`instance.route_unserved`). A domain that another Route owns, or a reserved name such as `gateway.orbit`, is refused with `route.domain_conflict`.
 
-## On a container Node
+## Container creation
 
-On a Node of the [build list](/reference/development-containers#the-build-list), the Project's first `default` Instance is a container, not a checkout ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd)). Orbit creates the container from the Node's image and fetches the default branch into a mirror on the Node. It pushes the branch in, writes `.env`, and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps) as `agent`, the workspace's owner ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)); there are no setup steps. Then it starts FrankenPHP, publishes the Route to it, and takes the first seed snapshot. A Project has one `default` in the fleet, and its other Instances are made on that `default`'s Node. [The default Instance](/reference/development-containers#the-default-instance) has the details and what a container default cannot run yet.
+Every new development Instance is a container; no Node opt-in applies. Create the Project's `default` first. A new non-default requires a container default: no default returns `instance.default_missing`; a checkout default returns `instance.container_required` (409). Migrate the existing default with [`instance:migrate`](/cli/instance/migrate) first. Existing checkout Instances keep their retry behavior and normal operations; create never silently converts one.
+
+The first `default` is made from the Node's image ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd)). Orbit fetches the default branch into a mirror on the Node, pushes it in, writes `.env`, and runs the Project's [development deploy steps](/reference/deployments#development-deploy-steps) as `agent`; there are no setup steps. Then it starts FrankenPHP, publishes the Route and takes the first seed snapshot. A Project has one `default` in the fleet. [The default Instance](/reference/development-containers#the-default-instance) describes the runtime limits. An unprepared Node refuses with `instance.host_unavailable`; it never falls back to a host checkout.
 
 Every other Instance of the Project is a clone of that `default` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd)). Orbit copies the default's newest seed snapshot, a ZFS clone, and gives the copy its own address, ACL and T3 port. It brings in the Instance's branch, and writes `.env`, the agent settings and `/etc/orbit/instance`. The clone's `.env` is the default's, with the clone's own keys in place of the default's ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)); a connection that the default marks shared stays attached. Then it starts T3 and records the T3 server with the [Conn layer](/reference/conn#instance-servers), even while Conn is off. Conn and ai-router are optional. The result records the model route at admission as `model_route: {"ready": true}` or `model_route: {"ready": false, "error_code": "…", "message": "…"}`. With no ready route, T3 runs but cannot reach a model; human output prints the reason. Beside the copy, it publishes the clone's address when no other Route write holds the Route's Nodes; with a Node held it never waits, and the completion publishes the address. The result's `route_publication` says which: `published`, `deferred` or `failed` ([the address during the create](/reference/development-containers#the-address-during-the-create)). The address answers TLS when the create succeeds, and the app answers once the completion has started it. The branch is the matching origin branch, or a new branch at the seed's commit. [Create](/reference/development-containers#create) has the details.
 
@@ -69,6 +71,8 @@ At retry admission, Orbit derives the Processes from the Project's current devel
 The API answers `202` with a queued Operation after recording the create, before work on the Node starts. Clients follow that Operation as usual. While it waits to start, another create for the same name is refused with `operation.target_busy`; a replay with the same Idempotency-Key returns the original Operation.
 
 ## Branch selection
+
+New container Instances follow [Container creation](#container-creation). The host paths and branch rules below apply only to retries of existing checkouts.
 
 | Creation input | Checkout | Selected branch |
 | --- | --- | --- |
@@ -98,7 +102,6 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.node_inactive`, `instance.node_not_app_dev` | The Node is not active, or has no active `app-dev` role. |
 | `instance.node_ci_only` | The Node is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node). Only a proof copy is made there. |
 | `instance.clone_launch_too_large` | A clone's launch copy (its release scripts and container intent) would be larger than 1 MiB. The create is refused before its run; see [the launch copy](/reference/development-containers#create). |
-| `instance.default_path_occupied`, `instance.path_taken` | The checkout path is in use on the Node. |
 | `instance.placement_conflict` | A repeat changed the root or branch while an earlier failed create is still being cleaned up. |
 | `instance.removal_conflict` | The Instance is being removed. |
 | `instance.route_unserved` | `--domain` was given for a Project that serves no web pages. |
@@ -107,7 +110,8 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.database_slug_taken` | The database connection name belongs to another owner. |
 | `instance.setup_step_failed`, `instance.setup_step_unavailable` | A setup step failed, or its command is missing. |
 | `operation.target_busy` | Another change to the Instance is running. |
-| `instance.default_missing` | The Project's `default` runs in a container on another Node, is not active or has no seed snapshot yet, or a build-list Node has no `default` of the Project yet. |
+| `instance.default_missing` | The Project has no `default`, or its container default is on another Node, inactive or has no seed snapshot yet. |
+| `instance.container_required` | A new non-default cannot clone a host checkout. Migrate the default first. |
 | `instance.database_clone_unsupported` | The default's database cannot be cloned: a clone in a container names another Database server, or the database is not on a server. |
 | `instance.create_agent_failed`, `instance.t3_unready` | A clone's T3 step failed; `failed_step` is `t3` for both, because one step writes the agent's files and then starts T3. The first code means the agent part failed or timed out; the second means T3 did not answer within 30 seconds of its start, T3's CLI failed to issue a session or add the project, or that part failed or timed out. |
 | `instance.create_register_failed` | A clone's T3 server refused a session the run issued, or the Gateway's session lacks `access:read` and `access:write`. The step's report names the `conn.*` code. |
@@ -116,7 +120,7 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `project.source_defaults_incomplete` | The Project's source defaults are incomplete, or a web-serving Project in a container has no PHP version. |
 | `operation.kind_unavailable` | The request needs a part of the container runtime that is not built yet, or no contribution is loaded to record a clone's T3 server. |
 | `instance.nested_fleet_host_unavailable` | The Project has `nested_fleet` on, and the Node hosts no nested fleets: its switch is off, and it is no CI-only Node whose `ci-runner` converge prepared nested hosting. Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
-| `instance.nested_fleet_container_required` | The Project has `nested_fleet` on, and the result would not be a container: the Node is not on the build list, or the default is a host checkout. Orbit records nothing. |
+| `instance.nested_fleet_container_required` | The Project has `nested_fleet` on, and an existing checkout would not be a container. Orbit records nothing. |
 | `instance.nested_fleet_image_unavailable` | The Project has `nested_fleet` on, and the Node's last converge failed to build the nested-fleet image. The create of the default makes no container. Converge the Node again; see [The nested-fleet image](/reference/development-containers#the-nested-fleet-image). |
 | `instance.ci_hold_unavailable` | A proof copy's create found no hold script of the `ci-runner` role on its Node. The step calls nothing, and the copy does not start. The detail names the Node. Converge the Node's `ci-runner` role; see [Proof places on a CI Node](/reference/node-provisioning#proof-places-on-a-ci-node). |
 | `instance.nested_club_key_unsafe_transfer`, `instance.nested_club_key_not_tmpfs`, `instance.nested_club_key_delivery_failed` | A nested-fleet clone could not get its Club key into `/run`. The workspace phase did not run. See [the Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway). |
@@ -125,12 +129,12 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 
 ### Container clone
 
-On a Node of the build list, this is what runs for every new Instance after the Project's first `default`: a clone of that `default` container.
+Every new Instance after the Project's first `default` clones that container.
 
 <div className="flow-at" data-chart="instance/container/create"></div>
 
 ### Host checkout
 
-This applies on a Node off the build list, or when the Project's `default` is a host checkout.
+Only retries of existing checkout Instances use these phases. New creates use the container charts.
 
 <div className="flow-at" data-chart="instance/create"></div>

@@ -1,5 +1,5 @@
 """A real checkout tree, trusted PR CI and immutable web bytes authorize reuse."""
-import copy
+from contextlib import chdir
 import io
 import json
 import os
@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 receipt = type('Receipt', (), runpy.run_path(str(ROOT / 'bin/ci-tree-receipt')))
 REPO = 'hardimpactdev/orbit'
 HEAD, TESTED, MAIN, TREE = (c * 40 for c in 'abcd')
+BASE = 'e' * 40
 BODY = 'Docs-unaffected: docs/reference/implementation-loop.md: No contract change.'
 START, UPLOAD, END, MERGE = ('2026-11-13T22:00:00Z', '2026-11-13T22:00:30Z', '2026-11-13T22:00:40Z', '2026-11-13T22:01:00Z')
 JOBS = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
@@ -42,17 +43,19 @@ class API:
                        base={'ref': 'main', 'repo': {'full_name': REPO}}, head={'sha': HEAD, 'repo': {'full_name': REPO}})
         self.run = dict(id=50, workflow_id=8, path=receipt.WORKFLOW, head_sha=HEAD,
                         event='pull_request', repository={'full_name': REPO}, head_repository={'full_name': REPO},
-                        created_at=START, html_url='https://github.com/hardimpactdev/orbit/actions/runs/50')
+                        status='completed', run_attempt=1, created_at=START, html_url='https://github.com/hardimpactdev/orbit/actions/runs/50')
+        self.main_delivered = True
         self.runs = [self.run]
         self.jobs = [dict(id=i, name=name, run_attempt=1, head_sha=HEAD, status='completed',
                           conclusion='success', started_at=START, completed_at=END)
                      for i, name in enumerate(('Required checks', 'Select build inputs', 'Docs build', 'Web build'), 60)]
         self.logs = {j['id']: checkout(TESTED) for j in self.jobs}
+        self.logs[61] += f'2026-11-13T22:00:32Z PR delivery target: main\n2026-11-13T22:00:32Z PR delivery baseline: {BASE}\n'
         self.logs[62] += f'2026-11-13T22:00:35Z Docs body SHA256: {receipt.sha256(BODY.encode())}\n'
         self.web_bytes = archive({'index.html': '<h1>Checked</h1>', 'version.json': json.dumps({'buildId': TESTED}), 'assets/test.js': 'tested code'})
         self.web = self.artifact(100, 'web-pr-50-1', self.web_bytes)
-        self.record = dict(repository=REPO, pr=7, head=HEAD, run=50, attempt=1, tested_commit=TESTED,
-                           tree=TREE, body_sha256=receipt.sha256(BODY.encode()), web_id=100,
+        self.record = dict(repository=REPO, pr=7, head=HEAD, base_ref='main', run=50, attempt=1, tested_commit=TESTED,
+                           tree=TREE, body_sha256=receipt.sha256(BODY.encode()), delivery_base=BASE, web_id=100,
                            web_digest=self.web['digest'].split(':')[1], web_attempt=1)
         self.commit = dict(tree={'sha': TREE}, parents=[{'sha': 'e' * 40}, {'sha': HEAD}])
         self.refresh_record()
@@ -73,6 +76,10 @@ class API:
     def rows(self, path, key=None):
         if path.startswith('commits/'):
             return [self.pr]
+        if 'branch=main' in path:
+            return [self.run | {'id': 70, 'event': 'push', 'head_branch': 'main', 'head_sha': BASE}] if self.main_delivered else []
+        if '/70/jobs?' in path:
+            return [self.jobs[0] | {'name': 'Main delivery checks', 'head_sha': BASE}]
         if path.startswith('actions/workflows/'):
             return self.runs
         if '/jobs?' in path:
@@ -102,6 +109,68 @@ class ReceiptTest(unittest.TestCase):
                     ['gh', 'api', '--allow-escape-sequences', f'repos/{REPO}/{path}'])
                 self.assertLessEqual(call.call_args.kwargs['timeout'], 10)
 
+    def test_delivery_baseline_walks_past_an_undelivered_main_parent(self):
+        class History(API):
+            def rows(self, path, key=None):
+                if path.startswith('actions/workflows/'):
+                    sha = path.rsplit('=', 1)[-1]
+                    return [self.run | {'id': 51 if sha == MAIN else 50, 'event': 'push',
+                                        'head_branch': 'main', 'head_sha': sha}]
+                return [self.jobs[0] | {'name': 'Main delivery checks',
+                                        'head_sha': MAIN if '/51/' in path else BASE,
+                                        'conclusion': 'failure' if '/51/' in path else 'success'}]
+
+        self.assertEqual(receipt.delivery_baseline(History(), [MAIN, BASE]), BASE)
+        with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
+            receipt.delivery_baseline(History(), [MAIN])
+
+    def test_retargeted_run_cannot_supply_a_main_delivery_receipt(self):
+        api = API()
+        api.logs[61] = api.logs[61].replace('delivery target: main', 'delivery target: staging')
+        with self.assertRaisesRegex(ValueError, 'must originally target main'):
+            self.verify(api)
+
+    def test_a_claimed_baseline_without_verified_main_delivery_blocks_promotion(self):
+        api = API()
+        api.main_delivered = False
+        with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
+            self.verify(api)
+
+    def test_baseline_must_be_in_the_tested_first_parent_history(self):
+        api = API()
+        api.commit['parents'][0]['sha'] = MAIN
+        one = api.one
+        api.one = lambda path: {'parents': []} if path == f'git/commits/{MAIN}' else one(path)
+        with self.assertRaisesRegex(ValueError, 'outside the tested first-parent history'):
+            self.verify(api)
+
+    def test_carried_gateway_change_selects_gateway_checks_for_a_docs_pr(self):
+        import test_ci_build_plan
+
+        with tempfile.TemporaryDirectory() as scratch, chdir(scratch):
+            def git(*args):
+                return subprocess.check_output(['git', '-c', 'user.name=Fixture',
+                                                '-c', 'user.email=test@example.com', *args],
+                                               text=True).strip()
+
+            git('init', '-q')
+            git('commit', '-q', '--allow-empty', '-m', 'Newest verified main')
+            base = git('rev-parse', 'HEAD')
+            gateway = Path('apps/gateway/app/Actions/Refresh.php')
+            gateway.parent.mkdir(parents=True)
+            gateway.write_text('<?php')
+            git('add', '.')
+            git('commit', '-qm', 'Undelivered main change')
+            parent = git('rev-parse', 'HEAD')
+            docs = Path('docs/reference/release.md')
+            docs.parent.mkdir(parents=True)
+            docs.write_text('Test')
+            git('add', '.')
+            git('commit', '-qm', 'Docs PR')
+            plan = test_ci_build_plan.plan
+            self.assertFalse(plan.select(plan.changed_inputs(parent, 'HEAD')[1], pull_request=True)['jobs']['gateway-tests'])
+            self.assertTrue(plan.select(plan.changed_inputs(base, 'HEAD')[1], pull_request=True)['jobs']['gateway-tests'])
+
     def test_same_tested_tree_reuses_bytes_even_when_pr_head_tree_differs(self):
         api = API()
         api.run['head_commit'] = {'tree_id': 'f' * 40}
@@ -129,6 +198,7 @@ class ReceiptTest(unittest.TestCase):
     def test_latest_run_and_latest_attempt_cannot_be_hidden_by_old_green(self):
         for state in ('failure', 'skipped', 'cancelled', None):
             api = API()
+            api.run['run_attempt'] = 2
             api.jobs.append(api.jobs[0] | dict(id=99, run_attempt=2, conclusion=state))
             with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'Required checks'):
                 self.verify(api)
@@ -137,12 +207,24 @@ class ReceiptTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'after merge'):
             self.verify(api)
 
+    def test_pending_rerun_cannot_inherit_the_previous_attempts_green_receipt(self):
+        for status in ('queued', 'in_progress', 'waiting'):
+            api = API()
+            api.run.update(status=status, run_attempt=2)
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, 'not complete'):
+                self.verify(api)
+        api = API()
+        api.run['run_attempt'] = 2
+        with self.assertRaisesRegex(ValueError, 'current attempt'):
+            self.verify(api)
+
     def test_changed_body_and_gate_only_rerun_cannot_bless_stale_docs(self):
         api = API()
         api.pr['body'] += '\nChanged after green'
         with self.assertRaisesRegex(ValueError, 'body changed'):
             self.verify(api)
         # Even a rewritten receipt claiming the new body cannot replace the actual Docs job log.
+        api.run['run_attempt'] = 2
         api.jobs[0]['run_attempt'] = 2
         api.record['attempt'] = 2
         api.record['body_sha256'] = receipt.sha256(api.pr['body'].encode())
@@ -154,6 +236,7 @@ class ReceiptTest(unittest.TestCase):
         api = API()
         api.pr['body'] += '\nA reviewed reason'
         # Actions may copy successful job records to a new attempt, preserving their timestamps and logs.
+        api.run['run_attempt'] = 2
         for job in api.jobs:
             job['run_attempt'] = 2
         api.record.update(attempt=2, body_sha256=receipt.sha256(api.pr['body'].encode()))
@@ -173,7 +256,7 @@ class ReceiptTest(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 self.verify(api)
 
-    def test_actual_checkout_tree_wins_over_claims_and_merge_behind_main_runs_normally(self):
+    def test_actual_checkout_tree_wins_over_claims_and_merge_behind_main_is_refused(self):
         api = API()
         api.commit['tree']['sha'] = 'f' * 40
         with self.assertRaisesRegex(ValueError, 'tree differs'):
@@ -187,8 +270,8 @@ class ReceiptTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'final PR merge'):
             self.verify(api)
 
-    def test_forged_or_unavailable_receipt_falls_back(self):
-        for key, value in (('pr', 8), ('head', 'f' * 40), ('run', 51), ('attempt', 2)):
+    def test_forged_or_unavailable_receipt_is_refused(self):
+        for key, value in (('delivery_base', 'f' * 40), ('pr', 8), ('head', 'f' * 40), ('run', 51), ('attempt', 2)):
             api = API()
             api.record[key] = value
             api.refresh_record()
@@ -210,13 +293,14 @@ class ReceiptTest(unittest.TestCase):
                 z.writestr('index.html', 'b')
             dict(receipt.files(buf.getvalue()))
 
-    def test_api_error_uses_normal_ci_without_setting_reuse(self):
+    def test_api_error_blocks_delivery_without_setting_reuse(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GITHUB_EVENT_NAME='push',
                 GITHUB_REF='refs/heads/main', GITHUB_REPOSITORY=REPO, GITHUB_SHA=MAIN,
                 GITHUB_OUTPUT=tmp + '/output', GITHUB_STEP_SUMMARY=tmp + '/summary'), patch.dict(receipt.attempt.__globals__,
                     verify=lambda *a: (_ for _ in ()).throw(ValueError('API unavailable')), git=lambda a: MAIN if a == 'HEAD' else TREE):
-            receipt.attempt(Path(tmp) / 'web')
-            self.assertEqual(Path(tmp, 'output').read_text(), 'reuse=false\n')
+            with self.assertRaisesRegex(SystemExit, 'Main delivery blocked'):
+                receipt.attempt(Path(tmp) / 'web')
+            self.assertFalse(Path(tmp, 'output').exists())
             self.assertFalse(Path(tmp, 'web').exists())
 
     def test_successful_attempt_writes_only_verified_files_and_traceable_receipt(self):
@@ -233,7 +317,7 @@ class ReceiptTest(unittest.TestCase):
             self.assertEqual(json.loads(Path(tmp, 'main-tree-receipt.json').read_text())['source_artifact_digest'], api.web['digest'])
             self.assertIn(TESTED, Path(tmp, 'summary').read_text())
 
-    def test_null_repository_metadata_uses_normal_ci(self):
+    def test_null_repository_metadata_blocks_delivery(self):
         for field in ('head_repository', 'repository'):
             api = API()
             api.run[field] = None
@@ -248,52 +332,49 @@ class ReceiptTest(unittest.TestCase):
                 GITHUB_OUTPUT=tmp + '/output', GITHUB_STEP_SUMMARY=tmp + '/summary'), \
              patch.dict(receipt.attempt.__globals__, verify=lambda *a: (_ for _ in ()).throw(AttributeError('unexpected API shape')),
                         git=lambda a: MAIN if a == 'HEAD' else TREE):
-            receipt.attempt(Path(tmp) / 'web')
-            self.assertEqual(Path(tmp, 'output').read_text(), 'reuse=false\n')
-            self.assertIn('Normal main CI after', Path(tmp, 'summary').read_text())
+            with self.assertRaisesRegex(SystemExit, 'Main delivery blocked'):
+                receipt.attempt(Path(tmp) / 'web')
+            self.assertFalse(Path(tmp, 'output').exists())
+            self.assertIn('Main delivery blocked after', Path(tmp, 'summary').read_text())
 
     def test_pr_record_binds_real_environment_and_rejects_missing_job_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             event = Path(tmp, 'event.json')
-            event.write_text(json.dumps({'number': 7, 'pull_request': {'head': {'sha': HEAD}}}))
+            event.write_text(json.dumps({'number': 7, 'pull_request': {'head': {'sha': HEAD}, 'base': {'ref': 'main'}}}))
             env = dict(GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
                        GITHUB_REPOSITORY=REPO, GITHUB_RUN_ID='50', GITHUB_RUN_ATTEMPT='2',
-                       DOCS_BODY_SHA256=receipt.sha256(BODY.encode()), WEB_ID='100',
+                       DOCS_BODY_SHA256=receipt.sha256(BODY.encode()), DELIVERY_BASE=BASE, WEB_ID='100',
                        WEB_DIGEST='e' * 64, WEB_ATTEMPT='1')
             path = Path(tmp, 'receipt.json')
             with patch.dict(os.environ, env), patch.dict(receipt.record.__globals__,
                     git=lambda a: TESTED if a == 'HEAD' else TREE):
                 receipt.record(path)
                 data = json.loads(path.read_text())
-                self.assertEqual(data, dict(repository=REPO, pr=7, head=HEAD, run=50, attempt=2,
+                self.assertEqual(data, dict(repository=REPO, pr=7, head=HEAD, base_ref='main', run=50, attempt=2,
                     tested_commit=TESTED, tree=TREE, body_sha256=env['DOCS_BODY_SHA256'],
-                    web_id=100, web_digest='e' * 64, web_attempt=1))
+                    delivery_base=BASE, web_id=100, web_digest='e' * 64, web_attempt=1))
                 for key, value in (('WEB_ID', ''), ('WEB_DIGEST', ''), ('WEB_DIGEST', 'sha256:' + 'e' * 64),
                                    ('DOCS_BODY_SHA256', ''), ('WEB_ATTEMPT', '')):
                     with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}), self.assertRaises(ValueError):
                         receipt.record(path)
 
     def test_real_workflow_reuse_selects_no_tests_and_still_checks_delivery(self):
-        from test_ci_delivery import delivery, needs_for
         from test_ci_build_plan import plan
         self.assertTrue(plan.select(['docs/a.md'], pull_request=True)['jobs']['web'])
         select = next(s for s in JOBS['changes']['steps'] if s.get('id') == 'plan')
-        script = select['run']
         with tempfile.TemporaryDirectory() as tmp:
-            env = os.environ | dict(REUSE='true', GITHUB_OUTPUT=tmp + '/output')
-            subprocess.run(['bash', '-eu', '-c', script], env=env, cwd=ROOT, check=True)
+            env = os.environ | dict(MAIN='true', GITHUB_OUTPUT=tmp + '/output')
+            subprocess.run(['bash', '-eu', '-c', select['run']], env=env, cwd=ROOT, check=True)
             outputs = dict(line.split('=', 1) for line in Path(tmp, 'output').read_text().splitlines())
         self.assertFalse(any(json.loads(outputs['jobs']).values()))
-        needs = needs_for()
-        needs['changes']['outputs'].update(outputs, fixture_shards='[]', fixture_capacity='[]')
-        for name in needs:
-            if name not in ('changes', 'ci-policy', 'gateway-release'):
-                needs[name]['result'] = 'skipped'
-        with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
-            delivery.validate(copy.deepcopy(needs))
-            needs['gateway-release']['result'] = 'failure'
-            with self.assertRaises(SystemExit):
-                delivery.validate(needs)
+        guard = JOBS['delivery']['steps'][0]['run']
+        success = dict(POLICY='success', CHANGES='success', REUSE='true', RELEASE='success')
+        for missing in (None, *success):
+            failed = {missing: ''} if missing else {}
+            with self.subTest(missing=missing):
+                result = subprocess.run(['bash', '-eu', '-c', guard],
+                                        env=os.environ | success | failed, capture_output=True, text=True)
+                self.assertEqual(result.returncode, bool(missing))
         self.assertIn("github.ref == 'refs/heads/main'", next(s for s in JOBS['changes']['steps'] if s.get('id') == 'reuse')['if'])
         self.assertEqual(JOBS['changes']['permissions'], {'contents': 'read', 'actions': 'read', 'pull-requests': 'read'})
         self.assertEqual(JOBS['gateway-release']['name'], 'Gateway release inputs')

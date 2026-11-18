@@ -235,6 +235,25 @@ class RunTest(unittest.TestCase):
         self.assertIn(caveat, summary)
         self.assertIn(caveat, done.stdout)
 
+    def test_carried_changes_use_the_exact_base_and_require_actual_passed_cases(self):
+        base = 'b' * 40
+        passed = json.loads(document('passed'))
+        passed['result']['commit'] = SHA
+        nothing = {'result': {'outcome': 'nothing_to_prove', 'commit': SHA, 'cases': []}}
+        wrong = json.loads(document('passed'))
+        wrong['result']['commit'] = base
+        for result, expected in ((passed, 0), (nothing, 1), (wrong, 1)):
+            with self.subTest(result=result):
+                script = f'''printf '%s\\n' "$*" >&2
+cat <<'JSON'
+{json.dumps(result)}
+JSON
+'''
+                done, _ = self.run_script(script, {'PROOF_BASE': base})
+                self.assertEqual(done.returncode, expected, done.stderr)
+                self.assertIn(f'proof:run {SHA} --json --idempotency-key ci-proof.7.2 --base {base}', done.stderr)
+                self.assertEqual(self.receipt['base'], base)
+
     def test_a_failed_case_fails_the_job(self):
         done, _ = self.run_script('cat <<\'JSON\'\n' + document('failed') + '\nJSON\n')
         self.assertNotEqual(0, done.returncode)

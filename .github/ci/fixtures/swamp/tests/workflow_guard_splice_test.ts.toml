@@ -1,0 +1,14 @@
+order = 1491
+cases = [
+  "no guard shares its text with an expression that run-start substitution writes",
+]
+file = "swamp/tests/workflow_guard_splice_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/*.yaml",
+]

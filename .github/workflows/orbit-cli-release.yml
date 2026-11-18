@@ -59,7 +59,7 @@ jobs:
             echo "tag=${tag}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Require exact main CI delivery evidence and link fixture report
+      - name: Require exact main delivery evidence
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ steps.release.outputs.commit }}

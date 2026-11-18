@@ -57,6 +57,7 @@ final class ConnProfileSettingsRules
             $section === ConnProfileSections::Workspaces => self::workspaces($path),
             $section === ConnProfileSections::Appearance => self::appearance($path),
             $section === ConnProfileSections::AttachedThreads => self::attachedThreads($path),
+            $section === ConnProfileSections::SidebarHiddenThreads => self::sidebarHiddenThreads($path),
             default => self::deviceSection($path),
         };
     }
@@ -124,6 +125,17 @@ final class ConnProfileSettingsRules
         ];
     }
 
+    /**
+     * The sidebar's hidden threads take the form of the attached set. Only the form is checked: an entry names no
+     * environment that must exist or be visible, because hiding a thread opens nothing.
+     *
+     * @return array<string, list<mixed>>
+     */
+    public static function sidebarHiddenThreads(string $path): array
+    {
+        return self::attachedThreads($path);
+    }
+
     /** @return array<string, list<mixed>> */
     public static function deviceSection(string $path): array
     {
@@ -154,7 +166,7 @@ final class ConnProfileSettingsRules
     {
         $limit = match (true) {
             $section === ConnProfileSections::Appearance => ConnProfileSections::MaxAppearanceBytes,
-            $section === ConnProfileSections::AttachedThreads => ConnProfileSections::MaxAttachedThreadsBytes,
+            $section === ConnProfileSections::AttachedThreads, $section === ConnProfileSections::SidebarHiddenThreads => ConnProfileSections::MaxAttachedThreadsBytes,
             ConnProfileSections::deviceType($section) !== null => ConnProfileSections::MaxDeviceBytes,
             default => null,
         };
@@ -210,7 +222,7 @@ final class ConnProfileSettingsRules
         };
     }
 
-    /** The attached set names each thread once. */
+    /** A thread set names each thread once. */
     private static function distinctThreads(string $attribute, mixed $value, Closure $fail): void
     {
         if (! is_array($value)) {

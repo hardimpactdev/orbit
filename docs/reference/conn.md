@@ -55,7 +55,7 @@ Removing an edge ends the sessions the Gateway holds for the consumer on the ser
 
 A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/conn/me`. Every Node that may use profiles ([Access](#access)) sees every profile.
 
-A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has four kinds of section:
+A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has five kinds of section:
 
 ```json
 {
@@ -89,11 +89,15 @@ A profile holds one settings document. Its keys follow Conn's stores, so they st
   "attachedThreads": {
     "schema": 1,
     "threads": [{"environmentId": "env-fix-login", "threadId": "thread-7d2a"}]
+  },
+  "sidebarHiddenThreads": {
+    "schema": 1,
+    "threads": [{"environmentId": "env-beast", "threadId": "thread-41c0"}]
   }
 }
 ```
 
-A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
+A section is `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
 
 | Field | Rule |
 | --- | --- |
@@ -116,9 +120,14 @@ A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`.
 | `devices.<type>.values` | Required flat map of at most 128 entries. |
 | `attachedThreads` | Object of at most 64 KB, serialized. |
 | `attachedThreads.schema` | Required integer, 1 or more. |
-| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. |
+| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. An object, even `{}`, is refused. |
 | `attachedThreads.threads[].environmentId` | Required: the `environment_id` of a Conn environment, at most 255 characters, no spaces or colons. See [Attached threads](#attached-threads) for which environments a write may name. |
 | `attachedThreads.threads[].threadId` | Required: the T3 thread id, at most 255 characters, no spaces. |
+| `sidebarHiddenThreads` | Object of at most 64 KB, serialized, with the same keys and rules as `attachedThreads`. |
+| `sidebarHiddenThreads.schema` | Required integer, 1 to 1000. |
+| `sidebarHiddenThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. An object, even `{}`, is refused. |
+| `sidebarHiddenThreads.threads[].environmentId` | Required: a Conn `environment_id`, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab, and no colon. The Gateway checks only its form ([Sidebar hidden threads](#sidebar-hidden-threads)). |
+| `sidebarHiddenThreads.threads[].threadId` | Required: the T3 thread id, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab. |
 
 A device type is 2 to 24 lowercase letters, digits, and hyphens, and starts with a letter, such as `desktop` or `iphone`.
 
@@ -194,6 +203,55 @@ A device learns of a change from `profile.settings_version` in `GET /me`, which 
 
 A profile from before this section has no `attachedThreads` key and no version for it. It reads as no attached threads, at section version 0, so the first patch sends version 0. No migration runs. A client that does not know the section keeps working: it ignores the key, `PUT` cannot send it and keeps it as it is, and a patch changes only the sections it names.
 
+### Sidebar hidden threads
+
+`sidebarHiddenThreads` is the profile's list of threads that the sidebar hides. It is a display choice that every device on the profile shares. A device that reads a thread on this list leaves it out of its sidebar. Showing the thread again removes it from the list.
+
+An entry names one thread on one server, as `environmentId` and `threadId`, as in `attachedThreads`. The pair is stable: it names the same thread on every device and after a restart, so a device matches it without any local id.
+
+The list changes only what a sidebar shows:
+
+- **No detach.** Hiding a thread does not detach it. Showing it does not attach it.
+- **Apart from attachment.** A write of this section leaves `attachedThreads` as it is. A write of `attachedThreads` leaves this section as it is.
+- **Destroy.** Orbit's drop of a removed Instance's threads changes only `attachedThreads`.
+- **No connection.** Hiding or showing a thread never changes which servers a device connects to. That set comes only from `attachedThreads` and `GET /environments` ([Attached threads](#attached-threads)).
+- **Container servers.** A hidden mark cannot keep a container server connected. Detaching its last attached thread takes the server out of the set.
+- **Host servers.** A device keeps a host server connected even with no attached thread, whether its threads are hidden or not.
+
+The list also opens no access:
+
+- **No registration.** An entry never registers, enables, or pairs an environment.
+- **No access.** An entry grants no access. It may name a thread that is not attached, or a server the writing device cannot see.
+- **Form only.** The Gateway checks only the form of an entry and the limits in the table above.
+- **No lookup.** It does not look the environment up or check node access. So a write never fails on another device's access.
+- **Same boundary.** Who may read and write the section is the same as for every profile section ([Access](#access)).
+- **Gone servers.** The Gateway keeps the entries of a deleted environment, at removal and on read.
+- **Stale entry.** Such an entry hides nothing, because no device lists that thread. A client may remove it at its next write.
+
+Write the section with `PATCH`, as the whole list, with the section version the client read. The envelope is the one `attachedThreads` uses:
+
+```json
+{"sections": {"sidebarHiddenThreads": {"version": 2, "value": {"schema": 1, "threads": [
+  {"environmentId": "env-beast", "threadId": "thread-41c0"}
+]}}}}
+```
+
+To hide a thread, send the list with it added. To show it, send the list without it. To show every thread, send `{"schema": 1, "threads": []}` or `null`. A bare `[]` lacks both required keys and is refused with `validation.failed` (422). Unlike other sections, `null` does not remove this section: the Gateway stores `{"schema": 1, "threads": []}`. It stores the same value for an empty list sent with another schema. Each of these writes adds 1 to the section version and to the document version.
+
+Two devices that change the list at the same time are handled by the section version ([Versions](#versions)). The second write gets `conn.settings_version_conflict` (409). That client reads the section again and merges three ways, as for attached threads: the remote list, plus the threads it hid since its base, minus the threads it showed since its base. Then it retries with the new version. A patch is all or nothing. A patch that also holds `attachedThreads` is refused as a whole when one of its attached entries is refused.
+
+A read shows the section by its version:
+
+- **Version 0.** A profile whose section was never written has no `sidebarHiddenThreads` key and no entry for it in `sections`. It reads as no hidden threads, so the first patch sends version 0. No migration runs.
+- **Version 1 or more.** Once the section has been written, `GET /profiles/{id}/settings` and the `PATCH` reply always hold its stored value in `settings.sidebarHiddenThreads`. Its version is in `sections`.
+- **Empty list.** After a write of `null` or of an empty list, with any schema, the value is `{"schema": 1, "threads": []}`.
+- **Confirm a show.** So a client confirms a write that shows the last hidden thread from the value, not only from the version.
+- **Other sections.** They keep their own rules: a section that was removed with `null` is absent.
+
+Every write of the section moves the document version, which `profile.settings_version` in `GET /me` shows. So a device that follows the document version, by any means, sees a change to this list as it sees any other section.
+
+A `PUT` cannot send this section and keeps it as it is ([Versions](#versions)). So a client that does not know the section, and writes only `workspaces`, never erases the threads another device hid. If its document version is behind a hide, the `PUT` gets a conflict; the client reads again and sends its workspaces without the section.
+
 ### Versions
 
 The document has a version, and so has each section. A new profile starts at document version 1 with no workspaces. Every write adds 1 to the document version. A write also adds 1 to the version of each section it changed. A section with no recorded version is at version 0. This includes a section written before sections had versions.
@@ -206,11 +264,11 @@ There are two ways to write. Prefer `PATCH`.
 
 `PUT /profiles/{id}/settings` replaces the sections it holds and keeps the others. It checks the document version, as it always did.
 
-A `PUT` accepts only `workspaces`, `appearance`, and `devices`. A body with any other section, such as `attachedThreads`, is refused with `validation.failed` (422) and writes nothing. So a client that sends back the whole document as it read it gets a refusal. A client must not send `attachedThreads` in a `PUT`; it changes the set with `PATCH`. Every installed Conn client sends only `workspaces` here, and patches the other sections. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
+A `PUT` accepts only `workspaces`, `appearance`, and `devices`. A body with any other section, such as `attachedThreads` or `sidebarHiddenThreads`, is refused with `validation.failed` (422) and writes nothing. So a client that sends back the whole document as it read it gets a refusal. A client must not send `attachedThreads` or `sidebarHiddenThreads` in a `PUT`; it changes them with `PATCH`. A `PUT` keeps `sidebarHiddenThreads`, which it cannot send, at its value and version. Every installed Conn client sends only `workspaces` here, and patches the other sections. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
 
 A patch whose section is at another version is refused with `conn.settings_version_conflict` (409), and the Gateway writes nothing. `details.current_version` is the document version. `details.sections` holds the current version of each section the request named. The client reads again, merges the sections that changed, and retries.
 
-A `value` of `null` removes any section but `workspaces`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
+A `value` of `null` removes any section but `workspaces` and `sidebarHiddenThreads`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. A `null` for `sidebarHiddenThreads` stores an empty list ([Sidebar hidden threads](#sidebar-hidden-threads)). Only an explicit `null` removes a section. An empty or blank string, including one of Unicode spaces such as a no-break space, is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
 
 Both run in one transaction on the locked profile row, so two writes from the same version cannot both win. A section name that Conn does not know, such as `theme`, `devices`, or `devices.Phone`, is refused with `validation.failed`. A rule error names its field with dots, such as `sections.devices.iphone.value.values.baseFontSize`.
 
@@ -1042,7 +1100,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /profiles` | `{"name": "Nick"}` | profile (201) |
 | `GET /profiles/{id}/settings` | — | settings |
 | `PUT /profiles/{id}/settings` | `{"version": 3, "settings": {"workspaces": [...]}}`; any of `workspaces`, `appearance`, `devices` | settings |
-| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`; any of `workspaces`, `appearance`, `attachedThreads`, `devices.<type>` | settings |
+| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`; any of `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads`, `devices.<type>` | settings |
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
@@ -1144,6 +1202,14 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 ### Why the attached set is a profile section
 
 The devices on a profile should connect to the same servers, so the set lives in the profile, beside the settings every device already reads. As a section it gets its own version, so attaching a thread never conflicts with a theme change, and it needs no new route and no client clock. A set merges three ways without loss, so the per-section version and a client retry are enough. The Gateway still checks the entries, so a device cannot attach a server it may not reach, and a removed Instance leaves no entry behind.
+
+### Why hidden threads are their own section
+
+Hiding is a display choice, and attaching decides which servers a device connects to. Hiding or showing a thread never changes the connection state: a hidden mark cannot keep a container server connected after its last attachment goes, and a host server stays connected with no attached thread.
+
+With one list for both, hiding a thread could disconnect a container server if that thread were its last attachment, and a device could not hide a thread without the Gateway's attachment check. So the hidden list is a section of its own, with its own version. A hide on one device never conflicts with an attach on another. It grants nothing, so the Gateway checks only its form.
+
+A `null` keeps the section as an empty list rather than removing it. A removed section would read like a section that was never written, and a client that showed its last hidden thread could not tell its write from an old profile.
 
 ## Session cleanup
 
