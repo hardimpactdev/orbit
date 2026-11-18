@@ -45,6 +45,9 @@ final readonly class ContainerDeployOutcome
         $file = is_array($file) ? $file : [];
         // A nested-fleet start's word for what it did with the Club key, kept in the result file by every later phase.
         $payload = ['commit' => null, 'failed_step' => null, 'started' => true, 'club_key' => $file['club_key'] ?? null];
+        if (is_array($file['executor'] ?? null)) {
+            $payload['executor'] = $file['executor'];
+        }
         $bestEffort = self::bestEffortSteps($steps, $admittedSteps);
         if ($bestEffort !== []) {
             $payload['best_effort_steps'] = $bestEffort;

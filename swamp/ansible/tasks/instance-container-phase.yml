@@ -132,7 +132,7 @@
 # wake meets address data of an earlier incarnation.
 - name: Hand a sleeping container to the power helper
   tags: [start]
-  when: phase == 'start' and start_found in ['Frozen', 'Stopped']
+  when: phase == 'start' and start_found in ['Frozen', 'Stopped'] and not intent.signed_power | default(false) | bool
   block:
     - name: Install the power helper
       ansible.builtin.include_tasks: { file: instance-power-helper.yml, apply: {tags: [start]} }
@@ -146,9 +146,56 @@
       when: power_called.outcome not in ['resumed', 'already_running', 'stopped']
       ansible.builtin.fail: { msg: "{{ power_called.error_code | default('instance.container_start_failed', true) }}" }
 
+- name: Recover a signed wake or resume a frozen container
+  tags: [start]
+  when: >-
+    phase == 'start' and intent.signed_power | default(false) | bool and
+    (intent.marker is defined or start_found == 'Frozen')
+  block:
+    - name: Deliver the signed wake order
+      ansible.builtin.include_tasks: { file: executor-power-relay.yml, apply: {tags: [start]} }
+      vars:
+        executor_phase: "{{ 'power' if intent.marker is defined else 'resume' }}"
+        executor_action: wake
+        executor_may_boot: true
+    - name: Read the real container state after the executor receipt
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+      register: signed_start_read
+      changed_when: false
+    - name: Check the receipt agrees with the container state
+      ansible.builtin.assert:
+        that:
+          - >-
+            (signed_start_read.stdout | from_json).status ==
+            ('Stopped' if executor_receipt.code | default('') == 'instance.container_stopped' else 'Running')
+        fail_msg: instance.container_start_failed
+        quiet: true
+    - name: Use the executor's wake outcome
+      ansible.builtin.set_fact:
+        container_read: "{{ signed_start_read }}"
+        start_resumed: "{{ start_found == 'Frozen' and executor_receipt.status in ['done', 'partial'] }}"
+        start_found: "{{ 'Stopped' if executor_receipt.code | default('') == 'instance.container_stopped' else start_found }}"
+
+- name: Refuse a signed wake that discovered a stopped nested fleet
+  tags: [start]
+  when: >-
+    phase == 'start' and intent.marker is defined and intent.signed_power | default(false) | bool
+    and start_nested | bool and start_found == 'Stopped'
+  ansible.builtin.fail: { msg: instance.nested_fleet_stopped }
+
+- name: Discard stale signed state before a lifecycle boot
+  tags: [start]
+  when: >-
+    phase == 'start' and intent.signed_power | default(false) | bool and
+    intent.marker is not defined and start_found == 'Stopped'
+  ansible.builtin.include_tasks: { file: executor-power-relay.yml, apply: {tags: [start]} }
+  vars:
+    executor_phase: boot
+    executor_action: discard
+
 - name: Resume the frozen container
   tags: [start]
-  when: phase == 'start' and start_found == 'Frozen'
+  when: phase == 'start' and start_found == 'Frozen' and not intent.signed_power | default(false) | bool
   block:
     - name: Start the web probe clock
       ansible.builtin.set_fact: { resume_probe_started: "{{ now().timestamp() }}" }
@@ -186,7 +233,7 @@
 # the facts that this run reports (docs/reference/prepared-restore.md#the-fast-wake).
 - name: Read the fast wake's outcome of this Operation
   tags: [start]
-  when: phase == 'start' and intent.marker is defined and start_found in ['Running', 'Frozen']
+  when: phase == 'start' and intent.marker is defined and start_found in ['Running', 'Frozen'] and not intent.signed_power | default(false) | bool
   ansible.builtin.find:
     paths: "{{ wake_outcomes | default('/var/lib/orbit/hibernation/outcomes') }}"
     patterns: "app-instance-{{ container.instance_id }}-op-{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') }}.ready-*"
@@ -205,7 +252,8 @@
                   else 'already_running' if start_found == 'Running' else 'started',
           'marker_found': wake_marker.stat.exists}
          | combine(start_resume_timing | default({}))
-         | combine({'prepared_restore': {'status': wake_fast_ready.path.split('.ready-')[-1] | replace('-', '_')},
+         | combine({'executor': executor_receipt} if intent.signed_power | default(false) | bool else
+                   {'prepared_restore': {'status': wake_fast_ready.path.split('.ready-')[-1] | replace('-', '_')},
                     'ready_at': '%Y-%m-%dT%H:%M:%SZ' | strftime(wake_fast_ready.mtime | int, utc=true),
                     'ready_at_resolution_seconds': 1}
                    if wake_fast_outcome.matched | default(0) == 1

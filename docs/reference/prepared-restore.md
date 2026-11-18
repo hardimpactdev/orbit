@@ -9,7 +9,7 @@ A sleeping development container keeps its memory in swap ([Sleep and wake](/ref
 
 This page is the contract for [ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes), which is in progress. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) charts show the steps.
 
-> **Target design, not built.** [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) replaces the Python helper, its transient-unit lock, the path unit, the dispatcher, the `orbit-instance-wake@` worker and the fast wake's files on this page. A Rust executor on the Node does every sleep and wake in-process, on Gateway-signed orders that arrive through the observer's WebSocket or one fixed SSH relay command. One restore pool of about 32 threads per Node serves one target fully before the next. The plan also records swapped pages (pagemap bit 62), so a partial wake never shrinks a later plan. Until its slices land, this page describes what runs.
+> **Disabled-mode engine.** This page describes the Python path. With [signed power delivery](/reference/executor#signed-power-delivery) enabled, [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) instead routes power to the Node's Rust executor. The executor uses its own plan and restore pool. Do not transfer frozen plans between engines.
 
 | Rule | Meaning |
 | --- | --- |

@@ -6,6 +6,8 @@ namespace App\Actions\Operations;
 
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
+use App\Domain\Instances\Power\ExecutorPowerIntent;
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -33,6 +35,10 @@ final readonly class CancelOperationAction
             abort_if(in_array($operation->kind, OperationKinds::PrivateConnKinds, true), 404);
             if ($operation->status->terminal()) {
                 return;
+            }
+            if (ExecutorWake::owns($operation) && ExecutorPowerIntent::managed($operation)
+                && $operation->status === OperationStatus::Running && ! isset($operation->state[ExecutorWake::Recovery])) {
+                throw new ResourceOperationException('executor.already_started', 'The signed power action has started and cannot be cancelled.', 409);
             }
             if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)
                 && ! isset($operation->state['swamp_run_id']) && $operation->attempts === 0

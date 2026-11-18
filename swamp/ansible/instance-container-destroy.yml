@@ -47,6 +47,12 @@
           when: phase == 'stop' and present | length > 0 and present[0].status != 'Stopped'
           ansible.builtin.command: { argv: "{{ incus + ['stop', '--force', container.name] }}", stdin: "" }
           changed_when: true
+        - name: Discard this Instance's signed power state after stop
+          when: phase == 'stop' and container.signed_power | default(false) | bool
+          ansible.builtin.include_tasks: { file: tasks/executor-power-relay.yml, apply: {tags: [always]} }
+          vars:
+            executor_phase: removal
+            executor_action: discard
         - name: Delete the container and its owned network state
           when: phase == 'remove'
           block:
@@ -198,12 +204,15 @@
             # The power helper's files of the Instance go with the container: its plan, sleep result, swap limits record, target
             # descriptor, receipts, and its fast wake's request and outcome files. `discard` takes the Instance's lock, so it waits for a
             # helper still at work, and a late worker then finds no descriptor (docs/reference/prepared-restore.md#lifecycle).
-            - name: Install the power helper
-              ansible.builtin.include_tasks: { file: tasks/instance-power-helper.yml, apply: {tags: [always]} }
-            - name: Discard this Instance's power helper files
-              ansible.builtin.include_tasks: { file: tasks/instance-power-call.yml, apply: {tags: [always]} }
-              vars:
-                power_call: ['discard', '--instance', '{{ container.instance_id }}']
+            - name: Discard this Instance's disabled-mode power state
+              when: not container.signed_power | default(false) | bool
+              block:
+                - name: Install the power helper
+                  ansible.builtin.include_tasks: { file: tasks/instance-power-helper.yml, apply: {tags: [always]} }
+                - name: Discard this Instance's power helper files
+                  ansible.builtin.include_tasks: { file: tasks/instance-power-call.yml, apply: {tags: [always]} }
+                  vars:
+                    power_call: ['discard', '--instance', '{{ container.instance_id }}']
             - name: Remove the Node repository mirror
               ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }
             # A task copy's base scratch, which a cancelled task:sync may leave; it holds no credential. The intent names no Instance id,

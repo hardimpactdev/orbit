@@ -15,12 +15,15 @@ use plan::{cgroup_identity, Plan};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
+use std::net::TcpStream;
 use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const RESIDUAL_ANON: u64 = 32 << 20;
 const UNMANAGED: &str = "instance.container_frozen_unmanaged";
+/// The published route must already recognize the asleep marker.
+pub const ROUTE_UNREADY: &str = "instance.sleep_route_unready";
 /// A sleep or discard waits this long for a stalled restore reader of its target, then refuses.
 const READER_BOUND: Duration = Duration::from_secs(10);
 /// The refusal when a stalled restore reader of the target outlives [`READER_BOUND`].
@@ -133,6 +136,9 @@ pub struct Receipt {
     pub total_us: u64,
     /// Time spent reclaiming and waiting for counters to settle.
     pub reclaim_us: u64,
+    /// Number of inner cgroup limits opened, excluding the container root.
+    #[serde(default)]
+    pub swap_subtree: usize,
 }
 fn micros(start: Instant) -> u64 {
     u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
@@ -194,6 +200,41 @@ impl Power {
     /// Returns a stable power error or a local I/O error. A frozen failure keeps recovery state.
     pub fn sleep(&self, id: &str, operation: &str) -> io::Result<Receipt> {
         self.sleep_with(&self.incus, id, operation)
+    }
+
+    /// Check the loaded route before changing swap or freezing a published Instance.
+    ///
+    /// # Errors
+    /// Returns [`ROUTE_UNREADY`] when Caddy does not recognize the marker.
+    pub fn require_sleep_route(&self, id: &str) -> io::Result<()> {
+        if caddy_checks(&self.marker(id)) {
+            Ok(())
+        } else {
+            Err(invalid(ROUTE_UNREADY))
+        }
+    }
+
+    fn sleep_with(&self, api: &dyn Api, id: &str, operation: &str) -> io::Result<Receipt> {
+        let marker = self.marker(id);
+        let had_marker = marker.exists();
+        let result = self.capture_sleep(api, id, operation);
+        if result.is_err() && !had_marker {
+            self.clear_failed_sleep_marker(api, id, &marker);
+        }
+        result
+    }
+
+    fn clear_failed_sleep_marker(&self, api: &dyn Api, id: &str, marker: &Path) {
+        if let Ok(Some(instance)) = api.instance(id) {
+            if instance.status == "running"
+                && self.identity(&instance).is_ok_and(|identity| {
+                    Self::kernel_frozen(&self.cgroups.join(identity.cgroup))
+                        .is_ok_and(|frozen| !frozen)
+                })
+            {
+                let _ = remove(marker);
+            }
+        }
     }
 
     /// Drop the plan and limits record after stop, destruction or a fresh boot. Safe to repeat.
@@ -350,7 +391,7 @@ impl Power {
                 .any(|l| l == "frozen 1"))
     }
 
-    fn sleep_with(&self, api: &dyn Api, id: &str, operation: &str) -> io::Result<Receipt> {
+    fn capture_sleep(&self, api: &dyn Api, id: &str, operation: &str) -> io::Result<Receipt> {
         if !valid_id(id) {
             return Err(invalid("unknown_target"));
         }
@@ -362,7 +403,8 @@ impl Power {
         if instance.status == "stopped" {
             self.discard(id)?;
             let receipt = stopped_receipt(started);
-            self.finish(id, &base, &receipt)?;
+            self.mark_asleep(id)?;
+            publish(&base.join("receipt.json"), &receipt)?;
             return Ok(receipt);
         }
         let identity = self.identity(&instance)?;
@@ -385,20 +427,7 @@ impl Power {
             }
             return Err(error);
         }
-        if instance.status != "frozen" && api.change(&instance, "freeze").is_err() {
-            // Incus may have completed the freeze before its response was lost.
-            if api
-                .instance(id)?
-                .is_some_and(|live| live.status == "running")
-                && !Self::kernel_frozen(&root)?
-            {
-                self.close_limits(&base, &identity)?;
-            }
-            return Err(invalid("instance.container_freeze_failed"));
-        }
-        if !Self::kernel_frozen(&root)? {
-            return Err(invalid("instance.container_freeze_failed"));
-        }
+        self.freeze(api, id, &instance, &base, &identity)?;
         let mut reason = None;
         let plan_path = base.join("plan.json");
         let plan =
@@ -409,6 +438,12 @@ impl Power {
         let (anon, file) = counters(&root)?;
         let ram_bytes = number(&root.join("memory.current"))?;
         let swap_bytes = number(&root.join("memory.swap.current"))?;
+        let limits: Limits = load(&base.join("limits.json"))?;
+        let swap_subtree = limits
+            .opened
+            .iter()
+            .filter(|limit| !limit.relative.as_os_str().is_empty())
+            .count();
         let mut sleep = "frozen";
         if anon > RESIDUAL_ANON {
             self.swap_full(api, id, &instance, &base, &identity)?;
@@ -441,19 +476,52 @@ impl Power {
             residual_file_bytes: file,
             total_us: micros(started),
             reclaim_us,
+            swap_subtree,
         };
-        self.finish(id, &base, &receipt)?;
+        publish(&base.join("receipt.json"), &receipt)?;
         Ok(receipt)
     }
 
-    fn finish(&self, id: &str, base: &Path, receipt: &Receipt) -> io::Result<()> {
-        publish(&base.join("receipt.json"), receipt)?;
+    fn freeze(
+        &self,
+        api: &dyn Api,
+        id: &str,
+        instance: &Instance,
+        base: &Path,
+        identity: &Identity,
+    ) -> io::Result<()> {
+        let root = self.cgroups.join(&identity.cgroup);
+        if let Err(error) = self.mark_asleep(id) {
+            if instance.status == "running" {
+                self.close_limits(base, identity)?;
+            }
+            return Err(error);
+        }
+        if instance.status == "running"
+            && api.change(instance, "freeze").is_err()
+            && !api
+                .instance(id)?
+                .is_some_and(|live| live.status == "frozen")
+        {
+            if !Self::kernel_frozen(&root)? {
+                self.close_limits(base, identity)?;
+            }
+            return Err(invalid("instance.container_freeze_failed"));
+        }
+        if Self::kernel_frozen(&root)? {
+            Ok(())
+        } else {
+            Err(invalid("instance.container_freeze_failed"))
+        }
+    }
+
+    fn marker(&self, id: &str) -> PathBuf {
+        self.markers.join(format!("app-instance-{id}.asleep"))
+    }
+
+    fn mark_asleep(&self, id: &str) -> io::Result<()> {
         fs::create_dir_all(&self.markers)?;
-        atomic(
-            &self.markers.join(format!("app-instance-{id}.asleep")),
-            b"",
-            0o644,
-        )
+        atomic(&self.marker(id), b"", 0o644)
     }
 
     fn existing_or_capture(
@@ -575,7 +643,33 @@ fn stopped_receipt(started: Instant) -> Receipt {
         residual_file_bytes: 0,
         total_us: micros(started),
         reclaim_us: 0,
+        swap_subtree: 0,
     }
+}
+
+fn caddy_checks(marker: &Path) -> bool {
+    let bound = Duration::from_millis(250);
+    let result = (|| -> io::Result<Vec<u8>> {
+        let mut stream = TcpStream::connect_timeout(&([127, 0, 0, 1], 2019).into(), bound)?;
+        stream.set_read_timeout(Some(bound))?;
+        stream.set_write_timeout(Some(bound))?;
+        stream.write_all(b"GET /config/ HTTP/1.0\r\nHost: localhost\r\n\r\n")?;
+        let mut bytes = Vec::new();
+        stream.take(8 * 1024 * 1024).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    })();
+    result.is_ok_and(|bytes| {
+        marker
+            .file_name()
+            .is_some_and(|name| route_checks(&bytes, name.as_encoded_bytes()))
+    })
+}
+
+fn route_checks(response: &[u8], marker_name: &[u8]) -> bool {
+    (response.starts_with(b"HTTP/1.0 200 ") || response.starts_with(b"HTTP/1.1 200 "))
+        && response
+            .windows(marker_name.len() + 1)
+            .any(|part| part[0] == b'/' && &part[1..] == marker_name)
 }
 
 fn valid_id(id: &str) -> bool {

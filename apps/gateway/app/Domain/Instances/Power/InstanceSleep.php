@@ -44,6 +44,50 @@ final readonly class InstanceSleep extends InstancePower
         return InstanceRuntimePowerState::Stopped;
     }
 
+    protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
+    {
+        if (! ExecutorPowerIntent::forInstance($instance, $runtime)) {
+            return parent::admit($instance, $runtime, $input, $caller, $requestId);
+        }
+        $executor = app(ExecutorWake::class);
+        $operation = $executor->admit($instance, [...$input, ExecutorPowerIntent::Managed => true], $caller, $requestId, self::Kind);
+        if ($operation->wasRecentlyCreated) {
+            $executor->dispatchDeferred($operation->id);
+        }
+
+        return $operation;
+    }
+
+    public function signedResult(Operation $operation, array $receipt): array
+    {
+        $measured = is_array($receipt['receipt'] ?? null) ? $receipt['receipt'] : [];
+        $prepared = ['version' => 1, 'status' => $measured['plan'] ?? 'not_applicable'];
+        if (is_string($measured['reason'] ?? null)) {
+            $prepared['reason'] = $measured['reason'];
+        }
+        foreach (['processes' => 'processes', 'mapping_bytes' => 'resident_mapping_bytes', 'residual_anon_bytes' => 'residual_anon_bytes',
+            'residual_file_bytes' => 'residual_file_bytes'] as $source => $key) {
+            if (is_int($measured[$source] ?? null) && $measured[$source] >= 0) {
+                $prepared[$key] = $measured[$source];
+            }
+        }
+
+        return [...parent::signedResult($operation, $receipt), ...$this->kept($measured), 'prepared_restore' => $prepared];
+    }
+
+    protected function provesSignedSuccess(?array $receipt, array $phase): bool
+    {
+        return parent::provesSignedSuccess($receipt, $phase) && in_array($receipt['receipt']['sleep'] ?? null, ['frozen', 'stopped'], true);
+    }
+
+    protected function open(Instance $instance, bool $join): ?Operation
+    {
+        $operation = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->first();
+
+        return $operation !== null && ExecutorPowerIntent::managed($operation) ? $operation : null;
+    }
+
     /** The extensions read the server's threads one last time, after the refusals and outside the Instance lock: a sleeping server cannot be read. */
     #[\Override]
     protected function beforeAdmission(Instance $instance): void

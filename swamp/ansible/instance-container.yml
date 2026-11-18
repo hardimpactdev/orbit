@@ -75,6 +75,12 @@
            if intent.fleet is defined and club_key_result_file is file
               and (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh | default(none) is mapping
          else {} }}
+    executor_carried: >-
+      {{ {} if not intent.signed_power | default(false) | bool
+         else {'executor': executor_receipt} if executor_receipt is defined
+         else {'executor': (lookup('ansible.builtin.file', club_key_result_file) | from_json).executor}
+           if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).executor | default(none) is mapping
+         else {} }}
   tasks:
     - name: Run the phases
       block:
@@ -105,6 +111,7 @@
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
                   | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
+                  | combine(executor_carried)
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
                             if phases is defined else {}))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"

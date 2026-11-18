@@ -241,14 +241,16 @@ counts syntactic control sites. `gateway_client_files` counts distinct files wit
 a `gateway-http` finding, including callers that reach a local Gateway client.
 The JSON report retains coverage categories, raw baseline counts and source moves.
 
-Nick permits exactly two Gateway execution primitives from steps: GitHub
-installation-token mint and certificate signing (CSR plus operation id to a public
-bundle). The gate allows only these exact POST route templates:
+Steps may mint a GitHub installation token, sign a certificate for an admitted
+CSR or sign an executor order for a bound Operation phase. The gate allows only
+these exact POST route templates:
 
 - `/api/v1/direct-operations/{operation}/github-token`
 - `/api/v1/direct-operations/{operation}/certificates/sign`
+- `/api/v1/direct-operations/{operation}/executor/sign`
 
-Root confirmed both route contracts on 2026-10-31. The operation segment must be a
+The executor primitive follows [ADR 0266](../../docs/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor.md#fallback-one-implementation-on-both-paths).
+The operation segment must be a
 positive numeric id. The native Python request fixture proves
 its numeric check precedes the request and rejects reassignment after that check. It does not exempt
 a client, module, endpoint prefix or file. Other Gateway HTTP calls from steps,

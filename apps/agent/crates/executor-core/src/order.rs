@@ -85,6 +85,24 @@ struct Payload {
     operation: OperationId,
     nonce: Nonce,
     expires_ms: u64,
+    #[serde(default)]
+    route_required: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RouteGuard {
+    Required,
+    Absent,
+}
+
+impl From<bool> for RouteGuard {
+    fn from(required: bool) -> Self {
+        if required {
+            Self::Required
+        } else {
+            Self::Absent
+        }
+    }
 }
 
 /// An order that passed every stateless check. Only [`check`] makes one.
@@ -95,18 +113,24 @@ pub struct VerifiedOrder {
     operation: OperationId,
     nonce: Nonce,
     expires_ms: u64,
+    route_guard: RouteGuard,
 }
 
 impl VerifiedOrder {
     /// Rebuilds an order that the journal recorded as open, for crash recovery. Its checks passed before it
     /// was journaled.
-    pub(crate) fn recovered(nonce: Nonce, key: &crate::journal::DoneKey) -> Self {
+    pub(crate) fn recovered(
+        nonce: Nonce,
+        key: &crate::journal::DoneKey,
+        route_guard: RouteGuard,
+    ) -> Self {
         Self {
             action: key.action,
             target: key.target.clone(),
             operation: key.operation.clone(),
             nonce,
             expires_ms: 0,
+            route_guard,
         }
     }
 
@@ -133,6 +157,11 @@ impl VerifiedOrder {
     /// When the order expires, in Unix milliseconds.
     pub fn expires_ms(&self) -> u64 {
         self.expires_ms
+    }
+
+    /// Whether this sleep must find the asleep marker rule in Caddy's loaded configuration.
+    pub fn route_required(&self) -> bool {
+        self.route_guard == RouteGuard::Required
     }
 }
 
@@ -249,6 +278,9 @@ pub fn check_with_target(
         .action
         .parse()
         .map_err(|_| OrderRefusal::UnknownAction)?;
+    if payload.route_required && action != Action::Sleep {
+        return Err(OrderRefusal::BadPayload);
+    }
     if !checks.enabled.allows(action) {
         return Err(OrderRefusal::ActionNotEnabled);
     }
@@ -274,6 +306,7 @@ pub fn check_with_target(
         operation: payload.operation,
         nonce: payload.nonce,
         expires_ms: payload.expires_ms,
+        route_guard: payload.route_required.into(),
     })
 }
 

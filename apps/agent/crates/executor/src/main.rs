@@ -53,10 +53,13 @@ impl Run for Families {
             Action::ProofNoop => Outcome::Done,
             Action::Sleep => {
                 let started = std::time::Instant::now();
-                match self
-                    .0
-                    .sleep(order.target().as_str(), order.operation().as_str())
-                {
+                let target = order.target().as_str();
+                let checked = if order.route_required() {
+                    self.0.require_sleep_route(target)
+                } else {
+                    Ok(())
+                };
+                match checked.and_then(|()| self.0.sleep(target, order.operation().as_str())) {
                     Ok(receipt) => {
                         // This includes receipt and marker fsync, which cannot time their own publication.
                         log(&format!(
@@ -65,13 +68,16 @@ impl Run for Families {
                             started.elapsed().as_micros(),
                             receipt.reclaim_us
                         ));
-                        Outcome::Done
+                        Outcome::Slept {
+                            receipt: serde_json::json!(receipt),
+                        }
                     }
                     Err(error) => {
                         log(&format!("power sleep failed: {error}"));
                         Outcome::Failed {
                             code: match error.to_string().as_str() {
                                 code @ ("instance.container_frozen_unmanaged"
+                                | orbit_executor_power::ROUTE_UNREADY
                                 | orbit_executor_power::READERS_BUSY) => code,
                                 _ => "instance.container_freeze_failed",
                             }

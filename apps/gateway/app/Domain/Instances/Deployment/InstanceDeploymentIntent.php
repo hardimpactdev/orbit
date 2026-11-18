@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Projects\DevelopmentDeployStep;
@@ -70,6 +71,7 @@ final readonly class InstanceDeploymentIntent
                 'repository' => $instance->project->repository_url, 'home' => $instance->checkout_path,
                 // The container is frozen with the rest of the intent; the run adds only the pinned commit.
                 'container' => $runtime !== null ? app(InstanceContainer::class)->intent($instance, $runtime) : null,
+                ...($runtime !== null && ExecutorPowerIntent::forInstance($instance, $runtime) ? [ExecutorPowerIntent::Managed => true] : []),
                 ...($fleet === null ? [] : ['fleet' => $fleet]),
             ];
         }

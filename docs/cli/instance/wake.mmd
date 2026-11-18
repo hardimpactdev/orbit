@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>Instance container
-  Note over GW,N: Slice 5 proof: Rust wake<br/>pool restore → Incus unfreeze
+  Note over GW,N: Signed Rust wake<br/>pool restore → Incus unfreeze
   %%> Executor proof path:
   %%> - a durable executor.power_proof Operation signs `wake`; the observer only relays bytes; the reply is `accepted`, then one result line
   %%> - before any memory syscall: boot id, cgroup inode and Incus incarnation against the plan, then each process's start time through a pidfd; any mismatch drops the plan and the wake goes on without a restore (`partial`, `instance.restore_plan_stale`)

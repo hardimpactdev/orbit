@@ -328,7 +328,8 @@ fn operation_idempotency_and_open_journal_recovery_run_real_power_actions() {
             serde_json::to_string(&Record::Open {
                 nonce: first.nonce(),
                 key,
-                expires_ms: 6000
+                expires_ms: 6000,
+                route_required: false,
             })
             .expect("record")
         ),
@@ -445,6 +446,51 @@ fn a_refused_incus_freeze_restores_all_original_swap_limits() {
         "1234"
     );
     assert!(!power.state.join("2/limits.json").exists());
+}
+
+#[test]
+fn caddy_must_have_the_exact_markers_matcher_in_its_loaded_config() {
+    let instance_marker = b"app-instance-2.asleep";
+    assert!(route_checks(
+        b"HTTP/1.1 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-2.asleep\"]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.1 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-20.asleep\"]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.1 503\r\n\r\n/app-instance-2.asleep",
+        instance_marker
+    ));
+}
+
+#[test]
+fn the_asleep_marker_is_visible_before_incus_freezes_the_container() {
+    struct CheckMarker<'a> {
+        api: &'a Fake,
+        marker: PathBuf,
+    }
+    impl Api for CheckMarker<'_> {
+        fn instance(&self, id: &str) -> io::Result<Option<Instance>> {
+            self.api.instance(id)
+        }
+        fn change(&self, instance: &Instance, action: &str) -> io::Result<()> {
+            if action == "freeze" && !self.marker.is_file() {
+                return Err(io::Error::other("asleep marker missing before freeze"));
+            }
+            self.api.change(instance, action)
+        }
+    }
+    let (_dir, power, api) = fixture();
+    let checked = CheckMarker {
+        api: &api,
+        marker: power.marker("2"),
+    };
+    assert_eq!(
+        power.sleep_with(&checked, "2", "op1").expect("sleep").sleep,
+        "frozen"
+    );
 }
 
 /// Answers each request on a stand-in Incus socket and returns the request lines and bodies it saw.
@@ -826,7 +872,8 @@ fn crash_recovery_after_the_unfreeze_finishes_the_wake_and_a_repeat_returns_it()
                     action: order.action(),
                     target: order.target().clone(),
                 },
-                expires_ms: 6000
+                expires_ms: 6000,
+                route_required: false,
             })
             .expect("record")
         ),

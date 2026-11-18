@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 4 and 5 have swap-backed clone measurements.** Thirty Rust sleeps, thirty Python sleeps, thirty Rust wakes, a three-clone wake burst and SIGKILL recovery ran on the nested fleet. In run 2, every Rust wake returned `done` with zero failed pages; Python skipped plan capture on this nested host. The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) evidence records the results and limits. Slice 6 adds the Gateway and Caddy side of [the wake inside the request](#the-wake-inside-the-request). It stays off until the relay and Swamp fallback land in slice 7.
+> **Signed power stays off by default.** The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) sections record the earlier swap-backed clone measurements. Slice 6 added [the wake inside the request](#the-wake-inside-the-request). Slice 7 adds [signed power delivery](#signed-power-delivery) through the observer, the SSH relay, and Swamp recovery.
 
 ## Where it runs
 
@@ -34,7 +34,7 @@ The converge also makes the system user `orbit-executor-relay`. A changed binary
 
 ### Rollout
 
-Nothing uses the executor yet, so a converge skips its install until the Gateway has both parts it needs. The intent then names the reason as `skip`, and the converge records `executor install skipped: <reason>` in its run:
+A converge skips the executor install until the Gateway has both parts it needs. The intent names the reason as `skip`, and the converge records `executor install skipped: <reason>` in its run:
 
 - `executor.release_missing`: the Gateway's pinned agent delivery has no `executor-linux-x86_64` artifact.
 - `executor.keys_missing`: `ORBIT_EXECUTOR_PUBLIC_KEYS` is empty.
@@ -51,6 +51,7 @@ The Gateway holds its executor settings in `config/orbit.php` under `orbit.execu
 | --- | --- | --- |
 | `public_keys` | `ORBIT_EXECUTOR_PUBLIC_KEYS` | One or two base64 Ed25519 public keys, comma-separated. Each executor Node pins them |
 | `signing_key` | `ORBIT_EXECUTOR_SIGNING_KEY` | The base64 64-byte libsodium secret key that signs every order. Its public half must be one of `public_keys` |
+| `power_enabled` | `ORBIT_EXECUTOR_POWER_ENABLED` | Admit signed power and lifecycle orders. Defaults to `false` |
 
 The signing key lives in the Gateway's own environment, readable by `orbit` and by no one else ([ADR 0266: Key custody](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#the-order)). Never print, log or commit it. Make a pair with libsodium's `sodium_crypto_sign_keypair()` as `orbit`, and write both halves, base64, straight into the Gateway's environment file, so neither reaches a terminal or a log. For a rotation, pin the new public key beside the old one, converge every executor Node, then switch the signing key and drop the old public key.
 
@@ -194,7 +195,7 @@ Admission records a queued wake with zero attempts and a pending completion. A p
 
 A durable Conn launch uses a queued publisher after its launch and wake records commit. The launch cancel transaction cancels an unshared executor wake while it is still queued. A visitor or another launch joining it records shared use under the same admission lock, so cleanup cannot cancel or put back to sleep work that another caller is using. A late publisher will not open a cancelled wake.
 
-The visitor does not enqueue jobs. A background pass on `operations-prompt` takes up to 50 completion handoffs and up to 50 hook handoffs. Recorded executor results take priority over publishing missing orders. Each set runs oldest first. The scheduler checks for eligible work every five seconds. It recovers a wake with no publication or result after six seconds. The completion job is due six seconds after publication, or at once if the publication receipt is missing but a result exists. A late `done` or `partial` succeeds; `refused` fails with `executor.wake_refused`, `failed` with `executor.wake_failed`, and no result with `executor.wake_timeout`. A terminal Operation keeps its end.
+The visitor does not enqueue on the request path. A newly admitted signed wake queues delivery after the response. A background pass on `operations-prompt` takes up to 50 completion handoffs and up to 50 hook handoffs. Recorded executor results take priority over publishing missing orders. Each set runs oldest first. The scheduler checks for eligible work every five seconds. A terminal Operation keeps its end, including when a late result arrives.
 
 The pass records a lease in a short write, then enqueues outside the writer. A failed enqueue leaves pending work. If the job is lost or exhausts its retries, the handoff becomes eligible again 60 seconds after the job was due. Recovery also handles wakes admitted before the setting was turned off.
 
@@ -202,9 +203,15 @@ Success records a pending lifecycle follow-up with the terminal result. A local 
 
 Conn reuses admitted session work. Its vault copy runs at native start. A failed retry of the queue push leaves the existing renewal able to start or finish. The wake worker leaves its hook undelivered and retries the same renewal.
 
-Operation notices are saved with the change and relayed to `operations-prompt` after commit, keeping their recorded sequence. A retried relay may deliver the same sequence again. Queue, vault and notice delivery do not run in the activation request or its termination callbacks.
+Operation notices are saved with the change and relayed to `operations-prompt` after commit, keeping their recorded sequence. A retried relay may deliver the same sequence again. Vault and notice delivery stay out of the activation request and its termination callbacks.
 
-The Gateway removes neither the container nor its marker on failure. A missing result fails to confirm the wake; the executor may still finish later. Its eventual result remains recorded without overwriting the terminal Operation. An explicit retry admits a new wake. This slice adds no SSH relay or Swamp fallback; slice 7 replaces this temporary failure policy with the ADR's fallback. Leave the setting off until slices 5 and 7 land. The Python path stays installed until slice 8.
+### Signed power delivery
+
+`ORBIT_EXECUTOR_POWER_ENABLED` is off by default. When on, sleep and wake use the existing Instance admissions and Operation kinds. The Gateway sends the signed order on the Node's WebSocket. If the Node has not reported `accepted` after 150 ms, the Gateway tries the same order over the fixed SSH relay. If no terminal result arrives within six seconds, the Gateway starts the native Swamp run for that same Operation.
+
+Swamp requests a fresh signature for the bound run and sends the order on the relay's stdin. The executor journal prevents another physical action for the same Operation and action. A refusal or deterministic failure is not lost transport. A legitimate stopped container can enter the existing boot flow; a nested default still requires deployment.
+
+The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission. Before handback, stop admitting signed sleeps, let open signed Operations finish, and wake any frozen signed Instances with the signed engine. Verify that any failed sleep left either a running container or a recovered container before you retire the executor from the Node. Disabling the setting does not transfer a frozen plan between engines. Keep the executor installed and reachable until those plans are drained. Python remains installed until slice 8.
 
 The Valkey host prerequisite is `hz 100`, applied by the orchestrator, as [the hand-off](#the-listener-and-the-hand-off) explains. Even then the server tick can make a timeout run a little late; a late successful reply must not authorize the original request.
 

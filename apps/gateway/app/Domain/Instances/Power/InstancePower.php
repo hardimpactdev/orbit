@@ -16,6 +16,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -153,6 +154,14 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
     }
 
+    /** @param array<string, mixed> $receipt
+     * @return array<string, mixed>
+     */
+    public function signedResult(Operation $operation, array $receipt): array
+    {
+        return [...$this->result($operation), ...$this->kept($receipt), 'executor' => $receipt];
+    }
+
     /**
      * The power Operations' shared refusal of other lifecycle work: an Instance that is not active, or a Process of it with an open
      * Operation. A sleep, a wake and the start of a nested-fleet clone (InstanceStart) all call it inside the Instance lock.
@@ -194,12 +203,31 @@ abstract readonly class InstancePower implements DirectOperationProjection
         $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
         $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
         $kept = $this->kept($phase);
+        $action = ExecutorPowerIntent::action($operation);
+        $line = $phase['executor'] ?? null;
+        $receipt = $action !== null && is_array($line) && ExecutorResults::matches($operation, $action, $line) ? $line : null;
+        if ($action !== null && $succeeded && ! $this->provesSignedSuccess($receipt, $phase)) {
+            $succeeded = false;
+            $data['status'] = OperationStatus::Failed->value;
+            $phase['error_code'] = 'executor.result_unproven';
+        }
         $endedBefore = in_array($operation->status->value, OperationStatus::terminalValues(), true);
 
-        $operation = DB::transaction(function () use ($operation, $data, $phase, $succeeded, $kept): Operation {
+        $operation = DB::transaction(function () use ($operation, $data, $phase, $succeeded, $kept, $receipt): Operation {
+            $result = $succeeded ? $this->result($operation) : array_intersect_key($phase, ['error_code' => true]);
+            if ($receipt !== null) {
+                if ($succeeded) {
+                    $result = $this->signedResult($operation, $receipt);
+                } else {
+                    $result['executor'] = $receipt;
+                }
+                Operation::query()->whereKey($operation->id)->whereNull('executor_result')->update([
+                    'executor_result' => json_encode($receipt, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu'),
+                ]);
+            }
             $operation = app(DirectOperation::class)->project($operation,
                 [...$data, 'error_code' => $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null)],
-                $succeeded ? [...$this->result($operation), ...$kept] : [...array_intersect_key($phase, ['error_code' => true]), ...$kept]);
+                [...$result, ...$kept]);
             if ($this->reached($operation)) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
             }
@@ -211,5 +239,13 @@ abstract readonly class InstancePower implements DirectOperationProjection
         }
 
         return $operation;
+    }
+
+    /** @param array<string, mixed>|null $receipt
+     * @param  array<string, mixed>  $phase
+     */
+    protected function provesSignedSuccess(?array $receipt, array $phase): bool
+    {
+        return in_array($receipt['status'] ?? null, ['done', 'partial'], true);
     }
 }

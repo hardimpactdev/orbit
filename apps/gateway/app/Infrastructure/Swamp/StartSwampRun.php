@@ -158,7 +158,7 @@ final readonly class StartSwampRun
                 return false;
             }
             if ($operation->cancel_requested_at !== null) {
-                app(OperationStore::class)->change($operation, ['status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null]);
+                app(OperationStore::class)->change($operation, ['status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null, 'lock_key' => null]);
 
                 return false;
             }

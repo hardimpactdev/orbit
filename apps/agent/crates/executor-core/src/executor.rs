@@ -184,8 +184,8 @@ impl<R: Run> Executor<R> {
         };
 
         let mut recovered = Vec::new();
-        for (nonce, key) in unfinished {
-            let order = VerifiedOrder::recovered(nonce, &key);
+        for (nonce, key, route_required) in unfinished {
+            let order = VerifiedOrder::recovered(nonce, &key, route_required.into());
             let outcome = executor.runner.run(&order);
             executor.finish(nonce, &key, &outcome, clock())?;
             recovered.push(Recovered { key, outcome });
@@ -253,6 +253,7 @@ impl<R: Run> Executor<R> {
             nonce: order.nonce(),
             key: key.clone(),
             expires_ms: order.expires_ms(),
+            route_required: order.route_required(),
         };
         self.journal
             .append(&open)
@@ -440,6 +441,7 @@ mod tests {
             nonce: open.nonce(),
             key: key.clone(),
             expires_ms: open.expires_ms(),
+            route_required: false,
         };
         std::fs::write(
             &path,

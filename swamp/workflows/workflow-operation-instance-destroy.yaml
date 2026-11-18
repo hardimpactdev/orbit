@@ -347,6 +347,7 @@ jobs:
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}
+          ORBIT_OPERATION_ID: ${{ string(inputs.operation_id) }}
           ORBIT_ANSIBLE: ${{ steps["Prepare container removal"].outputs.assets }}
           ANSIBLE_CONFIG: ${{ steps["Prepare container removal"].outputs.assets + "/ansible.cfg" }}
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
@@ -527,7 +528,6 @@ jobs:
         run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags remove "$ORBIT_ANSIBLE/instance-container-destroy.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-          ORBIT_RUN_ID: ${{ run.id }}
           ORBIT_ANSIBLE: ${{ steps["Prepare container removal"].outputs.assets }}
           # The shipped config turns on pipelining, and the master connection carries every task: one SSH login, not six per task.
           ANSIBLE_CONFIG: ${{ steps["Prepare container removal"].outputs.assets + "/ansible.cfg" }}

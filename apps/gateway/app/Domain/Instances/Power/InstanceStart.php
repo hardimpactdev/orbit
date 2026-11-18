@@ -55,6 +55,7 @@ final readonly class InstanceStart implements DirectOperationProjection
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
                 ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'fleet' => $fleet,
+                    ...(ExecutorPowerIntent::forInstance($instance, $runtime) ? [ExecutorPowerIntent::Managed => true] : []),
                     'asleep_marker' => InstancePower::markerPath($instance)],
                 $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
@@ -92,8 +93,10 @@ final readonly class InstanceStart implements DirectOperationProjection
                 'detail' => mb_strcut(app(LogRedactor::class)->redact($phase['detail'], []), 0, NativeStepFailure::MaximumBytes, 'UTF-8'),
                 'stderr_recorded' => true];
         }
+        $receipt = ExecutorPowerIntent::lifecycleReceipt($operation, $phase['executor'] ?? null);
         $result = [...($succeeded ? ['power_state' => InstanceRuntimePowerState::Running->value] : ['error_code' => $errorCode]),
             'nested_fleet_club_key' => NestedFleetClubKey::outcome($phase['club_key'] ?? null, $errorCode),
+            ...($receipt === null ? [] : ['executor' => $receipt]),
             ...(is_int($phase['fleet_seconds'] ?? null) || is_float($phase['fleet_seconds'] ?? null) ? ['fleet_seconds' => $phase['fleet_seconds']] : [])];
 
         return DB::transaction(function () use ($operation, $data, $errorCode, $result, $succeeded): Operation {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Executor;
 
+use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\OperationKinds;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -41,9 +42,9 @@ final readonly class ExecutorResults
     }
 
     /** Hands one reply line from Node `$nodeId`'s agent to the waiting request. Throws when Valkey or the database fails. */
-    public function receive(int $nodeId, ExecutorReply $reply): void
+    public function receive(int $nodeId, ExecutorReply $reply, string $route = 'websocket'): void
     {
-        if (! $this->verifyAndRecord($nodeId, $reply)) {
+        if (! $this->verifyAndRecord($nodeId, $reply, $route)) {
             $this->log->warning('The agent view subscriber dropped an executor reply for an Operation that is not on its Node.', [
                 'node_id' => $nodeId, 'operation_id' => $reply->operation, 'status' => $reply->status,
             ]);
@@ -64,7 +65,7 @@ final readonly class ExecutorResults
      * A replay envelope carries transport evidence, not a result in its own right. Its matching first outcome can recover a lost
      * original; the original wire lines still go to the ordered list.
      */
-    private function verifyAndRecord(int $nodeId, ExecutorReply $reply): bool
+    private function verifyAndRecord(int $nodeId, ExecutorReply $reply, string $route): bool
     {
         $owner = Operation::query()->whereKey($reply->operation)->where('node_id', $nodeId);
         $operation = (clone $owner)->first();
@@ -72,7 +73,7 @@ final readonly class ExecutorResults
             return false;
         }
         $action = match (true) {
-            ExecutorWake::owns($operation) && $operation->target_type === 'instance' => 'wake',
+            ExecutorWake::owns($operation) => ExecutorPowerIntent::action($operation) ?? 'wake',
             $operation->kind === OperationKinds::ExecutorProof && $operation->target_type === 'node' && $operation->target_id === $nodeId => 'proof.noop',
             $operation->kind === OperationKinds::ExecutorPowerProof && $operation->target_type === 'instance' => $operation->input['action'] ?? null,
             default => null,
@@ -81,24 +82,38 @@ final readonly class ExecutorResults
             return false;
         }
         if ($reply->isAccepted()) {
+            if ($route === 'websocket' && ExecutorPowerIntent::managed($operation)) {
+                $owner->whereNull('executor_accepted_us')->update(['executor_accepted_us' => (int) now()->format('Uu')]);
+            }
+
             return true;
         }
         $result = $reply->isReplay() ? $reply->first() : $reply;
         if ($result === null) {
             return ($reply->line['first'] ?? null) === null;
         }
-        $target = (string) $operation->target_id;
         $line = $result->line;
-        if ($result->status !== 'refused' && ($line['operation'] ?? null) !== (string) $operation->id) {
+        if (! self::matches($operation, $action, $line)) {
             return false;
         }
-        if (($line['action'] ?? ($result->status === 'refused' ? $action : null)) !== $action
-            || ($line['target'] ?? ($result->status === 'refused' ? $target : null)) !== $target) {
-            return false;
-        }
-        $owner->whereNull('executor_result')->update(['executor_result' => $result->raw, 'executor_result_received_us' => (int) now()->format('Uu')]);
+        $line = ExecutorPowerIntent::managed($operation) ? [...$line, 'delivery' => $route] : $line;
+        $owner->whereNull('executor_result')->update(['executor_result' => json_encode($line, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu')]);
 
         return true;
+    }
+
+    /** @param array<string, mixed> $line */
+    public static function matches(Operation $operation, string $action, array $line): bool
+    {
+        $status = $line['status'] ?? null;
+        $refused = $status === 'refused';
+        $id = (string) $operation->id;
+        $target = (string) $operation->target_id;
+
+        return in_array($status, ['done', 'partial', 'failed', 'refused'], true)
+            && ($line['operation'] ?? ($refused ? $id : null)) === $id
+            && ($line['action'] ?? ($refused ? $action : null)) === $action
+            && ($line['target'] ?? ($refused ? $target : null)) === $target;
     }
 
     /**
