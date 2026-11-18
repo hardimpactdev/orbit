@@ -39,8 +39,11 @@ final class DirectExecutorOrderController extends Controller
             }
 
             $wire = ExecutorPowerIntent::sign($current, $phase)->wire;
-            // ADR 0266, R2: from here the order may reach the Node, so the Operation keeps its fence until a receipt exists.
-            $current->forceFill(['state' => ExecutorFence::issue($current->state)])->save();
+            // ADR 0266, R2: from here the order may reach the Node, so the Operation keeps its fence until a receipt exists. A removal's
+            // run does not report its receipt yet; its play fails unless the discard is done, so it is not fenced here.
+            if ($phase !== 'removal') {
+                $current->forceFill(['state' => ExecutorFence::issue($current->state)])->save();
+            }
 
             return $wire;
         });
