@@ -1,5 +1,6 @@
 """Verify target ownership and route recovery at the AppProd publishing boundary."""
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,3 +50,42 @@ class ProductionReleaseHostTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 list(routes.local_paths([value]))
         self.assertEqual(list(routes.local_paths(["storage/app"])), [Path("storage/app")])
+
+    def test_first_move_detects_deletion_and_backdated_overwrite_and_resets_aborted_copy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home, volume, marker = root / "source", root / "target", root / "witness"
+            uploads = home / "storage" / "uploads"
+            uploads.mkdir(parents=True)
+            volume.mkdir()
+            paths = ["storage/uploads", "empty"]
+            (volume / "neighbor").write_text("retained")
+            source = uploads / "first"
+            source.write_bytes(b"abc")
+            (uploads / "second").write_text("second")
+            def prepare():
+                routes.shared_snapshot([], home, paths, marker, guest=[], destination=str(volume))
+            def check():
+                routes.shared_snapshot([], home, paths, marker)
+            prepare()
+            check()
+            uploaded = volume / "storage/uploads"
+            (uploaded / "built").write_text("migration ran in the candidate")
+            original = source.stat()
+            source.write_bytes(b"xyz")
+            os.utime(source, ns=(original.st_atime_ns, original.st_mtime_ns))
+            with self.assertRaisesRegex(ValueError, "changed after preparation"):
+                check()
+            self.assertEqual((uploaded / "first").read_bytes(), b"abc")
+            self.assertTrue((uploaded / "built").exists())
+            prepare()
+            check()
+            self.assertFalse((uploaded / "built").exists())
+            self.assertEqual((uploaded / "first").read_bytes(), b"xyz")
+            (uploads / "second").unlink()
+            with self.assertRaisesRegex(ValueError, "changed after preparation"):
+                check()
+            prepare()
+            self.assertFalse((uploaded / "second").exists())
+            self.assertEqual((volume / "neighbor").read_text(), "retained")
+            check()

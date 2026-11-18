@@ -80,17 +80,77 @@ def with_import(content, instance, routes, legacy_home=None):
     return "".join(pieces)
 
 
-def pipe(source, sink):
-    # Read as the legacy app account. File names, file contents and symlinks from that home are never evaluated on the host.
-    with subprocess.Popen(source, stdout=subprocess.PIPE) as src:
+# Consumed inside the off-traffic preparation container, as orbit. Replace each admitted
+# directory from a fresh tree so a failed first migration cannot leave deleted uploads.
+INSTALL_SHARED = """
+import json, os, shutil, sys, tarfile, tempfile
+from pathlib import Path
+root = Path(sys.argv[1])
+with tempfile.TemporaryDirectory(dir=root) as directory:
+    tree = Path(directory)
+    with tarfile.open(mode='r|', fileobj=sys.stdin.buffer) as archive:
+        archive.extractall(tree, filter='data')
+    while sys.stdin.buffer.read(1024 * 1024):
+        pass
+    for value in json.loads(sys.argv[2]):
+        source, target = tree / value, root / value
+        if target.parent.resolve() != target.parent or target.is_symlink():
+            raise ValueError('unsafe shared directory')
+        if target.exists():
+            shutil.rmtree(target)
+        if source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+"""
+
+
+def shared_snapshot(reader, home, paths, marker, *, guest=None, destination="/srv/shared"):
+    normalized = list(local_paths(paths))
+    if any(left == right or left in right.parents or right in left.parents
+           for i, left in enumerate(normalized) for right in normalized[i+1:]):
+        raise ValueError("Overlapping production shared paths")
+    existing = []
+    for path in normalized:
+        source = home / path
+        if source.is_symlink() or source.resolve() != source:
+            raise ValueError("Legacy shared path contains a symlink")
+        if source.exists():
+            if not source.is_dir():
+                raise ValueError("Legacy shared path is not a directory")
+            existing.append(str(path))
+    # Deterministic GNU tar headers include the relative name, type, link target and mode.
+    # File contents are read even when their size and modification time have not changed.
+    tar = [*reader, "tar", "--format=gnu", "--sort=name", "--numeric-owner", "--owner=0", "--group=0",
+           "-C", str(home), "-cf", "-"]
+    tar.extend(["--", *sorted(existing)] if existing else ["-T", "/dev/null"])
+    digest = hashlib.sha256()
+    with subprocess.Popen(tar, stdout=subprocess.PIPE) as src:
+        sink = None
         try:
-            result = subprocess.run(sink, stdin=src.stdout, timeout=900)
-            src.stdout.close()
-            if result.returncode or src.wait(timeout=10):
-                raise ValueError("Could not copy the legacy shared data")
+            if guest is not None:
+                sink = subprocess.Popen([*guest, "python3", "-I", "-c", INSTALL_SHARED, destination,
+                                         json.dumps(paths)], stdin=subprocess.PIPE)
+            while block := src.stdout.read(1024 * 1024):
+                digest.update(block)
+                if sink is not None:
+                    sink.stdin.write(block)
+            if src.wait(timeout=30) != 0:
+                raise ValueError("Legacy shared files changed during the snapshot")
+            if sink is not None:
+                sink.stdin.close()
+                if sink.wait(timeout=900) != 0:
+                    raise ValueError("Cannot install the initial shared files")
         finally:
-            if src.poll() is None:
-                src.kill()
+            if sink is not None:
+                if sink.poll() is None:
+                    sink.kill()
+                sink.wait()
+                sink.stdin.close()
+            src.stdout.close()
+    if guest is not None:
+        marker.write_text(digest.hexdigest())
+    elif not marker.is_file() or marker.read_text() != digest.hexdigest():
+        raise ValueError("Legacy shared files changed after preparation: retry the migration while the application is quiescent")
 
 
 def copy_shared(plan, instance, machine, phase, operation):
@@ -110,14 +170,12 @@ def copy_shared(plan, instance, machine, phase, operation):
         raise ValueError("Refusing another Instance's container")
     guest = [*inc, "exec", machine, "--", "runuser", "-u", "orbit", "--"]
     reader = ["runuser", "-u", user, "--"]
-    for path in local_paths(plan["shared_paths"]):
-        source = home / path
-        if not source.exists():
-            continue
-        if source.resolve(strict=True) != source or not source.is_dir():
-            raise ValueError("Legacy shared path is not a real directory")
-        pipe([*reader, "tar", "--one-file-system", "-C", str(home), "-cf", "-", "--", str(path)],
-             [*guest, "tar", "--keep-newer-files", "--no-same-owner", "--no-same-permissions", "-C", "/srv/shared", "-xf", "-"])
+    root = BASE / str(instance)
+    if plan["previous"] is not None or (phase == "prepare" and
+            ((root / "selected/upstream.caddy").is_symlink() or (root / "live").is_symlink())):
+        raise ValueError("Cannot import legacy shared files into a serving container release")
+    shared_snapshot(reader, home, plan["shared_paths"], root / "private" / f"shared-source-{operation}",
+                    guest=guest if phase == "prepare" else None)
     database = home / "database.sqlite"
     if database.exists():
         if not database.is_file() or database.resolve(strict=True) != database:
@@ -140,6 +198,11 @@ def copy_shared(plan, instance, machine, phase, operation):
                 marker.write_text(digest)
             elif not marker.is_file() or marker.read_text() != digest:
                 raise ValueError("Legacy SQLite received writes after preparation: retry the migration while that application is quiescent")
+    elif phase == "prepare":
+        # A previous aborted first migration may have seeded SQLite. The host is still authoritative.
+        subprocess.run([*guest, "rm", "-f", "--", *("/srv/shared/database.sqlite" + suffix
+                        for suffix in ("", "-wal", "-shm", "-journal"))], check=True, timeout=60)
+        (root / "private" / f"sqlite-source-{operation}").unlink(missing_ok=True)
     elif (BASE / str(instance) / "private" / f"sqlite-source-{operation}").exists():
         raise ValueError("Legacy SQLite source disappeared during preparation")
 
@@ -197,7 +260,8 @@ request_header -X-Orbit-Release-Verify
     elif phase == "unfence":
         fence.unlink(missing_ok=True)
     elif phase == "finish":
-        (root / "private" / f"sqlite-source-{operation}").unlink(missing_ok=True)
+        for prefix in ("sqlite-source", "shared-source"):
+            (root / "private" / f"{prefix}-{operation}").unlink(missing_ok=True)
     else:
         raise ValueError("Unknown route operation")
 
