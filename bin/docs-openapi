@@ -783,6 +783,9 @@ SUMMARIES = {
     'conn:project:branches': 'List a Conn Project’s remote branches',
     'conn:instance:name:check': 'Check a proposed clone name',
     'conn:project:list': 'List reachable Projects and clone readiness', 'conn:instance:create': "Create a thread's clone",
+    'conn:launch:create': 'Admit a durable Conn launch', 'conn:launch:list': 'List visible Conn launches',
+    'conn:launch:show': 'Read a Conn launch', 'conn:launch:cancel': 'Cancel a Conn launch before handoff',
+    'conn:launch:retry': 'Retry launch recovery or application completion',
     'conn:operation:show': 'Show a Conn operation', 'conn:operation:cancel': 'Cancel a Conn operation', 'conn:pairing:show': 'Read a one-time pairing URL',
     'conn:pairing:list': 'List pairings on a T3 server', 'conn:pairing:create': 'Mint a pairing link', 'conn:pairing:revoke': "Revoke a Node's sessions on a T3 server",
     'conn:thread:list': 'List the thread index of container T3 servers', 'conn:thread:record': 'Record a thread Conn started',
@@ -1730,6 +1733,45 @@ def bash_sample(route, path, body_schema, query, tag):
 
 
 # ---------------------------------------------------------------- responses
+def closed_object(properties):
+    return {'type': 'object', 'additionalProperties': False, 'required': list(properties), 'properties': properties}
+
+
+def conn_launch_snapshot():
+    number = {'type': 'integer', 'minimum': 1}
+    nullable_number = {'type': ['integer', 'null'], 'minimum': 1}
+    text = {'type': 'string'}
+    nullable_text = {'type': ['string', 'null']}
+    uuid = {'type': 'string', 'format': 'uuid'}
+    timestamp = {'type': ['string', 'null'], 'format': 'date-time'}
+    stage = closed_object({
+        'status': {'type': 'string', 'enum': ['pending', 'running', 'succeeded', 'failed', 'cancelled', 'skipped']},
+        'started_at': timestamp, 'finished_at': timestamp,
+        'error': {'oneOf': [{'type': 'null'}, closed_object({'code': text, 'detail': text})]},
+    })
+    action = closed_object({'available': {'type': 'boolean'}, 'reason': nullable_text, 'requires': nullable_text})
+    thread = closed_object({'environment_id': text, 'project_id': text, 'thread_id': uuid, 'message_id': uuid,
+                            'model_selection': {'type': 'object'}, 'accepted_at': {'type': 'string', 'format': 'date-time'}})
+    return closed_object({
+        'id': number, 'kind': {'type': 'string', 'const': 'conn.launch'},
+        'status': {'type': 'string', 'enum': ['queued', 'running', 'waiting', 'succeeded', 'failed', 'cancelled', 'interrupted']},
+        'created_at': timestamp, 'started_at': timestamp, 'finished_at': timestamp, 'cancel_requested': {'type': 'boolean'},
+        'poll_after_seconds': {**nullable_number, 'description': 'Continue polling while set, even if the thread is ready.'},
+        'error_code': nullable_text, 'launch_id': uuid, 'profile_id': number, 'project_id': number,
+        'instance_id': nullable_number, 'workspace_id': nullable_text, 'target_node_id': number, 'initiator_node_id': number,
+        'source': {'type': 'string', 'enum': ['web', 'mobile']},
+        'phase': {'type': 'string', 'enum': ['preparing', 'dispatching', 'publishing', 'ready', 'needs_retry', 'cancelling', 'cancelled']},
+        'stages': closed_object({key: stage for key in ('workspace_server', 'first_message', 'publication', 'application_preview', 'cleanup')}),
+        'readiness': closed_object({key: {'type': ['boolean', 'null']} for key in ('workspace_server', 'first_message', 'application_preview')}),
+        'actions': closed_object({key: action for key in ('cancel', 'retry_launch', 'retry_application')}),
+        'children': closed_object({f'{role}_operation_id': nullable_number for role in ('create', 'wake', 'completion', 'destroy')}),
+        'thread': {'oneOf': [{'type': 'null'}, thread]},
+    })
+
+
+components['ConnLaunchSnapshot'] = conn_launch_snapshot()
+
+
 def envelope(data_schema, description):
     return {'description': description, 'content': {'application/json': {'schema': {'type': 'object', 'properties': {'data': data_schema, 'meta': {'$ref': '#/components/schemas/Meta'}}, 'required': ['data', 'meta']}}}}
 
@@ -1966,6 +2008,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             sch, desc = {'type': 'integer', 'minimum': 1}, 'Numeric Project Document entry ID.'
         if p == 'operation' and route['name'] == 'websocket:operation:show':
             sch, desc = {'type': 'string', 'format': 'uuid'}, 'WebSocket registry operation UUID.'
+        if p == 'operation_id' and route['name'].startswith('conn:launch:'):
+            sch, desc = {'type': 'integer', 'minimum': 1}, 'Numeric Conn launch Operation ID.'
         if p == 'instance' and env_route:
             sch, desc = ENV_INSTANCE
         op['parameters'].append({'name': p, 'in': 'path', 'required': True, 'schema': sch, 'description': desc})
@@ -2107,6 +2151,26 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             {'type': 'object', 'additionalProperties': False, 'required': ['mode', 'name'],
              'properties': {'mode': {'type': 'string', 'const': 'existing'}, 'name': branch_name}},
         ], 'description': 'Optional frozen branch selection. Omit for installed-client behavior without a remote admission read.'}
+    if route['name'] == 'conn:launch:create' and body_schema:
+        props = body_schema['properties']
+        op['parameters'].append({'name': 'Idempotency-Key', 'in': 'header', 'required': True, 'schema': props.pop('Idempotency-Key'),
+                                 'description': 'Stable launch UUID scoped to the initiating Node.'})
+        body_schema['required'].remove('Idempotency-Key')
+        props['prompt'].update({'minLength': 1, 'writeOnly': True})
+        props['model_selection'] = {'type': 'object'}
+        selectors = props['target']['properties']
+        branch = {'type': 'string', 'minLength': 1, 'maxLength': 255}
+        new_target = closed_object({'kind': {'type': 'string', 'const': 'new'}, 'name': selectors['name'], 'branch': {'oneOf': [
+            {'type': 'null'},
+            closed_object({'mode': {'type': 'string', 'const': 'new'}, 'from': branch}),
+            closed_object({'mode': {'type': 'string', 'const': 'existing'}, 'name': branch}),
+        ]}})
+        new_target['required'].remove('branch')
+        props['target'] = {'oneOf': [new_target, closed_object({'kind': {'type': 'string', 'const': 'existing'}, 'instance_id': {'type': 'integer', 'minimum': 1}})]}
+    if route['name'] == 'conn:launch:retry':
+        body_schema = closed_object({'target': {'type': 'string', 'enum': ['launch', 'application']}})
+    if route['name'] == 'conn:launch:cancel':
+        body_schema = {'type': 'object', 'additionalProperties': False}
     if body_schema and 'oneOf' in body_schema:
         for variant in body_schema['oneOf']:
             variant['additionalProperties'] = False
@@ -2342,6 +2406,23 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+    if route['name'].startswith('conn:launch:'):
+        data = ref('ConnLaunchSnapshot')
+        if route['name'] == 'conn:launch:list':
+            data = {'type': 'array', 'items': data}
+        if method == 'post':
+            responses.pop('200', None)
+            responses['202'] = envelope(data, 'Accepted. Follow the launch snapshot.')
+        else:
+            responses['200'] = envelope(data, 'Launch progress visible through the current profile and target Node access.')
+        if route['name'] != 'conn:launch:list':
+            responses['404'] = error_response('No visible launch or target matches the request.')
+        if route['name'] == 'conn:launch:create':
+            responses['409'] = error_response('The expected device or profile changed (`conn.launch_scope_changed`), or the key has a different request (`operation.idempotency_conflict`). The Instance name or target may also be unavailable.')
+        elif route['name'] == 'conn:launch:cancel':
+            responses['409'] = error_response('The T3 handoff is committed (`conn.launch_handoff_committed`), or cancellation is unavailable.')
+        elif route['name'] == 'conn:launch:retry':
+            responses['409'] = error_response('The action cannot retry this work (`conn.launch_retry_unavailable`). `error.details.requires` names a known unmet prerequisite.')
     if route['name'] == 'conn:project:branches':
         meta = responses['200']['content']['application/json']['schema']['properties']
         meta['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'}, {'type': 'object', 'properties': {'pull_requests_unavailable': {'type': 'boolean', 'description': 'True when the bounded GitHub PR read failed or exceeded 500 open requests; all pull_request fields are null.'}}, 'required': ['pull_requests_unavailable']}]}

@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Fleet;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Instances\InstanceFleetGateway;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
@@ -34,10 +37,15 @@ final readonly class AdmitFleetRolloutAction
         return DB::transaction(fn (): Operation => $this->admit($nodeIds));
     }
 
+    /** One observer publication in the release’s ordered pass. */
+    public function forRelease(Node $node, string $commit, ?DesiredCliReleaseData $pin): Operation
+    {
+        return DB::transaction(fn (): Operation => $this->startRollout($commit, [$node], release: true, pin: $pin));
+    }
+
     /** @param list<int>|null $nodeIds */
     private function admit(?array $nodeIds): Operation
     {
-        // A fleet reboot pass shares the window; the rollout waits for it as for another rollout (ADR 0253).
         if (FleetReboot::open() instanceof Operation) {
             throw new ResourceOperationException('fleet.rollout_busy', 'A fleet reboot pass is running.', 409);
         }
@@ -50,26 +58,57 @@ final readonly class AdmitFleetRolloutAction
         if ($targets === [] || ($nodeIds !== null && count($targets) !== count($nodeIds))) {
             throw new ResourceOperationException('fleet.rollout_not_ready', 'The requested Nodes need no rollout visit now.', 409);
         }
-        // The lock key below closes the race between admissions; this check also covers a run admitted without one.
-        if (Operation::query()->where('kind', 'fleet.rollout')->whereIn('status', ['queued', 'running', 'waiting'])->exists()) {
-            throw new ResourceOperationException('fleet.rollout_busy', 'A fleet rollout is already running.', 409);
+
+        return $this->startRollout($plan['commit'], array_values(Node::query()->with('roles')->whereKey($targets)->get()->sortBy(
+            static fn (Node $node): int => (int) array_search($node->id, $targets, true),
+        )->all()));
+    }
+
+    /** @param list<Node> $targets */
+    private function startRollout(string $commit, array $targets, bool $release = false, ?DesiredCliReleaseData $pin = null): Operation
+    {
+        $root = $this->gateway->nodeId();
+        if ($root === null) {
+            throw new ResourceOperationException('fleet.rollout_not_ready', 'The serving Gateway Node is unknown.', 409);
+        }
+        // Manual rollout, verified release delivery and fleet reboot all admit under the serving Node row.
+        Node::query()->whereKey($root)->lockForUpdate()->firstOrFail();
+        if (FleetReboot::open() instanceof Operation || self::open()) {
+            throw new ResourceOperationException('fleet.rollout_busy', 'A fleet maintenance Operation is running.', 409);
         }
         $nodes = [];
-        foreach ($targets as $id) {
-            $node = Node::query()->with('roles')->findOrFail($id);
+        foreach ($targets as $node) {
             $agent = $this->delivery->artifacts()[AgentDelivery::key($node)] ?? null;
             if (! is_array($agent) || ! is_string($agent['url'] ?? null)) {
                 throw new ResourceOperationException('agent.release_unavailable', 'The pinned agent has no published delivery.', 409);
             }
-            $nodes[] = ['node_id' => $node->id, ...$this->cli->fleetInput($node, observer: true),
+            $cli = $this->cli->fleetInput($node, observer: true, pin: $pin);
+            if ($release && $node->id === $root && $cli['skip_reason'] === 'gateway') {
+                $cli['skip_reason'] = 'cli_not_required';
+            }
+            $nodes[] = ['node_id' => $node->id, ...$cli,
                 'agent' => ['url' => $agent['url'], 'sha256' => $agent['sha256'], 'version' => $this->delivery->reportedVersion($node)],
-                'daytime' => $node->roles->isNotEmpty() && $node->roles->every(static fn ($role): bool => $role->role === RoleName::AppDev)];
+                'daytime' => self::daytime($node)];
         }
 
         // Its steps run on the Swamp Node and read and record this intent, so that Node owns it. One rollout runs at a time.
         return $this->start->execute('fleet.rollout', 'fleet', $root, SwampNode::node()->id, [
-            'commit' => $plan['commit'], 'nodes' => $nodes,
-            'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...$targets])),
-        ], 'swamp', null, lockKey: OperationStore::lockKey('fleet_rollout', $root));
+            'commit' => $commit, 'nodes' => $nodes,
+            'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...array_column($nodes, 'node_id')])),
+        ], 'swamp', null, lockKey: $release
+            ? OperationStore::lockKey('node', $targets[0]->id)
+            : OperationStore::lockKey('fleet_rollout', $root));
+    }
+
+    public static function open(): bool
+    {
+        return Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
+            ->where(fn ($query) => $query->where('kind', 'fleet.rollout')->orWhere('input->_converge->intent->release_roles_only', true))->exists();
+    }
+
+    public static function daytime(Node $node): bool
+    {
+        return InstanceFleetGateway::holds() || ($node->roles->isNotEmpty()
+            && $node->roles->every(static fn ($role): bool => $role->role === RoleName::AppDev));
     }
 }

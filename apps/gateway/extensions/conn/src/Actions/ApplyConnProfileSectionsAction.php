@@ -10,6 +10,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\ConnAttachedThreads;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
+use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 
 /**
@@ -27,10 +28,11 @@ final readonly class ApplyConnProfileSectionsAction
      * @param  Node|null  $caller  The Node that writes; null when Orbit writes, as when it drops a destroyed Instance's threads.
      * @param  int|null  $version  The document version the client read. Null skips the check.
      * @param  array<string, int>  $sectionVersions  The version of each section the client read; a section at another version is a conflict.
+     * @param  ConnEnvironment|null  $launchEnvironment  The exact registered environment of a verified launch, locked for server-owned attachment.
      */
-    public function execute(ConnProfile $profile, ?Node $caller, array $writes, ?int $version = null, array $sectionVersions = []): ConnProfile
+    public function execute(ConnProfile $profile, ?Node $caller, array $writes, ?int $version = null, array $sectionVersions = [], ?ConnEnvironment $launchEnvironment = null): ConnProfile
     {
-        DB::transaction(function () use ($profile, $caller, $writes, $version, $sectionVersions): void {
+        DB::transaction(function () use ($profile, $caller, $writes, $version, $sectionVersions, $launchEnvironment): void {
             $locked = ConnProfile::query()->lockForUpdate()->findOrFail($profile->id);
             $meta = $locked->section_meta ?? [];
 
@@ -64,7 +66,7 @@ final readonly class ApplyConnProfileSectionsAction
             $attached = $writes[ConnProfileSections::AttachedThreads] ?? null;
 
             if (is_array($attached)) {
-                $writes[ConnProfileSections::AttachedThreads] = $this->attached->admit($attached, $settings[ConnProfileSections::AttachedThreads] ?? null, $caller);
+                $writes[ConnProfileSections::AttachedThreads] = $this->attached->admit($attached, $settings[ConnProfileSections::AttachedThreads] ?? null, $caller, $launchEnvironment);
             }
 
             $now = Carbon::now()->toIso8601String();

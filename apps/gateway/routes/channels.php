@@ -22,4 +22,4 @@ use Illuminate\Support\Facades\Broadcast;
 
 Broadcast::channel('orbit', fn (Node $node): bool => true);
 
-Broadcast::channel('operation.{operation}', fn (Node $node, int|string $operation): bool => Operation::query()->whereKey((int) $operation)->exists());
+Broadcast::channel('operation.{operation}', fn (Node $node, int|string $operation): bool => Operation::query()->publiclyVisible()->whereKey((int) $operation)->exists());

@@ -1,24 +1,31 @@
 ---
 - name: Reconcile the kernel policy
+  when: &manual_only not (intent.release_roles_only | default(false))
   ansible.builtin.import_tasks: node-kernel-policy.yml
   vars: { kernel_policy: "{{ intent.kernel }}" }
 - name: Reconcile the update policy
+  when: *manual_only
   ansible.builtin.import_tasks: node-update-policy.yml
   vars: { update_policy: "{{ intent.updates }}" }
 - name: Ensure the agent configuration directory
+  when: *manual_only
   ansible.builtin.file: { path: /etc/orbit/agent, state: directory, owner: root, group: root, mode: "0755" }
 - name: Inspect the agent secret without exposing it
+  when: *manual_only
   ansible.builtin.stat: { path: /etc/orbit/agent/secret, checksum_algorithm: sha256 }
   register: agent_secret
   no_log: true
 - name: Require the admitted verifier
+  when: *manual_only
   ansible.builtin.assert:
     that: [agent_secret.stat.checksum | default('') == secrets.agent_verifier]
     quiet: true
   no_log: true
 - name: Protect the existing agent secret
+  when: *manual_only
   ansible.builtin.file: { path: /etc/orbit/agent/secret, owner: root, group: root, mode: "0600" }
 - name: Reconcile the pinned agent binary
+  when: *manual_only
   ansible.builtin.import_tasks: node-converge-replace.yml
   vars:
     converge_replacement:
@@ -26,9 +33,11 @@
       url: "{{ intent.agent.url }}"
       sha256: "{{ intent.agent.sha256 }}"
 - name: Remember whether the agent binary changed
+  when: *manual_only
   ansible.builtin.set_fact:
     agent_binary_changed: "{{ converge_replacement_commit is changed or converge_replacement_metadata is changed }}"
 - name: Reconcile the agent configuration and trust
+  when: *manual_only
   ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
   loop:
     - { path: /etc/orbit/agent/config.toml, content: "{{ intent.agent.configuration }}" }
@@ -36,8 +45,10 @@
     - { path: /etc/systemd/system/orbit-agent.service, content: "{{ intent.agent.unit }}" }
   register: agent_files
 - name: Ensure the agent unit's supplementary group
+  when: *manual_only
   ansible.builtin.group: { name: orbit-env, system: true, state: present }
 - name: Start the agent and restart only for managed changes
+  when: *manual_only
   ansible.builtin.systemd:
     name: orbit-agent.service
     enabled: true
@@ -58,12 +69,12 @@
   when: role_units_written is changed
   ansible.builtin.systemd: { daemon_reload: true }
 - name: Require a valid recorded CLI release
-  when: intent.cli != None
+  when: [intent.cli != None, *manual_only]
   ansible.builtin.assert:
     that: [intent.cli.plan_error == None]
     quiet: true
 - name: Reconcile the recorded CLI release
-  when: intent.cli != None
+  when: [intent.cli != None, *manual_only]
   block:
     - name: Install the pinned CLI
       ansible.builtin.import_tasks: node-converge-replace.yml
@@ -87,6 +98,6 @@
         owner: root
         mode: "0600"
 - name: Retire the packaged CLI where it has no caller
-  when: intent.cli == None
+  when: [intent.cli == None, *manual_only]
   ansible.builtin.import_tasks: node-converge-cli-absent.yml
   vars: { cli_remove: true }

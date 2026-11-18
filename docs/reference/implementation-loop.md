@@ -59,7 +59,7 @@ The [task Instance workspace regression](/reference/task-instance-workspace#veri
 
 The migration environment fixtures cover dependency-file isolation and explicit application, Process and Schedule file selection. Clone runtime fixtures cover inherited-store reuse, empty-clone preparation followed by a later pinned Process, and same-commit seed refresh after conversion.
 
-Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. The phase fixtures disable automatic Git maintenance during setup, so a detached setup process cannot change repository bytes after the source snapshot. The comparison still includes every source file. The fixtures check that objects are independent, partial imports can repeat and retirement refuses later changes. The smaller Git checks run in selected PR shards; the large fixture that runs the migration phases runs in [self-hosted fixture shards](#self-hosted-fixture-shards).
+Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. Both the phase and retirement fixtures disable automatic Git maintenance during setup, so a detached setup process cannot change repository bytes after the source snapshot. The comparison still includes every source file. The fixtures check that objects are independent, partial imports can repeat and retirement refuses later changes. The smaller Git checks run in selected PR shards; the large fixture that runs the migration phases runs in [self-hosted fixture shards](#self-hosted-fixture-shards).
 
 Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
 
@@ -74,6 +74,8 @@ Default-remote replacement and failure cases rerun full preparation, including s
 The nested fleet step fixture runs the rules, start, refresh and reset of an Instance container's fleet against an Incus stand-in. The stand-in holds the device and configuration shape exported from the three nested containers of a task base.
 
 Refresh cases start from saved Incus state. A separate case runs the first refresh and start, then compares all persistent fields with that saved state. Each check of changed inputs, repeated refreshes, snapshots or failure recovery runs its own refresh. It does not rerun setup playbooks. The first refresh for each changed input verifies the record consumed by its repeat case.
+
+Fleet subsystem cases select the shipped start or refresh tasks they exercise, with their original conditions, variables and order. Pin restoration, host group membership, proxy bypass, Swamp pin reads and service checks do not repeat unrelated fleet phases. Complete start, refresh, reset and boundary-producer cases retain the integration coverage.
 
 Saved refresh records keep the code and converge digests. Their `converged` timestamp is normalized and rebound to the current time when restored. Producer checks require a real timestamp within the refresh interval; a skipped converge must preserve its prior timestamp. The stale-record cases use explicit ages. Regenerate the saved state and records through the shipped refresh when its format changes.
 

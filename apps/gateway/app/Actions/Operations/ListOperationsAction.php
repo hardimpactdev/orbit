@@ -34,6 +34,7 @@ final readonly class ListOperationsAction
     public function execute(Node $consumer, array $filters, int $limit = self::DefaultLimit, ?int $before = null): array
     {
         $rows = Operation::query()
+            ->publiclyVisible()
             ->select(self::ListColumns)
             ->addSelect(['input->caller_node_id as listed_caller_node_id', 'result->ready_at as listed_ready_at'])
             ->withCallerNodeName()

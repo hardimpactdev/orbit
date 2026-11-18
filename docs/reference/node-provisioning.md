@@ -586,6 +586,8 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
 
+A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses host-wide inputs.
+
 [Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
 
 With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two scope flags are mutually exclusive. `--full` runs every phase of the scope, whatever its [digest](#skip-a-phase-whose-input-did-not-change) says.
@@ -612,6 +614,8 @@ A failed phase stops later phases and fails the Operation with its failed step a
 
 ### Skip a phase whose input did not change
 
+A converge that defers a T3 restart records the container in its Operation result and leaves the roles digest unset so the next pass can retry. See [T3 restarts](/reference/development-containers#t3s-unit-drop-ins).
+
 This is the one rule for a skipped phase. It applies to `node:converge` and to the role Operations of [`node:role:add`](/cli/node/role-add), with and without `--converge`. They share one digest, one comparison and one record.
 
 | Operation | Phases that can skip | Phases that always run |
@@ -621,16 +625,18 @@ This is the one rule for a skipped phase. It applies to `node:converge` and to t
 
 A role phase that always runs can change another Node, signs with the Gateway, or starts a runtime. `publication` (Publish role sites) is one of them, because it can change other Nodes. PHP pools and private DNS are native delta publications: they change nothing when nothing changed.
 
-A phase digest is the SHA-256 of the phase name and of what the phases read. Swamp computes it when it prepares the input, after it writes every file for the phases. What the phases read is:
+A phase digest is the SHA-256 of the phase name and of what the phases read. Swamp computes it when it prepares the input, after it writes the private input files for the phases. What the phases read is:
 
 - the files written for the phases: the converge variables, `plans.json`, the inventory, the known hosts and each role's variables;
 - for a role Operation, its variables: the Operation kind, the role intent and its execution secrets;
 - the Ansible bundle, which also builds each role's variables;
 - the Tool helper and the shipped Tool files that it imports.
 
+For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
+
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 
-Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
+Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, its private run folder, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
 Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
 
