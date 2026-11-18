@@ -47,8 +47,9 @@ final class RealtimeAuthController extends Controller
             ]));
         }
 
-        // A live log stream's channel is signed only by the response that opens the stream (ADR 0153).
-        if (str_starts_with($channel, 'presence-') || str_starts_with($channel, 'private-log-stream.')) {
+        // A live log stream's channel is signed only by the response that opens the stream (ADR 0153), and a Conn profile
+        // channel only by Conn's own auth route (/reference/conn#profile-events).
+        if (str_starts_with($channel, 'presence-') || str_starts_with($channel, 'private-log-stream.') || str_starts_with($channel, 'private-conn-profile.')) {
             throw new ResourceOperationException('broadcast.channel_forbidden', 'Channel is not authorized.', 403);
         }
 

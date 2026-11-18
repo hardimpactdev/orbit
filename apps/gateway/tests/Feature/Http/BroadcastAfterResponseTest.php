@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Operations\OperationBroadcaster;
 use App\Domain\Operations\OperationStatus;
@@ -19,7 +21,9 @@ use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -235,4 +239,17 @@ it('sends the notice of an Activity that a fatal error ended at once, because th
     ActivityShutdownFinalizer::arm($activity)->finalize();
 
     expect(array_column($reverb->sent, 'type'))->toBe(['activity.updated']);
+});
+
+it('stamps a record event at its commit, not at the delayed send after the response', function (): void {
+    Event::fake([RecordBroadcast::class]);
+    request()->setRouteResolver(static fn (): Route => new Route('GET', 'api/v1/nodes', []));
+    Carbon::setTestNow(Carbon::parse('2026-11-18 12:00:00'));
+
+    DB::transaction(fn () => app(RecordEventBroadcaster::class)->broadcast(RecordEventType::NodeDeleted, 7, ['id' => 7]));
+    Carbon::setTestNow(Carbon::parse('2026-11-18 12:00:10'));
+    Event::assertNotDispatched(RecordBroadcast::class);
+    app()->terminate();
+
+    Event::assertDispatched(RecordBroadcast::class, static fn (RecordBroadcast $event): bool => $event->at === '2026-11-18T12:00:00+00:00');
 });

@@ -12,14 +12,18 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Actions\BindConnNodeProfileAction;
 use Orbit\Extensions\Conn\Data\ConnNodeData;
+use Orbit\Extensions\Conn\Domain\ConnProfileEvents;
 use Orbit\Extensions\Conn\Http\Requests\BindConnProfileRequest;
 
 #[RequiresNodeAccess(ServingNode::Collection)]
 final class ConnNodesController extends Controller
 {
-    public function show(Request $request): JsonResponse
+    public function show(Request $request, ConnProfileEvents $events): JsonResponse
     {
-        return $this->respond($request, $this->caller($request));
+        $node = $this->caller($request);
+        $events->renew($node);
+
+        return $this->respond($request, $node);
     }
 
     public function bindProfile(BindConnProfileRequest $request, BindConnNodeProfileAction $action): JsonResponse
