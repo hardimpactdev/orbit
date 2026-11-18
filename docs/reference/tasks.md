@@ -835,7 +835,7 @@ The first time the filer writes `muted_until` for a `completed`, `failed`, `canc
 
 ### What gets filed
 
-`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes release alerts first, then the highest `occurrences`. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready rows that are not muted, not tied to an open task, and not skipped by [Suppression](#suppression).
+`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes release alerts first, then the highest `occurrences`. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready rows that are not muted, not tied to an open task, and not skipped by [Suppression](#suppression). It skips a fingerprint whose last occurrence (`last_seen`) is older than 7 days and leaves it unmuted and unresolved, so a new occurrence makes it eligible again. Release alerts are exempt: each is pushed once per incident and stays open until its recovery evidence resolves it.
 
 The cap counts fingerprint rows whose `filed_at` falls on today's date in that timezone. An operator edit to the brief does not change the count. A missing Orbit Project files nothing.
 
