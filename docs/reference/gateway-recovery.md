@@ -108,6 +108,8 @@ Before waking preparation, each new build measures the serving workload, free RA
 
 The admitted commit pins PHP, FrankenPHP and Composer. The Node installs a changed runtime in its own immutable directory and mounts it read-only in preparation. The candidate inherits this mount. The serving and rollback containers keep the runtime selected by their own commits.
 
+Preparation updates the monorepo checkout in place. Composer installs the locked production packages in `apps/gateway`. The Gateway loads two PHP SDK log-stream types through its own autoloader. Its install hook reads SDK and CLI source to generate the API contracts. CI builds `apps/web` with Bun. The release installs that commit's verified web artifact at `/home/orbit/web/current` before cloning. The candidate serves the web app and the Laravel API together. A container rollback restores both from the retained release.
+
 The Gateway expects its managed Horizon and scheduler Processes to be named `horizon` and `schedule-work`. Preflight reports a custom name before the move. Record the Process configuration and desired state, recreate it under the expected name, then verify a host release to obtain a current Operation receipt.
 
 1. Run `orbit gateway:auto-release:disable`. Wait for any active release to finish.

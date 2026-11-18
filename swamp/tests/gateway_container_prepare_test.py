@@ -204,18 +204,20 @@ class BootstrapTest(unittest.TestCase):
             for obj in [other, excluded_blob]:
                 self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", obj], check=False).returncode, 0)
 
-            # Make two real package roots to exercise git clean's dependency exclusions.
+            # Exercise the upgrade from a checkout with separate CLI and SDK installs.
             git(mirror, "checkout", "-q", "--detach", commit)
-            for package in ("cli", "gateway"):
-                (mirror / "apps" / package).mkdir(parents=True)
-                (mirror / "apps" / package / "composer.json").write_text("{}")
-            git(mirror, "add", "apps")
+            for package in ("apps/cli", "apps/gateway", "packages/php-sdk"):
+                (mirror / package).mkdir(parents=True)
+                (mirror / package / "composer.json").write_text("{}")
+            git(mirror, "add", "apps", "packages")
             git(mirror, "commit", "-qm", "package roots")
             first = git(mirror, "rev-parse", "HEAD")
             subprocess.run(["bash", script, mirror, first, release], check=True)
             repo_inode = (release / ".git").stat().st_ino
             packs = set((release / ".git/objects/pack").glob("*.pack"))
-            vendors = [release / "apps" / package / "vendor" for package in ("cli", "gateway")]
+            gateway_vendor = release / "apps/gateway/vendor"
+            source_packages = [release / "apps/cli", release / "packages/php-sdk"]
+            vendors = [gateway_vendor, *(package / "vendor" for package in source_packages)]
             for vendor in vendors:
                 vendor.mkdir()
                 (vendor / "installed").write_text("complete")
@@ -229,11 +231,14 @@ class BootstrapTest(unittest.TestCase):
             self.assertTrue(packs and packs.issubset((release / ".git/objects/pack").glob("*.pack")))
             self.assertEqual((release / "README").read_text(), "next release")
             self.assertFalse((release / "stale-build-output").exists())
-            self.assertTrue(all((vendor / "installed").read_text() == "complete" for vendor in vendors))
+            self.assertEqual((gateway_vendor / "installed").read_text(), "complete")
+            for package in source_packages:
+                self.assertTrue((package / "composer.json").is_file())
+                self.assertFalse((package / "vendor").exists())
             self.assertFalse((release / "REVISION").exists())
 
             # Interrupt before the seal. The retry must discard partial Composer state.
-            (vendors[0] / "installed").write_text("partial")
+            (gateway_vendor / "installed").write_text("partial")
             (release / ".git/index.lock").touch()
             subprocess.run(["bash", script, mirror, second, release], check=True)
             self.assertTrue(all(not vendor.exists() for vendor in vendors))

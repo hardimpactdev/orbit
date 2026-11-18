@@ -39,7 +39,7 @@ printf '%s\n' "${revisions[@]}" | "${source_git[@]}" pack-objects --stdout --rev
   cd "$1"
   keep=()
   if [[ -n $3 ]]; then
-    keep=(-e /apps/cli/vendor/ -e /apps/gateway/vendor/)
+    keep=(-e /apps/gateway/vendor/)
   else
     rm -rf -- .git
     git init --quiet --template=

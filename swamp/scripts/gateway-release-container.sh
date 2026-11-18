@@ -327,16 +327,14 @@ case "$action" in
       rm -rf storage
       ln -s /home/orbit/shared/gateway-storage storage
       ln -s /home/orbit/shared/gateway.env .env'
-    for package in apps/cli apps/gateway; do
-      log=$(mktemp)
-      if ! user "$prep" composer --working-dir="$checkout/$package" install --no-dev --prefer-dist --no-interaction --no-progress >"$log" 2>&1; then
-        tail -c 4000 "$log" >&2
-        rm -f -- "$log"
-        fail "Composer install failed for $package"
-      fi
+    log=$(mktemp)
+    if ! user "$prep" composer --working-dir="$app" install --no-dev --prefer-dist --no-interaction --no-progress >"$log" 2>&1; then
+      tail -c 4000 "$log" >&2
       rm -f -- "$log"
-      user "$prep" composer --working-dir="$checkout/$package" check-platform-reqs --no-dev >&2
-    done
+      fail "Composer install failed for apps/gateway"
+    fi
+    rm -f -- "$log"
+    user "$prep" composer --working-dir="$app" check-platform-reqs --no-dev >&2
     user "$prep" mkdir -p "$checkout/apps/agent/delivery"
     printf '%s' "$manifest" | user "$prep" tee "$checkout/apps/agent/delivery/manifest.json" >/dev/null
     enter "$prep" install -d -m 0755 /etc/orbit/gateway-web
