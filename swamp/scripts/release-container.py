@@ -230,8 +230,10 @@ def promote(target, operation, commit, artifact):
         prep = owned(preparer(target), {**seal, "role": "prepare", "parked-seal": f"{operation}/{commit}/{artifact}"})
         halt(prep, operation)
         incus("rename", prep["name"], name)
-        power(prep["name"], "discard")
         existing = instance(name)
+    if instance("prepare-" + target) is None:
+        # Also on a retry after the rename: the preparer's power records belong to no container now.
+        power("prepare-" + target, "discard")
     owned(existing, seal)
     if existing["config"].get(PREFIX + "role") != "candidate":
         incus("config", "set", name, "boot.autostart=false", PREFIX + "role=candidate", "raw.lxc=" + GATEWAY_MOUNTS)
@@ -249,6 +251,8 @@ def demote(target, operation, commit):
     name = f"{target}-{commit[:12]}"
     record = instance(name)
     if record is None:
+        # A retry after the rename still discards the candidate's power records.
+        power(name, "discard")
         return ""
     owned(record, {"target": target, "operation": operation, "commit": commit})
     if record["config"].get("boot.autostart") == "true":
@@ -258,11 +262,9 @@ def demote(target, operation, commit):
         incus("delete", name, "--force")
         power(name, "discard")
         return name
-    if record["status"] == "Running":
-        # Units the switch enabled before it failed must not start in preparation.
-        incus("exec", name, "--", "find", "/etc/systemd/system", "-mindepth", "2", "-maxdepth", "2",
-              "-path", "*.wants/*", "-name", "orbit-*", "-delete")
     halt(record, operation)
+    # Units the switch enabled before it failed must not start in preparation. Read the stopped container itself.
+    clear_wanted(name)
     # Each change is checked against the current record, so a retry after a crash completes it.
     if "raw.lxc" in record["config"]:
         incus("config", "unset", name, "raw.lxc")
@@ -300,14 +302,66 @@ def seed(target, revision, operation):
         if prep["devices"].get("eth0", {}).get("ipv4.address"):
             incus("config", "device", "unset", name, "eth0", "ipv4.address")
         # Live's enabled Processes, timers and web server must not start when the next release wakes the preparer.
-        # Read the copy itself, so a retry sees what is left, and fail on any link that cannot go.
-        for path in wanted_links(name):
-            incus("file", "delete", name + path, timeout=60)
-        if wanted_links(name):
-            raise ValueError("release.preparation_units_enabled")
+        clear_wanted(name)
+    # Incus forgets the seed snapshot. A ZFS clone still depends on it, so Incus keeps it as a hidden deleted-* snapshot.
     if any(entry["name"] == snapshot for entry in json.loads(incus("snapshot", "list", live["name"], "--format", "json"))):
         incus("snapshot", "delete", live["name"], snapshot)
+    detach(live, name)
     return name
+
+
+def zfs(*args):
+    return subprocess.run(["zfs", *args], stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True, timeout=120).stdout
+
+
+def datasets(record):
+    """The ZFS pool dataset behind an instance's root disk, or None when the pool uses another driver."""
+    pool = record["expanded_devices"]["root"]["pool"]
+    if not re.fullmatch(r"[a-zA-Z0-9_.-]+", pool):
+        raise ValueError("invalid release pool")
+    info = json.loads(subprocess.check_output(["incus", "--force-local", "query", f"/1.0/storage-pools/{pool}"], text=True, timeout=30))
+    if info["driver"] != "zfs":
+        return None
+    return info["config"].get("zfs.pool_name") or info["config"]["source"]
+
+
+def detach(live, name):
+    """End the clone chain without copying a file.
+
+    The preparer is a ZFS clone of live's seed snapshot, so each live would depend on the release before it and a
+    deleted old would only move to deleted/. Promoting the preparer moves the snapshots Incus already forgot
+    (deleted-*) from live to the preparer; live becomes the dependent clone instead. Incus records no snapshot of
+    either dataset that moves, and it reads clones from ZFS on every delete. A deleted old then frees its blocks.
+    zfs.clone_copy=false or rebase would send the files instead."""
+    root = datasets(live)
+    if root is None:
+        return
+    prefix = root + "/containers/" + PROJECT + "_"
+    origin = zfs("get", "-H", "-o", "value", "origin", prefix + name).strip()
+    if origin.startswith(prefix + live["name"] + "@"):
+        if "@deleted-" not in origin:
+            raise ValueError("release.seed_snapshot_still_recorded")
+        zfs("promote", prefix + name)
+    prune(root)
+
+
+def prune(root):
+    """Destroy deleted-* release snapshots that no clone needs any more, as Incus does for its own deleted objects."""
+    prefix = root + "/containers/" + PROJECT + "_"
+    listing = zfs("list", "-H", "-p", "-t", "snapshot", "-o", "name,clones", "-r", root + "/containers")
+    for line in listing.splitlines():
+        snapshot, _, clones = line.partition("\t")
+        owned_name = re.fullmatch(re.escape(prefix) + r"(prepare-gateway|gateway-[0-9a-f]{12})@deleted-[^@/]+", snapshot)
+        if owned_name and clones.strip() in ("", "-"):
+            zfs("destroy", snapshot)
+
+
+def clear_wanted(name):
+    # Read the stopped container itself, so a retry sees what is left, and fail on any link that cannot go.
+    for path in wanted_links(name):
+        incus("file", "delete", name + path, timeout=60)
+    if wanted_links(name):
+        raise ValueError("release.preparation_units_enabled")
 
 
 def wanted_links(name):
@@ -456,6 +510,9 @@ def main(argv):
     seeding.add_argument("target", type=matches(OWNER))
     seeding.add_argument("revision", type=matches(REVISION))
     seeding.add_argument("operation", type=matches(OPERATION))
+    pruning = commands.add_parser("prune")
+    pruning.add_argument("target", type=matches(OWNER))
+    pruning.add_argument("revision", type=matches(REVISION))
     resting = commands.add_parser("rest")
     resting.add_argument("target", type=matches(OWNER))
     resting.add_argument("operation", type=matches(OPERATION))
@@ -481,6 +538,11 @@ def main(argv):
         return seed(args.target, args.revision, args.operation)
     if args.action == "rest":
         return rest(args.target, args.operation)
+    if args.action == "prune":
+        root = datasets(release(args.target, args.revision))
+        if root is not None:
+            prune(root)
+        return ""
     if args.action in ("wake", "sleep"):
         record = preparer(args.target)
         if args.action == "wake":

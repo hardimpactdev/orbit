@@ -592,6 +592,24 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
         self.assert_at_most_three()
 
+    def test_a_missing_old_hands_the_rollback_to_the_verified_pending_release(self):
+        # Live is unverified, old is gone, and the verified pending release still sits stopped.
+        self.serving_former()
+        (self.state / "former").unlink()
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.sha, "old": self.old, "pending": EARLIER,
+                                              "verified": [EARLIER], "host_retired": True}))
+        (self.state / "earlier").write_text("Stopped")
+        (self.state / f"gateway-{EARLIER[:12]}-boot").write_text("false")
+        (self.journal / "last-operation").write_text(OPERATION)
+        result = self.run_script(self.console, "")
+        self.assertIn("the stopped old is now " + EARLIER, result.stderr)
+        self.inventory_is(self.sha, EARLIER, verified=(EARLIER,))
+        # The next forward build recreates preparation in the freed slot instead of refusing.
+        result = self.direct("build", "false", "{}", "false")
+        self.assertIn("already serves", result.stderr)
+        self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
+
     def test_a_running_old_refuses_the_next_build(self):
         self.released()
         (self.state / "former").write_text("Running")

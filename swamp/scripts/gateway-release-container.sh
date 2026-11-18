@@ -196,6 +196,8 @@ gateway_slot() {
       present "$old" "${1:-}" || { old=''; changed=true; }
     fi
     if [[ -n $pending ]]; then present "$pending" '' || { pending=''; changed=true; }; fi
+    # The verified pending release becomes the rollback target when old is gone.
+    if [[ -z $old && -n $pending ]]; then old=$pending; pending=''; changed=true; fi
     if [[ $changed == true ]]; then set_inventory "$live" "$old" "$pending"; fi
     # A forward release needs the preparation slot. An unverified live keeps two stopped releases there.
     if [[ ${1:-} != rollback && -n $pending ]]; then settle_parked "$live" "$old" "$pending"; old=$(field '.old // ""'); pending=''; fi
@@ -465,7 +467,8 @@ finish_forward() {
   touch "$journal/host-retired"
   set_inventory "$sha" "$first" "$second" "$trusted"
   # Preparation returns once a slot is free: the third container beside live and one stopped release.
-  if (( ${#keep[@]} < 2 )); then ctl seed gateway "$id" "$operation" >&2; fi
+  # Both seed and prune destroy the hidden snapshots that only a deleted release needed, so its blocks are freed.
+  if (( ${#keep[@]} < 2 )); then ctl seed gateway "$id" "$operation" >&2; else ctl prune gateway "$id" >&2; fi
   cp "$journal/operation" "$journal/last-operation"
   sync -f "$journal"
   clear_switch
@@ -480,6 +483,8 @@ case "$action" in
       # Rollback selects the stopped old with its sealed build and web assets. It builds nothing.
       rollback_target || fail 'the selected release is not the retained Gateway release'
       gateway_slot rollback
+      # A missing old was just forgotten; its pending release, if any, is the rollback target now.
+      rollback_target || fail "the selected rollback release is gone; the stopped old is now $(field '.old // "none"')"
       ctl resume gateway "$id" "$operation" >&2
       # The switch admits only a candidate of this operation.
       "${incus_cli[@]}" config set "$candidate" user.orbit.release.operation="$operation"
@@ -488,6 +493,8 @@ case "$action" in
     fi
     [[ $force != true ]] || fail "Gateway releases require a descendant of live"
     gateway_slot
+    # Preparation can be missing after a forgotten old freed its slot.
+    if [[ -f $inventory && $(record_of "$prep") == '{}' ]]; then ctl seed gateway "$(field '.live' | cut -c1-12)" "$operation" >&2; fi
     if retained; then
       fail 'selected Gateway already serves; reconcile its exact revision or deploy a corrective commit'
     fi
@@ -650,6 +657,8 @@ case "$action" in
   settle)
     # Without an open handover: verify live, keep one stopped release and recreate preparation.
     [[ ! -e $journal/operation && $(field '.live') == "$sha" ]] || fail 'finish the Gateway handover first'
+    # Forget recorded releases whose containers are gone, then settle what remains.
+    gateway_slot rollback
     if [[ -n $(field '.pending // ""') ]]; then settle_parked "$sha" "$(field '.old // ""')" "$(field '.pending // ""')"; fi
     ;;
   recover)

@@ -48,6 +48,13 @@ def create(resource, name, command, settings):
     return item
 
 
+def create_preparer(digest, identity):
+    args = [*SCOPED, "init", digest, PREP, "--no-profiles", "-s", PROJECT, "-n", NETWORK]
+    for key, value in identity.items():
+        args.extend(["-c", f"{key}={value}"])
+    output(*args)
+
+
 def main(plan):
     dataset = plan["dataset"]
     datasets = output("zfs", "list", "-Hp", "-o", "name").splitlines()
@@ -78,14 +85,12 @@ def main(plan):
     prep = existing("instances", PREP, PROJECT)
     if prep is None:
         # A release promotes the preparer to its candidate. Its retire recreates preparation; a converge never
-        # adds a fourth Gateway container beside a candidate, live and old.
+        # adds a fourth Gateway container beside a candidate, live and old. bin/gateway-container-prepare already
+        # holds the release lock around this playbook, so no release phase runs during the check.
         names = json.loads(output(*SCOPED, "list", "--format", "json"))
         owned = [item for item in names if item["name"].startswith("gateway-") or item["config"].get("user.orbit.release.target") == "gateway"]
         require(len(owned) < 3, "a Gateway release holds the preparation slot; finish it before converging")
-        args = [*SCOPED, "init", digest, PREP, "--no-profiles", "-s", PROJECT, "-n", NETWORK]
-        for key, value in identity.items():
-            args.extend(["-c", f"{key}={value}"])
-        output(*args)
+        create_preparer(digest, identity)
         prep = existing("instances", PREP, PROJECT)
     require(not prep["profiles"] and prep["type"] == "container", "preparer must have an isolated device set")
     require_settings(prep["expanded_config"], {**identity, "volatile.base_image": digest}, PREP)

@@ -258,7 +258,7 @@ class ReleaseTest(unittest.TestCase):
         name = "gateway-" + SHA[:12]
         renamed = {**prep, "name": name, "status": "Stopped"}
         promoted = {**renamed, "config": {**renamed["config"], release.PREFIX + "role": "candidate"}}
-        with patch.object(release, "instance", side_effect=[None, prep, renamed, promoted]), \
+        with patch.object(release, "instance", side_effect=[None, prep, renamed, None, promoted]), \
                 patch.object(release, "incus") as incus, patch.object(release, "power") as power_call:
             self.assertEqual(release.main(["promote", "gateway", "13", SHA, DIGEST]), name)
         self.assertEqual([c.args[0] for c in incus.call_args_list], ["stop", "rename", "config", "start"])
@@ -274,18 +274,24 @@ class ReleaseTest(unittest.TestCase):
         candidate["config"]["boot.autostart"] = "false"
         candidate["config"]["raw.lxc"] = release.GATEWAY_MOUNTS
         with patch.object(release, "instance", side_effect=[candidate, None]), patch.object(release, "incus") as incus, \
-                patch.object(release, "power"):
+                patch.object(release, "power"), patch.object(release, "clear_wanted") as clear:
             self.assertEqual(release.main(["demote", "gateway", "13", SHA]), "prepare-gateway")
         actions = [c.args[:2] for c in incus.call_args_list]
-        self.assertEqual(actions[0], ("exec", name))
+        self.assertEqual(actions[0], ("stop", name))
+        clear.assert_called_once_with(name)
         self.assertIn(("config", "unset"), actions)
         self.assertEqual(actions[-1], ("rename", name))
         # A retry after the unset and the role change only renames.
         done = {**candidate, "status": "Stopped", "config": {**{k: v for k, v in candidate["config"].items() if k != "raw.lxc"},
                                                               release.PREFIX + "role": "prepare"}}
-        with patch.object(release, "instance", side_effect=[done, None]), patch.object(release, "incus") as incus, patch.object(release, "power"):
+        with patch.object(release, "instance", side_effect=[done, None]), patch.object(release, "incus") as incus, \
+                patch.object(release, "power"), patch.object(release, "clear_wanted"):
             release.demote("gateway", "13", SHA)
         self.assertEqual([c.args[0] for c in incus.call_args_list], ["rename"])
+        # A retry after the rename only discards the candidate's power records.
+        with patch.object(release, "instance", return_value=None), patch.object(release, "power") as power_call:
+            self.assertEqual(release.demote("gateway", "13", SHA), "")
+        power_call.assert_called_once_with(name, "discard")
         serving = {**candidate, "config": {**candidate["config"], "boot.autostart": "true"}}
         with patch.object(release, "instance", return_value=serving), self.assertRaisesRegex(ValueError, "still_active"):
             release.demote("gateway", "13", SHA)
@@ -304,8 +310,9 @@ class ReleaseTest(unittest.TestCase):
                     return values.pop(0)
             return ""
         with patch.object(release, "instance", side_effect=[live, None, seeded]), patch.object(release, "incus", side_effect=run) as incus, \
-                patch.object(release, "wanted_links", side_effect=[[link], []]):
+                patch.object(release, "wanted_links", side_effect=[[link], []]), patch.object(release, "detach") as detach:
             self.assertEqual(release.main(["seed", "gateway", SHA[:12], "14"]), "prepare-gateway")
+        detach.assert_called_once_with(live, "prepare-gateway")
         copy = next(c.args for c in incus.call_args_list if c.args[0] == "copy")
         self.assertIn("eth0,ipv4.address=", copy)
         self.assertIn("boot.autostart=false", copy)
@@ -314,6 +321,55 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn(("config", "device", "unset", "prepare-gateway", "eth0", "ipv4.address"), [c.args for c in incus.call_args_list])
         self.assertIn(call("file", "delete", "prepare-gateway" + link, timeout=60), incus.call_args_list)
         self.assertEqual(incus.call_args_list[-1].args, ("snapshot", "delete", live["name"], "seed-14"))
+
+    def zfs_calls(self, outputs):
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command[1:])
+            key = command[1]
+            return subprocess.CompletedProcess(command, 0, stdout=outputs.get(key, ""))
+        return calls, run
+
+    def test_detach_promotes_the_preparer_so_live_no_longer_keeps_the_release_before_it(self):
+        live = {"name": "gateway-" + SHA[:12], "expanded_devices": {"root": {"pool": "orbit-releases"}}}
+        root = "tank/gateway-releases/containers/orbit-releases_"
+        listing = "\n".join([
+            root + "gateway-" + SHA[:12] + "@deleted-old\t-",
+            root + "prepare-gateway@deleted-seed\t" + root + "gateway-" + SHA[:12],
+            root + "gateway-bbbbbbbbbbbb@snapshot-kept\t-",
+            root + "other@deleted-foreign\t-",
+        ])
+        calls, run = self.zfs_calls({"get": root + "gateway-" + SHA[:12] + "@deleted-seed\n", "list": listing})
+        pool = json.dumps({"driver": "zfs", "config": {"source": "tank/gateway-releases"}})
+        with patch.object(release.subprocess, "run", side_effect=run), patch.object(release.subprocess, "check_output", return_value=pool):
+            release.detach(live, "prepare-gateway")
+        self.assertIn(["promote", root + "prepare-gateway"], calls)
+        # Only an orphaned deleted-* release snapshot goes: one a clone needs, a recorded one and a foreign one stay.
+        self.assertEqual([c for c in calls if c[0] == "destroy"], [["destroy", root + "gateway-" + SHA[:12] + "@deleted-old"]])
+
+    def test_detach_refuses_a_seed_snapshot_that_incus_still_records_and_skips_other_drivers(self):
+        live = {"name": "gateway-" + SHA[:12], "expanded_devices": {"root": {"pool": "orbit-releases"}}}
+        root = "tank/r/containers/orbit-releases_"
+        calls, run = self.zfs_calls({"get": root + "gateway-" + SHA[:12] + "@snapshot-seed-14\n"})
+        pool = json.dumps({"driver": "zfs", "config": {"source": "tank/r"}})
+        with patch.object(release.subprocess, "run", side_effect=run), patch.object(release.subprocess, "check_output", return_value=pool), \
+                self.assertRaisesRegex(ValueError, "still_recorded"):
+            release.detach(live, "prepare-gateway")
+        self.assertNotIn("promote", [c[0] for c in calls])
+        with patch.object(release.subprocess, "run") as run_dir, \
+                patch.object(release.subprocess, "check_output", return_value=json.dumps({"driver": "dir", "config": {}})):
+            release.detach(live, "prepare-gateway")
+        run_dir.assert_not_called()
+
+    def test_a_promoted_preparer_is_detached_once_and_prune_runs_after_an_old_is_deleted(self):
+        live = {"name": "gateway-" + SHA[:12], "expanded_devices": {"root": {"pool": "orbit-releases"}}}
+        calls, run = self.zfs_calls({"get": "tank/r/containers/orbit-releases_gateway-cccccccccccc@deleted-x\n"})
+        pool = json.dumps({"driver": "zfs", "config": {"source": "tank/r"}})
+        with patch.object(release.subprocess, "run", side_effect=run), patch.object(release.subprocess, "check_output", return_value=pool):
+            release.detach(live, "prepare-gateway")
+        self.assertNotIn("promote", [c[0] for c in calls])
+        self.assertIn("list", [c[0] for c in calls])
 
     def test_seed_refuses_a_preparer_whose_units_stay_enabled(self):
         live = self.gateway("gateway-" + SHA[:12], "candidate", status="Running", commit=SHA)

@@ -133,7 +133,9 @@ After replacing the shared Gateway environment file, run `sudo /usr/local/libexe
 
 An established Gateway has three containers: a stopped preparation container, a serving container and a stopped old container with `boot.autostart=false`. A release never adds a fourth.
 
-Orbit finishes an interrupted handover before it builds, and refuses a build while old runs. A recorded old or pending release whose container is gone is forgotten instead of blocking the release. It updates preparation in place and seals it. Then it stops preparation, renames it to `gateway-<id>`, adds the read-only boot mounts and starts it as the candidate. A candidate that fails before the switch returns to the preparation slot. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
+Orbit finishes an interrupted handover before it builds, and refuses a build while old runs.
+
+A recorded old or pending release whose container is gone is forgotten instead of blocking the release. When old is gone, the pending release becomes old. A forward build recreates a missing preparation container first. It updates preparation in place and seals it. Then it stops preparation, renames it to `gateway-<id>`, adds the read-only boot mounts and starts it as the candidate. A candidate that fails before the switch returns to the preparation slot. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
 
 The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal.
 
@@ -144,6 +146,8 @@ Retire runs in this order, with at most three containers at each step:
 3. An unverified former live is deleted after its drain. The earlier old then stays.
 4. It waits for the former live's HTTP requests and Horizon jobs, disables its Horizon and scheduler units, and stops it with `boot.autostart=false`.
 5. It recreates preparation from a snapshot of the new live, stopped, without the live address reservation, boot mounts or enabled units.
+6. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
+7. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
 
 If the new live fails its public check, retire keeps every earlier stopped release and the former live when it was verified. The inventory records the older one as `pending`; it holds the preparation slot. The release fails. Roll back to old, or fix the cause and run `--recover`, which verifies live, keeps one stopped release and recreates preparation. The next build does the same before it starts. It also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
 
