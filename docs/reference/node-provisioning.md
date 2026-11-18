@@ -655,6 +655,8 @@ Swamp resolves each phase's files from the staged bundle when it prepares the in
 
 A path names a folder when it has two or more parts or ends in `/`. A local `copy`, `template` or `synchronize` source and a fileglob also name a folder.
 
+A glob also names every bundle file that it matches, by its whole path or by its end. So a bare glob such as `incus-network-*.py` counts every folder that Ansible searches for it.
+
 A full-line comment is not read. A file that more than one phase reaches is in each of those phases. `ansible.cfg`, `build_vars.py` and both converge playbooks are in every phase. `build_vars.py` is the role materializer.
 
 Some references cannot be resolved. Each of them makes its phase read the whole bundle, as before:
@@ -663,6 +665,7 @@ Some references cannot be resolved. Each of them makes its phase read the whole 
 - a file or template lookup of a computed path;
 - a local `copy`, `template`, `script` or `synchronize` source with a templated name;
 - a `with_fileglob` with a templated glob;
+- a Jinja `include`, `import`, `from` or `extends` whose template name is not a literal string, in any reached file;
 - `role_path`;
 - a Python file that opens files beside itself.
 

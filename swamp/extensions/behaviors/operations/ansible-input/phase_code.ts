@@ -102,9 +102,31 @@ export function named(source: string, byPath: Map<string, string[]>, byStem: Map
         const glob = match[1].search(/[*?[]/);
         const path = (glob < 0 ? match[1] : match[1].slice(0, match[1].lastIndexOf("/", glob) + 1)).replace(/^(\.\.?\/)+/, "").replace(/\/+$/, "");
         if (path) folder(path, true);
+        // Ansible searches a relative glob in several folders (`files/` and `templates/` beside the role, playbook or task file). Every
+        // bundle file whose path, or any end of it, matches the glob counts, which holds every folder it can search.
+        if (glob >= 0) {
+            const pattern = globPattern(match[1].replace(/^(\.\.?\/)+/, ""));
+            for (const [suffix, files] of byPath) if (pattern.test(suffix)) for (const file of files) found.add(file);
+        }
     }
     for (const word of text.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []) for (const file of byStem.get(word) ?? []) found.add(file);
     return [...found];
+}
+
+/** A shell glob as a whole-path pattern: `*` and `?` stay within one path part. */
+export function globPattern(glob: string): RegExp {
+    let pattern = "";
+    for (let index = 0; index < glob.length; index++) {
+        const char = glob[index];
+        if (char === "*") pattern += "[^/]*";
+        else if (char === "?") pattern += "[^/]";
+        else if (char === "[") {
+            const end = glob.indexOf("]", index + 1);
+            if (end < 0) pattern += "\\[";
+            else { pattern += `[${glob.slice(index + 1, end).replace(/^!/, "^").replace(/\\/g, "\\\\")}]`; index = end; }
+        } else pattern += char.replace(/[.+^${}()|\\]/g, "\\$&");
+    }
+    return new RegExp(`^${pattern}$`);
 }
 
 const runFolder = /^\s*(\(?\s*)?(run|orbit_run|lookup\(\s*'ansible\.builtin\.env'\s*,\s*'ORBIT_RUN'\s*\))\s*(~|\+|\}\})/;
@@ -127,6 +149,11 @@ export function unresolved(file: string, text: string): string | null {
         if (!literal.test(argument) && !fromPlaybook.test(argument) && !runFolder.test(argument) && !underRun) {
             return `${file}: ${match[0].trim().slice(0, 120)}`;
         }
+    }
+    // A Jinja include, import or extends must name its template literally; the name then joins the phase like any other name.
+    for (const match of text.matchAll(/\{%[-+]?\s*(include|import|extends|from)\s+(.*?)\s*(?:\bimport\b|\bwith\b|\bwithout\b|\bignore\b|[-+]?%\})/gs)) {
+        const names = match[2].trim().replace(/\s+as\s+\w+$/, "");
+        if (!/^(('[^'{}]*'|"[^"{}]*")|\[\s*(('[^'{}]*'|"[^"{}]*")\s*,?\s*)+\])$/.test(names)) return `${file}: ${match[0].slice(0, 120)}`;
     }
     // A script may run itself again by its own path; one that opens files beside itself names them dynamically.
     if (file.endsWith(".py") && text.split("\n").some((line) => /\b__file__\b/.test(line) && /\bdirname\b|\.parent\b|Path\(\s*__file__|join\(/.test(line))) return `${file}: __file__`;

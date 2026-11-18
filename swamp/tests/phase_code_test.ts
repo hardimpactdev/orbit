@@ -252,3 +252,55 @@ Deno.test("a new file in filter_plugins moves every phase digest", async () => {
         assertEquals(phases.filter((phase) => now[phase] === first[phase]), []);
     } finally { await Deno.remove(tree, { recursive: true }); }
 });
+
+Deno.test("a bare fileglob counts every bundle file it can match, so a matched file moves the phase that globs it", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const [ansible] = code;
+        await Deno.mkdir(`${ansible}/files`);
+        await Deno.writeTextFile(`${ansible}/files/incus-network-heal.py`, "one\n");
+        // Another Operation copies the file by name, so without the glob it is in no converge digest.
+        await Deno.writeTextFile(`${ansible}/instance-heal.yml`, "- hosts: target\n  tasks:\n    - ansible.builtin.copy: { src: incus-network-heal.py, dest: /x }\n");
+        await Deno.writeTextFile(`${ansible}/tasks/agent.yml`, "- ansible.builtin.copy: { src: \"{{ item }}\", dest: /usr/local/lib/ }\n  with_fileglob: [\"incus-network-*.py\"]\n");
+        assertEquals((await classify(ansible)).a.get("files/incus-network-heal.py"), ["agent"]);
+        const first = await phaseCodeDigests(code);
+        await Deno.writeTextFile(`${ansible}/files/incus-network-heal.py`, "two\n");
+        const now = await phaseCodeDigests(code);
+        assertEquals(phases.filter((phase) => now[phase] !== first[phase]), ["agent"]);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+Deno.test("a template's literal include joins its phase, and an include by a variable name makes the phase read the whole bundle", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const [ansible] = code;
+        await Deno.mkdir(`${ansible}/templates`);
+        await Deno.writeTextFile(`${ansible}/templates/child.j2`, "one\n");
+        await Deno.writeTextFile(`${ansible}/templates/parent.j2`, "{% include 'child.j2' %}\n");
+        await Deno.writeTextFile(`${ansible}/instance-child.yml`, "- hosts: target\n  tasks:\n    - ansible.builtin.template: { src: child.j2, dest: /x }\n");
+        await Deno.writeTextFile(`${ansible}/tasks/roles.yml`, "- ansible.builtin.template: { src: parent.j2, dest: /etc/parent }\n");
+        assertEquals((await classify(ansible)).a.get("templates/child.j2"), ["roles"]);
+        let last = await phaseCodeDigests(code);
+        const moved = async () => {
+            const now = await phaseCodeDigests(code);
+            const changed = phases.filter((phase) => now[phase] !== last[phase]);
+            last = now;
+            return changed;
+        };
+        await Deno.writeTextFile(`${ansible}/templates/child.j2`, "two\n");
+        assertEquals(await moved(), ["roles"]);
+        await Deno.writeTextFile(`${ansible}/templates/parent.j2`, "{% include child_template %}\n");
+        assertEquals((await resolvePhases(ansible)).roles.whole, true);
+        assertEquals(await moved(), ["roles"]);
+        await Deno.writeTextFile(`${ansible}/templates/child.j2`, "three\n");
+        assertEquals(await moved(), ["roles"]);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+Deno.test("unresolved() accepts literal Jinja includes, imports and extends and refuses any other name", () => {
+    for (const text of ["{% include 'a.j2' %}", "{%- include \"a.j2\" ignore missing -%}", "{% import 'm.j2' as m %}", "{% from 'm.j2' import x %}",
+        "{% extends 'base.j2' %}", "{% include ['a.j2', 'b.j2'] %}"]) assertEquals(unresolved("templates/t.j2", text), null, text);
+    for (const text of ["{% include name %}", "{% include 'a' ~ kind ~ '.j2' %}", "{% import macros as m %}", "{% extends parent %}"]) {
+        assertEquals(unresolved("templates/t.j2", text) === null, false, text);
+    }
+});
