@@ -58,11 +58,7 @@ function refused(
     code: string,
     step: z.infer<typeof NodeResult>["step"],
 ): z.infer<typeof NodeResult> {
-    const deferred = [
-        "fleet.window_closed",
-        "node.update_busy",
-        "cli.update_busy",
-    ].includes(code);
+    const deferred = ["node.update_busy", "cli.update_busy"].includes(code);
     return {
         ...result,
         step,
@@ -132,22 +128,11 @@ type Context = {
     ) => Promise<unknown>;
 };
 
-export function windowOpen(daytime: boolean, at: Date): boolean {
-    const hour = Number(new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/Amsterdam",
-        hour: "2-digit",
-        hourCycle: "h23",
-    }).format(at));
-    return daytime || hour >= 3 && hour < 6;
-}
-
 /** Native dependencies, placed Node steps and durable outputs own the release lifecycle. */
-export function fleetRelease(
-    now = () => new Date(),
-) {
+export function fleetRelease() {
     return {
         type: "@nckrtl/fleet-release",
-        version: "2026.11.05.1",
+        version: "2026.11.18.1",
         globalArguments: z.object({}),
         resources: {
             admission: {
@@ -254,12 +239,6 @@ export function fleetRelease(
                             result = refused(
                                 result,
                                 node.plan_error,
-                                "admission",
-                            );
-                        } else if (!windowOpen(node.daytime, now())) {
-                            result = refused(
-                                result,
-                                "fleet.window_closed",
                                 "admission",
                             );
                         }

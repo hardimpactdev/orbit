@@ -139,7 +139,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
 
-The Gateway queues the fleet pass when it records verification. Fleet `current` permits the Gateway to advance [the default refresh and seed publication](/reference/development-containers#refresh-after-a-release), when refresh is enabled. Each has its own status and Operation receipts in the release record. With rollout disabled, verification permits the same attempt. The release can stay verified while the fleet is pending, deferred or failed. The refresh has its own admission and result.
+The Gateway queues the fleet pass when it records verification. Fleet `current` permits the Gateway to advance [the default refresh and seed publication](/reference/development-containers#refresh-after-a-release), when refresh is enabled. Each has its own status and Operation receipts in the release record. With rollout disabled, verification permits the same attempt. The release can stay verified while the fleet is pending or failed. The refresh has its own admission and result.
 
 The refresh can keep a current nested app-dev host when a release changes only the play that launches Conn or the helper that starts a task turn. The refresh result records why each Node converged or skipped and which base snapshots it retook.
 
@@ -604,9 +604,11 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 ## Fleet rollout
 
-A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `deferred`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
+A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
 
-The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam when either fleet rollout or default refresh is enabled. Pending default and seed work keeps that job active even while automatic Gateway admission is paused. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
+The fleet admission job runs as soon as the Gateway records a release `verified`, at any hour. The fleet rollout has no time window: every Node, and then the default refresh, starts right after the release.
+
+The job also runs daily at 03:05 Europe/Amsterdam when either fleet rollout or default refresh is enabled. Pending default and seed work keeps that job active even while automatic Gateway admission is paused. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
 
 Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Orbit resolves any required CLI release before reserving the fleet visit and uses that pin for admission. Under the database writer lock, each pass confirms that its release still serves before it records or admits fleet work.
 
@@ -616,11 +618,11 @@ The automatic converge can write the selected roles' software, files and service
 
 Public render inputs determine whether a release needs a role converge. Private material is resolved at admission. Per-Operation values such as the Instance bridge admission timestamp do not affect the release digest.
 
-Automatic role convergence and conflicting Instance, Conn, Process and task work exclude one another at admission on a shared Node. An Instance transfer holds both its source and its destination, together with its other recorded participants. A converge receipt lists the T3 restarts deferred for open turns or activity it could not read. The Node stays pending and retries while its window is open.
+Automatic role convergence and conflicting Instance, Conn, Process and task work exclude one another at admission on a shared Node. An Instance transfer holds both its source and its destination, together with its other recorded participants. A converge receipt lists the T3 restarts deferred for open turns or activity it could not read. The Node stays pending and retries.
 
 Before a verified release starts fleet work, Orbit preserves the previous host baseline for every eligible Node that has no baseline. It keeps that baseline through a deferral or superseding release. Host-wide inputs include the common and base-only recipe pins, kernel policy, and the WireGuard network tasks and their included tasks. A change to any of these inputs fails with `fleet.host_inputs_changed` before Orbit starts work on that Node. The release cannot become fleet current or start its nested-fleet refresh.
 
-An approval recorded before the network task dependencies were included needs renewal because it cannot prove which child tasks the Node ran. Apply a reviewed host change or renew its approval with a successful `orbit node:converge <node>` without a base or role filter. The pass retries on the next existing fleet window or follows a newer verified release. Unreadable desired inputs fail with `fleet.inputs_unavailable`. An invalid assignment scope fails with `fleet.role_scope_invalid`.
+An approval recorded before the network task dependencies were included needs renewal because it cannot prove which child tasks the Node ran. Apply a reviewed host change or renew its approval with a successful `orbit node:converge <node>` without a base or role filter. The pass retries on the next daily pass or follows a newer verified release. Unreadable desired inputs fail with `fleet.inputs_unavailable`. An invalid assignment scope fails with `fleet.role_scope_invalid`.
 
 `ORBIT_FLEET_ROLLOUT` defaults to `true`. Set it to `false` to pause fleet rollouts. The Gateway reports `disabled` and leaves the release without fleet-current status. `ORBIT_FLEET_ROLLOUT_ORDER` takes a comma-separated list of workload Node names to visit first. The order never adds or removes a Node.
 
@@ -655,7 +657,7 @@ Orbit has no `agent` or `s3` role yet. The order already places `agent` in group
 
 Control steps run on Node 209. No step asks orbit-agent to act.
 
-App-dev-only Nodes and a task copy’s isolated inner fleet may start at any hour. Other Nodes use 03:00 inclusive to 06:00 exclusive Europe/Amsterdam. Swamp checks the admitted role policy before CLI publication and again before observer publication. An effect already running may finish after the window closes. Closed windows and a busy binary-publication lock defer that Node to a later pass.
+Every Node starts at any hour, one at a time, as soon as the Node before it succeeded. Nick decided on 2026-11-18 that the fleet always rolls out right after each release, so no time window holds a Node back. A busy binary-publication lock defers that Node to a later pass.
 
 ### Desired state
 
@@ -669,7 +671,7 @@ When the commit's release is still missing after 30 minutes, the desired state [
 
 ### One Node
 
-Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded, that the task is not cancelled, and that the Node's window is open. For a Node with CLI intent, the `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. Other Nodes skip it and publish their observer without a CLI gate. A newer CLI release or a commit build stays in place.
+Each Node runs the `fleet-release-node` child, and every step runs on Node 209 over SSH with the Node's stored host keys. Its `gate` step checks that every earlier Node succeeded and that the task is not cancelled. For a Node with CLI intent, the `cli` step runs the native [`node-cli-install`](/reference/node-provisioning#orbit-cli) child. Other Nodes skip it and publish their observer without a CLI gate. A newer CLI release or a commit build stays in place.
 
 A rollout then publishes the observer with official resources. `@swamp/cfgmgmt/fetch` writes the pinned agent to `/usr/local/bin/orbit-agent` only when its SHA-256 differs. One SSH read prints the running service's binary digest. The agent restarts only when the file changed or the running digest differs from the pin. The same read then checks that the pinned digest runs on an active unit. A failed fetch records `agent.download_failed`, a failed restart `agent.restart_failed`, and a failed check `agent.observer_unhealthy`. The rollout never reads the agent secret or changes observer configuration.
 
@@ -685,7 +687,7 @@ A lost or unknown command result leaves the Operation unresolved; it is not repo
 
 At the first failed Node, native dependencies leave later Nodes untouched. The run fails with that Node's error code, and the Operation's result names the Node. The Gateway raises [`rollout_halted`](#release-alerts) for that Node.
 
-Fix the cause. The next pass, at least 5 minutes after the failed run, starts again at that Node, because it is the first Node in risk order that the commit has not converged. That pass comes with the next verified release, the daily window pass, or `orbit fleet:rollout`. Until it converges, later Nodes wait. A deferred Node does not hold back later Nodes, just as it does not inside a run. A retry raises no new alert for the same Node, commit and error code, and the alert's problem resolves once a later pass converges the Node.
+Fix the cause. The next pass, at least 5 minutes after the failed run, starts again at that Node, because it is the first Node in risk order that the commit has not converged. That pass comes with the next verified release, the daily pass, or `orbit fleet:rollout`. Until it converges, later Nodes wait. A deferred Node does not hold back later Nodes, just as it does not inside a run. A retry raises no new alert for the same Node, commit and error code, and the alert's problem resolves once a later pass converges the Node.
 
 Native `swamp workflow resume` does not replace the retry. A failed rollout Operation is final at the Gateway, and the pinned Swamp release drops the inline SSH arguments of a resumed run. A new pass is the retry.
 
@@ -699,7 +701,7 @@ The Gateway's plan reads the newest result of each Node in the terminal `fleet.r
 | `deferred`, `failed`, `cancelled` or `skipped` | Its last visit did not converge it |
 | `converged` or `unchanged`, but drifted | Its observer reports another version, or its required CLI is missing or differs from the desired release |
 
-A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged by the first pass after it returns, inside its window.
+A Node waits at least 5 minutes after its last visit ended. While a failed or cancelled Node waits, the plan names no Node after it. So a Node that was offline is converged by the first pass after it returns.
 
 Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no visit yet`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a pass already resolved; it never asks Git or GitHub.
 
@@ -927,7 +929,7 @@ Converging Nodes in parallel is faster, but a bad release would break many Nodes
 
 Each pass starts again at the first Node in risk order that the commit has not converged. So a retry visits the failed Node first, and later Nodes stay untouched until it converges. The release record names each Node’s Operations. Swamp keeps the step history.
 
-A closed window or a busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing.
+A busy publication lock defers a Node instead of failing it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing.
 
 Development [`instance:mail:update`](/cli/instance/mail-update), [`instance:sleep`](/cli/instance/sleep), [`instance:wake`](/cli/instance/wake), [`instance:complete`](/cli/instance/complete) and [`env:sync` on a container Instance](/cli/env/sync#on-a-container-instance) (`instance.connection_environment`) also hold the release idle guard until their Operation settles.
 

@@ -59,7 +59,7 @@ final readonly class ContinueReleaseFleetAction
         $fleet = data_get($release->phases, 'fleet.status');
         $refresh = data_get($release->phases, 'default_refresh.status');
         $seed = data_get($release->phases, 'seed_publication.status');
-        if (in_array($fleet, ['pending', 'deferred'], true)
+        if ($fleet === 'pending'
             || (in_array($fleet, ['current', 'disabled'], true) && (in_array($refresh, [null, 'pending'], true)
                 || ($refresh === 'current' && in_array($seed, [null, 'pending'], true))))) {
             return $release;
@@ -177,11 +177,6 @@ final readonly class ContinueReleaseFleetAction
 
                     return null;
                 }
-            }
-            if (array_any($rows, static fn (array $row): bool => $row['status'] !== 'current')) {
-                $this->save($release, $phase, 'deferred');
-
-                return null;
             }
             $this->save($release, $phase, 'current');
 
@@ -302,11 +297,6 @@ final readonly class ContinueReleaseFleetAction
             // A previously completed visit cannot certify this new work.
             unset($row['delivery_operation_id'], $row['role_operation_id'], $row['agent']);
             $deliveryOperation = $roleOperation = null;
-        }
-        if (! AdmitFleetRolloutAction::daytime($node) && ! in_array(now('Europe/Amsterdam')->hour, [3, 4, 5], true)) {
-            $row['status'] = 'deferred';
-
-            return null;
         }
         $row['roles'] = array_fill_keys(array_column($desired, 'role'), 'unchanged');
         foreach ($changed as $role) {

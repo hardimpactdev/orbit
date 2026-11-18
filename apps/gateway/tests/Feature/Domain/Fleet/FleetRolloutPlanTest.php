@@ -337,7 +337,6 @@ function copyRolloutHostTree(string $path): void
 
 it('requires host approval for a network child task change before fleet work or default refresh', function (?string $child): void {
     Queue::fake();
-    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     config(['instances.nested_fleet_refresh' => true]);
     $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
     copyRolloutHostTree($previous);
@@ -457,9 +456,58 @@ it('stops seed continuation when default refresh is turned off', function (): vo
         ->and($release->refresh()->phases['seed_publication'])->toBe(['status' => 'disabled', 'operation_ids' => [41]]);
 });
 
+it('admits every Node of a verified release at once at midday, then refreshes the defaults', function (): void {
+    Queue::fake();
+    // Midday in Amsterdam: the release fleet has no time window, so the database and app-prod Nodes go now too.
+    $this->travelTo(now('Europe/Amsterdam')->setTime(12, 30));
+    config(['instances.nested_fleet_refresh' => true]);
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app(GatewayServingHost::class)->remember($gateway);
+    config(['swamp.run_token' => 'test-token']);
+    file_put_contents($this->base.'/agent.json', json_encode(['commit' => RolloutCommit, 'version' => '1.2.3',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']]], JSON_THROW_ON_ERROR));
+    $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
+    app()->instance(AgentDelivery::class, $delivery);
+    $inputs = app(ReleaseNodeInputs::class);
+    foreach (Node::query()->whereKey([...array_values($this->nodes), $gateway->id])->get() as $node) {
+        $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
+            'host' => $inputs->host(), 'agent' => $node->id === $this->nodes['dev'] ? $delivery->pin($node) : 'old-agent',
+            'roles' => array_map(fn (array $role): string => $role['digest'], $inputs->roles($node)),
+        ]])->saveQuietly();
+    }
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    foreach (['db', 'prod'] as $name) {
+        expect($fleet->execute($release))->toBe(10);
+        $operation = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
+        expect(array_column($operation->input['nodes'], 'node_id'))->toBe([$this->nodes[$name]])
+            ->and($operation->input['nodes'][0])->not->toHaveKey('daytime')
+            ->and($release->refresh()->phases['fleet']['nodes'][$this->nodes[$name]]['status'])->toBe('running');
+        $node = Node::query()->findOrFail($this->nodes[$name]);
+        $operation->forceFill(['status' => 'succeeded', 'finished_at' => now(), 'result' => ['nodes' => [[
+            'node_id' => $node->id, 'outcome' => 'converged', 'error_code' => null, 'cli_version' => null,
+            'agent_version' => $delivery->reportedVersion($node), 'step' => 'verify', 'ok' => true]]]])->save();
+    }
+    $gatewayRun = $fleet->execute($release);
+    if ($gatewayRun === 10) {
+        // The serving Gateway goes last with its own observer.
+        $operation = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
+        $operation->forceFill(['status' => 'succeeded', 'finished_at' => now(), 'result' => ['nodes' => [[
+            'node_id' => $gateway->id, 'outcome' => 'converged', 'error_code' => null, 'cli_version' => null,
+            'agent_version' => $delivery->reportedVersion($gateway), 'step' => 'verify', 'ok' => true]]]])->save();
+        $gatewayRun = $fleet->execute($release);
+    }
+
+    expect($gatewayRun)->toBeNull()
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('current')
+        ->and($release->phases['default_refresh'])->toBe(['status' => 'current', 'defaults' => []]);
+});
+
 it('detects membership, agent pin drift and late CLI publication on the daily pass after fleet current', function (string $change): void {
     Queue::fake();
-    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     $gateway = SwampNodeFixture::ensure();
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     app(GatewayServingHost::class)->remember($gateway);

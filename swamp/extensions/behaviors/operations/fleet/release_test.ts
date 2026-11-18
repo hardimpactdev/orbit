@@ -1,7 +1,7 @@
 import { createModelTestContext } from "jsr:@swamp-club/swamp-testing@0.20261016.58";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { fleetRelease, observed, windowOpen } from "./release.ts";
+import { fleetRelease, observed } from "./release.ts";
 
 const record = {
     node_id: 12,
@@ -30,7 +30,6 @@ const node = {
     profile: "{}",
     skip_reason: null,
     plan_error: null,
-    daytime: true,
     agent: null,
     ssh: {
         control_node_id: 209,
@@ -50,7 +49,7 @@ const args = {
     run_id: "a075eb23-7ac4-4487-80d1-57a038a92676",
 };
 function fixture() {
-    const release = fleetRelease(() => new Date("2026-10-31T12:30:00Z"));
+    const release = fleetRelease();
     const test = createModelTestContext();
     const context = test.context as unknown as Parameters<
         typeof release.methods.prepare.execute
@@ -141,36 +140,9 @@ Deno.test("every child step runs on 209 and only a rollout publishes the observe
     );
 });
 
-Deno.test("closed window defers shared nodes; daytime nodes bypass the window", () => {
-    for (const at of ["2026-10-31T12:30:00Z", "2026-07-01T12:30:00Z"]) {
-        assertEquals(windowOpen(false, new Date(at)), false);
-        assertEquals(windowOpen(true, new Date(at)), true);
-    }
-    for (
-        const at of [
-            "2026-10-31T02:00:00Z",
-            "2026-10-31T04:59:00Z",
-            "2026-07-01T01:00:00Z",
-            "2026-07-01T03:59:00Z",
-        ]
-    ) {
-        assertEquals(windowOpen(false, new Date(at)), true);
-    }
-    for (
-        const at of [
-            "2026-10-31T01:59:00Z",
-            "2026-10-31T05:00:00Z",
-            "2026-07-01T00:59:00Z",
-            "2026-07-01T04:00:00Z",
-        ]
-    ) {
-        assertEquals(windowOpen(false, new Date(at)), false);
-    }
-});
-
-Deno.test("full admitted input prepares and a closed window returns a deferred result without Gateway access", async () => {
+Deno.test("full admitted input prepares and every Node publishes at once, at any hour", async () => {
     const { release, context } = fixture();
-    const intent = { nodes: [{ ...node, daytime: false, ssh: null }] };
+    const intent = { nodes: [node] };
     const admission = await release.methods.prepare.execute(
         { ...args, intent },
         context,
@@ -182,18 +154,10 @@ Deno.test("full admitted input prepares and a closed window returns a deferred r
         target_node_id: 2,
         previous: {},
     }, context);
-    assertEquals(gate.install, false);
-    assertEquals([gate.result.outcome, gate.result.error_code], [
-        "deferred",
-        "fleet.window_closed",
-    ]);
+    assertEquals(gate.install, true);
     assertEquals(
-        await release.methods.finish.execute({
-            ...args,
-            admission,
-            node_results: { "node-0": { outputs: { record: gate.result } } },
-        }, context),
-        { nodes: [gate.result], error_code: null },
+        [gate.result.outcome, gate.result.error_code, gate.result.ok],
+        ["unchanged", null, true],
     );
 });
 
@@ -214,6 +178,16 @@ Deno.test("retired rollout fields are refused rather than silently accepted", as
             "Unrecognized key",
         );
     }
+    // The release fleet has no time window, so the per-Node window policy is gone too.
+    await assertRejects(
+        () =>
+            release.methods.prepare.execute({
+                ...args,
+                intent: { nodes: [{ ...node, ...{ daytime: false } }] },
+            }, context),
+        Error,
+        "Unrecognized key",
+    );
 });
 
 Deno.test("a failed or missing earlier Node keeps later fleet participants pending", async () => {
