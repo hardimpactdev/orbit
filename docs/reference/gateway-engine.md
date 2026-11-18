@@ -42,7 +42,9 @@ Today only `app-dev` Nodes enable the `firewall` family, because the converge in
 - a pending step whose `after` steps are done is sent;
 - a sent step past its deadline is sent again with a new order;
 - a sent step past its budget fails with `engine.step_budget_exceeded`;
-- the Operation ends when a step failed, all steps are done, or cancel was requested.
+- the Operation fails as soon as one step failed;
+- the Operation succeeds once all steps are done;
+- the Operation ends as cancelled at the first transition after a cancel request.
 
 Orders are published after the transaction commits. A publish that fails puts its step back to pending and throws. The event is then negatively acknowledged, and JetStream delivers it again after a second.
 
