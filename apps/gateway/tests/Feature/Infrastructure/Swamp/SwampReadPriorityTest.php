@@ -35,7 +35,7 @@ beforeEach(function (): void {
     $this->serve = new HandshakeCountingServe;
     $serve = $this->serve;
     app()->bind(SwampDependencyReader::class, static fn (): SwampDependencyReader => new WebSocketSwampDependencyReader(
-        static fn (int $limit): HandshakeCountingServe => $serve, 'swamp.test', 'read-token', '/test/ca.pem'));
+        static fn (int $limit): HandshakeCountingServe => $serve, 'swamp.test', 'read-token', '/test/ca.pem', $serve->clock(...)));
 });
 
 function readEndpoint(string $token = 'read-token'): WebSocketEndpoint
@@ -339,7 +339,9 @@ it('holds another Project only when serve answered for it, not when its answer d
         return $drop && ($frame['payload']['dataName'] ?? null) === $secondName ? false : null;
     };
 
-    expect(readDependencies($first))->toBe('available');
+    expect(readDependencies($first))->toBe('available')
+        // The read waited its five seconds for the answer that did not come.
+        ->and($this->serve->waited)->toBeGreaterThan(4.9)->toBeLessThanOrEqual(5.0);
     $drop = false;
 
     // The lost answer leaves no hold: the second Project's own read asks serve and finds its index.

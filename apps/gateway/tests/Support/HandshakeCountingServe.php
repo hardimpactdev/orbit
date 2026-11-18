@@ -27,6 +27,9 @@ final class HandshakeCountingServe implements WebSocketClient
 
     public int $refused = 0;
 
+    /** The seconds that reads with no answer waited. A real socket blocks for its timeout; `clock()` counts it without waiting. */
+    public float $waited = 0.0;
+
     /** @var list<array<string,mixed>> */
     public array $frames = [];
 
@@ -81,8 +84,17 @@ final class HandshakeCountingServe implements WebSocketClient
             }
         }
         $this->unanswered = [];
+        if ($answers === []) {
+            $this->waited += $timeoutSeconds;
+        }
 
         return $answers;
+    }
+
+    /** The clock of a reader of this serve: real time, plus the time its unanswered reads would have blocked. */
+    public function clock(): float
+    {
+        return microtime(true) + $this->waited;
     }
 
     public function close(): void

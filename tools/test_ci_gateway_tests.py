@@ -17,22 +17,31 @@ JOB = SOURCE.split('  gateway-tests:\n', 1)[1].split('\n  cli:\n', 1)[0]
 
 
 class GatewayTestsPolicyTest(unittest.TestCase):
-    def test_one_hosted_job_runs_the_whole_suite_after_selection(self):
+    def test_hosted_shards_run_the_whole_suite_after_selection_on_every_cpu(self):
         self.assertIn('    needs: changes\n', JOB)
         self.assertIn("toJSON(fromJSON(needs.changes.outputs.jobs)['gateway-tests']) != 'false'", JOB)
         self.assertIn('    runs-on: ubuntu-26.04\n', JOB)
-        self.assertNotIn('strategy:', JOB)
+        # One list holds the shard count. Every shard reports, so a failure names each shard that broke.
+        self.assertIn('    strategy:\n      fail-fast: false\n      matrix:\n', JOB)
+        shards = json.loads(next(line.split('shard:', 1)[1] for line in JOB.splitlines() if line.strip().startswith('shard: [')))
+        self.assertEqual(shards, list(range(1, len(shards) + 1)))
+        self.assertGreater(len(shards), 1)
         self.assertNotIn('continue-on-error', JOB)
         self.assertNotIn('ORBIT_SLOW_CHECKS_BLOCKING', JOB)
         command = next(line.strip() for line in JOB.splitlines() if 'vendor/bin/pest ' in line)
-        self.assertEqual(command, 'vendor/bin/pest --parallel --processes=4 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"')
+        # Stock Pest: `--parallel` takes every CPU of the runner, and `--shard` balances by the committed times.
+        self.assertEqual(command, 'vendor/bin/pest --parallel --shard=${{ matrix.shard }}/%d --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"' % len(shards))
+        self.assertNotIn('--processes', JOB)
+        self.assertIn('name: Gateway Pest suite (${{ matrix.shard }}/%d)' % len(shards), JOB)
+        timings = json.loads((ROOT / 'apps/gateway/tests/.pest/shards.json').read_text())['timings']
+        self.assertGreater(len(timings), len(shards))
         config = ET.parse(ROOT / 'apps/gateway/phpunit.xml').getroot().attrib
         self.assertEqual(config['defaultTimeLimit'], '5')
         for flag in ('enforceTimeLimit', 'failOnRisky', 'stopOnRisky'):
             self.assertEqual(config[flag], 'true')
         self.assertNotIn('--default-time-limit=', SOURCE)
         self.assertIn('if: always()\n        uses: actions/upload-artifact@', JOB)
-        self.assertIn('name: gateway-tests-junit', JOB)
+        self.assertIn('name: gateway-tests-junit-${{ matrix.shard }}', JOB)
         self.assertIn('if-no-files-found: error', JOB)
 
     def test_dev_dependencies_have_separate_input_keyed_caches_and_always_install(self):
