@@ -1,5 +1,7 @@
 ---
 title: "Production containers"
+covers:
+  - swamp/scripts/release-container.py
 description: "Build each production Instance release in its off-traffic preparation container, clone the finished build, switch traffic to the ready clone, and freeze the previous release for rollback."
 ---
 

@@ -2,7 +2,6 @@
 title: "Update and recover a Gateway"
 description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, find the request logs, receive release alerts, and follow the fleet rollout."
 covers:
-  - swamp/scripts/release-container.py
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/{app,logging,retention}.php
   - apps/gateway/app/{Infrastructure/Logging/**,Infrastructure/Database/**,Providers/Domains/DatabaseServiceProvider.php}
