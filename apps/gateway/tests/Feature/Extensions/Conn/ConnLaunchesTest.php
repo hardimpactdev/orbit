@@ -400,6 +400,18 @@ describe('launch admission', function (): void {
         ['runtime_mode', ''], ['runtime_mode', '  '], ['interaction_mode', ''], ['interaction_mode', '  '],
     ]);
 
+    it('refuses an incomplete model selection before it can commit the first send', function (): void {
+        $baseline = launchRecords();
+        foreach ([['instanceId' => 'codex'], ['instanceId' => 'codex', 'model' => '  '], ['instanceId' => 'codex', 'model' => false]] as $selection) {
+            callLaunchApi($this->phone, 'POST', 'conn/launches', [...$this->body, 'model_selection' => $selection], $this->key)
+                ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection.model']]]);
+        }
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$this->body, 'model_selection' => [
+            'instanceId' => 'codex', 'model' => 'valid-model', 'options' => 'invalid',
+        ]], $this->key)->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection.options']]]);
+        expect(launchRecords())->toBe($baseline);
+    });
+
     it('refuses unrepresentable model option numbers before admission or replay', function (): void {
         $body = [...$this->body, 'model_selection' => ['instanceId' => 'fixture', 'model' => 'fixture', 'options' => ['value' => 'fixture-number']]];
         $json = json_encode($body, JSON_THROW_ON_ERROR);
@@ -832,6 +844,58 @@ describe('launch control and progress', function (): void {
             ->assertJsonPath('data.thread.model_selection.model', 'actual-model')->assertDontSee('Fixture first message');
         expect(ConnLaunchIntent::query()->whereKey($id)->exists())->toBeFalse()
             ->and(fn () => $secrets->hydrate($retry, '', $private, [$field => $sourceName]))->toThrow(ResourceOperationException::class);
+    });
+
+    it('waits for T3 inspection before marking an existing workspace ready', function (): void {
+        InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
+            'incus_project' => 'orbit-instances', 'container_name' => 'fixture-clone', 'bridge_address' => '10.253.0.2',
+            'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()
+            ->assertJsonPath('data.readiness.workspace_server', null)->json('data.id');
+        $launch = Operation::query()->findOrFail($id);
+        $probe = launchNativeReceipt($launch, OperationKinds::ConnLaunchInspect, 'conn-launch:'.$id.':inspect:initial',
+            ['launch_operation_id' => $id]);
+        $probe->update(['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'conn.launch_workspace_failed']);
+        $launch->update(['state' => [...($launch->state ?? []), 'launch_inspect_operation_id' => $probe->id]]);
+
+        app(ConnLaunchSettlement::class)->advance($launch);
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()
+            ->assertJsonPath('data.phase', 'needs_retry')->assertJsonPath('data.readiness.workspace_server', false)
+            ->assertJsonPath('data.stages.workspace_server.status', 'failed');
+    });
+
+    it('observes existing completion without ownership and consumes a racing application retry', function (): void {
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $this->instance->update(['status' => InstanceState::SourceResolved]);
+        $dispatch = launchFixtureDispatch($id);
+        $state = app(ConnLaunchState::class);
+        $state->accepted($id, $dispatch->id, now());
+        $state->published($id);
+        $launch = Operation::query()->findOrFail($id);
+        $actor = 'node:'.$this->desktop->id;
+        $failed = launchNativeReceipt($launch, 'instance.complete', actor: $actor);
+        $failed->update(['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_process_inactive',
+            'result' => ['ready' => false, 'recovery' => ['retry' => ['requires' => 'project_process_definition']]]]);
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance($launch);
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()
+            ->assertJsonPath('data.children.completion_operation_id', $failed->id)
+            ->assertJsonPath('data.actions.retry_application.requires', 'project_process_definition');
+        expect($launch->refresh()->state['launch_children']['completion_operation_id']['owned'])->toBeFalse();
+
+        $failed->update(['result' => ['ready' => false]]);
+        callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/retry", ['target' => 'application'])->assertAccepted();
+        $completed = launchNativeReceipt($launch, 'instance.complete', actor: $actor);
+        $completed->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => ['ready' => true]]);
+        $this->instance->update(['status' => InstanceState::Active]);
+        $settlement->advance($launch->refresh());
+
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()
+            ->assertJsonPath('data.children.completion_operation_id', $completed->id)
+            ->assertJsonPath('data.readiness.application_preview', true)->assertJsonPath('data.poll_after_seconds', null);
+        expect($launch->refresh()->state['launch_children']['completion_operation_id']['owned'])->toBeFalse()
+            ->and($launch->state)->not->toHaveKey('launch_retry_requests.application')
+            ->and(Operation::query()->where('kind', 'instance.complete')->count())->toBe(2);
     });
 
     it('keeps application progress and retries independent of a published thread', function (): void {

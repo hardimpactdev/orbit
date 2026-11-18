@@ -105,8 +105,15 @@ final class CreateConnLaunchRequest extends FormRequest
                     }
                 }
             }
-            if (property_exists($this->body, 'model_selection') && ! $this->body->model_selection instanceof stdClass) {
-                $validator->errors()->add('model_selection', 'The model selection must be an object.');
+            if (property_exists($this->body, 'model_selection')) {
+                $selection = $this->body->model_selection;
+                if (! $selection instanceof stdClass) {
+                    $validator->errors()->add('model_selection', 'The model selection must be an object.');
+                } elseif (! is_string($selection->model ?? null) || preg_match('/\S/u', $selection->model) !== 1) {
+                    $validator->errors()->add('model_selection.model', 'The model name is required.');
+                } elseif (isset($selection->options) && ! $selection->options instanceof stdClass && ! is_array($selection->options)) {
+                    $validator->errors()->add('model_selection.options', 'The model options must be an object or an array.');
+                }
             }
         }];
     }

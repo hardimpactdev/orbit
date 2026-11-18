@@ -92,7 +92,6 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         if ($instance === null) {
             return;
         }
-        $this->state->workspaceReady($launch->id);
         $environment = ConnEnvironment::query()->where('instance_id', $instance->id)->where('node_id', $launch->node_id)->sole();
         $this->application($launch->refresh(), $instance);
         $requested = $request->model_selection ?? null;
@@ -114,6 +113,7 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
 
             return;
         }
+        $this->state->workspaceReady($launch->id);
         $this->native->dispatch($launch->refresh(), $instance, ValidatedData::string($receipt['environment_id']),
             ValidatedData::string($receipt['incarnation']), ValidatedData::string($receipt['project_id']), $selection);
     }
@@ -161,12 +161,12 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
 
     private function application(Operation $launch, Instance $instance): void
     {
-        $complete = ConnLaunchChild::Completion->operation($launch);
-        $retry = Arr::has($launch->state ?? [], 'launch_retry_requests.application');
+        $complete = $this->instances->observeCompletion($launch, $instance);
+        $retry = Arr::has($launch->refresh()->state ?? [], 'launch_retry_requests.application');
         if ($complete !== null && (! $retry || ! $this->nativeCancellation->settled($complete))) {
             return;
         }
-        if ($instance->status === InstanceState::SourceResolved && ($launch->input['target_kind'] ?? null) === 'new') {
+        if ($instance->refresh()->status === InstanceState::SourceResolved && ($retry || ($launch->input['target_kind'] ?? null) === 'new')) {
             $this->instances->complete($launch, $instance);
 
             return;
