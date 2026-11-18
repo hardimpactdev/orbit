@@ -7,7 +7,8 @@ cases = [
   "deadline reaps a detached stdout holder forked before leader exit",
   "deadline reaps a detached stdout holder forked during TERM",
   "a real Ansible deadline kills a stalled command after its worker detaches",
-  "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing",
+  "a build-list Node gets the Instance project, bridge, folders and image",
+  "a prepared build-list Node changes nothing and rebuilds no image on a complete host rerun",
   "a build-list Node prepared before the bridge DNS and container ACL rules gets both on its next converge",
   "an Instance bridge range that another interface of the Node holds refuses before any change",
   "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake",
@@ -15,9 +16,10 @@ cases = [
 file = "swamp/tests/ansible_instance_host_test.ts"
 self_hosted = true
 # Self-hosted costs: pool run 43904342622 with 4 workers per shard, an upper bound for 2; each case names its source.
-cost = 540
+# Changed cases use completed local estimates in tools/tests/ci-host-cost-evidence.json, not censored pool lower bounds.
+cost = 475
 # Startup is added per slice.
-slices = 11
+slices = 12
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -44,14 +46,17 @@ inputs = [
   "swamp/ansible/tasks/task-container-host-system.yml",
   "swamp/ansible/transport-exit-codes.json",
   "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/host_image_boundary.ts",
   "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/host-image-boundaries.json",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
 [case_costs]
-  "a build-list Node gets the Instance project, bridge, folders and image, then a rerun changes nothing" = 173 # pool run 43904342622: cut at 172.5s, a lower bound above hosted 103 x the median pool ratio of this file's passed units 0.30 = 31
-  "a build-list Node prepared before the bridge DNS and container ACL rules gets both on its next converge" = 175 # pool run 43904342622: cut at 175.0s, a lower bound above hosted 102 x the median pool ratio of this file's passed units 0.30 = 31
+  "a build-list Node gets the Instance project, bridge, folders and image" = 171 # ESTIMATE: completed local body 80.688s x 2.1, rounded up, plus 1s; oversized, capacity exemption retained
+  "a prepared build-list Node changes nothing and rebuilds no image on a complete host rerun" = 97 # ESTIMATE: completed local body 45.462s x 2.1, rounded up, plus 1s
+  "a build-list Node prepared before the bridge DNS and container ACL rules gets both on its next converge" = 60 # ESTIMATE: completed local body 28.026s x 2.1, rounded up, plus 1s
   "a stuck Instance host playbook throws with its last task and kills a descendant holding stdout" = 1 # no pool time (NOT RUN); hosted 3 x the median pool ratio of this file's passed units 0.30
   "a late playbook gets only the shared command budget left, then no new playbook starts" = 1 # no pool time (NOT RUN); hosted 2 x the median pool ratio of this file's passed units 0.30
   "the shared command budget stays exhausted across Deno test file isolates" = 2 # pool run 43904342622, 4 workers: passed 1.6s
@@ -60,4 +65,4 @@ inputs = [
   "deadline reaps a detached stdout holder forked during TERM" = 1 # no pool time (NOT RUN); hosted 3 x the median pool ratio of this file's passed units 0.30
   "a real Ansible deadline kills a stalled command after its worker detaches" = 8 # pool run 43904342622, 4 workers: passed 7.1s
   "an Instance bridge range that another interface of the Node holds refuses before any change" = 2 # pool run 43904342622, 4 workers: passed 1.3s
-  "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake" = 175 # pool run 43904342622: cut at 174.3s, a lower bound above hosted 41 x the median pool ratio of this file's passed units 0.30 = 13
+  "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake" = 130 # ESTIMATE: completed local body 61.397s x 2.1, rounded up, plus 1s

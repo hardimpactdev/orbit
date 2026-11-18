@@ -254,21 +254,15 @@ describe('Instance runtimes', function (): void {
     });
 });
 
-describe('the build list', function (): void {
-    it('includes only the listed Nodes and is empty by default', function (): void {
+describe('container hosts', function (): void {
+    it('includes every app-dev Node without an opt-in and no production-only Node', function (): void {
         $beast = recordsNode();
         $shark = recordsNode('shark', '10.44.0.11');
+        $shark->roles()->create(['role' => 'app-prod', 'status' => 'active']);
         expect(app(ContainerNodes::class)->includes($beast))->toBeFalse();
 
-        config(['instances.container_nodes' => [$shark->id]]);
-        expect(app(ContainerNodes::class)->includes($beast))->toBeFalse()
-            ->and(app(ContainerNodes::class)->includes($shark))->toBeTrue();
+        $beast->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+        expect(app(ContainerNodes::class)->includes($beast))->toBeTrue()
+            ->and(app(ContainerNodes::class)->includes($shark))->toBeFalse();
     });
-
-    it('refuses a malformed list', function (mixed $list): void {
-        config(['instances.container_nodes' => $list]);
-
-        expect(fn () => app(ContainerNodes::class)->includes(recordsNode()))
-            ->toThrow(ResourceOperationException::class, 'ORBIT_INSTANCES_CONTAINER_NODES must be a JSON list of Node ids');
-    })->with(['malformed JSON' => [null], 'names' => [['beast']], 'an object' => [['beast' => 1]], 'zero' => [[0]]]);
 });

@@ -39,10 +39,9 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 /**
- * Adopts agent-verified source in place. Only environment protection, setup and a Route need a run.
+ * Repairs existing registered checkouts from agent-verified source. Never admits a new host Instance.
  */
 final readonly class RegisterInstanceAction
 {
@@ -68,6 +67,9 @@ final readonly class RegisterInstanceAction
         }
         $project = Project::query()->findOrFail($data->projectId);
         InstancePlacement::checkout($project);
+        if (! Instance::query()->where('node_id', $caller->id)->where('checkout_path', $data->sourcePath)->exists()) {
+            throw $this->containerRequired();
+        }
         $name = DefaultInstanceName::resolve($project, $data->instanceName ?? basename($data->sourcePath));
         if (strlen($name) > 63 || preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $name) !== 1) {
             throw new ResourceOperationException('instance.name_invalid', 'The Instance name must be a lowercase DNS label.', 422);
@@ -95,27 +97,24 @@ final readonly class RegisterInstanceAction
         $result = DB::transaction(function () use ($caller, $project, $name, $root, $data, $requestId, $facts, $protectEnvironment): Operation|Instance {
             InstancePlacement::checkout(Project::query()->findOrFail($project->id));
             $instance = Instance::query()->where('node_id', $caller->id)->where('checkout_path', $data->sourcePath)->first();
-            if ($instance !== null && ($instance->project_id !== $project->id || $instance->name !== $name
+            if ($instance === null) {
+                throw $this->containerRequired();
+            }
+            if ($instance->project_id !== $project->id || $instance->name !== $name
                 || $instance->registration_request_id === null
                 || ($instance->root ?? $project->root) !== $root
-                || ! in_array($instance->status, [InstanceState::Reserved, InstanceState::Active], true))) {
+                || ! in_array($instance->status, [InstanceState::Reserved, InstanceState::Active], true)) {
                 throw new ResourceOperationException('instance.registration_conflict', 'The checkout already belongs to another Instance intent.', 409);
             }
             $existingRoute = $data->domain === null ? null : Route::query()->where('domain', RouteDomain::validate($data->domain))->first();
-            if ($existingRoute !== null && ($instance === null || $existingRoute->project_id !== $project->id
+            if ($existingRoute !== null && ($existingRoute->project_id !== $project->id
                 || $existingRoute->targets()->count() !== 1 || ! $existingRoute->targets()->where('instance_id', $instance->id)->exists())) {
                 throw new ResourceOperationException('route.domain_conflict', 'The Route domain is already owned.', 422);
             }
-            if ($instance !== null && $instance->routes()->where('domain', '!=', $data->domain ?? '')->exists()) {
+            if ($instance->routes()->where('domain', '!=', $data->domain ?? '')->exists()) {
                 throw new ResourceOperationException('instance.registration_conflict', 'Retry registration with its reserved Route domain.', 409);
             }
-            $this->overlap->assertAvailable($caller->id, StoragePath::parse($data->sourcePath), 'instance.source_conflict', ignoreInstanceId: $instance?->id);
-            $instance ??= Instance::query()->create([
-                'project_id' => $project->id, 'node_id' => $caller->id, 'name' => $name,
-                'source_layout' => 'checkout', 'checkout_path' => $data->sourcePath,
-                'root' => $root !== $project->root ? $root : null, 'status' => InstanceState::Reserved,
-                'registration_request_id' => (string) Str::uuid(), 'registration_original_path' => $data->sourcePath,
-            ]);
+            $this->overlap->assertAvailable($caller->id, StoragePath::parse($data->sourcePath), 'instance.source_conflict', ignoreInstanceId: $instance->id);
             RegistrationFacts::record($instance, $facts);
             $instance->update(['status' => InstanceState::Reserved, 'first_setup_pending' => $data->runSetup]);
             $route = $data->domain === null ? null : app(CreateRouteAction::class)->ensureForInstance($instance, $data->domain);
@@ -191,6 +190,11 @@ final readonly class RegisterInstanceAction
             || (($env['kind'] ?? null) === 'regular' && is_string($env['mode'] ?? null) && (octdec($env['mode']) & 0o077) === 0);
 
         return [$facts, ! $private];
+    }
+
+    private function containerRequired(): ResourceOperationException
+    {
+        return new ResourceOperationException('instance.container_required', 'New host registration is unavailable. Use instance:create to create a container Instance.', 409);
     }
 
     private function unavailable(): ResourceOperationException

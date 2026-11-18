@@ -6,6 +6,7 @@ namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
@@ -15,6 +16,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use Throwable;
 
@@ -23,7 +25,7 @@ use Throwable;
  * pairing and deletes the vault keys of the run; the result holds only public metadata. A session that a revoke or a renewal must end, or one of an
  * unknown outcome, is withdrawn instead, and its revoke by pairing id is owed.
  */
-final readonly class ConnSessionHoldProjection implements DirectOperationProjection
+final readonly class ConnSessionHoldProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
     /** T3 answered with one of these, so no session exists. Any other failure may have left one. */
     public const array AnsweredFailures = ['conn.session_rejected', 'conn.request_refused', 'conn.response_invalid', 'conn.redeem_refused'];
@@ -35,6 +37,20 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
     public function input(Operation $operation): array
     {
         return Arr::only($operation->input, ['intent', 'execution_secrets']);
+    }
+
+    /** @return array<string, mixed> */
+    public function workflowInput(Operation $operation): array
+    {
+        $input = $this->input($operation);
+        $environment = ConnEnvironment::query()->find(ValidatedData::integer($operation->input['conn_environment_id']));
+        if ($environment === null || ! $environment->admin_session_expires_at->isFuture()) {
+            throw new ResourceOperationException('conn.session_expired', 'The T3 administrator session is no longer available.', 409);
+        }
+        $reference = ValidatedData::object(ValidatedData::object($input['execution_secrets'] ?? [])['admin_session'] ?? []);
+        $this->vault->synchronize(ValidatedData::string($reference['vault'] ?? null), ValidatedData::string($reference['key'] ?? null), $environment->admin_session);
+
+        return $input;
     }
 
     public function apply(Operation $operation, array $data): Operation

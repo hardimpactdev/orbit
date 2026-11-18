@@ -20,7 +20,7 @@ orbit-agent will be the only collector of live UFW facts, with `observed_at`, an
 
 No Node desires task bridge input rules any more: the Node setting `task_vms` is removed ([old paths](/reference/old-paths#task-vm-settings)). A reachable Node removal still deletes any rule left under `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp`, `orbit:task-vms-dns-udp`, `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` or `orbit:task-containers-dns-udp`. The converge of the VPN Node deletes its old route rules from the reserved range: every rule whose comment starts with `orbit:task-vm-` ([Converge the hub](/reference/wireguard-endpoints#converge-the-hub)).
 
-An `app-dev` Node on the [container build list](/reference/development-containers#the-build-list) owns four input rules for its Instance bridge:
+Every `app-dev` Node with a prepared [Instance bridge](/reference/development-containers#nodes) owns four input rules for that bridge:
 
 - `orbit:instances-dhcp`;
 - `orbit:instances-egress`, which admits the [egress proxy](/reference/development-containers#egress-and-dns);

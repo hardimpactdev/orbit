@@ -988,6 +988,8 @@ Refusals before any Operation:
 
 ### How the Gateway makes one
 
+Admission records the held-session Operation and a vault reference. The start worker copies the current admin session to that reference before it submits the run, outside the database writer. If a wake retries delivery and finds its renewal still queued and unstarted, it can submit the same Operation again without creating another pairing.
+
 The run `operation-conn-session-hold` runs on the Swamp worker:
 
 | Step | What it does |

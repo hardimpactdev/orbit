@@ -170,7 +170,7 @@ it('also prints the named Node\'s Instance host intent digest as host, empty whi
     $base = app(NodeDesiredConvergeInput::class)->baseDigest($this->node);
     $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev'], '--base' => true, '--host' => 'app-dev'])
         ->expectsOutput(json_encode(['app-dev' => $base, 'host' => ''], JSON_THROW_ON_ERROR))->assertSuccessful();
-    config(['instances.container_nodes' => [$this->node->id]]);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     app(InstanceHostIntent::class)->prepare($this->node);
     $host = app(InstanceHostIntent::class)->digest($this->node->refresh());
     expect($host)->toMatch('/^[0-9a-f]{64}$/');
@@ -192,10 +192,9 @@ it('gives a role with a certificate leaf the same default digest at each read, t
         ->and(app(NodeDesiredConvergeInput::class)->defaultDigest($gateway))->toBe(app(NodeDesiredConvergeInput::class)->defaultDigest($gateway));
 });
 
-it('reads the default digest of a build-list Node with no Instance bridge yet as its admission would, and the admission time does not move it', function (): void {
+it('reads the default digest of an app-dev Node with no Instance bridge yet as its admission would, and the admission time does not move it', function (): void {
     // docs/reference/development-containers.md#what-a-refresh-skips: a healthy Node always has a readable digest.
     config(['swamp.run_token' => 'test-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
-    config(['instances.container_nodes' => [$this->node->id]]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $first = app(NodeDesiredConvergeInput::class)->defaultDigest($this->node);
     $this->travel(47)->seconds();
