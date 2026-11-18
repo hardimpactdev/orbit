@@ -16,6 +16,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\NativeRunProgress;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
@@ -368,6 +369,22 @@ it('frees the target of a run that nothing proves ended, one hour after the expi
 
     expect($operation->refresh()->lock_key)->toBeNull()
         ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('unproven');
+});
+
+it('records the exact native terminal after the target hold has been released', function (): void {
+    Queue::fake();
+    $operation = runningScript();
+    app(ExpireOperationAction::class)->execute($operation);
+    $operation->refresh()->update(['lock_key' => OperationStore::lockKey('task_group', $operation->target_id)]);
+    $this->travel(61)->minutes();
+    app(ExpireOperationAction::class)->releaseStaleHolds();
+    expect($operation->refresh()->state['native_timeout']['native_terminal_status'])->toBe('unproven');
+    reconcileSocket($operation, 'cancelled');
+
+    (new ReconcileSwampOperations)->settleOne($operation->id, app(SwampCommandStep::class), app(ExpireOperationAction::class));
+
+    expect($operation->refresh()->lock_key)->toBeNull()
+        ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
 });
 
 it('expires an unbound Operation at its admission deadline', function (): void {

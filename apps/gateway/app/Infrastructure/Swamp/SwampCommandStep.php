@@ -13,6 +13,7 @@ use App\Domain\Operations\OperationResultFields;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\OperationVersions;
 use App\Domain\Schedules\ScheduleFires;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -48,7 +49,7 @@ final readonly class SwampCommandStep
         $direct = app(DirectOperation::class);
         $workflow = $direct->workflowFor($operation);
         $start = ['key' => 'operation:'.$operation->id, 'workflow' => $workflow];
-        $timedOut = ExpireOperationAction::awaitsSettlement($operation) || InstanceMigrateProjection::unsettled($operation);
+        $timedOut = ExpireOperationAction::needsTerminalReceipt($operation) || InstanceMigrateProjection::unsettled($operation);
         if ($workflow === null || ! $direct->usesNativeTerminal($operation) || isset($operation->state['swamp_run_id'])
             || (isset($operation->state['swamp_start']) && $operation->state['swamp_start'] !== $start)
             || (! $timedOut && ($operation->status !== OperationStatus::Running || $operation->error_code !== 'swamp.start_uncertain'
@@ -63,7 +64,7 @@ final readonly class SwampCommandStep
         if ($timedOut && ($reply['total'] ?? null) === 0 && $rows === []) {
             DB::transaction(function () use ($operation): void {
                 $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-                if ((! ExpireOperationAction::awaitsSettlement($current) && ! InstanceMigrateProjection::unsettled($current)) || isset($current->state['swamp_run_id'])
+                if ((! ExpireOperationAction::needsTerminalReceipt($current) && ! InstanceMigrateProjection::unsettled($current)) || isset($current->state['swamp_run_id'])
                     || $current->kind !== $operation->kind || $current->node_id !== $operation->node_id
                     || ($current->state['swamp_start'] ?? null) !== ($operation->state['swamp_start'] ?? null)) {
                     return;
@@ -95,12 +96,12 @@ final readonly class SwampCommandStep
         DB::transaction(function () use ($operation, $runId, $start): void {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             if (isset($current->state['swamp_run_id'])
-                || ((! ExpireOperationAction::awaitsSettlement($current) && ! InstanceMigrateProjection::unsettled($current)) && ($current->status !== OperationStatus::Running
+                || ((! ExpireOperationAction::needsTerminalReceipt($current) && ! InstanceMigrateProjection::unsettled($current)) && ($current->status !== OperationStatus::Running
                     || $current->error_code !== 'swamp.start_uncertain' || ($current->state['swamp_start'] ?? null) !== $start))
                 || $current->node_id !== $operation->node_id || $current->kind !== $operation->kind) {
                 return;
             }
-            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => (ExpireOperationAction::awaitsSettlement($current) || InstanceMigrateProjection::unsettled($current)) ? $current->error_code : null,
+            app(OperationStore::class)->change($current, ['dispatched_at' => now(), 'error_code' => (ExpireOperationAction::needsTerminalReceipt($current) || InstanceMigrateProjection::unsettled($current)) ? $current->error_code : null,
                 'state' => [...($current->state ?? []), 'swamp_run_id' => $runId]]);
         });
     }
@@ -124,7 +125,7 @@ final readonly class SwampCommandStep
             return $operation;
         }
         $operation->refresh();
-        if ($operation->status->terminal() && ! ExpireOperationAction::expiredUnsettled($operation) && ! InstanceMigrateProjection::unsettled($operation)) {
+        if ($operation->status->terminal() && ! ExpireOperationAction::needsTerminalReceipt($operation) && ! InstanceMigrateProjection::unsettled($operation)) {
             return $operation;
         }
         $run = $this->history($runId);
@@ -183,7 +184,7 @@ final readonly class SwampCommandStep
         if (ExpireOperationAction::expiredUnsettled($operation) && $completedAt !== null && $deadline !== null && $completedAt->lessThan($deadline)) {
             $operation = app(ExpireOperationAction::class)->reopen($operation, $runId);
         }
-        if (ExpireOperationAction::awaitsSettlement($operation)) {
+        if (ExpireOperationAction::needsTerminalReceipt($operation)) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
         try {
@@ -204,7 +205,7 @@ final readonly class SwampCommandStep
 
             return $current;
         });
-        if (ExpireOperationAction::awaitsSettlement($current)) {
+        if (ExpireOperationAction::needsTerminalReceipt($current)) {
             return app(ExpireOperationAction::class)->settle($current, $runId, $status);
         }
         if ($current->status->terminal() || isset($current->state['swamp_scheduled_result'])) {
@@ -229,8 +230,8 @@ final readonly class SwampCommandStep
     {
         $declarations = [];
         $direct = app(DirectOperation::class);
-        foreach (array_keys($direct->definitions()) as $kind) {
-            $definition = $direct->definition($kind);
+        foreach ($operation->child_versions ?? $direct->childVersions($operation->kind, OperationVersions::pinned($operation)) as $kind => $version) {
+            $definition = $direct->definition($kind, $version);
             // A kind records its child runs through its own projection, or through the child projection it declares beside it.
             if ($definition === null) {
                 continue;
@@ -548,7 +549,7 @@ final readonly class SwampCommandStep
                     continue;
                 }
                 if ($operation->kind !== $row['kind'] || $operation->node_id !== $row['node_id']
-                    || ($direct->definition($operation->kind)['scheduled_result'] ?? null) !== $declaration) {
+                    || ($direct->definition($operation)['scheduled_result'] ?? null) !== $declaration) {
                     throw $this->unavailable();
                 }
                 $direct->assertRun($operation, $row['root_run_id']);
