@@ -205,14 +205,14 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
     private function cleanup(Operation $launch): void
     {
         $probe = ConnLaunchNativeWork::attempt($launch, 'launch_inspect_operation_id');
-        if ($probe !== null && (! $this->nativeCancellation->settled($probe) || $probe->finished_at === null
-            || $probe->finished_at->isAfter(now()->subSeconds(120)))) {
-            if ($probe->status->terminal() && ! $this->nativeCancellation->settled($probe)) {
+        if ($probe !== null) {
+            $settled = $this->nativeCancellation->settled($probe);
+            if ($probe->status->terminal() && ! $settled) {
                 $this->blocked($launch, ConnLaunchStage::Cleanup, $probe->error_code);
             }
-
-            // A cut remote process can use its 60-second OS bound, then its one-minute T3 session must have expired.
-            return;
+            if (! $settled || ! $this->probeCredentialExpired($probe)) {
+                return;
+            }
         }
 
         foreach ([ConnLaunchChild::Create, ConnLaunchChild::Completion, ConnLaunchChild::Wake] as $role) {
@@ -263,6 +263,15 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             return;
         }
         $this->instances->destroy($launch, $instance);
+    }
+
+    private function probeCredentialExpired(Operation $probe): bool
+    {
+        $observed = Arr::get($probe->state ?? [], 'native_timeout.native_terminal_observed_at');
+        $cutoff = now()->subSeconds(120);
+
+        return $probe->finished_at !== null && ! $probe->finished_at->isAfter($cutoff)
+            && (! is_string($observed) || ! Carbon::parse($observed)->isAfter($cutoff));
     }
 
     private function blocked(Operation $launch, ConnLaunchStage $stage, ?string $code = null): void

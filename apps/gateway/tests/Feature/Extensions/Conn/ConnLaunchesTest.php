@@ -737,7 +737,7 @@ describe('launch control and progress', function (): void {
         $settlement->advance($parent->refresh());
         callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.stages.cleanup.finished_at', $blocked);
 
-        $probe->update(['state' => ['native_timeout' => ['native_terminal_status' => 'failed']], 'finished_at' => now()]);
+        $probe->update(['state' => ['native_timeout' => ['native_terminal_status' => 'failed', 'native_terminal_observed_at' => now()->toISOString()]]]);
         $settlement->advance($parent->refresh());
         callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'cancelling');
         $this->travel(121)->seconds();
