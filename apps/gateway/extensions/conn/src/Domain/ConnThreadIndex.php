@@ -138,12 +138,12 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
      *
      * @return array{thread: ConnThread, created: bool}
      */
-    public function record(ConnEnvironment $environment, string $threadId, string $title): array
+    public function record(ConnEnvironment $environment, string $threadId, string $title, bool $seedTitle = false): array
     {
         $key = ['conn_environment_id' => $environment->id, 'thread_id' => $threadId];
         $created = ! ConnThread::query()->where($key)->exists();
         ConnThread::query()->upsert([[...$key, 'instance_id' => $environment->instance_id, 'title' => mb_substr($title, 0, self::TitleLength),
-            'seen_at' => CarbonImmutable::now()]], array_keys($key), ['instance_id', 'title', 'seen_at']);
+            'seen_at' => CarbonImmutable::now()]], array_keys($key), $seedTitle ? ['instance_id', 'seen_at'] : ['instance_id', 'title', 'seen_at']);
 
         return ['thread' => ConnThread::query()->where($key)->firstOrFail(), 'created' => $created];
     }
