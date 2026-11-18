@@ -575,13 +575,31 @@
 # Gateway's SQLite database recovers from its journal. Its Valkey keeps the queues and writes them only on its save schedule (no
 # append-only file), so it holds its clients' writes first (`CLIENT PAUSE <fleet_queue_pause_ms> WRITE`, 30 s by default, which ends by
 # itself so a lost controller cannot hold them longer), saves synchronously, and lets them go after the thaw: no write acknowledged
-# after the save is missing from `base`. A pause or save that fails lets the writes go and takes the stopped path. Such a `base` holds the network pid
+# after the save is missing from `base`. The old `base` goes before the hold, and a hold with under 10 s left at the freeze is refused. A pause or save that fails lets the writes go and takes the stopped path. Such a `base` holds the network pid
 # files of the running nested Incus (an Instance host's `orbitinst0`): the reset clears them after its restore
 # (instance-fleet-runtime.yml), the only place a `base` is restored. A failure fails the refresh, and the run restores the old seed,
 # `base` snapshots included: they live on the outer container's disk.
 - name: Retake base of the running fleet
   when: fleet_base_mode == 'running'
   block:
+    # Everything that may take long goes before the hold: between the save and the freeze only the thaw is armed.
+    - name: Delete the old base before the hold
+      ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['snapshot', 'delete', item.item, 'base'] }}" }
+      when: "item.item in fleet_base_targets and 'base' in (item.stdout | from_json | map(attribute='name') | list)"
+      loop: "{{ fleet_snapshots.results }}"
+      loop_control: { label: "{{ item.item }}" }
+      register: fleet_base_deleted
+      changed_when: true
+    # The `always` thaw needs the controller. A thaw armed in the Instance container first does not: a transient timer resumes each
+    # target `fleet_thaw_seconds` (60) after the freeze unless the run cancels it, so a lost controller leaves no frozen fleet. A resume
+    # of a running container only fails, and the next one still runs. A timer left by an earlier run goes first.
+    - name: Clear an earlier thaw timer
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['systemctl', 'stop', fleet_thaw_unit ~ '.timer', fleet_thaw_unit ~ '.service'] }}" }
+      changed_when: false
+      failed_when: false
+    - name: Time the hold of the queue writes
+      ansible.builtin.set_fact:
+        fleet_queue_hold_at: "{{ now(utc=true).timestamp() }}"
     - name: Hold the queue writes of the nested Gateway
       when: intent.fleet.guests.gateway in fleet_base_targets
       ansible.builtin.command:
@@ -611,19 +629,6 @@
       when: not fleet_queue_held | bool
       ansible.builtin.set_fact:
         fleet_base_mode: stopped
-    - name: Delete the old base before the freeze
-      ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['snapshot', 'delete', item.item, 'base'] }}" }
-      when: "item.item in fleet_base_targets and 'base' in (item.stdout | from_json | map(attribute='name') | list)"
-      loop: "{{ fleet_snapshots.results }}"
-      loop_control: { label: "{{ item.item }}" }
-      changed_when: true
-    # The `always` thaw needs the controller. A thaw armed in the Instance container first does not: a transient timer resumes each
-    # target `fleet_thaw_seconds` (60) after the freeze unless the run cancels it, so a lost controller leaves no frozen fleet. A resume
-    # of a running container only fails, and the next one still runs. A timer left by an earlier run goes first.
-    - name: Clear an earlier thaw timer
-      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['systemctl', 'stop', fleet_thaw_unit ~ '.timer', fleet_thaw_unit ~ '.service'] }}" }
-      changed_when: false
-      failed_when: false
     - name: Arm the thaw in the Instance container
       ansible.builtin.command:
         argv: >-
@@ -631,6 +636,27 @@
               '--on-active', (fleet_thaw_seconds | default(60) | int | string) ~ 's', '--timer-property', 'AccuracySec=1s', '--',
               'sh', '-c', 'for n do incus resume "$n" || true; done', 'sh'] + fleet_base_targets }}
       changed_when: true
+    # The hold ends by itself: a write acknowledged after it ended would be missing from `base`. Right before the freeze, a hold with
+    # less than 10 s left is refused: the writes go, the armed thaw is cancelled, nothing froze, and the stopped path takes `base`.
+    - name: Name whether the hold has room for the freeze
+      ansible.builtin.set_fact:
+        fleet_queue_room: >-
+          {{ intent.fleet.guests.gateway not in fleet_base_targets
+             or (now(utc=true).timestamp() - (fleet_queue_hold_at | float)) < (fleet_queue_pause_ms | default(30000) | int) / 1000 - 10 }}
+    - name: Let the queue writes go when the hold has no room
+      when: not fleet_queue_room | bool
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'CLIENT', 'UNPAUSE'] }}" }
+      changed_when: false
+      failed_when: false
+    - name: Cancel the armed thaw when the hold has no room
+      when: not fleet_queue_room | bool
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['systemctl', 'stop', fleet_thaw_unit ~ '.timer'] }}" }
+      changed_when: false
+      failed_when: false
+    - name: Take the stopped path when the hold has no room
+      when: not fleet_queue_room | bool
+      ansible.builtin.set_fact:
+        fleet_base_mode: stopped
     - name: Freeze the nested containers
       ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['pause'] + fleet_base_targets }}" }
       changed_when: true
@@ -692,9 +718,12 @@
           {{ fleet_drift | map(attribute='container') | zip(fleet_drift | map(attribute='kind'), fleet_drift | map(attribute='name'))
              | map('join', ' ') | join(', ') }}
         quiet: true
+    # A running retake that turned to this path may have deleted the old base already.
     - name: Delete the old base
       ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['snapshot', 'delete', item.item, 'base'] }}" }
-      when: "item.item in fleet_base_targets and 'base' in (item.stdout | from_json | map(attribute='name') | list)"
+      when: >-
+        item.item in fleet_base_targets and 'base' in (item.stdout | from_json | map(attribute='name') | list)
+        and item.item not in ((fleet_base_deleted | default({})).results | default([]) | selectattr('changed') | map(attribute='item.item') | list)
       loop: "{{ fleet_snapshots.results }}"
       loop_control: { label: "{{ item.item }}" }
       changed_when: true

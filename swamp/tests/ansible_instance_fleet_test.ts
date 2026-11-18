@@ -2624,15 +2624,15 @@ Deno.test({
       const calls = f.calls();
       const base = calls.slice(calls.indexOf("incus storage list --format csv --columns D"));
       const targets = ["nested-gateway", "nested-app-dev"];
-      // Readiness first, on the running fleet; then the queue writes are held and the queues saved, the old base goes, the thaw is
-      // armed in the Instance container, and the freeze, the snapshots, the thaw, the cancel of the armed thaw and the release of the
+      // Readiness first, on the running fleet; then the old base goes, before the hold: between the save and the freeze only the thaw is
+      // armed in the Instance container. The freeze, the snapshots, the thaw, the cancel of the armed thaw and the release of the
       // writes follow one another.
       assertEquals(base.filter((call) => readyCalls.includes(call) || /^(incus (stop|start|pause|resume|snapshot) |incus exec nested-gateway -- valkey-cli|systemd-run|systemctl stop orbit-fleet-thaw)/.test(call)), [
         ...readyCalls,
-        "incus exec nested-gateway -- valkey-cli CLIENT PAUSE 30000 WRITE",
-        "incus exec nested-gateway -- valkey-cli SAVE",
         "incus snapshot delete nested-gateway base",
         "systemctl stop orbit-fleet-thaw.timer orbit-fleet-thaw.service",
+        "incus exec nested-gateway -- valkey-cli CLIENT PAUSE 30000 WRITE",
+        "incus exec nested-gateway -- valkey-cli SAVE",
         `systemd-run --unit orbit-fleet-thaw --collect --on-active 60s --timer-property AccuracySec=1s -- sh -c for n do incus resume "$n" || true; done sh ${targets.join(" ")}`,
         `incus pause ${targets.join(" ")}`,
         ...targets.map((name) => `incus snapshot create ${name} base`),
@@ -2678,7 +2678,7 @@ Deno.test({
 const grantsDue = (state: Record<string, unknown>) => Object.assign(state, { grantsChanged: 2, digests: { "apps/gateway": "a1", swamp: "e2" } });
 
 Deno.test({
-  name: "on a btrfs inner pool a hold of the queue writes or a queue save that fails lets the writes go and takes base with the fleet stopped",
+  name: "on a btrfs inner pool a failed hold of the queue writes, a failed queue save or a hold without room lets the writes go and takes base with the fleet stopped",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -2701,6 +2701,24 @@ Deno.test({
         assertEquals(f.state().queuePaused, undefined, failure);
         assertEquals(f.refreshed()?.base_mode, "stopped");
       }
+      // A hold with less than 10 s left right before the freeze is refused: a 10 s hold has none. The writes go, the armed thaw is
+      // cancelled, nothing freezes, and the stopped path takes base, after the old base went before the hold.
+      f.change((state) => {
+        grantsDue(state);
+        state.digests = { "apps/gateway": "a1", swamp: "e6" };
+        delete state.queueSaveFails;
+      });
+      const late = f.run("refresh", ["-e", "fleet_queue_pause_ms=10000"]);
+      assert(late.ok, late.output);
+      const lateCalls = f.calls();
+      const at = (call: string) => lateCalls.indexOf(call);
+      assert(at("incus snapshot delete nested-gateway base") < at("incus exec nested-gateway -- valkey-cli CLIENT PAUSE 10000 WRITE"), lateCalls.join("\n"));
+      assert(at("incus exec nested-gateway -- valkey-cli SAVE") < at("incus exec nested-gateway -- valkey-cli CLIENT UNPAUSE"), lateCalls.join("\n"));
+      assert(at("incus exec nested-gateway -- valkey-cli CLIENT UNPAUSE") < at("incus stop nested-gateway --timeout 90"), lateCalls.join("\n"));
+      assert(!lateCalls.some((call) => call.startsWith("incus pause")), lateCalls.join("\n"));
+      assertEquals(lateCalls.filter((call) => call === "incus snapshot delete nested-gateway base").length, 1);
+      assertEquals([f.state().queuePaused, f.state().thawArmed], [undefined, undefined]);
+      assertEquals(f.refreshed()?.base_mode, "stopped");
     } finally {
       f.cleanup();
     }
