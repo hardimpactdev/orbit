@@ -73,9 +73,14 @@ final class ExecutorPowerIntent
     public static function sign(Operation $operation, string $phase = 'power'): SignedExecutorOrder
     {
         $action = self::action($operation, $phase) ?? throw new LogicException('This Operation has no signed power intent.');
+        $container = $operation->input['container'] ?? $operation->input['deployment']['container'] ?? null;
+        $powerCheck = match (true) {
+            $action === 'sleep' && ($operation->input['route'] ?? false) === true => 'route',
+            $action === 'wake' && is_array($container) && array_key_exists('web_config', $container) && $container['web_config'] === null => 'no_web',
+            default => null,
+        };
 
-        return ExecutorOrderSigner::fromConfig()->sign($operation, $action, (string) $operation->target_id,
-            routeRequired: $action === 'sleep' && ($operation->input['route'] ?? false) === true);
+        return ExecutorOrderSigner::fromConfig()->sign($operation, $action, (string) $operation->target_id, $powerCheck);
     }
 
     /** @return array<string, mixed>|null */

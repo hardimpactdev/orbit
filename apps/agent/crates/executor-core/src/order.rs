@@ -6,7 +6,7 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use ed25519_dalek::{Signature, VerifyingKey};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::action::{Action, Enabled, TargetKind};
 use crate::ids::{NodeId, Nonce, OperationId, TargetId};
@@ -86,23 +86,21 @@ struct Payload {
     nonce: Nonce,
     expires_ms: u64,
     #[serde(default)]
-    route_required: bool,
+    power_check: PowerCheck,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RouteGuard {
-    Required,
-    Absent,
-}
-
-impl From<bool> for RouteGuard {
-    fn from(required: bool) -> Self {
-        if required {
-            Self::Required
-        } else {
-            Self::Absent
-        }
-    }
+/// An additional requirement or exception derived from the admitted container intent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum PowerCheck {
+    /// Use the action's normal checks.
+    #[default]
+    Default,
+    /// Sleep requires Caddy's marker rule.
+    Route,
+    /// Wake an Instance that has no web unit without probing its app port.
+    NoWeb,
 }
 
 /// An order that passed every stateless check. Only [`check`] makes one.
@@ -113,7 +111,7 @@ pub struct VerifiedOrder {
     operation: OperationId,
     nonce: Nonce,
     expires_ms: u64,
-    route_guard: RouteGuard,
+    power_check: PowerCheck,
 }
 
 impl VerifiedOrder {
@@ -122,7 +120,7 @@ impl VerifiedOrder {
     pub(crate) fn recovered(
         nonce: Nonce,
         key: &crate::journal::DoneKey,
-        route_guard: RouteGuard,
+        power_check: PowerCheck,
     ) -> Self {
         Self {
             action: key.action,
@@ -130,7 +128,7 @@ impl VerifiedOrder {
             operation: key.operation.clone(),
             nonce,
             expires_ms: 0,
-            route_guard,
+            power_check,
         }
     }
 
@@ -159,9 +157,9 @@ impl VerifiedOrder {
         self.expires_ms
     }
 
-    /// Whether this sleep must find the asleep marker rule in Caddy's loaded configuration.
-    pub fn route_required(&self) -> bool {
-        self.route_guard == RouteGuard::Required
+    /// The power check the Gateway signed for this action.
+    pub fn power_check(&self) -> PowerCheck {
+        self.power_check
     }
 }
 
@@ -278,7 +276,12 @@ pub fn check_with_target(
         .action
         .parse()
         .map_err(|_| OrderRefusal::UnknownAction)?;
-    if payload.route_required && action != Action::Sleep {
+    if !matches!(
+        (payload.power_check, action),
+        (PowerCheck::Default, _)
+            | (PowerCheck::Route, Action::Sleep)
+            | (PowerCheck::NoWeb, Action::Wake)
+    ) {
         return Err(OrderRefusal::BadPayload);
     }
     if !checks.enabled.allows(action) {
@@ -306,7 +309,7 @@ pub fn check_with_target(
         operation: payload.operation,
         nonce: payload.nonce,
         expires_ms: payload.expires_ms,
-        route_guard: payload.route_required.into(),
+        power_check: payload.power_check,
     })
 }
 

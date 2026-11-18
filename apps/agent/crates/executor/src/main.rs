@@ -13,7 +13,7 @@ use orbit_executor_core::action::{Action, Enabled};
 use orbit_executor_core::caller::Policy;
 use orbit_executor_core::executor::{Executor, Run};
 use orbit_executor_core::journal::Outcome;
-use orbit_executor_core::order::{PinnedKeys, VerifiedOrder};
+use orbit_executor_core::order::{PinnedKeys, PowerCheck, VerifiedOrder};
 use orbit_executor_core::server::{self, Settings, SOCKET_PATH};
 use orbit_executor_core::{ids::NodeId, relay};
 
@@ -54,7 +54,7 @@ impl Run for Families {
             Action::Sleep => {
                 let started = std::time::Instant::now();
                 let target = order.target().as_str();
-                let checked = if order.route_required() {
+                let checked = if order.power_check() == PowerCheck::Route {
                     self.0.require_sleep_route(target)
                 } else {
                     Ok(())
@@ -88,7 +88,12 @@ impl Run for Families {
             }
             Action::Wake => {
                 let started = std::time::Instant::now();
-                match self.0.wake(order.target().as_str()) {
+                let probe = if order.power_check() == PowerCheck::NoWeb {
+                    orbit_executor_power::WebProbe::NotConfigured
+                } else {
+                    orbit_executor_power::WebProbe::Required
+                };
+                match self.0.wake(order.target().as_str(), probe) {
                     Ok(receipt) => {
                         log(&format!(
                             "power wake {} {}: total_us={} restore_us={} pages_read={} pages_failed={}",

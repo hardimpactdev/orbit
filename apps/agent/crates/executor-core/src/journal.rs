@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
 use crate::ids::{Nonce, OperationId, TargetId};
+use crate::order::PowerCheck;
 
 /// How often the background thread syncs the journal.
 pub const SYNC_INTERVAL: Duration = Duration::from_secs(1);
@@ -83,9 +84,9 @@ pub enum Record {
         key: DoneKey,
         /// The order's expiry, in Unix milliseconds.
         expires_ms: u64,
-        /// Whether the signed sleep requires a loaded Caddy marker rule.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        route_required: bool,
+        /// The signed check associated with the power action.
+        #[serde(default)]
+        power_check: PowerCheck,
     },
     /// Written for a nonce whose order did not run, because its key already had a result.
     Seen {
@@ -134,7 +135,7 @@ impl Default for Compaction {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Live {
     nonces: HashMap<Nonce, (DoneKey, u64)>,
-    open: HashMap<Nonce, bool>,
+    open: HashMap<Nonce, PowerCheck>,
     done: HashMap<DoneKey, (Nonce, Outcome, u64)>,
 }
 
@@ -155,10 +156,10 @@ impl Live {
                 nonce,
                 key,
                 expires_ms,
-                route_required,
+                power_check,
             } => {
                 self.nonces.insert(*nonce, (key.clone(), *expires_ms));
-                self.open.insert(*nonce, *route_required);
+                self.open.insert(*nonce, *power_check);
             }
             Record::Seen {
                 nonce,
@@ -198,8 +199,8 @@ impl Live {
     }
 
     /// The orders that were open without a result: crash recovery runs each one again.
-    pub fn unfinished(&self) -> Vec<(Nonce, DoneKey, bool)> {
-        let mut unfinished: Vec<(Nonce, DoneKey, bool)> = self
+    pub fn unfinished(&self) -> Vec<(Nonce, DoneKey, PowerCheck)> {
+        let mut unfinished: Vec<(Nonce, DoneKey, PowerCheck)> = self
             .open
             .iter()
             .filter_map(|(nonce, route)| {
@@ -235,12 +236,12 @@ impl Live {
             .iter()
             .map(|(nonce, (key, expires_ms))| {
                 let (nonce, key, expires_ms) = (*nonce, key.clone(), *expires_ms);
-                if let Some(route_required) = self.open.get(&nonce) {
+                if let Some(power_check) = self.open.get(&nonce) {
                     Record::Open {
                         nonce,
                         key,
                         expires_ms,
-                        route_required: *route_required,
+                        power_check: *power_check,
                     }
                 } else {
                     Record::Seen {
@@ -681,7 +682,7 @@ mod tests {
             nonce: nonce(1),
             key: key("op-1"),
             expires_ms: NOW + 5,
-            route_required: false,
+            power_check: PowerCheck::Default,
         };
         let journal = start(&path, Compaction::default());
         journal.append(&open).expect("append");
@@ -720,7 +721,7 @@ mod tests {
             nonce: nonce(2),
             key: key("op-open"),
             expires_ms: NOW - 1,
-            route_required: true,
+            power_check: PowerCheck::Route,
         };
         let live = Record::Seen {
             nonce: nonce(3),
@@ -806,7 +807,7 @@ mod tests {
                             nonce: nonce(last),
                             key: key(&format!("op-{last}")),
                             expires_ms: NOW + 5_000,
-                            route_required: false,
+                            power_check: PowerCheck::Default,
                         };
                         journal.append(&open).expect("append");
                         open
@@ -845,13 +846,13 @@ mod tests {
                 nonce: nonce(1),
                 key: key("op"),
                 expires_ms: NOW,
-                route_required: false,
+                power_check: PowerCheck::Default,
             },
             Record::Open {
                 nonce: nonce(2),
                 key: key("op-2"),
                 expires_ms: NOW,
-                route_required: true,
+                power_check: PowerCheck::NoWeb,
             },
             Record::Done {
                 nonce: nonce(1),
@@ -861,6 +862,9 @@ mod tests {
             },
         ]);
         live.prune(NOW + 1);
-        assert_eq!(live.unfinished(), vec![(nonce(2), key("op-2"), true)]);
+        assert_eq!(
+            live.unfinished(),
+            vec![(nonce(2), key("op-2"), PowerCheck::NoWeb)]
+        );
     }
 }

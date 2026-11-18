@@ -329,7 +329,7 @@ fn operation_idempotency_and_open_journal_recovery_run_real_power_actions() {
                 nonce: first.nonce(),
                 key,
                 expires_ms: 6000,
-                route_required: false,
+                power_check: orbit_executor_core::order::PowerCheck::Default,
             })
             .expect("record")
         ),
@@ -824,6 +824,16 @@ fn an_unready_app_fails_the_wake_and_keeps_the_marker() {
 }
 
 #[test]
+fn a_headless_wake_needs_no_web_unit_and_removes_the_marker() {
+    let (_dir, power, api) = asleep(503);
+    power
+        .wake_checked(&api, "2", WebProbe::NotConfigured)
+        .expect("headless wake");
+    assert!(!marker(&power).exists());
+    assert_eq!(swap_limits(&api), ["0", "0"]);
+}
+
+#[test]
 fn a_stopped_container_is_left_to_the_run_and_its_plan_dropped() {
     let (_dir, power, api) = asleep(200);
     "stopped".clone_into(&mut api.instance.lock().expect("instance").status);
@@ -873,7 +883,7 @@ fn crash_recovery_after_the_unfreeze_finishes_the_wake_and_a_repeat_returns_it()
                     target: order.target().clone(),
                 },
                 expires_ms: 6000,
-                route_required: false,
+                power_check: orbit_executor_core::order::PowerCheck::Default,
             })
             .expect("record")
         ),

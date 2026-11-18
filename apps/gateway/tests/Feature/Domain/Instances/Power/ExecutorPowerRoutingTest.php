@@ -101,6 +101,16 @@ it('relays the original signature after the no-accepted cutoff without a second 
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
+it('signs a headless wake without relaxing a web Instance readiness check', function (): void {
+    $wake = app(InstanceWake::class)->admitDeferred(managedPowerFixture(), 'cli', null);
+    foreach ([null, ['listen' => 8080]] as $web) {
+        $wake->input = [...$wake->input, 'container' => ['web_config' => $web]];
+        $wire = ExecutorPowerIntent::sign($wake)->wire;
+        $payload = json_decode(base64_decode(explode('.', $wire, 2)[0], true), true, flags: JSON_THROW_ON_ERROR);
+        expect($payload['power_check'] ?? null)->toBe($web === null ? 'no_web' : null);
+    }
+});
+
 it('starts durable recovery at six seconds and signs only a fresh order for the bound Swamp run', function (): void {
     $instance = managedPowerFixture();
     $swamp = containerDefaultNode('swamp-worker', '10.44.0.8', listed: false);

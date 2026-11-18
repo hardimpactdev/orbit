@@ -8,7 +8,7 @@ mod pool;
 mod wake;
 
 pub use pool::{MAX_THREADS, MIN_THREADS};
-pub use wake::WakeReceipt;
+pub use wake::{WakeReceipt, WebProbe};
 
 use incus::{Api, Incus, Instance};
 use plan::{cgroup_identity, Plan};

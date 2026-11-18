@@ -54,13 +54,13 @@ final readonly class ExecutorOrderSigner
      * @throws InvalidArgumentException when the Operation has no id or `node_id`, the action is unknown, the target is not the
      *                                  executor's form, or the order passes 4 KB.
      */
-    public function sign(Operation $operation, string $action, string $target, bool $routeRequired = false): SignedExecutorOrder
+    public function sign(Operation $operation, string $action, string $target, ?string $powerCheck = null): SignedExecutorOrder
     {
         $node = self::nodeOf($operation);
         $id = self::idOf($operation);
         $nonce = bin2hex(random_bytes(16));
         $expiresMs = (int) Carbon::now()->getTimestampMs() + self::ExpiresAfterMs;
-        $payload = self::payload($action, (string) $node, $target, $id, $nonce, $expiresMs, $routeRequired);
+        $payload = self::payload($action, (string) $node, $target, $id, $nonce, $expiresMs, $powerCheck);
         $wire = base64_encode($payload).'.'.base64_encode(sodium_crypto_sign_detached($payload, $this->secretKey));
         if (strlen($wire) > self::MaxWireBytes) {
             throw new InvalidArgumentException('An executor order may not pass '.self::MaxWireBytes.' bytes.');
@@ -100,7 +100,7 @@ final readonly class ExecutorOrderSigner
     }
 
     /** The signed payload's exact bytes. */
-    public static function payload(string $action, string $node, string $target, string $operation, string $nonce, int $expiresMs, bool $routeRequired = false): string
+    public static function payload(string $action, string $node, string $target, string $operation, string $nonce, int $expiresMs, ?string $powerCheck = null): string
     {
         if (! in_array($action, self::Actions, strict: true)) {
             throw new InvalidArgumentException("Unknown executor action [{$action}].");
@@ -118,7 +118,7 @@ final readonly class ExecutorOrderSigner
             'operation' => $operation,
             'nonce' => $nonce,
             'expires_ms' => $expiresMs,
-            ...($routeRequired ? ['route_required' => true] : []),
+            ...($powerCheck === null ? [] : ['power_check' => $powerCheck]),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
     }
 }
