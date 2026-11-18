@@ -160,8 +160,8 @@ final readonly class DirectOperation
     /** @return array<string,int> The native child charts this exact parent can still start or observe. */
     public function childVersions(string $kind, int $version): array
     {
-        if ($kind === 'proof.run' && $version === 1) {
-            return ['proof.command' => 1];
+        if ($version === 1 && isset(OperationKinds::CoordinatorChildren[$kind])) {
+            return OperationKinds::CoordinatorChildren[$kind];
         }
 
         return $this->definition($kind, $version)['child_versions'] ?? [];
@@ -170,7 +170,7 @@ final readonly class DirectOperation
     /** @return array<string,array<int,array<string,int>>> */
     public function dependencyGraph(): array
     {
-        $graph = ['proof.run' => [1 => $this->childVersions('proof.run', 1)]];
+        $graph = array_map(static fn (array $children): array => [1 => $children], OperationKinds::CoordinatorChildren);
         foreach ($this->versions as $kind => $declarations) {
             foreach ($declarations as $version => $declaration) {
                 if (($declaration['child_versions'] ?? []) !== []) {

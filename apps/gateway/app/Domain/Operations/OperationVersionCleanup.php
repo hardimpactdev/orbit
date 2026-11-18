@@ -56,6 +56,8 @@ final readonly class OperationVersionCleanup
             }
             // Queued retries, waiting children, late run terminals, and released-but-still-running timed-out work can all need their original handler.
             $pending = ReconcileSwampOperations::open()->orWhereNotNull('lock_key')
+                ->orWhere(fn ($q) => $q->where('kind', OperationKinds::ConnLaunch)->where('status', OperationStatus::Succeeded)
+                    ->whereNotNull('state->launch_retry_requests->application->id'))
                 ->orWhere(fn ($q) => $q->where('error_code', 'operation.timed_out')->whereNotNull('state->native_timeout')
                     ->whereNull('state->native_timeout->no_run_verified_at')
                     ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')
@@ -71,14 +73,18 @@ final readonly class OperationVersionCleanup
                     SELECT a.root_id, p.id FROM affected AS a JOIN operations AS c ON c.id = a.id
                     JOIN operations AS p ON p.id = c.parent_operation_id OR
                       (c.parent_operation_id IS NULL AND c.kind = 'proof.command' AND p.kind = 'proof.run'
-                       AND p.id = json_extract(c.input, '$.proof_operation_id'))
+                       AND p.id = json_extract(c.input, '$.proof_operation_id')) OR
+                      (c.parent_operation_id IS NULL AND p.kind = 'conn.launch' AND
+                       (p.id = json_extract(c.state, '$.conn_launch_owner') OR
+                        (c.kind IN ('conn.launch_inspect','conn.launch_dispatch') AND p.id = json_extract(c.input, '$.launch_operation_id'))))
                 )
                 SELECT v.kind, v.version, COUNT(DISTINCT a.root_id) AS total
                 FROM affected AS a JOIN operations AS o ON o.id = a.id JOIN deprecated_operation_versions AS v ON
                     (v.kind = o.kind AND v.version = o.operation_version)
-                    OR EXISTS (SELECT 1 FROM operation_version_dependencies AS d WHERE d.kind = o.kind AND d.version = o.operation_version
-                        AND d.child_kind = v.kind AND d.child_version = v.version)
-                    OR EXISTS (SELECT 1 FROM json_each(o.child_versions) AS child WHERE child.key = v.kind AND child.value = v.version)
+                    OR ((o.kind != 'conn.launch' OR o.status != 'succeeded' OR v.kind = 'instance.complete') AND (
+                        EXISTS (SELECT 1 FROM operation_version_dependencies AS d WHERE d.kind = o.kind AND d.version = o.operation_version
+                            AND d.child_kind = v.kind AND d.child_version = v.version)
+                        OR EXISTS (SELECT 1 FROM json_each(o.child_versions) AS child WHERE child.key = v.kind AND child.value = v.version)))
                 GROUP BY v.kind, v.version
                 SQL, $pending->getBindings());
             foreach ($outstanding as $row) {

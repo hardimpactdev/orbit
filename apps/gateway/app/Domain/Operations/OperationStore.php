@@ -15,6 +15,7 @@ use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -34,6 +35,7 @@ final readonly class OperationStore
     /** @param array<string,mixed> $input */
     public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null, ?Operation $parent = null): Operation
     {
+        $parent ??= $this->idempotency->parent($kind);
         if ($this->idempotency->key !== null && $this->idempotency->kind !== $kind) {
             throw new LogicException('The Operation kind must match the request idempotency key.');
         }
@@ -103,7 +105,12 @@ final readonly class OperationStore
     {
         $record = Operation::query()->lockForUpdate()->findOrFail($parent->id);
         $children = $record->child_versions ?? app(DirectOperation::class)->childVersions($record->kind, OperationVersions::pinned($record));
-        if ($record->status->terminal() || ! isset($children[$kind]) || ($kind === 'proof.command' && ($input['proof_operation_id'] ?? null) !== $record->id)) {
+        $retry = Arr::get($record->state ?? [], 'launch_retry_requests.application.id');
+        $applicationRetry = $record->kind === OperationKinds::ConnLaunch && $record->status === OperationStatus::Succeeded && $kind === 'instance.complete'
+            && is_string($retry) && $this->idempotency->key === 'conn-launch:'.$record->id.':complete:'.$retry;
+        if (($record->status->terminal() && ! $applicationRetry) || ! isset($children[$kind])
+            || ($kind === 'proof.command' && ($input['proof_operation_id'] ?? null) !== $record->id)
+            || (in_array($kind, [OperationKinds::ConnLaunchInspect, OperationKinds::ConnLaunchDispatch], true) && ($input['launch_operation_id'] ?? null) !== $record->id)) {
             throw new ResourceOperationException('operation.child_unadmitted', 'The open parent has no admission for this child Operation.', 409);
         }
 

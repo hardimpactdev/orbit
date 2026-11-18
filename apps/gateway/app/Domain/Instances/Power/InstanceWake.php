@@ -114,7 +114,7 @@ final readonly class InstanceWake extends InstancePower
         }
 
         return $idempotency->under(InstanceStart::Kind, $idempotency->key, $idempotency->fingerprint,
-            fn (): Operation => app(InstanceStart::class)->start($instance, $caller, $requestId));
+            fn (): Operation => app(InstanceStart::class)->start($instance, $caller, $requestId), parent: $idempotency->parent(self::Kind));
     }
 
     /**
