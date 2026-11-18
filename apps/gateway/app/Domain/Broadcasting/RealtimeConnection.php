@@ -137,7 +137,7 @@ final class RealtimeConnection
             return false;
         }
 
-        config([
+        $settings = [
             'broadcasting.default' => 'reverb',
             'broadcasting.connections.reverb.key' => $connection->key,
             'broadcasting.connections.reverb.secret' => $connection->secret,
@@ -155,7 +155,14 @@ final class RealtimeConnection
             'broadcasting.connections.reverb.client_options.curl' => $connection->resolveAddress === null
                 ? []
                 : [CURLOPT_RESOLVE => ["{$connection->host}:{$connection->port}:{$connection->resolveAddress}"]],
-        ]);
+        ];
+
+        $config = config();
+        if ($config->getMany(array_keys($settings)) !== $settings) {
+            $config->set($settings);
+            // Octane shares the manager across request sandboxes. The cURL handler has its own endpoint and CA cache.
+            Broadcast::purge('reverb');
+        }
 
         return true;
     }

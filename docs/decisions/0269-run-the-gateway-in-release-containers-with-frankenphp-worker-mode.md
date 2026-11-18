@@ -214,7 +214,7 @@ A master started by a FrankenPHP thread is a child of the FrankenPHP process, an
 
 - the PDO connection to SQLite: *about 0.1 ms per request (guess)*;
 - the Predis connection to Valkey with its login (`HELLO`, `CLIENT SETINFO`, `SELECT`): *1–2 ms per request that uses Valkey (guess)*, which includes every wake through ADR 0266's `BLPOP`;
-- the HTTP connection to Reverb's API for the signed `executor-order` event: *2–10 ms per wake (guess)* for the TCP and TLS setup. This saving needs a code change. `RealtimeConnection::configureBroadcasting` builds a new `CurlHandler` for every delivery, and channel auth purges the broadcaster, so today no connection survives a request even in a worker. Slice 1 keeps one handler per Reverb connection; until then this saving is 0.
+- the HTTP connection to Reverb's API for the signed `executor-order` event: *2–10 ms per wake (guess)* for the TCP and TLS setup. The worker reuses a cURL handler while the endpoint and trusted CA match. It clears Laravel's cached Reverb driver when it installs different broadcast settings, so the next delivery uses the current recipient and credentials.
 
 The wake inside the request therefore costs the route, the Ed25519 signature (*about 50 µs, guess*), one Reverb publish and one `BLPOP`, with no boot. Compared with ADR 0266's 500 ms bound, the boot alone was up to 8 % of it.
 
