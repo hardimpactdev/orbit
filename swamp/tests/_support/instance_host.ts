@@ -147,6 +147,7 @@ function writeTasks(folder: string) {
     Deno.copyFileSync(new URL("files/instance-container-wake.sh", root), `${folder}/files/instance-container-wake.sh`);
     Deno.copyFileSync(new URL("files/instance-container-power.py", root), `${folder}/files/instance-container-power.py`);
     Deno.copyFileSync(new URL("files/instance-browser-trust.sh", root), `${folder}/files/instance-browser-trust.sh`);
+    Deno.copyFileSync(new URL("files/incus-network-pid-heal.sh", root), `${folder}/files/incus-network-pid-heal.sh`);
     for (
         const name of [
             "instance-host.yml",

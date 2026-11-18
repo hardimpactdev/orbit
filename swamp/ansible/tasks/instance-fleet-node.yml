@@ -5,12 +5,22 @@
 # AppArmor, which cannot load a profile there, and creates the directory pool. The rest of the branch then finds both.
 - name: Make the folder of the Incus drop-in
   ansible.builtin.file: { path: /etc/systemd/system/incus.service.d, state: directory, owner: root, group: root, mode: "0755" }
-- name: Run the fleet Node's Incus without AppArmor
+# A copy of a running fleet can hold an empty dnsmasq pid file of `orbitinst0`, which stops the network at Incus's next start. The
+# drop-in runs the heal before every start of Incus, however the Node boots: autostart, a reset, its rescue or a copy's start.
+- name: Place the heal of stale network pid files
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/incus-network-pid-heal
+    content: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.sh') }}\n"
+    owner: root
+    group: root
+    mode: "0755"
+- name: Run the fleet Node's Incus without AppArmor, after the heal
   ansible.builtin.copy:
     dest: /etc/systemd/system/incus.service.d/50-orbit-nested.conf
     content: |
       [Service]
       Environment=INCUS_SECURITY_APPARMOR=false
+      ExecStartPre=/usr/local/sbin/incus-network-pid-heal
     owner: root
     group: root
     mode: "0644"

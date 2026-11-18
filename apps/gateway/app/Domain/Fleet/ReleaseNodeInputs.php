@@ -89,6 +89,7 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/instance_bridge.py',
         'swamp/ansible/instance_network.py',
         'swamp/ansible/instance_nested.py',
+        'swamp/ansible/files/incus-network-pid-heal.sh',
         'swamp/ansible/files/instance-browser-trust.sh',
         'swamp/ansible/files/instance-container-wake.sh',
         'swamp/ansible/files/instance-container-power.py',

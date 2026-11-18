@@ -56,6 +56,7 @@ additionalFiles:
   - ansible/files/fleet-reboot-planned.sh
   - ansible/files/instance-container-wake.sh
   - ansible/files/instance-container-power.py
+  - ansible/files/incus-network-pid-heal.sh
   - ansible/files/instance-browser-trust.sh
   - ansible/files/fleet-reboot-ci-drain.sh
   - ansible/tasks/node-converge-replace.yml

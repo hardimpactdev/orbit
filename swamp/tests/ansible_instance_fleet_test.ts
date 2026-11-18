@@ -271,11 +271,10 @@ const startReads = ["incus admin waitready --timeout 80", ...compareReads];
 const instanceHostReads = names.map((name) => `incus exec ${name} -- test -f /etc/orbit/instance-fleet-node`);
 const knownHostsList = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan list --raw --no-interaction";
 const knownHostsSync = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan gateway:known-hosts:sync --no-interaction";
-/** Before base and before a start, the stopped nested containers lose the inner Incus's network pid files (instance_fleet_runtime.py). */
+/** Before base, the stopped nested containers lose the inner Incus's network pid files (instance_fleet_runtime.py). */
 const runtimeCall = (stopped: string[]) => `python3 -I -c <instance_fleet_runtime.py> /var/lib/incus/storage-pools ${stopped.join(" ")}`;
 const startCalls = [
   "incus list --format csv --columns ns",
-  runtimeCall(names),
   ...names.map((name) => `incus start ${name}`),
   ...instanceHostReads,
   knownHostsList, knownHostsSync,
@@ -713,7 +712,6 @@ Deno.test({
         // The containers start again: the seed holds a running, ready fleet, and no step after the refresh starts it.
         ...startReads,
         "incus list --format csv --columns ns",
-        runtimeCall(names),
         ...names.map((name) => `incus start ${name}`),
         ...instanceHostReads,
         knownHostsList, knownHostsSync,
@@ -853,8 +851,6 @@ Deno.test({
       f.calls();
       // Work in the fleet changed a device of a nested container; the restore takes base's back.
       f.change((state) => state.containers["nested-app-dev"].devices.checkout.shift = "true");
-      // An older base holds the empty pid file of the inner bridge's dnsmasq that a copy of a running fleet left: the start clears it.
-      f.change((state) => state.containers["nested-app-dev"].snapshots.base.files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"] = "");
       // Doctor answers unhealthy once, so the readiness wait polls again after the reset's own delay.
       f.change((state) => {
         state.doctorCalls = 0;
@@ -870,7 +866,6 @@ Deno.test({
         ...names.map((name) => `incus snapshot restore ${name} base`),
         ...startReads,
         "incus list --format csv --columns ns",
-        runtimeCall(names),
         // One call starts the three after the rules check: Incus boots them in parallel.
         `incus start ${names.join(" ")}`,
         ...instanceHostReads,
@@ -894,7 +889,6 @@ Deno.test({
       ]);
       assertKeyUntouched(calls, reset.output);
       assertEquals(f.state().containers["nested-app-dev"].devices.checkout.shift, "false");
-      assertEquals(f.state().containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"], undefined);
       assertEquals(f.state().runningRestores ?? 0, 0, "a restore of a running container boots it on its own");
       // The waits poll every second within the 300 s bound: 300 retries, where the refresh's 5 s give 60.
       assertStringIncludes(reset.output, "FAILED - RETRYING: [localhost]: Wait for Doctor of the nested Gateway (300 retries left)");

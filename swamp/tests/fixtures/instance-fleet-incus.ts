@@ -93,11 +93,15 @@ if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c" && ["
 }
 
 // instance_fleet_runtime.py in the Instance container: it removes each `dnsmasq.pid` of the inner Incus's networks from the files of the
-// named nested containers. A nested container that runs fails it: a live dnsmasq may own its file.
+// named nested containers that are stopped, and names the others as skipped.
 if (runtimeScript) {
   const removed: string[] = [];
+  const skipped: string[] = [];
   for (const name of command.slice(5)) {
-    if (container(name).status === "Running") fail(`The runtime files of ${name} were cleared while it runs`);
+    if (container(name).status !== "Stopped") {
+      skipped.push(name);
+      continue;
+    }
     for (const path of Object.keys(container(name).files ?? {})) {
       const network = path.match(/^\/var\/lib\/incus\/networks\/([^/]+)\/dnsmasq\.pid$/)?.[1];
       if (network === undefined) continue;
@@ -105,7 +109,7 @@ if (runtimeScript) {
       removed.push(`${name}/${network}`);
     }
   }
-  done(JSON.stringify({ removed }));
+  done(JSON.stringify({ removed, skipped }));
 }
 
 // instance_shape_tools.py in the Instance container: its last line is the result, and its programs write to standard error.

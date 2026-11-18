@@ -2551,7 +2551,7 @@ So the host needs the 2,000,000 size of [The ID map size](#the-id-map-size). The
 
 The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested Gateway with the [fleet marker](#fleet-rules) recognizes its fleet's app-dev Node by `nested-app-dev`'s address. It sends that Node's `app-dev` intent `instances.fleet_node`, so the [container branch](/reference/compute-drivers#prepare-an-instance-container-host) runs on it in this order:
 
-1. It writes the drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false`. The Incus there cannot load AppArmor profiles; the Incus one level up still confines `nested-app-dev`.
+1. It writes the drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false`. The Incus there cannot load AppArmor profiles; the Incus one level up still confines `nested-app-dev`. The drop-in also runs the [heal of stale network pid files](#no-stale-network-pid-file) before each start of Incus.
 2. It installs Incus from the recipe's pinned packages.
 3. It creates the directory pool `orbit-instances`.
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
@@ -3280,11 +3280,19 @@ On a directory pool a restore copies back only the files that changed since `bas
 
 #### No stale network pid file
 
-An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, at `/var/lib/incus/networks/<network>/dnsmasq.pid`. At its next start, Incus reads the file to stop the old dnsmasq. A file that is not valid YAML stops the network: an empty file fails with `Could not read pid file`. On nested-app-dev that stops `orbitinst0`, and every `instance.create` there fails at its `container` step.
+An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, at `/var/lib/incus/networks/<network>/dnsmasq.pid`. At its next start, Incus reads the file to stop the old dnsmasq. A file that is not valid YAML stops the network: an empty file fails with `Could not read pid file`. On `nested-app-dev` that stops `orbitinst0`, and every `instance.create` there fails at its `container` step.
 
-A copy of a running fleet, such as the seed of a task copy, can hold the file empty because its last write never reached the disk. A clean stop keeps that file, so a `base` taken after it held the empty file too, and each reset brought it back.
+Two copies can hold such a file. The first is the **copied seed**. A task copy starts from a copy of the running default Instance container, which holds the live disks of its nested containers. When the pid file's last write had not reached the disk, the copy holds it empty, and the guest's autostart boots with it.
 
-So a stopped nested container never keeps such a file. `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of the named stopped containers. The refresh runs it just before it takes `base`. The start runs it before it boots the stopped containers, so a reset to an older `base`, a resumed fleet and a started copy all bring their bridges up clean. No dnsmasq runs in a stopped container, so every such file there is stale. The helper opens no folder through a symlink, and it removes the pid file itself, never what the file links to.
+The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back.
+
+**The fleet Node heals itself.** On `nested-app-dev` the [container branch](#instance-host-in-the-fleet) places `/usr/local/sbin/incus-network-pid-heal` (`swamp/ansible/files/incus-network-pid-heal.sh`). Incus's drop-in runs it as `ExecStartPre`, before every start of Incus. It keeps a pid file whose `pid:` names a running process with `--interface=<network>`, so a daemon restart keeps the live dnsmasq's file. It removes every other pid file. It runs however the guest boots: autostart in a copy, a reset, the reset's rescue or a start.
+
+**`base` holds none.** Before the refresh takes `base`, `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of the `base` targets. It reads each target from the inner Incus and clears only the root disk in the pool of its `root` device. A target that is not `Stopped` fails the step: a frozen container keeps its dnsmasq and its file. The helper opens no folder through a symlink. It removes the pid file itself, never what the file links to.
+
+A seed made before the heal gets it at the next refresh: a change under `swamp/ansible` converges `nested-app-dev` and retakes its `base`.
+
+`orbitinst0` serves DHCP only: its `raw.dnsmasq` is `port=0`, so its dnsmasq answers no names. An Instance there reaches names through its egress proxy at the bridge address.
 
 A reset that fails after its stop starts each nested container that ran before it again, one by one and best effort, then fails with the first reason. The proof's batch reports that reason. A failed restore can leave a container on its old disk or on `base`, so the fleet runs but its state is unknown. To recover, run `orbit proof` again: it resets first. When a container has lost its `base` snapshot, the reset cannot succeed; start a new task copy.
 
