@@ -42,7 +42,8 @@ describe('configure a Gateway release', function (): void {
         Http::fake();
         Process::fake(function (PendingProcess $process) use ($application) {
             expect($process->path)->toBe($application)
-                ->and($process->environment)->not->toHaveKey('ORBIT_GATEWAY_SSH_MUX');
+                ->and($process->environment)->not->toHaveKey('ORBIT_GATEWAY_SSH_MUX')
+                ->and($process->environment)->not->toHaveKey('ORBIT_GATEWAY_CONTAINER');
             file_put_contents($process->environment['APP_CONFIG_CACHE'], 'host');
 
             return Process::result();
@@ -70,6 +71,7 @@ describe('configure a Gateway release', function (): void {
         Process::fake(function (PendingProcess $process) {
             expect($process->path)->toBe($this->appPath)
                 ->and($process->environment['ORBIT_GATEWAY_SSH_MUX'])->toBe('/run/orbit/ssh-mux')
+                ->and($process->environment['ORBIT_GATEWAY_CONTAINER'])->toBe('1')
                 ->and($process->environment['ORBIT_AGENT_DELIVERY'])->toBe($this->base.'/orbit/apps/agent/delivery/manifest.json');
             file_put_contents($process->environment['APP_CONFIG_CACHE'], 'next');
 
