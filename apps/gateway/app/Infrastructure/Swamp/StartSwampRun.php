@@ -70,6 +70,21 @@ final readonly class StartSwampRun
             if (! $this->begin($operation)) {
                 return;
             }
+            // SPIKE: with the flag on, route.create runs on the Gateway state machine instead of a Swamp run.
+            if ($operation->kind === 'route.create' && \Illuminate\Support\Facades\Cache::get('spike:route-engine') === true) {
+                \App\Spike\StateMachine\RouteCreateFlow::start($operation->refresh());
+                $outcome = 'started';
+
+                return;
+            }
+            // SPIKE: a plain container clone's create runs on the state machine (slice 2).
+            if ($operation->kind === 'instance.create' && \Illuminate\Support\Facades\Cache::get('spike:create-engine') === true
+                && is_array($operation->input['direct_provisioning']['container']['clone'] ?? null)) {
+                \App\Spike\StateMachine\InstanceCreateFlow::start($operation->refresh());
+                $outcome = 'started';
+
+                return;
+            }
             $declaration = app(DirectOperation::class)->definition($operation->kind);
             if ($declaration === null) {
                 throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);

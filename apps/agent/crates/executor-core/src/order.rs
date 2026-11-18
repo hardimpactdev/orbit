@@ -104,15 +104,14 @@ pub struct VerifiedOrder {
 impl VerifiedOrder {
     /// Rebuilds an order that the journal recorded as open, for crash recovery. Its checks passed before it
     /// was journaled.
-    pub(crate) fn recovered(nonce: Nonce, key: &crate::journal::DoneKey) -> Self {
+    pub(crate) fn recovered(nonce: Nonce, key: &crate::journal::DoneKey, input: serde_json::Value) -> Self {
         Self {
             action: key.action,
             target: key.target.clone(),
             operation: key.operation.clone(),
             nonce,
             expires_ms: 0,
-            // SPIKE: the journal does not keep the input, so a recovered primitive refuses its input.
-            input: serde_json::Value::Null,
+            input,
         }
     }
 

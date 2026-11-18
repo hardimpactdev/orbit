@@ -4,8 +4,70 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d460b23cf577a94f8a89cb81c95ec7b6",
+    "content-hash": "7be59a4aaa0c089a3c7e768ef95c6ac3",
     "packages": [
+        {
+            "name": "apache/avro",
+            "version": "1.12.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/apache/avro.git",
+                "reference": "8fa2067f70e3012cb3fd9a8839cd97e8c7cc1772"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/apache/avro/zipball/8fa2067f70e3012cb3fd9a8839cd97e8c7cc1772",
+                "reference": "8fa2067f70e3012cb3fd9a8839cd97e8c7cc1772",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^7.1 || ^8.0"
+            },
+            "require-dev": {
+                "ext-curl": "*",
+                "ext-json": "*",
+                "ext-pcntl": "*",
+                "ext-xml": "*",
+                "php-mock/php-mock-phpunit": "^2.10",
+                "phpunit/phpunit": "^7.5 || ^8.5 || ^9.5",
+                "squizlabs/php_codesniffer": "3.*"
+            },
+            "type": "library",
+            "extra": {
+                "branch-alias": {
+                    "dev-master": "1.0.x-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Apache\\Avro\\": "lang/php/lib/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "Apache-2.0"
+            ],
+            "authors": [
+                {
+                    "name": "Apache Avro Developers",
+                    "email": "dev@avro.apache.org",
+                    "homepage": "http://avro.apache.org"
+                }
+            ],
+            "description": "Apache Avro™ is a data serialization system.",
+            "homepage": "http://avro.apache.org",
+            "keywords": [
+                "avro",
+                "data",
+                "serialization"
+            ],
+            "support": {
+                "email": "dev@avro.apache.org",
+                "issues": "https://issues.apache.org/jira/browse/AVRO",
+                "source": "https://github.com/apache/avro/tree/release-1.12.2"
+            },
+            "time": "2026-08-07T12:56:37+00:00"
+        },
         {
             "name": "aws/aws-crt-php",
             "version": "v1.2.7",
@@ -156,6 +218,78 @@
                 "source": "https://github.com/aws/aws-sdk-php/tree/3.399.1"
             },
             "time": "2026-10-02T18:16:16+00:00"
+        },
+        {
+            "name": "basis-company/nats",
+            "version": "1.2.6",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/basis-company/nats.php.git",
+                "reference": "52002aa9e5ee99bb761539df318dbe5a50fdf81c"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/basis-company/nats.php/zipball/52002aa9e5ee99bb761539df318dbe5a50fdf81c",
+                "reference": "52002aa9e5ee99bb761539df318dbe5a50fdf81c",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.1"
+            },
+            "require-dev": {
+                "ext-sodium": "*",
+                "friendsofphp/php-cs-fixer": "*",
+                "monolog/monolog": "^2.3.5",
+                "phan/phan": "^5.3",
+                "php-coveralls/php-coveralls": "^2.5",
+                "phpstan/phpstan": "*",
+                "phpstan/phpstan-deprecation-rules": "*",
+                "phpstan/phpstan-strict-rules": "*",
+                "phpunit/phpunit": "^9.5",
+                "rector/rector": "*",
+                "sebastian/code-unit-reverse-lookup": "^2.0"
+            },
+            "suggest": {
+                "ext-sodium": "Provides Ed25519 for nkey authentication",
+                "paragonie/sodium_compat": "Provides Ed25519 for nkey authentication if sodium is not available"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Basis\\Nats\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "dmitry krokhin",
+                    "email": "nekufa@gmail.com"
+                }
+            ],
+            "description": "nats jetstream client for php",
+            "keywords": [
+                "bucket",
+                "client",
+                "jetstream",
+                "key-value",
+                "messaging",
+                "nats",
+                "publish",
+                "queue",
+                "request",
+                "response",
+                "storage",
+                "streaming",
+                "subscribe"
+            ],
+            "support": {
+                "issues": "https://github.com/basis-company/nats.php/issues",
+                "source": "https://github.com/basis-company/nats.php/tree/1.2.6"
+            },
+            "time": "2026-11-09T08:30:48+00:00"
         },
         {
             "name": "brick/math",
@@ -721,6 +855,89 @@
             "time": "2026-10-19T17:53:57+00:00"
         },
         {
+            "name": "durable-workflow/workflow",
+            "version": "2.28.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/durable-workflow/workflow.git",
+                "reference": "c090506cafa011335fcd5db07b7da79945fe83db"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/durable-workflow/workflow/zipball/c090506cafa011335fcd5db07b7da79945fe83db",
+                "reference": "c090506cafa011335fcd5db07b7da79945fe83db",
+                "shasum": ""
+            },
+            "require": {
+                "apache/avro": "^1.12",
+                "laravel/framework": "^12.72.0|^13.41.0",
+                "php": "^8.2",
+                "react/promise": "^2.9|^3.0",
+                "symfony/yaml": "^6.0|^7.0|^8.0"
+            },
+            "conflict": {
+                "open-telemetry/api": "<1.10.1 || >=2.0"
+            },
+            "replace": {
+                "laravel-workflow/laravel-workflow": "self.version"
+            },
+            "require-dev": {
+                "aws/aws-sdk-php": "^3.0",
+                "doctrine/dbal": "^3.7",
+                "open-telemetry/api": "^1.10.1",
+                "open-telemetry/exporter-otlp": "^1.4",
+                "open-telemetry/sdk": "^1.0",
+                "orchestra/testbench": "^10.0|^11.0",
+                "phpstan/phpstan": "^2.0",
+                "symplify/easy-coding-standard": "^11.0"
+            },
+            "suggest": {
+                "durable-workflow/sdk": "Framework-neutral client and remote-worker SDK for the standalone Durable Workflow server.",
+                "open-telemetry/api": "Optional application-owned trace propagation API, version 1.10.1 or later in the 1.x line."
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Workflow\\Providers\\WorkflowServiceProvider"
+                    ]
+                },
+                "branch-alias": {
+                    "dev-main": "2.0.x-dev"
+                },
+                "durable-workflow": {
+                    "product-train": "2.28.1",
+                    "laravel-embedded-upgrade-contract": "resources/laravel-embedded-upgrade-contract.json",
+                    "laravel-dependency-security-policy": "resources/laravel-dependency-security-policy.json"
+                }
+            },
+            "autoload": {
+                "files": [
+                    "src/functions.php",
+                    "src/V2/functions.php"
+                ],
+                "psr-4": {
+                    "Workflow\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Durable Workflow",
+                    "email": "support@durable-workflow.com"
+                }
+            ],
+            "description": "Embedded durable workflow runtime and orchestration engine for Laravel applications.",
+            "support": {
+                "issues": "https://github.com/durable-workflow/workflow/issues",
+                "source": "https://github.com/durable-workflow/workflow/tree/2.28.1"
+            },
+            "time": "2026-11-14T00:45:51+00:00"
+        },
+        {
             "name": "egulias/email-validator",
             "version": "4.0.4",
             "source": {
@@ -922,16 +1139,16 @@
         },
         {
             "name": "guzzlehttp/guzzle",
-            "version": "8.5.2",
+            "version": "8.5.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/guzzle/guzzle.git",
-                "reference": "8e893188e1ac92b457eca35ddf2b574024b66280"
+                "reference": "f8aca40edffeae0ec508b92f4594766083c6e203"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/guzzle/guzzle/zipball/8e893188e1ac92b457eca35ddf2b574024b66280",
-                "reference": "8e893188e1ac92b457eca35ddf2b574024b66280",
+                "url": "https://api.github.com/repos/guzzle/guzzle/zipball/f8aca40edffeae0ec508b92f4594766083c6e203",
+                "reference": "f8aca40edffeae0ec508b92f4594766083c6e203",
                 "shasum": ""
             },
             "require": {
@@ -1029,7 +1246,7 @@
             ],
             "support": {
                 "issues": "https://github.com/guzzle/guzzle/issues",
-                "source": "https://github.com/guzzle/guzzle/tree/8.5.2"
+                "source": "https://github.com/guzzle/guzzle/tree/8.5.0"
             },
             "funding": [
                 {
@@ -1045,7 +1262,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-11-17T16:24:00+00:00"
+            "time": "2026-11-13T03:12:32+00:00"
         },
         {
             "name": "guzzlehttp/promises",
@@ -1493,16 +1710,16 @@
         },
         {
             "name": "laravel/framework",
-            "version": "v13.43.0",
+            "version": "v13.42.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/framework.git",
-                "reference": "72aa7e151062e218704d8660f407e6070040d8bc"
+                "reference": "f5c01f6b63803f16f38ebb31622c4fea412bd022"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/framework/zipball/72aa7e151062e218704d8660f407e6070040d8bc",
-                "reference": "72aa7e151062e218704d8660f407e6070040d8bc",
+                "url": "https://api.github.com/repos/laravel/framework/zipball/f5c01f6b63803f16f38ebb31622c4fea412bd022",
+                "reference": "f5c01f6b63803f16f38ebb31622c4fea412bd022",
                 "shasum": ""
             },
             "require": {
@@ -1557,7 +1774,6 @@
                 "voku/portable-ascii": "^2.0.2"
             },
             "conflict": {
-                "laravel/horizon": "<5.47.0",
                 "tightenco/collect": "<5.5.33"
             },
             "provide": {
@@ -1722,7 +1938,7 @@
                 "issues": "https://github.com/laravel/framework/issues",
                 "source": "https://github.com/laravel/framework"
             },
-            "time": "2026-11-17T14:58:33+00:00"
+            "time": "2026-11-10T15:54:30+00:00"
         },
         {
             "name": "laravel/horizon",
@@ -2739,16 +2955,16 @@
         },
         {
             "name": "monolog/monolog",
-            "version": "3.13.0",
+            "version": "3.12.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Seldaek/monolog.git",
-                "reference": "1f5f55bb4a9a230ff6d8a4ceccea31d10b0142ac"
+                "reference": "d7059e4c691d05ea1222b5124bed0f961be46e15"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Seldaek/monolog/zipball/1f5f55bb4a9a230ff6d8a4ceccea31d10b0142ac",
-                "reference": "1f5f55bb4a9a230ff6d8a4ceccea31d10b0142ac",
+                "url": "https://api.github.com/repos/Seldaek/monolog/zipball/d7059e4c691d05ea1222b5124bed0f961be46e15",
+                "reference": "d7059e4c691d05ea1222b5124bed0f961be46e15",
                 "shasum": ""
             },
             "require": {
@@ -2828,7 +3044,7 @@
             ],
             "support": {
                 "issues": "https://github.com/Seldaek/monolog/issues",
-                "source": "https://github.com/Seldaek/monolog/tree/3.13.0"
+                "source": "https://github.com/Seldaek/monolog/tree/3.12.1"
             },
             "funding": [
                 {
@@ -2840,7 +3056,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-11-16T10:43:05+00:00"
+            "time": "2026-09-29T19:21:12+00:00"
         },
         {
             "name": "mtdowling/jmespath.php",
@@ -4462,6 +4678,79 @@
                 "source": "https://github.com/ramsey/uuid/tree/4.10.0"
             },
             "time": "2026-11-14T23:23:20+00:00"
+        },
+        {
+            "name": "react/promise",
+            "version": "v3.3.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/reactphp/promise.git",
+                "reference": "23444f53a813a3296c1368bb104793ce8d88f04a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/reactphp/promise/zipball/23444f53a813a3296c1368bb104793ce8d88f04a",
+                "reference": "23444f53a813a3296c1368bb104793ce8d88f04a",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.1.0"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "1.12.28 || 1.4.10",
+                "phpunit/phpunit": "^9.6 || ^7.5"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/functions_include.php"
+                ],
+                "psr-4": {
+                    "React\\Promise\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Jan Sorgalla",
+                    "email": "jsorgalla@gmail.com",
+                    "homepage": "https://sorgalla.com/"
+                },
+                {
+                    "name": "Christian Lück",
+                    "email": "christian@clue.engineering",
+                    "homepage": "https://clue.engineering/"
+                },
+                {
+                    "name": "Cees-Jan Kiewiet",
+                    "email": "reactphp@ceesjankiewiet.nl",
+                    "homepage": "https://wyrihaximus.net/"
+                },
+                {
+                    "name": "Chris Boden",
+                    "email": "cboden@gmail.com",
+                    "homepage": "https://cboden.dev/"
+                }
+            ],
+            "description": "A lightweight implementation of CommonJS Promises/A for PHP",
+            "keywords": [
+                "promise",
+                "promises"
+            ],
+            "support": {
+                "issues": "https://github.com/reactphp/promise/issues",
+                "source": "https://github.com/reactphp/promise/tree/v3.3.0"
+            },
+            "funding": [
+                {
+                    "url": "https://opencollective.com/reactphp",
+                    "type": "open_collective"
+                }
+            ],
+            "time": "2025-08-19T18:57:03+00:00"
         },
         {
             "name": "spatie/laravel-activitylog",

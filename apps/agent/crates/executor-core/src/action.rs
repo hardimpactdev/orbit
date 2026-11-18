@@ -30,6 +30,41 @@ pub enum Action {
     UfwEnsure,
     /// SPIKE desired-state primitive: converge one rule by Orbit's order and answer in one line.
     UfwEnsureRule,
+    /// SPIKE: a long action that only waits `{seconds}`, standing in for a clone or a playbook.
+    SpikeWait,
+    /// SPIKE generic primitive `tls.csr`.
+    TlsCsr,
+    /// SPIKE generic primitive `file.put`.
+    FilePut,
+    /// SPIKE generic primitive `file.link`.
+    FileLink,
+    /// SPIKE generic primitive `file.install`.
+    FileInstall,
+    /// SPIKE generic primitive `ca.trust`.
+    CaTrust,
+    /// SPIKE generic primitive `caddy.config`.
+    CaddyConfig,
+    /// SPIKE generic primitive `systemd.restart`.
+    SystemdRestart,
+    IncusAclEnsure,
+    IncusCopy,
+    IncusDeviceEnsure,
+    IncusFilePut,
+    IncusFileLink,
+    IncusRootfsUnshift,
+    IncusStart,
+    UfwEnsureRoute,
+    HttpWait,
+    ContainerGitCheckout,
+    DotenvMerge,
+    ContainerGitConfig,
+    ContainerJsonMerge,
+    ContainerDir,
+    ContainerDirSync,
+    ContainerUnit,
+    T3SessionIssue,
+    T3ProjectAdd,
+    FileRemoveTree,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -48,9 +83,12 @@ impl Action {
     /// The family whose crate holds this action, and which a role enables.
     pub fn family(self) -> Family {
         match self {
-            Self::ProofNoop => Family::Proof,
+            Self::ProofNoop | Self::SpikeWait => Family::Proof,
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
             Self::UfwRead | Self::UfwEnsure | Self::UfwEnsureRule => Family::Ufw,
+            Self::TlsCsr | Self::FilePut | Self::FileLink | Self::FileInstall | Self::CaTrust | Self::CaddyConfig | Self::SystemdRestart
+            | Self::IncusAclEnsure | Self::IncusCopy | Self::IncusDeviceEnsure | Self::IncusFilePut | Self::IncusFileLink | Self::IncusRootfsUnshift | Self::IncusStart | Self::UfwEnsureRoute | Self::HttpWait
+            | Self::ContainerGitCheckout | Self::DotenvMerge | Self::ContainerGitConfig | Self::ContainerJsonMerge | Self::ContainerDir | Self::ContainerDirSync | Self::ContainerUnit | Self::T3SessionIssue | Self::T3ProjectAdd | Self::FileRemoveTree => Family::Node,
         }
     }
 
@@ -59,7 +97,10 @@ impl Action {
         match self {
             Self::ProofNoop => TargetKind::Node,
             Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
-            Self::UfwRead | Self::UfwEnsure | Self::UfwEnsureRule => TargetKind::Step,
+            Self::UfwRead | Self::UfwEnsure | Self::UfwEnsureRule | Self::SpikeWait => TargetKind::Step,
+            Self::TlsCsr | Self::FilePut | Self::FileLink | Self::FileInstall | Self::CaTrust | Self::CaddyConfig | Self::SystemdRestart
+            | Self::IncusAclEnsure | Self::IncusCopy | Self::IncusDeviceEnsure | Self::IncusFilePut | Self::IncusFileLink | Self::IncusRootfsUnshift | Self::IncusStart | Self::UfwEnsureRoute | Self::HttpWait
+            | Self::ContainerGitCheckout | Self::DotenvMerge | Self::ContainerGitConfig | Self::ContainerJsonMerge | Self::ContainerDir | Self::ContainerDirSync | Self::ContainerUnit | Self::T3SessionIssue | Self::T3ProjectAdd | Self::FileRemoveTree => TargetKind::Step,
         }
     }
 
@@ -73,6 +114,33 @@ impl Action {
             Self::UfwRead => "ufw.read",
             Self::UfwEnsure => "ufw.ensure",
             Self::UfwEnsureRule => "ufw.ensure_rule",
+            Self::SpikeWait => "spike.wait",
+            Self::TlsCsr => "tls.csr",
+            Self::FilePut => "file.put",
+            Self::FileLink => "file.link",
+            Self::FileInstall => "file.install",
+            Self::CaTrust => "ca.trust",
+            Self::CaddyConfig => "caddy.config",
+            Self::SystemdRestart => "systemd.restart",
+            Self::IncusAclEnsure => "incus.acl_ensure",
+            Self::IncusCopy => "incus.copy",
+            Self::IncusDeviceEnsure => "incus.device_ensure",
+            Self::IncusFilePut => "incus.file_put",
+            Self::IncusFileLink => "incus.file_link",
+            Self::IncusRootfsUnshift => "incus.rootfs_unshift",
+            Self::IncusStart => "incus.start",
+            Self::UfwEnsureRoute => "ufw.ensure_route",
+            Self::HttpWait => "http.wait",
+            Self::ContainerGitCheckout => "container.git_checkout",
+            Self::DotenvMerge => "dotenv.merge",
+            Self::ContainerGitConfig => "container.git_config",
+            Self::ContainerJsonMerge => "container.json_merge",
+            Self::ContainerDir => "container.dir",
+            Self::ContainerDirSync => "container.dir_sync",
+            Self::ContainerUnit => "container.unit",
+            Self::T3SessionIssue => "t3.session_issue",
+            Self::T3ProjectAdd => "t3.project_add",
+            Self::FileRemoveTree => "file.remove_tree",
         }
     }
 }
@@ -94,6 +162,33 @@ impl FromStr for Action {
             "ufw.read" => Ok(Self::UfwRead),
             "ufw.ensure" => Ok(Self::UfwEnsure),
             "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
+            "spike.wait" => Ok(Self::SpikeWait),
+            "tls.csr" => Ok(Self::TlsCsr),
+            "file.put" => Ok(Self::FilePut),
+            "file.link" => Ok(Self::FileLink),
+            "file.install" => Ok(Self::FileInstall),
+            "ca.trust" => Ok(Self::CaTrust),
+            "caddy.config" => Ok(Self::CaddyConfig),
+            "systemd.restart" => Ok(Self::SystemdRestart),
+            "incus.acl_ensure" => Ok(Self::IncusAclEnsure),
+            "incus.copy" => Ok(Self::IncusCopy),
+            "incus.device_ensure" => Ok(Self::IncusDeviceEnsure),
+            "incus.file_put" => Ok(Self::IncusFilePut),
+            "incus.file_link" => Ok(Self::IncusFileLink),
+            "incus.rootfs_unshift" => Ok(Self::IncusRootfsUnshift),
+            "incus.start" => Ok(Self::IncusStart),
+            "ufw.ensure_route" => Ok(Self::UfwEnsureRoute),
+            "http.wait" => Ok(Self::HttpWait),
+            "container.git_checkout" => Ok(Self::ContainerGitCheckout),
+            "dotenv.merge" => Ok(Self::DotenvMerge),
+            "container.git_config" => Ok(Self::ContainerGitConfig),
+            "container.json_merge" => Ok(Self::ContainerJsonMerge),
+            "container.dir" => Ok(Self::ContainerDir),
+            "container.dir_sync" => Ok(Self::ContainerDirSync),
+            "container.unit" => Ok(Self::ContainerUnit),
+            "t3.session_issue" => Ok(Self::T3SessionIssue),
+            "t3.project_add" => Ok(Self::T3ProjectAdd),
+            "file.remove_tree" => Ok(Self::FileRemoveTree),
             _ => Err(UnknownActionError),
         }
     }
@@ -129,6 +224,8 @@ pub enum Family {
     Power,
     /// SPIKE: typed ufw primitives.
     Ufw,
+    /// SPIKE: generic Node primitives (files, links, trust, Caddy, units, CSR).
+    Node,
 }
 
 /// The family name is unknown to this executor.
@@ -145,6 +242,7 @@ impl Family {
             "proof" => Some(Self::Proof),
             "power" => Some(Self::Power),
             "ufw" => Some(Self::Ufw),
+            "node" => Some(Self::Node),
             _ => None,
         }
     }

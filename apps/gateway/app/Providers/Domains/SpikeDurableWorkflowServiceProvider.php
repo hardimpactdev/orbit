@@ -13,7 +13,7 @@ final class SpikeDurableWorkflowServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([SpikeFirewallAllowCommand::class]);
+            $this->commands([SpikeFirewallAllowCommand::class, \App\Spike\StateMachine\SpikeStateMachineCommand::class, \App\Spike\Nats\SpikeNatsCommand::class]);
         }
     }
 }

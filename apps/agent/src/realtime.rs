@@ -369,6 +369,54 @@ impl ExecutorRelay {
     }
 }
 
+impl ExecutorRelay {
+    /// SPIKE: keeps one `SUBSCRIBE` connection to the executor open and relays every receipt line, named by the
+    /// Operation inside it. The executor runs each order as long as it needs and pushes its receipt here when done; an
+    /// order's own connection only carries `accepted`. Reconnects a second after the executor restarts. A receipt that
+    /// finds no subscriber is lost; the Gateway re-sends after its deadline and gets the stored result as a `repeat`.
+    pub fn subscribe_receipts(&self) {
+        let (socket, replies) = (self.socket.clone(), self.replies.clone());
+        tokio::spawn(async move {
+            loop {
+                if let Err(error) = receipts(&socket, &replies).await {
+                    eprintln!("orbit-agent: executor receipt stream ended: {error}");
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
+    }
+}
+
+async fn receipts(
+    socket: &std::path::Path,
+    replies: &tokio::sync::mpsc::UnboundedSender<ExecutorReply>,
+) -> std::io::Result<()> {
+    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
+    let mut stream = tokio::net::UnixStream::connect(socket).await?;
+    stream.write_all(b"SUBSCRIBE\n").await?;
+    let mut reader = tokio::io::BufReader::new(stream);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        if reader.read_until(b'\n', &mut line).await? == 0 {
+            return Ok(());
+        }
+        if line.pop() != Some(b'\n') || line.len() as u64 > MAX_EXECUTOR_REPLY_BYTES {
+            continue;
+        }
+        let Ok(text) = String::from_utf8(line.clone()) else { continue };
+        let operation = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|value| value["operation"].as_str().map(str::to_owned));
+        if let Some(operation) = operation.filter(|op| !op.is_empty() && op.len() <= MAX_EXECUTOR_OPERATION_BYTES) {
+            // SPIKE: on the NATS bus a receipt waits in JetStream until the Gateway takes it; Reverb only as fallback.
+            if !crate::nats::publish_receipt(&operation, &text).await {
+                let _ = replies.send(ExecutorReply { operation, line: text });
+            }
+        }
+    }
+}
+
 /// Writes the order to the socket and relays every complete reply line, within 10 s and 64 KB in total. Lines relayed
 /// before a bound passes stay relayed.
 async fn forward(

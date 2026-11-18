@@ -274,7 +274,9 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             || ! is_string($server['server_version'] ?? null) || ! is_string($expires) || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\z/D', $expires) !== 1) {
             throw new ResourceOperationException('instance.result_invalid', 'The clone did not prove its registered T3 server.');
         }
-        $secret = app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $session['key']);
+        // SPIKE: an engine create hands the token over directly (InstanceCreateFlow::finished); no vault hop.
+        $secret = \Illuminate\Support\Facades\Cache::pull('spike:t3-session:'.$session['key'])
+            ?? app(SwampVaultExecutionCopy::class)->readSecret('orbit-control-inputs', $session['key']);
         if ($secret === '') {
             throw new ResourceOperationException('instance.result_invalid', 'The T3 session of the clone is missing from the vault.');
         }

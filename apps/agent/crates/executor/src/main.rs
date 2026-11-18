@@ -19,6 +19,12 @@ use orbit_executor_core::{ids::NodeId, relay};
 
 mod ufw;
 mod ufw_rule;
+mod prims;
+mod incus;
+mod container;
+mod dotenv;
+mod unshift;
+mod bus;
 
 const KEYS_PATH: &str = "/etc/orbit/executor/gateway.pub";
 const ENABLED_PATH: &str = "/etc/orbit/executor/enabled";
@@ -57,6 +63,39 @@ impl Run for Families {
             Action::UfwRead => ufw::read(order.input()),
             Action::UfwEnsure => ufw::ensure(order.input()),
             Action::UfwEnsureRule => ufw_rule::ensure_rule(order.input()),
+            Action::TlsCsr => prims::tls_csr(order.input()),
+            Action::FilePut => prims::file_put(order.input()),
+            Action::FileLink => prims::file_link(order.input()),
+            Action::FileInstall => prims::file_install(order.input()),
+            Action::CaTrust => prims::ca_trust(order.input()),
+            Action::CaddyConfig => prims::caddy_config(order.input()),
+            Action::SystemdRestart => prims::systemd_restart(order.input()),
+            Action::IncusAclEnsure => incus::acl_ensure(order.input()),
+            Action::IncusCopy => incus::copy(order.input()),
+            Action::IncusDeviceEnsure => incus::device_ensure(order.input()),
+            Action::IncusFilePut => incus::file_put(order.input()),
+            Action::IncusFileLink => incus::file_link(order.input()),
+            Action::IncusRootfsUnshift => incus::rootfs_unshift(order.input()),
+            Action::IncusStart => incus::start(order.input()),
+            Action::UfwEnsureRoute => incus::ensure_route(order.input()),
+            Action::HttpWait => incus::http_wait(order.input()),
+            Action::ContainerGitCheckout => container::git_checkout(order.input()),
+            Action::DotenvMerge => container::dotenv_merge(order.input()),
+            Action::ContainerGitConfig => container::git_config(order.input()),
+            Action::ContainerJsonMerge => container::json_merge(order.input()),
+            Action::ContainerDir => container::dir(order.input()),
+            Action::ContainerDirSync => container::dir_sync(order.input()),
+            Action::ContainerUnit => container::unit(order.input()),
+            Action::T3SessionIssue => container::t3_session_issue(order.input()),
+            Action::T3ProjectAdd => container::t3_project_add(order.input()),
+            Action::FileRemoveTree => prims::remove_tree(order.input()),
+            Action::SpikeWait => match order.input().get("seconds").and_then(serde_json::Value::as_u64) {
+                Some(seconds) if seconds <= 600 => {
+                    std::thread::sleep(std::time::Duration::from_secs(seconds));
+                    Outcome::Done
+                }
+                _ => Outcome::Failed { code: "spike.input_invalid".to_owned() },
+            },
             Action::Sleep => {
                 let started = std::time::Instant::now();
                 match self
@@ -221,10 +260,14 @@ fn serve() -> Result<(), String> {
             done.key.operation, done.key.action, done.key.target, done.outcome
         ));
     }
+    let executor = Arc::new(executor);
+    // SPIKE: with a NATS configuration the executor takes its orders from JetStream itself; the socket stays for local
+    // callers.
+    bus::start(Arc::clone(&settings), Arc::clone(&executor), log);
     let listener = server::bind(Path::new(SOCKET_PATH), relay_user.map(|(_, gid)| gid))
         .map_err(|error| format!("bind {SOCKET_PATH}: {error}"))?;
     log(&format!("serving {SOCKET_PATH}"));
-    server::serve(&listener, &settings, &Arc::new(executor), log);
+    server::serve(&listener, &settings, &executor, log);
     Ok(())
 }
 

@@ -7,7 +7,7 @@
 //! the journal while the executor runs (ADR 0266), with the same rule that start-up uses; the syncer writes
 //! and syncs the compacted file, and the writer renames it into place.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
@@ -91,6 +91,9 @@ pub enum Record {
         key: DoneKey,
         /// The order's expiry, in Unix milliseconds.
         expires_ms: u64,
+        /// SPIKE: the order's typed input, so recovery can finish the order after a restart.
+        #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+        input: serde_json::Value,
     },
     /// Written for a nonce whose order did not run, because its key already had a result.
     Seen {
@@ -139,7 +142,7 @@ impl Default for Compaction {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Live {
     nonces: HashMap<Nonce, (DoneKey, u64)>,
-    open: HashSet<Nonce>,
+    open: HashMap<Nonce, serde_json::Value>,
     done: HashMap<DoneKey, (Nonce, Outcome, u64)>,
 }
 
@@ -160,9 +163,10 @@ impl Live {
                 nonce,
                 key,
                 expires_ms,
+                input,
             } => {
                 self.nonces.insert(*nonce, (key.clone(), *expires_ms));
-                self.open.insert(*nonce);
+                self.open.insert(*nonce, input.clone());
             }
             Record::Seen {
                 nonce,
@@ -189,27 +193,27 @@ impl Live {
     pub fn prune(&mut self, now_ms: u64) {
         let done = &self.done;
         let nonces = &self.nonces;
-        self.open.retain(|nonce| {
+        self.open.retain(|nonce, _| {
             nonces
                 .get(nonce)
                 .is_some_and(|(key, _)| !done.contains_key(key))
         });
         let open = &self.open;
         self.nonces
-            .retain(|nonce, (_, expires_ms)| *expires_ms > now_ms || open.contains(nonce));
+            .retain(|nonce, (_, expires_ms)| *expires_ms > now_ms || open.contains_key(nonce));
         self.done
             .retain(|_, (_, _, at_ms)| now_ms.saturating_sub(*at_ms) < DONE_RETENTION_MS);
     }
 
     /// The orders that were open without a result: crash recovery runs each one again.
-    pub fn unfinished(&self) -> Vec<(Nonce, DoneKey)> {
-        let mut unfinished: Vec<(Nonce, DoneKey)> = self
+    pub fn unfinished(&self) -> Vec<(Nonce, DoneKey, serde_json::Value)> {
+        let mut unfinished: Vec<(Nonce, DoneKey, serde_json::Value)> = self
             .open
             .iter()
-            .filter_map(|nonce| self.nonces.get(nonce).map(|(key, _)| (*nonce, key.clone())))
-            .filter(|(_, key)| !self.done.contains_key(key))
+            .filter_map(|(nonce, input)| self.nonces.get(nonce).map(|(key, _)| (*nonce, key.clone(), input.clone())))
+            .filter(|(_, key, _)| !self.done.contains_key(key))
             .collect();
-        unfinished.sort_by_key(|(nonce, _)| *nonce);
+        unfinished.sort_by_key(|(nonce, _, _)| *nonce);
         unfinished
     }
 
@@ -235,11 +239,12 @@ impl Live {
             .iter()
             .map(|(nonce, (key, expires_ms))| {
                 let (nonce, key, expires_ms) = (*nonce, key.clone(), *expires_ms);
-                if self.open.contains(&nonce) {
+                if let Some(input) = self.open.get(&nonce) {
                     Record::Open {
                         nonce,
                         key,
                         expires_ms,
+                        input: input.clone(),
                     }
                 } else {
                     Record::Seen {
@@ -680,6 +685,7 @@ mod tests {
             nonce: nonce(1),
             key: key("op-1"),
             expires_ms: NOW + 5,
+            input: serde_json::Value::Null,
         };
         let journal = start(&path, Compaction::default());
         journal.append(&open).expect("append");
@@ -718,6 +724,7 @@ mod tests {
             nonce: nonce(2),
             key: key("op-open"),
             expires_ms: NOW - 1,
+            input: serde_json::Value::Null,
         };
         let live = Record::Seen {
             nonce: nonce(3),
@@ -803,6 +810,7 @@ mod tests {
                             nonce: nonce(last),
                             key: key(&format!("op-{last}")),
                             expires_ms: NOW + 5_000,
+                            input: serde_json::Value::Null,
                         };
                         journal.append(&open).expect("append");
                         open
@@ -821,7 +829,7 @@ mod tests {
         let unfinished: Vec<Nonce> = live
             .unfinished()
             .into_iter()
-            .map(|(nonce, _)| nonce)
+            .map(|(nonce, _, _)| nonce)
             .collect();
         let mut expected: Vec<Nonce> = opened
             .iter()
@@ -841,11 +849,13 @@ mod tests {
                 nonce: nonce(1),
                 key: key("op"),
                 expires_ms: NOW,
+                input: serde_json::Value::Null,
             },
             Record::Open {
                 nonce: nonce(2),
                 key: key("op-2"),
                 expires_ms: NOW,
+                input: serde_json::Value::Null,
             },
             Record::Done {
                 nonce: nonce(1),
@@ -855,6 +865,6 @@ mod tests {
             },
         ]);
         live.prune(NOW + 1);
-        assert_eq!(live.unfinished(), vec![(nonce(2), key("op-2"))]);
+        assert_eq!(live.unfinished(), vec![(nonce(2), key("op-2"), serde_json::Value::Null)]);
     }
 }

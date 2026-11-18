@@ -1,0 +1,17 @@
+# SPIKE: Orbit agent bus. One account; the Gateway may do everything, each Node only its own orders and receipts.
+server_name: orbit-nats
+listen: 0.0.0.0:4222
+http: 127.0.0.1:8222
+max_payload: 1MB
+jetstream { store_dir: /var/lib/nats/jetstream, max_memory_store: 64MB, max_file_store: 1GB }
+accounts {
+  ORBIT {
+    jetstream: enabled
+    users: [
+      {user: gateway, password: <per-user secret> secret>"}
+      {user: node-1, password: <per-user secret> secret>", permissions: {publish: {allow: ["$JS.API.INFO", "$JS.API.STREAM.INFO.ORDERS", "$JS.API.CONSUMER.INFO.ORDERS.node-1", "$JS.API.CONSUMER.MSG.NEXT.ORDERS.node-1", "$JS.ACK.ORDERS.node-1.>", "orbit.receipts.1", "$JS.API.DIRECT.GET.KV_CONTENT.$KV.CONTENT.n1.>"]}, subscribe: {allow: ["_INBOX.>"]}}}
+      {user: node-3, password: <per-user secret> secret>", permissions: {publish: {allow: ["$JS.API.INFO", "$JS.API.STREAM.INFO.ORDERS", "$JS.API.CONSUMER.INFO.ORDERS.node-3", "$JS.API.CONSUMER.MSG.NEXT.ORDERS.node-3", "$JS.ACK.ORDERS.node-3.>", "orbit.receipts.3", "$JS.API.DIRECT.GET.KV_CONTENT.$KV.CONTENT.n3.>"]}, subscribe: {allow: ["_INBOX.>"]}}}
+      {user: node-4, password: <per-user secret> secret>", permissions: {publish: {allow: ["$JS.API.INFO", "$JS.API.STREAM.INFO.ORDERS", "$JS.API.CONSUMER.INFO.ORDERS.node-4", "$JS.API.CONSUMER.MSG.NEXT.ORDERS.node-4", "$JS.ACK.ORDERS.node-4.>", "orbit.receipts.4", "$JS.API.DIRECT.GET.KV_CONTENT.$KV.CONTENT.n4.>"]}, subscribe: {allow: ["_INBOX.>"]}}}
+    ]
+  }
+}

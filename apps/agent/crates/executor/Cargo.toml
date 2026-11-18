@@ -18,6 +18,11 @@ serde_json = "1"
 base64 = "0.22"
 flate2 = "1"
 regex = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
+futures-util = "0.3"
+rustix = { version = "1", features = ["fs", "process"] }
+async-nats = { version = "=0.51.0", default-features = false, features = ["ring", "jetstream", "nuid", "server_2_14"] }
 
 [dev-dependencies]
 base64 = "0.22"

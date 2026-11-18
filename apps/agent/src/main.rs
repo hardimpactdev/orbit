@@ -178,6 +178,8 @@ async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut systemd_poll = tokio::time::interval(Duration::from_secs(30));
     // Replies that arrive after a reconnect go out on the next session; orders that arrive while it reconnects are lost.
     let (executor, mut executor_rx) = ExecutorRelay::new(EXECUTOR_SOCKET);
+    executor.subscribe_receipts();
+    orbit_agent::nats::start(executor.clone());
     let session = reconnect_loop(&mut shutdown_rx, async |shutdown_rx, joined_at| loop {
         let discovery = tokio::select! {
             _ = shutdown_rx.changed() => return Ok(()),

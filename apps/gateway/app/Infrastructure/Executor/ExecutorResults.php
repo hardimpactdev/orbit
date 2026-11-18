@@ -41,6 +41,12 @@ final readonly class ExecutorResults
     /** Hands one reply line from Node `$nodeId`'s agent to the waiting request. Throws when Valkey or the database fails. */
     public function receive(int $nodeId, ExecutorReply $reply): void
     {
+        // SPIKE: a state-machine Operation spans Nodes; every line goes to its engine, which checks the step's Node.
+        if (Operation::query()->whereKey($reply->operation)->value('kind') === \App\Spike\StateMachine\Engine::Kind) {
+            \App\Spike\StateMachine\Engine::onReceipt($reply->operation, $nodeId, $reply->line);
+
+            return;
+        }
         if (! $this->verifyAndRecord($nodeId, $reply)) {
             $this->log->warning('The agent view subscriber dropped an executor reply for an Operation that is not on its Node.', [
                 'node_id' => $nodeId, 'operation_id' => $reply->operation, 'status' => $reply->status,

@@ -33,6 +33,27 @@ pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// Writes one log line to the executor's journal (its standard error under systemd).
 pub type Log = fn(&str);
 
+/// SPIKE: the receipt stream. The observer keeps one connection open with `SUBSCRIBE`; every receipt goes to every
+/// subscriber. A receipt with no subscriber is lost on purpose: the Gateway re-sends the order after its deadline, and
+/// the executor answers the stored result as a `repeat`.
+#[derive(Debug, Default)]
+pub struct Receipts(std::sync::Mutex<Vec<UnixStream>>);
+
+impl Receipts {
+    fn add(&self, stream: UnixStream) {
+        self.0.lock().expect("receipts lock poisoned").push(stream);
+    }
+
+    /// Writes one receipt line to every subscriber and drops the ones that are gone.
+    pub fn push(&self, line: &serde_json::Value) {
+        let text = format!("{line}\n");
+        self.0
+            .lock()
+            .expect("receipts lock poisoned")
+            .retain(|stream| { let mut out = stream; out.write_all(text.as_bytes()).is_ok() });
+    }
+}
+
 /// What every connection is checked against.
 #[derive(Debug)]
 pub struct Settings {
@@ -166,6 +187,7 @@ pub fn serve<R: Run + 'static>(
     log: Log,
 ) {
     let active = Arc::new(AtomicUsize::new(0));
+    let receipts = Arc::new(Receipts::default());
     for stream in listener.incoming() {
         let stream = match stream {
             Ok(stream) => stream,
@@ -179,15 +201,16 @@ pub fn serve<R: Run + 'static>(
             log("refused connection: more than 64 at once");
             continue;
         }
-        let (settings, executor, slot) = (
+        let (settings, executor, slot, receipts) = (
             Arc::clone(settings),
             Arc::clone(executor),
             Arc::clone(&active),
+            Arc::clone(&receipts),
         );
         let spawned = thread::Builder::new()
             .name("order".to_owned())
             .spawn(move || {
-                connection(&stream, &settings, &executor, log);
+                connection(&stream, &settings, &executor, &receipts, log);
                 slot.fetch_sub(1, Ordering::SeqCst);
             });
         if let Err(error) = spawned {
@@ -202,10 +225,11 @@ pub fn serve<R: Run + 'static>(
 /// # Panics
 ///
 /// Panics when a lock of the executor's state is poisoned, which is fatal.
-pub fn connection<R: Run>(
+pub fn connection<R: Run + 'static>(
     stream: &UnixStream,
     settings: &Settings,
-    executor: &Executor<R>,
+    executor: &Arc<Executor<R>>,
+    receipts: &Arc<Receipts>,
     log: Log,
 ) {
     let peer = match caller::identify(stream) {
@@ -228,7 +252,7 @@ pub fn connection<R: Run>(
             return;
         }
     };
-    if let Err(error) = answer(stream, settings, executor, log, caller) {
+    if let Err(error) = answer(stream, settings, executor, receipts, log, caller) {
         log(&format!(
             "connection from {caller:?} pid={} failed: {error}",
             peer.pid
@@ -236,15 +260,27 @@ pub fn connection<R: Run>(
     }
 }
 
-fn answer<R: Run>(
+fn answer<R: Run + 'static>(
     stream: &UnixStream,
     settings: &Settings,
-    executor: &Executor<R>,
+    executor: &Arc<Executor<R>>,
+    receipts: &Arc<Receipts>,
     log: Log,
     caller: caller::Caller,
 ) -> io::Result<()> {
     let wire = read_order(stream, READ_TIMEOUT)?;
     let mut out = stream;
+    if wire == b"SUBSCRIBE" {
+        // SPIKE: this connection now carries receipts until the observer closes it.
+        receipts.add(stream.try_clone()?);
+        log("receipt subscriber joined");
+        stream.set_read_timeout(None)?;
+        let mut sink = [0_u8; 64];
+        let mut reader = stream;
+        while matches!(reader.read(&mut sink), Ok(read) if read > 0) {}
+        log("receipt subscriber left");
+        return Ok(());
+    }
     writeln!(out, "{}", json!({ "status": "accepted" }))?;
 
     let now = now_ms();
@@ -263,9 +299,31 @@ fn answer<R: Run>(
             ));
             json!({ "status": "refused", "reason": refusal.code(), "node_clock_ms": now })
         }
-        Ok(verified) => match executor.handle(&verified, now) {
+        Ok(verified) => {
+            // SPIKE: the order runs as long as it needs; the connection closes now and the receipt follows on the
+            // subscriber stream.
+            let (executor, receipts) = (Arc::clone(executor), Arc::clone(receipts));
+            thread::Builder::new().name("action".to_owned()).spawn(move || {
+                let line = receipt(&executor, &verified, now, log, caller);
+                receipts.push(&line);
+            })?;
+            return Ok(());
+        }
+    };
+    writeln!(out, "{line}")
+}
+
+/// SPIKE: runs one verified order and returns its receipt line.
+fn receipt<R: Run>(
+    executor: &Executor<R>,
+    verified: &order::VerifiedOrder,
+    now: u64,
+    log: Log,
+    caller: caller::Caller,
+) -> serde_json::Value {
+    match executor.handle(verified, now) {
             Ok(reply) => {
-                let mut value = serde_json::to_value(&reply).map_err(io::Error::other)?;
+                let mut value = serde_json::to_value(&reply).unwrap_or_default();
                 value["node_clock_ms"] = now.into();
                 value
             }
@@ -273,9 +331,7 @@ fn answer<R: Run>(
                 let first = match &refusal {
                     StateRefusal::ReplayedNonce { first } => first
                         .as_deref()
-                        .map(serde_json::to_value)
-                        .transpose()
-                        .map_err(io::Error::other)?,
+                        .and_then(|reply| serde_json::to_value(reply).ok()),
                     _ => None,
                 };
                 log(&format!(
@@ -286,9 +342,7 @@ fn answer<R: Run>(
                 ));
                 json!({ "status": "refused", "reason": refusal.code(), "operation": verified.operation(), "first": first, "node_clock_ms": now })
             }
-        },
-    };
-    writeln!(out, "{line}")
+        }
 }
 
 /// A replay's log line names the first result it carries, ` first=<status>`, or ` first=none` before that result exists, so the
