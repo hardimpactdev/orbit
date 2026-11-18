@@ -32,6 +32,10 @@ The converge writes:
 
 The converge also makes the system user `orbit-executor-relay`. A changed binary or file restarts the service.
 
+### One agent binary
+
+[ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7 makes the executor the second process of the one `orbit-agent` binary. On Linux, `orbit-agent execute serve` and `orbit-agent execute relay` run the same code as `orbit-executor serve` and `orbit-executor relay`: the executor crate is a library, and both binaries call its one entry point. The separate `orbit-executor` binary and its artifact stay until the Gateway pins an agent delivery whose `orbit-agent` has the `execute` mode. The pull request that moves the install to `orbit-agent execute serve` removes them.
+
 ### Rollout
 
 A converge skips the executor install until the Gateway has both parts it needs. The intent names the reason as `skip`, and the converge records `executor install skipped: <reason>` in its run:
