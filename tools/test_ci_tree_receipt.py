@@ -43,7 +43,7 @@ class API:
                        base={'ref': 'main', 'repo': {'full_name': REPO}}, head={'sha': HEAD, 'repo': {'full_name': REPO}})
         self.run = dict(id=50, workflow_id=8, path=receipt.WORKFLOW, head_sha=HEAD,
                         event='pull_request', repository={'full_name': REPO}, head_repository={'full_name': REPO},
-                        created_at=START, html_url='https://github.com/hardimpactdev/orbit/actions/runs/50')
+                        status='completed', run_attempt=1, created_at=START, html_url='https://github.com/hardimpactdev/orbit/actions/runs/50')
         self.main_delivered = True
         self.runs = [self.run]
         self.jobs = [dict(id=i, name=name, run_attempt=1, head_sha=HEAD, status='completed',
@@ -198,6 +198,7 @@ class ReceiptTest(unittest.TestCase):
     def test_latest_run_and_latest_attempt_cannot_be_hidden_by_old_green(self):
         for state in ('failure', 'skipped', 'cancelled', None):
             api = API()
+            api.run['run_attempt'] = 2
             api.jobs.append(api.jobs[0] | dict(id=99, run_attempt=2, conclusion=state))
             with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'Required checks'):
                 self.verify(api)
@@ -206,12 +207,24 @@ class ReceiptTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'after merge'):
             self.verify(api)
 
+    def test_pending_rerun_cannot_inherit_the_previous_attempts_green_receipt(self):
+        for status in ('queued', 'in_progress', 'waiting'):
+            api = API()
+            api.run.update(status=status, run_attempt=2)
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, 'not complete'):
+                self.verify(api)
+        api = API()
+        api.run['run_attempt'] = 2
+        with self.assertRaisesRegex(ValueError, 'current attempt'):
+            self.verify(api)
+
     def test_changed_body_and_gate_only_rerun_cannot_bless_stale_docs(self):
         api = API()
         api.pr['body'] += '\nChanged after green'
         with self.assertRaisesRegex(ValueError, 'body changed'):
             self.verify(api)
         # Even a rewritten receipt claiming the new body cannot replace the actual Docs job log.
+        api.run['run_attempt'] = 2
         api.jobs[0]['run_attempt'] = 2
         api.record['attempt'] = 2
         api.record['body_sha256'] = receipt.sha256(api.pr['body'].encode())
@@ -223,6 +236,7 @@ class ReceiptTest(unittest.TestCase):
         api = API()
         api.pr['body'] += '\nA reviewed reason'
         # Actions may copy successful job records to a new attempt, preserving their timestamps and logs.
+        api.run['run_attempt'] = 2
         for job in api.jobs:
             job['run_attempt'] = 2
         api.record.update(attempt=2, body_sha256=receipt.sha256(api.pr['body'].encode()))

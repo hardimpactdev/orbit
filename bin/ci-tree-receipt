@@ -152,6 +152,8 @@ def verify(api, merged_sha, merged_tree):
     require(bool(runs), 'No trusted PR CI run')
     run = max(runs, key=lambda r: r['id'])
     require(run['created_at'] <= pr['merged_at'], 'PR run started after merge')
+    # A queued or running rerun must not inherit the green jobs and receipt of an earlier attempt.
+    require(run.get('status') == 'completed', 'The newest PR CI run is not complete')
     jobs = latest_jobs(api.rows(f"actions/runs/{run['id']}/jobs?filter=all", 'jobs'))
     for name in ('Required checks', 'Select build inputs', 'Docs build', 'Web build'):
         job = jobs.get(name, {})
@@ -159,6 +161,7 @@ def verify(api, merged_sha, merged_tree):
                 and job.get('head_sha') == head and job.get('completed_at', '') <= pr['merged_at'],
                 f'{name} is not green before merge on the final PR head')
     gate = jobs['Required checks']
+    require(gate['run_attempt'] == run.get('run_attempt'), 'Required checks did not run in the current attempt')
     artifacts = api.rows(f"actions/runs/{run['id']}/artifacts", 'artifacts')
     name = f"ci-tree-{run['id']}-{gate['run_attempt']}"
     receipts = [a for a in artifacts if a['name'] == name]

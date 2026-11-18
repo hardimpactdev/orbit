@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Gateway\GatewayBootstrapPlan;
+use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
+use App\Models\Node;
 use Illuminate\Support\Facades\Artisan;
 
 it('plans the packages, Caddy and PHP of a fresh Gateway from the recipe alone', function (): void {
@@ -62,4 +65,11 @@ it('prints the package cache of the plan only when it is passed, as a plain http
     foreach (['https://10.232.2.1:3142', '10.232.2.1:3142', 'http://10.232.2.1:3142/path', 'http://a b'] as $refused) {
         $this->artisan('orbit:bootstrap-plan '.$arguments.' --apt-proxy="'.$refused.'"')->assertFailed();
     }
+});
+
+it('installs jq for the Gateway role and the Swamp role separately, so a split release can verify and load', function (): void {
+    $catalog = new NodeBootstrapPackageCatalog;
+
+    expect($catalog->forRole(new Node, RoleName::Gateway))->toContain('jq')
+        ->and($catalog->forRole(new Node, RoleName::Swamp))->toContain('jq');
 });
