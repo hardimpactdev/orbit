@@ -53,6 +53,17 @@ return [
             'after_commit' => true,
         ],
 
+        // SPIKE: short operations on idempotent Executor primitives. A job lost with its worker comes back after 15 s and
+        // starts over; the steps it already finished return `repeat` from the Executor in milliseconds.
+        'spike-ops' => [
+            'driver' => 'redis',
+            'connection' => 'gateway',
+            'queue' => 'spike-ops',
+            'retry_after' => 15,
+            'block_for' => 5,
+            'after_commit' => true,
+        ],
+
         'database' => [
             'driver' => 'database',
             'connection' => env('DB_QUEUE_CONNECTION'),

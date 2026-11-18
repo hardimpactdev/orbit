@@ -65,8 +65,10 @@ pub enum Outcome {
     /// SPIKE: a primitive finished and returns what it read, such as `ufw status numbered`. Stored like any outcome,
     /// so a repeat returns the same output.
     Output {
-        /// The primitive's output.
+        /// The primitive's output, encoded as `encoding` says. A reply must fit one Pusher frame (9,900 bytes).
         stdout: String,
+        /// `gzip+base64`.
+        encoding: String,
     },
 }
 

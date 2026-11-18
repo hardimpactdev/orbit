@@ -2,8 +2,14 @@
 //! argv itself, so no command text ever travels in an order. The plan (what to add, where, what to move) stays in
 //! the Gateway's workflow; these primitives only read and change one rule.
 
+use std::io::Write as _;
 use std::net::IpAddr;
 use std::process::Command;
+
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 
 use orbit_executor_core::journal::Outcome;
 use serde::Deserialize;
@@ -56,7 +62,8 @@ pub(crate) fn ensure(input: &serde_json::Value) -> Outcome {
         );
         return failed("ufw.apply_failed");
     }
-    status()
+    // A change reports only that it happened; the workflow reads the table once after its last change.
+    Outcome::Done
 }
 
 /// The argv after `ufw`, or `None` when any field is outside its shape.
@@ -154,11 +161,22 @@ fn status() -> Outcome {
         .args(["30", UFW, "status", "numbered"])
         .output()
     {
-        Ok(output) if output.status.success() => Outcome::Output {
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        Ok(output) if output.status.success() => match gzip_base64(&output.stdout) {
+            Some(stdout) => Outcome::Output {
+                stdout,
+                encoding: "gzip+base64".to_owned(),
+            },
+            None => failed("ufw.read_failed"),
         },
         _ => failed("ufw.read_failed"),
     }
+}
+
+/// A table of a busy Node passes one Pusher frame as text; compressed it is about a tenth.
+fn gzip_base64(bytes: &[u8]) -> Option<String> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
+    encoder.write_all(bytes).ok()?;
+    Some(STANDARD.encode(encoder.finish().ok()?))
 }
 
 fn failed(code: &str) -> Outcome {

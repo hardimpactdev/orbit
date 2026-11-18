@@ -36,6 +36,10 @@ final class FirewallAllowExecutorWorkflow extends Workflow
             $final = self::activity(ExecutorPrimitive::class, $id, "ensure-{$index}", $nodeId, 'ufw.ensure', $change);
             $timings["ensure-{$index}"] = $final['result_ms'].($final['repeat'] ? ' repeat' : '');
         }
+        if ($changes !== []) {
+            $final = self::activity(ExecutorPrimitive::class, $id, 'read-2', $nodeId, 'ufw.read');
+            $timings['read-2'] = $final['result_ms'].($final['repeat'] ? ' repeat' : '');
+        }
         try {
             $result = UfwPlan::check($intent, $final['stdout'], count($changes));
         } catch (UfwRefusal $refusal) {
