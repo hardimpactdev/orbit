@@ -198,7 +198,9 @@ The visitor does not enqueue jobs. A background pass on `operations-prompt` take
 
 The pass records a lease in a short write, then enqueues outside the writer. A failed enqueue leaves pending work. If the job is lost or exhausts its retries, the handoff becomes eligible again 60 seconds after the job was due. Recovery also handles wakes admitted before the setting was turned off.
 
-Success records a pending lifecycle follow-up with the terminal result. A local kernel lock prevents two hook workers from running it at once, even if the enqueue lease has expired. The hooks run without the SQLite writer; only then does the worker commit the delivery receipt. If it dies before that receipt, the next delivery reconciles any work already recorded by the hooks. Conn reuses admitted session work. Its vault copy runs at native start. A failed retry of the queue push leaves the existing renewal able to start or finish. The wake worker leaves its hook undelivered and retries the same renewal.
+Success records a pending lifecycle follow-up with the terminal result. A local kernel lock prevents two hook workers from running it at once, even if the enqueue lease has expired. The hooks run without the SQLite writer; only then does the worker commit the delivery receipt. If it dies before that receipt, the next delivery reconciles any work already recorded by the hooks.
+
+Conn reuses admitted session work. Its vault copy runs at native start. A failed retry of the queue push leaves the existing renewal able to start or finish. The wake worker leaves its hook undelivered and retries the same renewal.
 
 Operation notices are saved with the change and relayed to `operations-prompt` after commit, keeping their recorded sequence. A retried relay may deliver the same sequence again. Queue, vault and notice delivery do not run in the activation request or its termination callbacks.
 
