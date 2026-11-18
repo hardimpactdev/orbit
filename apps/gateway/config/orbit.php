@@ -82,6 +82,18 @@ return [
         'wait_ms' => (int) env('ORBIT_EXECUTOR_WAIT_MS', 500),
     ],
 
+    // The Gateway state machine and its machine bus (ADR 0271; docs/reference/gateway-engine.md).
+    'engine' => [
+        // The Operation kinds that run on the state machine instead of Swamp; a kind moves as a whole.
+        'kinds' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('ORBIT_ENGINE_KINDS', ''))))),
+        'nats' => [
+            'host' => env('ORBIT_NATS_HOST', '127.0.0.1'),
+            'port' => (int) env('ORBIT_NATS_PORT', 4222),
+            'user' => env('ORBIT_NATS_USER', 'gateway'),
+            'password' => env('ORBIT_NATS_PASSWORD'),
+        ],
+    ],
+
     'websocket' => [
         'repository' => env(key: 'ORBIT_WEBSOCKET_REPOSITORY', default: 'https://github.com/hardimpactdev/orbit-reverb.git'),
         // Role convergence installs this Gateway release's server, never a moving branch.

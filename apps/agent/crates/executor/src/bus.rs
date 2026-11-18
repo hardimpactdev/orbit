@@ -86,6 +86,7 @@ async fn consume<R: Run + 'static>(
     let consumer: jetstream::consumer::PullConsumer =
         context.get_consumer_from_stream(format!("node-{node}"), "ORDERS").await?;
     let width = slots();
+    report_actions(&context, settings, &node).await?;
     log(&format!("nats bus joined as node-{node} with {width} slots"));
     let permits = Arc::new(tokio::sync::Semaphore::new(width));
     let mut messages = consumer.stream().max_messages_per_batch(width).messages().await?;
@@ -99,6 +100,23 @@ async fn consume<R: Run + 'static>(
             drop(permit);
         });
     }
+    Ok(())
+}
+
+/// Tells the Gateway which primitives this Node runs: every action whose family the Node's roles enable, in KV `NODES` under
+/// `n<node>`. The Gateway starts a kind on the state machine only when every Node it touches reported its primitives.
+async fn report_actions(
+    context: &jetstream::Context,
+    settings: &Settings,
+    node: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let actions: Vec<&str> = orbit_executor_core::action::Action::ALL
+        .into_iter()
+        .filter(|action| settings.enabled.allows(*action))
+        .map(orbit_executor_core::action::Action::name)
+        .collect();
+    let body = serde_json::json!({"actions": actions, "version": env!("CARGO_PKG_VERSION")}).to_string();
+    context.publish(format!("$KV.NODES.n{node}"), body.into()).await?.await?;
     Ok(())
 }
 

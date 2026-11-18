@@ -40,6 +40,9 @@ pub enum TargetKind {
 }
 
 impl Action {
+    /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
+    pub const ALL: [Self; 5] = [Self::ProofNoop, Self::Sleep, Self::Wake, Self::Discard, Self::UfwEnsureRule];
+
     /// The family whose crate holds this action, and which a role enables.
     pub fn family(self) -> Family {
         match self {
