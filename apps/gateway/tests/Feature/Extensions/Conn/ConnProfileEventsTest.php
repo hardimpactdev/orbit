@@ -159,6 +159,17 @@ describe('subscription', function (): void {
         $response->assertForbidden()->assertJsonPath('error.code', 'broadcast.channel_forbidden');
     })->with(['json', 'form']);
 
+    it('refuses a socket id with a trailing line feed instead of signing it', function (string $form): void {
+        $channel = profile_event_channel($this->phone);
+        $body = ['socket_id' => "123.456\n", 'channel_name' => $channel];
+        $response = $form === 'json'
+            ? profile_event_call($this->phone, 'POST', 'conn/broadcasting/auth', $body)
+            : test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->withHeader('Accept', 'application/json')
+                ->post('/api/v1/conn/broadcasting/auth', $body);
+
+        $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    })->with(['json', 'form']);
+
     it('refuses an ended key, a replaced key and a caller with no binding', function (): void {
         $channel = profile_event_channel($this->phone);
 
@@ -282,6 +293,42 @@ describe('keys', function (): void {
         expect(fn () => $remove([app(ConnNodeAccessRemoval::class)], $metrics))->toThrow(RuntimeException::class, 'Metrics is unreachable');
         expect(profile_event_key($this->phone))->not->toBe($before)
             ->and(NodeAccess::query()->where('consumer_node_id', $this->phone->id)->where('serving_node_id', $gateway->id)->exists())->toBeFalse();
+    });
+
+    it('reports the rollback, not a failing Metrics revoke, when the removal rolls back', function (): void {
+        $gateway = profile_event_node('gateway', '10.44.0.2');
+        NodeRole::withoutEvents(fn () => $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']));
+        $this->phone->accessibleNodes()->attach($gateway->id);
+        $before = profile_event_key($this->phone);
+        $failing = new class implements NodeAccessRemovalHook
+        {
+            public function removed(Node $consumer, Node $serving): void
+            {
+                throw new RuntimeException('the key update fails');
+            }
+        };
+        $metrics = new class implements MetricsAccessRevoker
+        {
+            public int $calls = 0;
+
+            public function revoke(): void
+            {
+                $this->calls++;
+
+                throw new RuntimeException('Caddy does not reload');
+            }
+        };
+        Log::spy();
+
+        expect(fn () => new RemoveNodeAccessAction(app(NodeAccessAuthorizer::class), $metrics, [app(ConnNodeAccessRemoval::class), $failing])
+            ->execute($this->phone, $gateway, $this->phone))->toThrow(RuntimeException::class, 'the key update fails');
+
+        expect($metrics->calls)->toBe(1)
+            ->and(profile_event_key($this->phone))->toBe($before)
+            ->and(NodeAccess::query()->where('consumer_node_id', $this->phone->id)->where('serving_node_id', $gateway->id)->exists())->toBeTrue();
+        Log::shouldHaveReceived('warning')->with('node_access.metrics_revoke_failed', Mockery::on(
+            fn (array $context): bool => $context['consumer_node_id'] === $this->phone->id && $context['exception'] === 'Caddy does not reload',
+        ))->once();
     });
 
     it('still revokes Metrics access when a hook\'s after-commit work fails after the deletion committed', function (): void {

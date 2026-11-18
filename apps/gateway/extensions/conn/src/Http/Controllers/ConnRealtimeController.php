@@ -9,11 +9,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\RealtimeAuthRequest;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Domain\ConnProfileEvents;
+use Orbit\Extensions\Conn\Http\Requests\ConnRealtimeAuthRequest;
 use Orbit\Extensions\Conn\Models\ConnProfileBinding;
 
 /**
@@ -33,7 +33,7 @@ final class ConnRealtimeController extends Controller
         ]);
     }
 
-    public function authenticate(RealtimeAuthRequest $request, RealtimeConnection $realtime): JsonResponse
+    public function authenticate(ConnRealtimeAuthRequest $request, RealtimeConnection $realtime): JsonResponse
     {
         $connection = $realtime->resolve();
 
