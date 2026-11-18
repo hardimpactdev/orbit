@@ -291,6 +291,11 @@ class ProductionReleaseTest(unittest.TestCase):
         (source / "removed").write_text("removed in next commit")
         (source / "composer.lock").write_text("lock v1")
         (source / "composer.json").write_text("{}")
+        (source / "package.json").write_text("{}")
+        (source / "package-lock.json").write_text("{}")
+        (source / ".node-version").write_text("22.14.0")
+        (source / "packages/a").mkdir(parents=True)
+        (source / "packages/a/package.json").write_text("{}")
         (source / "uploads").mkdir()
         (source / "uploads/seed").write_text("seed")
         (source / ".gitignore").write_text("vendor/\n.env\npublic/build/\n")
@@ -346,6 +351,21 @@ class ProductionReleaseTest(unittest.TestCase):
             plan["prepared"] = {}
             guest.checkout(plan)
             self.assertFalse(installed.exists())
+
+            # Native modules at both the root and workspace are reusable only under the original Node pin.
+            modules = (tree / "node_modules", tree / "packages/a/node_modules")
+            for directory in modules:
+                directory.mkdir()
+                (directory / "native-addon").write_text("node-22")
+            plan["prepared"] = {"scope": plan["scope"], "artifact": guest.content_digest(), "inputs": next_inputs}
+            self.assertEqual(guest.checkout(plan), next_inputs)
+            self.assertTrue(all((directory / "native-addon").is_file() for directory in modules))
+            plan["prepared"]["artifact"] = guest.content_digest()
+            (source / ".node-version").write_text("24.0.0")
+            plan["sha"] = commit()
+            guest.fetch(plan)
+            self.assertNotEqual(guest.checkout(plan), next_inputs)
+            self.assertTrue(all(not directory.exists() for directory in modules))
 
             # Change branch, then rewrite its history. Neither path may ship a former commit's objects.
             previous = plan["sha"]

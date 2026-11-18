@@ -107,7 +107,13 @@ def fetch(plan):
         file_bytes(owner, identity)
     pending.touch()
     env = git_environment()
-    with tempfile.TemporaryDirectory(prefix="orbit-release-credential-") as private:
+    # The build lock serializes fetches. Clean up this UID's interrupted files; tmpfs
+    # keeps them outside every container snapshot even if the previous fetch was killed.
+    for stale in Path("/dev/shm").glob("orbit-release-credential-*"):
+        info = stale.lstat()
+        if info.st_uid == os.geteuid() and stat.S_ISDIR(info.st_mode):
+            remove(stale)
+    with tempfile.TemporaryDirectory(dir="/dev/shm", prefix="orbit-release-credential-") as private:
         credential = Path(private) / "store"
         file_bytes(credential, plan.get("credential", ""))
         git = ["git", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=",
@@ -137,26 +143,40 @@ DEPENDENCIES = {
     "bun.lockb": "node_modules",
 }
 PACKAGE_INPUTS = set(DEPENDENCIES) | {"composer.json", "package.json", "pnpm-workspace.yaml", ".npmrc",
-                                      ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", "bunfig.toml"}
+                                      ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", "bunfig.toml", ".node-version",
+                                      ".nvmrc", ".gitattributes"}
 
 
 def dependency_trees(git, sha, env):
     entries = subprocess.check_output([*git, "ls-tree", "-rz", sha], env=env).split(b"\0")
     inputs = []
-    trees = set()
+    package_dirs = set()
+    locked = []
+    indirect = False
     for entry in filter(None, entries):
         descriptor, raw_path = entry.split(b"\t", 1)
         path = Path(os.fsdecode(raw_path))
         if path.name in PACKAGE_INPUTS or any(part in ("patches", ".yarn") for part in path.parts):
             inputs.append(entry)
-        if path.name in DEPENDENCIES and descriptor.split()[0] in (b"100644", b"100755"):
-            tree = path.parent / DEPENDENCIES[path.name]
+            indirect |= descriptor.startswith(b"120000 ")
+        if descriptor.split()[0] not in (b"100644", b"100755"):
+            continue
+        if path.name == "package.json":
+            package_dirs.add(path.parent)
+        if path.name in DEPENDENCIES:
+            locked.append((path.parent, DEPENDENCIES[path.name]))
+    trees = set()
+    for root, name in locked:
+        roots = {root}
+        if name == "node_modules":
+            roots.update(directory for directory in package_dirs if root in directory.parents)
+        for directory in roots:
             # These paths become Git clean exclusion patterns. Only literal, known paths qualify.
             try:
-                trees.add(relative(str(tree)).as_posix())
+                trees.add(relative(str(directory / name)).as_posix())
             except ValueError:
                 continue
-    return hashlib.sha256(b"\0".join(inputs)).hexdigest(), trees
+    return hashlib.sha256(b"\0".join(inputs)).hexdigest(), set() if indirect else trees
 
 
 def checkout(plan):
