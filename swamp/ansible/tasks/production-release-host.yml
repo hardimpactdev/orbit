@@ -59,13 +59,16 @@
     - {src: files/instance-control-environment.py, name: orbit-instance-control-environment}
     - {src: files/instance-release-guest.py, name: orbit-instance-release-guest}
     - {src: files/instance-release-prepare.py, name: orbit-instance-release-prepare}
+    - {src: "{{ playbook_dir }}/module_utils/orbit_route_withdraw.py", name: orbit_route_withdraw.py}
     - {src: files/instance-release-routes.py, name: orbit-instance-release-routes}
 - name: Install the swap-backed release power service
   ansible.builtin.include_tasks: instance-power-helper.yml
 - name: Write the Node identity and pinned runtime for new preparations
   ansible.builtin.copy:
     dest: /etc/orbit/production-release.json
-    content: "{{ {'node_id': production.node_id, 'pool': 'orbit-releases', 'network': 'orbitinst0', 'proxy': production.egress.origin, 'runtime': production.folder.path ~ '/' ~ production.folder.version} | to_json }}"
+    content: >-
+      {{ {'node_id': production.node_id, 'pool': 'orbit-releases', 'network': 'orbitinst0',
+          'proxy': production.egress.origin, 'runtime': production.folder.path ~ '/' ~ production.folder.version} | to_json }}
     owner: root
     group: root
     mode: "0644"

@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "ansible/module_utils"))
 spec = importlib.util.spec_from_file_location("release_routes", ROOT / "ansible/files/instance-release-routes.py")
 routes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(routes)

@@ -337,6 +337,11 @@ class _Lock:
         self.stream.close()
 
 
+def caddy_publication_lock(run, seconds=60, *, path=Path("/etc/caddy/.orbit-publish.lock")):
+    """Share Caddy's inode-checked publication transaction with native release controllers."""
+    return _Lock(path, run, seconds, "caddy.publish_busy")
+
+
 class _File:
     """One live file: what was read, its metadata, and how to put it back."""
 
@@ -660,7 +665,7 @@ def publish(plan, run, *, root="/", wait=30, caddy_gid=None):
     previous = at("/var/lib/orbit/route-previous")
     previous.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(previous, 0o700)
-    with _Lock(at("/etc/caddy/.orbit-publish.lock"), run, wait, "caddy.publish_busy"):
+    with caddy_publication_lock(run, wait, path=at("/etc/caddy/.orbit-publish.lock")):
         caddy = _File(at("/etc/caddy/Caddyfile"), previous / "Caddyfile", (os.geteuid(), caddy_gid or os.getegid()), 0o640)
         current = caddy.text()
         composed, owned = compose_publication(plan, current)

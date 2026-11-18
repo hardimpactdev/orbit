@@ -173,7 +173,11 @@
 
 # A run that fails between the flip and the last restart leaves this marker, so the next run restarts the containers again.
 - name: Mark the restart of what runs from the folder
-  when: not (folder_pinned_releases | default(false)) and folder_current.stat.exists and folder_current.stat.lnk_target != folder.version and not (folder_same.stdout | from_json).same
+  when:
+    - not (folder_pinned_releases | default(false))
+    - folder_current.stat.exists
+    - folder_current.stat.lnk_target != folder.version
+    - not (folder_same.stdout | from_json).same
   ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: touch, mode: "0644" }
 
 - name: Read the restart mark

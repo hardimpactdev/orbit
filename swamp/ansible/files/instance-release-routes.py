@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Publish a release upstream for the Instance's existing Caddy sites and migrate its shared files."""
-import fcntl
 import grp
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
 import tempfile
+from pathlib import Path, PurePosixPath
+
+from orbit_route_withdraw import caddy_publication_lock
 
 BASE = Path("/var/lib/orbit/production")
 CADDY = Path("/etc/caddy/Caddyfile")
@@ -228,6 +229,11 @@ def copy_shared(plan, instance, machine, phase, operation):
         raise ValueError("Legacy SQLite source disappeared during preparation")
 
 
+def publication_command(arguments, *, pass_fds):
+    result = subprocess.run(arguments, pass_fds=pass_fds, text=True, capture_output=True, timeout=65)
+    return result.returncode, result.stdout, result.stderr
+
+
 def execute(phase, instance, operation, plan):
     sha = plan["sha"]
     if not SHA.fullmatch(sha):
@@ -244,8 +250,7 @@ def execute(phase, instance, operation, plan):
     elif phase in ("select", "fence"):
         if phase == "select":
             copy_shared(plan, instance, f"instance-{instance}-{sha[:12]}", phase, operation)
-        with Path("/etc/caddy/.orbit-publish.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with caddy_publication_lock(publication_command):
             before = CADDY.read_text()
             after = with_import(before, instance, plan["routes"], (plan.get("legacy") or {}).get("home"))
             if before != after:
