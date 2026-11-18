@@ -31,7 +31,6 @@
     "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 7.4,
     "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing": 19.0,
     "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing": 57.3,
-    "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds": 40.7,
     "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start": 19.0
   },
   "estimates": {
@@ -39,7 +38,6 @@
     "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused": 17,
     "an earlier turn whose run T3 shows over is settled before the launch, and stops nothing": 70,
     "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing": 100,
-    "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds": 60,
     "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start": 40
   },
   "local_completed_seconds": {
@@ -47,6 +45,7 @@
     "the Codex model probe requires a usable response for the exact requested model": 0.147,
     "a continued answer resolves its stored requests before the send so a stale question cannot cut the work": 12,
     "an answered request that stays pending refuses the turn before launch or reviewer checkout": 8,
-    "a failed or unreadable answered resolution launches nothing and names the resolution failure": 19
+    "a failed or unreadable answered resolution launches nothing and names the resolution failure": 19,
+    "a turn cut by its bound stops no run, since Orbit cannot name its run, and holds": 13
   }
 }
