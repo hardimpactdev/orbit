@@ -87,6 +87,10 @@ struct Payload {
     expires_ms: u64,
     #[serde(default)]
     power_check: PowerCheck,
+    /// The primitive's public typed input (ADR 0271). The primitive checks it against its own schema; an action without input
+    /// receives `null`.
+    #[serde(default)]
+    input: serde_json::Value,
 }
 
 /// An additional requirement or exception derived from the admitted container intent.
@@ -114,6 +118,7 @@ pub struct VerifiedOrder {
     nonce: Nonce,
     expires_ms: u64,
     power_check: PowerCheck,
+    input: serde_json::Value,
 }
 
 impl VerifiedOrder {
@@ -123,6 +128,7 @@ impl VerifiedOrder {
         nonce: Nonce,
         key: &crate::journal::DoneKey,
         power_check: PowerCheck,
+        input: serde_json::Value,
     ) -> Self {
         Self {
             action: key.action,
@@ -131,6 +137,7 @@ impl VerifiedOrder {
             nonce,
             expires_ms: 0,
             power_check,
+            input,
         }
     }
 
@@ -162,6 +169,11 @@ impl VerifiedOrder {
     /// The power check the Gateway signed for this action.
     pub fn power_check(&self) -> PowerCheck {
         self.power_check
+    }
+
+    /// The primitive's typed input, as the Gateway signed it.
+    pub fn input(&self) -> &serde_json::Value {
+        &self.input
     }
 }
 
@@ -312,6 +324,7 @@ pub fn check_with_target(
         nonce: payload.nonce,
         expires_ms: payload.expires_ms,
         power_check: payload.power_check,
+        input: payload.input,
     })
 }
 

@@ -184,10 +184,11 @@ impl<R: Run> Executor<R> {
         };
 
         let mut recovered = Vec::new();
-        for (nonce, key, power_check) in unfinished {
-            let order = VerifiedOrder::recovered(nonce, &key, power_check);
+        for open in unfinished {
+            let key = open.key.clone();
+            let order = VerifiedOrder::recovered(open.nonce, &open.key, open.power_check, open.input);
             let outcome = executor.runner.run(&order);
-            executor.finish(nonce, &key, &outcome, clock())?;
+            executor.finish(open.nonce, &key, &outcome, clock())?;
             recovered.push(Recovered { key, outcome });
         }
         Ok((executor, recovered))
@@ -254,6 +255,7 @@ impl<R: Run> Executor<R> {
             key: key.clone(),
             expires_ms: order.expires_ms(),
             power_check: order.power_check(),
+            input: order.input().clone(),
         };
         self.journal
             .append(&open)
@@ -442,6 +444,7 @@ mod tests {
             key: key.clone(),
             expires_ms: open.expires_ms(),
             power_check: crate::order::PowerCheck::Default,
+            input: serde_json::Value::Null,
         };
         std::fs::write(
             &path,

@@ -68,6 +68,32 @@ pub enum Outcome {
         /// The failure's code.
         code: String,
     },
+    /// A primitive finished and returns what it read or made, such as a certificate request (ADR 0271). Stored like any
+    /// outcome, so a repeat returns the same output.
+    Output {
+        /// The primitive's output, encoded as `encoding` says.
+        stdout: String,
+        /// `text`, or `gzip+base64` for a large read.
+        encoding: String,
+    },
+    /// A desired-state primitive converged its resource and checked it (ADR 0271).
+    Applied {
+        /// How many changes it made; 0 means the resource was already right.
+        changes: u32,
+    },
+}
+
+/// An order the journal recorded as open whose key has no result yet: crash recovery finishes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unfinished {
+    /// The order's nonce.
+    pub nonce: Nonce,
+    /// The done record's key.
+    pub key: DoneKey,
+    /// The signed check of a power action.
+    pub power_check: PowerCheck,
+    /// The order's typed input.
+    pub input: serde_json::Value,
 }
 
 /// One journal line.
@@ -87,6 +113,9 @@ pub enum Record {
         /// The signed check associated with the power action.
         #[serde(default)]
         power_check: PowerCheck,
+        /// The order's typed input, so recovery can finish the order after a restart.
+        #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+        input: serde_json::Value,
     },
     /// Written for a nonce whose order did not run, because its key already had a result.
     Seen {
@@ -135,7 +164,7 @@ impl Default for Compaction {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Live {
     nonces: HashMap<Nonce, (DoneKey, u64)>,
-    open: HashMap<Nonce, PowerCheck>,
+    open: HashMap<Nonce, (PowerCheck, serde_json::Value)>,
     done: HashMap<DoneKey, (Nonce, Outcome, u64)>,
 }
 
@@ -157,9 +186,10 @@ impl Live {
                 key,
                 expires_ms,
                 power_check,
+                input,
             } => {
                 self.nonces.insert(*nonce, (key.clone(), *expires_ms));
-                self.open.insert(*nonce, *power_check);
+                self.open.insert(*nonce, (*power_check, input.clone()));
             }
             Record::Seen {
                 nonce,
@@ -199,18 +229,21 @@ impl Live {
     }
 
     /// The orders that were open without a result: crash recovery runs each one again.
-    pub fn unfinished(&self) -> Vec<(Nonce, DoneKey, PowerCheck)> {
-        let mut unfinished: Vec<(Nonce, DoneKey, PowerCheck)> = self
+    pub fn unfinished(&self) -> Vec<Unfinished> {
+        let mut unfinished: Vec<Unfinished> = self
             .open
             .iter()
-            .filter_map(|(nonce, route)| {
-                self.nonces
-                    .get(nonce)
-                    .map(|(key, _)| (*nonce, key.clone(), *route))
+            .filter_map(|(nonce, (power_check, input))| {
+                self.nonces.get(nonce).map(|(key, _)| Unfinished {
+                    nonce: *nonce,
+                    key: key.clone(),
+                    power_check: *power_check,
+                    input: input.clone(),
+                })
             })
-            .filter(|(_, key, _)| !self.done.contains_key(key))
+            .filter(|open| !self.done.contains_key(&open.key))
             .collect();
-        unfinished.sort_by_key(|(nonce, _, _)| *nonce);
+        unfinished.sort_by_key(|open| open.nonce);
         unfinished
     }
 
@@ -236,12 +269,13 @@ impl Live {
             .iter()
             .map(|(nonce, (key, expires_ms))| {
                 let (nonce, key, expires_ms) = (*nonce, key.clone(), *expires_ms);
-                if let Some(power_check) = self.open.get(&nonce) {
+                if let Some((power_check, input)) = self.open.get(&nonce) {
                     Record::Open {
                         nonce,
                         key,
                         expires_ms,
                         power_check: *power_check,
+                        input: input.clone(),
                     }
                 } else {
                     Record::Seen {
@@ -683,6 +717,7 @@ mod tests {
             key: key("op-1"),
             expires_ms: NOW + 5,
             power_check: PowerCheck::Default,
+            input: serde_json::Value::Null,
         };
         let journal = start(&path, Compaction::default());
         journal.append(&open).expect("append");
@@ -722,6 +757,7 @@ mod tests {
             key: key("op-open"),
             expires_ms: NOW - 1,
             power_check: PowerCheck::Route,
+            input: serde_json::Value::Null,
         };
         let live = Record::Seen {
             nonce: nonce(3),
@@ -808,6 +844,7 @@ mod tests {
                             key: key(&format!("op-{last}")),
                             expires_ms: NOW + 5_000,
                             power_check: PowerCheck::Default,
+                            input: serde_json::Value::Null,
                         };
                         journal.append(&open).expect("append");
                         open
@@ -826,7 +863,7 @@ mod tests {
         let unfinished: Vec<Nonce> = live
             .unfinished()
             .into_iter()
-            .map(|(nonce, _, _)| nonce)
+            .map(|open| open.nonce)
             .collect();
         let mut expected: Vec<Nonce> = opened
             .iter()
@@ -847,12 +884,14 @@ mod tests {
                 key: key("op"),
                 expires_ms: NOW,
                 power_check: PowerCheck::Default,
+                input: serde_json::Value::Null,
             },
             Record::Open {
                 nonce: nonce(2),
                 key: key("op-2"),
                 expires_ms: NOW,
                 power_check: PowerCheck::NoWeb,
+                input: serde_json::Value::Null,
             },
             Record::Done {
                 nonce: nonce(1),
@@ -864,7 +903,7 @@ mod tests {
         live.prune(NOW + 1);
         assert_eq!(
             live.unfinished(),
-            vec![(nonce(2), key("op-2"), PowerCheck::NoWeb)]
+            vec![Unfinished { nonce: nonce(2), key: key("op-2"), power_check: PowerCheck::NoWeb, input: serde_json::Value::Null }]
         );
     }
 }
