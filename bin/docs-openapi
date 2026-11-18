@@ -1680,8 +1680,8 @@ def conn_settings_body(name):
     attached_threads = {'type': 'object', 'additionalProperties': False, 'required': ['schema', 'threads'], 'description': 'Serialized at most 64 KB. The whole set: each thread once. See /reference/conn#attached-threads.', 'properties': {
         'schema': {'type': 'integer', 'minimum': 1, 'maximum': 1000},
         'threads': {'type': 'array', 'maxItems': 500, 'items': {'type': 'object', 'additionalProperties': False, 'required': ['environmentId', 'threadId'], 'properties': {
-            'environmentId': {'type': 'string', 'pattern': '^[^\\s:]{1,255}$(?![\\s\\S])'},
-            'threadId': {'type': 'string', 'pattern': '^\\S{1,255}$(?![\\s\\S])'},
+            'environmentId': {'type': 'string', 'minLength': 1, 'maxLength': 255, 'pattern': '^[^\\t\\n\\x0B\\f\\r :]+$(?![\\s\\S])', 'description': 'At most 255 bytes of UTF-8, so fewer characters when it holds non-ASCII ones. No ASCII whitespace (space, tab, line feed, vertical tab, form feed, carriage return) and no colon; other characters, such as a no-break space, pass.'},
+            'threadId': {'type': 'string', 'minLength': 1, 'maxLength': 255, 'pattern': '^[^\\t\\n\\x0B\\f\\r ]+$(?![\\s\\S])', 'description': 'At most 255 bytes of UTF-8, so fewer characters when it holds non-ASCII ones. No ASCII whitespace (space, tab, line feed, vertical tab, form feed, carriage return); other characters, such as a no-break space, pass.'},
         }}},
     }}
     sidebar_hidden_threads = {**attached_threads, 'description': 'Serialized at most 64 KB. The whole list of threads the sidebar hides: each thread once. Only the form is checked; it attaches nothing and opens no access. Null stores an empty list. See /reference/conn#sidebar-hidden-threads.'}

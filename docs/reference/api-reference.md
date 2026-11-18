@@ -55,6 +55,8 @@ bin/docs-openapi
 
 `bin/docs-openapi` writes the Conn settings patch body by hand in `conn_settings_body()`, because its rules depend on the sections a request holds. It lists `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads` and `devices.<type>`. `sidebarHiddenThreads` reuses the `attachedThreads` value schema with its own description. The replace body lists only `workspaces`, `appearance` and `devices`, the sections a `PUT` accepts. `ConnProfileSettingsContractTest` compares both generated bodies and the `conn-profile-settings-patch` tool with the request rules. Change the body with the rules, then regenerate OpenAPI and the MCP manifest. [Attached threads](/reference/conn#attached-threads) and [Sidebar hidden threads](/reference/conn#sidebar-hidden-threads) own those sections' rules.
 
+A JSON Schema pattern sees characters and Unicode whitespace, while the Gateway counts UTF-8 bytes and refuses only ASCII whitespace. So the thread id patterns list the ASCII whitespace characters, and each id description states the 255-byte limit, which a pattern cannot count. The contract test checks concrete ids against both.
+
 `GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields described in [Instance servers](/reference/conn#instance-servers). Their nullable types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
 
 The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its description explains how to retry a revoked pairing whose session still lives. [Conn session cleanup](/reference/conn#session-cleanup) defines selection and failure behavior. Regenerate both OpenAPI and the MCP manifest when this request changes.

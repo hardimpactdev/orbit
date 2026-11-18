@@ -9,6 +9,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 use Orbit\Extensions\Conn\Data\PatchConnProfileSettingsData;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
+use stdClass;
 
 /**
  * Changes some sections of a settings document, each with the version the client last read:
@@ -31,14 +32,21 @@ final class PatchConnProfileSettingsRequest extends FormRequest
     {
         $rules = ['sections' => ['bail', $this->knownSections(...), 'required', 'array', 'min:1']];
 
-        $strings = $this->sentStringValues();
+        $sent = $this->sentSections();
 
         foreach ($this->sections() as $section => $change) {
             $path = "sections.{$section}";
-            $value = in_array($section, $strings, true)
-                ? ["{$path}.value" => [self::refuseEmptyString(...)]]
+            $raw = $sent[$section] ?? null;
+            $sentNull = $raw instanceof stdClass && property_exists($raw, 'value') && $raw->value === null;
+            $value = array_key_exists('value', $change) && $change['value'] === null && ! $sentNull
+                ? ["{$path}.value" => [self::refuseBlank(...)]]
                 : ConnProfileSettingsRules::forSection($section, "{$path}.value", $change['value'] ?? null, nullable: true);
             array_unshift($value["{$path}.value"], 'present');
+
+            if (ConnProfileSections::isThreadSet($section) && $raw instanceof stdClass && ($raw->value ?? null) instanceof stdClass && ($raw->value->threads ?? null) instanceof stdClass) {
+                $value["{$path}.value.threads"][] = self::refuseObject(...);
+            }
+
             $rules += [
                 $path => ['array:version,value'],
                 "{$path}.version" => ['required', 'integer:strict', 'min:0'],
@@ -141,34 +149,30 @@ final class PatchConnProfileSettingsRequest extends FormRequest
     }
 
     /**
-     * The sections whose sent `value` is an empty or blank string. The request stack turns such a string
-     * into null, which would remove the section, so the raw body is read here.
+     * The sent sections by name as the raw JSON body holds them, with JSON objects kept as objects. The request stack
+     * turns a blank string, also one of Unicode spaces, into null, and the decoder turns `{}` into `[]`. Only the raw
+     * body tells a sent null from a blank string, and an empty object from an empty list.
      *
-     * @return list<string>
+     * @return array<string, mixed>
      */
-    private function sentStringValues(): array
+    private function sentSections(): array
     {
-        $body = json_decode($this->getContent(), true);
-        $sections = is_array($body) ? ($body['sections'] ?? null) : null;
+        $body = json_decode($this->getContent());
+        $sections = $body instanceof stdClass ? ($body->sections ?? null) : null;
 
-        if (! is_array($sections)) {
-            return [];
-        }
-
-        $strings = [];
-
-        foreach ($sections as $name => $change) {
-            if (is_array($change) && is_string($change['value'] ?? null) && trim($change['value']) === '') {
-                $strings[] = (string) $name;
-            }
-        }
-
-        return $strings;
+        return $sections instanceof stdClass ? get_object_vars($sections) : [];
     }
 
-    private static function refuseEmptyString(string $attribute, mixed $value, Closure $fail): void
+    /** A value that is null in the input but was not a JSON null: a blank string, which must not remove a section. */
+    private static function refuseBlank(string $attribute, mixed $value, Closure $fail): void
     {
         $fail("The {$attribute} field must not be an empty string. Send null to remove the section.");
+    }
+
+    /** A thread set's `threads` sent as a JSON object, such as `{}`, which the decoder would turn into an empty list. */
+    private static function refuseObject(string $attribute, mixed $value, Closure $fail): void
+    {
+        $fail("The {$attribute} field must be a list.");
     }
 
     /** Refuses a section name that Conn does not know, such as `theme`, `devices`, or `devices.Phone`. */

@@ -10,6 +10,7 @@ use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
@@ -29,14 +30,6 @@ uses(LazilyRefreshDatabase::class);
  * This keeps the published body, and the MCP tool built from it, on the request rules. It reads the generated
  * `docs/openapi.json` and MCP manifest, so run `bin/build-api` first, as CI does.
  */
-function contract_pattern(array $rules): string
-{
-    $regex = array_values(array_filter($rules, static fn (mixed $rule): bool => is_string($rule) && str_starts_with($rule, 'regex:')));
-    expect($regex)->toHaveCount(1)->and($regex[0])->toStartWith('regex:/\A')->toEndWith('\z/');
-
-    return '^'.substr($regex[0], strlen('regex:/\A'), -strlen('\z/')).'$(?![\s\S])';
-}
-
 /** @return array<string, array<string, mixed>> */
 function contract_sections(): array
 {
@@ -51,8 +44,6 @@ function contract_sections(): array
 }
 
 it('publishes every patch section with the thread-set rules of the request', function (string $section): void {
-    $rules = ConnProfileSettingsRules::forSection($section, 'v', [], nullable: true);
-
     foreach (contract_sections() as $source => $sections) {
         expect(array_keys($sections['properties']))->toEqualCanonicalizing(ConnProfileSections::Named, $source)
             ->and(array_keys($sections['patternProperties']))->toBe(['^devices\.[a-z][a-z0-9-]{1,23}$'], $source);
@@ -68,11 +59,55 @@ it('publishes every patch section with the thread-set rules of the request', fun
             ->and($value['description'])->toContain('at most '.(ConnProfileSections::MaxAttachedThreadsBytes / 1024).' KB')
             ->and($threads['maxItems'])->toBe(ConnProfileSections::MaxAttachedThreads)
             ->and($entry['additionalProperties'])->toBeFalse()
-            ->and($entry['required'])->toBe(['environmentId', 'threadId'])
-            ->and($entry['properties']['environmentId']['pattern'])->toBe(contract_pattern($rules['v.threads.*.environmentId']), $source)
-            ->and($entry['properties']['threadId']['pattern'])->toBe(contract_pattern($rules['v.threads.*.threadId']), $source);
+            ->and($entry['required'])->toBe(['environmentId', 'threadId']);
     }
 })->with([ConnProfileSections::AttachedThreads, ConnProfileSections::SidebarHiddenThreads]);
+
+/** Whether a string passes a published string schema: its pattern, read as a Unicode regex, and its length in characters. */
+function contract_passes(array $schema, string $value): bool
+{
+    $length = mb_strlen($value);
+
+    return preg_match('/'.$schema['pattern'].'/u', $value) === 1 && $length >= $schema['minLength'] && $length <= $schema['maxLength'];
+}
+
+/**
+ * The Gateway counts bytes and only ASCII whitespace; a JSON Schema pattern sees characters and Unicode whitespace. The
+ * published ids agree with the rule on every case but a non-ASCII id over 255 bytes, which no pattern can count, so
+ * their description states the byte limit.
+ */
+it('publishes thread ids that accept and refuse what the Gateway does', function (string $field, string $id, bool $gateway, bool $published): void {
+    $section = ConnProfileSections::SidebarHiddenThreads;
+    $entry = ['environmentId' => 'env-beast', 'threadId' => 'thread-1', $field => $id];
+    $passes = Validator::make(['v' => ['schema' => 1, 'threads' => [$entry]]], ConnProfileSettingsRules::forSection($section, 'v', [], nullable: true))->passes();
+
+    expect($passes)->toBe($gateway);
+
+    foreach (contract_sections() as $source => $sections) {
+        foreach ([ConnProfileSections::AttachedThreads, $section] as $name) {
+            $schema = $sections['properties'][$name]['properties']['value']['oneOf'][0]['properties']['threads']['items']['properties'][$field];
+
+            expect(contract_passes($schema, $id))->toBe($published, "{$source} {$name}")
+                ->and($schema['description'])->toContain('At most 255 bytes of UTF-8')->toContain('No ASCII whitespace');
+        }
+    }
+})->with([
+    'environment with a space' => ['environmentId', 'a b', false, false],
+    'environment with a tab' => ['environmentId', "a\tb", false, false],
+    'environment with a vertical tab' => ['environmentId', "a\x0Bb", false, false],
+    'environment with a colon' => ['environmentId', 'a:b', false, false],
+    'environment with a no-break space' => ['environmentId', "a\u{00A0}b", true, true],
+    'environment of 255 bytes' => ['environmentId', str_repeat('e', 255), true, true],
+    'environment of 256 bytes' => ['environmentId', str_repeat('e', 256), false, false],
+    'environment of 127 accented letters' => ['environmentId', str_repeat('é', 127), true, true],
+    'environment of 128 accented letters' => ['environmentId', str_repeat('é', 128), false, true],
+    'thread with a space' => ['threadId', 'a b', false, false],
+    'thread with a line feed' => ['threadId', "a\nb", false, false],
+    'thread with a colon' => ['threadId', 'a:b', true, true],
+    'thread with a no-break space' => ['threadId', "a\u{00A0}b", true, true],
+    'thread of 256 bytes' => ['threadId', str_repeat('t', 256), false, false],
+    'thread of 128 accented letters' => ['threadId', str_repeat('é', 128), false, true],
+]);
 
 it('names the attached set in the settings show and patch descriptions', function (): void {
     $spec = json_decode((string) file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
@@ -126,6 +161,14 @@ function hidden_patch_sections(Node $caller, array $sections, ?ConnProfile $prof
 function hidden_patch(Node $caller, int $version, mixed $value, ?ConnProfile $profile = null): TestResponse
 {
     return hidden_patch_sections($caller, ['sidebarHiddenThreads' => ['version' => $version, 'value' => $value]], $profile);
+}
+
+/** A patch with a raw JSON body, for values that a PHP array cannot carry, such as `{}` or an escaped Unicode space. */
+function hidden_patch_raw(Node $caller, string $body): TestResponse
+{
+    return test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call(
+        'PATCH', '/api/v1/conn/profiles/'.test()->profile->id.'/settings', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $body,
+    );
 }
 
 /** @return array<string, mixed> */
@@ -220,6 +263,42 @@ describe('sidebarHiddenThreads', function (): void {
             ->assertJsonPath('data.settings.sidebarHiddenThreads', ['schema' => 1, 'threads' => []])
             ->assertJsonPath('data.sections.sidebarHiddenThreads.version', 3);
     })->with(['null' => [null], 'empty list' => [['schema' => 1, 'threads' => []]]]);
+
+    it('stores the canonical empty list for an empty list of another schema', function (): void {
+        hidden_patch($this->phone, 0, hidden_value([['env-beast', 'thread-1']]))->assertOk();
+
+        hidden_patch($this->phone, 1, ['schema' => 2, 'threads' => []])->assertOk()
+            ->assertJsonPath('data.settings.sidebarHiddenThreads', ['schema' => 1, 'threads' => []])
+            ->assertJsonPath('data.sections.sidebarHiddenThreads.version', 2);
+
+        $read = hidden_read($this->desktop);
+        expect($read['settings']['sidebarHiddenThreads'])->toBe(['schema' => 1, 'threads' => []])
+            ->and($read['sections']['sidebarHiddenThreads']['version'])->toBe(2)
+            ->and($this->profile->fresh()?->settings['sidebarHiddenThreads'])->toBe(['schema' => 1, 'threads' => []]);
+    });
+
+    it('refuses a blank value or an object of threads without touching a stored set', function (string $section, string $value, string $field): void {
+        $marks = hidden_value([['env-beast', 'thread-1']]);
+        hidden_patch_sections($this->phone, [$section => ['version' => 0, 'value' => $marks]])->assertOk();
+
+        $response = hidden_patch_raw($this->phone, '{"sections":{"'.$section.'":{"version":1,"value":'.$value.'}}}')->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation.failed');
+
+        $read = hidden_read($this->desktop);
+        expect(array_keys($response->json('error.details')))->toBe([$field])
+            ->and($read['version'])->toBe(2)
+            ->and($read['settings'][$section])->toBe($marks)
+            ->and($read['sections'][$section]['version'])->toBe(1);
+    })->with([
+        'empty string' => [ConnProfileSections::SidebarHiddenThreads, '""', 'sections.sidebarHiddenThreads.value'],
+        'space' => [ConnProfileSections::SidebarHiddenThreads, '" "', 'sections.sidebarHiddenThreads.value'],
+        'tab' => [ConnProfileSections::SidebarHiddenThreads, '"\\t"', 'sections.sidebarHiddenThreads.value'],
+        'no-break space' => [ConnProfileSections::SidebarHiddenThreads, '"\\u00a0"', 'sections.sidebarHiddenThreads.value'],
+        'ideographic space' => [ConnProfileSections::SidebarHiddenThreads, '"\\u3000"', 'sections.sidebarHiddenThreads.value'],
+        'threads object' => [ConnProfileSections::SidebarHiddenThreads, '{"schema":1,"threads":{}}', 'sections.sidebarHiddenThreads.value.threads'],
+        'attached no-break space' => [ConnProfileSections::AttachedThreads, '"\\u00a0"', 'sections.attachedThreads.value'],
+        'attached threads object' => [ConnProfileSections::AttachedThreads, '{"schema":1,"threads":{}}', 'sections.attachedThreads.value.threads'],
+    ]);
 
     it('stores an empty list for a first write of null', function (): void {
         hidden_patch($this->phone, 0, null)->assertOk()

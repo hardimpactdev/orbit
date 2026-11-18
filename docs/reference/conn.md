@@ -120,12 +120,12 @@ A section is `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThread
 | `devices.<type>.values` | Required flat map of at most 128 entries. |
 | `attachedThreads` | Object of at most 64 KB, serialized. |
 | `attachedThreads.schema` | Required integer, 1 or more. |
-| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. |
+| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. An object, even `{}`, is refused. |
 | `attachedThreads.threads[].environmentId` | Required: the `environment_id` of a Conn environment, at most 255 characters, no spaces or colons. See [Attached threads](#attached-threads) for which environments a write may name. |
 | `attachedThreads.threads[].threadId` | Required: the T3 thread id, at most 255 characters, no spaces. |
 | `sidebarHiddenThreads` | Object of at most 64 KB, serialized, with the same keys and rules as `attachedThreads`. |
 | `sidebarHiddenThreads.schema` | Required integer, 1 to 1000. |
-| `sidebarHiddenThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. |
+| `sidebarHiddenThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. An object, even `{}`, is refused. |
 | `sidebarHiddenThreads.threads[].environmentId` | Required: a Conn `environment_id`, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab, and no colon. The Gateway checks only its form ([Sidebar hidden threads](#sidebar-hidden-threads)). |
 | `sidebarHiddenThreads.threads[].threadId` | Required: the T3 thread id, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab. |
 
@@ -236,7 +236,7 @@ Write the section with `PATCH`, as the whole list, with the section version the 
 ]}}}}
 ```
 
-To hide a thread, send the list with it added. To show it, send the list without it. To show every thread, send `{"schema": 1, "threads": []}` or `null`. A bare `[]` lacks both required keys and is refused with `validation.failed` (422). Unlike other sections, `null` does not remove this section: the Gateway stores `{"schema": 1, "threads": []}`. Both add 1 to the section version and to the document version.
+To hide a thread, send the list with it added. To show it, send the list without it. To show every thread, send `{"schema": 1, "threads": []}` or `null`. A bare `[]` lacks both required keys and is refused with `validation.failed` (422). Unlike other sections, `null` does not remove this section: the Gateway stores `{"schema": 1, "threads": []}`. It stores the same value for an empty list sent with another schema. Each of these writes adds 1 to the section version and to the document version.
 
 Two devices that change the list at the same time are handled by the section version ([Versions](#versions)). The second write gets `conn.settings_version_conflict` (409). That client reads the section again and merges three ways, as for attached threads: the remote list, plus the threads it hid since its base, minus the threads it showed since its base. Then it retries with the new version. A patch is all or nothing. A patch that also holds `attachedThreads` is refused as a whole when one of its attached entries is refused.
 
@@ -244,7 +244,7 @@ A read shows the section by its version:
 
 - **Version 0.** A profile whose section was never written has no `sidebarHiddenThreads` key and no entry for it in `sections`. It reads as no hidden threads, so the first patch sends version 0. No migration runs.
 - **Version 1 or more.** Once the section has been written, `GET /profiles/{id}/settings` and the `PATCH` reply always hold its stored value in `settings.sidebarHiddenThreads`. Its version is in `sections`.
-- **Empty list.** After a write of `{"schema": 1, "threads": []}` or `null`, the value is `{"schema": 1, "threads": []}`.
+- **Empty list.** After a write of `null` or of an empty list, with any schema, the value is `{"schema": 1, "threads": []}`.
 - **Confirm a show.** So a client confirms a write that shows the last hidden thread from the value, not only from the version.
 - **Other sections.** They keep their own rules: a section that was removed with `null` is absent.
 
@@ -268,7 +268,7 @@ A `PUT` accepts only `workspaces`, `appearance`, and `devices`. A body with any 
 
 A patch whose section is at another version is refused with `conn.settings_version_conflict` (409), and the Gateway writes nothing. `details.current_version` is the document version. `details.sections` holds the current version of each section the request named. The client reads again, merges the sections that changed, and retries.
 
-A `value` of `null` removes any section but `workspaces` and `sidebarHiddenThreads`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. A `null` for `sidebarHiddenThreads` stores an empty list ([Sidebar hidden threads](#sidebar-hidden-threads)). Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
+A `value` of `null` removes any section but `workspaces` and `sidebarHiddenThreads`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. A `null` for `sidebarHiddenThreads` stores an empty list ([Sidebar hidden threads](#sidebar-hidden-threads)). Only an explicit `null` removes a section. An empty or blank string, including one of Unicode spaces such as a no-break space, is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
 
 Both run in one transaction on the locked profile row, so two writes from the same version cannot both win. A section name that Conn does not know, such as `theme`, `devices`, or `devices.Phone`, is refused with `validation.failed`. A rule error names its field with dots, such as `sections.devices.iphone.value.values.baseFontSize`.
 

@@ -46,7 +46,10 @@ final readonly class ConnProfileSections
 
     public const int MaxDocumentBytes = 4 * 1024 * 1024;
 
-    /** What a null `sidebarHiddenThreads` stores: an empty list, so a read confirms that the last hidden thread was shown. */
+    /**
+     * What a null or empty `sidebarHiddenThreads` stores, whatever schema an empty list was sent with: one canonical empty
+     * list, so a read confirms that the last hidden thread was shown.
+     */
     public const array EmptySidebarHiddenThreads = ['schema' => 1, 'threads' => []];
 
     public static function device(string $type): string
@@ -66,6 +69,12 @@ final readonly class ConnProfileSections
         return preg_match(self::DeviceTypePattern, $type) === 1 ? $type : null;
     }
 
+    /** Whether the section is a thread set: `{"schema": 1, "threads": [...]}`. */
+    public static function isThreadSet(string $section): bool
+    {
+        return $section === self::AttachedThreads || $section === self::SidebarHiddenThreads;
+    }
+
     public static function isKnown(string $section): bool
     {
         return in_array($section, self::Named, true) || self::deviceType($section) !== null;
@@ -73,7 +82,8 @@ final readonly class ConnProfileSections
 
     /**
      * The document with one section replaced. A null value removes any section but `workspaces` and
-     * `sidebarHiddenThreads`, which stores an empty list, and `devices` goes away with its last device.
+     * `sidebarHiddenThreads`, which stores the canonical empty list as it does for any empty list, and `devices`
+     * goes away with its last device.
      * `workspaces` always stays a list.
      *
      * @param  array<string, mixed>  $settings
@@ -83,7 +93,7 @@ final readonly class ConnProfileSections
     {
         $type = self::deviceType($section);
 
-        if ($section === self::SidebarHiddenThreads && $value === null) {
+        if ($section === self::SidebarHiddenThreads && ($value === null || (is_array($value) && ($value['threads'] ?? null) === []))) {
             $value = self::EmptySidebarHiddenThreads;
         }
 
