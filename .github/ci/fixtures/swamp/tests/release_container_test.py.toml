@@ -5,6 +5,8 @@ inputs = [
   "swamp/ansible/files/instance-container-power.py",
 ]
 cases = [
+  "test_capacity_refuses_each_shortage_before_mutating_a_release",
+  "test_first_gateway_build_counts_host_fpm_and_gateway_processes",
   "test_address_is_reserved_once_and_cannot_silently_drift_after_boot",
   "test_cold_resume_waits_for_eth0_when_another_interface_gets_ipv4_first",
   "test_missing_eth0_address_uses_one_deadline_for_wait_and_reads",
