@@ -103,25 +103,35 @@ set_inventory() {
   mv -fT "$tmp" "$inventory"
   sync -f "$home"
 }
+discard_legacy() {
+  local discarded=$1 live=$2 name stale
+  [[ $discarded =~ ^[a-f0-9]{40}$ ]] && [[ $discarded != "$live" ]] && [[ $discarded != "$sha" ]] ||
+    fail 'Gateway rollback is unavailable; deploy a corrective commit'
+  name=gateway-${discarded:0:12}
+  stale=$("${incus_cli[@]}" list "$name" --format json | jq -c --arg name "$name" 'map(select(.name==$name))|first // {}')
+  if [[ $stale != '{}' ]]; then
+    jq -e --arg sha "$discarded" '(.status == "Frozen" or .status == "Stopped") and (.config |
+      .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.role"]=="candidate" and
+      .["user.orbit.release.commit"]==$sha and .["boot.autostart"]=="false")' <<< "$stale" >/dev/null ||
+      fail 'legacy rollback is not safely parked'
+    "${incus_cli[@]}" delete "$name" --force
+  fi
+  ctl forget gateway "${discarded:0:12}" >&2
+}
 gateway_slot() {
-  local live='' old='' records stale name
+  local live='' old='' pending records
   [[ ! -e $journal/operation ]] || fail 'finish the interrupted Gateway handover first'
-  records=$("${incus_cli[@]}" list --format json)
   if [[ -f $inventory ]]; then
     live=$(field '.live | select(test("^[0-9a-f]{40}$"))')
     old=$(field '.old // ""')
+    if [[ -f $journal/pending-prune ]]; then
+      pending=$(cat "$journal/pending-prune")
+      if [[ $pending != "$old" ]]; then discard_legacy "$pending" "$live"; fi
+      rm -- "$journal/pending-prune"
+      sync -f "$journal"
+    fi
     if [[ -n $old ]]; then
-      [[ $old =~ ^[a-f0-9]{40}$ && $old != "$live" && $old != "$sha" ]] || fail 'Gateway rollback is unavailable; deploy a corrective commit'
-      name=gateway-${old:0:12}
-      stale=$(jq -c --arg name "$name" 'map(select(.name==$name))|first // {}' <<< "$records")
-      if [[ $stale != '{}' ]]; then
-        jq -e --arg old "$old" '(.status == "Frozen" or .status == "Stopped") and (.config |
-          .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.role"]=="candidate" and
-          .["user.orbit.release.commit"]==$old and .["boot.autostart"]=="false")' <<< "$stale" >/dev/null ||
-          fail 'legacy rollback is not safely parked'
-        "${incus_cli[@]}" delete "$name" --force
-      fi
-      ctl forget gateway "${old:0:12}" >&2
+      discard_legacy "$old" "$live"
       set_inventory "$live"
     fi
   fi
@@ -171,13 +181,27 @@ active_horizons() {
     'orbit-process-*-horizon.service' orbit-gateway-horizon.service | awk '{print $1}'
 }
 drain_active_horizons() {
-  local machine=$1 unit units
-  units=$(active_horizons "$machine")
+  local machine=$1 unit units pid failed=0
+  local pids=()
+  units=$(active_horizons "$machine") || return 1
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
-    run_on "$machine" /bin/sh "$checkout/swamp/scripts/gateway-release-drain.sh" "$unit" </dev/null
+    # Stop all old consumers promptly; one long job must not leave another worker claiming jobs.
+    run_on "$machine" /bin/sh "$checkout/swamp/scripts/gateway-release-drain.sh" "$unit" </dev/null &
+    pids+=("$!")
   done <<< "$units"
-  [[ -z $(active_horizons "$machine") ]] || fail 'previous Gateway still has active Horizon consumers'
+  for pid in "${pids[@]}"; do wait "$pid" || failed=1; done
+  [[ $failed == 0 && -z $(active_horizons "$machine") ]] || fail 'previous Gateway still has active Horizon consumers'
+}
+drain_http() {
+  local prev=$1
+  # Older releases can have a finite service stop timeout. Do not force a request to end.
+  enter "$prev" install -d /run/systemd/system/orbit-gateway-web.service.d
+  printf '[Service]\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' |
+    enter "$prev" tee /run/systemd/system/orbit-gateway-web.service.d/drain.conf >/dev/null
+  enter "$prev" systemctl daemon-reload
+  enter "$prev" systemctl stop orbit-gateway-web.service
+  [[ $(enter "$prev" systemctl show -p ActiveState --value orbit-gateway-web.service) == inactive ]] || fail 'former Gateway HTTP still draining'
 }
 wanted_horizons() {
   local admitted=$1 observed=${2:-/dev/null}
@@ -187,7 +211,7 @@ wanted_horizons() {
   src swamp/scripts/gateway-release-horizons.py | python3 - "$admitted" "$observed"
 }
 start_horizons() {
-  local machine=$1 selected=$2 unit selected_units
+  local machine=$1 selected=$2 unit selected_units group
   selected_units=$(wanted_horizons "$selected" "${@:3}") || return 1
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
@@ -200,6 +224,8 @@ start_horizons() {
     fi
     run_on "$machine" systemctl enable --now -- "$unit" </dev/null >&2 || return 1
     run_on "$machine" systemctl is-active --quiet -- "$unit" </dev/null || return 1
+    group=$(run_on "$machine" systemctl show --property=ControlGroup --value -- "$unit") || return 1
+    php "$machine" "$checkout/bin/gateway-horizon-ready" "$app" "$group" || return 1
   done <<< "$selected_units"
 }
 start_background() {
@@ -218,11 +244,17 @@ stop_background() {
     run_on "$machine" systemctl disable --now "$unit" </dev/null >&2
   done < "${2:-$journal/background}"
 }
+fence_admissions() {
+  artisan "$candidate" operations:check-cleanup --fence-only --json >&2
+}
 publish_forward() {
   local addr
   [[ $(cat "$journal/candidate") == "$sha" && $(cat "$journal/operation") == "$operation" ]] || fail 'handover identity changed'
   # This marker is durable before either Caddy input changes. A crash or uncertain reload
   # can only republish this same candidate; an earlier backend can never be selected again.
+  [[ $(owned_sha "$candidate") == "$sha" &&
+    $("${incus_cli[@]}" config get "$candidate" user.orbit.release.operation) == "$operation" ]] || fail 'candidate identity changed'
+  "${incus_cli[@]}" config set "$candidate" boot.autostart=true
   addr=$(ctl address gateway "$id")
   set_upstream "$addr"
   sync -f /etc/caddy
@@ -230,12 +262,17 @@ publish_forward() {
   set_inventory "$sha"
 }
 finish_forward() {
-  local prev previous_sha exists unit service_failed=false
+  local prev previous_sha exists='{}' unit service_failed=false running=false http_pid drain_failed=0
   [[ $(field '.live') == "$sha" ]] || fail 'candidate no longer serves'
   if [[ ! -f $journal/operation ]]; then return; fi
   [[ $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] || fail 'handover identity changed'
+  # A failed Horizon start leaves the previous consumers and journal intact for retry.
+  start_horizons "$candidate" "$(cat "$journal/horizon")"
   prev=$(cat "$journal/machine")
-  if [[ $prev != host ]]; then
+  /usr/local/libexec/orbit-gateway-release-phase scheduler-window "$sha" "$operation"
+  if [[ $prev == host ]]; then
+    stop_background host
+  else
     previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$journal/inventory")
     [[ $prev == "gateway-${previous_sha:0:12}" && $previous_sha != "$sha" ]] || fail 'previous Gateway identity changed'
     exists=$("${incus_cli[@]}" list "$prev" --format json | jq -c --arg name "$prev" 'map(select(.name==$name))|first // {}')
@@ -245,31 +282,42 @@ finish_forward() {
         fail 'previous Gateway container changed'
       "${incus_cli[@]}" config set "$prev" boot.autostart=false
       if [[ $(jq -r .status <<< "$exists") != Stopped ]]; then
+        running=true
         stop_background "$prev"
-        drain_active_horizons "$prev"
-        # A previous release may predate the no-SIGKILL drop-in. Always wait for the web
-        # master and children to leave before stopping or deleting the former container.
-        enter "$prev" install -d /run/systemd/system/orbit-gateway-web.service.d
-        printf '[Service]\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' |
-          enter "$prev" tee /run/systemd/system/orbit-gateway-web.service.d/drain.conf >/dev/null
-        enter "$prev" systemctl daemon-reload
-        enter "$prev" systemctl stop orbit-gateway-web.service
-        [[ $(enter "$prev" systemctl show -p ActiveState --value orbit-gateway-web.service) == inactive ]] || fail 'former Gateway HTTP still draining'
-        "${incus_cli[@]}" stop "$prev" --timeout 120
       fi
-      "${incus_cli[@]}" delete "$prev"
     fi
-    ctl forget gateway "${previous_sha:0:12}" >&2
+  fi
+  # Transfer the scheduler before waiting for long-running jobs or HTTP responses.
+  # Preserve desired services across an unhealthy release so a corrective deploy can start them.
+  if start_background "$candidate"; then
+    rm -f "$journal/retry-background"
   else
-    stop_background host
+    cp "$journal/background" "$journal/retry-background"
+    service_failed=true
+  fi
+  if [[ $prev == host ]]; then
     drain_active_horizons host
+    # The host's on-demand Gateway pool exits after its last request and idle timeout.
+    # Other PHP-FPM pools keep their own workers. Leave the retirement marker absent on timeout.
+    pool_rc=0
+    timeout 630 pidwait -fx 'php-fpm: pool orbit-gateway' || pool_rc=$?
+    case $pool_rc in 0|1) ;; *) fail 'old Gateway PHP requests still draining' ;; esac
+    if pgrep -fx 'php-fpm: pool orbit-gateway' >/dev/null; then fail 'old Gateway PHP requests still draining'; fi
     while IFS= read -r unit; do
       [[ -z $unit ]] || systemctl disable -- "$unit" </dev/null
     done < "$journal/horizons"
+  else
+    if [[ $running == true ]]; then
+      drain_http "$prev" </dev/null &
+      http_pid=$!
+      (drain_active_horizons "$prev") || drain_failed=1
+      wait "$http_pid" || drain_failed=1
+      [[ $drain_failed == 0 ]] || fail 'former Gateway is still draining'
+      "${incus_cli[@]}" stop "$prev" --timeout 120
+    fi
+    if [[ $exists != '{}' ]]; then "${incus_cli[@]}" delete "$prev"; fi
+    ctl forget gateway "${previous_sha:0:12}" >&2
   fi
-  # If new application services cannot start, leave the new target selected and allow
-  # the operator to deploy a corrected commit. The next handover inherits desired units.
-  start_background "$candidate" || service_failed=true
   cp "$journal/operation" "$journal/last-operation"
   touch "$journal/host-retired"
   set_inventory "$sha"
@@ -282,11 +330,10 @@ case "$action" in
   build)
     force=$1 manifest=$2 rollback=${3:-false}
     [[ $rollback != true ]] || fail 'Gateway rollback is unavailable; deploy a corrective commit'
+    [[ $force != true ]] || fail "Gateway releases require a descendant of live"
     gateway_slot
     if retained; then
-      ctl resume gateway "$id" "$operation" >&2
-      grants "$candidate"
-      exit
+      fail 'selected Gateway already serves; reconcile its exact revision or deploy a corrective commit'
     fi
     if [[ ${ORBIT_GATEWAY_INITIAL_MOVE:-0} == 1 && ! -f $inventory ]]; then
       current=$(cat "$root/orbit/REVISION")
@@ -294,10 +341,7 @@ case "$action" in
     else
       current=$(field '.live')
     fi
-    if [[ $force == true ]]; then fail "Gateway releases require a descendant of live"; fi
-    if [[ -n $current ]]; then
-      git -c safe.directory="$mirror" -C "$mirror" merge-base --is-ancestor "$current" "$sha" || fail "$sha does not descend from live"
-    fi
+    git -c safe.directory="$mirror" -C "$mirror" merge-base --is-ancestor "$current" "$sha" || fail "$sha does not descend from live"
     if [[ -f $inventory ]]; then
       ctl capacity gateway --live="${current:0:12}" >&2
     else
@@ -349,11 +393,11 @@ case "$action" in
     ;;
   clone)
     digest=$1
-    if retained; then exit 0; fi
+    if retained; then fail "cannot clone over the serving Gateway"; fi
     gateway_slot
     # A retry can find this exact build already parked. Never execute guest code in a frozen preparer.
-    if [[ $( "${incus_cli[@]}" config get "$prep" user.orbit.release.operation) != "$operation" ]]; then fail 'preparer operation changed'; fi
-    if [[ $( "${incus_cli[@]}" config get "$prep" user.orbit.release.parked-seal) != "$operation/$sha/$digest" ]]; then
+    if [[ $("${incus_cli[@]}" config get "$prep" user.orbit.release.operation) != "$operation" ]]; then fail 'preparer operation changed'; fi
+    if [[ $("${incus_cli[@]}" config get "$prep" user.orbit.release.parked-seal) != "$operation/$sha/$digest" ]]; then
     # Publish REVISION only after code, configuration and the checked web build all exist.
     user "$prep" test -s /home/orbit/web/current/index.html
     printf '%s\n' "$sha" | user "$prep" tee "$checkout/REVISION.next" >/dev/null
@@ -395,6 +439,7 @@ case "$action" in
   switch)
     expected=$1
     if [[ -f $journal/operation ]]; then
+      fence_admissions
       publish_forward
       cat "$journal/generations"
       exit
@@ -418,6 +463,7 @@ case "$action" in
       printf '%s\n' "$prev" > "$journal/machine"
       {
         remember_background "$prev"
+        if [[ -f $journal/retry-background ]]; then cat "$journal/retry-background"; fi
         for record in /var/lib/orbit/gateway-processes/orbit-process-*-schedule-work.service.json; do
           [[ -f $record ]] || continue
           unit=${record##*/}
@@ -430,8 +476,10 @@ case "$action" in
       if grep -qxF orbit-agent-view.service "$journal/background"; then enter "$candidate" systemctl start orbit-agent-view.service; fi
       enter "$candidate" systemctl enable orbit-gateway-web.service
       # Set autostart after committing to forward recovery; a failed private build must stay disposable.
+      # No on-disk or live traffic selection changes until the database has durably
+      # rejected new admissions for all builders declared obsolete by this candidate.
       record_switch
-      "${incus_cli[@]}" config set "$candidate" boot.autostart=true
+      fence_admissions
       publish_forward
     fi
     printf '%s\n' "$generations"
@@ -440,13 +488,10 @@ case "$action" in
     check_release "$sha"
     ;;
   recover)
-    "${incus_cli[@]}" config set "$candidate" boot.autostart=true
     ctl resume gateway "$id" "$operation" >&2
+    fence_admissions
     publish_forward
-    failed=false
-    start_horizons "$candidate" "$(cat "$journal/horizon")" || failed=true
     finish_forward
-    [[ $failed == false ]] || fail 'Gateway selected; queue workers need a corrective deployment'
     ;;
   start-horizon)
     [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'
@@ -460,7 +505,7 @@ case "$action" in
     [[ ! -f $journal/operation && $(field '.live') == "$sha" ]] || fail 'finish the Gateway handover before checking cleanup'
     rc=0
     artisan "$candidate" operations:check-cleanup --json || rc=$?
-    [[ $rc == 0 || $rc == 75 ]] || exit "$rc"
+    case $rc in 0|75) ;; *) exit "$rc" ;; esac
     ;;
   retire) finish_forward ;;
   prune|prune-pending) : ;;

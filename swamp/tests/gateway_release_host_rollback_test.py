@@ -1,100 +1,53 @@
 """Exercise the host PHP-FPM rollback using the real release commands."""
 import json
 import os
-import socket
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from gateway_release_recovery_test import HORIZON, GatewayReleaseFixture
+from gateway_release_recovery_test import (
+    HORIZON,
+    MANAGED_HORIZON,
+    GatewayReleaseFixture,
+)
 
 
 class GatewayHostRollback(GatewayReleaseFixture):
-    def test_host_rollback_refuses_broken_listener_before_drain(self):
+    def test_host_fallback_refuses_after_the_first_move_even_if_php_fpm_is_healthy(self):
         self.assert_ok(self.run_move())
-        events = (self.state / "events").read_text()
-        with socket.socket(socket.AF_UNIX) as unavailable:
-            unavailable.bind(str(self.sock))
-            result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Gateway host is not ready", result.stderr)
-        self.assertEqual((self.state / "events").read_text(), events)
+        before = self.inventory.read_bytes()
+        for option in ("--host", self.old[:12], ""):
+            result = self.run_script(self.console, option)
+            self.assertIn("fix forward", result.stderr)
+            self.assertEqual(self.inventory.read_bytes(), before)
         self.assert_container_serves()
 
-        self.sock.unlink()
-        self.listener(complete=False)
-        result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("incomplete FastCGI response", result.stderr)
-        self.assertEqual((self.state / "events").read_text(), events)
-        self.assert_container_serves()
-
-    def test_host_rollback_refuses_wrong_served_commit_before_drain(self):
-        self.listener(self.old)
+    def test_first_move_preserves_stopped_registered_processes(self):
+        receipt = json.loads((self.state / "receipt").read_text())
+        (self.state / "receipt").write_text(json.dumps({**receipt, "horizon_unit": MANAGED_HORIZON}))
+        (self.state / f"host-{HORIZON}").unlink()
         self.assert_ok(self.run_move())
-        events = (self.state / "events").read_text()
-        result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("host PHP-FPM did not report the selected release", result.stderr)
-        self.assertEqual((self.state / "events").read_text(), events)
-        self.assert_container_serves()
-
-    def test_host_rollback_restores_container_on_public_failure(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        (self.state / "broken-public").touch()
-        result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assert_container_serves()
-
-    def test_host_rollback_recovers_before_drain(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"before {self.candidate} drain"))
-        self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_container_serves()
-
-    def test_host_rollback_recovers_after_drain_before_switch(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"after {self.candidate} drain"))
-        self.assertEqual((self.state / "site").read_text(), "container")
-        self.assertTrue(self.inventory.exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_container_serves()
-
-    def test_host_rollback_recovers_after_switch_before_verification(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt="after host switch"))
-        self.assertEqual((self.state / "site").read_text(), "host")
-        self.assertTrue(self.inventory.exists())
-        unavailable = self.state / f"broken-public-container-{self.sha}"
-        unavailable.touch()
-        result = self.run_script(self.console, "--recover")
-        self.assertNotEqual(result.returncode, 0)
-        self.assert_pending(self.sha)
-        self.assertTrue((self.journal / "host-fallback/inventory").exists())
+        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
         self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
-        unavailable.unlink()
+
+    def test_move_cannot_race_an_interrupted_forward_handover(self):
+        self.assert_interrupted(self.run_move("after container switch"))
+        result = self.run_move()
+        self.assertIn("--recover", result.stderr)
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
 
-    def test_host_rollback_completes_cleanup_after_verified_switch(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt="after candidate deletion"))
-        self.assertTrue((self.journal / "host-fallback/verified").exists())
-        unavailable = self.state / "broken-public"
-        unavailable.touch()
-        result = self.run_script(self.console, "--recover")
-        self.assertNotEqual(result.returncode, 0)
+    def test_first_move_keeps_host_horizon_when_the_new_queue_cannot_start(self):
+        failed = self.state / "broken-horizon"
+        failed.touch()
+        self.assertNotEqual(self.run_move().returncode, 0)
         self.assert_pending(self.sha)
-        unavailable.unlink()
+        self.assertTrue((self.state / f"host-{HORIZON}").exists())
+        self.assertFalse((self.journal / "host-retired").exists())
+        failed.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_host_serves()
+        self.assert_container_serves()
 
     def test_ordinary_fpm_release_and_rollback(self):
         release = self.home / "releases" / self.old[:12]

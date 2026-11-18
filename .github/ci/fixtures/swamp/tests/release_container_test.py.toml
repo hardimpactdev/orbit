@@ -17,6 +17,7 @@ cases = [
   "test_one_operation_uses_the_same_candidate_without_a_second_copy",
   "test_existing_candidate_from_another_operation_is_untouched",
   "test_an_existing_snapshot_must_match_the_entire_commit_and_artifact",
+  "test_gateway_clone_requires_the_exact_frozen_preparer_and_snapshot",
   "test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build",
   "test_power_target_must_match_the_fixed_project_and_complete_container_name",
   "test_an_instance_and_its_preparer_have_independent_receipts",

@@ -1,7 +1,7 @@
 order = 300
 cases = [
   "retired settings leave the Gateway environment; the other lines stay as they were",
-  "host recovery removal requires the committed handover and two retained containers",
+  "host recovery removal requires a committed handover in the recorded inventory version",
 ]
 file = "swamp/tests/ansible_gateway_retired_settings_test.ts"
 cost = 5

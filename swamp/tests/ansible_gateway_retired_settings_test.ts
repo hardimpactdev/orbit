@@ -62,7 +62,7 @@ Deno.test({
   },
 });
 
-Deno.test("host recovery removal requires the committed handover and two retained containers", () => {
+Deno.test("host recovery removal requires a committed handover in the recorded inventory version", () => {
     const tasks = parse(Deno.readTextFileSync(
         new URL("../ansible/tasks/gateway-retire.yml", import.meta.url),
     )) as Record<string, unknown>[];

@@ -67,6 +67,49 @@ def prepare(config):
     return config[:block.start() + start] + include + config[block.end()-1:]
 
 
+def metrics_import(config):
+    # Convert only the published private Metrics site. Keep its listener, access guard,
+    # certificate and Grafana upstream exactly as published.
+    block = re.search(r"(?ms)^# orbit: metrics metrics[.]orbit\n.*?^}", config)
+    if not block:
+        return config
+    body = block[0]
+    selected = str(MODES / "metrics-auth.caddy")
+    if re.search(r"(?m)^\s*import " + re.escape(selected) + r" ", body):
+        return config
+    old = re.search(
+        r"(?m)^(?P<indent>[ \t]*)forward_auth unix//run/php/orbit-gateway[.]sock \{\n"
+        r"\s*uri /index[.]php\n\s*transport fastcgi \{\n\s*root (?P<root>/[^\n{}]+/public)\n"
+        r"\s*resolve_root_symlink\n\s*split [.]php\n\s*env REQUEST_URI /api/v1/metrics/grafana/authorize\n"
+        r"\s*env REMOTE_ADDR \{remote_host\}\n\s*\}\n\s*\}", body,
+    )
+    if not old or not re.search(r"(?m)^metrics[.]orbit \{$", body):
+        raise ValueError("unrecognized Gateway authorization in the private Metrics site")
+    directive = old["indent"] + "import " + selected + " " + old["root"]
+    return config[:block.start()] + body[:old.start()] + directive + body[old.end():] + config[block.end():]
+
+
+def metrics_handler(mode):
+    if mode == "host":
+        return b"""forward_auth unix//run/php/orbit-gateway.sock {
+    uri /index.php
+    transport fastcgi {
+        root {args[0]}
+        resolve_root_symlink
+        split .php
+        env REQUEST_URI /api/v1/metrics/grafana/authorize
+        env REMOTE_ADDR {remote_host}
+    }
+}
+"""
+    return b"""import /etc/caddy/orbit-gateway-upstream.caddy
+forward_auth {http.vars.gateway_release_upstream} {
+    uri /api/v1/metrics/grafana/authorize
+    header_up X-Forwarded-For {remote_host}
+}
+"""
+
+
 def reload_config():
     subprocess.run(["caddy", "validate", "--adapter", "caddyfile", "--config", CONFIG], check=True)
     subprocess.run(["systemctl", "reload", "caddy.service"], check=True)
@@ -79,24 +122,37 @@ def apply(mode):
     original = CONFIG.read_bytes()
     previous = SELECTION.readlink() if SELECTION.is_symlink() else None
     changed_config = False
+    metrics_file = MODES / "metrics-auth.caddy"
+    old_metrics = metrics_file.read_bytes() if metrics_file.exists() else None
     try:
+        candidate = original.decode()
         if mode == "prepare":
-            candidate = prepare(original.decode()).encode()
-            if candidate != original:
-                write(CONFIG, candidate, permissions, owner)
-                changed_config = True
+            candidate = prepare(candidate)
         else:
             if not PREPARED.is_file():
                 raise ValueError("prepare the Gateway Caddy site first")
             select(mode)
+        candidate = metrics_import(candidate).encode()
+        active = SELECTION.readlink()
+        if active not in (MODES / "host.caddy", MODES / "container.caddy"):
+            raise ValueError("unexpected Gateway handler selection")
+        write(metrics_file, metrics_handler(active.stem))
+        if candidate != original:
+            write(CONFIG, candidate, permissions, owner)
+            changed_config = True
         reload_config()
         if mode == "prepare":
             write(PREPARED, b"1\n")
+        write(PREPARED.with_name("gateway-metrics-prepared"), b"1\n")
     except BaseException:
         # A failed reload can have accepted the new route. The committed handover
         # republishes this candidate on recovery; never re-expose the host here.
         if mode == "container":
             raise
+        if old_metrics is None:
+            metrics_file.unlink(missing_ok=True)
+        else:
+            write(metrics_file, old_metrics)
         changed_selection = (SELECTION.readlink() if SELECTION.is_symlink() else None) != previous
         if changed_config:
             write(CONFIG, original, permissions, owner)

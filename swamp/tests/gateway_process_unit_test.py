@@ -49,6 +49,9 @@ class GatewayUnitTest(unittest.TestCase):
                 self.change("start")
         self.guest.assert_not_called()
         self.assertFalse(self.state.exists())
+        (self.home / "gateway-containers.json").write_text(json.dumps({"version": 2, "live": self.sha, "old": None}))
+        self.change("status")
+        self.guest.assert_called_once()
 
     def test_changes_replay_off_traffic_without_starting_background_work(self):
         env = "SCHEDULER_NAME=example\n"

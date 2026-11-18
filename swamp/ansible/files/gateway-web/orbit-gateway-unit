@@ -143,7 +143,7 @@ def live_command(revision, action, unit, *parameters):
     with (HOME / "gateway-release.lock").open("r") as lock:
         fcntl.flock(lock, (fcntl.LOCK_SH if read else fcntl.LOCK_EX) | fcntl.LOCK_NB)
         inventory = json.loads((HOME / "gateway-containers.json").read_bytes())
-        if inventory.get("version") != 1 or inventory.get("live") != revision:
+        if inventory.get("version") not in (1, 2) or inventory.get("live") != revision:
             raise ValueError("serving Gateway changed")
         name = "gateway-" + revision[:12]
         checked_machine(name, role="candidate", commit=revision)

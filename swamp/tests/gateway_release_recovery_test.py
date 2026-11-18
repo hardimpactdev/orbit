@@ -4,12 +4,9 @@ import hashlib
 import json
 import os
 import signal
-import socketserver
-import struct
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 
@@ -17,10 +14,9 @@ ROOT = Path(__file__).resolve().parents[2]
 OPERATION = "42"
 HORIZON = "orbit-gateway-horizon.service"
 MANAGED_HORIZON = "orbit-process-71-horizon.service"
-HEADER = struct.Struct("!BBHHBB")
-WORKFLOW = "swamp/workflows/workflow-gateway-release-activate.yaml"
+WORKFLOW = "swamp/workflows/workflow-production-release-activate.yaml"
 CONTROLLER = "swamp/scripts/gateway-release-container.sh"
-PROTOCOL = "# orbit-gateway-recovery-protocol: 1\n"
+PROTOCOL = "# orbit-gateway-recovery-protocol: 2\n"
 
 
 def stub(name, args):
@@ -99,6 +95,8 @@ def stub(name, args):
         elif action == "is-active":
             return 0 if active.exists() else 3
         elif action in ("start", "enable") and (action == "start" or "--now" in args):
+            if machine == candidate and unit == HORIZON and (state / "broken-horizon").exists():
+                return 1
             active.touch()
             event(f"start {machine} {unit}")
         elif action in ("stop", "disable") and (action == "stop" or "--now" in args):
@@ -137,6 +135,16 @@ def stub(name, args):
                 (state / (machine + "-orbit-gateway-web.service")).touch()
             elif command[0] in ("systemctl", "/bin/sh", "bash"):
                 return subprocess.call(command, env=env)
+            if any(arg.endswith("/bin/gateway-horizon-ready") for arg in command):
+                event("Horizon readiness " + machine)
+                return 1 if (state / "broken-heartbeat").exists() else 0
+            if "operations:check-cleanup" in command:
+                if "--fence-only" in command:
+                    event("fence " + machine)
+                    return 1 if (state / "broken-fence").exists() else 0
+                print('{"status":"checked"}')
+                result = state / "cleanup-exit"
+                return int(result.read_text()) if result.exists() else 0
             if "gateway:release:cleanup" in command:
                 print('{"generations":[]}')
             elif "-r" in command:
@@ -145,23 +153,35 @@ def stub(name, args):
             machine = args[2]
             if args[3] == "user.orbit.release.commit":
                 print(sha if machine == candidate else old)
+            elif args[3] == "user.orbit.release.operation":
+                print(OPERATION)
         elif action == "config" and args[1] == "set":
             (state / f"{args[2]}-boot").write_text(args[3].split("=")[1])
         elif action == "snapshot" and args[1] == "list":
             print("[]")
         elif action == "list":
-            if (state / "candidate").exists():
-                print(json.dumps([{"name": candidate, "config": {
-                    "user.orbit.release.operation": OPERATION, "user.orbit.release.target": "gateway",
-                    "user.orbit.release.role": "candidate", "user.orbit.release.commit": sha,
-                    "boot.autostart": (state / f"{candidate}-boot").read_text(),
-                }}]))
+            rows = []
+            for key, target, commit in (("candidate", candidate, sha), ("former", "gateway-" + old[:12], old)):
+                if (state / key).exists():
+                    boot = state / f"{target}-boot"
+                    rows.append({"name": target, "status": (state / key).read_text().strip() or "Running", "config": {
+                        "user.orbit.release.operation": OPERATION, "user.orbit.release.target": "gateway",
+                        "user.orbit.release.role": "candidate", "user.orbit.release.commit": commit,
+                        "boot.autostart": boot.read_text().strip() if boot.exists() else "false",
+                    }})
+            if (state / "orphan").exists():
+                rows.append({"name": "gateway-" + "c"*12, "status": "Stopped", "config": {"user.orbit.release.target":"gateway"}})
+            print(json.dumps(rows))
+        elif action in ("delete", "stop"):
+            target = args[1]
+            key = "candidate" if target == candidate else "former"
+            if action == "delete":
+                (state / key).unlink()
+                event("delete " + key)
+                interrupt("after " + key + " deletion")
             else:
-                print("[]")
-        elif action == "delete":
-            (state / "candidate").unlink()
-            event("delete candidate")
-            interrupt("after candidate deletion")
+                (state / key).write_text("Stopped")
+                event("stop " + key)
         else:
             raise ValueError(args)
     elif name == "install":
@@ -169,29 +189,6 @@ def stub(name, args):
     elif name == "chown":
         pass
     return 0
-
-
-class FastCGI(socketserver.StreamRequestHandler):
-    def handle(self):
-        request = b""
-        while True:
-            header = self.rfile.read(HEADER.size)
-            _, kind, _, size, pad, _ = HEADER.unpack(header)
-            request += self.rfile.read(size)
-            self.rfile.read(pad)
-            if kind == 5:
-                break
-        version = self.server.version
-        body = (json.dumps({"data": {"status": "ok", "version": version}}).encode()
-                if b"/api/v1/gateway/status" in request else b"ok")
-        expected = self.server.index
-        headers = b"Content-Type: application/json\r\n"
-        if expected not in request:
-            headers += b"Status: 404 Not Found\r\n"
-        content = headers + b"\r\n" + body
-        self.wfile.write(HEADER.pack(1, 6, 1, len(content), 0, 0) + content)
-        if self.server.complete:
-            self.wfile.write(HEADER.pack(1, 3, 1, 8, 0, 0) + bytes(8))
 
 
 class GatewayReleaseFixture(unittest.TestCase):
@@ -206,7 +203,6 @@ class GatewayReleaseFixture(unittest.TestCase):
         self.state = self.root / "state"
         self.stubs = self.root / "stubs"
         self.libexec = self.root / "libexec"
-        self.sock = self.root / "fpm.sock"
         for directory in (self.journal, self.inventory.parent, self.upstream.parent, self.state, self.stubs, self.libexec):
             directory.mkdir(parents=True)
         self.mirror = self.home / "shared/orbit.git"
@@ -271,21 +267,10 @@ class GatewayReleaseFixture(unittest.TestCase):
   park-preparation|wait-idle|ready) exit 0 ;;
 esac
 """
-        marker = "# A failed deletion must complete before a new build"
+        marker = "# Cleanup belongs to the current host controller"
         phase = self.source("bin/gateway-release-phase", revision)
         self.phase.write_text(phase.replace(marker, prepare + marker, 1))
         self.phase.chmod(0o755)
-
-    def install_earlier_phase(self):
-        revision = os.environ.get("GATEWAY_RECOVERY_TEST_PREVIOUS_DISPATCHER")
-        if revision:
-            self.install_phase(revision)
-        else:
-            # The earlier dispatcher let the same switch code run before
-            # protocol declarations were required.
-            phase = self.phase.read_text()
-            self.phase.write_text(phase.replace("# Manual moves", "check_recovery() { :; }\n# Manual moves", 1))
-
 
     def git(self, *args):
         return subprocess.check_output(
@@ -312,7 +297,7 @@ esac
             source = (ROOT / name).read_text()
         for original, fixture in {
             "/home/orbit": self.home, "/var/lib/orbit": self.root / "var", "/etc/caddy": self.root / "caddy",
-            "/usr/local/libexec": self.libexec, "/run/php/orbit-gateway.sock": self.sock,
+            "/usr/local/libexec": self.libexec,
         }.items():
             source = source.replace(original, str(fixture))
         return source.replace("$EUID", "0").replace("os.geteuid() != 0", "False").replace("info.st_uid != 0", "info.st_uid != os.getuid()")
@@ -329,17 +314,6 @@ esac
             [script, *args], check=False, env=env, start_new_session=True, capture_output=True, text=True, timeout=45,
         )
 
-    def listener(self, version=None, *, complete=True):
-        server = socketserver.UnixStreamServer(str(self.sock), FastCGI)
-        server.version = version or self.sha
-        server.complete = complete
-        server.index = os.fsencode(self.checkout / "apps/gateway/public/index.php")
-        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
-        thread.start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(thread.join)
-        self.addCleanup(server.shutdown)
-
     def run_move(self, interrupt=""):
         return self.run_script(self.move, OPERATION, self.archive, interrupt=interrupt)
 
@@ -350,15 +324,7 @@ esac
         self.assertEqual(result.returncode, -signal.SIGKILL, result.stdout + result.stderr)
         self.assertEqual((self.journal / "operation").read_text().strip(), OPERATION)
         self.assertEqual((self.journal / "candidate").read_text().strip(), self.sha)
-        self.assertTrue((self.journal / f"rollback-{self.sha}").exists())
 
-    def assert_host_serves(self):
-        self.assertEqual((self.state / "site").read_text(), "host")
-        self.assertTrue((self.state / f"host-{HORIZON}").exists())
-        self.assertFalse((self.state / "candidate").exists())
-        self.assertFalse(self.inventory.exists())
-        self.assertFalse(self.upstream.exists())
-        self.assertFalse((self.journal / "operation").exists())
 
     def assert_container_serves(self, horizon=HORIZON):
         self.assertEqual((self.state / "site").read_text(), "container")
@@ -369,155 +335,131 @@ esac
         self.assertTrue(self.upstream.exists())
         self.assertFalse((self.journal / "operation").exists())
 
-    def retained_releases(self, *incompatible):
-        if incompatible:
-            old_source = os.environ.get("GATEWAY_RECOVERY_TEST_OLD")
-            self.git("checkout", "--quiet", "--detach", self.old)
-            for name in incompatible:
-                source = self.source(name, old_source) if old_source else self.source(name).replace(PROTOCOL, "")
-                (self.mirror / name).write_text(source)
-            self.old = self.commit("incompatible retained release")
-            self.retained = f"gateway-{self.old[:12]}"
-            self.env["FIXTURE_OLD"] = self.old
-            self.git("checkout", "--quiet", "--detach", self.sha)
-        self.assertNotEqual(self.git("rev-parse", f"{self.old}^{{tree}}"), self.git("rev-parse", f"{self.sha}^{{tree}}"))
-        self.assert_ok(self.run_move())
-        inventory = json.loads(self.inventory.read_text())
-        self.inventory.write_text(json.dumps({**inventory, "old": self.old}))
+    def serving_former(self):
+        (self.state / f"host-{HORIZON}").unlink(missing_ok=True)
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": None, "host_retired": True}))
+        self.upstream.write_text("vars gateway_release_upstream 10.1.0.3:8080\n")
+        (self.state / "site").write_text("container")
+        (self.state / "former").touch()
+        (self.state / "candidate").touch()
+        (self.state / f"{self.retained}-boot").write_text("true")
+        for service in (HORIZON, "orbit-gateway-web.service"):
+            (self.state / f"{self.retained}-{service}").touch()
+
+    def switch(self, **kwargs):
+        return self.run_script(self.phase, "switch", self.sha, OPERATION, self.old[:12], HORIZON, **kwargs)
+
+    def direct(self, action, *args):
+        return self.run_script(self.mirror / CONTROLLER, action, self.sha, OPERATION, *args)
 
     def assert_pending(self, sha):
         self.assertTrue((self.journal / "operation").exists(), "the switch has no recovery marker")
         self.assertEqual((self.journal / "operation").read_text().strip(), OPERATION)
         self.assertEqual((self.journal / "candidate").read_text().strip(), sha)
-        self.assertTrue((self.journal / f"rollback-{sha}").exists())
+
 
 
 class GatewayReleaseRecovery(GatewayReleaseFixture):
-    def test_matching_earlier_container_switch_recovers_only_after_public_verification(self):
-        self.retained_releases(CONTROLLER, WORKFLOW)
-        (self.state / f"{self.candidate}-{MANAGED_HORIZON}").touch()
-        self.install_earlier_phase()
-        interrupted = self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON,
-                                      interrupt="after container switch")
-        self.assertEqual(interrupted.returncode, -signal.SIGKILL, interrupted.stderr)
-        self.assert_pending(self.old)
-        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
-
-        self.install_phase()
-        events = self.state / "events"
-        wrong = self.state / f"wrong-public-{self.sha}"
-        wrong.touch()
-        result = self.run_script(self.phase, "switch-back", self.old, OPERATION)
-        self.assertIn(f"public Gateway did not verify restored release {self.sha}", result.stderr)
-        self.assert_pending(self.old)
-        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
-        wrong.unlink()
-
-        before = events.read_bytes()
-        for phase, sha, operation in (
-            ("restore", self.sha, OPERATION),
-            ("switch-back", self.old, "43"),
-            ("switch", self.sha, OPERATION),
-        ):
-            result = self.run_script(self.phase, phase, sha, operation, self.old[:12], HORIZON)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("switch", result.stderr)
-            self.assert_pending(self.old)
-            self.assertEqual(events.read_bytes(), before)
-
-        result = self.run_script(self.phase, "switch-back", self.old, OPERATION,
-                                 interrupt="during container public status")
-        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        self.assert_pending(self.old)
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_container_serves(horizon=MANAGED_HORIZON)
-        self.assertIn(f"public container {self.sha}", events.read_text())
-
-    def test_earlier_first_move_recovers_before_inventory_and_blocks_new_offline_rollback(self):
-        previous = os.environ.get("GATEWAY_RECOVERY_TEST_PREVIOUS_DISPATCHER")
-        for name in (CONTROLLER, WORKFLOW):
-            text = self.source(name, previous) if previous else self.source(name).replace(PROTOCOL, "")
-            (self.mirror / name).write_text(text)
-        self.sha = self.commit("first move before compatibility admission")
-        self.candidate = f"gateway-{self.sha[:12]}"
-        self.env["FIXTURE_SHA"] = self.sha
-        (self.checkout / "REVISION").write_text(self.sha)
-        self.listener()
-        self.install_earlier_phase()
-        self.assert_interrupted(self.run_move(interrupt="after host drain"))
-        self.assertFalse(self.inventory.exists())
-        self.assertFalse((self.state / f"host-{HORIZON}").exists())
-        events = self.state / "events"
-        before = events.read_bytes()
-
-        self.install_phase()
-        result = self.run_script(self.console, "--recover", interrupt="during host public status")
-        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        self.assert_interrupted(result)
-        self.assertFalse((self.state / f"host-{HORIZON}").exists())
-        (self.home / "releases" / self.sha[:12]).symlink_to(self.checkout)
-        before_retry = events.read_bytes()
-        result = self.run_script(self.console, self.sha[:12])
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("--recover", result.stderr)
-        self.assertEqual(events.read_bytes(), before_retry)
-
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_host_serves()
-        self.assertIn(f"public host {self.sha}", events.read_text()[len(before):])
-
-    def test_first_move_and_host_rollback_preserve_a_stopped_registered_process(self):
-        receipt = json.loads((self.state / "receipt").read_text())
-        (self.state / "receipt").write_text(json.dumps({**receipt, "horizon_unit": MANAGED_HORIZON}))
-        (self.state / f"host-{HORIZON}").unlink()
+    def test_first_move_publishes_before_draining_host_horizon(self):
         self.assert_ok(self.run_move())
-        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
-        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
-        self.listener()
-        self.assert_ok(self.run_script(self.console, "--host"))
-        self.assertFalse((self.state / f"host-{MANAGED_HORIZON}").exists())
-        self.assertFalse((self.state / f"host-{HORIZON}").exists())
-
-    def test_switch_rebuilds_the_candidate_after_configuration_changes_at_readiness(self):
-        self.retained_releases()
-        marker = self.state / (self.retained + "-digest")
-        marker.write_text(hashlib.sha256(b"A").hexdigest() + " " + str(self.home / "shared/gateway.env") + "\n")
-        (self.state / (self.retained + "-worker")).write_text("A")
-        (self.state / (self.retained + "-orbit-gateway-web.service")).touch()
-        (self.state / "env").write_text("B")
-        broken = self.state / "broken-config"
-        broken.touch()
-        result = self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON)
-        self.assertNotEqual(result.returncode, 0)
+        events = (self.state / "events").read_text()
+        self.assertLess(events.index("site container"), events.index("drain host"))
+        self.assertLess(events.index("start " + self.candidate + " " + HORIZON), events.index("drain host"))
         self.assert_container_serves()
-        self.assertFalse(marker.exists())
-        broken.unlink()
-        self.assert_ok(self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON))
-        self.assertEqual((self.state / (self.retained + "-worker")).read_text(), "B")
+        self.assertEqual(json.loads(self.inventory.read_text()), {"version":2, "host_retired":True, "old":None, "live":self.sha})
 
-    def test_first_move_recovers_before_drain(self):
-        self.listener()
-        self.assert_interrupted(self.run_move("before host drain"))
-        self.assertTrue((self.state / f"host-{HORIZON}").exists())
-        self.assertFalse(self.inventory.exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_host_serves()
-
-    def test_first_move_recovers_after_drain_before_switch(self):
-        self.listener()
-        self.assert_interrupted(self.run_move("after host drain"))
-        self.assertFalse((self.state / f"host-{HORIZON}").exists())
-        self.assertFalse(self.inventory.exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_host_serves()
-
-    def test_first_move_recovers_after_caddy_switch(self):
-        self.listener()
+    def test_interruption_after_caddy_publication_republishes_only_the_candidate(self):
         self.assert_interrupted(self.run_move("after container switch"))
-        self.assertEqual((self.state / "site").read_text(), "container")
-        self.assertTrue(self.inventory.exists())
+        self.assertFalse(self.inventory.exists())
         self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_host_serves()
+        self.assert_container_serves()
+        self.assertNotIn("site host", (self.state / "events").read_text())
+
+    def test_precommit_candidate_configuration_failure_keeps_the_previous_live(self):
+        self.serving_former()
+        (self.state / "broken-config").touch()
+        self.assertNotEqual(self.switch().returncode, 0)
+        self.assertFalse((self.journal / "operation").exists())
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
+        self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
+        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
+
+    def test_interrupted_drain_finishes_forward_with_a_failing_public_check(self):
+        self.serving_former()
+        self.assert_ok(self.switch())
+        (self.state / f"broken-public-container-{self.sha}").touch()
+        self.assertNotEqual(self.run_script(self.phase, "public-ready", self.sha, OPERATION).returncode, 0)
+        self.assert_interrupted(self.run_script(self.phase, "retire", self.sha, OPERATION, interrupt=f"before {self.retained} drain"))
+        self.assertTrue((self.state / "former").exists())
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assertFalse((self.state / "former").exists())
+        self.assert_container_serves()
+
+    def test_crash_after_former_deletion_finishes_without_recreating_it(self):
+        self.serving_former()
+        self.assert_ok(self.switch())
+        self.assert_interrupted(self.run_script(self.phase, "retire", self.sha, OPERATION, interrupt="after former deletion"))
+        self.assertFalse((self.state / "former").exists())
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assert_container_serves()
+        self.assertEqual((self.state / "events").read_text().count("delete former"), 1)
+
+    def test_configuration_refresh_and_background_desired_state_survive_the_switch(self):
+        self.serving_former()
+        (self.state / "env").write_text("B")
+        self.assert_ok(self.switch())
+        self.assertEqual((self.state / (self.candidate + "-worker")).read_text(), "B")
+        self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
+        self.assertFalse((self.state / f"{self.retained}-{HORIZON}").exists())
+        self.assertFalse((self.state / "former").exists())
+
+    def test_recovery_keeps_former_consumers_when_the_new_horizon_fails(self):
+        self.serving_former()
+        self.assert_ok(self.switch())
+        failed = self.state / "broken-horizon"
+        failed.touch()
+        self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)
+        self.assert_pending(self.sha)
+        self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
+        self.assertTrue((self.state / "former").exists())
+        failed.unlink()
+        heartbeat = self.state / "broken-heartbeat"
+        heartbeat.touch()
+        self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)
+        self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
+        self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
+        self.assert_pending(self.sha)
+        heartbeat.unlink()
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assert_container_serves()
+        self.assertFalse((self.state / "former").exists())
+
+    def test_admission_fence_failure_preserves_the_current_route_and_a_recoverable_target(self):
+        self.serving_former()
+        failed = self.state / "broken-fence"
+        failed.touch()
+        self.assertNotEqual(self.switch().returncode, 0)
+        self.assert_pending(self.sha)
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
+        self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
+        failed.unlink()
+        self.assert_ok(self.switch())
+        events = (self.state / "events").read_text()
+        self.assertLess(events.index("fence " + self.candidate), events.index("site container"))
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assertEqual((self.state / "events").read_text().count("fence " + self.candidate), 3)
+
+    def test_cleanup_reports_deferred_and_propagates_other_failures(self):
+        self.assert_ok(self.run_move())
+        code = self.state / "cleanup-exit"
+        code.write_text("75")
+        result = self.run_script(self.phase, "cleanup-versions", self.sha, OPERATION)
+        self.assert_ok(result)
+        self.assertEqual(json.loads(result.stdout), {"status":"checked"})
+        code.write_text("31")
+        self.assertEqual(self.run_script(self.phase, "cleanup-versions", self.sha, OPERATION).returncode, 31)
 
 
 if __name__ == "__main__":

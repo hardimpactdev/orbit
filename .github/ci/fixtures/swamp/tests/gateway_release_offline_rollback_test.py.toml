@@ -12,23 +12,23 @@ inputs = [
   "swamp/scripts/gateway-release-host-check.py",
   "swamp/scripts/gateway-release-horizons.py",
   "swamp/scripts/gateway-release-switch.sh",
-  "swamp/workflows/workflow-gateway-release-activate.yaml",
+  "swamp/workflows/workflow-production-release-activate.yaml",
   "swamp/tests/gateway_release_recovery_test.py",
 ]
 cases = [
-  "test_reconciliation_fences_offline_rollback_until_its_own_finalizer",
-  "test_incompatible_retained_helper_and_workflow_are_refused_before_rollback",
-  "test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper",
-  "test_native_failed_promotion_verifies_the_previous_release_before_acknowledging",
-  "test_offline_rollback_journals_the_original_units_before_draining",
-  "test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail",
-  "test_healthy_retained_container_rollback",
+  "test_reconciliation_fences_candidate_switches_until_its_own_finalizer",
+  "test_incompatible_target_is_refused_before_any_mutation",
+  "test_legacy_parked_release_is_deleted_before_another_clone_is_allowed",
+  "test_orphan_clone_refuses_a_fourth_gateway_container",
+  "test_rollback_and_old_switch_back_phases_are_refused",
+  "test_wrong_operation_cannot_finish_or_delete_the_committed_candidate",
+  "test_interrupted_console_recovery_still_uses_the_shared_lock",
 ]
 [case_costs]
-"test_reconciliation_fences_offline_rollback_until_its_own_finalizer" = 12
-"test_incompatible_retained_helper_and_workflow_are_refused_before_rollback" = 10
-"test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper" = 10
-"test_native_failed_promotion_verifies_the_previous_release_before_acknowledging" = 20
-"test_offline_rollback_journals_the_original_units_before_draining" = 14
-"test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail" = 20
-"test_healthy_retained_container_rollback" = 16
+"test_reconciliation_fences_candidate_switches_until_its_own_finalizer" = 12
+"test_incompatible_target_is_refused_before_any_mutation" = 10
+"test_legacy_parked_release_is_deleted_before_another_clone_is_allowed" = 10
+"test_orphan_clone_refuses_a_fourth_gateway_container" = 20
+"test_rollback_and_old_switch_back_phases_are_refused" = 14
+"test_wrong_operation_cannot_finish_or_delete_the_committed_candidate" = 20
+"test_interrupted_console_recovery_still_uses_the_shared_lock" = 16

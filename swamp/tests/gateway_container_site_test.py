@@ -1,5 +1,6 @@
 import importlib.machinery
 import importlib.util
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,40 @@ class GatewaySiteTest(unittest.TestCase):
             site.apply("container")
         self.assertEqual(reload.call_count, 1)
         self.assertEqual(site.SELECTION.readlink(), site.MODES / "container.caddy")
+
+    def test_host_and_container_modes_keep_metrics_authorized_across_publication(self):
+        script = r"""
+require 'apps/gateway/app/Infrastructure/Metrics/MetricsFootprint.php';
+require 'apps/gateway/app/Infrastructure/Metrics/MetricsPublicationRenderer.php';
+echo (new App\Infrastructure\Metrics\MetricsPublicationRenderer('/home/orbit/orbit/apps/gateway'))
+    ->caddy('10.44.0.9', '10.44.0.2', prepared: $argv[1] === 'prepared');
+"""
+        def render(mode):
+            body = subprocess.check_output(["php", "-r", script, mode], cwd=ROOT, text=True)
+            return "# orbit: metrics metrics.orbit\n" + body
+        legacy = render("host")
+        prepared = render("prepared").replace("/etc/caddy/orbit-gateway-modes", str(site.MODES))
+        self.assertIn("env REMOTE_ADDR {remote_host}", legacy)
+        self.assertIn("forward_auth unix//run/php/orbit-gateway.sock", legacy)
+        site.CONFIG.write_text(CONFIG + "\n" + legacy)
+        auth = site.MODES / "metrics-auth.caddy"
+        with patch.object(site, "reload_config"):
+            site.apply("prepare")
+            self.assertTrue(site.CONFIG.read_text().endswith(prepared))
+            self.assertIn("transport fastcgi", auth.read_text())
+            site.apply("container")
+            self.assertIn("forward_auth {http.vars.gateway_release_upstream}", auth.read_text())
+            self.assertIn("header_up X-Forwarded-For {remote_host}", auth.read_text())
+            self.assertIn("uri /api/v1/metrics/grafana/authorize", auth.read_text())
+            self.assertNotIn("fastcgi", auth.read_text())
+            self.assertTrue(site.PREPARED.with_name("gateway-metrics-prepared").exists())
+            self.assertTrue(site.CONFIG.read_text().endswith(prepared))
+            self.assertIn("reverse_proxy http://10.44.0.9:", prepared)
+            self.assertIn("bind 10.44.0.2", prepared)
+            site.CONFIG.write_text(CONFIG + "\n" + legacy.replace("env REMOTE_ADDR {remote_host}", "env REMOTE_ADDR 0.0.0.0"))
+            with self.assertRaisesRegex(ValueError, "unrecognized Gateway authorization"):
+                site.apply("container")
+
 
     def test_failed_initial_prepare_restores_original_site_and_mode(self):
         with (

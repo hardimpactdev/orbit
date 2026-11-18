@@ -198,6 +198,25 @@ class ReleaseTest(unittest.TestCase):
                 release.candidate("instance-8", "13", SHA, DIGEST)
             self.assertTrue(all(call.args[0] == "snapshot" and call.args[1] == "list" for call in incus.call_args_list))
 
+    def test_gateway_clone_requires_the_exact_frozen_preparer_and_snapshot(self):
+        receipt = f"13/{SHA}/{DIGEST}"
+        identity = {"target": "gateway", "commit": SHA, "artifact": DIGEST, "parked-seal": receipt}
+        snapshot = record("built-13", "prepare", status="Frozen", **identity)
+        clone = record("gateway-" + SHA[:12], "candidate", status="Stopped", **identity)
+        for status, marker, expected in (("Running", receipt, "not_frozen"), ("Frozen", "different", "identity_mismatch")):
+            prep = record("prepare-gateway", "prepare", status=status, **{**identity, "parked-seal":marker})
+            with patch.object(release, "instance", side_effect=[prep, None]), patch.object(release, "incus", return_value="[]") as incus:
+                with self.assertRaisesRegex(ValueError, expected):
+                    release.candidate("gateway", "13", SHA, DIGEST)
+                incus.assert_called_once_with("snapshot", "list", "prepare-gateway", "--format", "json")
+        prep = record("prepare-gateway", "prepare", status="Frozen", **identity)
+        with patch.object(release, "instance", side_effect=[prep, None, clone]), patch.object(
+            release, "incus", side_effect=["[]", "", json.dumps([snapshot]), "", "", ""]
+        ) as incus:
+            self.assertEqual(release.candidate("gateway", "13", SHA, DIGEST), clone["name"])
+            self.assertEqual([call.args[0] for call in incus.call_args_list], ["snapshot", "snapshot", "snapshot", "copy", "snapshot", "start"])
+
+
     def test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build(self):
         with patch.object(release, "instance", return_value=record("prepare-instance-8", "prepare")), patch.object(release, "power") as power_call:
             with self.assertRaisesRegex(ValueError, "preparation_changed"):

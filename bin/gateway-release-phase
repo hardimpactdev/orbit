@@ -21,6 +21,11 @@ if [[ $phase == fetch ]]; then
     git -C "$repo" cat-file -e "$sha^{commit}"
   ' bash "$repo" "$sha"
 fi
+if [[ $phase == scheduler-window ]]; then
+  second=$((10#$(date -u +%S)))
+  if (( second < 2 )); then sleep "$((2-second))"; elif (( second >= 58 )); then sleep "$((62-second))"; fi
+  exit
+fi
 if [[ $phase == activation-workflow ]]; then
   echo production-release-activate
   exit
@@ -89,16 +94,13 @@ case "$phase" in
 esac
 # The native workflow uses the checked entry points so an older installed
 # dispatcher refuses before Build or Load can change the target.
-if [[ $phase == check-recovery || $phase == check-load ]]; then exit 0; fi
+if [[ $phase == check-recovery || $phase == check-load || $phase == prune || $phase == prune-pending ]]; then exit 0; fi
 # Reconcile the exact serving container through its existing read-only checks.
 # Never resume, build or hand over a release when the caller asks to recover definitions.
 if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconcile-verify ]]; then
   [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]] || {
     echo 'gateway.release_reconcile_not_live: the requested commit no longer serves traffic' >&2; exit 1;
   }
-  if [[ $phase == reconcile-idle || $phase == reconcile-begin ]]; then
-    bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") wait-idle "$sha" "$operation" >&2
-  fi
   if [[ $phase == reconcile-begin ]]; then
     bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") public-ready "$sha" "$operation"
     install -d -m 0700 "$journal"
@@ -111,6 +113,11 @@ if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconci
   phase=public-ready
 fi
 if [[ $phase == build-checked ]]; then phase=build; fi
+case "$phase" in
+  build|web|clone|switch|recover|start-horizon|retire|park-preparation|release-unused) ;;
+  migrate|ready|wait-idle|cleanup|cleanup-versions|snapshot|public-ready) check_recovery ;;
+  *) echo "Unknown Gateway release phase: $phase" >&2; exit 64 ;;
+esac
 # Cleanup belongs to the current host controller, including a rollback to an older
 # sealed release whose script predates this phase. A failed fetch can have no object.
 if [[ $phase == park-preparation || $phase == release-unused ]]; then
