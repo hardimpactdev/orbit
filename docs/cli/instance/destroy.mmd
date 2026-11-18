@@ -248,7 +248,7 @@ sequenceDiagram
     %%> What it does:
     %%> - removes the container, volume, snapshots, Processes, T3, proxy, owned ACL, firewall rules, mirror and, for a task copy, the Node scratch `/var/tmp/orbit-task-base-<id>` that a cancelled `task:sync` may leave; it holds no credential
     %%> - requires successful Route withdrawal when present, and owned database removal; other Instances stay
-    %%> - the power helper's `discard`, as the Instance's lock unit: waits for a helper call still at work, then removes the plan, `limits.json`, the target descriptor and the Instance's fast wake request and outcome files, so a late worker finds nothing to act on
+    %%> - the power helper's `discard`, as the Instance's lock unit: waits for a helper call still at work, then removes the plan, `limits.json`, the target descriptor and the Instance's fast wake request and outcome files, so a late worker finds nothing to act on; a signed removal runs it after the executor's discard, because the Instance may have slept under Python before the switch
     Note over SW: Read container removal
     %%> Failure:
     %%> - a skipped deletion has no result and cannot report success

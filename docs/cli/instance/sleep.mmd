@@ -64,6 +64,9 @@ sequenceDiagram
     end
     Note over GW: Project sleep or failure<br/>one terminal Operation
     %%> - A known refusal or failure does not start recovery or record asleep. Repeated deliveries return the first result without freezing twice.
+    %%> - R1: a recorded `done` receipt is the sleep's outcome even when a later relay or Swamp transport fails; the Operation succeeds and records asleep
+    %%> - R2: a signed order with no receipt ends interrupted, `executor.result_unknown`, with the lock held
+    %%> - R3: the freezing engine owns the freeze; a cancelled or failed later sleep does not hand it to the other engine
     %%> - More than 32 MiB of anonymous RAM after reclaim takes the same stop rule as Python for a plain container. Report `sleep: stopped`, `prepared_restore: skipped`, reason `stopped` and the residual counters. The CLI says the next wake boots without restoring memory.
   else signed power disabled at admission
   GW->>SW: Start run, full intent<br/>operation-instance-sleep

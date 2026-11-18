@@ -124,6 +124,17 @@ A start or deploy admitted to resume a signed freeze requires a matching executo
 
 So every sleep and wake, whatever the caller (WebSocket, SSH fallback, Swamp run, deploy, start, destroy), goes through one executor with one journal.
 
+### Four rules for every signed outcome
+
+Each rule has one place in the Gateway that enforces it. Every caller goes through that place; no caller decides the case again.
+
+1. **The receipt decides the outcome (R1).** The durable, matching executor receipt is the only source of truth for what happened to the container. A transport outcome (WebSocket, relay, Swamp, Valkey, timeout) never overrides a recorded receipt. It only decides whether to ask again. Projection reads the receipt's verdict, `done`, `partial`, `stopped`, `refused` or `failed` with its code, for sleep, wake, start, deploy and destroy alike. A `failed` wake with `instance.container_stopped` is no outcome of its own: it hands the container to the ordinary boot, and the boot's own result (`wake: started`, then readiness) decides. Enforced by `ExecutorVerdict`.
+2. **An issued order keeps its fence (R2).** Once the Gateway signs an order for an Operation (published, relayed or handed to a Swamp phase), the order may reach the Node. From then on the Instance stays locked and the Operation cannot be cancelled until a terminal receipt exists. With no receipt, the end is `interrupted` with `executor.result_unknown`, and the lock stays; nothing calls that released. A missing receipt for an issued order is never a success. An Operation that issued nothing yet can still be cancelled, and the cancel settles it at once. Enforced by `ExecutorFence`.
+3. **The freezing engine owns the freeze (R3).** The engine whose sleep froze the container owns it until a receipt from that engine says it is awake, stopped or discarded. Settings, sleeps after the freeze that froze nothing (cancelled, refused, failed with no freeze) and admission decisions never move that ownership. Wake, start and deploy resume through the owner. Destroy removes both engines' files, so a target that was once frozen by Python leaves nothing behind after a signed discard. Enforced by `ContainerResume::frozenSleep()`.
+4. **A stuck end is a failure with a retry (R4).** A terminal wake that cannot advance, `failed` or `interrupted`, is shown as failed with its code and a retry, never as pending. A retry while the fence of rule 2 holds shows the same failure; it cannot admit a second wake beside an unknown order.
+
+The visitor's request bound is part of the wake, not of the current settings: a wake that resumes a signed freeze bounds its admission write even after the signed engine is switched off.
+
 ### What this supersedes and changes
 
 - **[ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes).** These are replaced by the executor: the Python engine, its five commands and its transient-unit lock; the path unit, the dispatcher and the `orbit-instance-wake@` worker; the `.wake`, `.taken`, `.ready-*`, `.done` and `.failed` files; and the Gateway's use of `hibernation.marker` and `hibernation.times` for the wake. The counter settle moves from Ansible into the executor. Three of its rules stay: the generic plan, restore before the unfreeze, and a restore as a hint. Two change: the plan now records swapped pages too (D2), and "the HTTP activation path is out of scope" ends (D3).
