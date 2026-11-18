@@ -37,10 +37,10 @@ final readonly class InstanceLifecycleContributions
         }
     }
 
-    public function projectWake(Instance $instance): void
+    public function projectWake(Instance $instance, bool $retryQueueFailure = false): void
     {
         foreach ($this->contributions as $contribution) {
-            $contribution->projectWake($instance);
+            $contribution->projectWake($instance, $retryQueueFailure);
         }
     }
 

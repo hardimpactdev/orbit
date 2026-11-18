@@ -56,7 +56,7 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
      * sleeping Instance, and the run issues a new session without the old one. Its held sessions within the margin renew too. A busy
      * server or Conn switched off starts nothing.
      */
-    public function projectWake(Instance $instance): void
+    public function projectWake(Instance $instance, bool $retryQueueFailure = false): void
     {
         $environment = ConnEnvironment::query()->where('instance_id', $instance->id)->first();
         if (! $environment instanceof ConnEnvironment || ! $this->extensions->enabled('conn')) {
@@ -72,7 +72,7 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
         // Held sessions renew with the session they find; one that waits on an ended Gateway session renews once that is recorded.
         // A revoke owed while it slept starts too; one the server cannot take yet waits for the hourly tick.
         if ($environment->admin_session_expires_at->isFuture()) {
-            app(ConnHeldSessions::class)->renewDue($environment);
+            app(ConnHeldSessions::class)->renewDue($environment, retryQueueFailure: $retryQueueFailure);
             app(ConnHeldSessions::class)->revokeNext($environment->id);
         }
     }

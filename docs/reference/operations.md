@@ -18,6 +18,10 @@ Swamp is the sole executor of task groups. The Gateway stores task state and run
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Swamp runs it: the Gateway admits the intent, starts one native workflow, and projects the workflow's result into the record ([How an operation runs](#how-an-operation-runs)). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
+A container wake with `ORBIT_EXECUTOR_WAKE_ENABLED=true` keeps its durable `instance.wake` Operation and target hold, but runs through a signed order to the [executor](/reference/executor#the-wake-inside-the-request). The wake stays queued with zero attempts until the publisher claims it. The activation request waits within its short budget. If it does not observe and commit success in time, a background completion reads the durable result. This path starts no fallback Swamp run until ADR 0266 slice 7.
+
+SQLite records the wake's notices and lifecycle handoff with the change. A background pass sends them to `operations-prompt` without holding the writer. [Wake handoff recovery](/reference/executor#wake-handoff-recovery) covers publication, job loss, retries and hook receipts. No queue failure changes an in-bound success.
+
 Container Process journal tails and unit state reads create no Operation. They use the narrow [direct transport exception](/reference/node-agent#commands); Process actions still run as Operations.
 
 Not every recorded result is an operation. The Gateway records an automatic deploy's Activity entries and release alerts from the terminal result of its scheduled run, with no Operation; see [Instance releases](/reference/deployments).
