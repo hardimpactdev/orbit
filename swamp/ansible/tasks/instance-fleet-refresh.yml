@@ -8,7 +8,7 @@
 # Node's converge is also due 7 days after its last one. The fleet's devices and keys are read, and readiness is waited for once, every time. `base` is
 # retaken only for the containers whose disks changed: the grants, a remint or a Swamp install changed the nested Gateway, a converge
 # changed a task, a rule or file differed, a `base` is missing, or the record was. On a btrfs inner pool it is taken of the running
-# containers, frozen for about a second; a rule or file that differed, a due shrink or another pool stops them and starts them again. A migration
+# containers, frozen while Incus snapshots them; a rule or file that differed, a due shrink or another pool stops them and starts them again. A migration
 # does not: a reset migrates after its restore (instance-fleet-migrate.yml). The record is removed before the
 # first write to a nested disk and written again last, so a run that stops in the middle leaves none. Input: instance-fleet.yml. The model
 # is the task VM refresh (task-vm-fleet.yml), from the Node through the Instance container.
@@ -536,7 +536,7 @@
   when: fleet_base_targets | length > 0 and (not fleet_due.rules or fleet_due.converge) and fleet_drift | length > 0
   ansible.builtin.include_tasks: instance-fleet-files.yml
 
-# How `base` is taken (docs/reference/development-containers.md#base). A btrfs snapshot of a running container is atomic: `running`
+# How `base` is taken (docs/reference/development-containers.md#how-base-is-taken). A btrfs snapshot of a running container is atomic: `running`
 # freezes the targets, snapshots each and thaws them, so the fleet never stops. `stopped` stops them first, as a directory pool needs (a
 # snapshot of a running container there is a file copy, not a consistent state), and so do a rule or file that differed here (the rules
 # are written with the three stopped) and a due shrink (the relink and the dedupe need the three stopped). The pool driver is read once;
@@ -569,7 +569,8 @@
     fleet_ready_at: "{{ now(utc=true).timestamp() }}"
 
 # `base` of the running fleet: the old one goes, then the targets freeze in one call, each is snapshotted, and they thaw in one call,
-# also when a snapshot fails. Their processes pause for about a second; nothing stops, boots or waits again, and the readiness above
+# also when a snapshot fails. Their processes pause while Incus snapshots them (about 5 s for the nested Gateway, 2 s for an app Node);
+# nothing stops, boots or waits again, and the readiness above
 # holds. Such a `base` holds the network pid files of the running nested Incus (an Instance host's `orbitinst0`): the reset clears them
 # after its restore (instance-fleet-runtime.yml), the only place a `base` is restored. A failure fails the refresh, and the run
 # restores the old seed, `base` snapshots included: they live on the outer container's disk.
