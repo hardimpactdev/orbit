@@ -742,7 +742,7 @@ Use the ordinary Conn workspace check before removing a completed launch-owned c
 
 Verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart.
 
-Preserve pre-existing Instances and unrelated work. Restore a launch-owned wake through native sleep when the lifecycle guard proves the Instance has no other consumer. Keep a shared wake and any Instance with recognized activity since the wake began. A failed activity read keeps cleanup pending.
+Preserve pre-existing Instances and unrelated work. Restore a launch-owned wake through native sleep when the lifecycle guard proves the Instance has no other consumer. Keep a shared wake and any Instance with recognized activity since the wake began. A failed activity read keeps cleanup pending with `conn.launch_wake_restore_unproven`.
 
 Only verified cleanup clears the private prompt on cancellation and ends the launch as `cancelled`.
 
