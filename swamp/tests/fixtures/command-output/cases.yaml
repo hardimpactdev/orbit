@@ -1,5 +1,15 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # `ss -tnH state established '( sport = :8080 )'` inside a draining release (Recv-Q, Send-Q, local, peer).
+  response-wait-queued:
+    web_sockets:
+      stdout_lines:
+      - "0      4096   10.1.0.3:8080   10.1.0.1:51234"
+      - "0      0      10.1.0.3:8080   10.1.0.1:51240"
+  response-wait-drained:
+    web_sockets:
+      stdout_lines:
+      - "0      0      10.1.0.3:8080   10.1.0.1:51240"
   fleet-command-current:
     fleet_gateway_commands:
       stdout: "list  List commands\ngateway:known-hosts:sync  Restore recorded pins\n"
@@ -1258,6 +1268,16 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: release-response-wait.yml
+  task: Wait for queued response bytes in the former live
+  field: vars.queued
+  context: response-wait-queued
+  expected: 1
+- file: release-response-wait.yml
+  task: Wait for queued response bytes in the former live
+  field: vars.queued
+  context: response-wait-drained
+  expected: 0
 - file: tasks/role-swamp.yml
   task: Check Swamp units
   field: loop
