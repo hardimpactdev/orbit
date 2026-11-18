@@ -111,11 +111,36 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The executor
 
 ### Fallback: one implementation on both paths
 
+An explicit signed wake queues delivery and follows its Operation, like Conn. Only the visitor's request has the 500 ms wait limit; the explicit wake's first relay can wait for a result until recovery is due.
+
 - **No `accepted` line within 150 ms.** The Gateway treats the WebSocket path as down. It runs `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` over its shared SSH connection, with the same signed order on stdin. The relay copies the order to the socket and the reply to stdout. If both copies arrive, the second is refused as `replayed nonce` and carries the first result. The action runs once.
 - **`accepted` but no result within the bound.** The restore is slow, not lost. The Operation keeps waiting for the listener up to 6 s.
-- **Still no result.** The Operation starts its Swamp run. Swamp's sleep and wake workflows call the executor through the same relay command. They get a freshly signed order for the same Operation from the Gateway's bound Operation read, because Swamp holds no key. The executor returns the stored result or acts once.
+- **A terminal wake result arrives.** Once the result is durable, the listener queues completion of the signed wake immediately. The worker projects the result and sends the Operation's notices without waiting for the sweep. The job that runs after 6 s still covers a missing result or a missed handoff.
+- **Still no result.** The Operation starts its Swamp run. Just before the fixed relay call, the machine phase asks the Gateway to sign a fresh order for that Operation. The action, Node and target come only from the committed admission, never from the request. The signer accepts only the authorized workflow identity, its bound run and an active, uncancelled Operation. Only the phase sees the order; it goes to relay stdin, never to run inputs, arguments or output. Swamp holds no signing key. The executor returns the stored result or acts once.
 
-So every sleep and wake, whatever the caller (WebSocket, SSH fallback, Swamp run, deploy, start, destroy), goes through one executor with one journal.
+Engine choice stays on the Operation after admission, including across a setting change. The signed engine is off by default. Before disabling it for handback, stop admitting signed sleeps, drain signed Operations, and wake Instances that still have a Rust sleep plan with the signed engine. Do not hand a frozen Rust plan to Python or a Python plan to Rust. A stopped container has no resumable memory; its ordinary lifecycle may boot it after the applicable guard and cleanup.
+
+A start or deploy admitted to resume a signed freeze requires a matching executor receipt. An already-running container that needs no resume or discard can still take its usual lifecycle path without a receipt.
+
+So every sleep and wake, whatever the caller (WebSocket, SSH fallback, Swamp run, deploy, start), goes through one executor with one journal. Destroy sends no signed order yet: it removes both engines' files as plain cleanup after the container is gone. A signed destroy is a follow-up, Orbit task 5891.
+
+### Four rules for every signed outcome
+
+Each rule has one place in the Gateway that enforces it. Every caller goes through that place; no caller decides the case again.
+
+1. **The receipt decides the outcome (R1).** The durable, matching executor receipt is the only source of truth for what happened to the container. A transport outcome (WebSocket, relay, Swamp, Valkey, a refused start, a timeout) never overrides a recorded receipt. It only decides whether to ask again. A run's own failure stands beside a successful receipt only when the run does work after the executor, as a start or deploy wrapper does. Projection reads the receipt's verdict, `done`, `partial`, `stopped`, `refused` or `failed` with its code, for sleep, wake, start and deploy alike. A `failed` wake with `instance.container_stopped` is no outcome of its own: it hands the container to the ordinary boot, and the boot's own result (`wake: started`, then readiness) decides. Every end of an Operation, a late receipt included, takes this verdict in `ExecutorFence::settle()`, which `ExecutorFence::verdict()` decides.
+2. **An issued order keeps its fence (R2).** Once the Gateway signs an order for an Operation (published, relayed or handed to a Swamp phase), the order may reach the Node. From then on the Instance stays locked and the Operation cannot be cancelled until a terminal receipt exists. With no receipt, the end is `interrupted` with `executor.result_unknown`, and the lock stays; nothing calls that released. A missing receipt for an issued order is never a success. An Operation that issued nothing yet can still be cancelled, and the cancel settles it at once. Enforced by `ExecutorFence`.
+3. **The freezing engine owns the freeze (R3).** The engine whose sleep froze the container owns it until a receipt from that engine says it is awake, stopped or discarded. Settings, sleeps after the freeze that froze nothing (cancelled, refused, failed with no freeze) and admission decisions never move that ownership. The ownership ends with a receipt that the Node discarded the freeze, even when the ordinary boot after it fails. Wake, start and deploy resume through the owner. Destroy removes both engines' files after it deletes the container, so a target frozen by either engine leaves nothing behind. Enforced by `ContainerResume::frozenSleep()`.
+4. **A stuck end is a failure with a retry (R4).** A terminal wake that cannot advance, `failed` or `interrupted`, is shown as failed with its code and a retry, never as pending. A retry while the fence of rule 2 holds shows the same failure; it cannot admit a second wake beside an unknown order. The same rule covers a nested clone's start that stands in for its wake, and a wake that ended before its visit returned.
+
+The visitor's request bound is part of the wake, not of the current settings: a wake that resumes a signed freeze bounds its admission write even after the signed engine is switched off.
+
+### Must clear before the signed power flags go on
+
+`ORBIT_EXECUTOR_WAKE_ENABLED` and `ORBIT_EXECUTOR_POWER_ENABLED` stay off until each item here is cleared. Open blockers from review: none.
+
+- Every app-dev Node runs the same executor build as the Gateway expects.
+- Every Instance already asleep wakes through the engine that froze it, or is drained before the switch.
 
 ### What this supersedes and changes
 
@@ -138,7 +163,7 @@ Each slice is one small pull request. It starts by updating the [sleep](/cli/ins
 | 4 | Rust sleep: limits, Incus freeze, whole-subtree scan with bit 62, plan, reclaim, residual policy, asleep marker | 30 sleeps of a real clone with T3 and Vite; RAM and swap after each | **Yes** |
 | 5 | Rust wake with the pool: identity, pool of about 32 serving one target at a time, Incus unfreeze, limits, readiness, crash recovery | 30 wakes and a burst of 3 on a real clone; the Incus unfreeze cost; a SIGKILL test | **Yes** |
 | 6 | The wake inside the request: Gateway bound, Caddy sends the original request on, waiting page otherwise | 50 visits to a sleeping clone, time to the app's first byte, against today's 1.5 s and 2.4 s | **Yes** |
-| 7 | Swamp and the SSH relay call the executor: fallback on no `accepted`, sleep and wake workflows, deploy, start and destroy | WebSocket path down: a wake through the relay; a run after a lost result; a crossed order runs once | **Yes** |
+| 7 | Swamp and the SSH relay call the executor: fallback on no `accepted`, sleep and wake workflows, deploy and start; destroy only removes both engines' files (signed destroy: task 5891) | WebSocket path down: a wake through the relay; a run after a lost result; a crossed order runs once | **Yes** |
 | 8 | Remove the Python path: the helper, path unit, dispatcher, worker template, file flow, Ansible counter settle; absorb this ADR | The sleep and wake proofs of slices 4–7 still pass; nothing installs the old units | **Yes** |
 
 Slices 1–3 can run before group 5513 lands. Slices 4–8 need a nested `app-dev` Node that hosts real app containers.

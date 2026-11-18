@@ -58,7 +58,7 @@ final readonly class InstanceWake extends InstancePower
     /** The container sleeps frozen: its runtime records it stopped and its last sleep froze it (ContainerResume::frozenBySleep). */
     private static function frozen(InstanceRuntime $runtime, Instance $instance): bool
     {
-        return $runtime->power_state === InstanceRuntimePowerState::Stopped && ContainerResume::frozenBySleep($instance);
+        return ExecutorPowerIntent::frozenSleep($instance, $runtime) !== null;
     }
 
     /** A nested-fleet default that no sleep froze starts only through its deployment, which brings back its Club key and fleet. */
@@ -79,7 +79,14 @@ final readonly class InstanceWake extends InstancePower
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
         $operation = $this->admitWake($instance, $caller, $requestId);
-        if (ExecutorWake::enabled()) {
+        if (ExecutorWake::owns($operation)) {
+            if (ExecutorPowerIntent::managed($operation)) {
+                if ($operation->wasRecentlyCreated) {
+                    app(ExecutorWake::class)->dispatchDeferred($operation->id);
+                }
+
+                return $operation;
+            }
             app(ExecutorWake::class)->request($operation);
 
             return $operation->refresh();
@@ -101,9 +108,6 @@ final readonly class InstanceWake extends InstancePower
 
     private function admitWake(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
-        if (ExecutorWake::enabled()) {
-            return parent::start($instance, $caller, $requestId);
-        }
         $runtime = $instance->runtime()->first();
         if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
             return parent::start($instance, $caller, $requestId);
@@ -192,7 +196,10 @@ final readonly class InstanceWake extends InstancePower
      */
     protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
     {
-        if (ExecutorWake::enabled()) {
+        if (ExecutorPowerIntent::forInstance($instance, $runtime)) {
+            return app(ExecutorWake::class)->admit($instance, [...$input, ExecutorPowerIntent::Managed => true], $caller, $requestId);
+        }
+        if (ExecutorWake::enabled() && ExecutorPowerIntent::frozenSleep($instance, $runtime) === null) {
             return app(ExecutorWake::class)->admit($instance, $input, $caller, $requestId);
         }
 
@@ -315,21 +322,28 @@ final readonly class InstanceWake extends InstancePower
      */
     public function activate(Instance $instance, bool $retry, string $caller): string|true|null
     {
-        $budget = ExecutorWake::enabled() ? new ExecutorWakeBudget : null;
-        if (! $retry) {
-            $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
-                ->where('target_id', $instance->id)->orderByDesc('id')->first();
-            if ($last?->kind === self::Kind && $last->status === OperationStatus::Failed) {
-                return 'The wake failed ('.($last->error_code ?? 'instance.wake_failed').'). Try again.';
-            }
+        $budget = new ExecutorWakeBudget;
+        $last = Operation::query()->whereIn('kind', [self::Kind, InstanceStart::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
+            ->where('target_id', $instance->id)->orderByDesc('id')->first();
+        if (($failed = self::failure($last, $retry)) !== null) {
+            return $failed;
         }
+        $runtime = $instance->runtime()->first();
         try {
-            if ($budget !== null) {
-                $operation = $budget->write(fn (): Operation => $this->admitWake($instance, $caller, null));
-
-                return $operation !== null && app(ExecutorWake::class)->request($operation, $budget) ? true : null;
+            // The request bound belongs to a wake of a signed freeze too, after the settings went off (R3).
+            $operation = ExecutorWake::enabled() || ($runtime !== null && ExecutorPowerIntent::forInstance($instance, $runtime))
+                ? $budget->write(fn (): Operation => $this->admitWake($instance, $caller, null))
+                : $this->admitWake($instance, $caller, null);
+            if ($operation === null) {
+                return null;
             }
-            $operation = $this->admitWake($instance, $caller, null);
+            if (ExecutorWake::owns($operation)) {
+                if ($operation->wasRecentlyCreated && ExecutorPowerIntent::managed($operation)) {
+                    defer(static fn () => app(ExecutorWake::class)->dispatchDeferred($operation->id), always: true);
+                }
+
+                return app(ExecutorWake::class)->request($operation, $budget) ? true : self::failure($operation->refresh(), false);
+            }
 
             if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
                 // A 401 page is no success, so the callback must run always. A worker that dies here leaves the safety net's run.
@@ -339,6 +353,8 @@ final readonly class InstanceWake extends InstancePower
                     }
                 }, always: true);
             }
+
+            return self::failure($operation->refresh(), false);
         } catch (ResourceOperationException $exception) {
             // Other lifecycle work holds the Instance: the page polls again, and a later request starts the wake.
             if (! in_array($exception->errorCode, ['operation.target_busy', 'instance.lifecycle_busy'], true)) {
@@ -347,5 +363,21 @@ final readonly class InstanceWake extends InstancePower
         }
 
         return null;
+    }
+
+    /**
+     * ADR 0266, R4: the one rule for what a visit shows of a wake that ended, or of a nested clone's start that stands in for it. A
+     * failed or interrupted one shows its failure with a retry. A retry admits a new wake, except under an unknown order's fence (R2),
+     * because no second wake can be admitted beside that order.
+     */
+    private static function failure(?Operation $operation, bool $retry): ?string
+    {
+        if ($operation === null || ! in_array($operation->kind, [self::Kind, InstanceStart::Kind], true)
+            || ! in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
+            || ($retry && ! ($operation->status === OperationStatus::Interrupted && $operation->lock_key !== null))) {
+            return null;
+        }
+
+        return 'The wake failed ('.($operation->error_code ?? 'instance.wake_failed').'). Try again.';
     }
 }

@@ -78,6 +78,21 @@ it('says in human output that a sleep did not check T3', function (): void {
         ->toContain('T3 was not checked: a running agent turn, if any, was cut.');
 });
 
+it('distinguishes a stopped sleep from a freeze in human output', function (string $sleep): void {
+    $final = ['id' => 901, 'kind' => 'instance.sleep', 'target_type' => 'instance', 'target_id' => 501,
+        'status' => 'succeeded', 'sequence' => 4, 'result' => ['power_state' => 'stopped', 'sleep' => $sleep]];
+    MockClient::global([
+        SleepInstanceRequest::class => MockResponse::make(['data' => $final], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => MockResponse::make(['data' => $final]),
+    ]);
+
+    $exit = Artisan::call('instance:sleep', ['instance' => 501, '--no-interaction' => true]);
+
+    expect($exit)->toBe(0)
+        ->and(str_contains(Artisan::output(), 'The container is stopped, not frozen.'))->toBe($sleep === 'stopped');
+})->with(['stopped', 'frozen']);
+
 it('names blockers in human and JSON migration failures', function (bool $json, string $code, string $message): void {
     $final = ['id' => 901, 'kind' => 'instance.migrate', 'target_type' => 'instance', 'target_id' => 501,
         'status' => 'failed', 'sequence' => 8, 'error_code' => $code,

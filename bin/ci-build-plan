@@ -324,12 +324,19 @@ def swamp_comparison_base(base, head):
     return source
 
 
+def listed_paths(*command):
+    """The paths of a NUL-delimited Git listing, byte for byte: text mode would rewrite a carriage return in a name."""
+    return [os.fsdecode(path) for path in subprocess.check_output(['git', *command], timeout=60).split(b'\0') if path]
+
+
+def changed_paths(ancestor, head):
+    return listed_paths('diff', '--name-only', '--no-renames', '-z', ancestor, head)
+
+
 def changed_inputs(base, head):
     """Select head's changes; the checkout must contain both refs and their common ancestry."""
     ancestor = subprocess.check_output(['git', 'merge-base', base, head], text=True, timeout=60).strip()
-    paths = subprocess.check_output(['git', 'diff', '--name-only', '--no-renames', '-z', ancestor, head],
-                                    text=True, timeout=60).rstrip('\0').split('\0')
-    return ancestor, [path for path in paths if path]
+    return ancestor, changed_paths(ancestor, head)
 
 
 def main():
