@@ -97,7 +97,12 @@ final readonly class NatsCredentials
         $claims['jti'] = rtrim((new Base32)->encode(hash('sha256', self::json($claims), true)), '=');
         $signing = self::base64url(self::json(['typ' => 'JWT', 'alg' => 'ed25519-nkey'])).'.'.self::base64url(self::json($claims));
 
-        return $signing.'.'.self::base64url(sodium_crypto_sign_detached($signing, $issuer->value));
+        $secret = $issuer->value;
+        if ($secret === '') {
+            throw new InvalidArgumentException('An nkey seed gave an empty signing key.');
+        }
+
+        return $signing.'.'.self::base64url(sodium_crypto_sign_detached($signing, $secret));
     }
 
     private static function seed(int $prefix, #[SensitiveParameter] string $raw): string

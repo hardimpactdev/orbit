@@ -222,3 +222,15 @@ it('ends a cancelled engine Operation at its next transition without sending mor
     expect($this->bus->orders)->toBe([])
         ->and($operation->refresh()->status)->toBe(OperationStatus::Cancelled);
 });
+
+it('signs the input the executor\'s ufw.ensure_rule reads, as the shared contract fixture states', function (): void {
+    $fixture = json_decode((string) file_get_contents(base_path('../agent/contract/fixtures/ufw-ensure-rule-input.json')), true, flags: JSON_THROW_ON_ERROR);
+    $response = $this->postJson('/api/v1/nodes/'.$this->node->id.'/firewall-rules/allow', $fixture['intent']);
+    $response->assertStatus(202);
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    app(StartSwampRun::class)->start($operation);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    expect($this->bus->payload(0)['input'])->toBe($fixture['input']);
+});
+
