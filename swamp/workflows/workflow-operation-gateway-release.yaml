@@ -102,6 +102,7 @@ jobs:
     # Resolves the current release, adds the worktree of the fetched commit, links shared env and storage, installs dependencies, writes the agent
     # manifest and seals the release with REVISION and a cached configuration. A sealed release of the same commit is reused. Its script is read
     # from the commit being released (a commit from before the scripts has none: gateway.release_script_missing), so a release never runs the scripts of another. Prints the release's rendered Swamp grants.
+    # The installed container helper checks the release protocol before this run can load the target's workflows.
   - name: Build the release
     labels: {role: swamp}
     writes: true
@@ -122,7 +123,7 @@ jobs:
         - '-c'
         - 'if test -f /home/orbit/.orbit/gateway-containers.json; then exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:6}"; fi; shift 6; exec "$@"'
         - 'bash'
-        - 'build'
+        - 'build-checked'
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
         - '${{ string(inputs.intent.force) }}'

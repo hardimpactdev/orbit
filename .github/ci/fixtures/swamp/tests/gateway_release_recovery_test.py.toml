@@ -10,6 +10,8 @@ cases = [
   "test_host_rollback_recovers_after_drain_before_switch",
   "test_host_rollback_recovers_after_switch_before_verification",
   "test_host_rollback_completes_cleanup_after_verified_switch",
+  "test_incompatible_retained_helper_and_workflow_are_refused_before_rollback",
+  "test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper",
   "test_native_failed_promotion_verifies_the_previous_release_before_acknowledging",
   "test_offline_rollback_journals_the_original_units_before_draining",
   "test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail",
@@ -17,7 +19,7 @@ cases = [
   "test_ordinary_fpm_release_and_rollback",
 ]
 file = "swamp/tests/gateway_release_recovery_test.py"
-cost = 100
+cost = 112
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-container-rollback",
@@ -30,6 +32,7 @@ inputs = [
   "swamp/scripts/gateway-release-host-check.py",
   "swamp/scripts/gateway-release-horizons.py",
   "swamp/scripts/gateway-release-switch.sh",
+  "swamp/workflows/workflow-gateway-release-activate.yaml",
 ]
 [case_costs]
 "test_first_move_recovers_before_drain" = 5
@@ -42,8 +45,10 @@ inputs = [
 "test_host_rollback_recovers_after_drain_before_switch" = 7
 "test_host_rollback_recovers_after_switch_before_verification" = 9
 "test_host_rollback_completes_cleanup_after_verified_switch" = 8
+"test_incompatible_retained_helper_and_workflow_are_refused_before_rollback" = 5
+"test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper" = 5
 "test_native_failed_promotion_verifies_the_previous_release_before_acknowledging" = 10
 "test_offline_rollback_journals_the_original_units_before_draining" = 7
-"test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail" = 8
+"test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail" = 10
 "test_healthy_retained_container_rollback" = 8
 "test_ordinary_fpm_release_and_rollback" = 3

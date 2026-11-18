@@ -6,6 +6,17 @@ shift 3
 [[ $sha =~ ^[a-f0-9]{40}$ && $operation =~ ^[1-9][0-9]*$ ]] || exit 64
 repo=/home/orbit/shared/orbit.git
 script=swamp/scripts/gateway-release-container.sh
+workflow=swamp/workflows/workflow-gateway-release-activate.yaml
+inventory=/home/orbit/.orbit/gateway-containers.json
+check_recovery() {
+  local path
+  for path in "$script" "$workflow"; do
+    if ! git -c safe.directory="$repo" -C "$repo" grep -q '^# orbit-gateway-recovery-protocol: 1$' "$sha" -- "$path"; then
+      echo "gateway.release_recovery_incompatible: $sha lacks container recovery protocol 1 in $path" >&2
+      return 1
+    fi
+  done
+}
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
   switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
@@ -16,6 +27,20 @@ case "$phase" in
     fi
     ;;
 esac
+# Admit only controllers that journal the drain and verify public recovery.
+# The native workflow uses build-checked so an older installed dispatcher fails
+# before it can build the candidate or load the candidate's Swamp workflows.
+case "$phase" in
+  drain)
+    echo 'gateway.release_recovery_incompatible: container Horizon must drain inside the journaled switch' >&2
+    exit 1
+    ;;
+  build|build-checked|switch|restore|switch-back|restore-host|check-recovery)
+    check_recovery
+    ;;
+esac
+if [[ $phase == check-recovery ]]; then exit 0; fi
+if [[ $phase == build-checked ]]; then phase=build; fi
 # A failed deletion must complete before a new build can reuse the previous SHA.
 if [[ $phase == build && -f /var/lib/orbit/gateway-release-switch/pending-prune ]]; then
   "$0" prune-pending "$sha" "$operation"
@@ -28,7 +53,6 @@ fi
 # Cleanup belongs to the current host controller, including a rollback to an older
 # sealed release whose script predates this phase. A failed fetch can have no object.
 if [[ $phase == park-preparation || $phase == release-unused ]]; then
-  inventory=/home/orbit/.orbit/gateway-containers.json
   journal=/var/lib/orbit/gateway-release-switch
   candidate=gateway-${sha:0:12}
   incus_cli=(incus --force-local --project orbit-releases)
@@ -45,6 +69,10 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
       $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
       { echo 'Unfinished traffic switch needs recovery' >&2; exit 1; }
   fi
+  # A refused rollback never woke the retained release. Leave it alone.
+  old=
+  if [[ -f $inventory ]]; then old=$(jq -r '.old // ""' "$inventory"); fi
+  if [[ $old == "$sha" ]] && ! check_recovery 2>/dev/null; then exit 0; fi
   # A failed Incus copy can leave only the preparer snapshot. Check the seal that
   # created it rather than trusting the name of a snapshot or the current preparer.
   snapshot="built-$operation"
@@ -59,7 +87,7 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
     "${incus_cli[@]}" snapshot delete prepare-gateway "$snapshot"
   fi
   if [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]]; then exit 0; fi
-  if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then
+  if [[ $old == "$sha" ]]; then
     ctl retire gateway "${sha:0:12}" "$operation"
     exit
   fi

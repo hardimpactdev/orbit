@@ -55,6 +55,7 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     # release Operation identifies this recovery. It does not create an Operation.
     operation=$(cat "$journal/last-operation")
     candidate() { "$phase" "$1" "$old" "$operation" "${@:2}"; }
+    candidate check-recovery
     trap 'rc=$?; if (( rc )); then candidate release-unused || :; fi' EXIT
     candidate build true '{}' true >/dev/null
     candidate ready

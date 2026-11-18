@@ -36,7 +36,8 @@ sequenceDiagram
   %%> - the fetch is its own step, so that the build runs its script from the commit being released, not from the live release
   SW->>GN: Build the release<br/>wake and update preparation
   %%> What it does:
-  %%> - refuses a commit that does not descend from the current release
+  %%> - refuses a commit that does not descend from the current release unless forced
+  %%> - on a container Gateway, checks the target commit's activation workflow and recovery script before waking it or loading its Swamp workflows
   %%> - checks out the exact commit and installs dependencies in the preparation container; its workers and scheduler stay disabled
   %%> - a retry after an incomplete build starts from a clean checkout and discards partial build output
   %%> On failure:

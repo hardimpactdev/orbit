@@ -24,4 +24,5 @@ On a Gateway that serves from a release container, the rollback target is the pr
 | `gateway.release_not_prepared` | The release is not a retained release. |
 | `gateway.release_already_current` | The release is already current. |
 | `gateway.release_in_progress` | Another release is queued or running. |
+| `gateway.release_recovery_incompatible` | The retained container's workflow or recovery script predates verified recovery. The current release keeps serving. |
 | `input.cancelled` | The rollback was not confirmed. Nothing started. |

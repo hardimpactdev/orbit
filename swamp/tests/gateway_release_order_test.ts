@@ -25,6 +25,19 @@ Deno.test("no release step admits a task VM image refresh: the VM refresh trigge
     [{ step: "Load Swamp on Node 209", condition: { type: "succeeded" } }]);
 });
 
+Deno.test("container rollback checks the retained Git object before workflow load", () => {
+  const build = release.find((step) => step.name === "Build the release")!;
+  const argv = build.task.inputs?.argv!;
+  assert(argv[4].includes('exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:6}"'));
+  assertEquals(argv.slice(6, 9), ["build-checked", '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']);
+  assertEquals(argv[11], '${{ string(has(inputs.intent.retained) && inputs.intent.retained) }}');
+  // The load and activation depend on a successful build, even when retained steps skip.
+  assertEquals(release.find((step) => step.name === "Snapshot the database")?.dependsOn?.[0],
+    { step: build.name, condition: { type: "succeeded" } });
+  assertEquals(release.find((step) => step.name === "Migrate")?.dependsOn?.[0],
+    { step: "Snapshot the database", condition: { type: "succeeded" } });
+});
+
 Deno.test("Swamp load requires the bounded DB busy guard, including forced releases", () => {
   const guard = release.find((step) => step.name === "Wait for active Operations")!;
   assert(guard, "check active Operations before replacing their workflows");

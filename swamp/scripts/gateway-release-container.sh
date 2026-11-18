@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# orbit-gateway-recovery-protocol: 1
 # Run one release phase on the Gateway Node. The Swamp run orders the phases.
 set -euo pipefail
 umask 077

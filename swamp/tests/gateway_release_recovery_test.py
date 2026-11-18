@@ -1,4 +1,5 @@
 """Run the real Gateway cutover and console recovery scripts against isolated services."""
+import fcntl
 import hashlib
 import json
 import os
@@ -14,14 +15,13 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SHA = "a" * 40
-OLD = "b" * 40
 OPERATION = "42"
 HORIZON = "orbit-gateway-horizon.service"
-CANDIDATE = f"gateway-{SHA[:12]}"
-RETAINED = f"gateway-{OLD[:12]}"
 MANAGED_HORIZON = "orbit-process-71-horizon.service"
 HEADER = struct.Struct("!BBHHBB")
+WORKFLOW = "swamp/workflows/workflow-gateway-release-activate.yaml"
+CONTROLLER = "swamp/scripts/gateway-release-container.sh"
+PROTOCOL = "# orbit-gateway-recovery-protocol: 1\n"
 
 
 def stub(name, args):
@@ -38,11 +38,9 @@ def stub(name, args):
         if os.environ.get("FIXTURE_INTERRUPT") == at:
             os.killpg(os.getpgrp(), signal.SIGKILL)
 
-    if name == "git":
-        if "show" in args:
-            path = args[-1].split(":", 1)[1]
-            sys.stdout.write((root / "source" / path).read_text())
-    elif name == "runuser":
+    sha, old = os.environ["FIXTURE_SHA"], os.environ["FIXTURE_OLD"]
+    candidate = f"gateway-{sha[:12]}"
+    if name == "runuser":
         command = args[3:]
         if command[0] == "php8.5":
             print('{"generations":[]}' if "gateway:release:cleanup" in command else (state / "receipt").read_text())
@@ -59,7 +57,7 @@ def stub(name, args):
             host = selected == "host"
             upstream = root / "caddy/orbit-gateway-upstream.caddy"
             version = (root / "home/orbit/REVISION").read_text().strip() if host else (
-                OLD if "10.1.0.3" in upstream.read_text() else SHA
+                old if "10.1.0.3" in upstream.read_text() else sha
             )
             event(f"public {selected} {version}")
             if (host and (state / "broken-public").exists()) or (state / f"broken-public-{selected}-{version}").exists():
@@ -67,9 +65,9 @@ def stub(name, args):
             if url.endswith("/status"):
                 interrupt(f"during {selected} public status")
                 if (state / f"wrong-public-{version}").exists():
-                    version = OLD if version == SHA else SHA
+                    version = old if version == sha else sha
         else:
-            version = OLD if "10.1.0.3" in url else SHA
+            version = old if "10.1.0.3" in url else sha
         if url.endswith("/status"):
             print(json.dumps({"data": {"status": "ok", "version": version}}))
     elif name == "systemctl":
@@ -80,6 +78,18 @@ def stub(name, args):
             for service in sorted(state.glob(f"{prefix}*horizon.service")):
                 print(f"{service.name.removeprefix(prefix)} loaded active running")
         elif action == "show" and "KillMode" in args:
+            with (root / "home/.orbit/gateway-release.lock").open() as lock:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    locked = True
+                else:
+                    locked = False
+            journal = root / "var/gateway-release-switch"
+            operation = journal / "operation"
+            horizons = journal / "horizons"
+            event(f"drain {machine} locked={locked} operation={operation.read_text().strip() if operation.exists() else '-'}"
+                  f" units={','.join(horizons.read_text().splitlines()) if horizons.exists() else '-'}")
             interrupt(f"before {machine} drain")
             print("KillMode=mixed\nSendSIGKILL=no")
         elif action == "show" and "ActiveState" in args:
@@ -111,17 +121,17 @@ def stub(name, args):
         elif action == "config" and args[1] == "get":
             machine = args[2]
             if args[3] == "user.orbit.release.commit":
-                print(SHA if machine == CANDIDATE else OLD)
+                print(sha if machine == candidate else old)
         elif action == "config" and args[1] == "set":
             (state / f"{args[2]}-boot").write_text(args[3].split("=")[1])
         elif action == "snapshot" and args[1] == "list":
             print("[]")
         elif action == "list":
             if (state / "candidate").exists():
-                print(json.dumps([{"name": CANDIDATE, "config": {
+                print(json.dumps([{"name": candidate, "config": {
                     "user.orbit.release.operation": OPERATION, "user.orbit.release.target": "gateway",
-                    "user.orbit.release.role": "candidate", "user.orbit.release.commit": SHA,
-                    "boot.autostart": (state / f"{CANDIDATE}-boot").read_text(),
+                    "user.orbit.release.role": "candidate", "user.orbit.release.commit": sha,
+                    "boot.autostart": (state / f"{candidate}-boot").read_text(),
                 }}]))
             else:
                 print("[]")
@@ -167,7 +177,6 @@ class GatewayReleaseRecovery(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         self.home = self.root / "home"
-        self.checkout = self.home / "releases" / SHA[:12]
         self.journal = self.root / "var/gateway-release-switch"
         self.inventory = self.home / ".orbit/gateway-containers.json"
         self.upstream = self.root / "caddy/orbit-gateway-upstream.caddy"
@@ -175,10 +184,25 @@ class GatewayReleaseRecovery(unittest.TestCase):
         self.stubs = self.root / "stubs"
         self.libexec = self.root / "libexec"
         self.sock = self.root / "fpm.sock"
-        for directory in (self.checkout, self.journal, self.inventory.parent, self.upstream.parent, self.state, self.stubs, self.libexec):
+        for directory in (self.journal, self.inventory.parent, self.upstream.parent, self.state, self.stubs, self.libexec):
             directory.mkdir(parents=True)
+        self.mirror = self.home / "shared/orbit.git"
+        self.mirror.mkdir(parents=True)
+        self.git("init", "--quiet", "--object-format=sha1")
+        for name in ("bin/gateway-release-check", "bin/gateway-rollback", CONTROLLER, WORKFLOW,
+                     "swamp/scripts/gateway-release-horizons.py", "swamp/scripts/gateway-release-host-check.py"):
+            self.copy(name, self.mirror / name)
+        ctl = self.mirror / "swamp/scripts/release-container.py"
+        ctl.write_text('import os, sys\nif sys.argv[1] == "address": print("10.1.0.2" if sys.argv[3] == os.environ["FIXTURE_SHA"][:12] else "10.1.0.3")\n')
+        self.old = self.commit("retained release")
+        (self.mirror / "application-version").write_text("serving release")
+        self.sha = self.commit("serving release")
+        self.candidate = f"gateway-{self.sha[:12]}"
+        self.retained = f"gateway-{self.old[:12]}"
+        self.checkout = self.home / "releases" / self.sha[:12]
+        self.checkout.mkdir(parents=True)
         (self.home / "orbit").symlink_to(self.checkout)
-        (self.checkout / "REVISION").write_text(SHA)
+        (self.checkout / "REVISION").write_text(self.sha)
         (self.home / ".orbit/gateway-release.lock").touch()
         self.archive = self.root / "web.zip"
         self.archive.write_bytes(b"fixture")
@@ -193,11 +217,12 @@ class GatewayReleaseRecovery(unittest.TestCase):
 
         self.env = {**os.environ, "PATH": f"{self.stubs}:{os.environ['PATH']}",
                     "FIXTURE_ROOT": str(self.root),
-                    "FIXTURE_TEST": str(Path(__file__).resolve())}
+                    "FIXTURE_TEST": str(Path(__file__).resolve()),
+                    "FIXTURE_SHA": self.sha, "FIXTURE_OLD": self.old}
         self.env.pop("ORBIT_GATEWAY_RELEASE_LOCK_HELD", None)
         self.env.pop("ORBIT_RELEASE_BASE", None)
 
-        for name in ("git", "runuser", "systemctl", "incus", "curl", "chown", "install"):
+        for name in ("runuser", "systemctl", "incus", "curl", "chown", "install"):
             self.make_stub(self.stubs / name)
         for name in ("orbit-gateway-site", "orbit-gateway-unit"):
             self.make_stub(self.libexec / name)
@@ -206,9 +231,9 @@ class GatewayReleaseRecovery(unittest.TestCase):
         self.rollback = self.copy("bin/gateway-rollback", self.libexec / "orbit-gateway-rollback-host")
         self.console = self.copy("bin/gateway-container-rollback", self.root / "console")
         self.phase = self.libexec / "orbit-gateway-release-phase"
-        self.copy("bin/gateway-release-phase", self.phase).write_text(
-            self.source("bin/gateway-release-phase").replace("shift 3", """shift 3
-case "$phase" in
+        # Stub preparation work only after the installed phase has checked the
+        # selected recovery protocol against the real Git objects.
+        prepare = """case "$phase" in
   build) echo '{}'; exit ;;
   web) cat >/dev/null; exit ;;
   clone)
@@ -216,23 +241,34 @@ case "$phase" in
     printf false > "$FIXTURE_ROOT/state/gateway-${sha:0:12}-boot"
     exit ;;
   park-preparation|wait-idle|ready) exit 0 ;;
-esac"""))
-        for name in ("bin/gateway-release-check", "bin/gateway-rollback", "swamp/scripts/gateway-release-container.sh",
-                     "swamp/scripts/gateway-release-horizons.py", "swamp/scripts/gateway-release-host-check.py"):
-            self.copy(name, self.root / "source" / name)
+esac
+"""
+        marker = "# A failed deletion must complete before a new build"
+        phase = self.copy("bin/gateway-release-phase", self.phase)
+        phase.write_text(phase.read_text().replace(marker, prepare + marker, 1))
         self.copy("swamp/scripts/gateway-release-drain.sh", self.checkout / "swamp/scripts/gateway-release-drain.sh")
-        ctl = self.root / "source/swamp/scripts/release-container.py"
-        ctl.write_text('import sys\nif sys.argv[1] == "address": print("10.1.0.2" if sys.argv[3] == "aaaaaaaaaaaa" else "10.1.0.3")\n')
+
+    def git(self, *args):
+        return subprocess.check_output(
+            ["git", "-C", self.mirror, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args],
+            text=True,
+        ).strip()
+
+    def commit(self, title):
+        self.git("add", ".")
+        self.git("commit", "--quiet", "-m", title)
+        return self.git("rev-parse", "HEAD")
 
     def make_stub(self, path):
         path.write_text('#!/bin/sh\nexec python3 "$FIXTURE_TEST" --stub "$(basename "$0")" "$@"\n')
         path.chmod(0o755)
 
-    def source(self, name):
+    def source(self, name, revision=None):
         # The base override is for reproducing the same tests against the draft.
-        base = os.environ.get("GATEWAY_RECOVERY_TEST_BASE")
+        base = revision or os.environ.get("GATEWAY_RECOVERY_TEST_BASE")
         if base and name != "swamp/scripts/gateway-release-host-check.py":
-            source = subprocess.check_output(["git", "show", f"{base}:{name}"], cwd=ROOT, text=True)
+            repo = os.environ.get("GATEWAY_RECOVERY_TEST_SOURCE_REPO", ROOT)
+            source = subprocess.check_output(["git", "show", f"{base}:{name}"], cwd=repo, text=True)
         else:
             source = (ROOT / name).read_text()
         for original, fixture in {
@@ -254,9 +290,9 @@ esac"""))
             [script, *args], check=False, env=env, start_new_session=True, capture_output=True, text=True, timeout=45,
         )
 
-    def listener(self, version=SHA, *, complete=True):
+    def listener(self, version=None, *, complete=True):
         server = socketserver.UnixStreamServer(str(self.sock), FastCGI)
-        server.version = version
+        server.version = version or self.sha
         server.complete = complete
         server.index = os.fsencode(self.checkout / "apps/gateway/public/index.php")
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
@@ -274,8 +310,8 @@ esac"""))
     def assert_interrupted(self, result):
         self.assertEqual(result.returncode, -signal.SIGKILL, result.stdout + result.stderr)
         self.assertEqual((self.journal / "operation").read_text().strip(), OPERATION)
-        self.assertEqual((self.journal / "candidate").read_text().strip(), SHA)
-        self.assertTrue((self.journal / f"rollback-{SHA}").exists())
+        self.assertEqual((self.journal / "candidate").read_text().strip(), self.sha)
+        self.assertTrue((self.journal / f"rollback-{self.sha}").exists())
 
     def assert_host_serves(self):
         self.assertEqual((self.state / "site").read_text(), "host")
@@ -287,17 +323,28 @@ esac"""))
 
     def assert_container_serves(self):
         self.assertEqual((self.state / "site").read_text(), "container")
-        self.assertTrue((self.state / f"{CANDIDATE}-{HORIZON}").exists())
+        self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
         self.assertFalse((self.state / f"host-{HORIZON}").exists())
         self.assertTrue((self.state / "candidate").exists())
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], SHA)
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
         self.assertTrue(self.upstream.exists())
         self.assertFalse((self.journal / "operation").exists())
 
-    def retained_releases(self):
+    def retained_releases(self, *incompatible):
+        if incompatible:
+            old_source = os.environ.get("GATEWAY_RECOVERY_TEST_OLD")
+            self.git("checkout", "--quiet", "--detach", self.old)
+            for name in incompatible:
+                source = self.source(name, old_source) if old_source else self.source(name).replace(PROTOCOL, "")
+                (self.mirror / name).write_text(source)
+            self.old = self.commit("incompatible retained release")
+            self.retained = f"gateway-{self.old[:12]}"
+            self.env["FIXTURE_OLD"] = self.old
+            self.git("checkout", "--quiet", "--detach", self.sha)
+        self.assertNotEqual(self.git("rev-parse", f"{self.old}^{{tree}}"), self.git("rev-parse", f"{self.sha}^{{tree}}"))
         self.assert_ok(self.run_move())
         inventory = json.loads(self.inventory.read_text())
-        self.inventory.write_text(json.dumps({**inventory, "old": OLD}))
+        self.inventory.write_text(json.dumps({**inventory, "old": self.old}))
 
     def assert_pending(self, sha):
         self.assertTrue((self.journal / "operation").exists(), "the switch has no recovery marker")
@@ -305,57 +352,108 @@ esac"""))
         self.assertEqual((self.journal / "candidate").read_text().strip(), sha)
         self.assertTrue((self.journal / f"rollback-{sha}").exists())
 
+    def test_incompatible_retained_helper_and_workflow_are_refused_before_rollback(self):
+        self.retained_releases(CONTROLLER, WORKFLOW)
+        for name in (CONTROLLER, WORKFLOW):
+            self.assertNotEqual(self.git("rev-parse", f"{self.sha}:{name}"), self.git("rev-parse", f"{self.old}:{name}"))
+        initial = [(path, path.read_bytes()) for path in (self.inventory, self.upstream, self.state / "events")]
+        for script, args in (
+            (self.console, (self.old[:12],)),
+            (self.phase, ("build-checked", self.old, OPERATION, "true", "{}", "true")),
+            (self.phase, ("drain", self.old, OPERATION, HORIZON)),
+            (self.phase, ("switch", self.old, OPERATION, self.sha[:12], HORIZON)),
+        ):
+            with self.subTest(args=args):
+                result = self.run_script(script, *args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("gateway.release_recovery_incompatible", result.stderr)
+                for path, before in initial:
+                    self.assertEqual(path.read_bytes(), before)
+                self.assert_container_serves()
+        self.assert_ok(self.run_script(self.phase, "release-unused", self.old, OPERATION))
+        for path, before in initial:
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper(self):
+        self.retained_releases(WORKFLOW)
+        self.assertEqual(self.git("rev-parse", f"{self.sha}:{CONTROLLER}"), self.git("rev-parse", f"{self.old}:{CONTROLLER}"))
+        self.assertNotEqual(self.git("rev-parse", f"{self.sha}:{WORKFLOW}"), self.git("rev-parse", f"{self.old}:{WORKFLOW}"))
+        result = self.run_script(self.phase, "build-checked", self.old, OPERATION, "true", "{}", "true")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"gateway.release_recovery_incompatible: {self.old} lacks container recovery protocol 1 in {WORKFLOW}", result.stderr)
+        self.assert_container_serves()
+
     def test_native_failed_promotion_verifies_the_previous_release_before_acknowledging(self):
         self.retained_releases()
-        (self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").touch()
-        self.assert_ok(self.run_script(self.phase, "switch", OLD, OPERATION, SHA[:12], HORIZON))
+        self.assert_ok(self.run_script(self.phase, "build-checked", self.old, OPERATION, "true", "{}", "true"))
+        (self.state / f"{self.candidate}-{MANAGED_HORIZON}").touch()
+        self.assert_ok(self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON))
         self.assertEqual(set((self.journal / "horizons").read_text().splitlines()), {HORIZON, MANAGED_HORIZON})
-        (self.state / f"broken-public-container-{OLD}").touch()
-        result = self.run_script(self.phase, "public-ready", OLD, OPERATION)
+        (self.state / f"broken-public-container-{self.old}").touch()
+        result = self.run_script(self.phase, "public-ready", self.old, OPERATION)
         self.assertNotEqual(result.returncode, 0)
-        wrong = self.state / f"wrong-public-{SHA}"
+        wrong = self.state / f"wrong-public-{self.sha}"
         wrong.touch()
-        result = self.run_script(self.phase, "switch-back", OLD, OPERATION)
+        result = self.run_script(self.phase, "switch-back", self.old, OPERATION)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("gateway.release_switched_back", result.stderr)
-        self.assert_pending(OLD)
-        self.assertFalse((self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").exists())
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], OLD)
+        self.assert_pending(self.old)
+        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
 
         wrong.unlink()
         result = self.run_script(self.console, "--recover", interrupt="during container public status")
         self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        self.assert_pending(OLD)
-        result = self.run_script(self.phase, "switch-back", OLD, OPERATION)
+        self.assert_pending(self.old)
+        result = self.run_script(self.phase, "switch-back", self.old, OPERATION)
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("gateway.release_switched_back", result.stderr)
         self.assertFalse((self.journal / "operation").exists())
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], SHA)
-        self.assertTrue((self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").exists())
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
+        self.assertTrue((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
 
     def test_offline_rollback_journals_the_original_units_before_draining(self):
         self.retained_releases()
-        (self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").touch()
-        result = self.run_script(self.console, OLD[:12], interrupt=f"after {CANDIDATE} drain")
+        units = [MANAGED_HORIZON, "orbit-process-73-horizon.service"]
+        for unit in units:
+            (self.state / f"{self.candidate}-{unit}").touch()
+        unrelated = self.state / f"{self.candidate}-orbit-process-72-mailer.service"
+        unrelated.touch()
+        with (self.home / ".orbit/gateway-release.lock").open() as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result = self.run_script(self.console, self.old[:12])
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("another Gateway release holds the lock", result.stderr)
+            self.assert_container_serves()
+        (self.state / f"{self.candidate}-{HORIZON}").unlink()
+        result = self.run_script(self.console, self.old[:12], interrupt=f"after {self.candidate} drain")
         self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        self.assert_pending(OLD)
-        self.assertEqual(set((self.journal / "horizons").read_text().splitlines()), {HORIZON, MANAGED_HORIZON})
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], SHA)
+        self.assert_pending(self.old)
+        self.assertEqual((self.journal / "horizons").read_text().splitlines(), units)
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
+        events = (self.state / "events").read_text().splitlines()
+        self.assertIn(f"drain {self.candidate} locked=True operation={OPERATION} units={','.join(units)}", events)
+        self.assertTrue(unrelated.exists())
         self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assertTrue((self.state / f"{CANDIDATE}-{MANAGED_HORIZON}").exists())
+        for unit in units:
+            self.assertTrue((self.state / f"{self.candidate}-{unit}").exists())
+        self.assertTrue(unrelated.exists())
         self.assertFalse((self.journal / "operation").exists())
 
     def test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail(self):
         self.retained_releases()
-        (self.state / f"broken-public-container-{OLD}").touch()
-        unavailable = self.state / f"broken-public-container-{SHA}"
+        (self.state / f"broken-public-container-{self.old}").touch()
+        unavailable = self.state / f"wrong-public-{self.sha}"
         unavailable.touch()
-        result = self.run_script(self.console, OLD[:12])
+        result = self.run_script(self.console, self.old[:12])
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("restored previous traffic", result.stderr)
-        self.assert_pending(OLD)
-        self.assertFalse((self.state / f"{CANDIDATE}-{HORIZON}").exists())
-        self.assertFalse((self.state / f"{RETAINED}-{HORIZON}").exists())
+        self.assertIn("public Gateway did not verify restored release", result.stderr)
+        self.assert_pending(self.old)
+        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
+        self.assertFalse((self.state / f"{self.retained}-{HORIZON}").exists())
+        self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)
+        self.assert_pending(self.old)
         unavailable.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
@@ -404,7 +502,7 @@ esac"""))
         self.assert_container_serves()
 
     def test_host_rollback_refuses_wrong_served_commit_before_drain(self):
-        self.listener(OLD)
+        self.listener(self.old)
         self.assert_ok(self.run_move())
         events = (self.state / "events").read_text()
         result = self.run_script(self.console, "--host")
@@ -424,15 +522,15 @@ esac"""))
     def test_host_rollback_recovers_before_drain(self):
         self.listener()
         self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"before {CANDIDATE} drain"))
-        self.assertTrue((self.state / f"{CANDIDATE}-{HORIZON}").exists())
+        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"before {self.candidate} drain"))
+        self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
 
     def test_host_rollback_recovers_after_drain_before_switch(self):
         self.listener()
         self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"after {CANDIDATE} drain"))
+        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"after {self.candidate} drain"))
         self.assertEqual((self.state / "site").read_text(), "container")
         self.assertTrue(self.inventory.exists())
         self.assert_ok(self.run_script(self.console, "--recover"))
@@ -444,13 +542,13 @@ esac"""))
         self.assert_interrupted(self.run_script(self.console, "--host", interrupt="after host switch"))
         self.assertEqual((self.state / "site").read_text(), "host")
         self.assertTrue(self.inventory.exists())
-        unavailable = self.state / f"broken-public-container-{SHA}"
+        unavailable = self.state / f"broken-public-container-{self.sha}"
         unavailable.touch()
         result = self.run_script(self.console, "--recover")
         self.assertNotEqual(result.returncode, 0)
-        self.assert_pending(SHA)
+        self.assert_pending(self.sha)
         self.assertTrue((self.journal / "host-fallback/inventory").exists())
-        self.assertFalse((self.state / f"{CANDIDATE}-{HORIZON}").exists())
+        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
         unavailable.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
@@ -464,40 +562,40 @@ esac"""))
         unavailable.touch()
         result = self.run_script(self.console, "--recover")
         self.assertNotEqual(result.returncode, 0)
-        self.assert_pending(SHA)
+        self.assert_pending(self.sha)
         unavailable.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_host_serves()
 
     def test_healthy_retained_container_rollback(self):
         self.retained_releases()
-        self.assert_ok(self.run_script(self.console, OLD[:12]))
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], OLD)
-        self.assertEqual(json.loads(self.inventory.read_text())["old"], SHA)
+        self.assert_ok(self.run_script(self.console, self.old[:12]))
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
+        self.assertEqual(json.loads(self.inventory.read_text())["old"], self.sha)
         self.assertEqual((self.state / "site").read_text(), "container")
-        self.assertTrue((self.state / f"gateway-{OLD[:12]}-{HORIZON}").exists())
-        self.assertFalse((self.state / f"{CANDIDATE}-{HORIZON}").exists())
+        self.assertTrue((self.state / f"gateway-{self.old[:12]}-{HORIZON}").exists())
+        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
 
     def test_ordinary_fpm_release_and_rollback(self):
-        release = self.home / "releases" / OLD[:12]
+        release = self.home / "releases" / self.old[:12]
         release.mkdir()
-        (release / "REVISION").write_text(OLD)
+        (release / "REVISION").write_text(self.old)
         self.copy("bin/gateway-rollback", release / "bin/gateway-rollback")
-        for sha in (OLD, SHA):
+        for sha in (self.old, self.sha):
             web = self.home / "web/releases" / sha[:12]
             web.mkdir(parents=True)
             (web / "index.html").touch()
 
         switch = self.copy("swamp/scripts/gateway-release-switch.sh", self.root / "switch")
-        result = self.run_script(switch, OLD[:12], OLD, HORIZON)
+        result = self.run_script(switch, self.old[:12], self.old, HORIZON)
         self.assert_ok(result)
         self.assertEqual(json.loads(result.stdout), [])
         self.assertEqual((self.home / "orbit").resolve(), release)
-        self.assertEqual(os.readlink(self.home / "web/current"), f"releases/{OLD[:12]}")
+        self.assertEqual(os.readlink(self.home / "web/current"), f"releases/{self.old[:12]}")
 
-        self.assert_ok(self.run_script(self.console, SHA[:12]))
+        self.assert_ok(self.run_script(self.console, self.sha[:12]))
         self.assertEqual((self.home / "orbit").resolve(), self.checkout)
-        self.assertEqual(os.readlink(self.home / "web/current"), f"releases/{SHA[:12]}")
+        self.assertEqual(os.readlink(self.home / "web/current"), f"releases/{self.sha[:12]}")
         self.assertEqual((self.state / "events").read_text().count("systemctl reload php8.5-fpm"), 2)
 
 
