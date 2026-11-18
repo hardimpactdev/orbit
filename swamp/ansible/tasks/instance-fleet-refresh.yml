@@ -573,21 +573,42 @@
 # also when a snapshot fails. Their processes pause while Incus snapshots them (about 5 s for the nested Gateway, 2 s for an app Node);
 # nothing stops, boots or waits again, and the readiness above holds. The atomic snapshot is what a power cut leaves: the nested
 # Gateway's SQLite database recovers from its journal. Its Valkey keeps the queues and writes them only on its save schedule (no
-# append-only file), so a synchronous `SAVE` comes first; a save that fails takes the stopped path. Such a `base` holds the network pid
+# append-only file), so it holds its clients' writes first (`CLIENT PAUSE <fleet_queue_pause_ms> WRITE`, 30 s by default, which ends by
+# itself so a lost controller cannot hold them longer), saves synchronously, and lets them go after the thaw: no write acknowledged
+# after the save is missing from `base`. A pause or save that fails lets the writes go and takes the stopped path. Such a `base` holds the network pid
 # files of the running nested Incus (an Instance host's `orbitinst0`): the reset clears them after its restore
 # (instance-fleet-runtime.yml), the only place a `base` is restored. A failure fails the refresh, and the run restores the old seed,
 # `base` snapshots included: they live on the outer container's disk.
 - name: Retake base of the running fleet
   when: fleet_base_mode == 'running'
   block:
-    - name: Save the queue state of the nested Gateway
+    - name: Hold the queue writes of the nested Gateway
       when: intent.fleet.guests.gateway in fleet_base_targets
-      ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'SAVE'] }}" }
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'CLIENT', 'PAUSE',
+              fleet_queue_pause_ms | default(30000) | int | string, 'WRITE'] }}
+      register: fleet_queue_pause
+      changed_when: false
+      failed_when: false
+    - name: Save the queue state of the nested Gateway
+      when: intent.fleet.guests.gateway in fleet_base_targets and fleet_queue_pause.rc == 0 and fleet_queue_pause.stdout | trim == 'OK'
+      ansible.builtin.command: { argv: "{{ ['timeout', '20'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'SAVE'] }}" }
       register: fleet_queue_save
       changed_when: false
       failed_when: false
+    - name: Name whether the queue state is held
+      ansible.builtin.set_fact:
+        fleet_queue_held: >-
+          {{ intent.fleet.guests.gateway not in fleet_base_targets
+             or (fleet_queue_save is not skipped and fleet_queue_save.rc == 0 and fleet_queue_save.stdout | trim == 'OK') }}
+    - name: Let the queue writes go after a failed hold or save
+      when: not fleet_queue_held | bool
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'CLIENT', 'UNPAUSE'] }}" }
+      changed_when: false
+      failed_when: false
     - name: Take the stopped path when the queue state was not saved
-      when: fleet_queue_save is not skipped and (fleet_queue_save.rc != 0 or fleet_queue_save.stdout | trim != 'OK')
+      when: not fleet_queue_held | bool
       ansible.builtin.set_fact:
         fleet_base_mode: stopped
     - name: Delete the old base before the freeze
@@ -623,6 +644,11 @@
       changed_when: true
     - name: Cancel the armed thaw
       ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['systemctl', 'stop', fleet_thaw_unit ~ '.timer'] }}" }
+      changed_when: true
+      failed_when: false
+    - name: Let the queue writes go
+      when: intent.fleet.guests.gateway in fleet_base_targets
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'CLIENT', 'UNPAUSE'] }}" }
       changed_when: true
       failed_when: false
 

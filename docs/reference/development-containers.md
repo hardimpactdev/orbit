@@ -3182,17 +3182,21 @@ Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It ho
 A btrfs snapshot of a running container is atomic. So on the btrfs pool `inner` of the [inner volume](#the-inner-volume), the refresh takes `base` of the running fleet. It runs these steps in order:
 
 1. It waits for readiness, the run's one readiness wait, so `base` holds a ready fleet.
-2. It saves the nested Gateway's queues with `valkey-cli SAVE`.
+2. It holds the writes of the nested Gateway's Valkey clients with `valkey-cli CLIENT PAUSE 30000 WRITE`, then saves the queues with `valkey-cli SAVE`.
 3. It deletes the old `base` of each target.
 4. It arms a thaw in the Instance container.
 5. It freezes the targets in one `incus pause` and snapshots each.
-6. It thaws them in one `incus resume` and cancels the armed thaw.
+6. It thaws them in one `incus resume`, cancels the armed thaw, and lets the Valkey writes go with `valkey-cli CLIENT UNPAUSE`.
 
 Nothing stops, boots or waits again. The thaw runs also when a snapshot fails; the refresh then fails, and the run restores the old seed.
 
 The armed thaw does not need the controller. It is a transient systemd timer, `orbit-fleet-thaw`, that resumes each target 60 s after it was armed (`fleet_thaw_seconds`). A resume of a running container only fails. So a refresh whose controller is lost while the fleet is frozen leaves it frozen for at most 60 s. In task copy 3717 the controller was killed right after the freeze, and the two containers ran again 60.3 s after the timer was armed.
 
-The snapshot is what a power cut would leave. The nested Gateway's SQLite database recovers from its journal, as after a crash; no other database runs in the three. Valkey keeps the queues in memory, without an append-only file, and writes them only on its save schedule. Without the save, `base` held a `dump.rdb` about 85 s older than the snapshot. A save that fails takes the stopped path.
+The snapshot is what a power cut would leave. The nested Gateway's SQLite database recovers from its journal, as after a crash; no other database runs in the three. Valkey keeps the queues in memory, without an append-only file, and writes them only on its save schedule. Without the save, `base` held a `dump.rdb` about 85 s older than the snapshot.
+
+A write acknowledged between the save and the freeze would still be missing from `base`, so the writes are held from before the save until after the thaw. The hold ends by itself after 30 s (`fleet_queue_pause_ms`), so a lost controller cannot hold them longer. A hold or a save that fails lets the writes go and takes the stopped path.
+
+In task copy 3717 a writer pushed one list element every 100 ms across a retake of `nested-gateway` and `nested-app-dev`. After a reset from that `base`, all 1,424 elements acknowledged before the freeze were there, and none acknowledged after it. The one write sent during the hold waited 8.7 s, until the writes were let go after the thaw. The median write took 6 ms.
 
 The freeze gives the set one point in time across the containers, as a stop did. It lasts as long as Incus takes to snapshot the targets: about 0.4 s for the freeze and the thaw, plus 1.3 to 2 s for each app container and about 5 s for `nested-gateway`. The btrfs snapshot itself takes 0.04 s. Incus spends the rest of that time in its own snapshot step for each container (measured in task copy 3717 on 2026-11-18).
 
@@ -3200,7 +3204,7 @@ The refresh stops the targets as before, and takes `base` of the stopped fleet, 
 
 - an inner pool is not btrfs, such as the directory pool of a default made before the inner volume. There a snapshot of a running container is a file copy.
 - the pools cannot be read, or the read gives anything but one driver name per line. The refresh reads them once, with `incus storage list --format csv --columns D`.
-- the save of the nested Gateway's queues fails.
+- the hold of the nested Gateway's queue writes or the save of its queues fails.
 - a fleet rule or file differed on the running fleet. The rules are written with the three stopped.
 - a [shrink](#the-inner-machines-stay-small) is due. The relink and the dedupe need the three stopped.
 

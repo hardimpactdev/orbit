@@ -377,11 +377,25 @@ if (command[0] === "incus") {
     const asOrbit = rest[0] === "runuser" && rest[1] === "-u" && rest[2] === "orbit" && rest[3] === "--";
     if ((rest[0] === "install" || rest[0] === "php") && !asOrbit) fail(`${rest[0]} as root: the app user runs it`);
     if (asOrbit) rest = rest.slice(4);
-    // The nested Gateway's Valkey: `SAVE` answers OK unless `queueSaveFails`; `queueSaved` counts the saves.
-    if (rest.join(" ") === "valkey-cli SAVE" && name === "nested-gateway") {
-      if (state.queueSaveFails) fail("ERR Background save already in progress");
-      state.queueSaved = (state.queueSaved ?? 0) + 1;
-      done("OK");
+    // The nested Gateway's Valkey: `CLIENT PAUSE <ms> WRITE` holds the writes (`queuePaused`) unless `queuePauseFails`, `CLIENT UNPAUSE`
+    // lets them go; `SAVE` answers OK unless `queueSaveFails`, and counts in `queueSaved` with the writes held or not (`queueSavedHeld`).
+    if (name === "nested-gateway" && rest[0] === "valkey-cli") {
+      const verb = rest.slice(1).join(" ");
+      if (/^CLIENT PAUSE [0-9]+ WRITE$/.test(verb)) {
+        if (state.queuePauseFails) fail("ERR timeout is not an integer or out of range");
+        state.queuePaused = Number(rest[3]);
+        done("OK");
+      }
+      if (verb === "CLIENT UNPAUSE") {
+        delete state.queuePaused;
+        done("OK");
+      }
+      if (verb === "SAVE") {
+        if (state.queueSaveFails) fail("ERR Background save already in progress");
+        state.queueSaved = (state.queueSaved ?? 0) + 1;
+        if (state.queuePaused) state.queueSavedHeld = (state.queueSavedHeld ?? 0) + 1;
+        done("OK");
+      }
     }
     if (rest.join(" ") === "php artisan list --raw --no-interaction") {
       if (!asOrbit || name !== "nested-gateway" || !inner.includes("/home/orbit/orbit/apps/gateway")) fail("Wrong command-list context");
