@@ -1,7 +1,7 @@
 ---
 title: "orbit gateway:release:rollback"
 sidebarTitle: "gateway:release:rollback"
-description: "Switch the active Gateway back to a retained release, then follow it."
+description: "Restore a retained Gateway release on a Node that still uses host worktrees."
 ---
 
 ```bash
@@ -13,16 +13,16 @@ orbit gateway:release:rollback [<release>] [--yes] [--json]
 | `release` | The 12-digit id of a retained release. In a terminal, an omitted value opens a list of the releases that went live. |
 | `--yes` | Confirm the code rollback without a prompt. Required with `--json` or without a terminal. |
 
-The Gateway checks that the target is a retained release, other than the current one, before it starts anything. It then runs the target's commit as a forced [Swamp release run](/reference/gateway-recovery#release-as-a-swamp-run): the build reuses the sealed release, and the load brings back that commit's workflows. Rollback switches code and leaves the database in place; migrations are expand and contract, so the older code runs on the current schema. Confirm with `--yes` for noninteractive or JSON calls; the interactive prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Database restore is an explicit operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back). Output and exit status follow `gateway:release:deploy`.
+A containerized Gateway returns `gateway.release_downgrade`. Deploy a corrective commit to fix the running release. To reload the serving revision’s Swamp workflows, deploy its full commit with `--reconcile`. [Gateway deployment](/cli/gateway/release-deploy)
 
-On a Gateway that serves from a release container, the rollback target is the previous live container. The run wakes it, checks it, then switches traffic. It skips the build, artifact download and database migration. The current database stays mounted. For a Gateway that cannot answer the CLI, see the [Node console procedure](/reference/gateway-recovery#move-the-gateway-to-release-containers).
+On a Gateway that still uses host worktrees, the command checks that the target is a retained release, other than the current one, before it starts anything. It then runs the target's commit as a forced [Swamp release run](/reference/gateway-recovery#release-as-a-swamp-run): the build reuses the sealed release, and the load brings back that commit's workflows. Rollback switches code and leaves the database in place; migrations are expand and contract, so the older code runs on the current schema. Confirm with `--yes` for noninteractive or JSON calls; the interactive prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Database restore is an explicit operator step described in [Gateway recovery](/reference/gateway-recovery#roll-back). Output and exit status follow `gateway:release:deploy`.
 
 ## Errors
 
 | Error code | Meaning |
 | --- | --- |
+| `gateway.release_downgrade` | The containerized Gateway accepts forward deployments. |
 | `gateway.release_not_prepared` | The release is not a retained release. |
 | `gateway.release_already_current` | The release is already current. |
 | `gateway.release_in_progress` | Another release is queued or running. |
-| `gateway.release_recovery_incompatible` | The retained container's workflow or recovery script predates verified recovery. The current release keeps serving. |
 | `input.cancelled` | The rollback was not confirmed. Nothing started. |

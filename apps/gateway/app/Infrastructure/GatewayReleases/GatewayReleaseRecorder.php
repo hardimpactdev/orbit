@@ -323,7 +323,7 @@ final readonly class GatewayReleaseRecorder
         try {
             match (true) {
                 $release->outcome === 'paused' => $this->automation->pauseFor($release->errorCode === 'gateway.release_held' ? 'held' : 'migration_failure', $row),
-                $release->outcome === 'verified' && in_array($release->trigger, ['rollback', 'reconcile'], true) => $this->pauseAfterRollback($row),
+                $release->outcome === 'verified' && $release->trigger === 'rollback' => $this->pauseAfterRollback($row),
                 $release->outcome === 'verified' => $this->automation->clearPause(),
                 default => null,
             };
@@ -410,7 +410,7 @@ final readonly class GatewayReleaseRecorder
     /** @param array<string, mixed> $properties */
     private function activity(string $trigger, string $outcome, int $durationMs, ?string $errorCode, array $properties): void
     {
-        $succeeded = $outcome === 'verified';
+        $succeeded = in_array($outcome, ['verified', 'reconciled'], true);
 
         try {
             Activity::query()->create([

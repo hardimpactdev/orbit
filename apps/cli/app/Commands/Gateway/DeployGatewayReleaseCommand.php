@@ -17,7 +17,7 @@ final class DeployGatewayReleaseCommand extends GatewayReleaseFollowCommand
     #[\Override]
     protected $signature = 'gateway:release:deploy
         {commit? : Full 40-character SHA of the commit to release}
-        {--reconcile : Reload the serving Gateway workflows after offline rollback}
+        {--reconcile : Reload and verify the serving Gateway workflows}
         {--json : Return the final release record as JSON}';
 
     #[\Override]

@@ -80,7 +80,8 @@ final readonly class FilesystemGatewayReleaseObserver implements GatewayReleaseO
 
         $contents = file_get_contents($path, length: 4097);
         $record = is_string($contents) ? json_decode($contents, true) : null;
-        if (! is_array($record) || ($record['version'] ?? null) !== 1 || ! array_key_exists('old', $record)) {
+        if (! is_array($record) || ! in_array($record['version'] ?? null, [1, 2], true) || ! array_key_exists('old', $record)
+            || ($record['version'] === 2 && $record['old'] !== null)) {
             throw $this->failed();
         }
 
@@ -109,7 +110,7 @@ final readonly class FilesystemGatewayReleaseObserver implements GatewayReleaseO
         $ids = array_map(strval(...), array_keys($commits));
 
         $hostRetired = $record['host_retired'] ?? false;
-        if (! is_bool($hostRetired) || ($hostRetired && count($ids) !== 2)) {
+        if (! is_bool($hostRetired) || ($record['version'] === 1 && $hostRetired && count($ids) !== 2)) {
             throw $this->failed();
         }
 

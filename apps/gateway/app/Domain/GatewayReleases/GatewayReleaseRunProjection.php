@@ -43,6 +43,8 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         'Check the serving release' => ['verify', 'gateway.release_reconcile_not_live', false],
         'Reload serving workflows' => ['swamp', 'gateway.release_swamp_load_failed', true],
         'Verify the serving release' => ['verify', 'gateway.release_reconcile_not_live', true],
+        'Check release ownership' => ['prepare', 'gateway.release_prepare_failed', false],
+        'Fetch the commit' => ['prepare', 'gateway.release_prepare_failed', false],
         'Build the release' => ['prepare', 'gateway.release_prepare_failed', false],
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Clone the prepared release' => ['prepare', 'gateway.release_clone_failed', false],
@@ -55,6 +57,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         'Load Swamp on Node 209' => ['swamp', 'gateway.release_swamp_load_failed', true],
         'Read the activation workflow' => ['handoff', 'gateway.release_handoff_failed', true],
         'Hand over a retained Gateway release' => ['handoff', 'gateway.release_handoff_failed', true],
+        'Confirm the Gateway handover' => ['verify', 'gateway.release_verify_failed', true],
         'Hand over the release' => ['handoff', 'gateway.release_handoff_failed', true],
         'Release unused candidate' => ['cleanup', 'gateway.release_candidate_cleanup_failed', true],
     ];
@@ -145,10 +148,11 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $status = ValidatedData::string($data['status']);
         $phases = ['run' => ['operation_id' => $operation->id, 'status' => $status]];
         $step = NativeFailedStep::label($data, array_keys(self::Steps));
-        // A cancelled, interrupted or expired run, or one that stopped at an unknown step, may have migrated: it pauses.
+        // A run that stops at an unknown step may already have migrated. The legacy host pauses in this case.
         [$phase, $code, $mayHaveChangedState] = $status === 'succeeded' ? ['verify', null, true]
             : ($step === null ? ['run', $status === 'timed_out' ? 'gateway.release_run_timed_out' : 'gateway.release_run_failed', true] : self::Steps[$step]);
         $reconcile = ($operation->input['reconcile'] ?? false) === true;
+        $container = $reconcile || ($operation->input['target'] ?? null) === 'gateway';
         $retained = $reconcile || ($operation->input['retained'] ?? false) === true;
         // The step's own refusal code, such as gateway.release_downgrade, is more exact than the step's.
         $detail = is_array($data['failure'] ?? null) && is_string($data['failure']['detail'] ?? null) ? $data['failure']['detail'] : '';
@@ -162,11 +166,30 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         }
         // The run put the previous release back after a failed check; it runs on the new, expanded schema.
         $previous = ValidatedData::string($operation->input['previous']);
-        $back = $code === 'gateway.release_switched_back';
+        $back = ! $container && $code === 'gateway.release_switched_back';
+        if ($container && $code === 'gateway.release_switched_back') {
+            $code = 'gateway.release_verify_failed';
+            $phases[$phase]['error_code'] = $code;
+        }
         if ($back) {
             $code = 'gateway.release_verify_failed';
             $phases[$phase]['error_code'] = $code;
             $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous];
+        }
+        if ($container && $code !== null) {
+            // Publication can precede a failed public check. Record only the revision observed in the host inventory.
+            try {
+                $layout = GatewayReleaseLayout::fromConfig();
+                if ($layout->usesContainers()) {
+                    $inventory = $layout->observe();
+                    $live = $inventory->commits[$inventory->current ?? ''] ?? null;
+                    if ($live !== null) {
+                        $phases['serving'] = ['sha' => $live, 'observed_at' => now()->toIso8601String()];
+                    }
+                }
+            } catch (GatewayReleaseException) {
+                // An unreadable inventory is no evidence about which release serves.
+            }
         }
         if ($code === null && ! $reconcile) {
             app(ContinueReleaseFleetAction::class)->preserveHostBaselines($previous);
@@ -176,7 +199,13 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $recorder->write(new DeployedGatewayRelease(
             id: GatewayReleaseCommit::id($sha),
             sha: $sha,
-            outcome: $code === null ? 'verified' : ($back ? 'switched_back' : ($mayHaveChangedState ? 'paused' : 'failed')),
+            outcome: match (true) {
+                $code === null => $reconcile ? 'reconciled' : 'verified',
+                $container => 'failed',
+                $back => 'switched_back',
+                $mayHaveChangedState => 'paused',
+                default => 'failed',
+            },
             trigger: $record->trigger,
             migrationsRan: $mayHaveChangedState && ! $retained,
             previousId: $previous,

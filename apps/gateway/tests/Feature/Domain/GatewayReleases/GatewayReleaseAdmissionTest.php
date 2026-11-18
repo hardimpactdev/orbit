@@ -206,3 +206,48 @@ it('admits only the exact serving container for reconciliation and uses no GitHu
         ->and(json_encode($input['execution_secrets']))->toBe('{}');
     Http::assertNothingSent();
 });
+
+it('refuses container rollback, release of an old retained SHA and force before fetching any publication', function (): void {
+    $layout = GatewayReleaseLayout::fromConfig();
+    mkdir(dirname($layout->containerInventoryPath()), 0700, true);
+    file_put_contents($layout->containerInventoryPath(), json_encode(['version' => 1, 'live' => ReleaseA, 'old' => ReleaseB]));
+    $admit = app(AdmitSwampGatewayReleaseAction::class);
+    $refused = fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_downgrade');
+    expect(fn () => $admit->rollback(substr(ReleaseB, 0, 12)))->toThrow($refused)
+        ->and(fn () => $admit->execute(ReleaseB))->toThrow($refused)
+        ->and(fn () => $admit->execute(ReleaseC, force: true))->toThrow($refused)
+        ->and(GatewayRelease::query()->count())->toBe(0);
+    Http::assertNothingSent();
+});
+
+it('observes a forward-only Gateway after the former release and host recovery have been retired', function (): void {
+    $layout = GatewayReleaseLayout::fromConfig();
+    mkdir(dirname($layout->containerInventoryPath()), 0700, true);
+    $state = ['version' => 2, 'live' => ReleaseA, 'old' => null, 'host_retired' => true];
+    file_put_contents($layout->containerInventoryPath(), json_encode($state));
+    $inventory = $layout->observe();
+    expect($inventory->current)->toBe(substr(ReleaseA, 0, 12))
+        ->and($inventory->retained)->toBe([substr(ReleaseA, 0, 12)])
+        ->and($inventory->hostRetired)->toBeTrue();
+    file_put_contents($layout->containerInventoryPath(), json_encode([...$state, 'old' => ReleaseB]));
+    expect(fn () => $layout->observe())->toThrow(GatewayReleaseException::class);
+});
+
+it('schedules a corrective green descendant from the actual live SHA after a container migration failed', function (): void {
+    $layout = GatewayReleaseLayout::fromConfig();
+    config(['orbit.home' => dirname($layout->containerInventoryPath())]);
+    mkdir(dirname($layout->containerInventoryPath()), 0700, true);
+    file_put_contents($layout->containerInventoryPath(), json_encode(['version' => 2, 'live' => ReleaseA, 'old' => null]));
+    file_put_contents($layout->currentPath().'/GATEWAY_ORIGIN', 'https://github.com/hardimpactdev/orbit');
+    GatewayRelease::query()->create(['sha' => ReleaseB, 'requested' => ReleaseB, 'trigger' => 'auto', 'outcome' => 'failed',
+        'force' => false, 'retryable' => false, 'migrations_ran' => true, 'phases' => [], 'duration_ms' => 1]);
+    $green = Mockery::mock(GreenCommitResolver::class);
+    $green->shouldReceive('resolve')->once()
+        ->withArgs(fn (GitHubRepository $repo, string $branch, string $check, string $live, array $excluded): bool => $live === ReleaseA && $excluded === [ReleaseB])
+        ->andReturn(new GreenCommit(ReleaseC, new GitHubCheckRun('Required checks', 'success', null)));
+    app()->instance(GreenCommitResolver::class, $green);
+    releaseAgent(static fn (string $sha): never => throw new GatewayReleaseException('prepare', 'gateway.release_agent_delivery_unavailable', 'Waiting for publication.', sha: $sha));
+    $tick = app(RunAutomaticGatewayReleaseAction::class)->execute();
+    expect($tick)->toMatchArray(['result' => 'waiting_for_agent_delivery', 'sha' => ReleaseC])
+        ->and(app(GatewayReleaseAutomation::class)->pause())->toBeNull();
+});

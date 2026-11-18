@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\GatewayReleases;
 
 /**
- * The outcome of one deploy or rollback. `verified` is the only success. `switched_back` means the
+ * The outcome of one deploy or rollback. `verified` confirms a deployment. `reconciled` confirms only the serving workflows. `switched_back` means the
  * previous release is current again. `paused` means migrations ran and the new release stayed
  * current. `failed` means nothing that was current changed, or switch-back itself failed.
  */
@@ -33,7 +33,7 @@ final readonly class DeployedGatewayRelease
     /** `resumed`: an interrupted adoption's first release was handed over again and serves. */
     public function succeeded(): bool
     {
-        return in_array($this->outcome, ['verified', 'resumed'], true);
+        return in_array($this->outcome, ['verified', 'resumed', 'reconciled'], true);
     }
 
     /** @return array<string, mixed> */
