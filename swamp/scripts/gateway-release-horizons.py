@@ -1,8 +1,8 @@
 """Select queue consumers from the latest host Process records at a Gateway handover."""
 import json
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 FALLBACK = "orbit-gateway-horizon.service"
 MANAGED = re.compile(r"orbit-process-[1-9][0-9]*-horizon\.service")
