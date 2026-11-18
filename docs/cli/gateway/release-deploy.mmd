@@ -82,6 +82,8 @@ sequenceDiagram
     %%> Why:
     %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
     AC->>GN: Verify the Gateway<br/>/up · status version
+    %%> What it does:
+    %%> - reads `/up` and the status version with sudo: the pinned root CA sits in the private certificate folder, `root:caddy 0750`
     opt the check failed
       AC->>GN: Switch back<br/>gateway-rollback previous
     end

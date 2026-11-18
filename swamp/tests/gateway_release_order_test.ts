@@ -7,7 +7,7 @@ type Step = {
   allowFailure?: boolean;
   guard?: string;
   dependsOn?: { step: string; condition: Condition }[];
-  task: { inputs?: { argv?: string[] }; workflowIdOrName?: string };
+  task: { inputs?: { argv?: string[]; sudo?: boolean }; workflowIdOrName?: string };
 };
 async function steps(file: string): Promise<Step[]> {
   const workflow = parse(await Deno.readTextFile(new URL(`../workflows/${file}.yaml`, import.meta.url))) as { jobs: { steps: Step[] }[] };
@@ -36,6 +36,12 @@ Deno.test("Swamp load requires the bounded DB busy guard, including forced relea
   assert(argv.join(" ").includes("gateway:release:wait-idle"));
   assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
     [{ step: "Wait for active Operations", condition: { type: "succeeded" } }]);
+});
+
+Deno.test("the Gateway check reads the root CA under the private certificate folder as root", () => {
+  const verify = activate.find((step) => step.name === "Verify the Gateway")!;
+  assert(verify.task.inputs?.argv?.join(" ").includes("--cacert /etc/caddy/orbit-cert-current/root-ca.pem"));
+  assertEquals(verify.task.inputs?.sudo, true);
 });
 
 Deno.test("the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release", () => {
