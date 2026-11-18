@@ -1672,7 +1672,7 @@ A sleep opens swap (`max`) for every cgroup of the container's subtree that hold
 
 One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
-> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a Rust executor on the Node replaces this helper and the fast wake's file flow. It acts on Gateway-signed orders over the observer's WebSocket, and Swamp and the SSH fallback reach it through one relay command. A visit waits a short bound for the wake, and then goes to the app in the same request. Every sleep and wake stays an Operation.
+> **Default-off signed engine.** [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) routes power through a Rust executor on the Node. With [signed power delivery](/reference/executor#signed-power-delivery) enabled, the Gateway signs orders, and the observer and SSH relay deliver them. The Python helper and fast wake files below remain the disabled-mode path.
 
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers that have no swap size: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
@@ -1726,7 +1726,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A production live sleeps and wakes; Caddy holds its visitor | Planned with production containers ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Production containers](/reference/production-containers#sleep-and-wake) |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
-The Gateway setting `ORBIT_EXECUTOR_WAKE_ENABLED`, off by default, selects the [executor wake inside the request](/reference/executor#the-wake-inside-the-request) for containers. A successful wake within `ORBIT_EXECUTOR_WAIT_MS` (500 ms by default) lets Caddy pass the original request straight to the app. Otherwise the visitor gets the existing waiting page. This path uses no SSH or Python, and leaves its completion to a queued job after the request bound. Keep the setting off until ADR 0266 slices 5 and 7 land.
+The Gateway setting `ORBIT_EXECUTOR_POWER_ENABLED`, off by default, selects signed sleep and wake. A successful wake within `ORBIT_EXECUTOR_WAIT_MS` (500 ms by default) lets Caddy pass the original request straight to the app. Otherwise the visitor gets the existing waiting page while the same Operation continues. The Gateway tries the SSH relay after 150 ms without acceptance. Swamp recovers an Operation without a terminal result after six seconds. A frozen Instance keeps the engine that froze it, even after a setting change.
 
 **The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development container to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. A clone, a default and a nested-fleet Instance follow the same rule; no list of names or ids exempts one. `ORBIT_HIBERNATION_CONTAINER_SLEEP` chooses which Instances it acts on:
 
@@ -1835,7 +1835,7 @@ A second check follows for the same reason. The converge keeps each container's 
 
 Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
-A destroy removes the marker, and the helper's `discard` removes the plan, the limits record and the fast wake's files after any helper call still at work has ended. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+A destroy removes the marker, and the helper's `discard` removes the plan, the limits record and the fast wake's files after any helper call still at work has ended. It also removes the executor's plan, limits record and receipt under `/var/lib/orbit/executor/power`. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
@@ -2081,7 +2081,7 @@ A continued turn whose title T3 lists not exactly once launches nothing and is `
 
 A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
 
-A reviewer turn's composed prompt names the checked commit and ends with two fixed rules: the [reviewer rule](/reference/tasks#the-reviewer-rule), which bounds the review by the task's scope, and the [pull request text](/reference/tasks#the-reviewers-pull-request-text) rule. An implementer turn's prompt ends with the rule on how to ask instead.
+A reviewer turn's composed prompt names the checked commit and ends with two fixed rules: the [reviewer rule](/reference/tasks#the-reviewer-rule), which bounds the review by the task's scope and lets only findings with real impact block, and the [pull request text](/reference/tasks#the-reviewers-pull-request-text) rule. An implementer turn's prompt ends with the rule on how to ask instead.
 
 ### A question ends the turn
 

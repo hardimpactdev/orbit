@@ -55,6 +55,7 @@ final readonly class InstanceStart implements DirectOperationProjection
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
                 ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'fleet' => $fleet,
+                    ...ExecutorPowerIntent::lifecycle($instance, $runtime),
                     'asleep_marker' => InstancePower::markerPath($instance)],
                 $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
@@ -86,6 +87,13 @@ final readonly class InstanceStart implements DirectOperationProjection
         $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
         $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
         $errorCode = $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null);
+        $raw = $phase['executor'] ?? null;
+        $receipt = ExecutorPowerIntent::lifecycleReceipt($operation, $raw);
+        $errorCode = ExecutorPowerIntent::lifecycleError($operation, $receipt, $succeeded, is_string($errorCode) ? $errorCode : null, ($phase['wake'] ?? null) === 'started');
+        if ($succeeded && $errorCode !== null) {
+            $succeeded = false;
+            $data['status'] = OperationStatus::Failed->value;
+        }
         if (! $succeeded && is_string($phase['detail'] ?? null) && $phase['detail'] !== '') {
             $native = is_array($data['failure'] ?? null) ? $data['failure'] : [];
             $data['failure'] = ['failed_step' => is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'Start the inner fleet',
@@ -94,6 +102,7 @@ final readonly class InstanceStart implements DirectOperationProjection
         }
         $result = [...($succeeded ? ['power_state' => InstanceRuntimePowerState::Running->value] : ['error_code' => $errorCode]),
             'nested_fleet_club_key' => NestedFleetClubKey::outcome($phase['club_key'] ?? null, $errorCode),
+            ...($receipt === null ? [] : ['executor' => $receipt]),
             ...(is_int($phase['fleet_seconds'] ?? null) || is_float($phase['fleet_seconds'] ?? null) ? ['fleet_seconds' => $phase['fleet_seconds']] : [])];
 
         return DB::transaction(function () use ($operation, $data, $errorCode, $result, $succeeded): Operation {

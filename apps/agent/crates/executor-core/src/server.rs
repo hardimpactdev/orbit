@@ -265,17 +265,15 @@ fn answer<R: Run>(
         }
         Ok(verified) => match executor.handle(&verified, now) {
             Ok(reply) => {
-                let mut value = serde_json::to_value(&reply).map_err(io::Error::other)?;
+                let mut value = reply_value(&reply)?;
                 value["node_clock_ms"] = now.into();
                 value
             }
             Err(refusal) => {
                 let first = match &refusal {
-                    StateRefusal::ReplayedNonce { first } => first
-                        .as_deref()
-                        .map(serde_json::to_value)
-                        .transpose()
-                        .map_err(io::Error::other)?,
+                    StateRefusal::ReplayedNonce { first } => {
+                        first.as_deref().map(reply_value).transpose()?
+                    }
                     _ => None,
                 };
                 log(&format!(
@@ -289,6 +287,14 @@ fn answer<R: Run>(
         },
     };
     writeln!(out, "{line}")
+}
+
+fn reply_value(reply: &crate::executor::Reply) -> io::Result<serde_json::Value> {
+    let mut value = serde_json::to_value(reply).map_err(io::Error::other)?;
+    if matches!(reply.outcome, crate::journal::Outcome::Slept { .. }) {
+        value["status"] = "done".into();
+    }
+    Ok(value)
 }
 
 /// A replay's log line names the first result it carries, ` first=<status>`, or ` first=none` before that result exists, so the

@@ -22,6 +22,8 @@ use Illuminate\Support\Str;
  */
 final readonly class InstanceSleep extends InstancePower
 {
+    public const string IncompleteFreeze = 'instance.container_sleep_incomplete';
+
     public const string Kind = 'instance.sleep';
 
     /** The closed reason codes of a `skipped` or `unsupported` plan (docs/reference/prepared-restore.md#wake). */
@@ -42,6 +44,64 @@ final readonly class InstanceSleep extends InstancePower
     protected function powerState(): InstanceRuntimePowerState
     {
         return InstanceRuntimePowerState::Stopped;
+    }
+
+    protected function admit(Instance $instance, InstanceRuntime $runtime, array $input, ?string $caller, ?string $requestId): Operation
+    {
+        if (! ExecutorPowerIntent::forInstance($instance, $runtime)) {
+            return parent::admit($instance, $runtime, $input, $caller, $requestId);
+        }
+        $executor = app(ExecutorWake::class);
+        $operation = $executor->admit($instance, [...$input, ExecutorPowerIntent::Managed => true], $caller, $requestId, self::Kind);
+        if ($operation->wasRecentlyCreated) {
+            $executor->dispatchDeferred($operation->id);
+        }
+
+        return $operation;
+    }
+
+    public function signedResult(Operation $operation, array $receipt): array
+    {
+        $measured = is_array($receipt['receipt'] ?? null) ? $receipt['receipt'] : [];
+        $prepared = ['version' => 1, 'status' => $measured['plan'] ?? 'not_applicable'];
+        if (is_string($measured['reason'] ?? null)) {
+            $prepared['reason'] = $measured['reason'];
+        }
+        foreach (['processes' => 'processes', 'mapping_bytes' => 'resident_mapping_bytes', 'residual_anon_bytes' => 'residual_anon_bytes',
+            'residual_file_bytes' => 'residual_file_bytes'] as $source => $key) {
+            if (is_int($measured[$source] ?? null) && $measured[$source] >= 0) {
+                $prepared[$key] = $measured[$source];
+            }
+        }
+
+        return [...parent::signedResult($operation, $receipt), ...$this->kept($measured), 'prepared_restore' => $prepared];
+    }
+
+    protected function provesSignedSuccess(?array $receipt): bool
+    {
+        return self::hasSleepOutcome($receipt);
+    }
+
+    /** @param array<string, mixed>|null $receipt */
+    public static function hasSleepOutcome(?array $receipt): bool
+    {
+        $measured = $receipt['receipt'] ?? null;
+
+        return is_array($measured) && in_array($measured['sleep'] ?? null, ['frozen', 'stopped'], true);
+    }
+
+    /** @param array<string, mixed>|null $receipt */
+    public static function isIncompleteFreeze(?array $receipt): bool
+    {
+        return ($receipt['status'] ?? null) === 'failed' && ($receipt['code'] ?? null) === self::IncompleteFreeze;
+    }
+
+    protected function open(Instance $instance, bool $join): ?Operation
+    {
+        $operation = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->first();
+
+        return $operation !== null && ExecutorPowerIntent::managed($operation) ? $operation : null;
     }
 
     /** The extensions read the server's threads one last time, after the refusals and outside the Instance lock: a sleeping server cannot be read. */

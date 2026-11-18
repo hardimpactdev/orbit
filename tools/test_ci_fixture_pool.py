@@ -1,6 +1,8 @@
 """Fixture matrices share twenty planned shards without admitting fork code or losing units."""
 from pathlib import Path
 import heapq
+import json
+import re
 import sys
 import tempfile
 import tomllib
@@ -9,7 +11,7 @@ import unittest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-from test_ci_units import BUDGET, fixture, planned, units
+from test_ci_units import BUDGET, ROOT, fixture, planned, units
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -153,6 +155,43 @@ class FixturePoolTest(unittest.TestCase):
         self.assertNotIn('capacity', plan)
         self.assertEqual([], units.unplaced_units(plan))
         self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), budget['runner_shards'])
+
+
+    def test_the_fleet_node_part_of_the_host_role_selects_no_fleet_step_unit(self):
+        # No case of the fleet step runs instance-fleet-node.yml: the host role includes it on an Instance fleet Node.
+        budget, fixtures, defaults = units.configuration()
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
+        plan = units.plan(['swamp/ansible/tasks/instance-fleet-node.yml'], budget, fixtures, defaults)
+        self.assertNotIn(fleet, {name.split('#')[0] for name in units.planned_units(plan) + units.unplaced_units(plan)})
+        self.assertNotIn('capacity', plan)
+        # Each task file that a phase of the fixture copies still selects every unit of it.
+        source = (ROOT / fleet).read_text()
+        phases = json.loads(re.search(r'^const phases = (\[.*\]);$', source, re.M).group(1))
+        self.assertEqual(18, len(phases))
+        for part in ('-' + phase if phase else '' for phase in phases):
+            with self.subTest(part=part):
+                plan = units.plan([f'swamp/ansible/tasks/instance-fleet{part}.yml'], budget, fixtures, defaults)
+                self.assertEqual(82, sum(name.split('#')[0] == fleet for name in units.planned_units(plan)))
+
+    def test_a_host_role_change_with_the_fleet_node_part_and_the_container_fixture_fits_the_shards(self):
+        # The changed paths of the btrfs pool change for the nested app-dev Node (17 files, 18 November 2026).
+        budget, fixtures, defaults = units.configuration()
+        paths = ['swamp/ansible/tasks/instance-fleet-node.yml', 'swamp/ansible/tasks/instance-host.yml',
+                 'swamp/scripts/instance_clone.py', 'swamp/tests/_support/regenerate_host_image_boundaries.ts',
+                 'swamp/tests/ansible_instance_container_test.ts', 'swamp/tests/ansible_instance_host_acl_test.ts',
+                 'swamp/tests/ansible_instance_host_image_test.ts', 'swamp/tests/fixtures/host-image-boundaries.json',
+                 'swamp/tests/fixtures/instance-container-incus.ts', 'swamp/tests/instance_clone_test.py']
+        plan = units.plan(paths, budget, fixtures, defaults)
+        self.assertNotIn('capacity', plan)
+        self.assertEqual([], units.unplaced_units(plan))
+        planned = {name.split('#')[0] for name in units.planned_units(plan)}
+        self.assertNotIn('swamp/tests/ansible_instance_fleet_test.ts', planned)
+        for part in ('host_updates', 'host_runtime', 'host_browser', 'host_acl', 't3_restart'):
+            file = f'swamp/tests/ansible_instance_{part}_test.ts'
+            self.assertEqual({name for name, _ in units.units_for(fixtures[file], budget)},
+                             {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+        self.assertEqual({row['file'] for row in plan.get('not_run', [])},
+                         {'swamp/tests/ansible_instance_container_test.ts', 'swamp/tests/ansible_instance_host_test.ts'})
 
 
     def test_spare_places_shorten_lanes_without_changing_admitted_units(self):

@@ -104,6 +104,20 @@ class FixtureCostEvidenceTest(unittest.TestCase):
                 actual = [unit for unit in units.planned_units(planned) if unit.partition('#')[0] == file]
                 self.assertCountEqual(actual, [unit for unit, _ in expected])
 
+    def test_scoped_host_cases_cost_their_largest_time_on_the_self_hosted_pool(self):
+        evidence = json.loads((ROOT / 'tools/tests/ci-host-pool-cost-evidence.json').read_text())
+        budget, fixtures, _ = units.configuration()
+        self.assertCountEqual(evidence['files'], [f'swamp/tests/ansible_instance_{part}_test.ts'
+                                                  for part in ('host_runtime', 'host_browser', 'host_updates', 't3_restart')])
+        for file, measured in evidence['files'].items():
+            with self.subTest(file=file):
+                fixture = fixtures[file]
+                self.assertTrue(fixture['self_hosted'])
+                self.assertNotIn(file, budget['capacity_gap'])
+                self.assertGreaterEqual(len(measured['runs']), 5)
+                self.assertEqual(fixture['case_costs'], {name: math.ceil(seconds) for name, seconds in measured['case_seconds'].items()})
+                self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
+
     def test_host_cold_build_stays_named_debt_while_the_complete_repeat_is_admitted(self):
         file = 'swamp/tests/ansible_instance_host_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-host-cost-evidence.json').read_text())

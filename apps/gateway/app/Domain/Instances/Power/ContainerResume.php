@@ -112,18 +112,27 @@ final readonly class ContainerResume
         return self::frozenSleep($instance) !== null;
     }
 
-    /** The sleep that froze the Instance's container while that freeze still holds; see frozenBySleep(). */
+    /**
+     * The sleep that froze the Instance's container while that freeze still holds; see frozenBySleep(). ADR 0266, R3: the freezing
+     * sleep owns the freeze, so a later sleep that froze nothing (cancelled, refused, failed or unknown) is passed over, whatever the
+     * engine or the current settings.
+     */
     public static function frozenSleep(Instance $instance): ?Operation
     {
         $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->orderByDesc('id')->first();
-        if ($sleep?->status !== OperationStatus::Succeeded || ($sleep->result['sleep'] ?? null) !== 'frozen') {
+            ->where(fn ($query) => $query->where('status', OperationStatus::Succeeded)->orWhere('error_code', InstanceSleep::IncompleteFreeze))
+            ->latest('id')->first();
+        if ($sleep === null || ($sleep->error_code !== InstanceSleep::IncompleteFreeze && ($sleep->result['sleep'] ?? null) !== 'frozen')) {
             return null;
         }
-        $found = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->where('id', '>', $sleep->id)->where('error_code', InstanceWake::NestedStopped)->exists();
+        // The freeze ends with proof that the container no longer holds it: Rust's discard receipt (its wake found the container
+        // stopped and discarded its freeze, or it discarded it for a boot or stop), or the native wake that found the container stopped.
+        $ended = Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)->where('id', '>', $sleep->id)
+            ->where(fn ($query) => $query->whereNotNull('executor_result')->orWhere('error_code', InstanceWake::NestedStopped))->get()
+            ->contains(fn (Operation $later): bool => $later->error_code === InstanceWake::NestedStopped
+                || ExecutorFence::discarded($later->executor_result));
 
-        return $found ? null : $sleep;
+        return $ended ? null : $sleep;
     }
 
     /**

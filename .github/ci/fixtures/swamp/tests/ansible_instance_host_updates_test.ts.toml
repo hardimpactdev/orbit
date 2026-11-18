@@ -7,7 +7,7 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_host_updates_test.ts"
 self_hosted = true
-cost = 340
+cost = 235
 slices = 4
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
@@ -41,9 +41,10 @@ inputs = [
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
-# Scoped subsystem case costs are ESTIMATES pending managed-pool receipts.
+# Each case costs its largest passed time on the self-hosted pool, rounded up: tools/tests/ci-host-pool-cost-evidence.json.
+# The planner adds startup.
 [case_costs]
-"a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old" = 90
-"a Squid configuration that does not parse never replaces the live one, and the run fails" = 25
-"a project that lists disk paths loses the list, so a container with the idmapped folders starts" = 125
-"an old folder version that a process still maps stays; a restart that failed runs again on the next converge" = 100
+"a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old" = 60
+"a Squid configuration that does not parse never replaces the live one, and the run fails" = 20
+"a project that lists disk paths loses the list, so a container with the idmapped folders starts" = 73
+"an old folder version that a process still maps stays; a restart that failed runs again on the next converge" = 82

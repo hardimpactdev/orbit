@@ -698,11 +698,12 @@ TAGS = [
     ('vault', 'Vaultwarden', 'The copy of database credentials into a Vaultwarden collection.'),
     ('conn', 'Conn', 'Profiles, shared workspace settings, registered T3 servers, and the pairing links the Gateway mints on them for each Node.'),
     ('realtime', 'Realtime', 'The record-change event feed broadcast to Reverb, its channel authorization, and Reverb connection discovery.'),
-    ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
+    ('internal', 'Node callbacks', 'Endpoints for managed Nodes, Swamp, and Caddy. Operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
 INTERNAL = {'project:dependency-read-token', 'task:agent:stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:watch', 'agent:facts', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 INTERNAL.update({'observation:plan', 'observation:health'})
+INTERNAL.add('operation:direct:executor-sign')
 # A task copy calls these through its Node's forwarder with its own key (docs/reference/ai-router.md#orbit-routes-for-task-copies).
 INTERNAL.update({'copy:whoami', 'copy:pull-request'})
 DEFINITION_ROUTES = {
@@ -732,6 +733,7 @@ SUMMARIES = {
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:update': 'Update a Node',
     'node:executor:proof': 'Check the signed executor round trip on a Node',
+    'operation:direct:executor-sign': 'Sign an order for a bound Swamp run',
     'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
     'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:activate': 'Activate a Cluster', 'cluster:deactivate': 'Deactivate a Cluster', 'cluster:destroy': 'Remove a Cluster',
@@ -847,6 +849,7 @@ DESCRIPTIONS = {
     'operation:show': 'Returns one parent Operation with its admitted input, native status, safe result and error code, and poll_after_seconds for the next read. Starts no work and records no Gateway step receipts. See /reference/operations#read-an-operation.',
     'operation:list': 'Lists the newest operations on Nodes the caller can access, newest first: `limit` rows (1 to 100, default 20), without `input`, `result` or `steps`; `operation:show` returns those. `meta.next_cursor` is the `cursor` of the next page, or null on the last page. Filter by `status`, `kind`, `target_type`, and `target_id`; `status=running` finds active jobs; `status=waiting` finds operations waiting for existing work. `kind` is two names joined by `.`, such as `instance.deploy`, and `target_type` one name, such as `instance`. A name starts with a lower-case letter and holds only lower-case letters, digits, and `_`. A well-formed value that no operation has returns an empty list. See /reference/operations#filter-the-list and /reference/operations#page-the-list.',
     'operation:cancel': 'Records a cooperative cancellation request for the native workflow and returns the current parent Operation. Swamp observes the request and records the terminal result. A finished Operation stays unchanged.',
+    'operation:direct:executor-sign': 'Internal callback for the Swamp worker only. The run and phase must match an active, uncancelled Operation. The Gateway derives the action, Node, and target from that Operation and returns a fresh signed order for relay stdin. This callback is not an MCP tool.',
     'gateway:release:rollback': 'Admits a rollback to a retained release, named by its 12-digit id, as a forced `gateway.release` run of its commit. Switches code only; restoring a database snapshot is an explicit operator step. Answers 202 with the running release record. See /reference/gateway-recovery#roll-back.',
     'gateway:release:list': 'Lists the 50 newest Gateway release records, newest first, including queued and running ones.',
     'gateway:release:show': 'Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.',

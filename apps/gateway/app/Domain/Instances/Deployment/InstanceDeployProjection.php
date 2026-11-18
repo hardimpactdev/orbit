@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetClubKey;
+use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\VpEnvironment\InstanceVpEnvironmentMaterial;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
@@ -105,6 +106,19 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             }
             if (isset($payload['fleet_refresh'])) {
                 $facts['fleet_refresh'] = $payload['fleet_refresh'];
+            }
+            $receipt = ExecutorPowerIntent::lifecycleReceipt($locked, $payload['executor'] ?? null);
+            if ($status !== 'running') {
+                $ownError = is_string($data['error_code'] ?? null) ? $data['error_code'] : (is_string($payload['error_code'] ?? null) ? $payload['error_code'] : null);
+                $failure = ExecutorPowerIntent::lifecycleError($locked, $receipt, $status === 'succeeded', $ownError, ($payload['wake'] ?? null) === 'started');
+                if ($failure !== $ownError) {
+                    $status = 'failed';
+                    unset($payload['started']);
+                    $data = [...$data, 'status' => $status, 'error_code' => $failure];
+                }
+            }
+            if ($receipt !== null) {
+                $facts['executor'] = $receipt;
             }
             // The exit code of each best-effort step that ran; a nonzero one does not fail the deployment.
             if (isset($payload['best_effort_steps'])) {

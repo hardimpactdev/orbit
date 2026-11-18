@@ -13,13 +13,15 @@ For a requested test cleanup or dead-code sweep, use the [optional audit procedu
 
 ## Review a completed PR
 
+Ad-hoc reviewers outside task copies, such as Codex agents an owner starts, apply the same [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule) to decide what blocks.
+
 Check correctness, regressions, test coverage, architectural decisions, and documentation. Inspect the required CI results. Check affected security boundaries, including ownership, untrusted input, credentials, TLS, and SSH identities.
 
 For command behavior, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) for real terminal checks. For a web UI change, open the phone and desktop screenshots from [verifying-web-ui](../verifying-web-ui/SKILL.md) and judge the layout on a phone. Do not stop at the diff.
 
 Review the author's pre-PR proof evidence from the [task copy and its nested fleet](../../../docs/reference/tasks.md#build-a-feature-in-one-copy). Use [verifying-commands](../verifying-commands/SKILL.md) to reproduce user-visible behavior and important failure cases there. Verify the running source and the exact cases and verdicts, not just a green summary. Task groups do not declare topologies; do not acquire a legacy topology for review.
 
-Unavailable, failed, unrun or interrupted proof is not a pass. Record the missing evidence and apply the [blocking rule](../../../docs/reference/tasks.md#reviewer-outcomes); do not infer coverage from CI, whose proof job is intentionally off for now. A required check on the running production Gateway is an operator step after deploy, not a replacement for pre-PR proof.
+Unavailable, failed, unrun or interrupted proof is not a pass. Record the missing evidence and apply the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule); do not infer coverage from CI, whose proof job is intentionally off for now. A required check on the running production Gateway is an operator step after deploy, not a replacement for pre-PR proof.
 
 ## Report
 

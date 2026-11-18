@@ -78,6 +78,17 @@ it('tells the reviewer that its text opens the pull request, and updates one tha
         .'the next publish of this check updates its title and body with it.');
 });
 
+it('lets a reviewer block only on real impact, not on rare interleavings or a flag that is off', function (): void {
+    expect(TaskCopyTurn::ReviewRule)
+        ->toContain('A finding blocks only if a normal run, or a likely failure (a crash, reboot or network loss at one step), would stop or delete something live')
+        ->toContain('Rare interleavings, races that need several unlikely events, hardening and defence in depth are non-blocking follow-ups')
+        ->toContain('Do not ask for new recovery states, markers or retry paths to cover them.')
+        ->toContain('a finding that matters only with the flag on goes on a "before the flag goes on" list; it does not block.')
+        ->toContain('A re-review checks only the earlier blocking findings and regressions in their fixes.')
+        ->toContain('Report your blocking findings and at most a short list of non-blocking ones.')
+        ->not->toContain('Report every finding');
+});
+
 it('refuses a composed prompt that the turn workflow would reject', function (): void {
     $subtask = promptSubtask(null);
     $room = TaskTurnPrompt::Limit - mb_strlen(TaskTurnPrompt::compose($subtask, '', promptStart()));

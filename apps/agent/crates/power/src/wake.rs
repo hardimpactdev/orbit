@@ -285,17 +285,39 @@ fn ask(socket: SocketAddr, deadline: Instant) -> Option<u16> {
     std::str::from_utf8(&head[9..12]).ok()?.parse().ok()
 }
 
+/// Whether the admitted container has an app port to check before releasing visitors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WebProbe {
+    /// Require the app to answer.
+    Required,
+    /// The container has no web unit.
+    NotConfigured,
+    /// A start or deploy owns readiness and the asleep marker after resume.
+    Lifecycle,
+}
+
 impl Power {
     /// Wake under the executor's per-target lock. Safe to repeat: a container that already runs gets only the steps after the
     /// unfreeze.
     ///
     /// # Errors
     /// Returns a stable power error. A failed wake keeps the asleep marker, so Caddy keeps the visitor away from the app.
-    pub fn wake(&self, id: &str) -> io::Result<WakeReceipt> {
-        self.wake_with(&self.incus, id)
+    pub fn wake(&self, id: &str, probe_web: WebProbe) -> io::Result<WakeReceipt> {
+        self.wake_checked(&self.incus, id, probe_web)
     }
 
+    #[cfg(test)]
     pub(crate) fn wake_with(&self, api: &dyn Api, id: &str) -> io::Result<WakeReceipt> {
+        self.wake_checked(api, id, WebProbe::Required)
+    }
+
+    pub(crate) fn wake_checked(
+        &self,
+        api: &dyn Api,
+        id: &str,
+        probe_web: WebProbe,
+    ) -> io::Result<WakeReceipt> {
         if !valid_id(id) {
             return Err(invalid("unknown_target"));
         }
@@ -368,13 +390,16 @@ impl Power {
             Self::unfreeze(api, id, &instance, &root)?;
         }
         self.close_wake_limits(&base, &identity)?;
-        let address = instance
-            .address
-            .ok_or_else(|| invalid("instance.web_unready"))?;
-        if !ready(address, self.web_port, READY_BOUND) {
+        if probe_web == WebProbe::Required
+            && !instance
+                .address
+                .is_some_and(|address| ready(address, self.web_port, READY_BOUND))
+        {
             return Err(invalid("instance.web_unready"));
         }
-        remove(&self.markers.join(format!("app-instance-{id}.asleep")))?;
+        if probe_web != WebProbe::Lifecycle {
+            remove(&self.markers.join(format!("app-instance-{id}.asleep")))?;
+        }
         receipt.total_us = micros(started);
         Ok(receipt)
     }
