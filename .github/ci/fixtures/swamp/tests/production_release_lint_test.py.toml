@@ -1,0 +1,38 @@
+file = "swamp/tests/production_release_lint_test.py"
+cost = 1
+inputs = [
+  "bin/gateway-container-environment",
+  "bin/gateway-container-prepare",
+  "swamp/ansible/files/gateway-release-guest.py",
+  "swamp/ansible/files/gateway-release-infrastructure.py",
+  "swamp/ansible/files/instance-control-environment.py",
+  "swamp/ansible/files/instance-control-process.py",
+  "swamp/ansible/files/instance-control-schedule.py",
+  "swamp/ansible/files/instance-legacy-schedule.py",
+  "swamp/ansible/files/instance-release-control.py",
+  "swamp/ansible/files/instance-release-guest.py",
+  "swamp/ansible/files/instance-release-phase.py",
+  "swamp/ansible/files/instance-release-prepare.py",
+  "swamp/ansible/files/instance-release-routes.py",
+  "swamp/ansible/files/instance-release-sql.py",
+  "swamp/ansible/files/production-release-host.py",
+  "swamp/scripts/gateway-release-horizons.py",
+  "swamp/scripts/gateway-release-host-check.py",
+  "swamp/scripts/release-container.py",
+  "swamp/tests/gateway_container_prepare_test.py",
+  "swamp/tests/gateway_container_site_test.py",
+  "swamp/tests/gateway_process_unit_test.py",
+  "swamp/tests/gateway_release_horizons_test.py",
+  "swamp/tests/gateway_release_host_rollback_test.py",
+  "swamp/tests/gateway_release_offline_rollback_test.py",
+  "swamp/tests/gateway_release_recovery_test.py",
+  "swamp/tests/production_instance_control_test.py",
+  "swamp/tests/production_release_host_test.py",
+  "swamp/tests/production_release_phase_test.py",
+  "swamp/tests/production_release_sql_test.py",
+  "swamp/tests/release_container_test.py",
+  "swamp/ansible/shape-gate-requirements.txt",
+]
+cases = [
+  "test_release_helpers_and_tests_pass_ruff",
+]

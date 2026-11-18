@@ -47,7 +47,7 @@ def atomic(path, content):
 def with_import(content, instance, routes, legacy_home=None):
     # The managed role/scope and the literal site domain must both belong to this Instance.
     # Keep TLS, address bindings and access matchers outside the ordered application handlers.
-    pattern = re.compile(r"^# orbit: (\S+) ([^\n]+)\n", re.M)
+    pattern = re.compile(r"^# orbit: (\S+) ([^\n]+)\n", re.MULTILINE)
     matches = list(pattern.finditer(content))
     pieces = [content[:matches[0].start()] if matches else content]
     domains = {route["domain"] for route in routes}
@@ -63,15 +63,15 @@ def with_import(content, instance, routes, legacy_home=None):
         public = re.fullmatch(r"route-([1-9][0-9]*)-(?:ingress|router)", header.group(2))
         if origin or (public and public[1] in by_id and (directive in block or
                 (legacy_home and "root * " + legacy_home + "/current" in block))):
-            site = re.search(r"^(?:https://)?([a-z0-9.-]+) \{$", block, re.M)
+            site = re.search(r"^(?:https://)?([a-z0-9.-]+) \{$", block, re.MULTILINE)
             if public and (not site or site[1] != by_id[public[1]]):
                 raise ValueError("The public Route no longer belongs to this Instance")
             if not site or site[1] not in domains:
                 raise ValueError("The published production Route set changed")
             seen.add(site[1])
             if not any(line.strip() == directive for line in block.splitlines()):
-                first = re.search(r"^\s*root \* (/[^\n]+)$", block, re.M)
-                last = re.search(r"^file_server\s*\n\}\s*$", block, re.M)
+                first = re.search(r"^\s*root \* (/[^\n]+)$", block, re.MULTILINE)
+                last = re.search(r"^file_server\s*\n\}\s*$", block, re.MULTILINE)
                 if not first or not last or first.start() > last.start():
                     raise ValueError("Converge the AppProd Route before switching the release")
                 block = block[:first.start()] + "\n    route {\n        " + directive + "\n" + block[first.start():last.start()] + "file_server\n    }\n}\n\n"
@@ -230,7 +230,7 @@ def copy_shared(plan, instance, machine, phase, operation):
 
 
 def publication_command(arguments, *, pass_fds):
-    result = subprocess.run(arguments, pass_fds=pass_fds, text=True, capture_output=True, timeout=65)
+    result = subprocess.run(arguments, check=False, pass_fds=pass_fds, text=True, capture_output=True, timeout=65)
     return result.returncode, result.stdout, result.stderr
 
 

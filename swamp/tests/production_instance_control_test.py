@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """AppProd live controls share the Node selection and switch lock."""
-from contextlib import contextmanager
 import hashlib
 import io
 import json
-from pathlib import Path
 import re
 import runpy
-from types import SimpleNamespace
 import unittest
+from contextlib import contextmanager
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 FILES = Path(__file__).resolve().parents[1] / "ansible/files"

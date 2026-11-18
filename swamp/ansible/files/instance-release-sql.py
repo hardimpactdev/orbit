@@ -33,7 +33,7 @@ def incus(*args, data=None, timeout=30):
 
 
 def grants(rows):
-    if not isinstance(rows, list):
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError("invalid production Database grants")
     devices = {}
     for row in rows:

@@ -1,0 +1,10 @@
+file = "swamp/tests/gateway_container_site_test.py"
+cost = 1
+inputs = [
+  "bin/gateway-container-site",
+]
+cases = [
+  "test_prepare_preserves_listener_guard_and_other_sites",
+  "test_failed_reload_restores_last_serving_mode",
+  "test_failed_initial_prepare_restores_original_site_and_mode",
+]

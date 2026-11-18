@@ -130,3 +130,7 @@ class ProductionReleaseHostTest(unittest.TestCase):
                 self.assertFalse((home / (target.name + suffix)).exists())
             with sqlite3.connect(target) as db:
                 self.assertEqual(db.execute("SELECT value FROM events").fetchall(), [("authoritative",)])
+
+
+if __name__ == "__main__":
+    unittest.main()
