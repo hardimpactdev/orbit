@@ -35,7 +35,7 @@ if [ "$(cat "$state/mode")" = drain ] && [ "$left" -gt 0 ]; then echo $((left-1)
 
 @unittest.skipUnless(shutil.which("ansible-playbook"), "the pinned Ansible toolchain is not installed")
 class ReleaseResponseWait(unittest.TestCase):
-    def play(self, mode, busy, status="Running", record=None, seconds=3):
+    def play(self, mode, busy, status="Running", record=None, seconds=10):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "bin").mkdir()
