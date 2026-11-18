@@ -48,6 +48,8 @@ capacity_gap = [
   # A case above the 150-second lane on the self-hosted pool; ADR 0262 names each case.
   "swamp/tests/ansible_instance_host_test.ts",
   "swamp/tests/ansible_wireguard_hub_lan_rules_test.py",
+  # Temporary: the next CI slice re-costs this file and removes it; ADR 0262 names the reason.
+  "swamp/tests/ansible_instance_host_updates_test.ts",
 ]
 
 [runner-pool]
