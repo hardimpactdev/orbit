@@ -80,8 +80,12 @@ final readonly class InstanceWake extends InstancePower
     {
         $operation = $this->admitWake($instance, $caller, $requestId);
         if (ExecutorWake::owns($operation)) {
-            if ($operation->wasRecentlyCreated && ExecutorPowerIntent::managed($operation)) {
-                app(ExecutorWake::class)->dispatchDeferred($operation->id);
+            if (ExecutorPowerIntent::managed($operation)) {
+                if ($operation->wasRecentlyCreated) {
+                    app(ExecutorWake::class)->dispatchDeferred($operation->id);
+                }
+
+                return $operation;
             }
             app(ExecutorWake::class)->request($operation);
 

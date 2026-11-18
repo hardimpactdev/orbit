@@ -109,11 +109,14 @@ it('relays the original signature after the no-accepted cutoff without a second 
         $publishedWireHash = hash('sha256', $event->order->wire);
         $this->travel(151)->milliseconds();
     };
-    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    expect($wake)->status->toBe(OperationStatus::Queued);
+    expect($publishedWireHash)->toBeNull();
     $this->mock(SshExecutor::class)->shouldReceive('execute')->once()->andReturnUsing(
         function (SshConnection $connection, RemoteCommand $command) use ($wake, &$publishedWireHash): CommandResult {
             expect($connection->shareConnection)->toBeTrue();
             expect($command->arguments)->toBe(['sudo', '-n', '-u', 'orbit-executor-relay', '/usr/local/libexec/orbit-executor', 'relay']);
+            expect($command->timeout)->toBeGreaterThan(0.5);
             expect($command->input)->toBeNull();
             $input = stream_get_contents($command->protectedInput->stream());
             expect($publishedWireHash === hash('sha256', trim($input)))->toBeTrue();

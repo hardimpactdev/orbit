@@ -111,6 +111,8 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The executor
 
 ### Fallback: one implementation on both paths
 
+An explicit signed wake queues delivery and follows its Operation, like Conn. Only the visitor's request has the 500 ms wait limit; the explicit wake's first relay can wait for a result until recovery is due.
+
 - **No `accepted` line within 150 ms.** The Gateway treats the WebSocket path as down. It runs `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` over its shared SSH connection, with the same signed order on stdin. The relay copies the order to the socket and the reply to stdout. If both copies arrive, the second is refused as `replayed nonce` and carries the first result. The action runs once.
 - **`accepted` but no result within the bound.** The restore is slow, not lost. The Operation keeps waiting for the listener up to 6 s.
 - **A terminal wake result arrives.** Once the result is durable, the listener queues completion of the signed wake immediately. The worker projects the result and sends the Operation's notices without waiting for the sweep. The job that runs after 6 s still covers a missing result or a missed handoff.

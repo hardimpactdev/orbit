@@ -51,6 +51,7 @@ sequenceDiagram
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
     %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
+    %%> - CLI, API and Conn queue the signed wake and follow the Operation; their relay is not limited by Caddy's request budget
     %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; Conn records cancellation of an unshared queued executor wake in the launch cancel transaction, before a publisher can claim it
     %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
     %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it recovers recorded results before publishing any missing order for the same Operation
@@ -60,25 +61,27 @@ sequenceDiagram
       GW->>N: Relay same order<br/>SSH · stdin
       %%> - The relay and observer can race. A replay without a terminal result does not prove failure or success.
     end
-    GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
-    %%> Result:
-    %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
-    %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
-    alt done or partial within the bound
-      GW-->>CL: 200, continue request<br/>original method, URI and body
+    opt Caddy, for a visit
+      GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
       %%> Result:
-      %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
-      %%> - the Operation succeeds and records the runtime running
-      %%> - record the pending lifecycle follow-up with success; a background worker runs the hook without a database writer and records its receipt after it returns
-      %%> - reclaim old handoffs in batches of up to 50; the per-Operation hook lock and receipt keep concurrent deliveries from running the hook twice
-    else no successful result in time
-      %% path: executor-pending
-      GW-->>CL: 401 progress page<br/>activation state pending
-      %%> Result:
-      %%> - the existing page polls every 250 ms and loads the app when the marker goes
-      %%> - once the subscriber records a terminal result, it queues immediate completion of the same signed wake; done or partial succeeds, refused or failed fails, and the worker sends the Operation's notices without waiting for the sweep
-      %%> - the six-second job still recovers an absent result and finishes a known result if the immediate job did not run
+      %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
+      %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
+      alt done or partial within the bound
+        GW-->>CL: 200, continue request<br/>original method, URI and body
+        %%> Result:
+        %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
+        %%> - the Operation succeeds and records the runtime running
+      else no successful result in time
+        %% path: executor-pending
+        GW-->>CL: 401 progress page<br/>activation state pending
+        %%> Result:
+        %%> - the existing page polls every 250 ms and loads the app when the marker goes
+      end
     end
+    Note over GW: Project the terminal receipt
+    %%> - done or partial succeeds, refused or failed fails; the worker sends the Operation's notices without waiting for the sweep
+    %%> - the job after 6 s still recovers an absent result and finishes a known result if the immediate job did not run
+    %%> - a background worker runs the lifecycle hook after success without holding a database writer, and records it once per Operation
     opt no terminal result within 6 s, or a legitimate stopped container needs boot
       GW->>SW: Continue Operation<br/>operation-instance-wake
       SW->>GW: Sign fresh order<br/>bound Operation
