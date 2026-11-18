@@ -8,7 +8,6 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 use std::sync::Arc;
 
 use orbit_executor_core::action::{Action, Enabled};
@@ -151,8 +150,9 @@ fn log(line: &str) {
     eprintln!("{line}");
 }
 
-/// Runs the executor mode with its arguments (`serve` or `relay`) and returns the process's exit code.
-pub fn main(args: &[String]) -> ExitCode {
+/// Runs the executor mode with its arguments (`serve` or `relay`) and returns the process's exit code, as the agent's
+/// other modes do.
+pub fn main(args: &[String]) -> i32 {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let result = match args.as_slice() {
         ["serve"] => serve(),
@@ -165,10 +165,10 @@ pub fn main(args: &[String]) -> ExitCode {
         _ => Err("usage: orbit-agent execute serve | orbit-agent execute relay".to_owned()),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(message) => {
             log(&format!("orbit-agent execute: {message}"));
-            ExitCode::FAILURE
+            1
         }
     }
 }

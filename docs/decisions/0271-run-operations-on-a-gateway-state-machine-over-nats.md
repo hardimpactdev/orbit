@@ -1,12 +1,12 @@
 ---
 title: "ADR 0271: Run operations on a Gateway state machine over NATS"
 sidebarTitle: "0271 Gateway state machine"
-description: "In progress. The Gateway runs an Operation as an event-driven state machine of typed primitives. orbit-executor runs each primitive on its Node and reaches the Gateway over NATS JetStream, which carries orders, receipts and content. Operation kinds move off Swamp one at a time. This changes ADR 0267's transport, its action granularity and its split with Swamp."
+description: "In progress. The Gateway runs an Operation as an event-driven state machine of typed primitives. The executor (`orbit-agent execute`) runs each primitive on its Node and reaches the Gateway over NATS JetStream, which carries orders, receipts and content. Operation kinds move off Swamp one at a time. This changes ADR 0267's transport, its action granularity and its split with Swamp."
 ---
 
 # ADR 0271: Run operations on a Gateway state machine over NATS
 
-The Gateway runs an Operation as a state machine. An Operation is a set of steps. Each step is one typed primitive on one Node, or a short step on the Gateway itself, with the steps it waits for. Nothing stays open while a Node works: the Gateway sends what can run, and every receipt records its step and sends what can run next. `orbit-executor` runs each primitive on its Node. Orders, receipts and content travel over NATS JetStream, which stores them until they are delivered and acknowledged. Operation kinds move off Swamp one at a time: a kind runs entirely on Swamp or entirely on the state machine.
+The Gateway runs an Operation as a state machine. An Operation is a set of steps. Each step is one typed primitive on one Node, or a short step on the Gateway itself, with the steps it waits for. Nothing stays open while a Node works: the Gateway sends what can run, and every receipt records its step and sends what can run next. The executor, `orbit-agent execute`, runs each primitive on its Node. Orders, receipts and content travel over NATS JetStream, which stores them until they are delivered and acknowledged. Operation kinds move off Swamp one at a time: a kind runs entirely on Swamp or entirely on the state machine.
 
 ## Status
 
@@ -40,7 +40,7 @@ The Node work of a container clone fitted 19 primitives, each on one resource. N
 
 ## Decision
 
-The Gateway owns every migrated Operation kind from admission to its projection. `orbit-executor` owns each primitive on its Node. NATS carries everything between them. The owner's decisions N1–N7 bind the design; the sections after them state how each part works.
+The Gateway owns every migrated Operation kind from admission to its projection. The executor owns each primitive on its Node. NATS carries everything between them. The owner's decisions N1–N7 bind the design; the sections after them state how each part works.
 
 ### The owner's decisions
 
@@ -66,7 +66,7 @@ The Gateway records each migrated Operation's steps and their state in its own t
 
 ### The executor on NATS
 
-- **Orders.** The executor holds a durable pull consumer on the stream `ORDERS`, subject `orbit.node.<id>.orders`. It checks each order exactly as [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) and ADR 0267 define: signature, action, enabled on this Node, Node, target, expiry, nonce, Operation, input.
+- **Orders.** The executor holds a durable pull consumer on the stream `ORDERS`, subject `orbit.node.<id>.orders`. It checks each order exactly as [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) and ADR 0267 define: signature, action, enabled on this Node, Node, target, expiry, nonce, Operation. The primitive then checks its typed input against its own schema.
 - **Receipts.** It publishes the receipt to `orbit.receipts.<id>` with a deduplication id, waits until JetStream has stored it, and only then acknowledges the order. An order whose receipt was not stored comes back, and the journal answers it as a repeat.
 - **Long steps.** While a primitive runs, the executor sends progress acknowledgements, so a short acknowledgement wait never redelivers a step that is still running.
 - **Content.** Before it runs an order, the executor reads every hash the order names from `CONTENT` into a root-only cache and checks it.
@@ -91,7 +91,7 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 
 ### Order of the moves
 
-1. One agent with two processes (N7): one binary, one artifact, one install.
+1. One agent with two processes (N7), in two pull requests. The first makes the executor a library, adds `orbit-agent execute`, and keeps `orbit-executor` as a wrapper of the same code. After the Gateway pins a delivery whose `orbit-agent` has the mode, the second moves the install to `orbit-agent execute serve` on every Node, with an empty allowlist where no role enables a family, and removes `orbit-executor` and its artifact.
 2. The foundation, with `firewall:allow` and `firewall:deny` as the first kind.
 3. `route:create` and `route:destroy`.
 4. The DNS writes and the short Node writes, such as Process control.

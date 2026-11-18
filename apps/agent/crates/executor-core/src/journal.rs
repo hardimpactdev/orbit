@@ -68,19 +68,6 @@ pub enum Outcome {
         /// The failure's code.
         code: String,
     },
-    /// A primitive finished and returns what it read or made, such as a certificate request (ADR 0271). Stored like any
-    /// outcome, so a repeat returns the same output.
-    Output {
-        /// The primitive's output, encoded as `encoding` says.
-        stdout: String,
-        /// `text`, or `gzip+base64` for a large read.
-        encoding: String,
-    },
-    /// A desired-state primitive converged its resource and checked it (ADR 0271).
-    Applied {
-        /// How many changes it made; 0 means the resource was already right.
-        changes: u32,
-    },
 }
 
 /// An order the journal recorded as open whose key has no result yet: crash recovery finishes it.
@@ -874,6 +861,25 @@ mod tests {
             .collect();
         expected.sort();
         assert_eq!(unfinished, expected);
+    }
+
+    #[test]
+    fn an_open_record_keeps_its_input_through_compaction_and_an_old_line_reads_as_null() {
+        let old = r#"{"record":"open","nonce":"00000000000000000000000000000001","operation":"op","action":"proof.noop","target":"7","expires_ms":1}"#;
+        let record: Record = serde_json::from_str(old).expect("an old open line parses");
+        let with_input = Record::Open {
+            nonce: nonce(2),
+            key: key("op-2"),
+            expires_ms: 1,
+            power_check: PowerCheck::Default,
+            input: serde_json::json!({"rule": "443/tcp"}),
+        };
+        let line = serde_json::to_string(&with_input).expect("record");
+        let live = Live::from_records([record, serde_json::from_str(&line).expect("round trip")]);
+        let compacted = Live::from_records(live.records());
+        let inputs: Vec<serde_json::Value> = compacted.unfinished().into_iter().map(|open| open.input).collect();
+        assert_eq!(inputs, vec![serde_json::Value::Null, serde_json::json!({"rule": "443/tcp"})]);
+        assert!(!serde_json::to_string(&compacted.records()).expect("records").contains(r#""input":null"#));
     }
 
     #[test]

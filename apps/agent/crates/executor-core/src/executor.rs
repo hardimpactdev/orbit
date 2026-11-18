@@ -486,6 +486,39 @@ mod tests {
         );
     }
 
+    /// Records the input each run receives.
+    #[derive(Debug, Default)]
+    struct Inputs(Arc<std::sync::Mutex<Vec<serde_json::Value>>>);
+
+    impl Run for Inputs {
+        fn run(&self, order: &VerifiedOrder) -> Outcome {
+            self.0.lock().expect("inputs lock").push(order.input().clone());
+            Outcome::Done
+        }
+    }
+
+    #[test]
+    fn start_up_runs_an_open_order_with_its_recorded_input() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("j");
+        let open = order(N1, "op-input");
+        let record = Record::Open {
+            nonce: open.nonce(),
+            key: DoneKey { operation: open.operation().clone(), action: open.action(), target: open.target().clone() },
+            expires_ms: open.expires_ms(),
+            power_check: crate::order::PowerCheck::Default,
+            input: serde_json::json!({"path": "/etc/example", "mode": "0644"}),
+        };
+        std::fs::write(&path, format!("{}\n", serde_json::to_string(&record).expect("json"))).expect("journal");
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (_, recovered) = Executor::start(&path, Inputs(Arc::clone(&seen)), || NOW + 60_000, |_| {}).expect("recover");
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(
+            *seen.lock().expect("inputs lock"),
+            vec![serde_json::json!({"path": "/etc/example", "mode": "0644"})]
+        );
+    }
+
     #[test]
     fn done_records_older_than_a_day_are_dropped_at_start_up() {
         let dir = tempfile::tempdir().expect("tempdir");

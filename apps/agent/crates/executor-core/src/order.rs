@@ -396,6 +396,16 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn an_order_carries_its_signed_input_and_defaults_to_null() {
+        let mut with_input = payload();
+        with_input["input"] = serde_json::json!({"port": "443", "protocol": "tcp"});
+        let order = run(&sign(1, &with_input)).expect("valid order");
+        assert_eq!(order.input(), &serde_json::json!({"port": "443", "protocol": "tcp"}));
+        let order = run(&sign(1, &payload())).expect("valid order");
+        assert_eq!(order.input(), &serde_json::Value::Null);
+    }
+
+    #[test]
     fn a_second_pinned_key_verifies_during_rotation() {
         let both = format!(
             "{}\n{}\n",

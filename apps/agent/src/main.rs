@@ -75,10 +75,7 @@ fn main() {
         }
         // The executor mode (ADR 0271 N7): the second process of the one agent binary.
         #[cfg(target_os = "linux")]
-        Some("execute") => {
-            let code = orbit_executor::main(&arguments[1..]);
-            std::process::exit(if code == std::process::ExitCode::SUCCESS { 0 } else { 1 })
-        }
+        Some("execute") => std::process::exit(orbit_executor::main(&arguments[1..])),
         Some("contract") if arguments.len() == 1 => {
             let contract = orbit_agent::command::registry::contract();
             println!(
