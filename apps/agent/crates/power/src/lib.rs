@@ -15,7 +15,7 @@ use plan::{cgroup_identity, Plan};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -648,21 +648,23 @@ fn stopped_receipt(started: Instant) -> Receipt {
 }
 
 fn caddy_checks(marker: &Path) -> bool {
-    let bound = Duration::from_millis(250);
-    let result = (|| -> io::Result<Vec<u8>> {
-        let mut stream = TcpStream::connect_timeout(&([127, 0, 0, 1], 2019).into(), bound)?;
-        stream.set_read_timeout(Some(bound))?;
-        stream.set_write_timeout(Some(bound))?;
-        stream.write_all(b"GET /config/ HTTP/1.0\r\nHost: localhost\r\n\r\n")?;
-        let mut bytes = Vec::new();
-        stream.take(8 * 1024 * 1024).read_to_end(&mut bytes)?;
-        Ok(bytes)
-    })();
+    let result = caddy_config(([127, 0, 0, 1], 2019).into());
     result.is_ok_and(|bytes| {
         marker
             .file_name()
             .is_some_and(|name| route_checks(&bytes, name.as_encoded_bytes()))
     })
+}
+
+fn caddy_config(address: SocketAddr) -> io::Result<Vec<u8>> {
+    let bound = Duration::from_millis(250);
+    let mut stream = TcpStream::connect_timeout(&address, bound)?;
+    stream.set_read_timeout(Some(bound))?;
+    stream.set_write_timeout(Some(bound))?;
+    write!(stream, "GET /config/ HTTP/1.0\r\nHost: {address}\r\n\r\n")?;
+    let mut bytes = Vec::new();
+    stream.take(8 * 1024 * 1024).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn route_checks(response: &[u8], marker_name: &[u8]) -> bool {

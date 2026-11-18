@@ -449,6 +449,36 @@ fn a_refused_incus_freeze_restores_all_original_swap_limits() {
 }
 
 #[test]
+fn caddy_admin_requires_the_full_loopback_authority() {
+    use std::io::{BufRead as _, BufReader};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("admin connection");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("bound fixture read");
+        let mut lines = BufReader::new(&mut stream).lines();
+        let request = lines.next().expect("request line").expect("read request");
+        let host = lines.next().expect("host header").expect("read authority");
+        let _end = lines.next().expect("blank line").expect("read terminator");
+        let response: &[u8] =
+            if request == "GET /config/ HTTP/1.0" && host == format!("Host: {address}") {
+                b"HTTP/1.0 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-2.asleep\"]}"
+            } else {
+                b"HTTP/1.0 403 Forbidden\r\n\r\n"
+            };
+        stream.write_all(response).expect("write response");
+    });
+
+    let response = caddy_config(address).expect("Caddy admin response");
+    server.join().expect("fixture server ended");
+    assert!(route_checks(&response, b"app-instance-2.asleep"));
+}
+
+#[test]
 fn caddy_must_have_the_exact_markers_matcher_in_its_loaded_config() {
     let instance_marker = b"app-instance-2.asleep";
     assert!(route_checks(
