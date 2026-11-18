@@ -12,6 +12,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -97,7 +98,7 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         }
 
         return DB::transaction(function () use ($operation, $data): Operation {
-            $operation->refresh();
+            $operation->setRawAttributes(Operation::query()->lockForUpdate()->findOrFail($operation->id)->getAttributes(), true);
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             [$code, $result] = $this->outcome($data, $operation);
             if ($data['status'] === 'succeeded') {
@@ -105,6 +106,11 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
             }
             $data = [...$data, 'error_code' => $code, 'failure' => $this->failure($data, $result, $operation)];
             if (! $operation->status->terminal()) {
+                $run = ValidatedData::object($data['result'] ?? []);
+                if (in_array($data['status'], ['failed', 'interrupted'], true)
+                    && NativeRunResult::stepStatus($run, 'Stop the container') === 'succeeded') {
+                    $operation->update(['state' => [...($operation->state ?? []), 'container_stop_succeeded' => true]]);
+                }
                 if ($data['status'] === 'succeeded') {
                     // A task's copy lets go of its group before its row goes; any other Instance has no owner and nothing happens.
                     app(TaskCopyLifecycle::class)->destroyed($operation->target_id);

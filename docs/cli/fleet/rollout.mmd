@@ -12,13 +12,14 @@ sequenceDiagram
   participant N as Target Node<br/>reached over ssh
   Note over GW: Pick Nodes when no Node<br/>IDs are given
   %%> When:
-  %%> - when the Gateway records a release `verified`: it queues one admission
+  %%> - when the Gateway records a release `verified`: the release’s fleet pass uses this Operation when a Node needs agent or CLI delivery
   %%> - once a day at 03:05 Europe/Amsterdam, when the window of the other Nodes opens; the schedule only queues the admission
   %%> - when an operator runs `orbit fleet:rollout`
   %%> - always while `ORBIT_FLEET_ROLLOUT=true`, and only for a commit whose Gateway release is verified
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the verified release admits the rollout, as `gateway:release:deploy` says; the deleted `fleet-maintenance` schedule did it each minute until 2026-11-06
   %%> - most releases land outside the window, so a daily pass at window open visits the Nodes they deferred
+  %%> - the release pass confirms the serving release under the writer lock before admitting a visit, including for Nodes with no CLI caller
   %%> - the admission waits while another rollout runs; Nodes without CLI intent need no CLI release
   %%> - a Node with CLI intent waits for its CLI release; the admission keeps its one-minute retry after admitting other Nodes
   %%> Picks:
@@ -28,7 +29,8 @@ sequenceDiagram
   %%> - in risk order: `app-dev`, then `ci-runner` `metrics` `analytics`, then `database` `websocket` `vpn` `router`, then `app-prod` `ingress`
   GW->>SW: Start run, full intent<br/>operation-fleet-rollout
   %%> Input:
-  %%> - the commit, the agent pin and each picked Node; CLI intent only for Nodes that require it
+  %%> - each picked Node with its agent pin; CLI intent only for Nodes that require it
+  %%> - the commit stays on the Gateway for visit history and alerts; steps never fetch intent or post results
   %%> Requirements:
   %%> - no other rollout is running
   loop each Node, in risk order
@@ -46,6 +48,10 @@ sequenceDiagram
     %%> - a Node without CLI intent skips the CLI child and publishes its observer independently
     %%> - the running digest and active unit prove the pinned observer
   end
+  Note over SW: Return each Node's outcome<br/>finish
+  %%> What it does:
+  %%> - shapes one bounded result from child outputs; a native assertion fails the run when a Node failed
+  %%> - the Gateway's shared terminal reader captures the result, including when the run failed
   alt every Node converged or deferred
     SW-->>GW: Run succeeded
     %%> Result:

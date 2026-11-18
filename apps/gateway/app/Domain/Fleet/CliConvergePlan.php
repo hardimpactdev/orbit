@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Fleet;
 
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NodeCliFootprint;
@@ -59,14 +60,14 @@ final readonly class CliConvergePlan
     }
 
     /** @return CliInput */
-    private function capture(Node $node, ?string $skipReason): array
+    private function capture(Node $node, ?string $skipReason, ?DesiredCliReleaseData $pin = null): array
     {
         $input = ['user' => $node->user, 'release' => null, 'profile' => '', 'skip_reason' => $skipReason, 'plan_error' => null];
         if ($input['skip_reason'] !== null) {
             return $input;
         }
         try {
-            $release = $this->desired->current()->cli;
+            $release = $pin ?? $this->desired->current()->cli;
         } catch (Throwable) {
             return [...$input, 'plan_error' => 'fleet.cli_plan_failed'];
         }
@@ -94,9 +95,9 @@ final readonly class CliConvergePlan
      *
      * @return array{user:string,release:?array{version:?string,url:string,sha256:string},profile:string,skip_reason:?string,plan_error:?string,ssh:?array<string,mixed>}
      */
-    public function fleetInput(Node $node, bool $observer = false): array
+    public function fleetInput(Node $node, bool $observer = false, ?DesiredCliReleaseData $pin = null): array
     {
-        $input = $this->input($node);
+        $input = $this->capture($node, $this->exclusion($node), $pin);
 
         return [...$input, 'ssh' => ($observer || ($input['skip_reason'] === null && $input['plan_error'] === null))
             ? app(SwampSshExecutionInput::class)->forNode($node) : null];

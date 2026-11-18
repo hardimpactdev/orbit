@@ -15,6 +15,8 @@ use App\Infrastructure\Metrics\MetricsFootprint;
  */
 final class CiRunnerStateFiles
 {
+    public function __construct(private readonly ?string $resources = null) {}
+
     public const string Script = '/usr/local/libexec/orbit-ci-runner-state';
 
     public const string Hold = '/usr/local/libexec/orbit-ci-runner-hold';
@@ -38,20 +40,28 @@ final class CiRunnerStateFiles
     }
 
     /** @return list<array{path: string, ensure: string, content: string, owner: string, group: string, mode: string}> */
-    public static function files(): array
+    public static function files(?string $resources = null): array
     {
         $file = static fn (string $path, string $content, string $mode): array => ['path' => $path, 'ensure' => 'present', 'content' => $content,
             'owner' => 'root', 'group' => 'root', 'mode' => $mode];
 
-        return [$file(self::Script, (string) file_get_contents(resource_path('ci-runner/state.py')), '0755'),
-            $file(self::Hold, self::holdScript(), '0755'),
+        return [$file(self::Script, (string) file_get_contents(($resources ?? resource_path('ci-runner')).'/state.py'), '0755'),
+            $file(self::Hold, self::holdScript($resources), '0755'),
             $file('/etc/systemd/system/'.self::Service, self::service(), '0644')];
     }
 
-    /** The hold script that this release installs. */
-    public static function holdScript(): string
+    /**
+     * @return array{directories: list<array{path:string,owner:string,group:string,mode:string}>, files: list<array{path:string,ensure:string,content:string,owner:string,group:string,mode:string}>, units: list<array{name:string,unit:string}>}
+     */
+    public function runtime(): array
     {
-        return (string) file_get_contents(resource_path('ci-runner/hold.py'));
+        return ['directories' => self::directories(), 'files' => self::files($this->resources), 'units' => self::units()];
+    }
+
+    /** The hold script that this release installs. */
+    public static function holdScript(?string $resources = null): string
+    {
+        return (string) file_get_contents(($resources ?? resource_path('ci-runner')).'/hold.py');
     }
 
     /** @return list<array{name: string, unit: string}> */

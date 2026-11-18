@@ -54,7 +54,7 @@ final class RealtimeAuthController extends Controller
 
         // An operation's progress channel exists while the operation does (docs/reference/operations.md).
         if (str_starts_with($channel, 'private-operation.')
-            && (preg_match('/^private-operation\\.([1-9][0-9]*)$/', $channel, $match) !== 1 || ! Operation::query()->whereKey((int) $match[1])->exists())) {
+            && (preg_match('/^private-operation\\.([1-9][0-9]*)$/', $channel, $match) !== 1 || ! Operation::query()->publiclyVisible()->whereKey((int) $match[1])->exists())) {
             throw new ResourceOperationException('broadcast.channel_forbidden', 'Channel is not authorized.', 403);
         }
 

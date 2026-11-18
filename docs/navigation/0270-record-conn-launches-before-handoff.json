@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 270,
+      "pages": [
+        "decisions/0270-record-conn-launches-before-handoff"
+      ]
+    }
+  ]
+}

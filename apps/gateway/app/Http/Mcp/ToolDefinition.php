@@ -31,6 +31,8 @@ final readonly class ToolDefinition
         public array $headerInputs = [],
         /** The call removes a resource; the OpenAPI document marks it (`x-orbit-destructive`). */
         public bool $destructive = false,
+        /** The operation requires an empty HTTP body (`x-orbit-bodyless`). */
+        public bool $bodyless = false,
     ) {}
 
     /** @param array<array-key, mixed> $entry */
@@ -68,6 +70,7 @@ final readonly class ToolDefinition
             inputSchema: ValidatedData::object($inputSchema),
             headerInputs: array_values(array_filter($headerInputs, is_string(...))),
             destructive: ($entry['destructive'] ?? false) === true,
+            bodyless: ($entry['bodyless'] ?? false) === true,
         );
     }
 

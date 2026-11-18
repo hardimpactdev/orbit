@@ -11,6 +11,8 @@ covers:
 
 `instance:unregister` is POST `/api/v1/instances/{instance}/unregister`, MCP tool `instance-unregister`. It returns an Operation receipt; the [command page](/cli/instance/unregister) defines its refusals and failure behavior.
 
+`POST /api/v1/nodes/{node}/executor/proof` and MCP tool `node-executor-proof` return a terminal `Operation`. See the [operator diagnostic](/reference/executor#the-proof-operation) for authorization and verdicts.
+
 The generator marks every DELETE route destructive with `x-orbit-destructive`, and each POST route in `DESTRUCTIVE_POSTS` of `bin/docs-openapi`, today only `instance:unregister`. The MCP manifest copies the mark as `destructive`, and the tool's `destructiveHint` annotation reads it.
 
 `instance:sleep` and `instance:wake` are POST `/api/v1/instances/{instance}/sleep` and `/wake`. Each returns an Operation receipt; a wake of an Instance with an open wake returns that Operation. The sleep's result names `sleep` (`frozen` or `stopped`), `swap_subtree` (the inner cgroups the freeze opened) and `t3_turn` (`idle`, `not_checked` or `no_server`); the wake's names its path in `wake`. A wake of a nested-fleet clone that no sleep froze returns an `instance.start` Operation instead. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) pages define their prerequisites and failure behavior.
@@ -38,6 +40,8 @@ The `fleet` group holds rollout admission, CLI convergence, peer DNS and the fle
 Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present. Conn Operation show uses this same step schema; its API and MCP descriptions state that `after_sequence` is accepted but currently does not filter steps. They also name the kinds it serves to the calling Node, a clone's `instance.complete` included; regenerate OpenAPI and the MCP manifest when that list changes. See the [Conn step contract](/reference/conn#threads-in-an-orbit-project).
 
 The Conn Operation cancel description names the same kinds except `instance.destroy`, which it refuses with 404, and answers 200 with `OperationData`; [Cancel a create or a completion](/reference/conn#cancel-a-create-or-a-completion) owns its rules.
+
+`POST /api/v1/conn/launches` documents `Idempotency-Key` as a required header and the expected profile and Node IDs as required body fields. The launch routes use `ConnLaunchSnapshot`, with an array for list and one snapshot for show and control. The Conn reference defines the fields, scope, and failures. [Durable launches](/reference/conn#durable-launches-v1)
 
 Run the generator from the repository root:
 

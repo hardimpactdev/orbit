@@ -15,6 +15,7 @@ cases = [
   "an isolated Tool failure retains both receipts without failing the phase or skipping network and check",
   "a tools phase that stops before it judges a Tool fails the converge with no Tool receipt",
   "private input is mode-protected, literal and limited to target plus recorded hub",
+  "converge keeps the staged phase files after worker cache removal and keeps repeat digests stable",
   "terminal result removes private input after success without publishing callback content",
   "terminal result removes private input after roles without publishing callback content",
   "an invalid installed Tool version cannot become terminal success (null)",

@@ -27,7 +27,9 @@ final class FakeSelfUpdateHost implements SelfUpdateHost
 
     public function runningBinary(): RunningBinary
     {
-        return new RunningBinary($this->kind, $this->kind === RunningBinaryKind::Source ? null : $this->binaryPath());
+        $path = $this->binaryPath();
+
+        return new RunningBinary($this->kind, $this->kind === RunningBinaryKind::Source ? null : (realpath($path) ?: $path));
     }
 
     public function platform(): ?string

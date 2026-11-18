@@ -267,6 +267,30 @@ class FixtureRunTest(unittest.TestCase):
 
 
 class CapacityPreflightTest(unittest.TestCase):
+    def test_fixture_planning_uses_the_prepared_python_when_available(self):
+        gate = check['units'].gate
+        calls = []
+
+        def run(argv):
+            calls.append(argv)
+            if argv[1] == 'bin/ci-build-plan':
+                return 0, '{"jobs": {}}'
+            Path(argv[argv.index('--plan-json') + 1]).write_text('{}')
+            return 0, ''
+
+        with tempfile.TemporaryDirectory() as scratch, \
+                patch.object(gate, 'default_tools', return_value=Path(scratch)), \
+                patch.object(gate, 'venv_name', return_value='venv-test'), \
+                patch.object(gate, 'tool_path', side_effect=AssertionError('planning must not install tools')), \
+                patch.dict(check['ci_plan'].__globals__, {'run': run}):
+            venv = Path(scratch) / 'venv-test'
+            venv.mkdir()
+            self.assertEqual(check['ci_plan']('base', 'head'), ({}, {}, ''))
+            self.assertEqual(calls[-1][:3], ['python3', 'bin/ci-units', 'plan'])
+            (venv / '.complete').touch()
+            self.assertEqual(check['ci_plan']('base', 'head'), ({}, {}, ''))
+            self.assertEqual(calls[-1][:3], [str(venv / 'bin/python3'), 'bin/ci-units', 'plan'])
+
     def test_real_host_input_plan_refuses_overflow_before_any_optional_check(self):
         units = check['units']
         budget, table, defaults = units.configuration()

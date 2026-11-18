@@ -179,7 +179,18 @@ final readonly class InstanceHostIntent
         }
 
         return $intent === null ? null
-            : hash('sha256', json_encode(array_diff_key($intent, ['bridge_admitted_at' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            : hash('sha256', json_encode(self::withoutAdmission($intent), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * @param  array<string,mixed>  $intent
+     * @return array<string,mixed>
+     */
+    public static function withoutAdmission(array $intent): array
+    {
+        unset($intent['bridge_admitted_at']);
+
+        return $intent;
     }
 
     /** @return array<string, mixed>|null */

@@ -35,7 +35,7 @@ The observer is one Rust package, `apps/agent`, with about 68,000 lines. CI runs
 
 ## Decision
 
-The owner's decisions P1–P10 bind every part of this design. The sections after them define the shared parts, the one binary, the change to existing rules, the script inventory, the create case, the Rust rules and the slices.
+The owner's decisions P1–P10 bind every part of this design, including the planned follow-ons after the Instance clone.
 
 ### The owner's decisions
 
@@ -131,8 +131,8 @@ Every Python and shell file under `swamp/` that a Swamp run executes on a Node. 
 | `ansible/instance_node_services.py` | Node-service proxies, hosts block and proxy drop-ins | Executor: shared with the clone (`instance.node-services`) |
 | `ansible/instance_mail.py` | Mail convergence for a container | Executor: shared with the clone (`instance.mail`) |
 | `ansible/instance_mail_line.py` | The mailer-line rule | Executor: part of `instance.mail` |
-| `ansible/instance_env_keys.py` | Replaces named keys in a container's `.env` | Executor, as a case after the create: passes P3 (`env:sync`) |
-| `ansible/instance/destroy-git.py` | Read-only Git check before a destroy or transfer | Executor, as a case after the create: passes P3; today a remote program over SSH |
+| `ansible/instance_env_keys.py` | Replaces named keys in a container's `.env` | Stays Ansible; standalone [`env:sync`](/cli/env/sync) is off the executor shortlist. Aim to apply Gateway-managed environment at create or deploy, with no change to current render or sync behavior |
+| `ansible/instance/destroy-git.py` | Inspects Git sources and worktree dependencies for destroy or transfer | Separate executor candidate under P3; today a remote program over SSH. This is not Conn's workspace work check |
 | `ansible/instance_bridge.py` | Bridge endpoint rules under the Node's writer lock | Stays Ansible: reconciles every Instance of the Node in a converge |
 | `ansible/instance_container_files.py` | Brings every container to the image's shared files | Stays Ansible: a converge over every container |
 | `ansible/instance_nested.py` | The nested-fleet start policy | Stays Ansible: part of a nested start and host audit |
@@ -173,6 +173,28 @@ The executor runs the copy, the start, the Club key, the checkout beside T3 and 
 Private input, such as the Git credential, the model keys and the Process environment, never enters the order's clear payload. How it reaches the executor is open point 11.
 
 The completion's Node step becomes `instance.clone-complete`, and a failed clone's Node cleanup becomes `instance.clone-cleanup`. Both are called from Swamp through the relay.
+
+### Planned follow-ons after the Instance clone
+
+These candidates add no work to the sleep/wake or create slices. As C6 absorbs the completed create decision, carry any unbuilt candidates into their own ADRs. For each candidate, the Gateway authorizes, records the Operation, dispatches a signed order and projects the result. The executor runs a fixed, bounded, replay-safe action on one Node. Swamp keeps background and multi-step coordination.
+
+#### Process control
+
+Move the local runtime step of [`process:start`](/cli/process/start), [`process:stop`](/cli/process/stop) and [`process:restart`](/cli/process/restart) from [`operation-process-control`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-process-control.yaml) into one Process family. It controls only installed Orbit-managed Processes: Node-owned and Instance-owned units or containers, across host systemd, host Docker and systemd inside an Incus Instance. Keep [desired state and runtime verification](/reference/processes-and-schedules#direct-process-controls) (`running` after start or restart, `stopped` after stop), existing boot policy (including on-demand units) and the Vite wake policy. Long drains, Vite publication and other multi-step work stay in Swamp, which calls the same executor action for the local step.
+
+**Proof:** Start, stop and restart on each runtime, covering both ownership kinds, and check boot policy and observed state before projecting success. Drop the reply and crash the executor on either side of the restart call; repeat the same Operation and verify the runtime restarted at most once. A running status alone does not prove the restart happened. Recover the result from durable evidence of the restart or report an unresolved outcome without restarting again.
+
+#### Conn workspace work check
+
+Move the live [`ContainerWorkspaceRead`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/app/Infrastructure/Instances/ContainerWorkspaceRead.php) behind [Remove an Instance](/reference/conn#remove-an-instance) from bounded SSH to the executor. It is not the `destroy-git.py` source and worktree check in the inventory. Keep the 2 s Node budget and run Git read-only as `agent` in `/srv/workspace`, without fetching. Keep `clean`, `dirty` and `unknown` with their reasons, and all four work classes: modified tracked files, untracked files, unpublished commits and stashes. Keep the [workspace work rules](/reference/development-containers#workspace-work-state): use the recorded baseline, the current default when applicable, or the plain read when no baseline is available. Exclude ignored untracked files and Orbit's untracked root env files. Do not count commits reachable from baseline heads, last-fetched remote refs or known published commits.
+
+**Proof:** Check an inherited clean workspace, each class of new work, published commits and an unreadable workspace. Open the dialog while clean, then edit a file and attempt removal without acknowledgement; the new read must refuse. Each distinct read gets a fresh Operation, including the read at removal; only a retry of that read may replay its result. Only `clean` permits removal without acknowledgement.
+
+#### Conn held-session minting
+
+Move only [first attach on a held-session miss](/reference/conn#attach) from [`operation-conn-session-hold`](https://github.com/hardimpactdev/orbit/blob/main/swamp/workflows/workflow-operation-conn-session-hold.yaml) to the executor. The Gateway checks Node access, admits one Operation for concurrent misses and stores the session encrypted on the pairing. The executor mints and redeems the one-time link on the local T3 server. Pass the admin credential and return the held session through a private channel bound to the Operation and target, not in public order fields, Operation results or logs. A cache hit needs no order. Swamp keeps routine renewals and cleanup. Today Swamp calls T3 over HTTP; the expected gain is skipping workflow dispatch, not a measured first-attach improvement.
+
+**Proof:** Race two attaches, drop the reply and crash the executor around mint and redeem. Recovery uses the same pairing label and recovers the same private result, or confirms the prior link and any session can no longer be used before issuing a replacement. Verify that retries leave no duplicate usable credentials, that a cache hit sends no order and that public records contain no credentials.
 
 ### Rust rules (P9)
 
@@ -250,6 +272,7 @@ New:
 16. **Ansible calling the relay for shared rules.** A converge over many Instances then sends one signed order per Instance. The cost of the signing at admission and of the relay calls is not measured.
 17. **The run-bound expiry for relay orders.** It widens ADR 0266's 5 s window to the run budget for relay orders, for the shared rules and for the create's second order. A copied run-length create order can start the copy only once for its Operation, and only through the relay. If the short-lived order is lost, the create's Node part starts only when the Swamp step runs, after the Swamp start of about 2 s. The executor's clock check needs a second bound for them. ADR 0266's Swamp fallback reads a freshly signed order from the Gateway's bound Operation read instead; the two paths are to become one before G1 lands.
 18. **Instances that appear during a run.** An Instance created after the admission has no order in the input. The phase refuses it with its own code, and the next converge covers it.
+19. **Workspace read input size.** A recorded workspace baseline can exceed the 4 KB signed order cap. Decide how to bound and bind larger baseline and publication inputs to the order without dropping work or weakening order checks.
 
 ## Affects
 

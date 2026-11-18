@@ -48,6 +48,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -71,9 +72,13 @@ final readonly class StartDevelopmentInstanceCreateAction
      * reads them here, before the admission transaction. `$proofPlace`: the copy takes a CI place on its Node for a proof run
      * (TaskCopyStart, ProofRunIntent), so its create holds that place first.
      *
+     * A Conn launch wraps only the admission in its fence, after source and branch preflight.
+     *
      * @param  array<string, string>|null  $agentFiles
+     * @param  (Closure(Closure(): Operation): Operation)|null  $within
      */
-    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId, ?Task $taskOwner = null, ?array $agentFiles = null, bool $proofPlace = false): Operation
+    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId, ?Task $taskOwner = null,
+        ?array $agentFiles = null, bool $proofPlace = false, ?int $connLaunchId = null, ?Closure $within = null): Operation
     {
         if (($replay = $this->idempotency->replay('instance.create')) !== null) {
             return $replay;
@@ -93,7 +98,7 @@ final readonly class StartDevelopmentInstanceCreateAction
         $selection = $data->branchSelection === null ? null
             : app(DevelopmentInstanceBranchAdmission::class)->prepare($project, $data->name, $data->branchSelection, $caller);
 
-        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed, $taskOwner, $agentFiles, $proofPlace): Operation {
+        $record = fn (): Operation => DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed, $taskOwner, $agentFiles, $proofPlace, $connLaunchId): Operation {
             $project = Project::query()->findOrFail($data->projectId);
             $this->admission->assertSourceAccess($project);
             $node = Node::query()->findOrFail($data->nodeId);
@@ -161,6 +166,7 @@ final readonly class StartDevelopmentInstanceCreateAction
 
             $input = [
                 'instance_id' => $instance->id, 'project_id' => $project->id, 'created' => $created,
+                ...($connLaunchId === null ? [] : ['conn_launch_operation_id' => $connLaunchId]),
                 'name' => $name, 'name_converted_from' => DefaultInstanceName::convertedFrom($project, $data->name),
                 'root' => $root, 'domain' => $data->domain, 'branch_override' => $data->branch,
                 'checkout' => $instance->checkout_path, 'prepare_id' => $instance->source_prepare_id,
@@ -267,6 +273,8 @@ final readonly class StartDevelopmentInstanceCreateAction
 
             return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
+
+        return $within === null ? $record() : $within($record);
     }
 
     /**

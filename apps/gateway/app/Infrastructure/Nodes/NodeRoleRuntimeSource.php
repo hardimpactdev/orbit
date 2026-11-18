@@ -35,6 +35,8 @@ use InvalidArgumentException;
 /** Existing role credential types, rendered only inside the approved private callback. */
 final readonly class NodeRoleRuntimeSource implements OperationSecretSource
 {
+    public const string MetricsPasswordPath = '/etc/orbit/metrics/grafana/admin-password';
+
     public function __construct(private SettingRepository $settings, private MetricsConfigurationRenderer $metrics,
         private ServiceMetricsProjection $services, private WebSocketEnvironmentRenderer $websocket,
         private DockerProcessRenderer $docker, private ProcessTargetResolver $targets, private DirectOperationPrivateBindings $bindings) {}
@@ -109,23 +111,7 @@ final readonly class NodeRoleRuntimeSource implements OperationSecretSource
             if (! is_string($password) || $password === '') {
                 $this->refuse();
             }
-            $bundle = $this->metrics->render(array_values(array_map(static fn (mixed $target): array => [
-                'name' => ValidatedData::string(ValidatedData::object($target)['name']),
-                'address' => ValidatedData::string(ValidatedData::object($target)['address']),
-            ], is_array($runtime['targets'] ?? null) ? $runtime['targets'] : [])), $password, $this->services->forFleet($node));
-            $files = [];
-            foreach ($bundle->files as $file) {
-                $input = $file->contents->input();
-                try {
-                    $contents = stream_get_contents($input->stream());
-                    if ($contents === false) {
-                        $this->refuse();
-                    }
-                    $files[$file->path] = $contents;
-                } finally {
-                    $input->close();
-                }
-            }
+            $files = [...$this->metricsFiles($node, $runtime), self::MetricsPasswordPath => $password];
 
             return new OperationSecretValue(['configuration' => $files, 'password' => $password], [$password]);
         }
@@ -152,6 +138,20 @@ final readonly class NodeRoleRuntimeSource implements OperationSecretSource
 
         return new OperationSecretValue(['installation' => ['runtime' => 'docker', 'spec' => $installation['spec'],
             'definition' => $this->docker->containerInput($process, $this->targets->forInstallation($process))]]);
+    }
+
+    /**
+     * The public configuration consumed by both the Metrics plan and the private runtime renderer.
+     *
+     * @param  array<string,mixed>  $runtime
+     * @return array<string,string>
+     */
+    public function metricsFiles(Node $node, array $runtime): array
+    {
+        return $this->metrics->publicFiles(array_values(array_map(static fn (mixed $target): array => [
+            'name' => ValidatedData::string(ValidatedData::object($target)['name']),
+            'address' => ValidatedData::string(ValidatedData::object($target)['address']),
+        ], is_array($runtime['targets'] ?? null) ? $runtime['targets'] : [])), $this->services->forFleet($node));
     }
 
     /** @return array<string,mixed> */

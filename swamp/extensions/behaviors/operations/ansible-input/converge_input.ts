@@ -28,7 +28,7 @@ async function sha256(text: string | Uint8Array): Promise<string> {
 
 /** The files and folders the phases run beside their written input: the Ansible bundle, which also builds each role's variables, the
  * Tool helper and the shipped Tool files it imports. The input behaviour is bundled on a worker; its output is in the written files. */
-export function phaseCode(builder: string, toolHelper: string): string[] {
+export function phaseCode(builder: string, toolHelper: string): [string, string, string] {
     return [builder.slice(0, builder.lastIndexOf("/")), toolHelper, `${toolHelper.slice(0, toolHelper.lastIndexOf("/ansible-input/"))}/tools`];
 }
 
@@ -64,7 +64,7 @@ export function admissionValues(intent: unknown): string[] {
 
 /**
  * What the phases read (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): every file written for them, that is
- * the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID, the versions of its
+ * the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID, its run folder, the versions of its
  * certificate leaves and the admission time of its Instance bridge) replaced by fixed marks, and their code.
  */
 export async function readDigest(folder: string, operationId: number, code: string[]): Promise<string> {
@@ -78,7 +78,7 @@ export async function readDigest(folder: string, operationId: number, code: stri
             if (entry.isDirectory) await walk(`${path}/${entry.name}`);
             else if (entry.isFile && entry.name !== "intent.json" && entry.name !== "digests.json") {
                 const text = own.reduce((read, value) => read.replaceAll(value, "admitted-#"),
-                    (await Deno.readTextFile(`${path}/${entry.name}`)).replace(mark, "operation-#"));
+                    (await Deno.readTextFile(`${path}/${entry.name}`)).replaceAll(folder, "orbit-ansible-#").replace(mark, "operation-#"));
                 rows.push(`${path.slice(folder.length)}/${entry.name}\0${await sha256(text)}`);
             }
         }

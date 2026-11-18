@@ -1,4 +1,6 @@
 import { z } from "npm:zod@4.4.3";
+import { copy } from "jsr:@std/fs@1.0.19/copy";
+import { InventoryProfile, InventoryReceiptInput, inventoryReceipt } from "../node-base-inventory/receipt.ts";
 import * as ci from "../node/ci_host_spec.ts";
 import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
 import { roleAddPlans } from "./role_add_plans.ts";
@@ -20,7 +22,23 @@ const Output = z.object({
     collections: z.string(),
 });
 // The phases whose digest the Node records, which the workflow skips (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change).
-const Phases = z.object({ ready: z.literal(true), unchanged: z.array(z.enum(["agent", "software", "roles", "tools", "network"])) });
+const InventoryTarget = z.object({
+    name: z.literal("target"), node_id: z.number().int().positive(), host: z.union([z.ipv4(), z.ipv6()]),
+    user: z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/), port: z.literal(22),
+    host_keys: z.array(z.string().regex(/^ssh-ed25519 [A-Za-z0-9+/]+={0,2}$/)).min(1).max(2),
+}).strict();
+const InventoryAdmission = z.object({
+    node_id: z.number().int().positive(), operation_id: z.number().int().positive(), profile: InventoryProfile,
+    target: InventoryTarget, expected: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
+    websocket_port: z.number().int().min(0).max(65535),
+    backing_containers: z.array(z.string().regex(/^orbit-process-[1-9][0-9]*-[a-z0-9-]+$/)).max(64),
+}).strict();
+const InventorySourceArgs = z.object({
+    node_id: z.number().int().positive(), operation_id: z.number().int().positive(), admission: z.string().max(16384),
+    reference: z.string(),
+}).strict();
+const InventorySource = z.object({ source: z.string(), target: InventoryTarget, profile: InventoryProfile });
+const Phases = z.object({ ready: z.literal(true), assets: z.string().startsWith("/"), unchanged: z.array(z.enum(["agent", "software", "roles", "tools", "network"])) });
 // A role Operation's phases: `stdout` carries the digests to the Gateway, which reads only a step's stdout.
 const RolePhases = z.object({ ready: z.literal(true), unchanged: z.array(z.enum(roleSkippable)), stdout: z.string() });
 const ConvergeInputArgs = ReportInput.extend({ operation_id: z.number().int().positive() }).strict();
@@ -32,14 +50,39 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.16.3",
+    version: "2026.11.18.1",
     resources: {
+        inventorySource: { schema: InventorySource, lifetime: "1d", garbageCollection: 5 },
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
         phases: { schema: Phases, lifetime: "1d", garbageCollection: 10 },
         rolePhases: { schema: RolePhases, lifetime: "1d", garbageCollection: 10 },
         output: { schema: z.object({ stdout: z.string() }), lifetime: "1d", garbageCollection: 10 },
     },
     methods: {
+        baseInventorySource: {
+            description: "Check the vault-bound admission and load the only collector",
+            arguments: InventorySourceArgs,
+            async execute(raw: z.infer<typeof InventorySourceArgs>, ctx: Context) {
+                const admission = InventoryAdmission.parse(JSON.parse(raw.admission));
+                if (raw.reference !== `node-base-inventory-${raw.operation_id}-verifier` || admission.operation_id !== raw.operation_id ||
+                    admission.node_id !== raw.node_id || admission.target.node_id !== raw.node_id) {
+                    throw new Error("node.base_inventory_invalid_binding");
+                }
+                const source = await Deno.readTextFile(ctx.extensionFile("extensions/behaviors/operations/node-base-inventory/collect.py"));
+                const result = { source, target: admission.target, profile: admission.profile };
+                await ctx.writeResource("inventorySource", "inventory-source", result);
+                return result;
+            },
+        },
+        baseInventoryReceipt: {
+            description: "Store the fixed Node base inventory shape",
+            arguments: InventoryReceiptInput,
+            async execute(raw: z.infer<typeof InventoryReceiptInput>, ctx: Context) {
+                const result = inventoryReceipt(raw);
+                await ctx.writeResource("output", "output", result);
+                return result;
+            },
+        },
         fleetRebootResult: {
             description: "Record unreachable or cut fleet reboot phases from private Ansible callbacks on the controller",
             arguments: FleetRebootResultInput,
@@ -93,8 +136,19 @@ export const behavior = {
                 const { folder, operation_id } = ConvergeInputArgs.parse(raw);
                 const builder = ctx.extensionFile('ansible/build_vars.py');
                 const helper = ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts');
-                const phases = await convergeInput(folder, operation_id, builder, helper, phaseCode(builder, helper));
-                const value = Phases.parse({ ready: true, unchanged: phases.unchanged });
+                const code = phaseCode(builder, helper);
+                const [ansible, , tools] = code;
+                const assets = `${folder}/assets`;
+                const operations = `${assets}/operations`;
+                const stagedHelper = `${operations}/ansible-input/converge_tool.ts`;
+                const phases = await convergeInput(folder, operation_id, builder, stagedHelper, code);
+                // Each dispatch has its own worker cache. Later shell steps use the run's
+                // files on the Swamp Node even if this worker drains and clears its cache.
+                await Deno.mkdir(`${operations}/ansible-input`, { recursive: true, mode: 0o700 });
+                await copy(ansible, `${assets}/ansible`);
+                await copy(helper, stagedHelper);
+                await copy(tools, `${operations}/tools`);
+                const value = Phases.parse({ ready: true, assets: `${assets}/ansible`, unchanged: phases.unchanged });
                 await ctx.writeResource("phases", "phases", value);
                 return value;
             },

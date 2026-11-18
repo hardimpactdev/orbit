@@ -21,7 +21,7 @@ use Psr\Log\NullLogger;
  * with `hz 100`, as the bound needs (docs/reference/executor.md#the-listener-and-the-hand-off). These measure
  * timing and expiry, which no fake can, so they are in the `privileged` group, which the Gateway suite excludes:
  * `vendor/bin/pest --group privileged tests/Feature/Infrastructure/Executor/ExecutorResultWaitTest.php` on a host with
- * `valkey-server`. They skip there when the binary is missing. CI does not run them.
+ * `valkey-server`. They skip there when the binary is missing. The Gateway real database clients CI lane installs it and fails on skips.
  * The waiter's status and reason mapping runs against an in-memory queue on a fake clock, in CI too.
  */
 
@@ -129,9 +129,9 @@ it('maps each result status and its reason, and skips lines that are no result',
     'refused' => ['{"status":"refused","reason":"bad_signature","node_clock_ms":1}', ExecutorWaitStatus::Refused, 'bad_signature'],
 ]);
 
-it('notes the accepted line, prefers a waiting result, and times out at its bound', function (): void {
+it('notes the accepted line, reads queued lines in order, and times out at its bound', function (): void {
     $queue = executorFakeQueue();
-    $queue->push(ExecutorResults::acceptedKey(5), '{"status":"accepted"}', 60);
+    $queue->push(ExecutorResults::resultKey(5), '{"status":"accepted"}', 60);
 
     $timeout = executorFakeWait($queue)->wait(5, 0.5);
 
@@ -140,13 +140,14 @@ it('notes the accepted line, prefers a waiting result, and times out at its boun
         ->and($timeout->elapsedMs)->toBe(500.0)
         ->and($queue->timeouts)->toBe([0.5, 0.49]);
 
-    $queue->push(ExecutorResults::acceptedKey(5), '{"status":"accepted"}', 60);
+    $queue->push(ExecutorResults::resultKey(5), '{"status":"accepted"}', 60);
     $queue->push(ExecutorResults::resultKey(5), '{"status":"done"}', 60);
 
     $done = executorFakeWait($queue)->wait(5, 0.5);
 
-    expect($done->status)->toBe(ExecutorWaitStatus::Done)->and($done->acceptedMs)->toBe($done->elapsedMs)
-        ->and($queue->lists[ExecutorResults::acceptedKey(5)])->toHaveCount(1);
+    expect($done->status)->toBe(ExecutorWaitStatus::Done)->and($done->acceptedMs)->toBe(10.0)
+        ->and($done->elapsedMs)->toBe(20.0)
+        ->and($queue->lists[ExecutorResults::resultKey(5)])->toBe([]);
 });
 
 describe('against a real valkey-server', function (): void {
@@ -170,19 +171,19 @@ describe('against a real valkey-server', function (): void {
         $this->wait = new ExecutorResultWait($queue, static fn (): float => microtime(true));
     });
 
-    it('pushes both keys with a 60 s expiry and hands a result over at once', function (): void {
+    it('pushes both lines with a 60 s expiry and hands a result over at once', function (): void {
         $id = $this->operation->id;
         $done = ['operation' => (string) $id, 'status' => 'done', 'repeat' => false];
         executorHandOff($this, ['status' => 'accepted']);
         executorHandOff($this, $done);
 
-        expect(($this->redis)()->command('ttl', [ExecutorResults::resultKey($id)]))->toBeGreaterThan(55)->toBeLessThanOrEqual(60)
-            ->and(($this->redis)()->command('ttl', [ExecutorResults::acceptedKey($id)]))->toBeGreaterThan(55)->toBeLessThanOrEqual(60);
+        expect(($this->redis)()->command('ttl', [ExecutorResults::resultKey($id)]))->toBeGreaterThan(55)->toBeLessThanOrEqual(60);
 
         $result = $this->wait->wait($id, 0.5);
 
         expect($result->status)->toBe(ExecutorWaitStatus::Done)
             ->and($result->line)->toBe($done)
+            ->and($result->acceptedMs)->not->toBeNull()
             ->and($result->elapsedMs)->toBeLessThan(50.0);
     });
 

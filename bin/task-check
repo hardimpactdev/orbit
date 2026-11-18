@@ -465,7 +465,9 @@ def ci_plan(base, head):
     jobs = json.loads(output.strip().splitlines()[-1])['jobs']
     with tempfile.TemporaryDirectory(prefix='task-check-plan-') as scratch:
         path = Path(scratch) / 'plan.json'
-        code, output = run(['python3', 'bin/ci-units', 'plan', '--base', base, '--head', head, '--plan-json', str(path)])
+        venv = units.gate.default_tools() / units.gate.venv_name()
+        python = str(venv / 'bin/python3') if (venv / '.complete').is_file() else 'python3'
+        code, output = run([python, 'bin/ci-units', 'plan', '--base', base, '--head', head, '--plan-json', str(path)])
         if code:
             return None, None, output
         return jobs, json.loads(path.read_text()), ''

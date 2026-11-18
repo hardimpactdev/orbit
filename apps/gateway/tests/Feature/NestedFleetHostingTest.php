@@ -8,6 +8,7 @@ use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Schedules\RunScheduleAction;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\FactDoctor;
+use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
@@ -41,6 +42,7 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyStart;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -538,6 +540,42 @@ describe('the seed of the proof default on each Node that offers proof places', 
         $defaultNode->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
         expect(ciRunnerRuntime($defaultNode->refresh())['proof_seed']['present'])->toBeFalse();
     });
+
+    it('fingerprints the captured proof seed when only its sender changes', function (string $change): void {
+        $default = proofSeedDefault();
+        $sender = $default->node()->firstOrFail();
+        seedSwampNode();
+        $node = ciNode();
+        $runner = $node->roles()->sole();
+        $other = $node->roles()->create(['role' => RoleName::Database, 'status' => LifecycleStatus::Active]);
+        app(NodeRoleRuntimeInput::class)->prepare($node, $runner);
+        $node->refresh();
+        $inputs = app(ReleaseNodeInputs::class);
+        $seed = ciRunnerRuntime($node)['proof_seed'];
+        $before = $inputs->roles($node);
+
+        if ($change === 'default moved') {
+            $replacement = containerDefaultNode('next-proof-default', '10.44.0.35');
+            $runtime = $default->runtime()->firstOrFail();
+            $addresses = Ipv4Subnet::from((string) $replacement->instance_bridge)->usableAddresses();
+            $addresses->next();
+            $runtime->delete();
+            $default->update(['node_id' => $replacement->id]);
+            $default->runtime()->create([...$runtime->getAttributes(), 'node_id' => $replacement->id, 'bridge_address' => $addresses->current()]);
+            $sender = $replacement;
+        } else {
+            $sender->forceFill(['ssh_host_key' => 'rotated-proof-sender-key'])->saveQuietly();
+        }
+
+        $newSeed = ciRunnerRuntime($node)['proof_seed'];
+        $after = $inputs->roles($node);
+        expect($newSeed['sender']['node_id'])->toBe($sender->id)
+            ->and($newSeed['sender']['ssh']['target']['host_keys'])->toBe(['ssh-ed25519 '.$sender->ssh_host_key])
+            ->and($newSeed['sender'])->not->toBe($seed['sender'])
+            ->and(array_diff_key($newSeed, ['sender' => true]))->toBe(array_diff_key($seed, ['sender' => true]))
+            ->and($after[$runner->id])->not->toBe($before[$runner->id])
+            ->and($after[$other->id])->toBe($before[$other->id]);
+    })->with(['default moved', 'sender host key']);
 
     it('admits the seed port from the default\'s Node alone, in front of the WireGuard member trust, and removes both rules on a Node without places', function (): void {
         $default = proofSeedDefault();

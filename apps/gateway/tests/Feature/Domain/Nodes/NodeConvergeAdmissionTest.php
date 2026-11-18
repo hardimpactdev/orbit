@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Nodes\AdmitNodeEnrollmentOperationAction;
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
@@ -9,7 +10,9 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\ReleaseHistory;
+use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
@@ -22,6 +25,7 @@ use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeUpdatePolicy;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -29,6 +33,7 @@ use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\StartAdmittedSwampRun;
+use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -41,6 +46,7 @@ uses(LazilyRefreshDatabase::class);
 
 beforeEach(function (): void {
     Queue::fake();
+    config(['instances.fleet_marker' => '/fixture/no-nested-fleet']);
     Http::preventStrayRequests();
     Process::preventStrayProcesses();
     config(['swamp.run_token' => 'test-token', 'swamp.read_token' => 'read-token', 'swamp.address' => 'swamp.test', 'swamp.ca_path' => '/test/ca.pem']);
@@ -529,4 +535,71 @@ it('takes full from the role convergence request', function (): void {
     $this->postJson('/api/v1/nodes/'.$this->node->id.'/roles', ['role' => 'app-dev', 'converge_existing' => true, 'full' => true])->assertAccepted();
 
     expect(Operation::query()->sole()->input['native_role']['recorded_digests'])->toBe([]);
+});
+
+it('limits an automatic converge to active selected roles under the Node lock', function (): void {
+    $this->node->forceFill(['converge_digests' => ['roles' => str_repeat('1', 64)]])->save();
+    $role = $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+
+    $operation = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod'], release: true);
+
+    $capture = $operation->input['_converge'];
+    expect($operation->lock_key)->toBe('node:'.$this->node->id)
+        ->and($capture['intent']['release_roles_only'])->toBeTrue()
+        ->and($capture['intent']['recorded_digests'])->toBe([])
+        ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
+        ->and($capture['intent']['role_units'])->toBe([])
+        ->and($capture['intent']['tools'])->toBe([])
+        ->and($capture['intent']['network'])->toBeNull()
+        ->and(array_keys($capture['release_inputs']['roles']))->toBe([$role->id]);
+});
+
+it('serializes automatic role admission with participating work in both admission orders', function (string $kind): void {
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $converge = fn (): Operation => app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod'], release: true);
+    $admit = fn (array $ids): Operation => app(OperationStore::class)->create($kind, 'instance', 99, $this->control->id,
+        ['participant_node_ids' => $ids], 'test', null);
+    $participants = [$this->control->id, $this->node->id];
+
+    $busy = $admit($participants);
+    expect($converge)->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect(Operation::query()->count())->toBe(1);
+    $expired = ['swamp_run_id' => 'still-running', 'native_timeout' => [], 'native_cancel_requested_at' => now()->toISOString()];
+    $busy->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out', 'state' => $expired]);
+    expect($converge)->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    $busy->update(['state' => [...$expired, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+
+    $scope = $converge();
+    expect(fn () => $admit($participants))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    expect($admit([$this->control->id])->status)->toBe(OperationStatus::Queued)
+        ->and(Operation::query()->count())->toBe(3);
+    $scope->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+    expect($admit($participants)->status)->toBe(OperationStatus::Queued);
+})->with(['instance.deploy', 'tasks.copy_turn']);
+
+it('keeps the release pending on a deferred T3 receipt and schedules a new role Operation after the retry interval', function (): void {
+    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host(), 'agent' => app(AgentDelivery::class)->pin($this->node)]])->save();
+    $operation = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod'], release: true);
+    $operation->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now(),
+        'result' => ['t3_restart_deferred' => ['orbit-instances/instance-7']]]);
+    $commit = str_repeat('a', 40);
+    config(['app.version' => $commit, 'orbit.gateway_checkout' => base_path()]);
+    $release = GatewayRelease::query()->create(['sha' => $commit, 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
+        'phases' => ['fleet' => ['status' => 'pending', 'nodes' => [$this->node->id => ['node_id' => $this->node->id,
+            'name' => $this->node->name, 'status' => 'running', 'role_operation_id' => $operation->id]]]]]);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(FleetReleaseLag::RetryAfterSeconds)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['status'])->toBe('pending')
+        ->and(Operation::query()->count())->toBe(1);
+    $this->travel(FleetReleaseLag::RetryAfterSeconds)->seconds();
+    expect($fleet->execute($release))->toBe(10);
+    $retry = Operation::query()->latest('id')->firstOrFail();
+    expect($retry->id)->not->toBe($operation->id)
+        ->and($retry->kind)->toBe('node.converge')
+        ->and($retry->input['_converge']['intent']['selected_roles'])->toBe(['app-prod']);
 });

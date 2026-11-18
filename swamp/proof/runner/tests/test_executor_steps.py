@@ -208,10 +208,11 @@ class ExecutorRoundTripTest(unittest.TestCase):
         self.assertEqual((summary['count'], summary['p50_ms'], summary['p95_ms'], summary['max_ms'], summary['wait_bound_ms']), (20, 14.0, 23.0, 23.0, 500))
         self.assertFalse([call for call in calls if call[1].startswith('sleep ')], 'the waiter waits, not the runner')
 
-    def test_a_round_trip_fails_on_a_timeout_a_repeat_another_record_a_second_run_or_a_missing_trip(self):
+    def test_a_round_trip_fails_on_missing_evidence_or_an_unexpected_run(self):
         trips = [self.trip('10', 4.0), self.trip('11', 5.0)]
         cases = [
             ([self.trip('10', 4.0, status='timeout', line=None, recorded=None), trips[1]], ran('10', '11'), None, 'waited timeout'),
+            ([self.trip('10', 4.0, accepted_ms=None), trips[1]], ran('10', '11'), None, 'completed without prior acceptance'),
             ([self.trip('10', 4.0, line=line('10', True), recorded=line('10', True)), trips[1]], ran('10', '11'), None, 'waited done'),
             ([self.trip('10', 4.0, recorded=None), trips[1]], ran('10', '11'), None, 'recorded None'),
             (trips, ran('10', '11', '11'), None, 'Operation 11 ran 2 times, not once'),
