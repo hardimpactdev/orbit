@@ -2886,3 +2886,16 @@ non_command_output:
   task: Install the pinned inner Incus packages
   field: vars.inner_debs
   reason: Builds package paths in the build container from the admitted recipe; does not parse command output.
+
+- file: conn-launch.yml
+  task: Validate the admitted launch target
+  field: ansible.builtin.assert.that[1]
+  reason: Validates the admitted Incus project.
+- file: conn-launch.yml
+  task: Validate the admitted launch target
+  field: ansible.builtin.assert.that[3]
+  reason: Validates the admitted Conn environment ID.
+- file: conn-launch.yml
+  task: Validate the admitted launch target
+  field: ansible.builtin.assert.that[4]
+  reason: Validates the admitted provider ID.

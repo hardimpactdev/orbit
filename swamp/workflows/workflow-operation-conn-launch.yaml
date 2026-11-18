@@ -67,7 +67,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: conn-launch-stage-stdin
+          behaviorName: ${{ "conn-launch-stage-stdin" }}
           methodName: exec
           globalArgs:
             name: conn-launch-stage-stdin
