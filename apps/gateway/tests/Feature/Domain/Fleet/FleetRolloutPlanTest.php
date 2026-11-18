@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\CliReleaseUnavailableReason;
@@ -16,6 +17,10 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Metrics\ExporterSelection;
 use App\Domain\Metrics\ExporterSelectionReason;
 use App\Domain\Metrics\MetricsExporterProjection;
@@ -26,12 +31,15 @@ use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
+use App\Domain\Projects\ProjectSourceReader;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Releases\ReleaseAlert;
 use App\Domain\Releases\ReleaseAlertNotifier;
 use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\StaticCliRelease;
@@ -39,9 +47,12 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\Cluster;
 use App\Models\GatewayRelease;
+use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\ProblemFingerprint;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -337,7 +348,6 @@ function copyRolloutHostTree(string $path): void
 
 it('requires host approval for a network child task change before fleet work or default refresh', function (?string $child): void {
     Queue::fake();
-    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     config(['instances.nested_fleet_refresh' => true]);
     $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
     copyRolloutHostTree($previous);
@@ -457,9 +467,87 @@ it('stops seed continuation when default refresh is turned off', function (): vo
         ->and($release->refresh()->phases['seed_publication'])->toBe(['status' => 'disabled', 'operation_ids' => [41]]);
 });
 
+it('admits every Node of a verified release at once at midday, then refreshes the defaults', function (): void {
+    Queue::fake();
+    // Midday in Amsterdam: the release fleet has no time window, so the database and app-prod Nodes go now too.
+    $this->travelTo(now('Europe/Amsterdam')->setTime(12, 30));
+    config(['instances.nested_fleet_refresh' => true]);
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app(GatewayServingHost::class)->remember($gateway);
+    config(['swamp.run_token' => 'test-token']);
+    file_put_contents($this->base.'/agent.json', json_encode(['commit' => RolloutCommit, 'version' => '1.2.3',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']]], JSON_THROW_ON_ERROR));
+    $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
+    app()->instance(AgentDelivery::class, $delivery);
+    // One nested-fleet default on the app-dev Node, which the release refresh deploys to the release commit.
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    $dev->update(['settings' => ['nested_fleet' => true]]);
+    // A nested-fleet host's role inputs read the machine-software recipe of the served release.
+    File::copyDirectory(base_path('resources/machine-software'), config('orbit.gateway_checkout').'/resources/machine-software');
+    app(AllocateInstanceBridgeAction::class)->execute($dev);
+    $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
+        'default_branch' => 'main', 'root' => '.']);
+    $project->forceFill(['nested_fleet' => true, 'repository_identity' => GitRepositoryIdentity::derive($project->repository_url)])->save();
+    $default = Instance::query()->create(['project_id' => $project->id, 'node_id' => $dev->id, 'name' => 'default', 'checkout_path' => '/srv/tool/default',
+        'status' => InstanceState::Active]);
+    InstanceRuntime::query()->create(['instance_id' => $default->id, 'node_id' => $dev->id, 'incus_project' => InstancePlacement::NestedProject,
+        'container_name' => 'instance-'.$default->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
+        'power_state' => InstanceRuntimePowerState::Stopped, 'idmap_size' => 101000000]);
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(['head' => RolloutCommit, 'files' => [
+        '.env.example' => ['mode' => '100644', 'object' => str_repeat('d', 40), 'content' => "APP_NAME=deployed\n"], 'composer.json' => null, 'artisan' => null]]);
+    $inputs = app(ReleaseNodeInputs::class);
+    foreach (Node::query()->whereKey([...array_values($this->nodes), $gateway->id])->get() as $node) {
+        $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
+            'host' => $inputs->host(), 'agent' => $node->id === $this->nodes['dev'] ? $delivery->pin($node) : 'old-agent',
+            'roles' => array_map(fn (array $role): string => $role['digest'], $inputs->roles($node)),
+        ]])->saveQuietly();
+    }
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    foreach (['db', 'prod'] as $name) {
+        expect($fleet->execute($release))->toBe(10);
+        $operation = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
+        expect(array_column($operation->input['nodes'], 'node_id'))->toBe([$this->nodes[$name]])
+            ->and($operation->input['nodes'][0])->not->toHaveKey('daytime')
+            ->and($release->refresh()->phases['fleet']['nodes'][$this->nodes[$name]]['status'])->toBe('running');
+        $node = Node::query()->findOrFail($this->nodes[$name]);
+        $operation->forceFill(['status' => 'succeeded', 'finished_at' => now(), 'result' => ['nodes' => [[
+            'node_id' => $node->id, 'outcome' => 'converged', 'error_code' => null, 'cli_version' => null,
+            'agent_version' => $delivery->reportedVersion($node), 'step' => 'verify', 'ok' => true]]]])->save();
+    }
+    $gatewayRun = $fleet->execute($release);
+    if ($gatewayRun === 10) {
+        // The serving Gateway goes last with its own observer.
+        $operation = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
+        $operation->forceFill(['status' => 'succeeded', 'finished_at' => now(), 'result' => ['nodes' => [[
+            'node_id' => $gateway->id, 'outcome' => 'converged', 'error_code' => null, 'cli_version' => null,
+            'agent_version' => $delivery->reportedVersion($gateway), 'step' => 'verify', 'ok' => true]]]])->save();
+        $gatewayRun = $fleet->execute($release);
+    }
+
+    // The pass that makes the fleet current admits the default's deploy, pinned to the release commit, in the same tick.
+    $deploy = Operation::query()->where('kind', 'instance.deploy')->sole();
+    expect($gatewayRun)->toBe(60)
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('current')
+        ->and($release->phases['default_refresh'])->toBe(['status' => 'pending', 'defaults' => [$default->id => ['status' => 'pending', 'operation_id' => $deploy->id]]])
+        ->and($deploy->target_id)->toBe($default->id)
+        ->and($deploy->triggered_by)->toBe(NestedFleetRefresh::Trigger)
+        ->and($deploy->input['commit'])->toBe(RolloutCommit);
+});
+
+it('continues a release whose fleet phase an older Gateway left deferred', function (): void {
+    // Drop with the deferred status after one release.
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'deferred', 'nodes' => []]]]);
+
+    expect(app(ContinueReleaseFleetAction::class)->pending(RolloutCommit)?->id)->toBe($release->id);
+});
+
 it('detects membership, agent pin drift and late CLI publication on the daily pass after fleet current', function (string $change): void {
     Queue::fake();
-    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
     $gateway = SwampNodeFixture::ensure();
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     app(GatewayServingHost::class)->remember($gateway);

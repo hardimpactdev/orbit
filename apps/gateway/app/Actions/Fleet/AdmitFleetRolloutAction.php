@@ -9,8 +9,6 @@ use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Gateway\GatewayServingHost;
-use App\Domain\Instances\InstanceFleetGateway;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
@@ -87,8 +85,7 @@ final readonly class AdmitFleetRolloutAction
                 $cli['skip_reason'] = 'cli_not_required';
             }
             $nodes[] = ['node_id' => $node->id, ...$cli,
-                'agent' => ['url' => $agent['url'], 'sha256' => $agent['sha256'], 'version' => $this->delivery->reportedVersion($node)],
-                'daytime' => self::daytime($node)];
+                'agent' => ['url' => $agent['url'], 'sha256' => $agent['sha256'], 'version' => $this->delivery->reportedVersion($node)]];
         }
 
         // Its steps run on the Swamp Node and read and record this intent, so that Node owns it. One rollout runs at a time.
@@ -104,11 +101,5 @@ final readonly class AdmitFleetRolloutAction
     {
         return Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
             ->where(fn ($query) => $query->where('kind', 'fleet.rollout')->orWhere('input->_converge->intent->release_roles_only', true))->exists();
-    }
-
-    public static function daytime(Node $node): bool
-    {
-        return InstanceFleetGateway::holds() || ($node->roles->isNotEmpty()
-            && $node->roles->every(static fn ($role): bool => $role->role === RoleName::AppDev));
     }
 }
