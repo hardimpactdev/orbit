@@ -8,8 +8,8 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The sections of a profile's settings document. Each section has its own version, so two devices that
- * change different sections never conflict. A section is `workspaces`, `appearance`, `attachedThreads`, or
- * `devices.<type>`, where `<type>` names a kind of device such as `desktop` or `iphone`.
+ * change different sections never conflict. A section is `workspaces`, `appearance`, `attachedThreads`,
+ * `sidebarHiddenThreads`, or `devices.<type>`, where `<type>` names a kind of device such as `desktop` or `iphone`.
  */
 final readonly class ConnProfileSections
 {
@@ -20,8 +20,14 @@ final readonly class ConnProfileSections
     /** The threads the profile has attached: the servers its devices connect to ({@see ConnAttachedThreads}). */
     public const string AttachedThreads = 'attachedThreads';
 
+    /**
+     * The threads the profile's sidebars hide. A display choice only: it takes the form and limits of `attachedThreads`, but
+     * it never attaches a thread, connects a server, or opens access, so no environment is looked up for it.
+     */
+    public const string SidebarHiddenThreads = 'sidebarHiddenThreads';
+
     /** The sections that are one name each; the device sections are `devices.<type>`. */
-    public const array Named = [self::Workspaces, self::Appearance, self::AttachedThreads];
+    public const array Named = [self::Workspaces, self::Appearance, self::AttachedThreads, self::SidebarHiddenThreads];
 
     private const string DevicePrefix = 'devices.';
 
@@ -39,6 +45,9 @@ final readonly class ConnProfileSections
     public const int MaxAttachedThreadsBytes = 64 * 1024;
 
     public const int MaxDocumentBytes = 4 * 1024 * 1024;
+
+    /** What a null `sidebarHiddenThreads` stores: an empty list, so a read confirms that the last hidden thread was shown. */
+    public const array EmptySidebarHiddenThreads = ['schema' => 1, 'threads' => []];
 
     public static function device(string $type): string
     {
@@ -63,8 +72,9 @@ final readonly class ConnProfileSections
     }
 
     /**
-     * The document with one section replaced. A null value removes any section but `workspaces`, and
-     * `devices` goes away with its last device. `workspaces` always stays a list.
+     * The document with one section replaced. A null value removes any section but `workspaces` and
+     * `sidebarHiddenThreads`, which stores an empty list, and `devices` goes away with its last device.
+     * `workspaces` always stays a list.
      *
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
@@ -72,6 +82,10 @@ final readonly class ConnProfileSections
     public static function with(array $settings, string $section, mixed $value): array
     {
         $type = self::deviceType($section);
+
+        if ($section === self::SidebarHiddenThreads && $value === null) {
+            $value = self::EmptySidebarHiddenThreads;
+        }
 
         if ($type === null) {
             if ($value === null) {

@@ -15,8 +15,9 @@ use Orbit\Extensions\Conn\Domain\ConnProfileSections;
  *
  *     {"sections": {"appearance": {"version": 3, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}
  *
- * A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`. A null value removes any
- * section but `workspaces`; an empty string is refused, so a client bug cannot clear a section. A section with
+ * A section is `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads`, or `devices.<type>`. A null
+ * value removes any section but `workspaces` and `sidebarHiddenThreads`, which it empties; an empty string is refused,
+ * so a client bug cannot clear a section. A section with
  * no recorded version, including one written before sections had versions, is at version 0. The rules
  * of each section are in {@see ConnProfileSettingsRules}.
  *
@@ -112,7 +113,7 @@ final class PatchConnProfileSettingsRequest extends FormRequest
     }
 
     /**
-     * The sections of the request by flat name, as `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`, with
+     * The sections of the request by flat name, as `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads`, or `devices.<type>`, with
      * the validated change of each. Names that are not sections are left out.
      *
      * @return array<string, array<mixed>>
@@ -188,7 +189,7 @@ final class PatchConnProfileSettingsRequest extends FormRequest
         }
 
         if ($unknown !== []) {
-            $fail('Unknown section: '.implode(', ', $unknown).'. A section is workspaces, appearance, attachedThreads, or devices.<type>.');
+            $fail('Unknown section: '.implode(', ', $unknown).'. A section is workspaces, appearance, attachedThreads, sidebarHiddenThreads, or devices.<type>.');
         }
     }
 }
