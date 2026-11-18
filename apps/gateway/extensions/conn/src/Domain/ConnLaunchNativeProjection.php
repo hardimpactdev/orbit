@@ -35,9 +35,10 @@ final readonly class ConnLaunchNativeProjection implements DirectOperationProjec
         $intent = ValidatedData::object($operation->input['intent']);
         $node = Node::query()->findOrFail($operation->node_id);
         $intent['ssh_execution'] = $this->ssh->forNode($node);
+        // Swamp resolves the staging connection before it evaluates the step's dispatch guard.
+        $intent['staging_ssh'] = $this->ssh->forNode(SwampNode::node());
         $secrets = [];
         if ($operation->kind === ConnLaunchDispatchSource::Kind) {
-            $intent['staging_ssh'] = $this->ssh->forNode(SwampNode::node());
             $launchId = ValidatedData::integer($operation->input['launch_operation_id']);
             $source = $this->source->resolve($operation, $launchId, '', ConnLaunchDispatchSource::Field);
             $value = json_encode($source->value, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
