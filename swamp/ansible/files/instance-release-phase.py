@@ -21,6 +21,8 @@ CONFIG = Path("/etc/orbit/production-release.json")
 LIB = Path("/usr/local/libexec")
 WORK = "/srv/workspace/current"
 PROJECT = "orbit-releases"
+RESPONSE_WAITS = Path("/var/lib/orbit/release-response-wait")
+RESPONSE_WAIT_SECONDS = 600
 SHA = re.compile(r"[0-9a-f]{40}")
 DOMAIN = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 UNIT = re.compile(r"orbit-(?:process-[1-9][0-9]*-[a-z0-9-]+[.]service|schedule-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}[.](?:service|timer))")
@@ -888,6 +890,32 @@ class Release:
         self.primitive("forget", sha[:12])
         self.record(sha).unlink(missing_ok=True)
 
+    def response_gate(self, machine):
+        """Stop a former live only after its queued response bytes drained, or the bound since the first check passed.
+
+        The workflow's bounded Ansible wait records the outcome. Without it, as in recovery, each retry probes once."""
+        record = RESPONSE_WAITS / machine
+        words = record.read_text().split() if record.exists() else []
+        if words[:1] == [str(self.operation)] and words[1:] in (["drained"], ["timeout"]):
+            return
+        probe = self.guest(machine, "ss", "-tanH", "( sport = :8080 )", check=False)
+        if probe.returncode == 0:
+            queued = [line for line in probe.stdout.splitlines()
+                      if len(line.split()) > 2 and line.split()[0] not in ("LISTEN", "TIME-WAIT") and int(line.split()[2]) > 0]
+            drained = not queued
+        else:
+            # A failed probe counts as drained only for a stopped or missing container.
+            item = self.ctl["instance"](machine)
+            drained = item is None or item["status"] != "Running"
+        first = self.state.setdefault("response_wait_since", int(time.time()))
+        self.persist(response_wait_since=first)
+        if not drained and time.time() - first < RESPONSE_WAIT_SECONDS:
+            raise Refusal(f"deployment.response_wait: {machine} still has queued response bytes; retry to keep waiting")
+        if not drained:
+            print(f"deployment.response_wait_timeout: {machine} still had queued response bytes; it stops now", file=sys.stderr)
+        RESPONSE_WAITS.mkdir(mode=0o700, parents=True, exist_ok=True)
+        atomic(record, f"{self.operation} {'drained' if drained else 'timeout'}\n")
+
     @staticmethod
     def parked(record):
         return record["status"] == "Stopped" and record["config"].get("boot.autostart") == "false"
@@ -917,6 +945,8 @@ class Release:
                 if not self.state.get("quiesced_previous"):
                     # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
                     self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
+                    self.persist(quiesced_previous=True)
+                self.response_gate(self.container(previous))
                 self.primitive("retire", previous[:12], self.operation)
             self.persist(parked_previous=True)
         if old and old not in (self.sha, previous):

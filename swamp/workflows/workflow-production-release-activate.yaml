@@ -1,4 +1,4 @@
-# orbit-gateway-recovery-protocol: 3
+# orbit-gateway-recovery-protocol: 4
 id: 653c7a78-56d3-49af-89fe-27c72b11c662
 name: production-release-activate
 autoContinue: false
@@ -178,7 +178,8 @@ jobs:
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
   # The former live's web server stopped. Its kernel can still hold response bytes for slow clients, and a container
-  # stop would drop them. Ansible's own retries (600, 1 second apart) wait under `timeout 660`; a reached bound only logs.
+  # stop would drop them. Ansible's own retries (600, 1 second apart) wait under `timeout 660` and record the outcome;
+  # retire refuses to stop the former live without that record, and a reached bound only logs.
   - name: Write the response wait input
     labels: {role: swamp}
     writes: true
@@ -191,7 +192,7 @@ jobs:
       behaviorName: '${{ "ansible-input" }}'
       methodName: write
       inputs:
-        intent: '${{ {"ssh_execution": inputs.intent.ssh, "container": steps["Quiesce the previous live"].outputs.stdout.trim()} }}'
+        intent: '${{ {"ssh_execution": inputs.intent.ssh, "container": steps["Quiesce the previous live"].outputs.stdout.trim(), "operation": inputs.operation_id} }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
   - name: Wait for queued responses
     labels: {role: swamp}

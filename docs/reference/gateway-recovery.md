@@ -127,7 +127,7 @@ The Gateway expects its managed Horizon and scheduler Processes to be named `hor
 7. Release the next forward commit. Check that the former live stops as old after HTTP and Horizon drain, and that preparation returns. Until then the Gateway has no old to roll back to.
 8. Converge the Gateway role to retire host PHP-FPM. Restore the previous automation setting.
 
-The installed phase dispatcher accepts commits that carry recovery protocol 3 or later. Protocol 3 is the first that keeps a stopped old and rolls back through the journal. A dispatcher from before it strands the stopped old and any interrupted handover. Converge the Gateway's container helpers first, then release.
+The installed phase dispatcher accepts commits that carry recovery protocol 4 or later. Protocol 4 keeps a stopped old, journals a rollback before old starts and stops a former live only after the response wait. A dispatcher from before it strands the stopped old and any interrupted handover. Converge the Gateway's container helpers first, then release.
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
@@ -135,28 +135,29 @@ An established Gateway has three containers: a stopped preparation container, a 
 
 Orbit finishes an interrupted handover before it builds, and refuses a build while old runs.
 
-A recorded old or pending release whose container is gone is forgotten instead of blocking the release. When old is gone, the pending release becomes old. A forward build recreates a missing preparation container first. It updates preparation in place and seals it. Then it stops preparation, renames it to `gateway-<id>`, adds the read-only boot mounts and starts it as the candidate. A candidate that fails before the switch returns to the preparation slot. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
+A recorded old whose container is gone is forgotten instead of blocking the release. A forward build recreates a missing preparation container first. It updates preparation in place and seals it. Then it stops preparation, renames it to `gateway-<id>`, adds the read-only boot mounts and starts it as the candidate. A candidate that fails before the switch returns to the preparation slot. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
 
 The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal.
 
-Retire runs in this order, with at most three containers at each step:
+Retire is one ordered list of steps. Each checks state, then acts or skips, so a release, a native or console rollback and `--recover` replay it the same way, with at most three containers at each step:
 
-1. It checks the new live through the public name and records the result in the inventory's `verified` list. A successful public check outside a handover records it too.
-2. If the new live is verified, it deletes the earlier old. Only a verified former live replaces it.
-3. An unverified former live is deleted after its drain. The earlier old then stays.
-4. It waits for the former live's HTTP requests and Horizon jobs and disables its Horizon and scheduler units.
-5. A separate workflow step waits until no web connection in the former live still has queued send bytes. Ansible checks every second, up to 600 times. A reached bound is logged and retire continues.
-6. Retire then stops the former live with `boot.autostart=false`.
+1. It starts Horizon on the new live. It checks the new live through the public name and records the result in the inventory's `verified` list.
+2. It moves the scheduler and the background units. It waits for the former live's HTTP requests and Horizon jobs, then disables its Horizon and scheduler units.
+3. A separate workflow step waits until no connected or closing socket in the former live has queued send bytes. Ansible checks every second, up to 600 times. It records `drained` or `timeout`.
+4. Without that record, retire probes once per retry, as in console rollback and `--recover`. The bound counts from the first probe.
+5. It stops the former live with `boot.autostart=false`.
+6. old becomes the most recent verified former live, else none. Every other stopped release is deleted.
 
 Then preparation returns:
 
-1. It recreates preparation from a snapshot of the new live, stopped, without the live address reservation, boot mounts or enabled units.
-2. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
-3. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
+1. It rebuilds preparation from a snapshot of the release that serves. Preparation stays stopped, without the live address reservation, boot mounts or enabled units.
+2. A preparer cloned from another release is replaced.
+3. Preparation is a ZFS clone; nothing is copied. Incus forgets the seed snapshot. Then `zfs promote` makes preparation the origin of live.
+4. It destroys hidden `deleted-*` release snapshots that no clone needs. A deleted old frees its disk.
 
 The seed refuses a pool whose `zfs.clone_copy` is not `true`, because Incus would then copy files. It refuses to promote while a snapshot that Incus still records would move. It refuses a fourth Gateway container. Until its cleanup and promotion finish, the preparer is marked unfinished: no release wakes it, and the next build repeats the seed.
 
-If the new live fails its public check, retire keeps every earlier stopped release and the former live when it was verified. The inventory records the older one as `pending`; it holds the preparation slot. The release fails. Roll back to old, or fix the cause and run `--recover`, which verifies live, keeps one stopped release and recreates preparation. The next build does the same before it starts. It also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
+If the new live fails its public check, the release fails after retire. Roll back to old, or deploy a corrective commit. Retire also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
 
 If the selected Horizon unit cannot start, inspect its journal in the selected container. Orbit keeps the outgoing workers and the handover journal. Repair the reported dependency, configuration or service in place and rerun `--recover`. For an emergency code patch, use a temporary systemd override on the affected Horizon unit to mount the corrected file read-only from a writable path in that container. Commit the same patch and deploy the forward release after the journal clears. The correction then lives in the sealed release. The temporary override stays in the stopped old until the next release replaces it.
 

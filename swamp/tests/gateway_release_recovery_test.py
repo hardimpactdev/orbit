@@ -36,9 +36,16 @@ elif action in ("retire", "resume") and (state / key).exists():
     event(("stop " if action == "retire" else "start ") + key)
     if os.environ.get("FIXTURE_INTERRUPT") == "after " + key + (" stop" if action == "retire" else " start"):
         os.killpg(os.getpgrp(), 9)
-elif action == "seed" and not (state / "prep").exists():
-    (state / "prep").write_text("Stopped")
-    event("seed prep")
+elif action == "seed":
+    # Preparation is always a clone of the current live; one cloned from another release is replaced.
+    origin = state / "prep-from"
+    if (state / "prep").exists() and origin.exists() and origin.read_text() != sys.argv[3]:
+        (state / "prep").unlink()
+        event("delete prep")
+    if not (state / "prep").exists():
+        (state / "prep").write_text("Stopped")
+        origin.write_text(sys.argv[3])
+        event("seed prep")
 elif action == "demote":
     target = keys[sys.argv[4]]
     if (state / target).exists():
@@ -49,7 +56,7 @@ elif action == "demote":
 elif action == "rest" and (state / "prep").exists():
     (state / "prep").write_text("Stopped")
 """
-PROTOCOL = "# orbit-gateway-recovery-protocol: 3\n"
+PROTOCOL = "# orbit-gateway-recovery-protocol: 4\n"
 
 
 def stub(name, args):
@@ -103,6 +110,10 @@ def stub(name, args):
     elif name == "systemctl":
         unit = args[-1]
         active = state / f"{machine}-{unit}"
+        if action == "list-unit-files":
+            # systemd 259 exits 1 when no unit file matches; nothing here stays enabled after a drain.
+            event(f"systemctl list-unit-files {unit}")
+            return 1
         if action == "list-units" and "--state=active,activating,deactivating" in args:
             prefix = f"{machine}-"
             for service in sorted(state.glob(f"{prefix}*horizon.service")):
@@ -166,6 +177,17 @@ def stub(name, args):
                 if cached.exists():
                     (state / (machine + "-worker")).write_bytes(cached.read_bytes())
                 (state / (machine + "-orbit-gateway-web.service")).touch()
+            elif command[0] == "ss":
+                # Closing sockets of a former live that a slow reader still drains, one fewer per probe.
+                busy = state / f"busy-{machine}"
+                count = int(busy.read_text()) if busy.exists() else 0
+                print("LISTEN     0      4096   10.1.0.3:8080   0.0.0.0:*")
+                for index in range(count):
+                    print(f"FIN-WAIT-1 0      4096   10.1.0.3:8080   10.1.0.1:5{index}")
+                event(f"probe {machine} {count}")
+                if count:
+                    busy.write_text(str(count - 1))
+                return 0
             elif command[0] in ("systemctl", "/bin/sh", "bash"):
                 return subprocess.call(command, env=env)
             if any(arg.endswith("/bin/gateway-horizon-ready") for arg in command):
@@ -408,8 +430,8 @@ esac
         self.assertTrue(counts, "no container change was recorded")
         self.assertLessEqual(max(counts), 3, counts)
 
-    def inventory_is(self, live, old, pending=None, verified=()):
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": live, "old": old, "pending": pending,
+    def inventory_is(self, live, old, verified=()):
+        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": live, "old": old,
                                                                  "verified": sorted(verified), "host_retired": True})
 
     def assert_parked(self, key, sha):
@@ -441,7 +463,7 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assertLess(events.index("site container"), events.index("drain host"))
         self.assertLess(events.index("start " + self.candidate + " " + HORIZON), events.index("drain host"))
         self.assert_container_serves()
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version":2, "host_retired":True, "old":None, "pending":None,
+        self.assertEqual(json.loads(self.inventory.read_text()), {"version":2, "host_retired":True, "old":None,
                                                                   "verified":[self.sha], "live":self.sha})
         self.assertTrue((self.state / "prep").exists())
         self.assert_at_most_three()

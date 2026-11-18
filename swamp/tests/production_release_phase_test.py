@@ -185,7 +185,7 @@ class ProductionReleaseTest(unittest.TestCase):
     def test_the_earlier_rollback_survives_a_failed_stop_of_the_previous_live(self):
         self.r.link(NEXT)
         self.r.state["verified"] = True
-        with patch.object(self.r, "guest"), patch.object(self.r, "identity"), \
+        with patch.object(self.r, "guest"), patch.object(self.r, "identity"), patch.object(self.r, "response_gate"), \
                 patch.object(self.r, "primitive", side_effect=ValueError("release.container_not_stopped")), patch.object(self.r, "discard") as discard:
             with self.assertRaisesRegex(ValueError, "not_stopped"):
                 self.r.retire()
@@ -217,10 +217,43 @@ class ProductionReleaseTest(unittest.TestCase):
         self.assertTrue(self.r.state["quiesced_previous"])
         with patch.object(self.r, "guest") as guest, patch.object(self.r, "identity", return_value=running), \
                 patch.object(self.r, "primitive") as primitive, patch.object(self.r, "discard"), \
-                patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"):
+                patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), patch.object(self.r, "response_gate") as gate:
             self.r.retire()
         guest.assert_not_called()
+        gate.assert_called_once_with(self.r.container(CURRENT))
         primitive.assert_called_once_with("retire", CURRENT[:12], self.r.operation)
+
+    def test_recovery_retire_waits_for_queued_response_bytes_up_to_the_bound(self):
+        self.r.link(NEXT)
+        self.r.state.update(verified=True, quiesced_previous=True)
+        running = {"status": "Running", "config": {"boot.autostart": "false"}}
+        waits = self.r.root / "waits"
+        busy = CompletedProcess([], 0, stdout="LISTEN 0 4096 a:8080 *\nLAST-ACK 0 2048 a:8080 b:1\nTIME-WAIT 0 9 a:8080 b:2\n")
+        idle = CompletedProcess([], 0, stdout="LISTEN 0 4096 a:8080 *\nTIME-WAIT 0 9 a:8080 b:2\n")
+        with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "identity", return_value=running), \
+                patch.object(self.r, "discard"), patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), \
+                patch.object(self.r, "primitive") as primitive:
+            with patch.object(self.r, "guest", return_value=busy), self.assertRaisesRegex(phase.Refusal, "queued response bytes"):
+                self.r.retire()
+            primitive.assert_not_called()
+            # A retry after the bytes drained records the outcome and stops the container.
+            with patch.object(self.r, "guest", return_value=idle):
+                self.r.retire()
+            primitive.assert_called_once_with("retire", CURRENT[:12], self.r.operation)
+        self.assertEqual((waits / self.r.container(CURRENT)).read_text(), "300 drained\n")
+
+    def test_recovery_retire_stops_after_the_bound_with_bytes_still_queued(self):
+        self.r.link(NEXT)
+        self.r.state.update(verified=True, quiesced_previous=True, response_wait_since=1)
+        running = {"status": "Running", "config": {"boot.autostart": "false"}}
+        waits = self.r.root / "waits"
+        busy = CompletedProcess([], 0, stdout="FIN-WAIT-1 0 2048 a:8080 b:1\n")
+        with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "identity", return_value=running), \
+                patch.object(self.r, "discard"), patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), \
+                patch.object(self.r, "primitive") as primitive, patch.object(self.r, "guest", return_value=busy):
+            self.r.retire()
+        primitive.assert_called_once()
+        self.assertEqual((waits / self.r.container(CURRENT)).read_text(), "300 timeout\n")
 
     def test_rollback_cleanup_leaves_an_already_parked_old_alone(self):
         self.r.state.update(action="rollback", rollback_awake=True, sha=OLD)

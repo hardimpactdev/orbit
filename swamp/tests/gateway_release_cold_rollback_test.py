@@ -11,7 +11,10 @@ from gateway_release_recovery_test import HORIZON, GatewayReleaseFixture
 class GatewayColdRollback(GatewayReleaseFixture):
     def assert_rolled_back(self):
         self.inventory_is(self.old, self.sha, verified=(self.old, self.sha))
+        # Preparation is rebuilt from the release that serves now, never kept from the rolled-away live.
         self.assertTrue((self.state / "prep").exists())
+        self.assertEqual((self.state / "prep-from").read_text(), self.old[:12])
+        self.assertIn("delete prep", (self.state / "events").read_text())
         self.assert_at_most_three()
         self.assertEqual((self.state / "former").read_text(), "Running")
         self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
@@ -30,7 +33,8 @@ class GatewayColdRollback(GatewayReleaseFixture):
         rollback = events[events.rindex("start former"):]
         self.assertLess(rollback.index("fence gateway-" + self.old[:12]), rollback.index("site container"))
         self.assertLess(rollback.index("site container"), rollback.index("stop candidate"))
-        self.assertNotIn("delete", events)
+        self.assertNotIn("delete former", events)
+        self.assertNotIn("delete candidate", events)
         # The rolled-away release is now old, so a second rollback goes forward again.
         self.assert_ok(self.run_script(self.console, self.sha[:12]))
         self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)

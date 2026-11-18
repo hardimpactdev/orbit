@@ -1,0 +1,33 @@
+file = "swamp/tests/gateway_release_drain_test.py"
+cost = 18
+inputs = [
+  "bin/gateway-container-move",
+  "bin/gateway-horizon-ready",
+  "bin/gateway-container-rollback",
+  "bin/gateway-container-site",
+  "bin/gateway-release-check",
+  "bin/gateway-release-phase",
+  "bin/gateway-rollback",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-release-drain.sh",
+  "swamp/scripts/gateway-release-host-check.py",
+  "swamp/scripts/gateway-release-horizons.py",
+  "swamp/scripts/gateway-release-switch.sh",
+  "swamp/workflows/workflow-production-release-activate.yaml",
+  "swamp/tests/gateway_release_recovery_test.py",
+]
+cases = [
+  "test_retire_without_the_workflow_wait_probes_once_per_retry_until_the_bytes_drain",
+  "test_retire_stops_the_former_live_once_the_wait_bound_passed",
+  "test_retire_uses_the_workflow_wait_record_without_probing",
+  "test_a_rollback_killed_after_old_started_is_parked_by_recover",
+  "test_quiesce_stops_the_former_web_server_and_names_the_container_for_the_response_wait",
+  "test_a_rollback_to_a_missing_old_is_refused_and_the_old_forgotten",
+]
+[case_costs]
+"test_retire_without_the_workflow_wait_probes_once_per_retry_until_the_bytes_drain" = 3
+"test_retire_stops_the_former_live_once_the_wait_bound_passed" = 3
+"test_retire_uses_the_workflow_wait_record_without_probing" = 3
+"test_a_rollback_killed_after_old_started_is_parked_by_recover" = 3
+"test_quiesce_stops_the_former_web_server_and_names_the_container_for_the_response_wait" = 3
+"test_a_rollback_to_a_missing_old_is_refused_and_the_old_forgotten" = 3

@@ -1,6 +1,7 @@
 ---
 # Wait until the former live holds no queued response bytes on its web port, before retire stops its container.
-# Bound: 600 retries 1 second apart, under the step's `timeout 660`. A reached bound is logged and never fails retire.
+# Bound: 600 retries 1 second apart, under the step's `timeout 660`. The outcome, drained or timeout, is recorded
+# on the Node for this Operation; retire refuses to stop the former live without it. A timeout never fails retire.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -25,21 +26,35 @@
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     wait_retries: 600
     wait_delay: 1
-    # Connections whose Send-Q, the second column, is not empty.
-    queued: "{{ web_sockets.stdout_lines | map('regex_replace', '^\\s*\\S+\\s+(\\d+).*$', '\\1') | map('int') | select('gt', 0) | list | length }}"
+    record_dir: /var/lib/orbit/release-response-wait
+    # Connected and closing sockets whose Send-Q, the third column, is not empty. A server that already closed
+    # leaves FIN-WAIT, CLOSING and LAST-ACK sockets that still hold bytes.
+    queued: "{{ web_sockets.stdout_lines | reject('match', '^\\s*(LISTEN|TIME-WAIT)\\s') | map('regex_replace', '^\\s*\\S+\\s+\\S+\\s+(\\d+).*$', '\\1') | map('int') | select('gt', 0) | list | length }}"
+    # A failed probe counts as drained only when Incus says the container is not running or does not exist.
+    gone: "{{ web_sockets.rc != 0 and (web_sockets.stderr is search('not running|[Nn]ot [Ff]ound')) }}"
+    drained: "{{ gone | bool or (web_sockets.rc == 0 and queued | int == 0) }}"
   tasks:
-    - name: Read established web connections that still hold queued bytes
+    - name: Read web sockets that still hold queued bytes
       ansible.builtin.command:
         argv: [incus, --force-local, --project, orbit-releases, exec, "{{ intent.container }}", --,
-               ss, -tnH, state, established, "( sport = :8080 )"]
+               ss, -tanH, "( sport = :8080 )"]
       register: web_sockets
       changed_when: false
       failed_when: false
       retries: "{{ wait_retries }}"
       delay: "{{ wait_delay }}"
-      # A stopped or missing container holds no connection.
-      until: web_sockets.rc != 0 or queued | int == 0
+      until: drained | bool
     - name: Report the reached bound and continue to retire
-      when: web_sockets.rc == 0 and queued | int > 0
+      when: not drained | bool
       ansible.builtin.debug:
-        msg: "gateway.release_response_wait_timeout: {{ intent.container }} still had {{ queued }} connections with queued bytes after {{ wait_retries }} checks"
+        msg: "gateway.release_response_wait_timeout: {{ intent.container }} still had queued response bytes after {{ wait_retries }} checks"
+    - name: Create the response wait records
+      ansible.builtin.file:
+        path: "{{ record_dir }}"
+        state: directory
+        mode: "0700"
+    - name: Record the outcome for retire
+      ansible.builtin.copy:
+        dest: "{{ record_dir }}/{{ intent.container }}"
+        content: "{{ intent.operation }} {{ 'drained' if drained | bool else 'timeout' }}\n"
+        mode: "0600"

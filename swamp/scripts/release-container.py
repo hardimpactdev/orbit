@@ -285,6 +285,13 @@ def seed(target, revision, operation):
     live = release(target, revision)
     snapshot = "seed-" + operation
     prep = instance(name)
+    if prep is not None and prep["config"].get(PREFIX + "seeded-from") not in (None, live["config"][PREFIX + "commit"]):
+        # Preparation is always a clone of the current live. One cloned from another release is replaced.
+        owned(prep, {"target": target, "role": "prepare"})
+        halt(prep, operation)
+        incus("delete", name)
+        power(name, "discard")
+        prep = None
     if prep is None:
         gateway_slots(target)
         require_clone_copy(live)
@@ -544,9 +551,6 @@ def main(argv):
     seeding.add_argument("target", type=matches(OWNER))
     seeding.add_argument("revision", type=matches(REVISION))
     seeding.add_argument("operation", type=matches(OPERATION))
-    pruning = commands.add_parser("prune")
-    pruning.add_argument("target", type=matches(OWNER))
-    pruning.add_argument("revision", type=matches(REVISION))
     resting = commands.add_parser("rest")
     resting.add_argument("target", type=matches(OWNER))
     resting.add_argument("operation", type=matches(OPERATION))
@@ -572,11 +576,6 @@ def main(argv):
         return seed(args.target, args.revision, args.operation)
     if args.action == "rest":
         return rest(args.target, args.operation)
-    if args.action == "prune":
-        root = datasets(release(args.target, args.revision))
-        if root is not None:
-            prune(root)
-        return ""
     if args.action in ("wake", "sleep"):
         record = preparer(args.target)
         if args.action == "wake":

@@ -26,6 +26,7 @@ inputs = [
   "swamp/tests/gateway_release_host_rollback_test.py",
   "swamp/tests/gateway_release_cold_rollback_test.py",
   "swamp/tests/gateway_release_retire_test.py",
+  "swamp/tests/gateway_release_drain_test.py",
   "swamp/tests/release_response_wait_test.py",
   "swamp/tests/gateway_release_offline_rollback_test.py",
   "swamp/tests/gateway_release_recovery_test.py",

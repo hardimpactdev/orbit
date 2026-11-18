@@ -29,7 +29,7 @@ class GatewayOfflineRollback(GatewayReleaseFixture):
         for name in (CONTROLLER, WORKFLOW):
             path = self.mirror / name
             original = path.read_text()
-            path.write_text(original.replace("recovery-protocol: 3", "recovery-protocol: 2"))
+            path.write_text(original.replace("recovery-protocol: 4", "recovery-protocol: 3"))
             bad = self.commit("incompatible target")
             result = self.run_script(self.phase, "build-checked", bad, OPERATION, "false", "{}", "false")
             self.assertIn("gateway.release_recovery_incompatible", result.stderr)

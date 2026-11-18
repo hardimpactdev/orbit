@@ -13,6 +13,8 @@ inputs = [
   "swamp/ansible/module_utils/orbit_route_withdraw.py",
 ]
 cases = [
+  "test_recovery_retire_waits_for_queued_response_bytes_up_to_the_bound",
+  "test_recovery_retire_stops_after_the_bound_with_bytes_still_queued",
   "test_quiesce_stops_the_previous_web_server_once_and_retire_then_only_stops_the_container",
   "test_all_private_identities_are_bound_before_a_guest_operation",
   "test_only_the_owned_host_resource_can_take_a_checked_shared_or_exclusive_lock",

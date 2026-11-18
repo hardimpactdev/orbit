@@ -6,9 +6,11 @@ inputs = [
   "swamp/ansible/ansible.cfg",
 ]
 cases = [
-  "test_retire_waits_until_the_send_queues_drain",
-  "test_a_reached_bound_is_logged_and_never_fails_retire",
+  "test_a_slow_reader_after_the_server_closed_is_waited_for",
+  "test_a_reached_bound_is_logged_recorded_and_never_fails_retire",
+  "test_a_failed_probe_is_not_drained_unless_the_container_is_gone",
 ]
 [case_costs]
-"test_retire_waits_until_the_send_queues_drain" = 6
-"test_a_reached_bound_is_logged_and_never_fails_retire" = 6
+"test_a_slow_reader_after_the_server_closed_is_waited_for" = 4
+"test_a_reached_bound_is_logged_recorded_and_never_fails_retire" = 4
+"test_a_failed_probe_is_not_drained_unless_the_container_is_gone" = 4

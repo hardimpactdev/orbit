@@ -20,12 +20,12 @@ The Gateway Node holds at most three Gateway containers at every moment, also du
 | --- | --- |
 | Between releases | preparation, live, stopped old |
 | Build, promote, migrate, ready, switch | the candidate (the promoted preparation), live, stopped old |
-| Verify the new live, delete the earlier old | new live, draining former live |
-| Drain and stop the former live as old | new live, stopped old |
-| Recreate preparation from the new live | preparation, live, stopped old |
-| Rollback | preparation, live, old started as the candidate; the rolled-away live then stops as old |
+| Verify the new live, drain and stop the former live | new live, former live, earlier old |
+| Keep the most recent verified former live as old | new live, stopped old |
+| Rebuild preparation from the new live | preparation, live, stopped old |
+| Rollback | preparation, live, old started as the candidate; then the rolled-away live stops and preparation is rebuilt |
 
-A failed candidate before the switch returns to the preparation slot, so live and the stopped old remain. The release records which releases passed public verification. The earlier old is deleted only after the new live is verified and serves, and only a verified former live replaces it. If the new live fails its public check, every earlier stopped release stays, and the former live stays only if it was verified. Two stopped releases then hold the third slot until live verifies or a rollback serves. The release lock scopes the build and the switch to one target. Stopping old frees its memory; it keeps only its disk.
+A failed candidate before the switch returns to the preparation slot, so live and the stopped old remain. The release records which releases passed public verification. One rule decides old: the most recent verified former live, else none. Retire deletes every other stopped release. Preparation is rebuilt from the serving release after every switch and rollback. The release lock scopes the build and the switch to one target. Stopping old frees its memory; it keeps only its disk.
 
 **No file is copied, and no release keeps another's disk.** Preparation is a ZFS clone of a snapshot of live, created in about a second. A plain clone would chain every live to the release before it, so a deleted old would only move to Incus's `deleted/` path and keep its blocks. Retire therefore deletes the seed snapshot through Incus first. Incus forgets it and, because the clone needs it, keeps it as a hidden `deleted-*` snapshot. Then `zfs promote` makes preparation the origin: the forgotten snapshots move to preparation, and live becomes the dependent clone. Incus records no snapshot that moves and reads clones from ZFS on every delete, so its state stays consistent. A deleted old then frees its blocks. Retire also destroys `deleted-*` release snapshots that no clone needs any more, as Incus does for its own deleted objects. The rejected options copy files: `zfs.clone_copy=false` sends the whole dataset, and `rebase` sends everything since the image. The seed therefore refuses a pool where Incus would copy, and refuses to promote while a snapshot that Incus still records would move.
 
