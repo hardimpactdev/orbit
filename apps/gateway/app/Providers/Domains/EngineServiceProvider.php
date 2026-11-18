@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers\Domains;
 
 use App\Console\Commands\EngineConsumeCommand;
+use App\Console\Commands\EngineKeysCommand;
 use App\Console\Commands\EngineSetupCommand;
 use App\Domain\Engine\MachineBus;
 use App\Infrastructure\Engine\EngineBus;
@@ -23,7 +24,7 @@ final class EngineServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([EngineConsumeCommand::class, EngineSetupCommand::class]);
+            $this->commands([EngineConsumeCommand::class, EngineKeysCommand::class, EngineSetupCommand::class]);
         }
     }
 }

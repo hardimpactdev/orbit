@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Infrastructure\Engine\GatewayBus;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\InstanceHostIntent;
@@ -60,7 +61,9 @@ final readonly class NativeNodeRoleRuntimeInput
             $gateway = app(GatewayRuntimeFiles::class)->render($node);
             $runtime['gateway'] = ['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => $node->user,
                 'environment' => GatewayReleaseLayout::fromConfig()->sharedPath().'/gateway.env', 'retired_settings' => GatewayRuntimeFiles::RetiredSettings,
-                'tmpfiles' => GatewayRuntimeFiles::RuntimeTmpfiles];
+                'tmpfiles' => GatewayRuntimeFiles::RuntimeTmpfiles,
+                // The machine bus's server binary, pinned by its tarball's SHA-256 (ADR 0271).
+                'nats' => GatewayBus::config() === null ? null : GatewayBus::artifact()];
             $runtime['directories'] = [...$runtime['directories'], ...$gateway['directories']];
             $runtime['files'] = [...$runtime['files'], ...$gateway['files']];
             $runtime['units'] = [...$runtime['units'], ...$gateway['units']];

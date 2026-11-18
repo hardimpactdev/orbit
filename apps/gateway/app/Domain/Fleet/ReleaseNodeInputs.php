@@ -36,6 +36,8 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/tasks/node-update-policy.yml',
         'apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php',
         'swamp/ansible/tasks/gateway-runtime.yml',
+        'apps/gateway/app/Infrastructure/Engine/GatewayBus.php',
+        'swamp/ansible/tasks/gateway-nats.yml',
     ];
 
     /** The network phase reconciles the target and can import the hub separately before a peer. */
@@ -259,7 +261,7 @@ final readonly class ReleaseNodeInputs
                 'swamp/ansible/tasks/proof-seed-certificate.yml', 'swamp/ansible/tasks/proof-seed-listener.yml',
                 'swamp/extensions/behaviors/operations/node/ci_host_spec.ts'],
             RoleName::Gateway => ['swamp/ansible/operation-node-converge-local-dns.yml', 'swamp/ansible/tasks/gateway-retire.yml',
-                'swamp/ansible/tasks/gateway-runtime.yml', 'swamp/ansible/tasks/gateway-dns.yml',
+                'swamp/ansible/tasks/gateway-runtime.yml', 'swamp/ansible/tasks/gateway-nats.yml', 'swamp/ansible/tasks/gateway-dns.yml',
                 'swamp/ansible/tasks/private-dns-listener.yml', 'swamp/ansible/tasks/private-dns-withdraw.yml'],
             // These roles use the common converge play and the branches selected by their rendered resources and software.
             RoleName::AppDev, RoleName::AppProd, RoleName::Vpn, RoleName::Router, RoleName::Ingress,

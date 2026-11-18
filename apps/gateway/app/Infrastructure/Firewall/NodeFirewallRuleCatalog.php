@@ -130,6 +130,8 @@ final readonly class NodeFirewallRuleCatalog
         return match ($role) {
             RoleName::Gateway => [
                 $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
+                // The machine bus: Node executors reach nats-server over WireGuard only (ADR 0271).
+                $this->rule('orbit:gateway-nats', '4222', 'any', 'orbit'),
             ],
             RoleName::CiRunner => [new UfwManagedRule(
                 new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),
