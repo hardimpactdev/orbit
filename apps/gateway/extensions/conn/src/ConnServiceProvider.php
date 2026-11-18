@@ -14,6 +14,8 @@ use App\Domain\Instances\Power\InstanceAgentActivity;
 use App\Domain\Nodes\NodeAccessRemovalHook;
 use App\Domain\Nodes\NodeRemovalHook;
 use App\Domain\Operations\DirectOperationContribution;
+use App\Domain\Operations\OperationRecordCoordinator;
+use App\Domain\Operations\OperationSecretSource;
 use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 use Orbit\Extensions\Conn\Console\ReadConnThreadsCommand;
@@ -21,6 +23,8 @@ use Orbit\Extensions\Conn\Console\RenewConnEnvironmentsCommand;
 use Orbit\Extensions\Conn\Domain\ConnAgentActivity;
 use Orbit\Extensions\Conn\Domain\ConnDirectOperations;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
+use Orbit\Extensions\Conn\Domain\ConnLaunchDispatchSource;
+use Orbit\Extensions\Conn\Domain\ConnLaunchSettlement;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
 use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
 use Orbit\Extensions\Conn\Domain\ConnThreadIndex;
@@ -49,6 +53,8 @@ final class ConnServiceProvider extends ExtensionServiceProvider
     public function register(): void
     {
         $this->contribute(DirectOperationContribution::class, ConnDirectOperations::class);
+        $this->contribute(OperationSecretSource::class, ConnLaunchDispatchSource::class);
+        $this->contribute(OperationRecordCoordinator::class, ConnLaunchSettlement::class);
         $this->contribute(ActivityInputRedaction::class, ConnActivityInputRedaction::class);
         $this->contribute(InstanceLifecycleContribution::class, ConnInstanceLifecycle::class);
         $this->contribute(InstanceAgentActivity::class, ConnAgentActivity::class);

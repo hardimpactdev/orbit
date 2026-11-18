@@ -57,7 +57,7 @@ final readonly class ConnAttachedThreads
      *
      * @throws ValidationException when a new entry names an environment that is gone or that the caller may not see
      */
-    public function admit(array $value, mixed $stored, ?Node $caller): array
+    public function admit(array $value, mixed $stored, ?Node $caller, ?ConnEnvironment $launchEnvironment = null): array
     {
         $entries = self::entries($value);
         $existing = $this->existing(array_column($entries, 'environmentId'));
@@ -66,6 +66,9 @@ final readonly class ConnAttachedThreads
         $visible = $new === [] || ! $caller instanceof Node ? [] : $this->access
             ->visible($caller, ConnEnvironment::query()->whereIn('environment_id', $new))
             ->get(['environment_id'])->map(static fn (ConnEnvironment $environment): string => $environment->environment_id)->all();
+        if ($launchEnvironment !== null && in_array($launchEnvironment->environment_id, $existing, true)) {
+            $visible[] = $launchEnvironment->environment_id;
+        }
         $kept = [];
         $errors = [];
 

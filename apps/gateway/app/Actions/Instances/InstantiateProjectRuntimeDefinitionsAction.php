@@ -156,7 +156,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 $record->status = LifecycleStatus::Provisioning;
             }
             if ($forCreateRetry) {
-                $record->forceFill(['name' => $definition->name, 'desired_state' => $this->desiredFor($instance, $definition),
+                $record->forceFill([...$this->developmentRetryFields($instance, $definition),
                     'status' => LifecycleStatus::Provisioning, 'failed_step' => null, 'error_code' => null]);
             }
             if ($record->isDirty() || ! $this->processSpecifications->matches($record, $attributes)) {
@@ -167,6 +167,22 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
             }
         }
         $this->initializeContainerPresetPort($instance);
+    }
+
+    /** @return array{id:int,name:string,content:string,environment:?string,desired:string} */
+    public function developmentRetryUnit(Instance $instance, ProcessDefinition $definition, #[SensitiveParameter] Process $process): array
+    {
+        $expected = clone $process;
+        $expected->forceFill([...$this->attributesForDefinition($instance, $definition, $this->processTargets->forPreparation($instance)),
+            ...$this->developmentRetryFields($instance, $definition)]);
+
+        return app(ContainerProcesses::class)->unit($instance, $expected);
+    }
+
+    /** @return array{name:string,desired_state:DesiredProcessState} */
+    private function developmentRetryFields(Instance $instance, ProcessDefinition $definition): array
+    {
+        return ['name' => $definition->name, 'desired_state' => $this->desiredFor($instance, $definition)];
     }
 
     /**

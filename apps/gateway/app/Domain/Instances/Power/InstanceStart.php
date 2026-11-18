@@ -47,8 +47,7 @@ final readonly class InstanceStart implements DirectOperationProjection
             if ($runtime === null || $instance->placementEnvironment() !== 'development' || ! NestedFleetIntent::cloneKeepsFleet($instance, $runtime)) {
                 throw new ResourceOperationException('instance.start_unsupported', 'Only a clone of a nested-fleet default starts this way.', 409);
             }
-            if (($open = Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-                ->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first()) !== null) {
+            if (($open = InstanceWake::openWake($instance, self::Kind, join: true)) !== null) {
                 return $open;
             }
             InstancePower::assertIdle($instance, 'Only an active copy starts: a copy whose create or set-up did not finish is not startable this way.');

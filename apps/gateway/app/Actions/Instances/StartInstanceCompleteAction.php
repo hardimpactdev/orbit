@@ -94,12 +94,13 @@ final readonly class StartInstanceCompleteAction
      * transaction, with the recovery of a failed run. So the create names it, and Conn, the alerts and a task copy see an ordinary failed
      * completion. No run starts and no lock is taken.
      */
-    public function refused(Instance $instance, Operation $create, string $code, string $detail): Operation
+    public function refused(Instance $instance, Operation $create, string $code, string $detail, bool $keyed = false): Operation
     {
         $store = app(OperationStore::class);
-        $operation = app(OperationIdempotency::class)->suspended(fn (): Operation => $store->create(self::Kind, 'instance', $instance->id, $instance->node_id,
+        $record = fn (): Operation => $store->create(self::Kind, 'instance', $instance->id, $instance->node_id,
             ['instance_id' => $instance->id, 'create_operation_id' => $create->id, 'route_id' => $create->input['route_id'] ?? null],
-            $create->triggered_by, $create->request_id));
+            $create->triggered_by, $create->request_id);
+        $operation = $keyed ? $record() : app(OperationIdempotency::class)->suspended($record);
         $instance->update(['failed_step' => 'complete', 'error_code' => $code]);
         $store->change($operation, ['status' => OperationStatus::Failed, 'error_code' => $code, 'failed_step' => 'complete',
             'started_at' => now(), 'finished_at' => now(), 'lock_key' => null,

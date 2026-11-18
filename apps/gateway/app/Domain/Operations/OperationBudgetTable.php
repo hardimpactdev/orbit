@@ -33,6 +33,9 @@ final class OperationBudgetTable
         // The 240 s restart phase (a 100 s try-restart and about 84 s of label reads), a 30 s queue wait, input, result and cleanup,
         // rounded up to five minutes. No live sample yet.
         'conn.environment_restart' => 300,
+        // One placed 85 s T3 phase, plus the input, receipt and cleanup step bounds and their queue allowances.
+        'conn.launch_inspect' => 300,
+        'conn.launch_dispatch' => 300,
         // No run yet. Basis: the import step's own bound, DatabaseImport::TimeoutSeconds (3,600 s: a 2 GB dump at 1 MB/s), plus
         // 300 s for the vault copy, the run start and the result. Replace with the 14-day p95 after the first successes.
         'database.import' => 3900,

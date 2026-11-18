@@ -21,7 +21,9 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use App\Models\Task;
+use Closure;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Sleep and wake of a development container (docs/reference/development-containers.md#sleep-and-wake). The sleep freezes the whole
@@ -83,6 +85,12 @@ abstract readonly class InstancePower implements DirectOperationProjection
 
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
+        return $this->startWhen($instance, $caller, $requestId) ?? throw new LogicException('Power admission requires a receipt.');
+    }
+
+    /** @param  (Closure(Instance): bool)|null  $guard  A condition checked under the Instance lock after the preflight. */
+    protected function startWhen(Instance $instance, ?string $caller, ?string $requestId, ?Closure $guard = null): ?Operation
+    {
         if (($replay = app(OperationIdempotency::class)->replay($this->kind())) !== null) {
             return $replay;
         }
@@ -91,9 +99,12 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $this->beforeAdmission($instance);
         }
 
-        return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
+        return DB::transaction(function () use ($instance, $caller, $requestId, $guard): ?Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
-            ['runtime' => $runtime, 'open' => $open] = $this->admissible($instance);
+            if ($guard !== null && ! $guard($instance)) {
+                return null;
+            }
+            ['runtime' => $runtime, 'open' => $open] = $this->admissible($instance, join: true);
             if ($open !== null) {
                 return $open;
             }
@@ -112,7 +123,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
      *
      * @return array{runtime: InstanceRuntime, open: ?Operation}
      */
-    private function admissible(Instance $instance): array
+    private function admissible(Instance $instance, bool $join = false): array
     {
         $runtime = $instance->runtime()->first();
         if ($runtime === null) {
@@ -122,7 +133,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
         if ($instance->placementEnvironment() !== 'development') {
             throw new ResourceOperationException('instance.sleep_unsupported', 'Only a development container sleeps and wakes.', 409);
         }
-        if (($open = $this->open($instance)) !== null) {
+        if (($open = $this->open($instance, $join)) !== null) {
             return ['runtime' => $runtime, 'open' => $open];
         }
         self::assertIdle($instance);
@@ -158,7 +169,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
     }
 
     /** An open Operation of this kind that a second caller joins; only a wake is joined. */
-    protected function open(Instance $instance): ?Operation
+    protected function open(Instance $instance, bool $join): ?Operation
     {
         return null;
     }

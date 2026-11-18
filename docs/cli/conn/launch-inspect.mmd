@@ -1,0 +1,14 @@
+sequenceDiagram
+  %% status: draft
+  %% command: internal · prepare Conn launch
+  %% kind: conn.launch_inspect
+  autonumber
+  participant G as Gateway
+  participant S as Swamp
+  participant N as Instance Node
+  G->>S: Start inspection
+  S->>N: Inspect the workspace
+  %%> Find the exact project and read the enabled provider and configured default.
+  %%> Pin the live server to its original persisted incarnation.
+  N-->>S: Preparation receipt
+  S-->>G: Project the result

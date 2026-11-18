@@ -27,6 +27,7 @@ sequenceDiagram
   %%> Result:
   %%> - the wake admits `instance.start` instead of `instance.wake`; an Idempotency-Key keys the start
   %%> - an open start of the Instance is joined; any other Operation on the Instance refuses it with `operation.target_busy`
+  %%> - a join to a Conn launch's start records shared use while locking the start Operation. If launch cleanup already cancelled the queued start, a new request admits a new start
   %%> On failure:
   %%> - a stopped nested-fleet default: `instance.sleep_unsupported`; it starts only through its deployment
   %%> - other lifecycle work: `instance.lifecycle_busy`; no run starts
