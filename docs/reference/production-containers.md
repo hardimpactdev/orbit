@@ -223,7 +223,7 @@ The automatic tick retries that failure at its [backoff](/reference/deployments#
 
 ## PHP runtime
 
-FrankenPHP serves every release container in classic mode, from the runtime folder's static glibc PHP build. Each release pins the runtime folder version it was built with and retains the exact runtime mount on the container. A runtime folder update on the Node restarts no production container; it reaches production with the next deploy. The Node keeps each version that a release container records.
+AppProd serves applications with FrankenPHP in classic mode, using the runtime folder's static glibc PHP build. The Gateway uses [FrankenPHP worker mode](/reference/gateway-recovery). The AppProd Node builds each runtime version in a private directory and publishes it when complete. Each release keeps its read-only runtime and Vite+ mounts. The next deploy picks up the new version. Live and rollback keep their original versions.
 
 ## First release and migration
 
