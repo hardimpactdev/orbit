@@ -63,27 +63,44 @@ final class RecordEventBroadcaster
      */
     public function broadcast(RecordEventType $type, int|string $id, array $data, string $channel = 'orbit'): void
     {
-        DB::afterCommit(function () use ($type, $id, $data, $channel): void {
-            $event = new RecordBroadcast($type, $id, $data, $channel);
+        $this->afterCommit(function () use ($type, $id, $data, $channel): void {
+            $this->deliver(new RecordBroadcast($type, $id, $data, $channel), ['type' => $type->value, 'id' => $id]);
+        });
+    }
 
+    /**
+     * Runs work that sends events at the moment a record event would go out: after the surrounding transaction commits,
+     * and in an HTTP request after the response. A rolled-back change runs nothing. Work that must decide at the last
+     * moment whether to send, such as a Conn profile event, does its checks inside `$work`.
+     *
+     * @param  Closure(): void  $work
+     */
+    public function afterCommit(Closure $work): void
+    {
+        DB::afterCommit(function () use ($work): void {
             if (self::$immediate > 0 || request()->route() === null) {
-                $this->deliver($event, $type, $id);
+                $work();
 
                 return;
             }
 
             // A terminating callback added while the application terminates still runs, in order, so a broadcast
             // that a terminating callback causes is not lost.
-            app()->terminating(fn () => $this->deliver($event, $type, $id));
+            app()->terminating($work);
         });
     }
 
-    private function deliver(RecordBroadcast $event, RecordEventType $type, int|string $id): void
+    /**
+     * Sends one event now to every Reverb server that holds clients. A failure is logged with `$context` and never thrown.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function deliver(RecordBroadcast|NamedBroadcast $event, array $context): void
     {
         try {
             $connections = $this->realtime->all();
         } catch (Throwable $exception) {
-            $this->failed($type, $id, $exception);
+            $this->failed($context, $exception);
 
             return;
         }
@@ -91,7 +108,7 @@ final class RecordEventBroadcaster
         if ($connections === []) {
             // Best-effort: when no websocket role is active this leaves the default `null` connection in
             // place, and the event still fires but broadcasts nowhere.
-            $this->send(static fn () => event($event), $type, $id);
+            $this->send(static fn () => event($event), $context);
 
             return;
         }
@@ -101,7 +118,7 @@ final class RecordEventBroadcaster
                 $this->send(function () use ($connection, $event): void {
                     $this->realtime->configureBroadcasting($connection);
                     event($event);
-                }, $type, $id);
+                }, $context);
 
                 continue;
             }
@@ -123,7 +140,7 @@ final class RecordEventBroadcaster
                 }
 
                 $broadcaster->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
-            }, $type, $id);
+            }, $context);
             $this->realtime->recordOldServer($connection, $reached);
         }
 
@@ -133,26 +150,26 @@ final class RecordEventBroadcaster
         }
     }
 
-    /** @param Closure(): mixed $operation */
-    private function send(Closure $operation, RecordEventType $type, int|string $id): bool
+    /**
+     * @param  Closure(): mixed  $operation
+     * @param  array<string, mixed>  $context
+     */
+    private function send(Closure $operation, array $context): bool
     {
         try {
             $operation();
 
             return true;
         } catch (Throwable $exception) {
-            $this->failed($type, $id, $exception);
+            $this->failed($context, $exception);
 
             return false;
         }
     }
 
-    private function failed(RecordEventType $type, int|string $id, Throwable $exception): void
+    /** @param array<string, mixed> $context */
+    private function failed(array $context, Throwable $exception): void
     {
-        Log::warning('Failed to broadcast a record event.', [
-            'type' => $type->value,
-            'id' => $id,
-            'exception' => $exception->getMessage(),
-        ]);
+        Log::warning('Failed to broadcast a record event.', [...$context, 'exception' => $exception->getMessage()]);
     }
 }

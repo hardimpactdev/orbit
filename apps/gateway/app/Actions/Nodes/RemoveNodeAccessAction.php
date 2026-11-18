@@ -14,6 +14,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 
 final readonly class RemoveNodeAccessAction
 {
@@ -29,18 +30,24 @@ final readonly class RemoveNodeAccessAction
         $this->requireActive($consumer);
         $this->requireActive($serving);
 
-        $wasDeleted = NodeAccess::query()
-            ->where('consumer_node_id', $consumer->id)
-            ->where('serving_node_id', $serving->id)
-            ->delete() === 1;
+        // The deletion and its hooks commit together before any fallible side effect, so no committed deletion misses a hook.
+        $wasDeleted = DB::transaction(function () use ($consumer, $serving): bool {
+            $deleted = NodeAccess::query()
+                ->where('consumer_node_id', $consumer->id)
+                ->where('serving_node_id', $serving->id)
+                ->delete() === 1;
+
+            if ($deleted) {
+                foreach ($this->hooks as $hook) {
+                    $hook->removed($consumer, $serving);
+                }
+            }
+
+            return $deleted;
+        });
 
         if ($this->access->isGatewayNode($serving)) {
             $this->metricsAccess->revoke();
-        }
-        if ($wasDeleted) {
-            foreach ($this->hooks as $hook) {
-                $hook->removed($consumer, $serving);
-            }
         }
 
         $selfLockout = $wasDeleted && $caller->is($consumer) && $this->access->isGatewayNode($serving);
