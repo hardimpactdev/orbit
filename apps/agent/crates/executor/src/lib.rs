@@ -1,7 +1,9 @@
-//! `orbit-executor`: runs Gateway-signed orders for fast Node actions (ADR 0266, ADR 0267).
+//! The executor: runs Gateway-signed orders on this Node (ADR 0266, ADR 0267, ADR 0271).
 //!
-//! - `orbit-executor serve` is the long-running executor that `orbit-executor.service` starts at boot.
-//! - `orbit-executor relay` is the one relay command, run as `orbit-executor-relay`.
+//! It is a mode of the one `orbit-agent` binary (ADR 0271 N7):
+//!
+//! - `orbit-agent execute serve` is the long-running executor that `orbit-executor.service` starts at boot.
+//! - `orbit-agent execute relay` is the one relay command, run as `orbit-executor-relay`.
 
 use std::fs;
 use std::io;
@@ -149,8 +151,8 @@ fn log(line: &str) {
     eprintln!("{line}");
 }
 
-fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+/// Runs the executor mode with its arguments (`serve` or `relay`) and returns the process's exit code.
+pub fn main(args: &[String]) -> ExitCode {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let result = match args.as_slice() {
         ["serve"] => serve(),
@@ -160,12 +162,12 @@ fn main() -> ExitCode {
             io::stdout().lock(),
         )
         .map_err(|error| error.to_string()),
-        _ => Err("usage: orbit-executor serve | orbit-executor relay".to_owned()),
+        _ => Err("usage: orbit-agent execute serve | orbit-agent execute relay".to_owned()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            log(&format!("orbit-executor: {message}"));
+            log(&format!("orbit-agent execute: {message}"));
             ExitCode::FAILURE
         }
     }
