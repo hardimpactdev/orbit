@@ -57,7 +57,7 @@ A host reboot, an out-of-memory kill or a stop by hand can leave a clone of a ne
 
 A stopped nested-fleet default does not take this path: it starts only through its deployment.
 
-The Rust executor also implements the wake for signed proof orders ([Executor](/reference/executor#rust-wake)). This command keeps the Python path until ADR 0266 slices 6 to 8.
+With `ORBIT_EXECUTOR_POWER_ENABLED` on, this command wakes through a signed order to the Rust executor, with the WebSocket, the SSH relay and the Swamp recovery described in [Signed power delivery](/reference/executor#signed-power-delivery). The setting is off by default, and then the command uses the Python path. A container that a signed sleep froze always wakes through the executor, and one that Python froze through Python, whatever the setting.
 
 ## How it works
 

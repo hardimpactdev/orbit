@@ -78,6 +78,7 @@ The [container destroy chart](https://github.com/hardimpactdev/orbit/blob/main/d
 | `instance.database_slots_unreadable` | Orbit could not read the replication slots on an owned database's server. HTTP 503 before admission; nothing is changed. Try again when the server answers. |
 | `instance.checkout_path_unsafe` | The checkout path is not safe to delete. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete clone. |
+| `executor.result_unknown` | An earlier removal signed the executor's `discard` but has no receipt. The Instance stays `removing`; verify the Node's outcome before the hold is cleared. See [Signed power delivery](/reference/executor#signed-power-delivery). |
 | `instance.removal_conflict` | The Instance belongs to a different removal request, or `--force` was added or dropped on a rerun against the rules above. |
 | `operation.target_busy` | Another operation holds the Instance, such as a removal or a clone's completion that is still running. |
 | `instance.destroy_unsupported` | The Node account is not an unprivileged account, or the placement is a member placement. |

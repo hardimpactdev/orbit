@@ -679,3 +679,31 @@ it('names the planned databases in the slot read only through the drop\'s identi
         expect($refusal->errorCode)->toBe('database.server_admin_invalid');
     }
 });
+
+it('R2: keeps a signed removal fenced until its discard receipt arrives, then removes the Instance', function (bool $receipt): void {
+    config(['orbit.executor.power_enabled' => true]);
+    $clone = destroyClone(destroyDefault());
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    expect($operation->input['container_destroy']['signed_power'] ?? null)->toBeTrue();
+    $line = ['status' => 'done', 'operation' => (string) $operation->id, 'action' => 'discard', 'target' => (string) $clone->id, 'delivery' => 'swamp'];
+    $read = ['Read container removal' => ['status' => 'succeeded', 'stdout' => json_encode(['container_present' => true, 'removed' => true,
+        ...($receipt ? ['executor' => $line] : [])])]];
+    $terminal = destroyTerminal($operation, 'succeeded', ['steps' => $read]);
+    // The bound run asked the Gateway to sign its discard (DirectExecutorOrderController).
+    $operation->forceFill(['state' => [...$operation->state, 'executor_order_issued' => true]])->save();
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, $terminal);
+
+    $operation->refresh();
+    if ($receipt) {
+        expect($operation)->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull()
+            ->and($operation->executor_result['status'] ?? null)->toBe('done')->and($clone->fresh())->toBeNull();
+    } else {
+        expect($operation)->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')
+            ->and($clone->fresh()->status)->toBe(InstanceState::Removing)->and($clone->runtime()->exists())->toBeTrue()
+            ->and(InstanceRemoval::query()->findOrFail($operation->input['removal_id'])->status)->toBe(InstanceRemovalStatus::Removing);
+        // No second removal starts beside the unknown discard.
+        expect(fn () => app(StartInstanceDestroyAction::class)->execute($clone->fresh(), true))
+            ->toThrow(ResourceOperationException::class, 'An earlier removal of this Instance has no executor result yet.');
+    }
+})->with(['receipt' => [true], 'no receipt' => [false]]);

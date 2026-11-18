@@ -103,6 +103,7 @@ sequenceDiagram
     %%> What it does:
     %%> - stops the clone with `incus stop --force` under the deletion's slot name, so no worker or other client in it holds a database session when the drop runs
     %%> - a stopped or missing container counts as stopped and changes nothing
+    %%> - a signed removal then asks the Gateway to sign a `discard` for this run and relays it on stdin; the executor removes its own power state and the receipt goes into the run folder (ADR 0266)
     opt clone owns server databases
       %% path: server-database
       SW->>N: Drop owned databases<br/>child database-destroy
@@ -119,6 +120,7 @@ sequenceDiagram
     %%> - after a refusal the inner volume goes by name, its snapshots then the volume, also a clone whose origin went with another Instance; that origin and every other volume stay
     %%> - checks that the container, its storage volume and any inner volume are absent, by this Instance's names only
     %%> - a failed task writes its name, message and stderr tail into the result; the Gateway records it as `error.detail` with `stderr_recorded: true`
+    %%> - a signed removal's result carries the discard receipt from the stop phase; the Gateway records it on the Operation, and a signed discard with no receipt ends interrupted with `executor.result_unknown`, the Instance still `removing`, and a new destroy refused until the hold is cleared (R2)
     %%> - the default and sibling clones stay; a migrated Instance's retained Git directory is untouched and can be purged only by hand
     opt a proof copy
       Note over N: Release the CI place<br/>orbit-ci-runner-hold release

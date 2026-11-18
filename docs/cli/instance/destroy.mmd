@@ -213,6 +213,7 @@ sequenceDiagram
     %%> What it does:
     %%> - stops the container with `incus stop --force`, so its workers and every other client in it close their database sessions before the drop
     %%> - a stopped or missing container counts as stopped and changes nothing
+    %%> - a signed removal then asks the Gateway to sign a `discard` for this run and sends it on the executor relay's stdin; the receipt goes into the run folder
     %%> Why:
     %%> - a session on a planned database refuses the drop with `database.in_use` (Operation 25427, Instance 3472)
   end
@@ -250,7 +251,10 @@ sequenceDiagram
     %%> - requires successful Route withdrawal when present, and owned database removal; other Instances stay
     %%> - the power helper's `discard`, as the Instance's lock unit: waits for a helper call still at work, then removes the plan, `limits.json`, the target descriptor and the Instance's fast wake request and outcome files, so a late worker finds nothing to act on; a signed removal runs it after the executor's discard, because the Instance may have slept under Python before the switch
     Note over SW: Read container removal
+    %%> Returns:
+    %%> - for a signed removal, the executor's discard receipt; the Gateway records it on the Operation (ADR 0266, R1)
     %%> Failure:
+    %%> - a signed discard with no receipt is never a success: the removal ends interrupted with `executor.result_unknown`, the Instance stays `removing`, and a new destroy refuses until the hold is cleared (ADR 0266, R2)
     %%> - a skipped deletion has no result and cannot report success
     %%> - a failed deletion's result names the failed task with its stderr tail, which the Operation keeps
     Note over SW: Clean container files

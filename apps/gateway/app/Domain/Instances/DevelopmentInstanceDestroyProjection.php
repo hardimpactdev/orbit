@@ -8,6 +8,8 @@ use App\Actions\Instances\ProjectDirectInstanceDestroyAction;
 use App\Domain\DatabaseServers\DatabaseDestroyProjection;
 use App\Domain\DatabaseServers\DatabaseOwnedRemoval;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\Power\ExecutorFence;
+use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
@@ -100,7 +102,14 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         return DB::transaction(function () use ($operation, $data): Operation {
             $operation->setRawAttributes(Operation::query()->lockForUpdate()->findOrFail($operation->id)->getAttributes(), true);
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
+            $unproven = $this->recordRemovalReceipt($operation, $data);
+            if ($unproven) {
+                $data = [...$data, 'status' => 'interrupted'];
+            }
             [$code, $result] = $this->outcome($data, $operation);
+            if ($unproven) {
+                [$code, $result] = ['executor.result_unproven', [...$result, 'error_code' => 'executor.result_unproven']];
+            }
             if ($data['status'] === 'succeeded') {
                 $result = [...$result, ...Arr::only($operation->input, ['retained_git_path', 'retained_git_at'])];
             }
@@ -124,6 +133,26 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
 
             return $this->direct->project($operation, $data, $result);
         });
+    }
+
+    /**
+     * ADR 0266, R1 and R2: a signed removal's stop phase reports the executor's discard receipt in the removal file, which "Read container
+     * removal" prints; it is recorded once on the Operation. Returns whether a run that reported success issued its order and has no
+     * receipt: that is never a success, and the Operation keeps its fence.
+     *
+     * @param  array<string,mixed>  $data
+     */
+    private function recordRemovalReceipt(Operation $operation, array $data): bool
+    {
+        if (ExecutorPowerIntent::action($operation, 'removal') === null) {
+            return false;
+        }
+        $run = is_array($data['result'] ?? null) ? $data['result'] : [];
+        $read = is_array($run['steps'] ?? null) && is_array($run['steps']['Read container removal'] ?? null) ? $run['steps']['Read container removal'] : [];
+        $file = is_string($read['stdout'] ?? null) ? json_decode(trim($read['stdout']), true) : null;
+        ExecutorFence::record($operation, 'discard', is_array($file) ? ($file['executor'] ?? null) : null);
+
+        return ($data['status'] ?? null) === 'succeeded' && ExecutorFence::holds($operation);
     }
 
     /**

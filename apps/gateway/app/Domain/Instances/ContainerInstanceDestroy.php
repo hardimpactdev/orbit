@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\InstancePower;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
+use App\Models\Operation;
 
 /** The container identity of the saved removal; no execution. */
 final readonly class ContainerInstanceDestroy
@@ -22,11 +24,25 @@ final readonly class ContainerInstanceDestroy
         if ($runtime === null) {
             return;
         }
+        $this->assertNoUnknownDiscard($instance);
         if ($instance->name === DefaultInstanceName::Name) {
             $this->assertRemovableDefault($instance);
         }
         if (! $force) {
             throw new ResourceOperationException('instance.container_destroy_force_required', 'Non-default container removal currently requires --force. Guarded removal follows separately.', 409);
+        }
+    }
+
+    /**
+     * ADR 0266, R2: a destroy holds no lock; the Instance's `removing` status keeps other work out. An earlier removal whose signed
+     * discard may have reached the Node without a receipt keeps the Instance fenced, so no second removal starts beside it.
+     */
+    private function assertNoUnknownDiscard(Instance $instance): void
+    {
+        $last = Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereIn('kind', ['instance.destroy', 'instance.unregister'])->latest('id')->first();
+        if ($last !== null && $last->status->terminal() && ExecutorFence::holds($last)) {
+            throw new ResourceOperationException('executor.result_unknown', 'An earlier removal of this Instance has no executor result yet.', 409);
         }
     }
 
