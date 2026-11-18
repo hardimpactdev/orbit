@@ -74,7 +74,7 @@ final readonly class ConnLaunchNativeProjection implements DirectOperationProjec
         $requestedAvailable = $receipt['requested_provider_available'] ?? null;
         $fallback = $receipt['model_selection'] ?? null;
         if (! is_string($expected) || ($receipt['environment_id'] ?? null) !== $expected
-            || ! is_string($incarnation) || preg_match('/\A[0-9a-f]{64}\z/D', $incarnation) !== 1
+            || ! is_string($incarnation) || preg_match('/\A[A-Za-z0-9:_-]{1,128}\.[0-9a-f]{64}\z/D', $incarnation) !== 1
             || ! is_string($project) || $project === '' || strlen($project) > 255
             || ! is_bool($requestedAvailable)
             || ($requestedAvailable ? $fallback !== null

@@ -176,16 +176,29 @@ async function workspaceProject(rpc) {
     return (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
 }
 
-async function launchIdentity(environmentId) {
+async function launchIdentity(environmentId, witness) {
+    if (typeof witness !== "string" || !/^[A-Za-z0-9:_-]{1,128}$/.test(witness)) return null;
     const response = await fetch(`${origin}/.well-known/t3/environment`, { redirect: "error", signal: AbortSignal.timeout(left()) });
     if (!response.ok) return null;
     const descriptor = await response.json();
     const localEnvironmentId = readFileSync(`${userdata}/environment-id`, "utf8").trim();
     if (!environmentId || descriptor.environmentId !== environmentId || localEnvironmentId !== environmentId || descriptor.serverVersion !== "0.1.7") return null;
-    // The state file's identity survives a normal process restart and detects a replaced file even if its environment ID was copied.
-    // Read filesystem metadata only; message and receipt evidence always comes through T3's RPC.
-    const { dev, ino } = statSync(`${userdata}/statev2.sqlite`, { bigint: true });
-    return createHash("sha256").update(`${environmentId}\0${dev}\0${ino}`).digest("hex");
+    const path = `${userdata}/statev2.sqlite`;
+    const { dev, ino } = statSync(path, { bigint: true });
+
+    // The stock auth API writes and revokes the probe session in this database. Its row survives revocation and restart,
+    // while an older database restored into the same inode lacks it. Read only presence, never a credential or thread data.
+    const { DatabaseSync } = await import("node:sqlite");
+    const database = new DatabaseSync(path, { readOnly: true, timeout: 1000 });
+    try {
+        if (database.prepare("SELECT 1 FROM auth_sessions WHERE session_id = ?").get(witness) === undefined) return null;
+        const current = statSync(path, { bigint: true });
+        if (current.dev !== dev || current.ino !== ino) return null;
+    } finally {
+        database.close();
+    }
+    const fingerprint = createHash("sha256").update(`${environmentId}\0${dev}\0${ino}\0${witness}`).digest("hex");
+    return `${witness}.${fingerprint}`;
 }
 
 // These are the pinned T3 driver defaults used by Conn when a selectable provider has an empty catalog.
@@ -238,12 +251,12 @@ function launchModel(config, projectId, requestedProvider) {
 }
 
 async function inspectLaunch(rpc, environmentId, requestedProvider) {
-    const incarnation = await launchIdentity(environmentId);
+    const incarnation = await launchIdentity(environmentId, issued.sessionId);
     if (incarnation === null) return { error_code: "conn.launch_server_changed" };
     const project = await workspaceProject(rpc);
     if (typeof project?.id !== "string") return { error_code: "conn.launch_workspace_failed" };
     const model = launchModel(await rpc.call("server.getConfig", {}), project.id, requestedProvider);
-    if (await launchIdentity(environmentId) !== incarnation) return { error_code: "conn.launch_server_changed" };
+    if (await launchIdentity(environmentId, issued.sessionId) !== incarnation) return { error_code: "conn.launch_server_changed" };
     if (model === null) return { error_code: "conn.launch_workspace_failed" };
     return { environment_id: environmentId, incarnation, project_id: project.id, ...model, error_code: null };
 }
@@ -308,13 +321,14 @@ async function launchMessage(rpc, send) {
         || request.initialMessage.attachments.length !== 0 || request.reuseExistingThread !== undefined) {
         return { error_code: "conn.launch_invalid_dispatch" };
     }
-    if (await launchIdentity(frozen.environment_id) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
+    const witness = frozen.incarnation.split(".", 1)[0];
+    if (await launchIdentity(frozen.environment_id, witness) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
     const projection = send
         ? (await rpc.call("orchestration.launchThread", request))?.projection
         : await rpc.call("orchestration.getThreadProjection", { threadId: request.threadId });
     let acceptedAt = initialAcceptance(projection, request);
     if (!send && acceptedAt === undefined) acceptedAt = await readLaunchHistory(request);
-    if (await launchIdentity(frozen.environment_id) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
+    if (await launchIdentity(frozen.environment_id, witness) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
     return acceptedAt == null
         ? { error_code: "conn.launch_first_message_unconfirmed" }
         : { accepted_at: acceptedAt, error_code: null };

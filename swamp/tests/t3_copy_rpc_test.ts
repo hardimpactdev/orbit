@@ -8,6 +8,7 @@ const thread = "mcp:66105c2c";
 const run = "run:thread:mcp%3A66105c2c:ordinal:1";
 const token = "t3-session-" + "x".repeat(40);
 const launchEnvironment = "fixture-launch-environment";
+const launchWitness = "session-1";
 const launchText = "  Fixture first message · β\nline two.  \n";
 const acceptedAt = "2026-11-17T17:58:00.123Z";
 const launchRequest = { commandId: "fixture-command", threadId: "fixture-thread", projectId: "fixture-project", creationSource: "mobile",
@@ -21,7 +22,7 @@ type Request = { id: string; kind: string; status: string; responseCapability?: 
 type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck"; respond?: "refuse" | "stuck" | "raced";
     projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[]; launchProjection?: LaunchProjection; dropLaunchReply?: boolean;
     launchReadFails?: boolean; servedEnvironment?: string; config?: unknown; bounded?: unknown;
-    history?: Record<string, unknown>; historyReads?: string[] };
+    history?: Record<string, unknown>; historyReads?: string[]; replaceStateInPlace?: boolean };
 
 /** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
 function serve(state: Server) {
@@ -106,7 +107,23 @@ async function helper(state: Server, args: string[], issue = "json", frozen?: (i
         Deno.mkdirSync(userdata, { recursive: true });
         Deno.writeTextFileSync(`${userdata}/server-runtime.json`, JSON.stringify({ origin: `http://127.0.0.1:${server.addr.port}` }));
         Deno.writeTextFileSync(`${userdata}/environment-id`, `${launchEnvironment}\n`);
-        Deno.writeFileSync(`${userdata}/statev2.sqlite`, new Uint8Array());
+        const statePath = `${userdata}/statev2.sqlite`;
+        const makeState = async (path: string, witness: string) => {
+            const created = await new Deno.Command("node", {
+                args: ["--input-type=module", "-e", 'import { DatabaseSync } from "node:sqlite"; const db = new DatabaseSync(process.argv[1]); db.exec("CREATE TABLE auth_sessions (session_id TEXT)"); db.prepare("INSERT INTO auth_sessions VALUES (?)").run(process.argv[2]); db.close();', path, witness],
+            }).output();
+            assert(created.success);
+        };
+        if (args[0].includes("launch")) {
+            await makeState(statePath, launchWitness);
+            if (state.replaceStateInPlace) {
+                const original = Deno.statSync(statePath);
+                await makeState(`${userdata}/replacement.sqlite`, "other-session");
+                Deno.writeFileSync(statePath, Deno.readFileSync(`${userdata}/replacement.sqlite`));
+                const replaced = Deno.statSync(statePath);
+                assertEquals([replaced.dev, replaced.ino], [original.dev, original.ino]);
+            }
+        }
         const issued = issue === "json" ? JSON.stringify({ sessionId: "session-1", token }) : `warning: ${token} "sessionId": "session-1"`;
         Deno.writeTextFileSync(`${folder}/t3`, `#!/bin/sh
 if [ "$1 $2 $3" = "auth session issue" ]; then printf '%s' '${issued}'; exit 0; fi
@@ -122,9 +139,9 @@ exit 2
             await writer.write(Deno.readFileSync(script));
         } else {
             const { dev, ino } = Deno.statSync(`${userdata}/statev2.sqlite`);
-            const bytes = new TextEncoder().encode(`${launchEnvironment}\0${dev}\0${ino}`);
+            const bytes = new TextEncoder().encode(`${launchEnvironment}\0${dev}\0${ino}\0${launchWitness}`);
             const incarnation = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
-            await writer.write(new TextEncoder().encode(JSON.stringify(frozen(incarnation))));
+            await writer.write(new TextEncoder().encode(JSON.stringify(frozen(`${launchWitness}.${incarnation}`))));
         }
         await writer.close();
         const done = await child.output();
@@ -289,7 +306,7 @@ Deno.test({ name: "Conn launch uses its frozen first message and recovers a lost
     const inspected = await helper(state, ["inspect-launch", launchEnvironment]);
     assertEquals([inspected.code, inspected.out!.environment_id, inspected.out!.project_id, inspected.out!.error_code], [0, launchEnvironment, launchRequest.projectId, null]);
     assertEquals(inspected.out!.model_selection, state.config.settings.defaultModelSelection);
-    assert(/^[0-9a-f]{64}$/.test(String(inspected.out!.incarnation)));
+    assert(/^session-1\.[0-9a-f]{64}$/.test(String(inspected.out!.incarnation)));
     const lost = await helper(state, ["launch"], "json", freezeLaunch);
     assertEquals([lost.code, lost.out, lost.stderr, state.commands, lost.revoked],
         [0, { error_code: "conn.launch_first_message_unconfirmed" }, "", [launchRequest], ["session-1"]]);
@@ -302,6 +319,11 @@ Deno.test({ name: "Conn launch fails closed on a replaced server or mismatched f
     const replaced = { ...waiting([], {}), servedEnvironment: "other-launch-environment" };
     const refused = await helper(replaced, ["launch"], "json", freezeLaunch);
     assertEquals([refused.out, replaced.commands], [{ error_code: "conn.launch_server_changed" }, []]);
+    const overwritten = { ...waiting([], {}), replaceStateInPlace: true };
+    for (const command of ["launch", "reconcile-launch"]) {
+        const refusedInPlace = await helper(overwritten, [command], "json", freezeLaunch);
+        assertEquals([refusedInPlace.out, overwritten.commands], [{ error_code: "conn.launch_server_changed" }, []]);
+    }
     const original = waiting([], {});
     const wrongState = await helper(original, ["reconcile-launch"], "json", () => freezeLaunch("previous-state"));
     assertEquals([wrongState.out, original.commands], [{ error_code: "conn.launch_server_changed" }, []]);
