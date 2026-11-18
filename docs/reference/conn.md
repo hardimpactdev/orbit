@@ -190,7 +190,7 @@ A failure of the drop never stops the destroy:
 - **Problem.** The Gateway logs `conn.attached_threads_drop_failed` with the profile and the environments. Its log collector records that error as a Problem. A log channel that fails is ignored.
 - **Hidden entries.** The skipped entries stay stored, and every read leaves them out.
 
-A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
+A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write, and from a [profile event](#profile-events) that names the new version.
 
 A profile from before this section has no `attachedThreads` key and no version for it. It reads as no attached threads, at section version 0, so the first patch sends version 0. No migration runs. A client that does not know the section keeps working: it ignores the key, `PUT` cannot send it and keeps it as it is, and a patch changes only the sections it names.
 
@@ -213,6 +213,67 @@ A patch whose section is at another version is refused with `conn.settings_versi
 A `value` of `null` removes any section but `workspaces`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
 
 Both run in one transaction on the locked profile row, so two writes from the same version cannot both win. A section name that Conn does not know, such as `theme`, `devices`, or `devices.Phone`, is refused with `validation.failed`. A rule error names its field with dots, such as `sections.devices.iphone.value.values.baseFontSize`.
+
+### Profile events
+
+After a profile write commits, the Gateway tells the Nodes bound to that profile its new document version over the Gateway's Reverb server. The event is a notice. It carries no settings, so the device reads them over HTTP. The HTTP reads stay the truth, and a lost event only delays a device until its next read.
+
+**Event.** `conn.profile.updated`, in the Gateway's [event envelope](/reference/events#envelope). `id` is the profile id. `data` is exactly `{"profile_id": 1, "version": 7}`. `version` is the committed document version: the `settings_version` of `GET /me` and the `version` of `GET /profiles/{id}/settings`. The event never names a section or a writer, and never carries a value. A write to any section moves this one counter, including a section added later.
+
+```json
+{"type": "conn.profile.updated", "id": 1, "at": "2026-11-18T15:00:00+00:00", "data": {"profile_id": 1, "version": 7}}
+```
+
+**Channel.** Each binding has its own private channel, `private-conn-profile.{key}`. `key` is 32 lowercase hex characters, 128 random bits. Every successful `PUT /me/profile` gives the binding a new key in the same write as the profile id, even when the Node binds the profile it already has. The key is stored on the binding row. A key is never reused. The Gateway never sends a Conn profile event on `orbit` or on any other channel.
+
+**Generation.** The key is the binding's generation. It ends when:
+
+- **Rebind.** `PUT /me/profile` commits.
+- **Access removal.** `node:access:remove` leaves the Node with no node access to any Node (the [collection rule](#access)). Conn's `NodeAccessRemovalHook` then gives the binding a new key.
+- **Node removal.** The binding is deleted with the Node. Enrolling the machine again makes a new Node, with a new binding and key.
+
+For A to B to A the Node gets three keys. A socket on the first key gets no event for A after the last bind, although A is current again. Two binds in the same second also get two keys, because the key is random, not a time. A grant after an access removal does not bring the old key back. The device reads the new key from `GET /me`.
+
+A Node that leaves `active` without removal keeps its key. It is outside the audience and cannot subscribe while it is not active, as the next rule says.
+
+Reverb gives the Gateway no way to unsubscribe a socket. So an old socket can stay subscribed to an ended key, and no event reaches that key again.
+
+**Audience.** The Gateway reads the audience when it sends the event, not when the write commits. It is each binding to the written profile whose Node is active and passes the collection rule at that moment, each on its own current key. While the `conn` switch is off, the Gateway sends nothing. Access can also lapse without an edge removal, for example when the Gateway Node moves. Then the key stays, but no event goes to it while the Node fails the rule. Once the Node passes again, its device on the same binding gets events again.
+
+**When.** Every write goes through `ApplyConnProfileSectionsAction`, which registers the event in its transaction. The event goes out only after the outermost transaction commits. Delivery is the same as for every Gateway event ([Transport](/reference/events#transport)): after the response in a request, at once in a job or a console command, to both servers during a `websocket` move. A rolled-back or refused write, such as a version conflict or `validation.failed`, sends nothing. A failed broadcast is logged and never fails the accepted write. The writers on `main` are:
+
+| Writer | Path | Event |
+| --- | --- | --- |
+| `PATCH /profiles/{id}/settings` | `extensions/conn/src/Actions/PatchConnProfileSettingsAction.php` | Yes |
+| `PUT /profiles/{id}/settings` | `extensions/conn/src/Actions/ReplaceConnProfileSettingsAction.php` | Yes |
+| Launch attachment and workspace ref | `extensions/conn/src/Actions/PublishConnLaunchAction.php`, inside the launch transaction | Yes, after that transaction commits |
+| Drop of a destroyed Instance's threads | `ConnAttachedThreads::drop()` in `extensions/conn/src/Domain/ConnAttachedThreads.php`, one transaction per profile | Yes, for each profile it changed |
+| `POST /profiles` | `extensions/conn/src/Actions/CreateConnProfileAction.php` | No: a new profile at version 1 has no binding |
+
+Paths are under `apps/gateway`. A new writer must call `ApplyConnProfileSectionsAction`. `PUT /me/profile` (`BindConnNodeProfileAction`) changes no document, so it sends no event. Its response carries the new channel.
+
+**Order and races.** Events can arrive late, twice, out of order, or not at all. Suppose a write to A is registered before a rebind of its Node to B and delivered after it:
+
+- **Rebind committed first.** The rebind commits before the Gateway reads the audience. The Node is not in A's audience, so nothing goes out to it.
+- **Rebind between read and send.** The rebind commits after the read and before the send. The event goes to the ended key only, so a socket on B's new key never gets it.
+- **Old socket.** A device that still holds the old socket discards the event by its `profile_id`.
+
+No event comes before its write commits. So a device that reads after an event always sees that version or a later one.
+
+**Discovery.** `GET /api/v1/conn/realtime` answers `{"data": {"url": "wss://reverb.orbit", "key": "<reverb-app-key>"}, "meta": {...}}`. `url` and `key` are null when no `websocket` role is active. The key is public. The channel comes from `GET /me`, not from here.
+
+**Subscription.** `POST /api/v1/conn/broadcasting/auth` takes the Pusher form fields `socket_id` (`<digits>.<digits>`) and `channel_name`. It answers the bare Pusher body `{"auth": "<key>:<signature>"}`, which signs `socket_id:channel_name` with the Reverb app secret. It signs only a `channel_name` equal to the caller's current `profile_channel`. Anything else gets `broadcast.channel_forbidden` (403): another key, an ended key, another prefix, `orbit`, a `presence-*` channel, or a caller with no binding. Without a `websocket` role it answers `realtime.not_configured` (404).
+
+Both routes sit with the other Conn routes: active peer, `conn` switch, and the collection rule, as for `GET /me`. They record no command activity. They grant no Gateway realtime access: they never sign `orbit`, `private-operation.*` or a presence channel. The Gateway's `POST /api/v1/broadcasting/auth` keeps its authority and refuses every `private-conn-profile.*` channel with `broadcast.channel_forbidden`. `GET /api/v1/realtime` does not change. The HTTP profile routes and their authorization do not change.
+
+**Client.** `GET /me` returns `node.profile_channel`: the channel name, or `null` before a binding. `PUT /me/profile` returns the new one. The device:
+
+1. **Subscribe.** It subscribes to `profile_channel` after each read of `GET /me` that changed it, and unsubscribes from the old one.
+2. **Compare.** It reads `GET /me` and compares `profile.id` and `profile.settings_version` with what it holds. A newer version or another profile starts a settings read.
+3. **Compare times.** It compares after a successful subscription, after each reconnect, on return to the foreground, and every 10 minutes during a subscription.
+4. **Ignore.** It ignores an event for another `profile_id` than the bound `profile.id`. It also ignores a `version` that is not above the version it holds.
+5. **Discard.** It throws away the answer of a settings read that it started for an earlier profile or channel.
+6. **Refusal.** On `broadcast.channel_forbidden` it reads `GET /me` again and subscribes to the returned channel. A `null` channel means no subscription.
 
 ## Registration
 
@@ -1035,7 +1096,9 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | Method and path | Request | Response `data` |
 | --- | --- | --- |
 | `GET /me` | — | node, with `profile` `null` before a binding |
-| `PUT /me/profile` | `{"profile_id": 1}` | node |
+| `PUT /me/profile` | `{"profile_id": 1}` | node, with a new `profile_channel` |
+| `GET /realtime` | — | `{"url", "key"}` ([Profile events](#profile-events)) |
+| `POST /broadcasting/auth` | `socket_id`, `channel_name` | `{"auth"}`, bare, without `data` ([Profile events](#profile-events)) |
 | `GET /profiles` | — | list of profile |
 | `POST /profiles` | `{"name": "Nick"}` | profile (201) |
 | `GET /profiles/{id}/settings` | — | settings |
@@ -1068,7 +1131,7 @@ The objects:
 
 ```json
 {
-  "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}},
+  "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}, "profile_channel": "private-conn-profile.9f2c4e1ab07d4c3e8a5b6f0d1e2c3b4a"},
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null, "renewal_error_code": null, "renewal_checked_at": null},
@@ -1091,6 +1154,8 @@ The objects:
 | `instance.default_missing` | 409 | The Project has no default Instance in a container that is active and has a seed snapshot. |
 | `instance.complete_unavailable` | 409 | The clone is not `source_resolved` with its starting commit and a registered T3 server. |
 | `validation.failed` | 422 | The request breaks a rule; `details` names each field. This includes an attached thread whose environment is new to the set and is gone or not one the caller may see. |
+| `broadcast.channel_forbidden` | 403 | `POST /broadcasting/auth` named a channel other than the caller's current `profile_channel`. |
+| `realtime.not_configured` | 404 | `POST /broadcasting/auth` found no active `websocket` role. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
@@ -1138,6 +1203,12 @@ Each device type has its own section for the same reason: a phone and a desktop 
 The Gateway stores the versions apart from the document, in `section_meta` on the profile. A profile from before sections has no entry, so every section of it is at version 0, and the first patch of a section sends version 0.
 
 `PUT` stays for clients that only know workspaces. It replaces just the sections it sends, so such a client cannot erase the appearance or device settings that a newer client wrote.
+
+### Why profile events use a key per binding
+
+A channel named after the profile would let any Node that may read profiles subscribe to every profile. A channel named after the Node would stay the same across a rebind, and Reverb cannot drop a socket that subscribed before it. A random key that every bind replaces solves both. The Gateway sends only to keys that are current when it sends, so a socket from an earlier binding never hears of a profile again. Conn's own routes sign only that key, so a device gets no Gateway realtime access through Conn.
+
+The event carries only the version. The device must read the settings over HTTP anyway, and that read applies the same authority.
 
 ### Why the attached set is a profile section
 
