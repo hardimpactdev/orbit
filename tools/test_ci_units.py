@@ -170,31 +170,16 @@ class PlanningTest(unittest.TestCase):
         self.assertIn('swamp/gap.ts#1/3', units.unplaced_units(result))
         self.assertNotIn('not_run', result)
 
-    def test_a_hosted_capacity_gap_names_its_overflow_instead_of_blocking(self):
-        budget = {**BUDGET, 'pr_shards': 1, 'capacity_gap': ['swamp/gap.ts']}
-        fixtures = [fixture('swamp/gap.ts', 600, ['swamp/input'], slices=6)]
-        result = planned(['swamp/input'], fixtures, budget=budget)
-        self.assertTrue(result['not_run'][0]['units'])
-        self.assertNotIn('capacity', result)
-        result = planned(['swamp/input'], fixtures, budget={**budget, 'capacity_gap': []})
-        self.assertIn('capacity', result)
-
-    def test_a_capacity_gap_must_name_registered_files(self):
+    def test_a_capacity_gap_must_name_registered_self_hosted_files(self):
         original, inventory = units.registry.load(ROOT)
-        for gaps in (['swamp/tests/missing_test.ts'], 'swamp/tests/ansible_instance_migrate_move_test.ts',
+        hosted = next(f['file'] for f in original['fixture'] if not f.get('self_hosted'))
+        for gaps in (['swamp/tests/missing_test.ts'], [hosted], 'swamp/tests/ansible_instance_migrate_move_test.ts',
                      ['swamp/tests/ansible_instance_migrate_move_test.ts'] * 2):
             config = json.loads(json.dumps(original))
             config['budget']['capacity_gap'] = gaps
             with self.subTest(gaps=gaps), patch.object(units.registry, 'load', return_value=(config, inventory)):
-                with self.assertRaisesRegex(ValueError, 'capacity_gap must list unique registered fixtures'):
+                with self.assertRaisesRegex(ValueError, 'capacity_gap must list unique registered self_hosted fixtures'):
                     units.configuration()
-        # A hosted file can be a named gap too.
-        hosted = next(f['file'] for f in original['fixture']
-                      if not f.get('self_hosted') and f['file'] not in original['budget']['capacity_gap'])
-        config = json.loads(json.dumps(original))
-        config['budget']['capacity_gap'] = [*original['budget']['capacity_gap'], hosted]
-        with patch.object(units.registry, 'load', return_value=(config, inventory)):
-            self.assertIn(hosted, units.configuration()[0]['capacity_gap'])
 
     def test_self_hosted_units_follow_the_unit_ceiling_with_startup(self):
         result = planned(['swamp/runner.ts'], [fixture('swamp/runner.ts', 145, cases=['long'], self_hosted=True)])
