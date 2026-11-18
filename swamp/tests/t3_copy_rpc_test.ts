@@ -17,7 +17,7 @@ const acceptedProjection = () => ({ thread: { id: launchRequest.threadId, projec
     messages: [{ id: launchRequest.initialMessage.messageId, threadId: launchRequest.threadId, role: "user", text: launchText, createdAt: acceptedAt }] });
 type LaunchProjection = ReturnType<typeof acceptedProjection>;
 
-type Request = { id: string; kind: string; status: string; responseCapability?: { type: "message" | "live" }; runId?: string };
+type Request = { id: string; kind: string; status: string; responseCapability?: { type: "message" | "live" }; runId?: string; ownerless?: boolean };
 // `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends.
 type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck"; respond?: "refuse" | "stuck" | "raced";
     projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[]; launchProjection?: LaunchProjection; dropLaunchReply?: boolean;
@@ -71,7 +71,7 @@ function serve(state: Server) {
             } else if (frame.tag === "orchestration.getThreadProjection" && state.launchProjection !== undefined) {
                 value = state.launchProjection;
             } else if (frame.tag === "orchestration.getThreadProjection") {
-                value = { nodes: state.requests.map((r) => ({ id: `node:${r.id}`, runId: r.runId ?? run })), thread: { id: thread }, runs: [{ id: run, status: state.runStatus }], runtimeRequests: state.requests.map((r) => ({ ...r, nodeId: `node:${r.id}` })),
+                value = { nodes: state.requests.filter((r) => !r.ownerless).map((r) => ({ id: `node:${r.id}`, runId: r.runId ?? run })), thread: { id: thread }, runs: [{ id: run, status: state.runStatus }], runtimeRequests: state.requests.map((r) => ({ ...r, nodeId: `node:${r.id}` })),
                     turnItems: Object.entries(state.questions).map(([requestId, questions]) => ({ type: "user_input_request", requestId, questions })) };
             } else {
                 state.commands.push(frame.payload);
@@ -179,6 +179,9 @@ Deno.test({ name: "the read prints every pending question in the result step's s
         // A question too large to fit the result step's bound once escaped is not stored whole either.
         const large = await helper(waiting([{ id: "r1", kind: "user_input", status: "pending" }], { r1: [{ ...color, question: "x".repeat(160000) }] }), ["read", thread]);
         assertEquals([large.code, large.out!.stoppable, (large.out!.requests as unknown[]).length], [0, false, 1]);
+        // A question whose request names no node of a run has no owner: the read says the run may not be stopped.
+        const ownerless = await helper(waiting([{ id: "r1", kind: "user_input", status: "pending", ownerless: true }], { r1: [color] }), ["read", thread]);
+        assertEquals([ownerless.code, ownerless.out!.stoppable, (ownerless.out!.requests as { run_id: unknown }[])[0].run_id], [0, false, null]);
     } });
 
 Deno.test({ name: "the stop ends the run only while it waits for exactly the stored questions", ignore: !available, async fn() {

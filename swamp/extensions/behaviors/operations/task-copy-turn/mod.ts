@@ -79,6 +79,8 @@ export type Evidence = {
     stop: z.infer<typeof Stop> | null;
     read: z.infer<typeof Read> | null;
     restore: z.infer<typeof Restore> | null;
+    // The admitted prompt from the run's intent: free text that quotes it stays out of the result.
+    prompt?: string | null;
 };
 const Started = z.object({
     threadId: z.string().min(1),
@@ -94,8 +96,8 @@ const Shown = z.object({
 const Entry = z.object({ id: z.string(), kind: z.literal("message"), label: z.string(), text: z.string(), at: z.string() });
 const AskedQuestion = z.object({
     request_id: z.string(),
-    // The run that owns the request: only that run's question is cancelled when the answer comes.
-    run_id: z.string().nullable(),
+    // The run that owns the request: only that run's question is cancelled when the answer comes. A question without one is never stored.
+    run_id: z.string(),
     id: z.string(),
     header: z.string(),
     question: z.string(),
@@ -130,6 +132,22 @@ export const Turn = z.object({
     transcript: z.array(Entry),
 });
 export type Turn = z.infer<typeof Turn>;
+
+/** The shortest run of the prompt's characters that counts as a quote of it. */
+const QuoteChars = 24;
+
+/**
+ * T3's or a provider's own text, as the result may hold it: redacted, and omitted whole when it quotes the turn's prompt, which
+ * redaction does not catch (docs/reference/development-containers.md#turn-evidence).
+ */
+function unquoted(text: string, prompt: string | null | undefined): string {
+    const redacted = redactText(text);
+    if (!prompt || prompt.length < QuoteChars) return redacted;
+    for (let start = 0; start + QuoteChars <= redacted.length; start++) {
+        if (prompt.includes(redacted.slice(start, start + QuoteChars))) return "[omitted: the text quotes the turn's prompt]";
+    }
+    return redacted;
+}
 
 const parse = <T>(schema: z.ZodType<T>, text: string): T | null => {
     try {
@@ -188,7 +206,8 @@ function shapeRun(evidence: Evidence): Turn {
     // run its bound cut, or when T3 holds no thread of this title or holds it in no active state. Anything else may still write in the
     // checkout.
     const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
-    const ended = !evidence.launched || (started !== null && started.status !== "waiting") || cutEnded
+    // A start that printed no status names no end: its run may be queued.
+    const ended = !evidence.launched || (started?.status !== undefined && started.status !== "waiting") || cutEnded
         || (listed !== null && (listed.found === 0 || (listed.found === 1 && listed.status !== null && !Active.has(listed.status))));
     const base = {
         ended,
@@ -211,7 +230,7 @@ function shapeRun(evidence: Evidence): Turn {
     if (started?.status === "completed") return { ...base, state: "done", error: null };
     if (started?.status === "waiting") return asked(base, evidence);
     if (started !== null) {
-        const detail = redactText(started.error ?? "").slice(0, ErrorChars);
+        const detail = unquoted(started.error ?? "", evidence.prompt).slice(0, ErrorChars);
         const status = started.status === undefined ? "T3 started no run" : `T3 run ${started.status}`;
         return { ...base, state: "failed", error: `${status}${detail === "" ? "" : `: ${detail}`}`, error_code: "tasks.turn_failed" };
     }
@@ -258,7 +277,7 @@ function shapeRun(evidence: Evidence): Turn {
     }
     const exit = evidence.start === null ? "no exit" : `exit ${evidence.start.start_exit}`;
     // T3's message ends its stderr; a long one keeps its end.
-    const refusal = redactText(evidence.start?.error?.trim() ?? "").slice(-ErrorChars);
+    const refusal = unquoted(evidence.start?.error?.trim() ?? "", evidence.prompt).slice(-ErrorChars);
     return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit})${refusal === "" ? "" : `: ${refusal}`}.`, error_code: "tasks.copy_turn_failed" };
 }
 
@@ -270,7 +289,7 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
     const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
     const questions = (read?.requests ?? []).flatMap((request) => request.questions.map((question) => ({
         request_id: request.request_id,
-        run_id: request.run_id ?? null,
+        run_id: request.run_id ?? "",
         id: question.id,
         header: redactText(question.header),
         question: redactText(question.question),
@@ -280,7 +299,9 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
         initial_answer: question.initialAnswer === undefined ? null : redactText(question.initialAnswer),
         required: question.required ?? null,
     })));
-    const turn = { ...base, questions, state: "asking_for_input" as const };
+    // A request whose owner run Orbit could not read stores no question: the answer turn could not cancel it exactly.
+    const owned = (read?.requests ?? []).every((request) => request.run_id);
+    const turn = { ...base, questions: owned ? questions : [], state: "asking_for_input" as const };
     if (read !== null && !read.stoppable) {
         return { ...turn, error: "The run waits for something Orbit cannot store whole (an approval, a request without a question, or too much text), "
             + "so Orbit did not stop the run.", error_code: "tasks.copy_question_unread" };
@@ -289,10 +310,13 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
         const exit = evidence.ask === null ? "no read" : `exit ${evidence.ask.ask_exit}`;
         return { ...turn, error: `Orbit could not read the agent's question (${exit}), so it did not stop the run.`, error_code: "tasks.copy_question_unread" };
     }
+    if (!owned) {
+        return { ...turn, error: "Orbit could not read which run owns the agent's question, so it did not stop the run.", error_code: "tasks.copy_question_unread" };
+    }
     const stopped = evidence.interrupt?.interrupt_exit === 0 ? parse(Stopped, evidence.interrupt.interrupt) : null;
     if (stopped?.interrupted !== true) {
         const why = stopped?.error ?? (evidence.interrupt === null ? "no stop ran" : `exit ${evidence.interrupt.interrupt_exit}`);
-        return { ...turn, error: `Orbit could not stop the run that asks: ${redactText(why).slice(0, ErrorChars)}`, error_code: "tasks.copy_question_unstopped" };
+        return { ...turn, error: `Orbit could not stop the run that asks: ${unquoted(why, evidence.prompt).slice(0, ErrorChars)}`, error_code: "tasks.copy_question_unstopped" };
     }
     return { ...turn, error: null };
 }
@@ -308,6 +332,7 @@ async function evidence<T>(path: string, limit: number, schema: z.ZodType<T>): P
     }
 }
 
+const Intent = z.object({ turn: z.object({ prompt: z.string() }) });
 type Context = { writeResource(spec: string, name: string, value: unknown): Promise<unknown> };
 const Result = z.object({ successful: z.boolean(), turn: Turn });
 
@@ -335,6 +360,7 @@ export const behavior = {
                     stop: await evidence(args.folder + "/stop.json", 65536, Stop),
                     read: await evidence(args.folder + "/read.json", ReadBytes, Read),
                     restore: await evidence(args.folder + "/restore.json", 1024, Restore),
+                    prompt: (await evidence(args.folder + "/intent.json", StartBytes, Intent))?.turn.prompt ?? null,
                 }));
                 // A done turn, or one that asked and whose run Orbit stopped, succeeds.
                 const result = { successful: turn.error === null && (turn.state === "done" || (turn.state === "asking_for_input" && turn.ended)), turn };

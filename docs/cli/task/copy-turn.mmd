@@ -90,7 +90,7 @@ sequenceDiagram
   %%> - names the provider instance, the model and the effort the thread started with, as the admission recorded them
   %%> - a reviewer turn with the detach mark and no restore that reads clean on its branch at its tip fails with `tasks.copy_review_unrestored`, whatever its run did, also when it failed or nothing was launched; the error keeps the run's own error
   %%> - keeps the message text of the thread, all its turns, redacted and bounded to 256 KiB with the newest kept; T3's CLI gives no tool items and no token use. A user message keeps only its ID, author and time, never its text: redaction does not catch an ordinary private prompt
-  %%> - names `sent` from the launch mark and `launched` only when the start reported the run it started; a send with no reported run is possibly sent. Each stored question names the run that owns its request as `run_id`. `spent` stays empty: the CLI driver proves no earlier run
+  %%> - names `sent` from the launch mark and `launched` only when the start reported the run it started; a send with no reported run is possibly sent. Each stored question names the run that owns its request as `run_id`; a read with a request of no owner stores no question, stops no run and fails with `tasks.copy_question_unread`. A start that printed no status names no end. T3's text that quotes the turn's prompt, read from the run's intent, is omitted from the error. `spent` stays empty: the CLI driver proves no earlier run
   %%> - records whether the turn is over: nothing was launched, the start printed an end other than a wait for an answer, T3 lists no thread of this title or lists it in no active state, which a stopped run is not, or the stop of a run cut by its bound ended it or found no active run. A cut turn whose run stopped still fails with `tasks.turn_timeout`, and holds nothing. An unrestored reviewer turn is never over
   %%> - names the earlier turns it found settled; the Gateway counts them settled from then on
   Note over SW: cleanup
@@ -105,7 +105,8 @@ sequenceDiagram
     %%> Result:
     %%> - the thread's state and error, T3's thread id as its external id, and the transcript in the Gateway's archive: `task:agent:show` reads it after the copy is gone
     %%> - the external id's admission: the ID that capture set stays `admitted` until T3 reports it back, which makes it `confirmed`; a reported ID that replaced it, or any report on a row from before the mark, is `overwritten`
-    %%> - only a `launched` turn replaces the thread's questions; a thread whose every stored request the result names in `spent` asks nothing any more
+    %%> - only a `launched` turn replaces the thread's questions; a thread whose stored request IDs are exactly the result's `spent` asks nothing any more
+    %%> - the archive keeps a user message only by its ID, author and time, also when an older worker sends its text
     %%> - a turn that asked keeps its question on the thread: `task:agent:list` shows it until the thread's next turn. The answer is the next `task:turn` of the role, or a message to the thread from a T3 client
     %%> - the result names the provider instance, the model and the effort the thread started with, from its record
     %%> - the result names `agent_id`, the agent thread's row that `task:agent:show GROUP AGENT_ID` reads, and `reply`: the text of the transcript's last `assistant` entry, its first 16,384 characters, then ` [cut: N more characters; read task:agent:show GROUP AGENT_ID]` when it is longer. No assistant entry, such as a transcript of user entries and Orbit's truncation notice only: `reply` is null. The transcript stays out of the result

@@ -23,6 +23,9 @@ cases = [
   "the method reads the model evidence: a model the catalog does not offer fails with what it offers",
   "an answered question whose resolution cannot be confirmed fails before launch and holds no run",
   "the method reads the answered evidence and refuses an unconfirmed resolution before launch",
+  "a question whose owner run Orbit could not read is not stored and its run is not stopped or over",
+  "a start that printed no status names no end: with no run and a queued readback the turn is possibly sent and holds",
+  "T3's or a provider's text that quotes the turn's prompt stays out of the result; other text is kept",
 ]
 file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
 cost = 2

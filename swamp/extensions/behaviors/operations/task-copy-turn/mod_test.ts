@@ -66,9 +66,9 @@ Deno.test("an earlier turn still running launches nothing and fails tasks.copy_t
 });
 
 Deno.test("a free-text question with no options is stored whole, so the run it stopped asks for input and is over", () => {
-    const free = { ...asked, requests: [{ request_id: request, kind: "user_input", questions: [{ id: "Why?", header: "", question: "Why does it fail?", options: [] }] }] };
+    const free = { ...asked, requests: [{ request_id: request, kind: "user_input", run_id: run, questions: [{ id: "Why?", header: "", question: "Why does it fail?", options: [] }] }] };
     const stored = turn(2, started("waiting"), { ask: { ask_exit: 0, ask: JSON.stringify(free) }, interrupt: stopped, read: { ...read, status: "interrupted" } });
-    assertEquals([stored.state, stored.error, stored.ended, stored.questions], ["asking_for_input", null, true, [{ request_id: request, run_id: null, id: "Why?", header: "",
+    assertEquals([stored.state, stored.error, stored.ended, stored.questions], ["asking_for_input", null, true, [{ request_id: request, run_id: run, id: "Why?", header: "",
         question: "Why does it fail?", options: [], multi_select: false, allow_custom_answer: null, initial_answer: null, required: null }]]);
 });
 
@@ -276,6 +276,11 @@ Deno.test("the method reads each evidence file on its own, so an oversized read 
         Deno.writeTextFileSync(`${folder}/read.json`, JSON.stringify({ ...read, status: "interrupted" }));
         const asking = await behavior.methods.result.execute({ folder }, context);
         assertEquals([asking.successful, asking.turn.state, asking.turn.ended, asking.turn.questions], [true, "asking_for_input", true, questions]);
+        // The method reads the prompt from the run's intent: a failure that quotes it keeps none of it.
+        Deno.writeTextFileSync(`${folder}/intent.json`, JSON.stringify({ runtime: {}, turn: { prompt: "Rename the private billing tables tonight, quietly." } }));
+        Deno.writeTextFileSync(`${folder}/start.json`, JSON.stringify({ start_exit: 1, start: started("failed", "Rename the private billing tables tonight") }));
+        const quoted = await behavior.methods.result.execute({ folder }, context);
+        assertEquals(quoted.turn.error, "T3 run failed: [omitted: the text quotes the turn's prompt]");
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }
@@ -339,4 +344,29 @@ Deno.test("the method reads the answered evidence and refuses an unconfirmed res
     } finally {
         await Deno.remove(folder, { recursive: true });
     }
+});
+
+Deno.test("a question whose owner run Orbit could not read is not stored and its run is not stopped or over", () => {
+    const ownerless = { ...asked, requests: asked.requests.map(({ run_id: _, ...rest }) => rest), stoppable: false };
+    const unread = turn(2, started("waiting"), { ask: { ask_exit: 0, ask: JSON.stringify(ownerless) }, read: { ...read, status: "waiting" } });
+    assertEquals([unread.state, unread.error_code, unread.ended, unread.questions], ["asking_for_input", "tasks.copy_question_unread", false, []]);
+    // Also when an older read still called the run stoppable.
+    const older = turn(2, started("waiting"), { ask: { ask_exit: 0, ask: JSON.stringify({ ...ownerless, stoppable: true }) }, interrupt: stopped, read: { ...read, status: "interrupted" } });
+    assertEquals([older.error_code, older.questions], ["tasks.copy_question_unread", []]);
+});
+
+Deno.test("a start that printed no status names no end: with no run and a queued readback the turn is possibly sent and holds", () => {
+    const queued = turn(0, JSON.stringify({ threadId: thread }), { read: { ...read, status: "queued" } });
+    assertEquals([queued.sent, queued.launched, queued.ended, queued.error_code], [true, false, false, "tasks.turn_failed"]);
+    // T3 lists the thread idle: nothing of the turn runs.
+    assertEquals(turn(0, JSON.stringify({ threadId: thread }), { read: { ...read, status: "idle" } }).ended, true);
+});
+
+Deno.test("T3's or a provider's text that quotes the turn's prompt stays out of the result; other text is kept", () => {
+    const prompt = "Subtask: Doctor note\n\nPrompt of this turn:\nMy private plan is to rename the billing tables tonight.";
+    const quoted = turn(1, started("failed", "invalid_request: My private plan is to rename the billing tables tonight. is too long"), { prompt });
+    assertEquals([quoted.error, quoted.error_code], ["T3 run failed: [omitted: the text quotes the turn's prompt]", "tasks.turn_failed"]);
+    const refused = shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "", error: "echo: rename the billing tables tonight." }, read: null, prompt });
+    assertEquals(refused.error, "T3 did not report the turn's end (exit 1): [omitted: the text quotes the turn's prompt].");
+    assertEquals(turn(1, started("failed", "api_error_529"), { prompt }).error, "T3 run failed: api_error_529");
 });

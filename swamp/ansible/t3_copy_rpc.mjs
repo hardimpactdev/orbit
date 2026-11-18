@@ -118,8 +118,9 @@ async function state(rpc) {
     };
 }
 
-/** The run may be stopped only when every pending request is a question Orbit can store whole: no approval, no empty request. */
-const stoppable = (seen) => seen.requests.length > 0 && seen.requests.every((request) => request.kind === "user_input" && request.questions.length > 0);
+/** The run may be stopped only when every pending request is a question Orbit can store whole, with its owner run: no approval, no empty request. */
+const stoppable = (seen) => seen.requests.length > 0
+    && seen.requests.every((request) => request.kind === "user_input" && request.questions.length > 0 && request.run_id !== null);
 const live = (seen, run) => seen.runs.some((open) => open.id === run);
 
 /** Resolve only the answered turn's stored questions, without sending a message. A concurrent answer needs no second response. */

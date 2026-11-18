@@ -108,12 +108,13 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             }
         }
         self::recordThread($operation->target_id, $thread, $result);
-        // An earlier answer turn's confirmed run used its answer: a thread whose every stored request is spent asks nothing any more
-        // (docs/reference/development-containers.md#earlier-turns).
-        $spent = array_map(ValidatedData::string(...), is_array($result['spent'] ?? null) ? array_values($result['spent']) : []);
+        // An earlier answer turn's confirmed run used its answer: a thread whose stored request IDs are exactly the spent ones asks nothing
+        // any more (docs/reference/development-containers.md#earlier-turns).
+        $spent = self::requestSet(array_map(ValidatedData::string(...), is_array($result['spent'] ?? null) ? array_values($result['spent']) : []));
         if ($spent !== []) {
             AgentThread::query()->where('task_group_id', $operation->target_id)->whereNotNull('questions')->get()
-                ->filter(static fn (AgentThread $asked): bool => array_diff(array_map(static fn (array $question): string => ValidatedData::string($question['request_id']), $asked->questions ?? []), $spent) === [])
+                ->filter(static fn (AgentThread $asked): bool => self::requestSet(array_map(
+                    static fn (array $question): string => ValidatedData::string($question['request_id']), $asked->questions ?? [])) === $spent)
                 ->each(static fn (AgentThread $asked): bool => $asked->update(['questions' => null]));
         }
         // Only a turn whose run T3 confirmed replaces what the thread asked: one that launched nothing, or was only possibly sent, leaves
@@ -127,6 +128,18 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
     }
 
     /**
+     * @param  list<string>  $ids
+     * @return list<string>
+     */
+    private static function requestSet(array $ids): array
+    {
+        $ids = array_values(array_unique($ids));
+        sort($ids);
+
+        return $ids;
+    }
+
+    /**
      * Records the thread's final state and error, and archives its transcript. T3 reports no token use, so no metric is recorded.
      *
      * @param  array<string,mixed>  $result
@@ -136,7 +149,12 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
         $record = AgentThread::query()->where('task_group_id', $group)->lockForUpdate()->findOrFail($thread);
         $record->update(['state' => $result['state'] ?? 'failed', 'error' => $result['error'] ?? null, 'observed_at' => now(), 'observation_error' => null]);
         if (isset($result['transcript'])) {
-            app(ArchiveAgentTranscriptsAction::class)->record($record, array_map(ValidatedData::object(...), is_array($result['transcript']) ? array_values($result['transcript']) : []));
+            // A user message keeps only its ID, author and time, also from a worker that still sends its text: the prompt stays out of the archive.
+            app(ArchiveAgentTranscriptsAction::class)->record($record, array_map(static function (mixed $entry): array {
+                $entry = ValidatedData::object($entry);
+
+                return ($entry['label'] ?? null) === 'user' ? [...$entry, 'text' => ''] : $entry;
+            }, is_array($result['transcript']) ? array_values($result['transcript']) : []));
         }
     }
 }

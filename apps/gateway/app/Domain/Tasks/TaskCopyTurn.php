@@ -172,12 +172,20 @@ final readonly class TaskCopyTurn
 
         return ['operation_id' => $turn->id, 'title' => ValidatedData::string($intent['title']),
             'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch']),
-            't3_thread_id' => AgentThread::query()->find(ValidatedData::integer($turn->input['thread_id']))?->external_id,
+            // The thread that turn reported, else the one it froze, else, for a turn admitted before the freeze, its row's: a cancelled turn
+            // records no report on the row.
+            't3_thread_id' => self::nonEmpty($result['t3_thread_id'] ?? null) ?? self::nonEmpty($intent['t3_thread_id'] ?? null)
+                ?? AgentThread::query()->find(ValidatedData::integer($turn->input['thread_id']))?->external_id,
             'message_id' => is_string($intent['message_id'] ?? null) ? $intent['message_id'] : null,
             'digest' => hash('sha256', ValidatedData::string($intent['prompt'])),
             'run_id' => is_string($result['run_id'] ?? null) ? $result['run_id'] : null,
             'sent' => ($result['sent'] ?? $result['launched'] ?? true) !== false,
             'answered' => array_values(array_map(ValidatedData::string(...), is_array($intent['answered'] ?? null) ? $intent['answered'] : []))];
+    }
+
+    private static function nonEmpty(mixed $value): ?string
+    {
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**

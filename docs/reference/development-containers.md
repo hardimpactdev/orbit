@@ -2144,7 +2144,7 @@ A recorded run ID must equal the run that the link finds. Otherwise the earlier 
 
 Settling keeps today's order. First the worker proves that the earlier run ended. Then, for a reviewer's turn whose detach mark is set, it restores the checkout and verifies it, only when the restore is safe as [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) says. Only then does it name the turn settled. A reviewer's run that ended over a checkout not yet restored leaves the turn unsettled. A reviewer's turn without the mark is settled once its run is over, as today.
 
-An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears a thread's stored questions when every one of their request IDs is spent. It does not wait for the earlier Operation, which is not recorded a second time.
+An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears a thread's stored questions when their request IDs are exactly the spent ones. A partial overlap or a superset clears nothing. It does not wait for the earlier Operation, which is not recorded a second time.
 
 The current turn froze its prompt at capture, so it may quote those spent questions as the question it answers. When its own `answered` list holds a spent request, it launches nothing and fails with `tasks.copy_question_answered`. The caller sends its prompt again. The next capture composes it without the spent questions.
 
@@ -2153,11 +2153,11 @@ The current turn froze its prompt at capture, so it may quote those spent questi
 The flow of [A question ends the turn](#a-question-ends-the-turn) stays, on the new calls:
 
 1. A run started from the turn's message waits. Every pending request must be a complete user-input question, and each request's node must belong to that run.
-2. The worker stores the questions, bounded, with each request ID and the owner run ID, as each question's `run_id`.
+2. The worker stores the questions, bounded, with each request ID. Each question's `run_id` names its owner run.
 3. It reads the projection again. The same request IDs must still be pending, with the same owner run.
 4. It interrupts that run and waits for proof that the run ended. Only then is the turn `asking_for_input` and over.
 
-An approval, a request without a question, or a request of another run is never a reason to interrupt. The turn then fails as it does today, and the group holds.
+A request whose owner the worker cannot read stores no question and stops no run. An approval, a request without a question, or a request of another run is never a reason to interrupt. The turn then fails as it does today, and the group holds.
 
 The answer is a new turn. Capture admits the stored request IDs and their owner run into its grant. The only change the grant allows to those prior requests is `runtime-request.respond` with decision `cancel`. The target accepts the cancel only when the request is still pending, is a user-input request of the admitted thread, and its owner is the stored run.
 
@@ -2205,9 +2205,11 @@ The Operation's result names:
 - one fixed outcome code;
 - the reviewer's checkout and restore, as [Calls](#calls) describes.
 
-The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the run folder, the logs or Activity.
+The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`. T3's or a provider's error text that quotes the prompt is left out of the result.
 
-The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. The archive keeps assistant text, bounded and redacted; the CLI driver already shapes it so. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The Gateway already holds the admitted prompt in the Operation's input.
+The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run, mode `0600`, and its cleanup removes it. The RPC worker drops that staging with the CLI calls.
+
+The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. The archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The CLI driver already shapes it so, and the projection drops a user message's text that an older worker still sends. The stock CLI gives no message ID or time: under it, an entry's ID is the run ID and the message's index, and its time is empty. The Gateway already holds the admitted prompt in the Operation's input.
 
 #### Proof and removal
 
