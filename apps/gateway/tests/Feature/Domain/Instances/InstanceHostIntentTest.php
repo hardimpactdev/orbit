@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDevPorts;
@@ -107,6 +108,42 @@ describe('the container branch of the app-dev converge', function (): void {
                 ->and(array_column($intent($fleet)['folders'], 'shift'))->toBe(['false', 'false'])
                 ->and($intent($fleet)['fleet_node'])->toBeTrue();
         } finally {
+            unlink($marker);
+            unlink($environment);
+        }
+    });
+
+    // docs/reference/development-containers.md#no-stale-network-pid-file: only the Instance fleet Node runs the heal, so only its digest reads it.
+    it('marks only the Instance fleet Node for a converge when the heal of stale network pid files changes', function (): void {
+        $marker = sys_get_temp_dir().'/orbit-instance-fleet-heal-'.getmypid();
+        file_put_contents($environment = $marker.'-environment', "HTTPS_PROXY=\"http://10.253.0.1:3128\"\n");
+        config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
+        $real = instanceHostNode();
+        $fleet = instanceHostNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
+        app(InstanceHostIntent::class)->prepare($real);
+        app(InstanceHostIntent::class)->prepare($fleet);
+        touch($marker);
+        // A copy of the checkout, by links, in which only the heal differs.
+        $root = dirname(base_path(), 2);
+        $copy = sys_get_temp_dir().'/orbit-heal-root-'.getmypid();
+        $link = static function (string $from, string $to, array $except): void {
+            mkdir($to, 0o755, true);
+            foreach (array_diff(scandir($from) ?: [], ['.', '..', ...$except]) as $entry) {
+                symlink($from.'/'.$entry, $to.'/'.$entry);
+            }
+        };
+        $link($root, $copy, ['swamp']);
+        $link($root.'/swamp', $copy.'/swamp', ['ansible']);
+        $link($root.'/swamp/ansible', $copy.'/swamp/ansible', ['files']);
+        $link($root.'/swamp/ansible/files', $copy.'/swamp/ansible/files', ['incus-network-pid-heal.py']);
+        file_put_contents($copy.'/swamp/ansible/files/incus-network-pid-heal.py', file_get_contents($root.'/swamp/ansible/files/incus-network-pid-heal.py')."# changed\n");
+        try {
+            $inputs = app(ReleaseNodeInputs::class);
+            $roles = static fn (Node $node, string $from): array => $inputs->roles($node->refresh(), root: $from);
+            expect($roles($real, $copy))->toBe($roles($real, $root))
+                ->and($roles($fleet, $copy))->not->toBe($roles($fleet, $root));
+        } finally {
+            exec('rm -rf '.escapeshellarg($copy));
             unlink($marker);
             unlink($environment);
         }

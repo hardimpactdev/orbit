@@ -48,6 +48,11 @@
           {{ fleet_restore_failed | map(attribute='item') | join(', ') }} did not restore base:
           {{ fleet_restore_failed | map(attribute='stderr') | map('trim') | join('; ') | truncate(400) }}
         quiet: true
+    # A `base` taken before the Node's heal holds neither the heal nor a clean disk: the restored, stopped disks lose their network pid
+    # files before they boot (instance-fleet-runtime.yml).
+    - name: Clear the network pid files of the restored fleet
+      ansible.builtin.include_tasks: instance-fleet-runtime.yml
+      vars: { fleet_runtime_names: "{{ fleet_names }}" }
     - name: Start the fleet
       ansible.builtin.include_tasks: instance-fleet-start.yml
       vars: { fleet_ready_delay: 1, fleet_start_together: true }
@@ -76,6 +81,11 @@
              ~ ((': ' ~ (ansible_failed_result.stderr | string | trim)[-400:])
                 if (ansible_failed_result.msg | default('')) == 'non-zero return code' and (ansible_failed_result.stderr | default('') | string | trim) != ''
                 else '') }}
+    # A restore that ran before the failure may have put an older `base` back: its stopped disks lose their pid files first, best effort.
+    - name: Clear the network pid files before the start again
+      when: fleet_reset_running | length > 0
+      ansible.builtin.include_tasks: instance-fleet-runtime.yml
+      vars: { fleet_runtime_names: "{{ fleet_reset_running }}", fleet_runtime_best_effort: true }
     - name: Start the nested containers again
       ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['start', item] }}" }
       loop: "{{ fleet_reset_running }}"

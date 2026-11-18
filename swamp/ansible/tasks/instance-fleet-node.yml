@@ -10,7 +10,7 @@
 - name: Place the heal of stale network pid files
   ansible.builtin.copy:
     dest: /usr/local/sbin/incus-network-pid-heal
-    content: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.sh') }}\n"
+    content: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.py') }}\n"
     owner: root
     group: root
     mode: "0755"

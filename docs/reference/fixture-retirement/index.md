@@ -14,7 +14,7 @@ The deleting pull request of a family merges only after the proof is switched on
 
 ## Survey
 
-This table groups the 178 fixture files registered under `.github/ci/fixtures/` by the operation they test. **Cost** is the single-worker seconds that the registries declare. **Covered** compares the family's realistic behaviour with the cases of today, not with their `uncovered` lists.
+This table groups the 179 fixture files registered under `.github/ci/fixtures/` by the operation they test. **Cost** is the single-worker seconds that the registries declare. **Covered** compares the family's realistic behaviour with the cases of today, not with their `uncovered` lists.
 
 | Family | Fixture files | Files, cases, cost | Proof cases file | Covered | Batch wall time | Retire now |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -33,7 +33,7 @@ This table groups the 178 fixture files registered under `.github/ci/fixtures/` 
 | Conn environment restart | `workflow_conn_environment_restart_test.ts` | 1, 15, 312 | `conn/environment-restart`: one refusal, 13 `uncovered` | No | Seconds today | No |
 | Fleet reboot | `fleet_reboot_*` | 2, 39, 312 | None | No | None | No |
 | Tasks and task copies | `ansible_task_copy_turn`, `task-copy-turn/*`, `t3_copy_rpc`, `task_copy_*`, `task_instance_*` | 15, 139, 1589 | None | No | None | No |
-| Proof copy and nested fleet | `proof_*`, `ansible_task_vm_*`, `ansible_instance_fleet_test`, `instance_fleet_shrink`, `instance_fleet_runtime`, `fleet_converge_inputs`, `workflow_instance_deploy_fleet`, `ansible_task_container_host_prepare`, `ansible_task_host_firewall_remove` | 23, 267, 4578 | None: no proof can cover it | Not needed | None | No, they stay under the [ADR's exception](/decisions/0262-prove-changed-operations-on-the-pull-request#exception-the-code-that-makes-the-proof-copy) |
+| Proof copy and nested fleet | `proof_*`, `ansible_task_vm_*`, `ansible_instance_fleet_test`, `instance_fleet_shrink`, `instance_fleet_runtime`, `fleet_converge_inputs`, `workflow_instance_deploy_fleet`, `ansible_task_container_host_prepare`, `ansible_task_host_firewall_remove` | 23, 270, 4581 | None: no proof can cover it | Not needed | None | No, they stay under the [ADR's exception](/decisions/0262-prove-changed-operations-on-the-pull-request#exception-the-code-that-makes-the-proof-copy) |
 
 ## Batch wall time
 

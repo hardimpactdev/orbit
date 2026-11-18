@@ -4,18 +4,21 @@ cases = [
   "test_only_the_named_containers_are_cleared",
   "test_a_frozen_or_running_container_keeps_its_file_and_is_named",
   "test_only_the_root_pool_of_the_container_is_cleared",
-  "test_no_path_leaves_the_root_disk_through_a_symlink",
-  "test_an_empty_file_or_one_without_a_live_dnsmasq_of_its_network_goes",
-  "test_the_file_of_a_live_dnsmasq_of_its_network_stays",
+  "test_a_link_on_the_way_makes_the_disk_unsafe_and_nothing_outside_is_touched",
+  "test_a_missing_or_linked_root_disk_is_unsafe",
+  "test_the_record_of_a_live_dnsmasq_of_its_network_stays",
+  "test_each_record_that_fails_one_check_goes",
+  "test_no_link_is_followed",
+  "test_a_linked_networks_folder_is_left_alone",
   "test_no_networks_folder_changes_nothing",
   "test_the_incus_drop_in_of_a_fleet_node_runs_the_placed_heal_before_incus",
 ]
 file = "swamp/tests/instance_fleet_runtime_test.py"
-cost = 9
+cost = 12
 # The files it reads: the clear before base, the fleet Node's heal and the task that places it, run as shipped.
 inputs = [
   "swamp/ansible/instance_fleet_runtime.py",
-  "swamp/ansible/files/incus-network-pid-heal.sh",
+  "swamp/ansible/files/incus-network-pid-heal.py",
   "swamp/ansible/tasks/instance-fleet-node.yml",
 ]
 [case_costs]
@@ -23,8 +26,11 @@ inputs = [
 "test_only_the_named_containers_are_cleared" = 1
 "test_a_frozen_or_running_container_keeps_its_file_and_is_named" = 1
 "test_only_the_root_pool_of_the_container_is_cleared" = 1
-"test_no_path_leaves_the_root_disk_through_a_symlink" = 1
-"test_an_empty_file_or_one_without_a_live_dnsmasq_of_its_network_goes" = 1
-"test_the_file_of_a_live_dnsmasq_of_its_network_stays" = 1
+"test_a_link_on_the_way_makes_the_disk_unsafe_and_nothing_outside_is_touched" = 1
+"test_a_missing_or_linked_root_disk_is_unsafe" = 1
+"test_the_record_of_a_live_dnsmasq_of_its_network_stays" = 1
+"test_each_record_that_fails_one_check_goes" = 1
+"test_no_link_is_followed" = 1
+"test_a_linked_networks_folder_is_left_alone" = 1
 "test_no_networks_folder_changes_nothing" = 1
 "test_the_incus_drop_in_of_a_fleet_node_runs_the_placed_heal_before_incus" = 1

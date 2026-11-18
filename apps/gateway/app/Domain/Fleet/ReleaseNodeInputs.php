@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Fleet;
 
+use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
@@ -65,6 +66,11 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/transport-exit-codes.json',
     ];
 
+    /** Shipped assets that only the Instance fleet Node (nested-app-dev of a nested fleet) consumes: no real Node is marked by them. */
+    private const array FleetNodeFiles = [
+        'swamp/ansible/files/incus-network-pid-heal.py',
+    ];
+
     /** Shipped assets consumed by the shared Instance-host branch on app-dev and CI-only Nodes. */
     private const array InstanceHostFiles = [
         'swamp/ansible/tasks/instance-host*.yml',
@@ -89,7 +95,6 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/instance_bridge.py',
         'swamp/ansible/instance_network.py',
         'swamp/ansible/instance_nested.py',
-        'swamp/ansible/files/incus-network-pid-heal.sh',
         'swamp/ansible/files/instance-browser-trust.sh',
         'swamp/ansible/files/instance-container-wake.sh',
         'swamp/ansible/files/instance-container-power.py',
@@ -207,6 +212,7 @@ final readonly class ReleaseNodeInputs
                 ...($executor !== null || $roleUnits !== [] ? ['swamp/ansible/tasks/node-converge-base.yml'] : []),
                 ...($executor !== null ? ['swamp/ansible/tasks/node-executor.yml', 'swamp/ansible/tasks/node-converge-replace.yml'] : []),
                 ...($hostRole === $assignment->role ? self::InstanceHostFiles : []),
+                ...($hostRole === $assignment->role && ContainerNodes::fleetNode($node) ? self::FleetNodeFiles : []),
             ];
             $roles[$assignment->id] = ['role' => $role, 'digest' => self::digest(self::ordered([
                 $software, $this->pins($recipe, $software), in_array($role, $recipe->phpPolicy->pcovProfiles, true),

@@ -3286,11 +3286,25 @@ Two copies can hold such a file. The first is the **copied seed**. A task copy s
 
 The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back.
 
-**The fleet Node heals itself.** On `nested-app-dev` the [container branch](#instance-host-in-the-fleet) places `/usr/local/sbin/incus-network-pid-heal` (`swamp/ansible/files/incus-network-pid-heal.sh`). Incus's drop-in runs it as `ExecStartPre`, before every start of Incus. It keeps a pid file whose `pid:` names a running process with `--interface=<network>`, so a daemon restart keeps the live dnsmasq's file. It removes every other pid file. It runs however the guest boots: autostart in a copy, a reset, the reset's rescue or a start.
+**The fleet Node heals itself.** On `nested-app-dev` the [container branch](#instance-host-in-the-fleet) places `/usr/local/sbin/incus-network-pid-heal` (`swamp/ansible/files/incus-network-pid-heal.py`). Incus's drop-in runs it as `ExecStartPre`, before every start of Incus. It keeps a pid file only when every check holds:
 
-**`base` holds none.** Before the refresh takes `base`, `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of the `base` targets. It reads each target from the inner Incus and clears only the root disk in the pool of its `root` device. A target that is not `Stopped` fails the step: a frozen container keeps its dnsmasq and its file. The helper opens no folder through a symlink. It removes the pid file itself, never what the file links to.
+- The file is a regular file, not a link.
+- It reads as the record Incus writes, with `name: dnsmasq`, a `pid`, a `start_time` and a `boot_id`.
+- Its `boot_id` is the current boot's.
+- The process lives, and its `comm` is `dnsmasq`.
+- Its command line holds `--interface=<network>` as one whole argument.
 
-A seed made before the heal gets it at the next refresh: a change under `swamp/ansible` converges `nested-app-dev` and retakes its `base`.
+So a daemon restart keeps the live dnsmasq's file, and every other pid file goes. The heal follows no link: it leaves a linked network folder alone, and it unlinks a linked pid file itself. It runs whenever the guest's Incus starts: autostart in a copy, a reset, the reset's rescue or a start.
+
+**The host clears stopped disks.** `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of stopped nested containers. It reads each container from the inner Incus and clears only the root disk in the pool of its `root` device. Three steps run it:
+
+- The refresh runs it before it takes `base`, so a new `base` holds no pid file.
+- The reset runs it between the restore of `base` and the start. A `base` taken before the heal existed holds neither the heal nor a clean disk, and this clears it before it boots.
+- The reset's rescue runs it, best effort, before it starts the containers again. The reset keeps its own error.
+
+A container that is not `Stopped` fails the step: a frozen container keeps its dnsmasq and its file. So does a container whose disk the helper cannot check without following a link, such as a missing root disk or a linked `networks` folder. Then no `base` is taken and the reset does not start the fleet.
+
+A seed made before the heal gets it at the next refresh: a change under `swamp/ansible` converges `nested-app-dev` and retakes its `base`. Only the fleet Node's release inputs hold the heal, so a change to it marks no real `app-dev` or CI Node for a converge.
 
 `orbitinst0` serves DHCP only: its `raw.dnsmasq` is `port=0`, so its dnsmasq answers no names. An Instance there reaches names through its egress proxy at the bridge address.
 

@@ -2,8 +2,8 @@
 
 - swamp/ansible/instance_fleet_runtime.py: the refresh's clear of stopped nested containers before `base`. `incus` is a stub on PATH:
   `incus query /1.0/instances/<name>` answers the status and root pool that `STATUS_<name>` and `POOL_<name>` name.
-- swamp/ansible/files/incus-network-pid-heal.sh: a fleet Node's heal before its Incus starts, on a scratch networks folder and a
-  scratch `/proc`.
+- swamp/ansible/files/incus-network-pid-heal.py: a fleet Node's heal before its Incus starts, on a scratch networks folder, a
+  scratch `/proc` and a scratch boot ID.
 
 nested-app-dev holds the empty `dnsmasq.pid` of `orbitinst0` that a copy of a running fleet left: at the next start Incus failed with
 `Could not read pid file`.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 ANSIBLE = Path(__file__).resolve().parents[1] / 'ansible'
 SCRIPT = ANSIBLE / 'instance_fleet_runtime.py'
-HEAL = ANSIBLE / 'files/incus-network-pid-heal.sh'
+HEAL = ANSIBLE / 'files/incus-network-pid-heal.py'
 NETWORKS = 'var/lib/incus/networks'
 
 
@@ -59,37 +59,39 @@ class FleetRuntimeTest(unittest.TestCase):
         leases = write(networks / 'orbitinst0/dnsmasq.leases')
         raw = write(networks / 'orbitinst0/dnsmasq.raw', 'port=0\n')
         self.disk('nested-gateway').mkdir(parents=True)
+        self.disk('nested-app-prod').mkdir(parents=True)
 
         result = self.run_script('nested-gateway', 'nested-app-dev', 'nested-app-prod')
 
-        self.assertEqual(result, {'removed': ['nested-app-dev/orbitinst0', 'nested-app-dev/other0'], 'skipped': []})
+        self.assertEqual(result, {'removed': ['nested-app-dev/orbitinst0', 'nested-app-dev/other0'], 'skipped': [], 'unsafe': []})
         self.assertFalse(empty.exists())
         self.assertFalse(stale.exists())
         self.assertTrue(leases.exists())
         self.assertEqual(raw.read_text(), 'port=0\n')
-        self.assertEqual(self.run_script('nested-app-dev'), {'removed': [], 'skipped': []})
+        self.assertEqual(self.run_script('nested-app-dev'), {'removed': [], 'skipped': [], 'unsafe': []})
 
     def test_only_the_named_containers_are_cleared(self):
         kept = write(self.disk('nested-app-prod') / NETWORKS / 'orbitinst0/dnsmasq.pid')
-        self.assertEqual(self.run_script('nested-app-dev'), {'removed': [], 'skipped': []})
+        self.disk('nested-app-dev').mkdir(parents=True)
+        self.assertEqual(self.run_script('nested-app-dev'), {'removed': [], 'skipped': [], 'unsafe': []})
         self.assertTrue(kept.exists())
 
     def test_a_frozen_or_running_container_keeps_its_file_and_is_named(self):
         frozen = write(self.disk('nested-app-dev') / NETWORKS / 'orbitinst0/dnsmasq.pid', 'pid: 757\n')
         running = write(self.disk('nested-app-prod') / NETWORKS / 'orbitinst0/dnsmasq.pid', 'pid: 758\n')
         result = self.run_script('nested-app-dev', 'nested-app-prod', STATUS_nested_app_dev='Frozen', STATUS_nested_app_prod='Running')
-        self.assertEqual(result, {'removed': [], 'skipped': ['nested-app-dev', 'nested-app-prod']})
+        self.assertEqual(result, {'removed': [], 'skipped': ['nested-app-dev', 'nested-app-prod'], 'unsafe': []})
         self.assertTrue(frozen.exists())
         self.assertTrue(running.exists())
 
     def test_only_the_root_pool_of_the_container_is_cleared(self):
         other_pool = write(self.disk('nested-app-dev', 'old') / NETWORKS / 'orbitinst0/dnsmasq.pid')
         own = write(self.disk('nested-app-dev', 'inner') / NETWORKS / 'orbitinst0/dnsmasq.pid')
-        self.assertEqual(self.run_script('nested-app-dev'), {'removed': ['nested-app-dev/orbitinst0'], 'skipped': []})
+        self.assertEqual(self.run_script('nested-app-dev'), {'removed': ['nested-app-dev/orbitinst0'], 'skipped': [], 'unsafe': []})
         self.assertFalse(own.exists())
         self.assertTrue(other_pool.exists())
 
-    def test_no_path_leaves_the_root_disk_through_a_symlink(self):
+    def test_a_link_on_the_way_makes_the_disk_unsafe_and_nothing_outside_is_touched(self):
         outside = self.folder / 'outside'
         target = write(outside / 'orbitinst0/dnsmasq.pid')
         through_folder = write(self.folder / 'elsewhere/networks/orbitinst0/dnsmasq.pid')
@@ -104,10 +106,29 @@ class FleetRuntimeTest(unittest.TestCase):
         os.symlink(target, linked / 'dnsmasq.pid')
 
         self.assertEqual(self.run_script('nested-gateway', 'nested-app-dev', 'nested-app-prod'),
-                         {'removed': ['nested-gateway/orbitinst0'], 'skipped': []})
+                         {'removed': ['nested-gateway/orbitinst0'], 'skipped': [], 'unsafe': ['nested-app-dev', 'nested-app-prod']})
         self.assertTrue(target.exists())
         self.assertTrue(through_folder.exists())
         self.assertFalse(os.path.lexists(linked / 'dnsmasq.pid'))
+
+    def test_a_missing_or_linked_root_disk_is_unsafe(self):
+        elsewhere = self.folder / 'elsewhere-rootfs'
+        write(elsewhere / NETWORKS / 'orbitinst0/dnsmasq.pid')
+        (self.pools / 'inner/containers/nested-app-prod').mkdir(parents=True)
+        os.symlink(elsewhere, self.pools / 'inner/containers/nested-app-prod/rootfs')
+        self.assertEqual(self.run_script('nested-app-dev', 'nested-app-prod'),
+                         {'removed': [], 'skipped': [], 'unsafe': ['nested-app-dev', 'nested-app-prod']})
+        self.assertTrue((elsewhere / NETWORKS / 'orbitinst0/dnsmasq.pid').exists())
+
+
+BOOT = '20d9f9ee-6d10-4997-bf71-7cd558d8c898'
+
+
+def incus_record(pid, boot=BOOT, name='dnsmasq'):
+    """A pid record as Incus writes it, its args continued on indented lines."""
+    return (f'name: {name}\nargs: [--keep-in-foreground, --strict-order, --bind-interfaces, --except-interface=lo,\n'
+            f'  --pid-file=, --no-ping, --interface=orbitinst0]\napparmor: ""\ncwd: ""\npid: {pid}\nstart_time: 79271055\n'
+            f'boot_id: {boot}\nuid: 0\ngid: 0\nset_groups: false\nsysprocattr: null\n')
 
 
 class NetworkPidHealTest(unittest.TestCase):
@@ -116,43 +137,78 @@ class NetworkPidHealTest(unittest.TestCase):
         self.addCleanup(subprocess.run, ['rm', '-rf', str(self.folder)])
         self.networks = self.folder / 'networks'
         self.proc = self.folder / 'proc'
+        self.boot = write(self.folder / 'boot_id', BOOT + '\n')
 
-    def process(self, pid, *args):
+    def process(self, pid, comm, *args):
+        write(self.proc / str(pid) / 'comm', comm + '\n')
         write(self.proc / str(pid) / 'cmdline', ''.join(arg + '\0' for arg in args))
 
+    def pid_file(self, content, network='orbitinst0'):
+        return write(self.networks / network / 'dnsmasq.pid', content)
+
     def heal(self):
-        done = subprocess.run(['sh', str(HEAL), str(self.networks), str(self.proc)], capture_output=True, text=True)
+        done = subprocess.run([sys.executable, '-I', str(HEAL), str(self.networks), str(self.proc), str(self.boot)],
+                              capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout.splitlines()
 
-    def test_an_empty_file_or_one_without_a_live_dnsmasq_of_its_network_goes(self):
-        empty = write(self.networks / 'orbitinst0/dnsmasq.pid')
-        dead = write(self.networks / 'dead0/dnsmasq.pid', 'name: dnsmasq\npid: 4242\n')
-        # A live dnsmasq, but of another network: its PID was reused, so the file is stale.
-        self.process(5000, 'dnsmasq', '--interface=other0')
-        reused = write(self.networks / 'reused0/dnsmasq.pid', 'name: dnsmasq\npid: 5000\n')
-        leases = write(self.networks / 'orbitinst0/dnsmasq.leases')
-
-        self.assertEqual(self.heal(), ['removed dead0', 'removed orbitinst0', 'removed reused0'])
-        for path in (empty, dead, reused):
-            self.assertFalse(path.exists(), path)
-        self.assertTrue(leases.exists())
-
-    def test_the_file_of_a_live_dnsmasq_of_its_network_stays(self):
-        self.process(757, 'dnsmasq', '--keep-in-foreground', '--interface=orbitinst0', '--listen-address=10.253.1.1')
-        live = write(self.networks / 'orbitinst0/dnsmasq.pid', 'name: dnsmasq\napparmor: ""\npid: 757\nuid: 0\n')
+    def test_the_record_of_a_live_dnsmasq_of_its_network_stays(self):
+        self.process(757, 'dnsmasq', 'dnsmasq', '--keep-in-foreground', '--interface=orbitinst0', '--listen-address=10.253.1.1')
+        live = self.pid_file(incus_record(757))
         self.assertEqual(self.heal(), [])
-        self.assertTrue(live.exists())
+        self.assertEqual(live.read_text(), incus_record(757))
+
+    def test_each_record_that_fails_one_check_goes(self):
+        self.process(757, 'dnsmasq', 'dnsmasq', '--interface=orbitinst0')
+        self.process(758, 'sleep', 'sleep', '--interface=orbitinst0')
+        self.process(759, 'dnsmasq', 'dnsmasq', '--interface=br01')
+        cases = {
+            'empty': '',
+            'no_newline_end': incus_record(757)[:-1],
+            'malformed': 'pid: 757\n{not yaml\n' + incus_record(757).split('\n', 1)[1],
+            'duplicate_key': incus_record(757) + 'pid: 757\n',
+            'other_name': incus_record(757, name='other'),
+            'no_start_time': incus_record(757).replace('start_time: 79271055\n', ''),
+            'other_boot': incus_record(757, boot='00000000-0000-0000-0000-000000000000'),
+            'dead_pid': incus_record(4242),
+            'not_dnsmasq': incus_record(758),
+        }
+        for network, content in cases.items():
+            self.pid_file(content.replace('--interface=orbitinst0', f'--interface={network}'), network)
+        # A live dnsmasq whose interface only matches as a pattern: `br.1` names another network than `br01`.
+        self.pid_file(incus_record(759), 'br.1')
+        self.assertEqual(self.heal(), [f'removed {network}' for network in sorted([*cases, 'br.1'])])
+        self.assertEqual(sorted(path.name for path in self.networks.glob('*/dnsmasq.pid')), [])
+
+    def test_no_link_is_followed(self):
+        self.process(757, 'dnsmasq', 'dnsmasq', '--interface=orbitinst0')
+        outside = write(self.folder / 'outside/orbitinst0/dnsmasq.pid')
+        self.networks.mkdir()
+        os.symlink(outside.parent, self.networks / 'linked0')
+        linked_file = self.networks / 'orbitinst0'
+        linked_file.mkdir()
+        os.symlink(write(self.folder / 'outside/record', incus_record(757)), linked_file / 'dnsmasq.pid')
+        self.assertEqual(self.heal(), ['removed orbitinst0'])
+        self.assertTrue(outside.exists())
+        self.assertEqual((self.folder / 'outside/record').read_text(), incus_record(757))
+        self.assertFalse(os.path.lexists(linked_file / 'dnsmasq.pid'))
+
+    def test_a_linked_networks_folder_is_left_alone(self):
+        outside = write(self.folder / 'outside/orbitinst0/dnsmasq.pid')
+        os.symlink(outside.parent.parent, self.networks)
+        self.assertEqual(self.heal(), [])
+        self.assertTrue(outside.exists())
 
     def test_no_networks_folder_changes_nothing(self):
         self.assertEqual(self.heal(), [])
 
     def test_the_incus_drop_in_of_a_fleet_node_runs_the_placed_heal_before_incus(self):
         tasks = (ANSIBLE / 'tasks/instance-fleet-node.yml').read_text()
-        placed = re.search(r"dest: (\S+)\n    content: \"\{\{ lookup\('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.sh'\) \}\}", tasks)
+        placed = re.search(r"dest: (\S+)\n    content: \"\{\{ lookup\('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.py'\) \}\}", tasks)
         self.assertIsNotNone(placed)
         self.assertIn(f'      ExecStartPre={placed.group(1)}\n', tasks)
         self.assertIn('mode: "0755"', tasks[placed.end():placed.end() + 120])
+        self.assertTrue(HEAL.read_text().startswith('#!/usr/bin/python3 -I\n'))
 
 
 if __name__ == '__main__':

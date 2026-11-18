@@ -1,14 +1,24 @@
 ---
 # Clear the inner Incus's network pid files (each managed bridge's dnsmasq.pid) from the stopped nested containers that
-# `fleet_runtime_names` names (instance_fleet_runtime.py). The refresh runs it before it takes `base`, so no `base` holds one: a stop
-# keeps the file, and an empty one stopped `orbitinst0` on nested-app-dev. A container that is not stopped fails the step, and no
-# `base` is taken. The Node's own heal (instance-fleet-node.yml) covers every boot of an older disk. Input: instance-fleet.yml.
+# `fleet_runtime_names` names (instance_fleet_runtime.py). A stop keeps the file, and an empty one stopped `orbitinst0` on nested-app-dev.
+# - The refresh runs it before it takes `base`, so no `base` holds one.
+# - The reset runs it between the restore of `base` and the start, and its rescue before it starts the containers again: a `base` taken
+#   before the Node's heal (instance-fleet-node.yml) holds neither the heal nor a clean disk.
+# A container that is not stopped (`skipped`) or that could not be checked without following a link (`unsafe`) fails the step, so no
+# `base` is taken and no reset starts it. The rescue sets `fleet_runtime_best_effort`: it never fails there, and the reset keeps its own
+# error. Input: instance-fleet.yml.
 - name: Clear the network pid files of the stopped nested containers
+  vars:
+    fleet_runtime_result: >-
+      {{ (fleet_runtime.stdout_lines | last | from_json) if fleet_runtime.rc | default(1) == 0 and fleet_runtime.stdout_lines | default([]) | length > 0
+         else {'removed': [], 'skipped': [], 'unsafe': fleet_runtime_names} }}
   ansible.builtin.command:
     argv: >-
       {{ ['timeout', '60'] + fleet_outer
          + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_fleet_runtime.py'), fleet_inner_pools]
          + fleet_runtime_names }}
   register: fleet_runtime
-  changed_when: (fleet_runtime.stdout_lines | last | from_json).removed | length > 0
-  failed_when: fleet_runtime.rc != 0 or (fleet_runtime.stdout_lines | last | from_json).skipped | length > 0
+  changed_when: fleet_runtime_result.removed | length > 0
+  failed_when: >-
+    not (fleet_runtime_best_effort | default(false) | bool)
+    and (fleet_runtime.rc != 0 or (fleet_runtime_result.skipped + fleet_runtime_result.unsafe) | length > 0)
