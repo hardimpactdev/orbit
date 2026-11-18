@@ -1,9 +1,0 @@
-operation 198 succeeded wall_seconds 141
-  {'name': 'input', 'status': 'succeeded', 'elapsed_seconds': 2, 'changed': 0}
-  {'name': 'agent', 'status': 'succeeded', 'elapsed_seconds': 11, 'changed': 0}
-  {'name': 'software', 'status': 'succeeded', 'elapsed_seconds': 22, 'changed': 0}
-  {'name': 'roles', 'status': 'succeeded', 'elapsed_seconds': 63, 'changed': 3}
-  {'name': 'tools', 'status': 'succeeded', 'elapsed_seconds': 2, 'changed': 0}
-  {'name': 'network', 'status': 'succeeded', 'elapsed_seconds': 19, 'changed': 0}
-  {'name': 'check', 'status': 'succeeded', 'elapsed_seconds': 12, 'changed': 0}
-changed 3
