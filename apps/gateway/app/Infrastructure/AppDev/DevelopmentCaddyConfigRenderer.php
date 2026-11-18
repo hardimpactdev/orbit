@@ -207,10 +207,8 @@ final readonly class DevelopmentCaddyConfigRenderer
                 CADDY;
 
             $handlers = $site->viteUpstream === null ? $application : $this->withDevelopmentServer($application, $site->viteUpstream);
-            $asleep = $this->containerWake($site);
 
-            // The site template indents only the first line, so the proxy keeps its site indentation after the check.
-            return $asleep === null ? $handlers : $asleep.PHP_EOL.'    '.$handlers;
+            return $this->containerWake($site, $handlers);
         }
 
         if ($site->isProxy()) {
@@ -363,19 +361,19 @@ final readonly class DevelopmentCaddyConfigRenderer
      * a stat of the marker on the Node, evaluated in the request matcher: while the marker is missing it is false, and the request
      * goes straight to the proxy below without a call to the Gateway. A probe never wakes the Instance.
      */
-    private function containerWake(DevelopmentSite $site): ?string
+    private function containerWake(DevelopmentSite $site, string $handlers): string
     {
         if ($site->asleepMarker === null || preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $site->scope, $matches) !== 1) {
-            return null;
+            return $handlers;
         }
         $host = parse_url($this->gatewayOrigin, PHP_URL_HOST);
         if (! is_string($host) || $host === '') {
-            return null;
+            return $handlers;
         }
         $directory = dirname($site->asleepMarker);
         $marker = '/'.basename($site->asleepMarker);
         $probeHeader = RuntimeHibernation::ProbeHeader;
-        $activation = $this->activation((int) $matches[1], $host);
+        $activation = $this->activation((int) $matches[1], $host, '@orbit_asleep');
         $log = RuntimeHibernation::accessLogPath(RuntimeHibernation::key((int) $matches[1]));
 
         // The access log's mtime is the HTTP activity of the idle sleep. Caddy creates the file when it loads the site, so a new
@@ -398,20 +396,22 @@ final readonly class DevelopmentCaddyConfigRenderer
                     try_files {$marker}
                 }
             }
-            handle @orbit_asleep {
+            route {
                 {$activation}
+                {$handlers}
             }
             CADDY;
     }
 
-    /** The runtime activation call of a sleeping Instance: the Gateway answers with the progress or failure page. */
-    private function activation(int $instanceId, string $host): string
+    /** A 2xx activation continues the original request; any other response is returned unchanged to the visitor. */
+    private function activation(int $instanceId, string $host, ?string $matcher = null): string
     {
         $uri = '/api/v1/runtime-activations/app-instance/'.$instanceId;
         $root = self::ORBIT_ROOT_CA_PATH;
+        $forwardAuth = 'forward_auth '.($matcher === null ? '' : $matcher.' ').$this->gatewayOrigin;
 
         return <<<CADDY
-            forward_auth {$this->gatewayOrigin} {
+            {$forwardAuth} {
                     uri {$uri}
                     header_up Host {$host}
                     transport http {

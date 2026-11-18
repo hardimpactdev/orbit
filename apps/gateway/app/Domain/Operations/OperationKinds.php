@@ -21,6 +21,7 @@ final readonly class OperationKinds
         'websocket.app_destroy' => ['executor' => 'gateway'],
         'websocket.app_rotate' => ['executor' => 'gateway'],
         'proof.run' => ['executor' => 'gateway'],
+        self::ConnLaunch => ['executor' => 'gateway'],
         'executor.proof' => ['executor' => 'gateway'],
         'executor.power_proof' => ['executor' => 'gateway'],
     ];
@@ -54,6 +55,14 @@ final readonly class OperationKinds
     public const string ProjectPrMerge = 'project.pr_merge';
 
     public const string ProofRun = 'proof.run';
+
+    public const string ConnLaunch = 'conn.launch';
+
+    public const string ConnLaunchInspect = 'conn.launch_inspect';
+
+    public const string ConnLaunchDispatch = 'conn.launch_dispatch';
+
+    public const array PrivateConnKinds = [self::ConnLaunch, self::ConnLaunchInspect, self::ConnLaunchDispatch];
 
     public const string ProofVerify = 'proof.verify';
 

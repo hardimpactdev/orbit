@@ -9,6 +9,7 @@ covers:
   - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
+  - swamp/ansible/t3_copy_rpc.mjs
 ---
 
 # Instance containers
@@ -1715,11 +1716,13 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | Sleep after an idle hour | Built; off until the operator turns it on. See below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
 | The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
-| A visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
+| With executor wakes off, a visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
 | The wake reads the pages that were resident at the freeze back from swap before it resumes | In progress ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)); off for nested-fleet Instances. See [Prepared restore](/reference/prepared-restore) |
 | A long freeze becomes a stop | Planned |
 | A production live sleeps and wakes; Caddy holds its visitor | Planned with production containers ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Production containers](/reference/production-containers#sleep-and-wake) |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
+
+The Gateway setting `ORBIT_EXECUTOR_WAKE_ENABLED`, off by default, selects the [executor wake inside the request](/reference/executor#the-wake-inside-the-request) for containers. A successful wake within `ORBIT_EXECUTOR_WAIT_MS` (500 ms by default) lets Caddy pass the original request straight to the app. Otherwise the visitor gets the existing waiting page. This path uses no SSH or Python, and leaves its completion to a queued job after the request bound. Keep the setting off until ADR 0266 slices 5 and 7 land.
 
 **The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development container to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. A clone, a default and a nested-fleet Instance follow the same rule; no list of names or ids exempts one. `ORBIT_HIBERNATION_CONTAINER_SLEEP` chooses which Instances it acts on:
 
@@ -2026,7 +2029,17 @@ A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a
 
 ## Swamp drives T3
 
-Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver. The [`pi` driver](/reference/tasks#drivers) and task VMs are removed.
+Swamp drives a container's stock T3 through its own CLI and WebSocket RPC, run in the container. The [Conn launch transport](#conn-launch-transport) shares that RPC helper; the rest of this section describes the `t3` task driver. The [`pi` driver](/reference/tasks#drivers) and task VMs are removed.
+
+### Conn launch transport
+
+The placed phase reads or hands off only inside the admitted Instance. Run-folder staging allows the full frozen request to reach T3 on stdin. A cancelled preparation waits for any bounded native call and its local service session to settle before teardown.
+
+The [durable Conn launch](/reference/conn#durable-launches-v1) uses stock T3 `0.1.7` through the shared `t3_copy_rpc.mjs` transport. Swamp uses the admitted Node and exact container runtime; it enters the container with `incus exec`, then runs as `agent` with `runuser` in `/srv/workspace`. The worker reads the local runtime origin, issues a one-minute T3 session with `orchestration:read` and `orchestration:operate`, exchanges it for a WebSocket ticket, and uses `/ws?orchestrationProtocol=2`. Close the socket and revoke the session; if the process dies first, the session expires. Never return sessions, tickets, raw RPC frames or projections as evidence. The prompt is private input, not a shell argument or a Swamp artifact.
+
+Discover the active project for `/srv/workspace` from `orchestration.subscribeShell` and read provider settings with `server.getConfig` in the same scopes. The live `/.well-known/t3/environment` descriptor exposes the ID that stock T3 persists as `userdata/environment-id`. Check the live identity against the local state. Bind it to the device and inode of the persisted T3 database file before dispatch. This uses filesystem metadata. Recheck the binding on every attempt, including a read after a lost response. An ordinary restart with the same state keeps that binding. If state was copied, restored or otherwise lost continuity, a matching descriptor alone does not prove the replay window survived.
+
+Separate the read-only preparation evidence from permission to dispatch. Only native work admitted under the committed launch fence may send. Mark sending as a native write; recovery checks the pinned server and exact thread projection before any possible replay. Stock T3 writes separate command receipts for thread creation and the initial message, and can schedule the run before returning the launch response. A thread with no matching first message is not an acceptance receipt. Keep projection reads bounded and compare the exact message in the container; return only safe facts for the Gateway to project.
 
 ### Reach and authentication
 

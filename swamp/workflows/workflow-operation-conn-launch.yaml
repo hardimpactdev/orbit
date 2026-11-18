@@ -1,0 +1,146 @@
+id: 90ead66d-8285-4ddc-a9fe-decce916975c
+name: operation-conn-launch
+autoContinue: false
+description: Inspect the registered stock T3 workspace or act on its admitted first-message handoff.
+vaults: [orbit-control-inputs]
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [conn.launch_inspect, conn.launch_dispatch]}
+    intent: {type: object}
+    execution_secrets:
+      type: object
+      propertyNames: {enum: [dispatch_request]}
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^conn-launch-dispatch-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: launch
+    labels: {role: swamp}
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Inspect T3
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        guard: '${{ inputs.kind != "conn.launch_inspect" || inputs.intent.action != "inspect-launch" }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ ("conn-launch-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}'
+          methodName: execute
+          inputs:
+            run: timeout 85 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags launch "$ORBIT_ANSIBLE/conn-launch.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: Stage the private launch request
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        guard: '${{ inputs.kind != "conn.launch_dispatch" || !("dispatch_request" in inputs.execution_secrets) || !(inputs.intent.action in ["launch", "reconcile-launch"]) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: ${{ "conn-launch-stage-stdin" }}
+          methodName: exec
+          globalArgs:
+            name: conn-launch-stage-stdin
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.staging_ssh.target.user }}
+              port: ${{ inputs.intent.staging_ssh.target.port }}
+              identityFile: ${{ inputs.intent.staging_ssh.identity_file }}
+            hosts:
+              - name: staging
+                address: ${{ inputs.intent.staging_ssh.target.host }}
+                transport: {hostKeys: '${{ inputs.intent.staging_ssh.target.host_keys }}'}
+          inputs:
+            hosts: name:staging
+            sudo: true
+            timeoutSec: 15
+            argv:
+              - /usr/sbin/runuser
+              - -u
+              - orbit
+              - --
+              - /bin/sh
+              - -c
+              - 'umask 077; set -C; exec /bin/cat > "$1"'
+              - orbit-conn-launch
+              - '${{ "/tmp/orbit-ansible-" + run.id + "/launch.json" }}'
+            stdin: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.dispatch_request.key) }}'
+      - name: Hand off or reconcile T3
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Stage the private launch request, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ ("conn-launch-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}'
+          methodName: execute
+          inputs:
+            run: timeout 85 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags launch "$ORBIT_ANSIBLE/conn-launch.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: result
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: Stage the private launch request, condition: {type: always}}
+          - {step: Inspect T3, condition: {type: always}}
+          - {step: Hand off or reconcile T3, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "conn-launch-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "conn-launch-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+

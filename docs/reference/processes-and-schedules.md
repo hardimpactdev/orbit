@@ -22,6 +22,8 @@ A retained container create retry derives its Processes from the Project's curre
 
 A clone has no deployment. On a clone, and for a container Process recorded without a definition, [`process:destroy --instance`](/cli/process/destroy#a-process-in-an-instance-container) removes a Process that no current definition owns. It stops and removes only that Process's unit and folder in the container, then deletes the record. The id must belong to the named Instance.
 
+When a Conn launch's application completion needs a Process definition change, Orbit compares the current definition with the unit recorded by the failed completion. The application can retry after the definition changes, even if another operation has already applied the change to the Process. [Durable launches](/reference/conn#durable-launches-v1)
+
 ## Execution
 
 Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the local Node actions and returns a bounded native result. The Gateway projects that result into the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.

@@ -78,7 +78,8 @@ sequenceDiagram
     SW->>SW: Prepare the input<br/>phase: input
     %%> What it does:
     %%> - writes private inventory, vars and known_hosts from schema-validated inputs
-    %%> - after it writes the files for the phases, computes each phase digest from what the phases read: those files with the Operation ID masked, the Ansible bundle and the Tool helper with its Tool files; lists the phases whose digest equals the record
+    %%> - stages the shipped Ansible files and Tool helper in the private run folder shared by the Swamp Node workers
+    %%> - after it writes the input files for the phases, computes each phase digest from what the phases read: those files with the Operation ID masked, the Ansible bundle and the Tool helper with its Tool files; lists the phases whose digest equals the record
     opt digest equals the record
       %% path: phase-unchanged
       Note over SW: Skip an unchanged phase

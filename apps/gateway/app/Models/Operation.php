@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\Swamp\NativeRunStepTimes;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,6 +32,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed>|null $state
  * @property array<string, mixed>|null $result
  * @property array<string, mixed>|null $executor_result The executor's result line for this Operation's order (ADR 0266), written once by the agent view subscriber.
+ * @property int|null $executor_result_received_us Gateway receipt time in Unix microseconds, written with the first result.
  * @property OperationStatus $status
  * @property int $sequence
  * @property string|null $current_step
@@ -94,10 +96,23 @@ final class Operation extends Model
         $query->addSelect(['caller_node_name' => Node::query()->select('name')->whereColumn('nodes.id', 'operations.input->caller_node_id')]);
     }
 
+    /** @param Builder<self> $query */
+    public function scopePubliclyVisible(Builder $query): void
+    {
+        $query->whereNotIn('kind', OperationKinds::PrivateConnKinds);
+    }
+
     #[\Override]
     public function resolveRouteBinding($value, $field = null): ?self
     {
-        return self::query()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value)->first();
+        $query = self::query()->withCallerNodeName()->where($field ?? $this->getRouteKeyName(), $value);
+        if (request()->routeIs('operation:direct:*')) {
+            $query->where('kind', '!=', OperationKinds::ConnLaunch);
+        } else {
+            $query->publiclyVisible();
+        }
+
+        return $query->first();
     }
 
     #[\Override]
@@ -121,6 +136,7 @@ final class Operation extends Model
             'state' => 'array',
             'result' => 'array',
             'executor_result' => 'array',
+            'executor_result_received_us' => 'integer',
             'status' => OperationStatus::class,
             'sequence' => 'integer',
             'attempts' => 'integer',

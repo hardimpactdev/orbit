@@ -1,0 +1,40 @@
+sequenceDiagram
+  %% status: draft
+  %% command: POST /api/v1/conn/launches
+  %% kind: conn.launch
+  autonumber
+  participant C as API caller
+  participant G as Gateway
+  participant S as Swamp
+  C->>G: Admit the launch
+  %%> Validate the expected device and its locked profile binding on first admission and replay.
+  %%> Check the encoded model selection size before creating a new Operation.
+  %%> Store the encrypted request with the parent Operation.
+  G-->>C: 202 · launch snapshot
+  G->>S: Prepare the Instance
+  %%> Use the exact owned create or admitted wake. Record application completion separately.
+  %%> On explicit Retry, admit a fresh wake if the existing Instance slept again. Wait for it before probing T3 again.
+  %%> If sleep restoration was admitted first, wait for it to settle before checking power and probing T3.
+  %%> Read the registered stock T3 project and model defaults.
+  alt Cancel wins the Operation lock
+    %% path: cancel
+    G->>S: Remove owned work
+    %%> Check the clone for work and T3 activity even when its create failed.
+    %%> Lock the Instance and check for other launches before admitting teardown.
+    %%> For a stopped container, use the verified Stop result from the same owned removal chain, including after a retry fails before its run starts.
+    %%> After reading activity for a completed wake, lock the Instance and recheck the exact wake owner and current consumers before admitting sleep.
+    %%> Verified cleanup ends the launch. A failed or unproven cleanup remains Cancelling.
+    S-->>G: Cleanup proof
+  else Dispatch wins the Operation lock
+    %% path: handoff
+    G->>S: Send the first message
+    %%> After an ambiguous reply, read the exact message on the original T3 state.
+    S-->>G: Verified acceptance
+    Note over G: Publish the thread
+    %%> Retry only publication after acceptance. Leave a deleted workspace absent.
+    %%> Recheck the exact application Retry under the launch lock. Under the Instance lock, use a newer completion admitted for the same Instance and Node and record it as unowned.
+    %%> End the matching application Retry with a sanitized preview error if its target is gone or admission refuses completion on an existing Instance. Keep the ready thread and the last admitted completion.
+    %%> Settlement can record the first completion for the admitted Instance and Node after the launch is ready. A later completion can replace a failed child.
+  end
+  C->>G: Follow or control
+  G-->>C: Recorded snapshot

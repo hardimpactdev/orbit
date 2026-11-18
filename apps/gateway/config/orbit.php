@@ -75,9 +75,10 @@ return [
     // during a rotation, base64, comma-separated. `signing_key` is the secret half that signs every order: the base64 64-byte
     // libsodium secret key, readable only by `orbit` (docs/reference/executor.md#rollout). Never log or print it.
     'executor' => [
+        'wake_enabled' => (bool) env('ORBIT_EXECUTOR_WAKE_ENABLED', false),
         'public_keys' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('ORBIT_EXECUTOR_PUBLIC_KEYS', ''))))),
         'signing_key' => env('ORBIT_EXECUTOR_SIGNING_KEY'),
-        // How long a waiting request waits on Valkey for an order's result (ADR 0266 slice 3). A starting value: slice 6 measures it.
+        // The shared publish-and-wait budget of a container wake request (ADR 0266 slice 6). Valkey needs hz 100.
         'wait_ms' => (int) env('ORBIT_EXECUTOR_WAIT_MS', 500),
     ],
 

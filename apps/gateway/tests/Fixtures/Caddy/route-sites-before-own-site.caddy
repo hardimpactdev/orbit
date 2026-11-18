@@ -86,8 +86,8 @@ log {
         try_files /app-instance-12.asleep
     }
 }
-handle @orbit_asleep {
-    forward_auth https://gateway.orbit {
+route {
+    forward_auth @orbit_asleep https://gateway.orbit {
         uri /api/v1/runtime-activations/app-instance/12
         header_up Host gateway.orbit
         transport http {
@@ -95,7 +95,6 @@ handle @orbit_asleep {
             tls_server_name gateway.orbit
         }
     }
-}
     @orbit_vite {
     path /__orbit/vite /__orbit/vite/*
 }
@@ -109,6 +108,7 @@ handle {
         read_timeout 1h
         response_header_timeout 1h
     }
+}
 }
 }
 }
@@ -164,8 +164,8 @@ log {
         try_files /app-instance-11.asleep
     }
 }
-handle @orbit_asleep {
-    forward_auth https://gateway.orbit {
+route {
+    forward_auth @orbit_asleep https://gateway.orbit {
         uri /api/v1/runtime-activations/app-instance/11
         header_up Host gateway.orbit
         transport http {
@@ -173,13 +173,13 @@ handle @orbit_asleep {
             tls_server_name gateway.orbit
         }
     }
-}
     reverse_proxy 10.253.0.2:8080 {
     flush_interval -1
     transport http {
         read_timeout 1h
         response_header_timeout 1h
     }
+}
 }
 }
 

@@ -5,11 +5,10 @@ covers:
   - apps/gateway/extensions/conn/**
   - swamp/extensions/behaviors/operations/conn-*/**
   - swamp/workflows/workflow-operation-conn-*.yaml
+  - swamp/ansible/conn-*.yml
+  - swamp/{ansible/t3_copy_rpc.mjs,tests/t3_copy_rpc_test.ts}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
-  - apps/gateway/database/migrations/2027_02_03_000001_add_instance_to_conn_environments.php
-  - apps/gateway/database/migrations/2027_02_10_000000_add_renewal_to_conn_environments.php
-  - apps/gateway/database/migrations/2027_02_15_000000_create_conn_threads_table.php
-  - apps/gateway/database/migrations/2027_02_17_000000_add_held_sessions_to_conn_pairings.php
+  - apps/gateway/database/migrations/*_conn_*.php
 ---
 
 # Conn layer
@@ -36,6 +35,8 @@ Conn uses the existing [node access](/cli/node/access-add) edges. It has no gran
 | Thread index list, `GET /threads` | Node access to at least one Node. The list covers only the container servers the server list shows the caller. |
 | Thread record, `POST /environments/{environment_id}/threads` | Node access to the Node that serves the server. |
 | Thread start, `POST /projects/{id}/instances` | Node access to the Node of the Project's default Instance. |
+| Durable launch admission and replay, `POST /launches` | An active peer, matching `expected_node_id` and `expected_profile_id` checked against the authenticated Node and its current binding in the admission transaction, and current target Node access. The collection access rule also applies. |
+| Durable launch reads and controls | An active peer, a current binding to the recorded profile, and access to the recorded target Node. The collection access rule also applies. |
 | `POST /environments`, registration | No edge. |
 
 The Gateway Node, its serving host, and a Node with an edge to the Gateway Node have access to every Node, so they reach every server. When a server's Node was removed, only those callers reach it. A refused call gets `node_access.required` (403), with `details.consumer_node` and, for a server, `details.serving_node`.
@@ -662,6 +663,125 @@ A cancelled clone create keeps the clone for its owner. The Instance stays `rese
 
 A cancelled completion keeps the clone `source_resolved`, its container running and its thread usable. Its own `withdraw-route` step takes back an address that it published. Retry it with `POST /instances/{id}/complete`, or remove the clone. A database fill that already runs is not cut: the cancel waits until the fill has ended, with the two exceptions in [Remove a clone whose completion runs](#remove-a-clone-whose-completion-runs).
 
+## Durable launches (v1)
+
+**Contract v1.1.** One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. The contract supports text only on the Orbit T3 recipe `0.1.7`. This is an additive Gateway API: the existing Conn endpoints and the installed clients' create-then-send path do not change. Conn Rust parity is out of scope.
+
+### Admit and replay
+
+`POST /api/v1/conn/launches` requires `Idempotency-Key: <launch_id>` and a JSON object with these fields. Before Send the client allocates four stable opaque UUIDs: `launch_id` (in the header only), `command_id`, `thread_id`, and `message_id`. A repeat uses all four unchanged.
+
+| Field | Contract |
+| --- | --- |
+| `expected_profile_id`, `expected_node_id` | Required positive integers for the profile and device Node the client expects to launch as. They do not grant access. |
+| `project_id` | Orbit Project ID. |
+| `workspace_id` | Optional workspace ID in the caller's profile. Omit it or send `null` to attach to the profile without a workspace. |
+| `target` | New clone: `{ "kind": "new", "name": "fix-login-k3j9", "branch": … }`. Existing Instance: `{ "kind": "existing", "instance_id": 42 }` in this Project. An existing target keeps its checkout; omit `branch`. |
+| `target.branch` | On a new target, use Conn's existing branch selection: `{ "mode": "new", "from": "main" }` or `{ "mode": "existing", "name": "fix-login" }`. Omit it or send `null` for the current default Conn clone branch behavior. |
+| `prompt` | First user message as text, without attachments. Preserve its exact text, including whitespace and Unicode. |
+| `model_selection`, `runtime_mode`, `interaction_mode` | Optional Conn/T3 selection and modes. Request numbers must round-trip without loss within the JavaScript safe integer range. |
+| `source` | `web` for desktop or web; `mobile` for iOS. |
+| `command_id`, `thread_id`, `message_id` | Stable client UUIDs for the T3 command, thread, and first message. |
+
+The Gateway derives the initiating Node from WireGuard and the profile from its current `ConnProfileBinding`. Inside the admission transaction, before any launch effect or replay response, compare both expected IDs with those authoritative IDs. Reuse the existing binding row and hold it through commit: SQLite uses the configured `IMMEDIATE` transaction to serialize writes; other drivers lock the binding row. Do not rely on a check before the transaction or let idempotency middleware replay a response first.
+
+Missing or invalid expected IDs fail request validation. A mismatch or absent binding returns `409 conn.launch_scope_changed`. Neither refusal adds an Operation, private input, or child, or returns an old snapshot.
+
+Matching IDs still require current target access. For a new clone the Gateway checks the same Project and default placement access as Conn create; for an existing Instance it checks the recorded Project, registered target and target Node access. It commits one `conn.launch` Operation and its encrypted private request before it returns `202` with `{ "data": LaunchSnapshot, "meta": { "request_id": … } }`.
+
+The admission identity is the original Node and `launch_id`, not the profile or a later control device. On a lost reply, the same Node can replay the same key and normalized body. Before returning the same Operation's current snapshot, the Gateway performs the same locked expected-ID check and rechecks current access to the recorded profile and target Node. A rebind makes a replay with the original expected IDs fail with `conn.launch_scope_changed`; supplying new expected IDs does not move the original launch to the new profile. One device does not inherit another device's admission key.
+
+Compare every accepted request field, including a keyed, protected fingerprint of the exact prompt. Normalize omitted and `null` `workspace_id`, and omitted and `null` new-target `branch`, to the same values before fingerprinting. Compare the admitted selectors, not defaults resolved later from live state. A changed normalized request for the same admission identity returns `409`.
+
+For a new admission, the model selection can use up to 16,384 bytes in the JSON Orbit stores and freezes for dispatch. The count includes JSON escapes and the decimal part of integral floats such as `1.0`. A larger selection returns `422` on `model_selection` before Orbit records an Operation, private input, or child. The limit applies to the selection only. Already admitted requests keep the replay rules above.
+
+Keep the exact prompt and the private part of the frozen dispatch request encrypted. Only the declared private-material transport for the admitted native run may hydrate it on the target. Do not put them in public Operation input or results, Activity, broadcasts, runner arguments or output, or persistent Swamp data. Use a title seed that does not disclose the prompt; T3 generates the thread title. Keep only bounded acceptance evidence and the protected admission fingerprint after acceptance or verified cleanup. T3 keeps the actual message as part of the user's thread.
+
+### Prepare, dispatch and publish
+
+The Gateway advances records under the launch Operation's row lock. It admits existing native create, wake, completion and teardown work with keyed child identities and records the exact child IDs, target and ownership before consuming their results. Children retain `node:<initiator>` and the admitted target even when another device controls the launch. Reusing an already running Instance, joining a wake or observing work that another caller admitted conveys no ownership. Do not follow the newest Operation by name or switch to another target on recovery.
+
+Workspace-server readiness comes from the Swamp create's recorded T3 registration or from the wake's T3 readiness on the admitted target, not from application preview. The [placed Swamp phase](/reference/development-containers#conn-launch-transport) discovers the live T3 project rooted at `/srv/workspace`.
+
+Use the requested model selection if its provider instance is enabled for the project; a health check still in progress does not count as a disabled provider. Otherwise, or with no selection, use the server's configured default selection, then the project's provider default. If neither supplies a model, leave preparation retryable without sending. The omitted runtime and interaction modes default to `full-access` and `default`, respectively.
+
+Freeze the resolved `modelSelection` (including provider instance and options), modes, all RPC fields and the persisted T3 incarnation before sending. A retry cannot resolve a different model or change the request. Report the actual selection, not the requested one when fallback applied.
+
+The same Operation lock commits either `cancel_requested` or `dispatch_committed`, never both. The worker can send only after `dispatch_committed`; cancellation that wins the lock prevents both dispatch and admission of further launch work. The placed worker calls stock `orchestration.launchThread` with this payload; the stock WebSocket handler supplies `createdBy: "user"`. The service session grants transport access only; the launch retains the initiating human device's Node and profile for audit.
+
+```text
+{
+  commandId, threadId, projectId, title, generateTitle: true,
+  modelSelection, runtimeMode, interactionMode,
+  workspaceStrategy: { type: "root" }, creationSource,
+  initialMessage: { messageId, text, attachments: [] }
+}
+```
+
+Here `projectId` is T3's project ID, `creationSource` is the admitted `source`, and `text` is the exact submitted prompt. This is the same first-turn shape as Conn's `orbitFirstTurnInput` and `startThreadTurn`, not a separate create followed by a second send.
+
+On every attempt, verify the live server against the pinned persisted incarnation independently of its URL. The worker checks the environment and database file identity, plus the presence of the original probe session row in the local stock T3 database. Only that row's presence matters. A normal restart retains the row. An older database restored into the same file lacks it.
+
+After an ambiguous reply, ask `orchestration.getThreadProjection` on that incarnation for the exact `threadId`. Verify the exact thread and project, a user message with the exact `messageId`, and the original message text byte for byte. Apply the same identity and text checks to an acknowledged launch.
+
+If the first message has left the RPC snapshot, read the same thread through the authenticated bounded snapshot and older conversation pages. An older item must be a local, user-authored message of that thread. A match proves acceptance: store the bounded receipt and finish publication only, even if T3's run failed after accepting the message.
+
+The native handoff streams the private request over pinned SSH to a mode-0600 file in the Swamp worker’s run folder. The play reads and removes that file before passing its exact bytes to T3 on stdin. The first send claims one execution in that folder. After an ambiguous first reply, the reconciler starts a read-only recovery attempt. Further Retry requests use the same read-only action.
+
+After a lost reply, send the identical frozen command only if an authoritative read proves the expected message is absent **and** the original incarnation is still within a known safe replay window. A stable URL, the passage of time alone, an empty thread, or a generic read error is not proof. A replacement server, mismatched identity or text, a failed read, or an incomplete projection without authoritative absence and a safe window leaves the launch recoverable without another send. V1 does not assume a stock T3 receipt lifetime from a successful test.
+
+Acceptance is separate from publication. As soon as acceptance is known, store `thread` and clear the private prompt. Use the existing Conn thread index and attached-thread services to publish idempotently under the recorded profile's lock. Check the workspace on that locked record. If it was deleted, attach the thread to the profile without a workspace and do not recreate it. A lost publication reply retries the record write, never the T3 command.
+
+### Cancel, retry and follow
+
+The launch routes in the [API table](#api) return the same snapshot shape. List returns visible launches newest first. Show reconciles the exact Operation from recorded facts. Both reads and both controls require an active WireGuard peer, a current binding to the launch's recorded profile, and current access to its recorded target Node. Filter list rows and return `404` for an invisible individual launch, subject to the existing collection access gate.
+
+Recheck control authority and the action under lock. Audit which Node requested Cancel or Retry separately from the initiator. The caller-only rule on the existing Conn Operation routes does not change. HTTP snapshots are authoritative. Reverb, if used, only invalidates reads for the same audience and carries no launch payload.
+
+If Cancel wins, settle owned child work before admitting teardown. If a probe times out, wait for evidence that its native run ended and for the remaining T3 session lifetime to expire. Measure that wait from the recorded native end, not the Gateway's timeout.
+
+Use the ordinary Conn workspace check and confirm there is no T3 activity before removing a launch-owned clone, even if its create failed. A reservation whose create never ran needs no workspace read. Keep cleanup pending if the workspace is dirty, a required read fails, or another launch uses the Instance. Admission of a launch on an existing clone and admission of its cleanup both lock the Instance. If the other launch claims it first, cleanup waits. If cleanup claims it first, the other launch is refused.
+
+Verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart. If the launch's own removal stopped the container before it failed, Orbit can retry while the workspace reports the container stopped. A retry that fails before starting its native run keeps the earlier Stop evidence within the same owned removal chain. The ownership and other-launch checks still apply.
+
+Preserve pre-existing Instances and unrelated work. Joining an open `instance.wake` or `instance.start` records shared use under the same Operation lock that launch cleanup takes before cancelling queued work. If the join wins, the wake runs for the other caller and cleanup leaves the Instance awake. If cleanup cancels an unshared queued wake first, the next caller can admit a fresh wake. A failed activity read keeps cleanup pending with `conn.launch_wake_restore_unproven`.
+
+To restore a completed wake, read activity outside the Instance lock. When admitting native sleep, take the same Instance lock as existing-target launch admission. Confirm that the cancelling launch still owns the current wake. Check whether another caller joined that wake or another launch used the Instance since the wake began. If a new launch claims the Instance first, cleanup leaves it running. If sleep restoration is admitted first, the next launch waits for that sleep to settle, then wakes the Instance if needed before probing T3.
+
+Only verified cleanup clears the private prompt on cancellation and ends the launch as `cancelled`.
+
+Once `dispatch_committed` is recorded, Cancel answers `409 conn.launch_handoff_committed`, including while the reply is uncertain. Stock T3 can start the agent before it replies, so response receipt is too late for this cutoff. After acceptance, use the normal T3 thread Stop or Remove actions, not launch Cancel.
+
+`POST /launches/{operation_id}/retry` accepts `{ "target": "launch" }` for the same launch, or `{ "target": "application" }` to retry application completion alone. Launch retry resumes from the recorded child or receipt and respects the same dispatch fence and replay rules. Application retry uses the existing completion admission and can fail or succeed independently once the thread is ready. It never restarts T3 or sends a message. Report a known prerequisite, such as `project_process_definition`, before offering a retry that cannot work.
+
+If a newer completion for the same Instance and Node is admitted before the accepted application retry can admit its own completion, Orbit uses that completion and clears the retry. The launch keeps the earlier completion in its history and shows the newer completion’s progress or result.
+
+If the target Instance is gone when an accepted application retry runs, Orbit ends the retry and stops polling. Orbit also ends the retry if admission refuses completion on an existing Instance. In either case, `application_preview` shows a sanitized error. The launch stays `ready` and keeps the last admitted completion ID. A later admitted completion replaces the refusal in the snapshot.
+
+### Launch snapshot
+
+Project the safe fields of `OperationData::summary`: `id`, `kind`, `status`, `created_at`, `started_at`, `finished_at`, `cancel_requested`, `poll_after_seconds`, and `error_code`. The `kind` is `conn.launch`. Do not include raw Operation input, state, result or native diagnostics. Add these fields:
+
+| Field | Contract |
+| --- | --- |
+| `launch_id`, `project_id`, `instance_id`, `workspace_id` | Admission UUID, Orbit Project, exact Instance once known, and requested workspace. The last two can be `null`. |
+| `profile_id` | Recorded numeric Conn profile ID, present on every snapshot. |
+| `target_node_id`, `initiator_node_id`, `source` | Recorded target Node, initiating device Node, and `web` or `mobile`. |
+| `phase` | `preparing`, `dispatching`, `publishing`, `ready`, `needs_retry`, `cancelling`, or `cancelled`. `ready` means the accepted thread is published, not that the application preview works. `needs_retry` indicates launch recovery; application-only failure does not undo `ready`. |
+| `stages` | Object keyed by `workspace_server`, `first_message`, `publication`, `application_preview`, `cleanup`. Each value has `status` (`pending`, `running`, `succeeded`, `failed`, `cancelled`, `skipped`), `started_at`, `finished_at`, and `error` (`null` or sanitized `{ "code": …, "detail": … }`). An unrecorded timestamp is `null`. |
+| `readiness` | Object with `workspace_server`, `first_message`, and `application_preview`, each `true`, `false` or `null` (not known). Use the create registration or wake T3 result, the acceptance receipt, and `InstanceCompleteProjection` or its recorded prerequisite respectively. |
+| `actions` | Object keyed by `cancel`, `retry_launch`, and `retry_application`. Each has boolean `available` and nullable strings `reason` and `requires`. `requires` is a machine-readable prerequisite code, for example `project_process_definition`. |
+| `children` | Object with nullable `create_operation_id`, `wake_operation_id`, `completion_operation_id`, and `destroy_operation_id`. A null ID means no child is recorded for that role. |
+| `thread` | `null` until acceptance is known; then `{ "environment_id": …, "project_id": …, "thread_id": …, "message_id": …, "model_selection": …, "accepted_at": … }`. The project ID here is T3's. The receipt is available during `publishing`. |
+
+The `stages`, `actions`, and `children` fields are keyed JSON objects even in the initial snapshot. Record stage times and errors from Gateway transitions and native results, never from a client's socket. Use the message's recorded time for `thread.accepted_at`, not the time a reply arrives. Keep core Operation status nonterminal while launch retry or cleanup remains pending. Do not reopen a terminal Operation to represent later application progress.
+
+Successful workspace preparation keeps its recorded times even if later launch preparation needs a retry or cancellation removes the server. A launch retry after a later preparation failure uses the same Instance. If an existing Instance slept again after its wake succeeded, Retry records a fresh wake or joins an open one before running a new T3 probe.
+
+Keep following `poll_after_seconds` after the launch reaches `ready` if application completion or an application retry is pending. Read `application_preview` separately from thread readiness. A ready launch with no completion can report `skipped` with no readiness value. When you run [`instance:complete`](/cli/instance/complete) for the admitted Instance on its target Node, settlement can record it as the first completion on the same ready launch. Settlement can also replace a failed completion with a newer one. The accepted thread and its first message stay the same.
+
+When a Project process definition is required for retry, Orbit compares the expected unit with the one the failed completion used. Applying the repaired definition to the Instance first does not prevent a retry.
+
 ## Remove an Instance
 
 `POST /instances/{id}/destroy` requires an `Idempotency-Key` and `{"acknowledge_unsaved": true|false}`. The caller needs access to the Instance's Node. Only non-default container Instances can be removed here:
@@ -807,6 +927,8 @@ Refusals before any Operation:
 
 ### How the Gateway makes one
 
+Admission records the held-session Operation and a vault reference. The start worker copies the current admin session to that reference before it submits the run, outside the database writer. If a wake retries delivery and finds its renewal still queued and unstarted, it can submit the same Operation again without creating another pairing.
+
 The run `operation-conn-session-hold` runs on the Swamp worker:
 
 | Step | What it does |
@@ -927,6 +1049,11 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `GET /instances/{id}/work` | — | workspace work state |
 | `POST /instances/{id}/destroy` | `{"acknowledge_unsaved": true}` and `Idempotency-Key` | Operation (202) |
 | `POST /instances/{id}/complete` | no body; `Idempotency-Key` | Operation (202) |
+| `POST /launches` | [Launch request](#admit-and-replay) and `Idempotency-Key` | [Launch snapshot](#launch-snapshot) (202) |
+| `GET /launches` | — | List of launch snapshots, newest first |
+| `GET /launches/{operation_id}` | — | Launch snapshot |
+| `POST /launches/{operation_id}/cancel` | No fields | Launch snapshot (202) |
+| `POST /launches/{operation_id}/retry` | `{ "target": "launch" }` or `{ "target": "application" }` | Launch snapshot (202) |
 | `GET /environments` | — | list of environment |
 | `POST /environments` | `{"environment_id", "label", "url", "admin_session"}` | environment |
 | `GET /environments/{environment_id}/pairings` | `include_held` query, optional | list of pairing, newest first |

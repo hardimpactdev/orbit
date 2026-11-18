@@ -187,6 +187,7 @@ function fixture() {
           HOST_FIXTURE: folder,
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
           ANSIBLE_NOCOLOR: "1",
+          ANSIBLE_PIPELINING: "true",
           ANSIBLE_HOME: `${folder}/ansible`,
           ANSIBLE_LOCAL_TEMP: `${folder}/tmp`,
           ORBIT_RUN: `${folder}/run`,
@@ -294,10 +295,8 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      for (const phase of ["container", "workspace", "processes", "seed"]) {
-        const done = f.run(phase);
-        assert(done.ok, done.output);
-      }
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
       const before = f.state();
       // Simulate interruption after conversion but before snapshot capture.
       // The durable marker, not this invocation's changed flag, must force refresh.
@@ -327,10 +326,8 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      for (const phase of ["container", "workspace", "processes", "seed"]) {
-        const done = f.run(phase);
-        assert(done.ok, done.output);
-      }
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
       const head = git(f.source, "rev-parse", "HEAD");
       const snapshotCreates = () =>
         Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
@@ -371,10 +368,8 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      for (const phase of ["container", "workspace", "processes", "seed"]) {
-        const done = f.run(phase);
-        assert(done.ok, done.output);
-      }
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
       const head = git(f.source, "rev-parse", "HEAD");
       f.intent.deployment = { variant: "container", steps: [] };
       f.write();
@@ -423,10 +418,8 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      for (const phase of ["container", "workspace", "processes", "seed"]) {
-        const done = f.run(phase);
-        assert(done.ok, done.output);
-      }
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
       const head = git(f.source, "rev-parse", "HEAD");
       const state = f.state();
       state.containers["instance-7"].snapshots = [`next-${head}`, "next-0000"];
@@ -594,7 +587,8 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
       const first = git(f.source, "rev-parse", "HEAD");
       Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
       git(f.source, "commit", "--quiet", "-am", "second");
@@ -677,52 +671,64 @@ Deno.test({
   },
 });
 
+for (const merged of [true, false]) {
 Deno.test({
-  name: "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
+  name: `${merged ? "merged deploy steps" : "separate deploy plays"} keep the commit, checkout, bundle and seed, and flush each phase's handlers before the next`,
   ignore: !hasAnsible,
-  async fn() {
-    const merged = fixture();
-    const separate = fixture();
+  fn() {
+    const f = fixture();
     try {
       // A handler that the processes phase notifies: as with separate plays, it runs before the seed stops the Processes.
-      const phaseFile = `${merged.folder}/tasks/instance-container-phase.yml`;
+      const phaseFile = `${f.folder}/tasks/instance-container-phase.yml`;
       Deno.writeTextFileSync(phaseFile, stringify([...(parse(Deno.readTextFileSync(phaseFile)) as Task[]), {
         name: "Notify the fixture handler", tags: ["processes"], when: "phase == 'processes'",
         "ansible.builtin.command": { argv: ["true"] }, changed_when: true, notify: "Reload the fixture unit" }]));
-      const handlers = `${merged.folder}/tasks/instance-container-handlers.yml`;
+      const handlers = `${f.folder}/tasks/instance-container-handlers.yml`;
       Deno.writeTextFileSync(handlers, stringify([...(parse(Deno.readTextFileSync(handlers)) as Task[]), {
         name: "Reload the fixture unit", "ansible.builtin.command": { argv: "{{ as_root + ['systemctl', 'reload', '--', 'orbit-fixture.service'] }}" },
         changed_when: true }]));
-      const commits: string[] = [];
-      for (const f of [merged, separate]) {
-        for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
-        Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
-        git(f.source, "commit", "--quiet", "-am", "second");
-        commits.push(git(f.source, "rev-parse", "HEAD"));
-      }
-      const before = (merged.state().systemctl as string[][]).length;
-      for (const phases of [["start", "fetch"], ["checkout"], ["processes", "seed", "check"]]) {
-        const done = merged.phases(phases);
+      const first = git(f.source, "rev-parse", "HEAD");
+      // Start needs installed Process units; export needs the first checkout, not an earlier seed.
+      const setup = f.phases(["container", "workspace", "processes"]);
+      assert(setup.ok, setup.output);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/systemd/system/orbit-frankenphp.service`), f.container.units[0].content);
+      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
+      git(f.source, "commit", "--quiet", "-am", "second");
+      const commit = git(f.source, "rev-parse", "HEAD");
+      const before = (f.state().systemctl as string[][]).length;
+      const steps = merged ? [["start", "fetch"], ["checkout"], ["processes", "seed", "check"]]
+        : ["start", "fetch", "checkout", "processes", "seed", "check"].map((phase) => [phase]);
+      for (const phases of steps) {
+        const done = merged ? f.phases(phases) : f.run(phases[0]);
         assert(done.ok, `${phases}: ${done.output}`);
       }
-      for (const phase of ["start", "fetch", "checkout", "processes", "seed", "check"]) {
-        const done = separate.run(phase);
-        assert(done.ok, `${phase}: ${done.output}`);
-      }
-      // The same end state: the result, the checkout, the bundle and the seed.
-      assertEquals(merged.result(), { commit: commits[0], phases_passed: ["processes", "seed", "check"] });
-      assertEquals(separate.result(), { commit: commits[1] });
-      for (const [f, commit] of [[merged, commits[0]], [separate, commits[1]]] as const) {
-        assertEquals(f.workspace("rev-parse", "HEAD"), commit);
-        assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
-      }
-      assertEquals(merged.state().bundles.at(-1).prerequisites.length, separate.state().bundles.at(-1).prerequisites.length);
+      // Both paths must reach this independently known state, rather than merely agree with each other's bundle count.
+      assertEquals(f.result(), { commit, ...(merged ? { phases_passed: ["processes", "seed", "check"] } : {}) });
+      assertEquals(f.workspace("rev-parse", "HEAD"), commit);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
+      assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
       // The handler ran once, after processes and before the seed's stop of the Processes.
-      const calls = (merged.state().systemctl as string[][]).slice(before);
+      const calls = (f.state().systemctl as string[][]).slice(before);
       const reload = calls.findIndex((call) => call[0] === "reload" && call.includes("orbit-fixture.service"));
       const stop = calls.findIndex((call) => call[0] === "stop");
       assert(reload >= 0 && stop > reload, JSON.stringify(calls));
       assertEquals(calls.filter((call) => call[0] === "reload").length, 1);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+}
+
+Deno.test({
+  name: "an interrupted merged deploy retains passed phases, and a later failure names its phase",
+  ignore: !hasAnsible,
+  async fn() {
+    const merged = fixture();
+    try {
+      const setup = merged.phases(["container", "workspace", "processes"]);
+      assert(setup.ok, setup.output);
+      assertEquals(Deno.readTextFileSync(`${merged.folder}/containers/instance-7/etc/systemd/system/orbit-frankenphp.service`), merged.container.units[0].content);
       // A play killed in a later phase (its step's timeout, a lost Node) runs no rescue: the result file still holds what the passed
       // phases wrote, as their own plays did, so the Gateway knows the container started and keeps the start's values.
       const hang = `${merged.folder}/tasks/instance-container-phase.yml`;
@@ -749,7 +755,6 @@ Deno.test({
       assertEquals(merged.result(), { error_code: "instance.container_fetch_failed", failed_phase: "fetch", phases_passed: ["start"] });
     } finally {
       merged.cleanup();
-      separate.cleanup();
     }
   },
 });
@@ -3140,6 +3145,12 @@ Deno.test({
   async fn() {
     const f = await hostFixture({pool: "zfs"});
     try {
+      const path = `${f.folder}/tasks/instance-host.yml`;
+      const tasks = JSON.parse(Deno.readTextFileSync(path)) as Task[];
+      const prepared = tasks.findIndex((task) => task.name === "Prepare the Instance bridge, project and profile");
+      assert(prepared > 0);
+      // These shipped tasks produce the projects, profiles, modules and clone probes; later host services and images do not.
+      Deno.writeTextFileSync(path, JSON.stringify(tasks.slice(0, prepared + 1)));
       f.write({...f.instances, ids: 201 * 65536 + 2 * 101000000, nested: {project: "orbit-instances-nested"}});
       const result = await f.run();
       assert(result.ok, result.output);
@@ -3758,19 +3769,22 @@ const seedOrder = (f: ReturnType<typeof fixture>) => incusCalls(f).map((call) =>
   : call.includes("storage volume snapshot create orbit-instances inner-7 ") ? ["v"] : []);
 
 Deno.test({
-  name: "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
+  name: "the inner volume is flushed right before its half of every seed, and a failed flush fails the seed by name",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       innerVolumeCreate(f);
-      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+      const setup = f.phases(["container", "workspace", "processes", "seed"]);
+      assert(setup.ok, setup.output);
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/systemd/system/orbit-frankenphp.service`), f.container.units[0].content);
       const head = git(f.source, "rev-parse", "HEAD");
       // The first seed, then a same-commit retake under `next-`: each flushes between its container half and its volume half
       // (live proof 2026-11-14: a volume snapshot without the flush lacked an inner pool made 23 s before).
       f.intent.deployment = { variant: "container" };
       f.write();
-      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
+      const retake = f.phases(["start", "seed"]);
+      assert(retake.ok, retake.output);
       assertEquals(seedOrder(f), ["c", "f", "v", "c", "f", "v"]);
       assertEquals(f.state().syncs, [["-f", "/srv/inner-pool"], ["-f", "/srv/inner-pool"]]);
       // A flush that fails takes no volume half, deletes the new container half and keeps the old pair whole.
@@ -3786,12 +3800,21 @@ Deno.test({
       assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
       assert(failed.output.includes("TASK [Start the Processes again]"), failed.output);
     } finally { f.cleanup(); }
-    // A normal default and a nested default without a volume (Instance 2454's shape) evaluate the task's guard and skip it.
-    for (const shape of ["nested", "normal"]) {
+  },
+});
+
+// Each default evaluates the actual task guard, independently of the volume-bearing failure case.
+for (const shape of ["nested", "normal"]) {
+  Deno.test({
+    name: `a ${shape} default without an inner volume skips its flush`,
+    ignore: !hasAnsible,
+    fn() {
       const g = fixture();
       try {
         if (shape === "nested") nestedCreate(g);
-        for (const phase of ["container", "workspace", "processes", "seed"]) assert(g.run(phase).ok, `${shape} ${phase}`);
+        const setup = g.phases(["container", "workspace", "processes"]);
+        assert(setup.ok, `${shape}: ${setup.output}`);
+        assertEquals(Deno.readTextFileSync(`${g.folder}/containers/instance-7/etc/systemd/system/orbit-frankenphp.service`), g.container.units[0].content);
         g.intent.deployment = { variant: "container" };
         g.write();
         const seeded = g.run("seed");
@@ -3800,9 +3823,9 @@ Deno.test({
         assert(/skipping: \[node\]/.test(own) && !/(ok|changed): \[node\]/.test(own), shape);
         assertEquals(g.state().syncs, undefined, shape);
       } finally { g.cleanup(); }
-    }
-  },
-});
+    },
+  });
+}
 
 Deno.test({
   name: "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",

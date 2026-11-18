@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container wakes by the same rule, and Caddy holds its visitor instead of the progress page.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, ADR 0266 slice 6, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container wakes by the same rule, and Caddy holds its visitor instead of the progress page.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -29,7 +29,7 @@ sequenceDiagram
   %%> Callers:
   %%> - the command
   %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
-  %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
+  %%> - a durable Conn launch that opens the T3 server; planned: the task flow before a turn on an attached Instance
   %%> - planned: a due native cron Schedule of a production Instance whose live sleeps; the fire waits for the wake, and this wake does not count as activity
   %%> - not needed by a copy: a clone or task copy of an asleep default copies its seed snapshot
   %%> - a deployment of a sleeping Instance resumes or starts it in its own run, and removes the marker there
@@ -40,12 +40,43 @@ sequenceDiagram
   %%> When:
   %%> - an active development container, a default and a nested-fleet Instance included
   %%> - planned: a production Instance's live release container; the wake is admitted beside an open deploy or rollback, which changes live only after its switch; the switch and the wake take the Instance's power lock
-  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) and a nested-fleet default refuses: only its deployment starts it
+  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) only with executor wakes off, and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
-  %%> - an open wake of the Instance is joined: a second caller gets the same Operation, Caddy the same progress page
+  %%> - an open wake of the Instance is joined: a second caller gets the same Operation; Caddy waits within the bound for a signed wake and otherwise gets the progress page
+  %%> - a join to a Conn launch's wake records shared use while locking the wake Operation. If launch cleanup already cancelled the queued wake, a new request admits a new wake
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
-  %%> - no container, a non-development Instance, a nested-fleet default whose last sleep did not freeze it, or other lifecycle work starts no run
+  %%> - no container, a non-development Instance, a nested-fleet Instance that cannot take the wake or its start, or other lifecycle work admits no wake
+  alt executor wake enabled
+    %% path: executor
+    GW->>N: Sign and publish wake<br/>executor-order · WebSocket
+    %%> What it does:
+    %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
+    %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; Conn records cancellation of an unshared queued executor wake in the launch cancel transaction, before a publisher can claim it
+    %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
+    %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it recovers recorded results before publishing any missing order for the same Operation
+    %%> - record Operation notices locally and hand them to operations-prompt in the background; the request never enqueues a job
+    %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
+    GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
+    %%> Result:
+    %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
+    %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
+    alt done or partial within the bound
+      GW-->>CL: 200, continue request<br/>original method, URI and body
+      %%> Result:
+      %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
+      %%> - the Operation succeeds and records the runtime running
+      %%> - record the pending lifecycle follow-up with success; a background worker runs the hook without a database writer and records its receipt after it returns
+      %%> - reclaim old handoffs in batches of up to 50; the per-Operation hook lock and receipt keep concurrent deliveries from running the hook twice
+    else no successful result in time
+      %% path: executor-pending
+      GW-->>CL: 401 progress page<br/>activation state pending
+      %%> Result:
+      %%> - the existing page polls every 250 ms and loads the app when the marker goes
+      %%> - a queued completion reads the durable result 6 s after publication, without holding a request worker; done or partial succeeds, refused or failed fails, and no result fails executor.wake_timeout
+      %%> - slice 7 adds the relay and Swamp fallback; until then this path fails without calling either, and the setting stays off by default
+    end
+  else executor wake disabled
   opt Caddy, for a development visit
     GW-->>CL: 401 progress page, at once<br/>spinner only
     %%> Result:
@@ -182,6 +213,7 @@ sequenceDiagram
     %%> Retry:
     %%> - Try again or the same command; a start of a running container changes nothing
     %%> - planned, a production live: the first visit 30 s or more after the failure starts one new wake by itself; until then Caddy answers `503` with `Retry-After: 30`
+  end
   end
   loop until terminal
     CL->>GW: operation:show TASK

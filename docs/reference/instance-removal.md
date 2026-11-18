@@ -135,7 +135,7 @@ After a refusal, the step deletes the container again, and the inner volume by n
 
 The end check `Check the container and volume are gone` stays strict: it reads the container, its root volume and the inner volume by this Instance's names.
 
-A container removal stops the container before its databases drop: `Stop the container` runs `incus stop --force` before `Drop owned databases`. Its workers and every other client in it then hold no session on a planned database. A container that is stopped or gone already counts as stopped. The step takes the deletion's slot name, so a Node keeps its 512 names.
+A container removal stops the container before its databases drop: `Stop the container` runs `incus stop --force` before `Drop owned databases`. Its workers and every other client in it then hold no session on a planned database. A container that is stopped or gone already counts as stopped. The step takes the deletion's slot name, so a Node keeps its 512 names. If a later step fails, Orbit records the successful stop with that removal Operation so [Conn launch cleanup](/reference/conn#cancel-retry-and-follow) can retry it safely.
 
 A session or lock on an owned server database still makes its drop refuse before any `DROP`, so the end check `Check they are gone` finds every name. Such a client is outside the container, such as a person's database tool. The removal then fails with the database child's own code at the child's step: `database.in_use`, `database.server_admin_failed` or `database.destroy_incomplete`, not `instance.removal_incomplete`. Orbit never disconnects the clients. The [removal reaper](#the-removal-reaper) runs the removal again once they are gone.
 

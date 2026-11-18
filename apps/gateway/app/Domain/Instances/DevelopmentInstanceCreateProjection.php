@@ -178,7 +178,9 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             }
             $ended = $operation->status->terminal();
             $operation = $this->direct->project($operation, $data, $result);
-            if ($handover && ! $ended) {
+            if ($handover && ! $ended && ! isset($operation->input['conn_launch_operation_id'])) {
+                // A Conn launch admits its own completion under the parent cancel fence.
+                // The ordinary create ends and hands its hold to completion here.
                 // The create row is terminal and has let go of the Instance lock; the completion takes it in this same transaction, so
                 // nothing takes the Instance in between. Its vault copy and its Swamp start run after the commit.
                 // The admission runs in its own savepoint. A refusal, such as a Route whose Cluster lost its Router since the create's

@@ -6,6 +6,9 @@ namespace App\Domain\Operations;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\ExecutorWakeNotices;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Models\Operation;
 
 /**
@@ -14,7 +17,7 @@ use App\Models\Operation;
  */
 final readonly class OperationBroadcaster
 {
-    public function __construct(private RecordEventBroadcaster $broadcaster) {}
+    public function __construct(private RecordEventBroadcaster $broadcaster, private ExecutorWakeNotices $wakeNotices) {}
 
     public static function channel(int $operationId): string
     {
@@ -23,17 +26,35 @@ final readonly class OperationBroadcaster
 
     public function created(Operation $operation): void
     {
-        $this->broadcaster->broadcast(RecordEventType::OperationCreated, $operation->id, self::notice($operation));
+        $this->broadcast($operation, RecordEventType::OperationCreated);
     }
 
     public function changed(Operation $operation, bool $statusChanged): void
     {
-        $notice = self::notice($operation);
-        $this->broadcaster->broadcast(RecordEventType::OperationUpdated, $operation->id, $notice, self::channel($operation->id));
+        $this->broadcast($operation, RecordEventType::OperationUpdated, self::channel($operation->id));
 
         if ($statusChanged) {
-            $this->broadcaster->broadcast(RecordEventType::OperationUpdated, $operation->id, $notice);
+            $this->broadcast($operation, RecordEventType::OperationUpdated);
         }
+    }
+
+    public static function usesWakeOutbox(Operation $operation): bool
+    {
+        return $operation->kind === InstanceWake::Kind && (ExecutorWake::enabled() || ExecutorWake::owns($operation));
+    }
+
+    private function broadcast(Operation $operation, RecordEventType $type, string $channel = 'orbit'): void
+    {
+        if (in_array($operation->kind, OperationKinds::PrivateConnKinds, true)) {
+            return;
+        }
+        $notice = self::notice($operation);
+        if (self::usesWakeOutbox($operation)) {
+            $this->wakeNotices->record($operation, $type, $notice, $channel);
+
+            return;
+        }
+        $this->broadcaster->broadcast($type, $operation->id, $notice, $channel);
     }
 
     /** @return array{id: int, kind: string, target_type: string, target_id: int, status: string, sequence: int, current_step: string|null} */

@@ -164,6 +164,22 @@ final readonly class NativeRunCancellation
             && is_string($step) && isset((self::CopySteps[$operation->kind] ?? [])[$step]);
     }
 
+    /** Establishes a native end even when the Gateway's budget expired first. */
+    public function settled(Operation $operation): bool
+    {
+        if (! $operation->status->terminal() || $this->outlivesTimeout($operation)
+            || $operation->error_code === 'swamp.start_uncertain') {
+            return false;
+        }
+        if ($operation->error_code !== 'operation.timed_out') {
+            return true;
+        }
+        $timeout = $operation->state['native_timeout'] ?? null;
+
+        return is_array($timeout) && (is_string($timeout['no_run_verified_at'] ?? null)
+            || in_array($timeout['native_terminal_status'] ?? null, ['succeeded', 'failed', 'cancelled', 'interrupted'], true));
+    }
+
     /** True for a failed Operation that the Gateway timed out and whose native run has no recorded end. */
     public function outlivesTimeout(Operation $operation): bool
     {

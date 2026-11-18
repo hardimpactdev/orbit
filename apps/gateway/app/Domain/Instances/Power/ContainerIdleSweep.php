@@ -143,6 +143,42 @@ final readonly class ContainerIdleSweep
         }
     }
 
+    /** True restores an unshared wake, false keeps a recognized consumer or policy, and null means the evidence is missing. */
+    public function canRestoreWake(Instance $instance, Operation $wake): ?bool
+    {
+        $runtime = $instance->runtime()->first();
+        $since = $wake->started_at?->getTimestamp();
+        if ($runtime === null || $since === null || $wake->finished_at === null) {
+            return null;
+        }
+        if (! $this->wakeStillRestorable($instance, $runtime, $wake)) {
+            return false;
+        }
+
+        $path = RuntimeHibernation::accessLogPath(RuntimeHibernation::key($instance->id));
+        $times = $this->files->read($instance->node, [$path]);
+        if ($times === null) {
+            return null;
+        }
+        $evidence = $this->evidence($runtime, $times[$path] ?? null, true, CarbonImmutable::now());
+        if ($evidence->t3Server && ($evidence->t3 === null || ! $evidence->t3->readable)) {
+            return null;
+        }
+        $used = static fn (?int $time): bool => $time !== null && $time >= $since;
+
+        return ! ($used($evidence->lastHttpAt) || $used($evidence->lastDeployAt)
+            || $evidence->t3?->turnRuns === true || $used($evidence->t3?->lastActivityUnix));
+    }
+
+    /** The recorded conditions can be checked again under the Instance admission lock. */
+    public function wakeStillRestorable(Instance $instance, InstanceRuntime $runtime, Operation $wake): bool
+    {
+        $latest = Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceStart::Kind])
+            ->where('target_type', 'instance')->where('target_id', $instance->id)->latest('id')->value('id');
+
+        return $latest === $wake->id && $this->standing($instance, $runtime, ContainerSleepScope::All) === null;
+    }
+
     /** The reasons that need no read of the Node or the container: the value's own first, then in the order the sleep admission checks them. */
     private function standing(Instance $instance, InstanceRuntime $runtime, ContainerSleepScope $scope): ?string
     {
