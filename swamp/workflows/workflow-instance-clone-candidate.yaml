@@ -217,7 +217,9 @@ jobs:
     - step: candidate-submodules
       condition:
         type: succeeded
-    guard: ${{ has(inputs.intent.candidate.container) }}
+    # Run-start substitution writes an evaluated value into every place with the same expression text, guards included, so this guard
+    # must not read like the `sudo` inputs above (tests/workflow_guard_splice_test.ts).
+    guard: ${{ inputs.intent.candidate.?container.hasValue() }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
