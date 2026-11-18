@@ -143,6 +143,26 @@ type Task = Record<string, unknown>;
 const tagsOf = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : typeof value === "string" ? value.split(",").map((tag) => tag.trim()) : [];
 const selects = (tags: string[], phase: Phase) => tags.includes(phase) || tags.includes("always");
 
+/** Every tag a task file names, in any `tags` key, including an include's `apply`. A file that does not parse names every tag. */
+function tagsIn(text: string): string[] {
+    const found: string[] = [];
+    const walk = (node: unknown): void => {
+        if (Array.isArray(node)) node.forEach(walk);
+        else if (node !== null && typeof node === "object") {
+            for (const [key, value] of Object.entries(node)) {
+                if (key === "tags") found.push(...tagsOf(value));
+                walk(value);
+            }
+        }
+    };
+    try {
+        walk(parse(text));
+    } catch {
+        return ["always"];
+    }
+    return found;
+}
+
 /** The YAML text of each task `--tags <phase>` selects in a playbook, and of the play keys every phase parses. */
 function playbookRoots(text: string, phase: Phase): string[] {
     const plays = parse(text) as Task[];
@@ -158,9 +178,10 @@ function playbookRoots(text: string, phase: Phase): string[] {
     };
     for (const play of plays) {
         const tags = tagsOf(play.tags);
-        const { tasks: list, pre_tasks, post_tasks, handlers, ...rest } = play;
+        // A notified handler runs whatever the tags select, so the handlers are in the play keys every phase reads.
+        const { tasks: list, pre_tasks, post_tasks, ...rest } = play;
         roots.push(JSON.stringify(rest));
-        for (const section of [pre_tasks, list, post_tasks, handlers]) tasks(section, tags);
+        for (const section of [pre_tasks, list, post_tasks]) tasks(section, tags);
     }
     return roots;
 }
@@ -201,7 +222,7 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
         }
         for (const file of statics) {
             if (entries[phase].includes(file)) continue;
-            if ([...text(file).matchAll(/tags:\s*([^\n]*)/g)].some((match) => new RegExp(`\\b(${phase}|always)\\b`).test(match[1]))) visit([file]);
+            if (tagsIn(text(file)).some((tag) => tag === phase || tag === "always")) visit([file], "static import");
         }
         while (queue.length && !reason) {
             const file = queue.shift()!;

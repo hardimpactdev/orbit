@@ -631,8 +631,8 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 
 - the files written for the phases: the converge variables, `plans.json`, the inventory, the known hosts and each role's variables;
 - for a role Operation, its variables: the Operation kind, the role intent and its execution secrets;
-- the Ansible bundle, which also builds each role's variables;
-- the Tool helper and the shipped Tool files that it imports.
+- its code: for a `node.converge` phase, the Ansible files that phase can load (see below); for a role Operation, the whole Ansible bundle;
+- the Tool helper and the shipped Tool files that it imports: for a `node.converge`, in the `tools` and `roles` phases only.
 
 For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
 
@@ -640,7 +640,33 @@ The converge variables hold the attempt's intent and the values of its execution
 
 Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, its private run folder, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
-Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
+Every phase reads the same variables, so a change of any recorded input, secret value or plan moves every phase digest. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.
+
+Swamp resolves each phase's files from the staged bundle when it prepares the input. The resolver is `phase_code.ts` beside the input behaviour. It works in these steps:
+
+1. It starts at the tasks that `--tags <phase>` selects in the converge playbooks. These are the tasks and plays tagged with the phase or `always`.
+2. It also starts at each statically imported file that tags a task with the phase or `always`.
+3. The roles phase also starts at the local DNS wrapper playbook, because the roles phase may run that playbook instead.
+4. It follows every bundle file that a reached file names, by path or by file name.
+5. It follows a Python file by its module name. So Ansible modules, `module_utils` files and imported helpers count.
+
+A full-line comment is not read. A file that more than one phase reaches is in each of those phases. `ansible.cfg`, `build_vars.py` and both converge playbooks are in every phase. `build_vars.py` is the role materializer.
+
+Some references cannot be resolved. Each of them makes its phase read the whole bundle, as before:
+
+- an include or import with a templated name;
+- a file or template lookup of a computed path;
+- a local `copy`, `template` or `script` source with a templated name;
+- `role_path`;
+- a Python file that opens files beside itself.
+
+The resolver does resolve three forms: a playbook-relative path that ends in a literal file name, a run-folder path, and a loop item of a literal loop.
+
+A bundle file that no phase names is in no phase digest, because no skippable phase can load it. The `check` phase always runs, so its own files are in no digest either.
+
+A test fails when a phase of the shipped bundle falls back to the whole bundle, or when a reached file includes a task file outside its phase's set (`swamp/tests/phase_code_test.ts`). A role Operation's phases still read the whole bundle.
+
+The first converge of each Node after this rule shipped finds every code digest moved and runs every phase once.
 
 Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
 

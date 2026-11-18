@@ -2889,7 +2889,7 @@ Each Node has its own reason in the result, `converge_reasons`. The refresh only
 
 A digest cannot be read when the Node's intent cannot be built, when the read failed, or when the checkout gives no tree ID of the `swamp` files.
 
-`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
+`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). Each phase digest holds only the `swamp/ansible` files that phase can load, so a changed Ansible task file runs only the phases that load it. A change to `ansible.cfg`, the converge playbooks or `build_vars.py` runs every phase ([phase code](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change)).
 
 A change only to the five files excluded from the host digest does not make `nested-app-dev` due. It still counts for any part that reads those files, such as the nested Gateway's grants digest when the Club key is present. If no other work changes a nested disk and no other snapshot rule applies, `base` stays as it was.
 

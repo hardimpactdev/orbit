@@ -117,3 +117,16 @@ Deno.test("an ansible.cfg change moves every phase", async () => {
         assertEquals(phases.filter((phase) => now[phase] === first[phase]), []);
     } finally { await Deno.remove(tree, { recursive: true }); }
 });
+
+Deno.test("a statically imported file with a task tagged in a list, and a play's handlers, reach the phase", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const [ansible] = code;
+        await Deno.writeTextFile(`${ansible}/tasks/agent.yml`, "- name: tagged\n  ansible.builtin.include_tasks: tasks/check.yml\n  tags:\n    - network\n");
+        await Deno.writeTextFile(`${ansible}/operation-node-converge.yml`, (await Deno.readTextFile(`${ansible}/operation-node-converge.yml`))
+            .replace("  tasks:\n", "  handlers:\n    - { name: reload, ansible.builtin.import_tasks: tasks/unused.yml }\n  tasks:\n"));
+        const resolved = await resolvePhases(ansible);
+        assertEquals(resolved.network.files!.includes("tasks/agent.yml") && resolved.network.files!.includes("tasks/check.yml"), true);
+        for (const phase of phases) assertEquals(resolved[phase].files!.includes("tasks/unused.yml"), true, phase);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
