@@ -12,12 +12,12 @@ The Gateway runs an Operation as a state machine. An Operation is a set of steps
 
 In progress.
 
-The owner decided N1–N6 below on 2026-11-18, after the spike on the copy `executor-spike` (branch `spike/swamp-engine-reference`).
+The owner decided N1–N7 below on 2026-11-18, after the spike on the copy `executor-spike` (branch `spike/swamp-engine-reference`).
 
 Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One state machine runs every migrated kind, one primitive holds each resource rule, and the order signature stays the security boundary. Exceptions:
 
 - [No exceptions and no legacy](/mission#principles): while kinds move, Swamp and the state machine run side by side. Each kind is on exactly one of them, and the move of the last kind removes Swamp's operation workflows. Swamp is not a fallback for a migrated kind.
-- The frozen agent of [ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained): the observer gets no new command. Its relay of orders and receipts goes away, because the executor joins NATS itself.
+- The frozen agent of [ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained): the observer gets no new command of its own. Under N7 its binary also carries the executor's mode, and its relay of orders and receipts goes away, because the executor joins NATS itself.
 
 ## Context
 
@@ -48,6 +48,7 @@ The Node work of a container clone fitted 19 primitives, each on one resource. N
 - **N4. One kind at a time.** An Operation kind moves as a whole, in one pull request, after its proof passes. Swamp keeps every other kind until it moves.
 - **N5. Two processes, both root, for now.** The observer and the executor stay separate processes with separate NATS users. Only the executor publishes receipts. Both run as root, as Swamp's SSH does today. Hardening (an unprivileged observer, sealed receipts) comes later, and these seams keep it a configuration change.
 - **N6. Content travels over NATS.** A file's bytes reach a Node through the NATS KV bucket `CONTENT`, keyed by Node and SHA-256. The signed order names only the hash. There is no HTTP side channel.
+- **N7. One agent, two processes.** `orbit-agent` is one binary in one release artifact with one pin, installed on every Node. It runs as two processes: `orbit-agent observe` (the observer, `orbit-agent.service`) and `orbit-agent execute serve` (the executor, `orbit-executor.service`). Each process has its own NATS user. The per-role allowlist `/etc/orbit/executor/enabled` still decides which primitive families run; a Node whose roles enable none runs the executor with nothing enabled.
 
 ### The state machine
 
@@ -80,6 +81,7 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 
 ### What this changes
 
+- **ADR 0267 P2 and P10** (the executor is a separate binary, installed only where a role needs it): under N7 the executor is a mode of the one `orbit-agent` binary, installed on every Node, and the per-role allowlist alone gates its families. One crate per family stays.
 - **ADR 0267 P1** (orders over the WebSocket): orders, receipts and content go over NATS. The observer's relay goes away.
 - **ADR 0267 P3** (the executor test): the test is one Node, idempotent by Operation, a fixed name and one resource kind. A primitive may run longer than seconds within its budget, with progress acknowledgements.
 - **ADR 0267 P4 and P8** (Swamp keeps multi-Node work; `instance.clone` is one action): the state machine runs migrated kinds, multi-Node ones included. The clone's Node part is a composition of primitives, not one action.
@@ -87,11 +89,12 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 
 ### Order of the moves
 
-1. The foundation, with `firewall:allow` and `firewall:deny` as the first kind.
-2. `route:create` and `route:destroy`.
-3. The DNS writes and the short Node writes, such as Process control.
-4. `instance:create` and the other container flows.
-5. The converges (`node:role-add`, Node setup) last.
+1. One agent with two processes (N7): one binary, one artifact, one install.
+2. The foundation, with `firewall:allow` and `firewall:deny` as the first kind.
+3. `route:create` and `route:destroy`.
+4. The DNS writes and the short Node writes, such as Process control.
+5. `instance:create` and the other container flows.
+6. The converges (`node:role-add`, Node setup) last.
 
 ## Rejected alternatives
 
