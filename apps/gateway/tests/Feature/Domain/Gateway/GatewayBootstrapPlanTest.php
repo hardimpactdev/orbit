@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Artisan;
 it('plans the packages, Caddy and PHP of a fresh Gateway from the recipe alone', function (): void {
     $plan = GatewayBootstrapPlan::make('https://10.45.0.1', '/home/orbit/.orbit', '/home/orbit/orbit/apps/gateway');
 
-    expect($plan['packages'])->toContain('wireguard', 'logrotate', 'dnsmasq', 'python3-venv', 'composer', 'git', 'sqlite3')
+    expect($plan['packages'])->toContain('wireguard', 'logrotate', 'dnsmasq', 'python3-venv', 'jq', 'composer', 'git', 'sqlite3')
         ->not->toContain('caddy')
         ->and($plan['packages'])->toBe(array_values(array_unique($plan['packages'])))
         ->and($plan['caddy_package']['path'])->toEndWith('_linux_amd64.deb')
