@@ -1,0 +1,43 @@
+file = "swamp/tests/gateway_release_retire_test.py"
+cost = 33
+inputs = [
+  "bin/gateway-container-move",
+  "bin/gateway-horizon-ready",
+  "bin/gateway-container-rollback",
+  "bin/gateway-container-site",
+  "bin/gateway-release-check",
+  "bin/gateway-release-phase",
+  "bin/gateway-rollback",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-release-drain.sh",
+  "swamp/scripts/gateway-release-host-check.py",
+  "swamp/scripts/gateway-release-horizons.py",
+  "swamp/scripts/gateway-release-switch.sh",
+  "swamp/workflows/workflow-production-release-activate.yaml",
+  "swamp/tests/gateway_release_recovery_test.py",
+]
+cases = [
+  "test_retire_keeps_the_former_stopped_and_replaces_the_earlier_old_only_then",
+  "test_a_missing_former_live_keeps_the_earlier_old",
+  "test_two_failed_releases_in_a_row_keep_the_verified_rollback_target",
+  "test_a_failed_release_keeps_every_earlier_release_until_live_verifies",
+  "test_a_failed_second_release_never_makes_an_unverified_former_live_old",
+  "test_a_verified_candidate_keeps_the_verified_earlier_old_over_an_unverified_former",
+  "test_a_missing_old_is_forgotten_instead_of_blocking_releases",
+  "test_a_candidate_that_never_served_returns_to_the_preparation_slot",
+  "test_a_retried_build_returns_its_candidate_before_it_can_seed_a_fourth_container",
+  "test_an_unverified_former_live_never_becomes_old",
+  "test_a_running_old_refuses_the_next_build",
+]
+[case_costs]
+"test_retire_keeps_the_former_stopped_and_replaces_the_earlier_old_only_then" = 3
+"test_a_missing_former_live_keeps_the_earlier_old" = 3
+"test_two_failed_releases_in_a_row_keep_the_verified_rollback_target" = 3
+"test_a_failed_release_keeps_every_earlier_release_until_live_verifies" = 3
+"test_a_failed_second_release_never_makes_an_unverified_former_live_old" = 3
+"test_a_verified_candidate_keeps_the_verified_earlier_old_over_an_unverified_former" = 3
+"test_a_missing_old_is_forgotten_instead_of_blocking_releases" = 3
+"test_a_candidate_that_never_served_returns_to_the_preparation_slot" = 3
+"test_a_retried_build_returns_its_candidate_before_it_can_seed_a_fourth_container" = 3
+"test_an_unverified_former_live_never_becomes_old" = 3
+"test_a_running_old_refuses_the_next_build" = 3

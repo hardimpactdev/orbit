@@ -19,7 +19,12 @@ use Illuminate\Support\Facades\Broadcast;
  */
 final class RealtimeConnection
 {
-    private static ?OrbitCaCurlFactory $caFactory = null;
+    /**
+     * The current and retiring Reverb endpoints each own at most one reusable connection.
+     *
+     * @var array<int, array{endpoint: string, handler: CurlHandler}>
+     */
+    private static array $handlers = [];
 
     /** Connect and request limits for the old server of a `websocket` move, in seconds. */
     public const float OldServerConnectSeconds = 0.3;
@@ -132,7 +137,7 @@ final class RealtimeConnection
             return false;
         }
 
-        config([
+        $settings = [
             'broadcasting.default' => 'reverb',
             'broadcasting.connections.reverb.key' => $connection->key,
             'broadcasting.connections.reverb.secret' => $connection->secret,
@@ -141,7 +146,7 @@ final class RealtimeConnection
             'broadcasting.connections.reverb.options.port' => $connection->port,
             'broadcasting.connections.reverb.options.scheme' => $connection->scheme,
             'broadcasting.connections.reverb.options.useTLS' => $connection->scheme === 'https',
-            'broadcasting.connections.reverb.client_options.handler' => new CurlHandler(['handle_factory' => self::$caFactory ??= new OrbitCaCurlFactory]),
+            'broadcasting.connections.reverb.client_options.handler' => $this->handler($connection, $oldServer),
             'broadcasting.connections.reverb.client_options.verify' => $connection->caCertificatePath,
             // A stuck server must not hold the job or the PHP worker that sends the broadcast.
             // The old server of a `websocket` move gets a much shorter limit, so it never slows the serving one.
@@ -150,9 +155,31 @@ final class RealtimeConnection
             'broadcasting.connections.reverb.client_options.curl' => $connection->resolveAddress === null
                 ? []
                 : [CURLOPT_RESOLVE => ["{$connection->host}:{$connection->port}:{$connection->resolveAddress}"]],
-        ]);
+        ];
+
+        $config = config();
+        if ($config->getMany(array_keys($settings)) !== $settings) {
+            $config->set($settings);
+            // Octane shares the manager across request sandboxes. The cURL handler has its own endpoint and CA cache.
+            Broadcast::purge('reverb');
+        }
 
         return true;
+    }
+
+    private function handler(RealtimeConnectionData $connection, bool $oldServer): CurlHandler
+    {
+        $ca = is_readable($connection->caCertificatePath) ? hash_file('sha256', $connection->caCertificatePath) : false;
+        $endpoint = implode("\0", [$connection->scheme, $connection->host, (string) $connection->port, $connection->resolveAddress ?? '', $connection->caCertificatePath, $ca ?: '']);
+        $slot = (int) $oldServer;
+        if ((self::$handlers[$slot]['endpoint'] ?? null) !== $endpoint) {
+            self::$handlers[$slot] = [
+                'endpoint' => $endpoint,
+                'handler' => new CurlHandler(['handle_factory' => new OrbitCaCurlFactory(1)]),
+            ];
+        }
+
+        return self::$handlers[$slot]['handler'];
     }
 
     /**

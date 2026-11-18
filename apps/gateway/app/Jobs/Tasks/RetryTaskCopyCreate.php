@@ -7,8 +7,8 @@ namespace App\Jobs\Tasks;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskLifecycle;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -46,7 +46,7 @@ final class RetryTaskCopyCreate implements ShouldQueue
                     return;
                 }
                 $group->update(['copy_create_failure' => null]);
-                TaskCopyLifecycle::askAfterRetry($group, $first, "a new create, was refused with {$refusal->errorCode}");
+                TaskLifecycle::askAfterRetry($group, $first, "a new create, was refused with {$refusal->errorCode}");
             });
         }
     }

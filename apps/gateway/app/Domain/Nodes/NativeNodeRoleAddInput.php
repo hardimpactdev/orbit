@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Data\Nodes\NodeSettingsData;
 use App\Domain\Fleet\NodeFootprint as DesiredNodeFootprint;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Metrics\MetricsFleetCapture;
 use App\Domain\Nodes\Storage\ConfiguredStoragePathValidator;
 use App\Domain\Routes\RouteExecutionProof;
@@ -168,6 +169,9 @@ final readonly class NativeNodeRoleAddInput
             $build = PhpBuildInstaller::input(new RecipeLoader()->load(), [NodePrivateDnsListenerFootprint::PhpVersion], false,
                 extras: 'keep', fpm: 'none', opentelemetry: false);
             $phpPackages = $this->phpPackages($build);
+            if (GatewayReleaseHost::retiredFpm($node)) {
+                $phpPackages = array_values(array_filter($phpPackages, static fn (array $package): bool => $package['name'] !== 'php8.5-fpm'));
+            }
             $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
         }
         if ($role === RoleName::AppDev) {

@@ -47,7 +47,7 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     attached_targets: list<AttachedTargetRecord>,
- *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int, required: bool}>,
  *     warnings?: list<string>,
  *     name_converted_from?: string,
  *     auto_deploy: AutoDeployRecord|null
@@ -85,7 +85,7 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     attached_targets: list<AttachedTargetRecord>,
- *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int, required: bool}>,
  *     auto_deploy: AutoDeployRecord|null,
  *     warnings?: list<string>,
  *     name_converted_from?: string,
@@ -310,6 +310,7 @@ final readonly class InstanceResponse
                 $step['phase'],
                 $step['command'],
                 $step['timeout_seconds'],
+                required: ($step['required'] ?? true) !== false,
             );
         }
 

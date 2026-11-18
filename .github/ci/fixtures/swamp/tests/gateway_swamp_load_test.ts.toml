@@ -9,12 +9,15 @@ cases = [
   "an unforced load moves the serve checkout forward",
   "the release passes its force flag to the load",
   "the checkout reads the release commit and the force flag from the load intent",
+  "retained rollback checks out the sealed commit with an unavailable origin",
+  "a resumed load checks the exact Gateway target before changing the staging checkout",
 ]
 file = "swamp/tests/gateway_swamp_load_test.ts"
 host_programs = ["jq"]
 cost = 1
 inputs = [
   "bin/swamp-shape-gate",
+  "bin/gateway-release-phase",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",

@@ -205,7 +205,7 @@ final readonly class FactDoctor
             return $check->report();
         }
         foreach ($roles->where('status', LifecycleStatus::Active) as $role) {
-            foreach ($this->services->forRole($role->role) as $service) {
+            foreach ($this->services->forRole($role->role, $check->node) as $service) {
                 $check->read($role->id, ['role.services_inactive'], function () use ($check, $role, $service): void {
                     $unit = $check->unit('systemd', $service.'.service') ?? throw new UnexpectedValueException('unit');
                     if ($unit['state'] !== 'active') {

@@ -26,7 +26,7 @@ final class PruneInstanceDeployCopiesCommand extends Command
     {
         $dryRun = (bool) $this->option('dry-run');
         [$deploys, $keys, $kept] = [0, 0, 0];
-        Operation::query()->where('kind', 'instance.deploy')->whereIn('status', OperationStatus::terminalValues())
+        Operation::query()->where(fn ($query) => $query->where('kind', 'instance.deploy')->orWhere(fn ($rollback) => $rollback->where('kind', 'instance.rollback')->whereNotNull('input->production_release')))->whereIn('status', OperationStatus::terminalValues())
             ->chunkById(self::Batch, function (Collection $chunk) use ($copies, $dryRun, &$deploys, &$keys, &$kept): void {
                 $ended = $chunk->filter(InstanceDeployExecutionCopies::ended(...))->values();
                 $kept += $chunk->count() - $ended->count();

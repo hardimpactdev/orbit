@@ -11,7 +11,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCopyEnd;
+use App\Domain\Tasks\TaskEnd;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -43,7 +43,7 @@ final class DestroyTaskCopy implements ShouldQueue
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Tasks->value)->afterCommit();
     }
 
-    public function handle(StartInstanceDestroyAction $destroy, InstanceLifecycleContributions $contributions, TaskCopyEnd $end): void
+    public function handle(StartInstanceDestroyAction $destroy, InstanceLifecycleContributions $contributions, TaskEnd $end): void
     {
         [$instance, $group] = $this->destroyable() ?? [null, null];
         if ($instance === null || $group === null) {
@@ -55,7 +55,7 @@ final class DestroyTaskCopy implements ShouldQueue
             $workspace = $end->workspace($group, $instance);
             $kept = null;
             try {
-                TaskCopyEnd::assertDiscardable($workspace, false);
+                TaskEnd::assertDiscardable($workspace, false);
             } catch (ResourceOperationException) {
                 $kept = self::keptReason($group, $workspace);
             }

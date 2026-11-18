@@ -33,6 +33,7 @@ final readonly class UpdateInstanceDeployStepAction
         bool $hasCommand,
         bool $hasPhase,
         bool $hasTimeout,
+        ?bool $required = null,
     ): DeploymentStep {
         $result = $this->operations->run([$instance->id], function () use (
             $instance,
@@ -45,6 +46,7 @@ final readonly class UpdateInstanceDeployStepAction
             $hasCommand,
             $hasPhase,
             $hasTimeout,
+            $required,
         ): DeploymentStep {
             $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
@@ -60,6 +62,7 @@ final readonly class UpdateInstanceDeployStepAction
                 $hasCommand,
                 $hasPhase,
                 $hasTimeout,
+                $required,
             );
         });
 

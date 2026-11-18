@@ -2,7 +2,7 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Console/Commands/SyncKnownHostsCommand,Infrastructure/Ssh/KnownHostsStore,Infrastructure/Ssh/KnownHostsRepository,Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Console/Commands/SyncKnownHostsCommand,Infrastructure/Ssh/KnownHostsStore,Infrastructure/Ssh/KnownHostsRepository,Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskTurn,Domain/Tasks/TaskTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts,InstanceModelRoute}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes,28_000000_allow_a_proof_copy_clone_on_its_seed_node}.php
@@ -2067,21 +2067,21 @@ Reads need `orchestration:read`. Writes need `orchestration:operate`. Neither sc
 
 #### Admission
 
-`TaskCopyTurn::capture` admits each turn under the group's lock, as it does today. It names the copy, the role's `AgentThread` and the thread's `external_id`:
+`TaskTurn::capture` admits each turn under the group's lock, as it does today. It names the copy, the role's `AgentThread` and the thread's `external_id`:
 
 - **New thread.** Capture sets a UUID as `external_id` and marks it admitted: `external_id_admission` is `admitted`. `thread.create` uses that exact ID. The target must not choose another.
 - **Confirmed.** A turn that reports that same ID back makes it `confirmed`. Capture names the ID as `turn.t3_thread_id` and its standing as `turn.admission`.
 - **Established thread.** The turn uses an admitted `external_id`. The worker never looks a thread up by its title.
 - **Binding.** Before dispatch, the worker confirms the target's environment ID and its one admitted workspace project for `/srv/workspace`. A thread of another environment or project is refused.
 
-Rows made before this contract need one rule. Today `capture` sets a UUID, but `t3_copy_rpc.mjs create` makes its own thread ID. A continued turn finds its thread by title in `thread list`. `TaskCopyTurnProjection::record` then writes the reported ID over the row. So these rows fall in two groups:
+Rows made before this contract need one rule. Today `capture` sets a UUID, but `t3_copy_rpc.mjs create` makes its own thread ID. A continued turn finds its thread by title in `thread list`. `TaskTurnProjection::record` then writes the reported ID over the row. So these rows fall in two groups:
 
 | Row | How to tell | Rule |
 | --- | --- | --- |
 | Provisional | No turn of the thread reported a `t3_thread_id`. The row still holds the UUID that capture set, which T3 never received | The next turn creates the thread with that UUID and marks it admitted |
 | Overwritten | A turn reported a `t3_thread_id` | Refused with `tasks.copy_thread_missing`. The turn launches nothing |
 
-`TaskCopyTurn::admission` reads the standing. A row from before the mark has a null `external_id_admission`; it is `provisional` while no copy turn of the thread reported a `t3_thread_id`, and `overwritten` after. A reported ID that differs from the row's ID, or any report on a row without the mark, sets `overwritten`.
+`TaskTurn::admission` reads the standing. A row from before the mark has a null `external_id_admission`; it is `provisional` while no copy turn of the thread reported a `t3_thread_id`, and `overwritten` after. A reported ID that differs from the row's ID, or any report on a row without the mark, sets `overwritten`.
 
 The provenance of an overwritten ID is not guaranteed. A first turn reports the ID that the helper made, but a continued turn reports the ID of a title match, and a person's thread with the same title passes that match. The row does not say which happened, so every overwritten row is refused, and the caller starts a new thread with `--thread=new`.
 
@@ -2098,7 +2098,7 @@ The worker counts the turn as launched only when `getThreadProjection` shows the
 | Possibly sent, no confirmed run | `true` | `false` | `false` |
 | Confirmed launch | `true` | `true` | As the run went |
 
-`TaskCopyTurnProjection::record` replaces a thread's stored questions only when `launched` is `true`. So a possibly sent answer keeps the questions. `ended: false` keeps the hold through `TaskCopyTurn::unsettled`. A reviewer's turn cut after its detach and before its send holds the group too, as it does today with `tasks.copy_review_unrestored`.
+`TaskTurnProjection::record` replaces a thread's stored questions only when `launched` is `true`. So a possibly sent answer keeps the questions. `ended: false` keeps the hold through `TaskTurn::unsettled`. A reviewer's turn cut after its detach and before its send holds the group too, as it does today with `tasks.copy_review_unrestored`.
 
 #### Recovery of a lost reply
 
@@ -2146,7 +2146,7 @@ A recorded run ID must equal the run that the link finds. Otherwise the earlier 
 
 Settling keeps today's order. First the worker proves that the earlier run ended. Then, for a reviewer's turn whose detach mark is set, it restores the checkout and verifies it, only when the restore is safe as [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) says. Only then does it name the turn settled. A reviewer's run that ended over a checkout not yet restored leaves the turn unsettled. A reviewer's turn without the mark is settled once its run is over, as today.
 
-An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears a thread's stored questions when their request IDs are exactly the spent ones. A partial overlap or a superset clears nothing. It does not wait for the earlier Operation, which is not recorded a second time.
+An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskTurnProjection` clears a thread's stored questions when their request IDs are exactly the spent ones. A partial overlap or a superset clears nothing. It does not wait for the earlier Operation, which is not recorded a second time.
 
 The current turn froze its prompt at capture, so it may quote those spent questions as the question it answers. When its own `answered` list holds a spent request, it launches nothing and fails with `tasks.copy_question_answered`. The caller sends its prompt again. The next capture composes it without the spent questions.
 
@@ -2209,7 +2209,7 @@ The Operation's result names:
 
 The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`.
 
-The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds the fixed sentence of its code, and nothing parsed from any text. A turn that has not ended adds a fixed sentence that the group holds. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's, and drops any other error field. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
+The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds the fixed sentence of its code, and nothing parsed from any text. A turn that has not ended adds a fixed sentence that the group holds. The raw text stays in the run folder. `TaskTurnProjection` enforces this for every result, also an older worker's, and drops any other error field. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
 
 One rule names a turn ended, judged on the turn's own run, never on another run of its thread. The first row that applies decides:
 
@@ -2235,7 +2235,7 @@ A question without its owner run is never stored. The turn records `tasks.copy_q
 
 The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run: the folder is mode `0700`, `intent.json` is mode `0600`, and its cleanup removes the folder. The RPC worker drops that staging with the CLI calls.
 
-The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. The archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The CLI driver already shapes it so, and the projection drops a user message's text that an older worker still sends. The stock CLI gives no message ID or time: under it, an entry's ID is the run ID and the message's index, and its time is empty. The Gateway already holds the admitted prompt in the Operation's input.
+The transcript goes only to the thread's archive, as `TaskTurnProjection` does today. The archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The CLI driver already shapes it so, and the projection drops a user message's text that an older worker still sends. The stock CLI gives no message ID or time: under it, an entry's ID is the run ID and the message's index, and its time is empty. The Gateway already holds the admitted prompt in the Operation's input.
 
 #### Proof and removal
 
@@ -3429,7 +3429,7 @@ Why `incus copy --refresh`, once per seed and Node:
 
 The cost is one trust between Nodes: each CI Node trusts the default's Node for one Incus project. The listener answers only on the WireGuard address, and the firewall admits its port only from the default's Node.
 
-A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the holder, its snapshot and its volume as the source, in place of the default's container and volume (`TaskCopyStart::seed`).
+A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the holder, its snapshot and its volume as the source, in place of the default's container and volume (`TaskStart::seed`).
 
 A copy on a Node whose seed is not the default's current seed is refused with `tasks.copy_source_unavailable`. A task copy still goes to the default's Node and clones the default. A proof copy goes to a free [CI place](/cli/proof/run#the-run) on any Node that offers proof places. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
 

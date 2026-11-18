@@ -5,5 +5,11 @@
   ansible.builtin.import_tasks: fleet-reboot-ci-start.yml
   when: target.ci_project is not none and runners is defined and runners.stdout is defined
 - name: Start the Gateway scheduler and Horizon again
+  when: target.gateway.release is not defined
   ansible.builtin.systemd_service: { name: "{{ item }}", state: started }
   loop: "{{ [target.gateway.scheduler, target.gateway.horizon] | select | list if target.gateway is not none else [] }}"
+- name: Start the drained units in the serving Gateway
+  when: target.gateway.release is defined
+  ansible.builtin.command: { argv: [/usr/local/libexec/orbit-gateway-unit, "{{ target.gateway.release }}", resume, "{{ item }}"] }
+  loop: "{{ [target.gateway.scheduler, target.gateway.horizon] | select | list if target.gateway is not none else [] }}"
+  changed_when: true

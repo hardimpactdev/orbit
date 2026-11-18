@@ -1,0 +1,371 @@
+id: 8ed818d1-6eb5-401c-a10c-ffa1f097fad6
+name: production-release
+autoContinue: false
+description: Build in the target preparer, verify an independent candidate and hand over to its release.
+queueTimeout: 120
+vaults: [orbit-control-inputs]
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [gateway.release, instance.deploy, instance.rollback]}
+    intent:
+      type: object
+      properties:
+        sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+        target: {type: string, pattern: '^gateway$|^instance-[1-9][0-9]*$'}
+        instance_id: {type: integer, minimum: 1}
+        after_timeout_seconds: {type: integer, minimum: 1, maximum: 90000}
+        build_timeout_seconds: {type: integer, minimum: 1, maximum: 90000}
+        retained: {type: boolean}
+        ssh: {type: object}
+      required: [target, sha, ssh]
+    execution_secrets:
+      type: object
+      propertyNames: {enum: [github_token, release]}
+      maxProperties: 1
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^(production-release-operation|gateway-release)-[1-9][0-9]*$'}
+        required: [vault, key]
+        additionalProperties: false
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+- name: release
+  labels: {role: swamp}
+  steps:
+  - name: Check release ownership
+    labels: {role: swamp}
+    task:
+      type: assert
+      severity: high
+      message: The target or private input belongs to a different Operation.
+      expr: >-
+        inputs.kind == "gateway.release"
+          ? inputs.intent.target == "gateway" && !has(inputs.intent.instance_id)
+              && ((has(inputs.intent.retained) && inputs.intent.retained) ? !has(inputs.execution_secrets.github_token)
+                : has(inputs.execution_secrets.github_token) && inputs.execution_secrets.github_token.key == "gateway-release-" + string(inputs.operation_id))
+          : has(inputs.intent.instance_id) && inputs.intent.target == "instance-" + string(inputs.intent.instance_id) && has(inputs.execution_secrets.release)
+              && inputs.execution_secrets.release.key == "production-release-operation-" + string(inputs.operation_id)
+  - name: Fetch the commit
+    dependsOn: [{step: Check release ownership, condition: {type: succeeded}}]
+    labels: {role: swamp}
+    writes: true
+    # A Gateway rollback starts the stopped old release, whose commit is already in the mirror.
+    guard: '${{ inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-fetch-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: &ssh
+        name: '${{ ("production-release-ssh-" + string(inputs.node_id) + "-" + inputs.intent.target).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.ssh.target.user }}'
+          port: '${{ inputs.intent.ssh.target.port }}'
+          identityFile: '${{ inputs.intent.ssh.identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.ssh.target.host }}'
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 360
+        stdin: '${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}'
+        argv:
+        - /usr/bin/timeout
+        - "330"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - fetch
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Build the release
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
+    dependsOn:
+    - {step: Fetch the commit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-build-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 2430
+        argv: >-
+          ${{ ["/usr/bin/timeout", "2400", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "build-checked", inputs.intent.sha, string(inputs.operation_id)] + [string((has(inputs.intent.force) ? inputs.intent.force : false)), has(inputs.intent.manifest) ? inputs.intent.manifest : "", string(has(inputs.intent.retained) && inputs.intent.retained)] }}
+  - name: Build the Instance release
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind == "gateway.release" }}'
+    dependsOn:
+    - {step: Fetch the commit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-build-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: '${{ (has(inputs.intent.build_timeout_seconds) ? inputs.intent.build_timeout_seconds : 2400) + 30 }}'
+        stdin: '${{ vault.get(inputs.execution_secrets.release.vault, inputs.execution_secrets.release.key) }}'
+        argv:
+        - /usr/bin/timeout
+        - '${{ string((has(inputs.intent.build_timeout_seconds) ? inputs.intent.build_timeout_seconds : 2400)) }}'
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - build
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Install the web build
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    dependsOn:
+    - {step: Build the release, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-web-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 930
+        stdin: '${{ vault.get(inputs.execution_secrets.github_token.vault, inputs.execution_secrets.github_token.key) }}'
+        argv: >-
+          ${{ ["/usr/bin/timeout", "900", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "web", inputs.intent.sha, string(inputs.operation_id)] + [(has(inputs.intent.repository) ? inputs.intent.repository : ""), string((has(inputs.intent.web) ? inputs.intent.web.artifact_id : 0)), string((has(inputs.intent.web) ? inputs.intent.web.size : 0)), (has(inputs.intent.web) ? inputs.intent.web.digest : "")] }}
+  - name: Clone the prepared release
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.kind == "instance.rollback" || (has(inputs.intent.retained) && inputs.intent.retained) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    dependsOn:
+    - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-clone-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 255
+        argv: >-
+          ${{ ["/usr/bin/timeout", "225", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "clone", inputs.intent.sha, string(inputs.operation_id)] + (inputs.kind == "gateway.release" ? [(has(inputs.intent.web) ? inputs.intent.web.digest : "")] : []) }}
+  - name: Sleep preparation
+    guard: '${{ steps["Check release ownership"].status != "succeeded" }}'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Clone the prepared release, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-park-preparation-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 195
+        argv:
+        - /usr/bin/timeout
+        - "165"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - park-preparation
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Migrate
+    # Migrations are expand-only, so old's code runs on the current schema. A rollback never migrates or restores data.
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    dependsOn:
+    - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Sleep preparation, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-migrate-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 930
+        argv:
+        - /usr/bin/timeout
+        - "900"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - migrate
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Check the migration
+    labels: {role: swamp}
+    guard: '${{ inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    dependsOn:
+    - {step: Migrate, condition: {type: succeeded}}
+    task: {type: assert, expr: 'steps["Migrate"].outputs.stdout.trim().endsWith("migrate-exit=0")', severity: high, message: The Gateway database migration failed.}
+  - name: Check the Instance candidate
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind == "gateway.release" }}'
+    dependsOn:
+    - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-ready-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 330
+        argv:
+        - /usr/bin/timeout
+        - "300"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - ready
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Check the candidate
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
+    dependsOn:
+    - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Check the migration, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-ready-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 330
+        argv:
+        - /usr/bin/timeout
+        - "300"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - ready
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Load Swamp on Node 209
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
+    dependsOn: [{step: Check the candidate, condition: {type: succeeded}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-gateway-swamp-load
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: 209
+        kind: gateway.swamp_load
+        intent:
+          sha: '${{ inputs.intent.sha }}'
+          force: '${{ (has(inputs.intent.force) ? inputs.intent.force : false) }}'
+          retained: '${{ has(inputs.intent.retained) && inputs.intent.retained }}'
+          grants:
+            grants/orbit-gateway.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[0] }}'
+            grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'
+          ssh: '${{ (has(inputs.intent.swamp_ssh) ? inputs.intent.swamp_ssh : {}) }}'
+          gateway_ssh: '${{ inputs.intent.ssh }}'
+        execution_secrets: {}
+  - name: Hand over the release
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    dependsOn:
+    - {step: Check the candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Check the Instance candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Sleep preparation, condition: {type: succeeded}}
+    - {step: Load Swamp on Node 209, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: workflow
+      workflowIdOrName: production-release-activate
+      inputs:
+        operation_id: '${{ inputs.operation_id }}'
+        node_id: '${{ inputs.node_id }}'
+        kind: '${{ inputs.kind }}'
+        intent: '${{ inputs.intent }}'
+  - name: Release unused candidate
+    guard: '${{ steps["Check release ownership"].status != "succeeded" }}'
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Hand over the release, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-release-unused-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 270
+        argv:
+        - /usr/bin/timeout
+        - "240"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - release-unused
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Read the serving release
+    labels: {role: swamp}
+    guard: '${{ inputs.kind == "gateway.release" || steps["Check release ownership"].status != "succeeded" }}'
+    dependsOn:
+    - {step: Release unused candidate, condition: {type: always}}
+    - {step: Hand over the release, condition: {type: always}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-readback-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 90
+        argv:
+        - /usr/bin/timeout
+        - "60"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - readback
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'

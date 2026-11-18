@@ -16,7 +16,7 @@ final class DirectGitHubTokenController extends Controller
 {
     public function mint(DirectGitHubTokenRequest $request, Operation $operation): JsonResponse
     {
-        $issuer = app(DirectOperation::class)->definition($operation->kind)['github_token_issuer'] ?? null;
+        $issuer = app(DirectOperation::class)->definition($operation)['github_token_issuer'] ?? null;
         if ($issuer !== null) {
             return response()->json(['data' => ['execution_secrets' => app($issuer)->issue($operation, $request->peerNodeId(), ValidatedData::string($request->validated('run_id')), $request->validated('purpose'))], 'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')]])->header('Cache-Control', 'private, no-store');
         }

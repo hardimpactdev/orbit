@@ -7,7 +7,7 @@ namespace App\Data\Tasks;
 use App\Domain\Compute\VmPower;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
-use App\Domain\Tasks\TaskCopyAgent;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
@@ -39,7 +39,7 @@ final class TaskGroupData extends Data
 
     /**
      * @param  list<TaskData>  $subtasks
-     * @param  array<string, array<string, array{value: string, source: string}>>  $resolvedAgents  each role's copy turn agent and where each value comes from (TaskCopyAgent)
+     * @param  array<string, array<string, array{value: string, source: string}>>  $resolvedAgents  each role's copy turn agent and where each value comes from (TaskAgent)
      */
     public function __construct(
         public int $id,
@@ -194,8 +194,8 @@ final class TaskGroupData extends Data
             reviewerProvider: $group->reviewer_agent_provider,
             reviewerEffort: $group->reviewer_agent_effort,
             resolvedAgents: [
-                TaskThreadRole::Implementer->value => TaskCopyAgent::resolve($group, TaskThreadRole::Implementer),
-                TaskThreadRole::Reviewer->value => TaskCopyAgent::resolve($group, TaskThreadRole::Reviewer),
+                TaskThreadRole::Implementer->value => TaskAgent::resolve($group, TaskThreadRole::Implementer),
+                TaskThreadRole::Reviewer->value => TaskAgent::resolve($group, TaskThreadRole::Reviewer),
             ],
             tokens: $group->tokens,
             lineDiff: $group->line_diff,

@@ -13,7 +13,7 @@ const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, 
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
 const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", options: [] as { id: string; value: string }[], candidate: null, answered: [] as string[], settle: [] as { operation_id: number; title: string; branch: string | null; t3_thread_id?: string; admitted?: boolean; run_id?: string; sent?: boolean }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
-// What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
+// What TaskTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
 

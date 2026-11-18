@@ -66,6 +66,14 @@ final class RequestLogContext
         });
     }
 
+    public static function clear(): void
+    {
+        self::$depth = 0;
+        if (self::$requestId !== null) {
+            self::set(null);
+        }
+    }
+
     private static function set(?string $requestId): void
     {
         if ($requestId === null) {

@@ -17,12 +17,12 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskDonePublication;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPublishProjection;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurn;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -173,7 +173,7 @@ final readonly class RunTaskMergeRoundAction
     }
 
     /**
-     * The reviewer's sent text on C1 is its approval (TaskCopyTurn::PrTextRule). A done-check publish P completes the subtask again, so the
+     * The reviewer's sent text on C1 is its approval (TaskTurn::PrTextRule). A done-check publish P completes the subtask again, so the
      * done rule makes C1 the done check; any other P pushes C1 only.
      *
      * @return Result
@@ -214,7 +214,7 @@ final readonly class RunTaskMergeRoundAction
     private function start(Task $group, Operation $publish, string $step, string $kind, Closure $admit): array
     {
         // A turn that may still run holds the copy; a stop needs no step, so only a start waits for it to settle.
-        if (TaskCopyTurn::unsettled($group) !== []) {
+        if (TaskTurn::unsettled($group) !== []) {
             return self::result($group, $publish, $step, 'busy', null);
         }
         $key = self::prefix($group, $publish).$step;

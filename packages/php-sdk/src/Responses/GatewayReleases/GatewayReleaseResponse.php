@@ -81,7 +81,7 @@ final readonly class GatewayReleaseResponse
 
     public function succeeded(): bool
     {
-        return $this->outcome === 'verified';
+        return in_array($this->outcome, ['verified', 'reconciled'], true);
     }
 
     /** @return array<string, mixed> */

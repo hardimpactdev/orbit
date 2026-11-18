@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\DatabaseServers\DatabaseDestroyRun;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\Deployment\InstanceRollbackProjection;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
@@ -71,7 +72,9 @@ return [
             'captures' => ['size' => ['job' => 'import', 'step' => 'Read .env into the vault', 'field' => 'size'],
                 'sha256' => ['job' => 'import', 'step' => 'Read .env into the vault', 'field' => 'sha256']]],
         'projection' => NativeInstanceEnvironmentImportProjection::class],
-    'instance.sync_environment' => ['workflow' => 'operation-instance-environment', 'workflow_inputs' => true,
+    'instance.sync_environment' => ['workflow' => 'operation-instance-environment', 'alternate_workflows' => ['production-environment-sync'], 'workflow_inputs' => true,
+        'alternate_results' => ['production-environment-sync' => ['job' => 'environment', 'step' => 'Apply the live environment', 'native' => true,
+            'captures' => ['receipt' => ['job' => 'environment', 'step' => 'Apply the live environment', 'field' => 'stdout']]]],
         // The file behavior reports `compliant` for a file it left in place and `applied` for one it wrote.
         'terminal_result' => ['job' => 'environment', 'step' => 'Check the written file', 'native' => true, 'captures' => [
             'environment_write' => ['job' => 'environment', 'step' => 'Write .env, .env.testing-0', 'field' => 'status'],
@@ -103,7 +106,8 @@ return [
                 'route_hold_release' => ['job' => 'unregister', 'step' => 'Release the Route Nodes', 'field' => 'stdout']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$']]],
     'instance.deploy' => [
-        'workflow' => 'operation-instance-deploy-direct',
+        'workflow' => 'operation-instance-deploy-direct', 'alternate_workflows' => ['production-release'],
+        'alternate_results' => [ProductionContainerRelease::Workflow => ProductionContainerRelease::Terminal],
         // Development ends with the checkout's end check, a container default with "Finish the container", whose last phase is its
         // check, and production with the deployment's; the Vite+ runtime the steps ran under comes as one capture. Every step runs on
         // Node 209 over official SSH.
@@ -111,7 +115,7 @@ return [
             'captures' => ['vp_runtime' => ['job' => 'dev-vp-workspaces', 'step' => 'dev-vp-requirements', 'field' => 'runtime'],
                 'php_runtime' => ['job' => 'deploy', 'step' => 'Check PHP runtime', 'field' => 'status']]],
         'workflow_inputs' => true,
-        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^production-release-operation-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-(?:credential|processes)$'],
             ['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$'],
@@ -122,7 +126,9 @@ return [
         'projection' => InstanceDeployProjection::class,
     ],
     // The link read back after the swap is the end check; every step runs on Node 209 over official SSH.
-    'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'workflow_inputs' => true,
+    'instance.rollback' => ['workflow' => 'operation-instance-rollback', 'alternate_workflows' => ['production-release'],
+        'alternate_results' => [ProductionContainerRelease::Workflow => ProductionContainerRelease::Terminal],
+        'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^production-release-operation-[1-9][0-9]*$']], 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'rollback', 'step' => 'Check the selection', 'native' => true], 'projection' => InstanceRollbackProjection::class],
     // The seed of the proof default on each other Node that offers proof places (docs/cli/instance/seed-copy.mmd): the result step
     // prints each target's outcome, also after a failed pin or target.

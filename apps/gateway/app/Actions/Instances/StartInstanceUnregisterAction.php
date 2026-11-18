@@ -27,6 +27,7 @@ final readonly class StartInstanceUnregisterAction
         if (($replay = $this->idempotency->replay(self::Kind)) !== null) {
             return $replay;
         }
+        ContainerInstanceDestroy::assertReleaseRemovalAvailable($instance);
         if ($instance->runtime()->exists()) {
             throw new ResourceOperationException('instance.unregister_container', "Instance [{$instance->name}] is a container Instance. Use instance:destroy.", 409);
         }

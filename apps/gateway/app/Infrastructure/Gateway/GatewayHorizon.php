@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Gateway;
 
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Shared\ShutdownFastStop;
 use App\Models\Node;
 use App\Models\Process;
@@ -43,6 +44,16 @@ final readonly class GatewayHorizon
         $command = $process->runtime_config['command'] ?? null;
 
         return is_array($command) && array_slice($command, 1, 2) === ['artisan', 'horizon'];
+    }
+
+    public static function releaseUnit(Node $gateway, bool $container): string
+    {
+        $process = self::find($gateway);
+        if ($process !== null) {
+            return new SystemdProcessRenderer()->unitName($process);
+        }
+
+        return $container && GatewayQueueRedis::configured() ? 'orbit-gateway-horizon.service' : '';
     }
 
     public static function find(Node $gateway): ?Process

@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# The permanent Gateway Node entry point. Swamp runs each phase from the admitted commit.
+set -euo pipefail
+phase=$1 sha=$2 operation=$3
+shift 3
+[[ $sha =~ ^[a-f0-9]{40}$ && $operation =~ ^[1-9][0-9]*$ ]] || exit 64
+repo=/home/orbit/shared/orbit.git
+script=swamp/scripts/gateway-release-container.sh
+workflow=swamp/workflows/workflow-production-release-activate.yaml
+inventory=/home/orbit/.orbit/gateway-containers.json
+journal=/var/lib/orbit/gateway-release-switch
+# These entry points belong to the installed Node role. Fetch runs before the
+# target exists in the mirror. The token travels through stdin as the mirror owner.
+if [[ $phase == fetch ]]; then
+  exec runuser -u orbit -- bash -euo pipefail -c '
+    repo=$1 sha=$2
+    if git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then exit 0; fi
+    basic=$(printf "x-access-token:%s" "$(cat)" | base64 -w0)
+    GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
+      GIT_CONFIG_VALUE_0="Authorization: Basic $basic" git -C "$repo" fetch --quiet --no-tags origin "$sha"
+    git -C "$repo" cat-file -e "$sha^{commit}"
+  ' bash "$repo" "$sha"
+fi
+if [[ $phase == scheduler-window ]]; then
+  second=$((10#$(date -u +%S)))
+  if (( second < 2 )); then sleep "$((2-second))"; elif (( second >= 58 )); then sleep "$((62-second))"; fi
+  exit
+fi
+if [[ $phase == activation-workflow ]]; then
+  echo production-release-activate
+  exit
+fi
+check_recovery() {
+  local path
+  for path in "$script" "$workflow"; do
+    # Protocol 4 and later keep the stopped old, journal a rollback before old starts and gate every stop on the response wait.
+    if ! git -c safe.directory="$repo" -C "$repo" grep -qE '^# orbit-gateway-recovery-protocol: ([4-9]|[1-9][0-9]+)$' "$sha" -- "$path"; then
+      echo "gateway.release_recovery_incompatible: $sha lacks container rollback protocol 4 or later in $path" >&2
+      return 1
+    fi
+  done
+}
+# Manual moves and offline recovery already hold the same lock.
+case "$phase" in
+  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|build|build-checked|web|clone|park-preparation|switch|recover|start-horizon|quiesce|retire|settle|cleanup-versions|release-unused)
+    if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
+      exec 9</home/orbit/.orbit/gateway-release.lock
+      flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
+      export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
+    fi
+    ;;
+esac
+# Node 209 publishes definitions across several SSH steps. Keep the serving
+# generation fixed between them, including when an operator rolls back offline.
+lease=$journal/reconcile
+if [[ $phase == reconcile-end ]]; then
+  if [[ -f $lease ]]; then
+    [[ $(cat "$lease") == "$operation $sha" ]] || { echo 'Another reconciliation owns the lease' >&2; exit 1; }
+    rm -- "$lease"
+    sync -f "$journal"
+  fi
+  exit
+fi
+if [[ -f $lease ]]; then
+  case "$phase" in
+    reconcile-idle|reconcile-begin|reconcile-verify)
+      [[ $(cat "$lease") == "$operation $sha" ]] || { echo 'Another reconciliation owns the lease' >&2; exit 1; } ;;
+    switch|recover|build|build-checked|check-load)
+      echo 'The serving workflows are being reconciled. See gateway-recovery for interrupted runs.' >&2; exit 1 ;;
+  esac
+fi
+# Check compatibility before starting new work. Recovery of a durable switch
+# uses its exact candidate and operation, including switches made before this check.
+case "$phase" in
+  drain|restore|switch-back|restore-host)
+    echo 'gateway.release_phase_retired: roll back to the stopped old release through the journaled switch, or finish it with --recover' >&2
+    exit 1
+    ;;
+  reconcile-begin|reconcile-idle|reconcile-verify|build|build-checked|check-recovery|check-load)
+    [[ ! -e $journal/operation ]] || { echo 'Finish the interrupted Gateway handover with --recover first' >&2; exit 1; }
+    if [[ $phase != check-load || -f $inventory ]]; then check_recovery; fi
+    ;;
+  switch|recover|start-horizon|quiesce|retire)
+    check_recovery
+    if [[ -e $journal/operation || $phase == recover ]]; then
+      [[ -f $journal/operation && -f $journal/candidate &&
+        $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
+        { echo 'There is no matching Gateway handover' >&2; exit 1; }
+    fi
+    ;;
+  web|clone)
+    check_recovery
+    [[ ! -e $journal/operation ]] || { echo 'An interrupted Gateway handover needs recovery' >&2; exit 1; }
+    ;;
+esac
+# The native workflow uses the checked entry points so an older installed
+# dispatcher refuses before Build or Load can change the target.
+if [[ $phase == check-recovery || $phase == check-load || $phase == prune || $phase == prune-pending ]]; then exit 0; fi
+# Reconcile the exact serving container through its existing read-only checks.
+# Never resume, build or hand over a release when the caller asks to recover definitions.
+if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconcile-verify ]]; then
+  [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]] || {
+    echo 'gateway.release_reconcile_not_live: the requested commit no longer serves traffic' >&2; exit 1;
+  }
+  if [[ $phase == reconcile-begin ]]; then
+    bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") public-ready "$sha" "$operation"
+    install -d -m 0700 "$journal"
+    tmp=$(mktemp "$journal/.reconcile.XXXXXXXX")
+    printf '%s %s\n' "$operation" "$sha" > "$tmp"
+    mv -fT "$tmp" "$lease"
+    sync -f "$journal"
+    exit
+  fi
+  phase=public-ready
+fi
+if [[ $phase == build-checked ]]; then phase=build; fi
+case "$phase" in
+  build|web|clone|switch|recover|start-horizon|quiesce|retire|settle|park-preparation|release-unused) ;;
+  migrate|ready|wait-idle|cleanup|cleanup-versions|snapshot|public-ready) check_recovery ;;
+  *) echo "Unknown Gateway release phase: $phase" >&2; exit 64 ;;
+esac
+# Cleanup belongs to the current host controller, including a rollback to an older
+# sealed release whose script predates this phase. A failed fetch can have no object.
+if [[ $phase == park-preparation || $phase == release-unused ]]; then
+  candidate=gateway-${sha:0:12}
+  incus_cli=(incus --force-local --project orbit-releases)
+  ctl() { python3 <(git -c safe.directory="$repo" -C "$repo" show "$sha:swamp/scripts/release-container.py") "$@"; }
+  if [[ $phase == park-preparation ]]; then
+    # The promoted preparer is the candidate now. A build that failed before promotion stops its preparer.
+    ctl rest gateway "$operation" >/dev/null
+    exit
+  fi
+  if [[ -e $journal/operation ]]; then
+    echo 'An unfinished Gateway handover needs forward recovery; leave both containers intact' >&2
+    exit 1
+  fi
+  if [[ ! -f $inventory && ${ORBIT_GATEWAY_INITIAL_MOVE:-0} != 1 ]]; then exit 0; fi
+  # A failed Incus copy of an older protocol can leave only the preparer snapshot. Check the seal that
+  # created it rather than trusting the name of a snapshot or the current preparer.
+  snapshot="built-$operation"
+  snapshots=$("${incus_cli[@]}" snapshot list prepare-gateway --format json 2>/dev/null || echo '[]')
+  if jq -e --arg name "$snapshot" 'any(.[]; .name==$name)' <<< "$snapshots" >/dev/null; then
+    jq -e --arg name "$snapshot" --arg op "$operation" --arg sha "$sha" '
+      any(.[]; .name==$name and .config["user.orbit.release.target"]=="gateway"
+        and .config["user.orbit.release.role"]=="prepare" and .config["user.orbit.release.operation"]==$op
+        and .config["user.orbit.release.commit"]==$sha)' <<< "$snapshots" >/dev/null || {
+          echo 'Refusing to remove a snapshot with a different identity' >&2; exit 1;
+        }
+    "${incus_cli[@]}" snapshot delete prepare-gateway "$snapshot"
+  fi
+  if [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]]; then exit 0; fi
+  if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then
+    # A refused or failed rollback may have started old. Park it again; it stays the rollback release.
+    # A refusal before the start leaves it parked, also when its own controller is older.
+    # A missing old is already gone; the next build forgets it.
+    # Capture the lookup first: a failed lookup is no proof that old is parked. Recovery markers stay for confirm_settled.
+    listing=$("${incus_cli[@]}" list "$candidate" --format json) || { echo 'Cannot read the retained Gateway release' >&2; exit 1; }
+    running=$(jq -r --arg name "$candidate" 'any(.[]; .name==$name and (.status!="Stopped" or .config["boot.autostart"]!="false"))' <<< "$listing")
+    if [[ $running == true ]]; then
+      ctl retire gateway "${sha:0:12}" "$operation"
+    fi
+    exit
+  fi
+  existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')
+  if [[ $existing != '{}' || ! -f $journal/operation ]]; then
+    if [[ $(jq -r '.config["user.orbit.release.operation"] // ""' <<< "$existing") != "$operation" ]]; then
+      [[ ! -f $journal/operation ]] || { echo 'Refusing to clean up a clone from another operation' >&2; exit 1; }
+      exit 0
+    fi
+    jq -e --arg sha "$sha" '.config | .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha and .["boot.autostart"]=="false"' <<< "$existing" >/dev/null
+    # The candidate was the preparer. It returns to the preparation slot, so live, old and preparation remain.
+    ctl demote gateway "$operation" "$sha" >/dev/null
+  fi
+  if [[ ! -f $journal/operation ]]; then rm -f -- "$journal/rollback-$sha"; fi
+  exit
+fi
+git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:$script"
+exec bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") "$phase" "$sha" "$operation" "$@"

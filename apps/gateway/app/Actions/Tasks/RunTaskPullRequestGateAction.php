@@ -13,9 +13,9 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckedCandidate;
-use App\Domain\Tasks\TaskCopyPullRequest;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskPullRequest;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Models\Operation;
 use App\Models\Task;
@@ -73,8 +73,8 @@ final readonly class RunTaskPullRequestGateAction
     {
         $number = $group->watched_pr_number;
         // A task copy's pull request gets no ready step and no merge (docs/reference/tasks.md#no-merge).
-        if (TaskCopyPullRequest::copy($group)) {
-            return $this->result($group, $number, null, 'skipped', TaskCopyPullRequest::Code);
+        if (TaskPullRequest::copy($group)) {
+            return $this->result($group, $number, null, 'skipped', TaskPullRequest::Code);
         }
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
         if (! is_int($number) || ! $repository instanceof GitHubRepository) {

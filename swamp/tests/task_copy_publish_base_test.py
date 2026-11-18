@@ -32,7 +32,7 @@ GIT_ENV = {'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_AU
            'GIT_COMMITTER_NAME': 'base', 'GIT_COMMITTER_EMAIL': 'base@example.test'}
 
 
-class TaskCopyPublishBaseTest(unittest.TestCase):
+class TaskPublishBaseTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='copy-publish-base-')
         self.addCleanup(self.temp.cleanup)

@@ -17,7 +17,7 @@ final class CreateTaskGroupData extends Data
 {
     /**
      * @param  list<TaskInputData>  $tasks
-     * @param  array<string, string|null>  $agents  the copy turn agent values the group names, keyed by field (TaskCopyAgent)
+     * @param  array<string, string|null>  $agents  the copy turn agent values the group names, keyed by field (TaskAgent)
      */
     public function __construct(
         public int $projectId,

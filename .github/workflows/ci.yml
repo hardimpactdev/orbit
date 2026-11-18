@@ -103,11 +103,16 @@ jobs:
         run: vendor/bin/pest --group privileged tests/Feature/Domain/Instances/InstanceEgressTest.php --filter 'on a real kernel'
 
   gateway-tests:
-    name: Gateway Pest suite
+    name: Gateway Pest suite (${{ matrix.shard }}/5)
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['gateway-tests']) != 'false' }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 4
+    timeout-minutes: 3
+    strategy:
+      fail-fast: false
+      matrix:
+        # Stock Pest shards, balanced by the times in tests/.pest/shards.json. Each shard uses every CPU of its runner.
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -206,17 +211,17 @@ jobs:
           with open(os.environ['GITHUB_PATH'], 'a') as output:
               output.write(str(binary.parent) + '\n')
           PYTHON
-      - name: Run the complete Gateway Pest suite
+      - name: Run one shard of the complete Gateway Pest suite
         working-directory: apps/gateway
         run: |
           php -r 'if (ini_get("memory_limit") !== "1G") { exit(1); }'
           command -v caddy
-          vendor/bin/pest --parallel --processes=4 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"
+          vendor/bin/pest --parallel --shard=${{ matrix.shard }}/5 --fail-on-empty-test-suite --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"
       - name: Publish Gateway Pest results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gateway-tests-junit
+          name: gateway-tests-junit-${{ matrix.shard }}
           path: ${{ runner.temp }}/gateway-tests.xml
           if-no-files-found: error
           retention-days: 7

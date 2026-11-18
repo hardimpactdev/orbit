@@ -9,14 +9,14 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskCopyEnd;
-use App\Domain\Tasks\TaskCopyWork;
+use App\Domain\Tasks\TaskEnd;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskWork;
 use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
@@ -32,8 +32,8 @@ final readonly class CompleteTaskGroupAction
         private StopTaskSubtaskAction $stop,
         private TaskExecutionLock $execution,
         private TaskFinalReview $review,
-        private TaskCopyWork $work,
-        private TaskCopyEnd $end,
+        private TaskWork $work,
+        private TaskEnd $end,
     ) {}
 
     /**
@@ -176,14 +176,14 @@ final readonly class CompleteTaskGroupAction
 
     /**
      * The copy's destroy takes what it holds, so a copy that holds uncommitted, untracked, stashed or other-branch work, or that cannot
-     * be read, refuses the completion before it changes anything, as a cancel without discard does (TaskCopyEnd). A completed group's
+     * be read, refuses the completion before it changes anything, as a cancel without discard does (TaskEnd). A completed group's
      * retry reads nothing: the completion that ended it read the copy.
      */
     private function assertCopyDiscardable(Task $group): void
     {
         $copy = TaskInstanceWorkspace::forGroup($group);
         if ($copy !== null) {
-            TaskCopyEnd::assertDiscardable($this->end->workspace($group, $copy->instance), discard: false);
+            TaskEnd::assertDiscardable($this->end->workspace($group, $copy->instance), discard: false);
         }
     }
 
