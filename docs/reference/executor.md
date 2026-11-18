@@ -183,7 +183,7 @@ Two Pest files in `apps/gateway/tests/Feature/Infrastructure/Executor` test this
 
 ## The wake inside the request
 
-`ORBIT_EXECUTOR_WAKE_ENABLED` defaults to `false`. With it off, the activation endpoint and `instance:wake` keep the Python/SSH wake. With it on, container wakes use only a signed `wake` order, with the Instance id as its target, through the observer to the Operation's Node. The Gateway records or joins `instance.wake` under the Instance lock before signing.
+`ORBIT_EXECUTOR_WAKE_ENABLED` defaults to `false`. With both this setting and signed power routing off, the activation endpoint and `instance:wake` keep the Python/SSH wake. Either setting selects a signed `wake` order with the Instance id as its target. The Gateway records or joins `instance.wake` under the Instance lock before signing and sends the order through the observer to the Operation's Node.
 
 The visitor uses one monotonic `ORBIT_EXECUTOR_WAIT_MS` budget, default 500 ms, for admission, publishing, waiting, and recording an in-bound success. The Gateway caps SQLite writer waits and Reverb HTTP calls by the remaining budget and checks the recorded receipt between short Valkey waits. A sibling can consume the Valkey copy without losing the result. The visitor only continues if it observes `done` or `partial` and sees the wake committed as succeeded while time remains. System scheduling, Valkey timeout ticks and the rest of the HTTP exchange are not part of a 500 ms response guarantee.
 
