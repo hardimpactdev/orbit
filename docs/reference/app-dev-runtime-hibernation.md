@@ -89,13 +89,21 @@ Caddy on the Instance's Node checks for the awake marker on every request. When 
 
 The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page shows only the animated Orbit logo; the Instance's name is the page title. It polls the original path every 250 ms and loads it when the state header is gone. That load is the first application request. `Retry-After` stays one second, the smallest whole value HTTP allows, for a client without the page's script.
 
-A container Instance's site calls the same endpoint behind its asleep marker. The Gateway admits or joins the wake and answers the progress page at once; it never holds the visitor's request for the wake. A frozen container's resume through its Node ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)) starts after that answer. The Node first reads the container's recorded pages back from swap, still frozen, then resumes it ([Prepared restore](/reference/prepared-restore)), and the page's poll loads the app once the marker is gone.
+A container Instance's site calls the same endpoint behind its asleep marker. With `ORBIT_EXECUTOR_WAKE_ENABLED=false` (the default), the Gateway admits or joins the wake and answers the progress page at once. A frozen container's resume through its Node ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)) starts after that answer. The Node first reads the container's recorded pages back from swap, still frozen, then resumes it ([Prepared restore](/reference/prepared-restore)), and the page's poll loads the app once the marker is gone.
 
-> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) the endpoint holds a development container Instance's visit for a short bound, starting at 500 ms, while the Node's executor wakes it. When the wake ends in time, the endpoint answers 200 and Caddy passes the original request to the app. Otherwise it answers the progress page, as above.
+Set `ORBIT_EXECUTOR_WAKE_ENABLED=true` on the Gateway to use the in-request executor path for container wakes ([Executor](/reference/executor#the-wake-inside-the-request)). Orbit records or joins one `instance.wake` Operation before signing and publishing its `wake` order. If it observes a committed `done` or `partial` wake within `ORBIT_EXECUTOR_WAIT_MS` (default 500 ms), Caddy continues the original request to the app, preserving its method, URI and body. Otherwise the endpoint returns the same 401 progress page and `pending` header. This is a wake budget, not a bound on the whole HTTP exchange.
+
+An admitted Operation continues after a timeout, refusal or failure in the request. A later failed wake shows the existing failure page until Try again. If the writer was too busy to admit a wake, a later poll can admit it. Leave the setting off until the Rust wake (slice 5) and fallback (slice 7) are available. When enabled, a container wake uses only the executor; it never reads `hibernation.marker` or `hibernation.times`, calls SSH, or starts the Python path.
+
+The Gateway records completion, lifecycle and notice handoffs in SQLite and queues them in the background. No queue dispatch, deferred wake, hook or notice delivery runs on the activation worker. [Wake handoff recovery](/reference/executor#wake-handoff-recovery) covers lost jobs and unfinished deliveries without another visit.
+
+The Gateway's Valkey must run with `hz 100` before this path is enabled. At its default `hz 10`, a 200 ms `BLPOP` timeout measured 297 ms, and a 500 ms timeout measured 504–575 ms. The orchestrator applies this host setting; the Gateway change does not configure Valkey.
 
 Planned: a production live gets no progress page. The Gateway still answers at once; then the Node's Caddy holds the visitor's request until the asleep marker is gone, up to 10 s, and proxies it to live ([Production containers](/reference/production-containers#sleep-and-wake)).
 
-The restore makes the app's first answer faster. It does not change this page, its 250 ms poll, or when the Gateway answers. The page polls the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.
+The restore makes the app's first answer faster. The progress page keeps its 250 ms poll on both wake paths. The page polls the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.
+
+On the swap-backed T3/Vite clone in the [50-visit proof](/reference/executor#slice-6-proof-case), the executor path served 21 visits in the original request; 29 saw the progress page first and then reached the app. The measurements include Caddy and the poll, not just the Gateway's 500 ms wait.
 
 The wake runs in this order:
 
@@ -167,7 +175,7 @@ Enabling development units for boot would start every Instance without a request
 
 ### The first response is a page
 
-When the intercept returned 200, Caddy would pass the request to an application whose Processes are not ready. So the intercept returns the progress page, and the reload after the wake is the first application request.
+A Node-level Process wake returns the progress page because its Processes are not ready yet. The container executor path returns 200 only after a successful readiness result within the bound; Caddy then continues to the app in the same request.
 
 ### One page for both tiers
 

@@ -409,7 +409,7 @@ describe('CLI release workflow', function (): void {
         expect($release['env']['REQUESTED_COMMIT'])->toBe('${{ inputs.commit }}');
 
         $verification = collect($workflow['jobs']['resolve']['steps'])->firstWhere(
-            'name', 'Require exact main CI delivery evidence and link fixture report',
+            'name', 'Require exact main delivery evidence',
         );
         expect($verification['run'])->toBe('python3 bin/ci-delivery verify --sha "$COMMIT"')
             ->and($verification['env']['COMMIT'])->toBe('${{ steps.release.outputs.commit }}')

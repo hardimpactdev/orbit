@@ -6,6 +6,7 @@ use App\Actions\Nodes\AdmitNodeRoleOperationAction;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeRoleRemoveInput;
 use App\Domain\Nodes\RoleName;
@@ -13,6 +14,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -235,4 +237,12 @@ it('returns the claim refusal over the API', function (): void {
         ->assertJsonPath('error.details.status', 'removing');
 
     expect(Operation::query()->count())->toBe(0);
+});
+
+it('withdraws the wake directory boot rule when the app-dev role leaves', function (): void {
+    $assignment = $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Removing]);
+    $capture = app(NativeNodeRoleRemovalInput::class);
+    $plan = $capture->capture($this->node, $assignment, $capture->publications($this->node, RoleName::AppDev));
+
+    expect(array_column($plan['files'], 'path'))->toContain(TmpfilesFootprintArtifact::Path);
 });

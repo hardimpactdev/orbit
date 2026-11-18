@@ -77,4 +77,19 @@ final readonly class ExecutorReply
     {
         return $this->status === self::Accepted;
     }
+
+    public function isReplay(): bool
+    {
+        return $this->status === 'refused' && $this->reason === 'replayed_nonce';
+    }
+
+    public function first(): ?self
+    {
+        $first = $this->line['first'] ?? null;
+        if (! $this->isReplay() || ! is_array($first) || ! in_array($first['status'] ?? null, ['done', 'partial', 'failed'], true)) {
+            return null;
+        }
+
+        return self::fromEvent(['operation' => (string) $this->operation, 'line' => json_encode($first, JSON_THROW_ON_ERROR)]);
+    }
 }

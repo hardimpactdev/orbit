@@ -19,7 +19,7 @@ class SdkTestsPolicyTest(unittest.TestCase):
         self.assertNotIn('strategy', job)
         self.assertNotIn('continue-on-error', job)
         self.assertNotIn('ORBIT_', str(job))
-        for gate in ('required', 'delivery'):
+        for gate in ('required',):
             self.assertIn('sdk-tests', WORKFLOW['jobs'][gate]['needs'])
         with (ROOT / '.github/ci/checks.toml').open('rb') as source:
             check = tomllib.load(source)['check']['sdk-tests']

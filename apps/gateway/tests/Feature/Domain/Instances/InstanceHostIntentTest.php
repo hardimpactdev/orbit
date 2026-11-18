@@ -39,12 +39,17 @@ use Illuminate\Support\Facades\DB;
 
 uses(LazilyRefreshDatabase::class);
 
-function instanceHostNode(string $name = 'shark', string $ip = '10.44.0.11'): Node
+function instanceHostNode(string $name = 'shark', string $ip = '10.44.0.11', bool $appDev = true): Node
 {
-    return Node::withoutEvents(fn (): Node => Node::query()->create([
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'wireguard_ip' => $ip, 'public_ssh_host' => $ip, 'user' => 'orbit',
     ]));
+    if ($appDev) {
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    }
+
+    return $node;
 }
 
 /** @return array<string, FolderPin> */
@@ -54,22 +59,21 @@ function instanceFolderPins(string $version = '1.0'): array
 }
 
 describe('the container branch of the app-dev converge', function (): void {
-    it('gives a Node that is not on the build list nothing and leaves its bridge unallocated', function (): void {
-        $node = instanceHostNode();
+    it('gives a Node without app-dev nothing and leaves its bridge unallocated', function (): void {
+        $node = instanceHostNode(appDev: false);
 
         expect(app(InstanceHostIntent::class)->for($node))->toBeNull()
             ->and($node->refresh()->instance_bridge)->toBeNull();
     });
 
-    it('reads the bridge only: a build-list Node without one is refused, and only the admission allocates it', function (): void {
+    it('reads the bridge only: an app-dev Node without one is refused, and only the admission allocates it', function (): void {
         $node = instanceHostNode();
-        config(['instances.container_nodes' => [$node->id]]);
 
         expect(fn () => app(InstanceHostIntent::class)->for($node))
             ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.host_unavailable'))
             ->and($node->refresh()->instance_bridge)->toBeNull();
 
-        $assignment = $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        $assignment = $node->roles()->where('role', RoleName::AppDev)->firstOrFail();
         app(NodeRoleRuntimeInput::class)->prepare($node, $assignment);
 
         expect($node->refresh()->instance_bridge)->toBe('10.253.0.0/24');
@@ -82,7 +86,6 @@ describe('the container branch of the app-dev converge', function (): void {
         config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
         $real = instanceHostNode();
         $fleet = instanceHostNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
-        config(['instances.container_nodes' => [$real->id, $fleet->id]]);
         app(InstanceHostIntent::class)->prepare($real);
         app(InstanceHostIntent::class)->prepare($fleet);
         $intent = static fn (Node $node): array => array_diff_key(app(InstanceHostIntent::class)->for($node->refresh()), ['bridge_admitted_at' => true]);
@@ -116,7 +119,6 @@ describe('the container branch of the app-dev converge', function (): void {
         config(['instances.fleet_marker' => $marker, 'instances.fleet_environment' => $environment]);
         $real = instanceHostNode();
         $fleet = instanceHostNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
-        config(['instances.container_nodes' => [$real->id, $fleet->id]]);
         app(InstanceHostIntent::class)->prepare($real);
         app(InstanceHostIntent::class)->prepare($fleet);
         touch($marker);
@@ -148,7 +150,6 @@ describe('the container branch of the app-dev converge', function (): void {
     // docs/reference/development-containers.md#instance-host-in-the-fleet: the refresh rebuilds the host when this digest moves.
     it('digests the whole branch intent but its admission time, the image definition included, and none before the bridge', function (): void {
         $node = instanceHostNode();
-        config(['instances.container_nodes' => [$node->id]]);
         expect(app(InstanceHostIntent::class)->digest($node))->toBeNull();
         app(InstanceHostIntent::class)->prepare($node);
         $intent = app(InstanceHostIntent::class)->for($node->refresh());
@@ -164,7 +165,6 @@ describe('the container branch of the app-dev converge', function (): void {
 
     it('names the project, pool, image and folders of a prepared Node', function (): void {
         $node = instanceHostNode();
-        config(['instances.container_nodes' => [$node->id]]);
         $recipe = app(CurrentRecipe::class)->currentRecipe();
         app(InstanceHostIntent::class)->prepare($node);
 
@@ -194,7 +194,6 @@ describe('the container branch of the app-dev converge', function (): void {
     // and asks that container's program for open turns before it restarts T3 there.
     it('hands the converge the unit drop-ins of each container with a T3, as a clone\'s create writes them, and none of a default', function (): void {
         $node = instanceHostNode();
-        config(['instances.container_nodes' => [$node->id]]);
         app(InstanceHostIntent::class)->prepare($node);
         $project = Project::query()->create(['name' => 'tool', 'slug' => 'tool', 'type' => ProjectType::NodePackage, 'repository_url' => 'https://github.com/nckrtl/tool.git',
             'default_branch' => 'main', 'root' => '.', 'is_laravel' => false]);
@@ -235,7 +234,6 @@ describe('the container branch of the app-dev converge', function (): void {
 
     it('lets the bridge ACL admit what a container\'s ACL may admit: the Node to FrankenPHP and the development ports, and T3\'s clients', function (): void {
         $node = instanceHostNode();
-        config(['instances.container_nodes' => [$node->id]]);
         app(InstanceHostIntent::class)->prepare($node);
 
         $ingress = app(InstanceHostIntent::class)->for($node)['ingress'];
@@ -256,7 +254,7 @@ describe('the container branch of the app-dev converge', function (): void {
             'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'wireguard_ip' => '10.44.0.7',
             'public_ssh_host' => '10.44.0.7', 'user' => 'orbit', 'settings' => ['task_vms' => ['cidr' => '10.253.0.0/24', 'task_places' => 4, 'ci_places' => 2]],
         ]));
-        config(['instances.container_nodes' => [$node->id]]);
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
         app(InstanceHostIntent::class)->prepare($node);
 
         $intent = app(InstanceHostIntent::class)->for($node);
@@ -267,30 +265,29 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($intent)->not->toHaveKey('arc');
     });
 
-    it('adds the branch to the app-dev runtime of a build-list Node only, so every other intent stays exactly as it was', function (): void {
-        $listed = instanceHostNode();
+    it('adds the branch to every app-dev runtime without changing the other roles', function (): void {
+        $listed = instanceHostNode(appDev: false);
         $other = instanceHostNode('beast', '10.44.0.7');
         $capture = function (Node $node, RoleName $role): array {
             $assignment = $node->roles()->firstOrCreate(['role' => $role], ['status' => 'active']);
 
             return app(NativeNodeRoleRuntimeInput::class)->capture($node, $assignment, [], new Operation)['intent'];
         };
-        $before = ['other' => $capture($other, RoleName::AppDev), 'ci' => $capture($listed, RoleName::CiRunner), 'app' => $capture($listed, RoleName::AppDev)];
-        config(['instances.container_nodes' => [$listed->id]]);
+        $beforeCi = $capture($listed, RoleName::CiRunner);
+        $listed->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
         app(InstanceHostIntent::class)->prepare($listed);
+        app(InstanceHostIntent::class)->prepare($other);
 
         $after = $capture($listed, RoleName::AppDev);
-        expect($capture($other, RoleName::AppDev))->toBe($before['other'])
-            ->and($capture($listed, RoleName::CiRunner))->toBe($before['ci'])
-            ->and(array_diff_key($after, ['instances' => true]))->toBe($before['app'])
+        expect($capture($other, RoleName::AppDev)['instances']['cidr'])->toBe('10.253.1.0/24')
+            ->and($capture($listed, RoleName::CiRunner))->toBe($beforeCi)
             ->and($after['instances']['cidr'])->toBe('10.253.0.0/24')
-            ->and($other->refresh()->instance_bridge)->toBeNull();
+            ->and($other->refresh()->instance_bridge)->toBe('10.253.1.0/24');
     });
 
-    it('lists the bridge\'s DHCP and egress proxy input rules, and no DNS, for a build-list Node with a bridge', function (): void {
+    it('lists the bridge\'s DHCP and egress proxy input rules, and no DNS, for an app-dev Node with a bridge', function (): void {
         $node = instanceHostNode();
         expect(app(NodeFirewallRuleCatalog::class)->instanceHostInput($node))->toBe([]);
-        config(['instances.container_nodes' => [$node->id]]);
         app(AllocateInstanceBridgeAction::class)->execute($node);
 
         $rules = app(NodeFirewallRuleCatalog::class)->instanceHostInput($node->refresh());

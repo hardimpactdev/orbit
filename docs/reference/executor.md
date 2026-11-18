@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Slices 4 and 5 have swap-backed clone measurements.** Thirty Rust sleeps, thirty Python sleeps, thirty Rust wakes, a three-clone wake burst and SIGKILL recovery ran on the nested fleet. In run 2, every Rust wake returned `done` with zero failed pages; Python skipped plan capture on this nested host. The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) evidence records the results and limits. Production commands keep their existing paths until the later cutover slices.
+> **Slices 4 and 5 have swap-backed clone measurements.** Thirty Rust sleeps, thirty Python sleeps, thirty Rust wakes, a three-clone wake burst and SIGKILL recovery ran on the nested fleet. In run 2, every Rust wake returned `done` with zero failed pages; Python skipped plan capture on this nested host. The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) evidence records the results and limits. Slice 6 adds the Gateway and Caddy side of [the wake inside the request](#the-wake-inside-the-request). It stays off until the relay and Swamp fallback land in slice 7.
 
 ## Where it runs
 
@@ -45,7 +45,7 @@ Roll out in this order:
 2. Set `ORBIT_EXECUTOR_SIGNING_KEY` and `ORBIT_EXECUTOR_PUBLIC_KEYS` on the Gateway.
 3. Move the agent pin to that delivery and release the Gateway. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) converges each `app-dev` Node whose executor input changed.
 
-The Gateway holds two settings in `config/orbit.php` under `orbit.executor`:
+The Gateway holds its executor settings in `config/orbit.php` under `orbit.executor`:
 
 | Setting | Environment | Content |
 | --- | --- | --- |
@@ -93,7 +93,7 @@ Orders for one target run one at a time under that target's lock; different targ
 
 ## The Gateway signer and the event
 
-`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (`proof.noop`, `sleep`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 
@@ -101,7 +101,9 @@ Orders for one target run one at a time under that target's lock; different targ
 { "operation": "<the Operation id, a numeric string>", "order": "<base64(payload).base64(signature)>" }
 ```
 
-The observer copies `operation` unread into every reply line, so a reply that carries no Operation (the `accepted` line, or a refusal before the payload is read) still finds its Operation. The [listener](#the-listener-and-the-hand-off) records a result only when that Operation's `node_id` is the Node that sent it. During a `websocket` move the event also goes to the old Node's Reverb, because an agent that connected before DNS moved still listens there. The agent holds one connection, so at most one copy reaches the executor. A failure on the serving Reverb throws, so the caller can take the fallback of slice 7 at once.
+The observer copies `operation` unread into every reply line, so a reply without an Operation id still finds its Operation. The [listener](#the-listener-and-the-hand-off) records a result only when that Operation's `node_id` is the Node that sent it.
+
+During a `websocket` move the event also goes to the old Node's Reverb, where an agent that connected before DNS moved still listens. The agent holds one connection, so at most one copy reaches the executor. A failure on the serving Reverb throws, so the caller can take the fallback of slice 7 at once. Skipping the old server when the local budget ends does not mark it down for other broadcasts.
 
 ## The observer pass-through
 
@@ -147,19 +149,21 @@ The [agent view subscriber](/reference/node-agent#gateway-view) is the listener.
 1. It checks the sender. Reverb must stamp the event with the member `agent.{id}` of that Node's channel, as for `client-log`. It drops and logs an event from any other sender.
 2. It checks the form. `operation` must be an Operation id, and `line` one JSON object with a known `status`. A line that names another Operation fails too. It drops and logs a malformed event.
 3. It checks that the sender owns the Operation before it queues an `accepted` line. The line goes to `executor:op:<operation>` with no database write.
-4. It records a result line on the Operation's `executor_result`, so the result is durable. A result line has the status `done`, `partial`, `failed` or `refused`.
-5. It logs a `refused` result with its reason and the Node's clock. It also leaves a failed Activity with the code `executor.order_check_failed` on the Node. It logs a `failed` result with its code.
-6. It then pushes the result line to `executor:op:<operation>`. A refusal is already logged and recorded by then, so a Valkey failure cannot hide it.
+4. It checks that an action result names the expected Operation, action and target. It records the first valid outcome with the Gateway receipt time in microseconds.
+5. It logs a deterministic refusal with its reason and the Node's clock. It leaves a failed Activity with the code `executor.order_check_failed` on the Node. It logs a `failed` line with its code.
+6. It pushes the checked wire line to `executor:op:<operation>`, after the record write. A Valkey failure cannot hide a recorded refusal.
 
-The record is one conditional `UPDATE`. It changes only an Operation of that Node that holds no result yet. A repeat changes no row, and neither does a second listener during a release ([ADR 0269](/decisions/0269-run-the-gateway-in-release-containers-with-frankenphp-worker-mode)). The listener still pushes that copy, because it may recover a lost push. It drops and logs any reply for an Operation of another Node, or for no Operation.
+One conditional `UPDATE` records the first result and its receipt. A repeat changes neither. A `replayed_nonce` envelope is transport evidence, not a terminal refusal. If its `first` holds a matching action result, the listener can record that inner result. A bare replay cannot hide a later success, and a result for another Operation, action, target or Node cannot settle this one. Checked wire lines remain in arrival order, including replay evidence, so another waiter can still recover a lost push.
 
 The list lives in the Gateway queue's Valkey, under its `orbit-gateway:` prefix. Each push is one Lua call that runs `RPUSH` and `EXPIRE` of 60 s together, so a key never exists without its expiry. If the database or Valkey fails, the subscriber logs it and goes on. The waiting request then falls back as for a lost result.
 
-**The alert.** The [Problem collector](/reference/tasks#fingerprints) selects an Activity whose code ends in `_failed`. So each refusal counts toward the Problem `orbit:agent-view|executor.order_check_failed`, and the Activity's `error_message` names the reason. The subscriber saves the Activity without its model observers. The broadcast observer would send a Reverb HTTP request at once, and the socket loop must not wait for it. The properties sanitizer still runs. So `activity:list` and the collector see the row, but no browser gets a live Activity event for it.
+**The alert.** The [Problem collector](/reference/tasks#fingerprints) selects an Activity whose code ends in `_failed`. A deterministic refusal counts toward the Problem `orbit:agent-view|executor.order_check_failed`, and the Activity names the reason. Replay evidence does not count. The subscriber saves the Activity without its model observers, so no Reverb HTTP request blocks the socket loop. `activity:list` and the collector still see the row.
 
-**Cost in the socket loop.** We measured 300 results on a file SQLite database in WAL mode with 20,000 Operations and a local Valkey. The record write takes 0.12 ms median (0.15 ms p95), the push 0.05 ms median (0.07 ms p95), and the whole hand-off 0.19 ms median (0.27 ms p95, 2.1 ms at most). No queue job, HTTP call or Laravel boot sits between the listener and the waiting request. A refusal adds one Activity insert: in a second run of 300 results of each kind, a `done` result took 0.21 ms median (0.35 ms p95), and a refusal 0.54 ms median (0.84 ms p95, 8.8 ms at most). No broadcast fired.
+**Cost in the socket loop.** Before adding reply matching and receipt timestamps, the hand-off took 0.19 ms median (0.27 ms p95, 2.1 ms max) over 300 results on file SQLite in WAL mode with 20,000 Operations and a local Valkey. In a second run, a `done` result took 0.21 ms median (0.35 ms p95), and a refusal with its Activity insert took 0.54 ms median (0.84 ms p95, 8.8 ms max). No queue job or HTTP call sits between the listener and the waiting request.
 
-**The waiting request.** `ExecutorResultWait::wait(operation, bound)` runs `BLPOP`, through `ExecutorResultQueue::pop`, on the Operation list until a result arrives or the bound passes. It reads lines in arrival order, including lines already queued when the wait starts. It returns `done`, `partial`, `failed`, `refused` or `timeout`, with the elapsed time, the result line and the time to an observed `accepted` line if one arrived first. The bound is the Gateway setting `ORBIT_EXECUTOR_WAIT_MS`, 500 ms to start. Slice 6 wires it into the activation endpoint.
+**The waiting request.** `ExecutorResultWait::wait(operation, bound)` runs `BLPOP`, through `ExecutorResultQueue::pop`, on the Operation list until a result arrives or the bound passes. It reads lines in arrival order, including lines already queued when the wait starts. It returns `done`, `partial`, `failed`, `refused` or `timeout`, with the elapsed time, the result line and the time to an observed `accepted` line if one arrived first. A result released after the deadline returns a timeout; the result remains recorded on the Operation. The activation endpoint uses the `ORBIT_EXECUTOR_WAIT_MS` bound when `ORBIT_EXECUTOR_WAKE_ENABLED=true`.
+
+Activation uses a separate Valkey connection with 25 ms connect and 50 ms socket I/O timeouts. It uses short `BLPOP` calls only while at least 250 ms remain, to leave room for connection, authentication, database selection and the reply. With less time left, or if that connection fails, it checks the durable SQLite receipt at intervals of up to 10 ms. It does not wait on a queue push or return 200 for a receipt observed after the deadline.
 
 Valkey checks a blocked command's timeout on its server tick. With the default `hz 10`, a 200 ms bound ended after 297 ms. With `hz 100` it ended after 212 ms. A result that arrives is handed over at once, so only a timeout runs late. The Gateway's Valkey needs `hz 100` before slice 6 holds visits on this bound.
 
@@ -175,6 +179,62 @@ Two Pest files in `apps/gateway/tests/Feature/Infrastructure/Executor` test this
 - the 60 s expiry
 - a result 100 ms into the wait
 - the timeout bound
+
+## The wake inside the request
+
+`ORBIT_EXECUTOR_WAKE_ENABLED` defaults to `false`. With it off, the activation endpoint and `instance:wake` keep the Python/SSH wake. With it on, container wakes use only a signed `wake` order, with the Instance id as its target, through the observer to the Operation's Node. The Gateway records or joins `instance.wake` under the Instance lock before signing.
+
+The visitor uses one monotonic `ORBIT_EXECUTOR_WAIT_MS` budget, default 500 ms, for admission, publishing, waiting, and recording an in-bound success. The Gateway caps SQLite writer waits and Reverb HTTP calls by the remaining budget and checks the recorded receipt between short Valkey waits. A sibling can consume the Valkey copy without losing the result. The visitor only continues if it observes `done` or `partial` and sees the wake committed as succeeded while time remains. System scheduling, Valkey timeout ticks and the rest of the HTTP exchange are not part of a 500 ms response guarantee.
+
+Caddy runs `forward_auth` before the app handlers in one ordered route. A 200 continues the original method, URI, query and body; the response is the app's own. Otherwise a slow wake, busy admission, refusal, failure or transport error shows the existing 401 page with `X-Orbit-Runtime-Activation-State: pending`. The page polls until the asleep marker goes. If SQLite could not admit the wake while the writer was busy, a later poll can admit it.
+
+### Wake handoff recovery
+
+Admission records a queued wake with zero attempts and a pending completion. A publisher takes a non-blocking local lock and claims the committed Operation in a short transaction. That claim starts its one attempt. The publisher signs and sends outside the transaction and records a separate publication receipt. A crashed or uncertain send can be retried with a fresh nonce and the same Operation id; the executor acts once. A recorded result needs no resend.
+
+A durable Conn launch uses a queued publisher after its launch and wake records commit. The launch cancel transaction cancels an unshared executor wake while it is still queued. A visitor or another launch joining it records shared use under the same admission lock, so cleanup cannot cancel or put back to sleep work that another caller is using. A late publisher will not open a cancelled wake.
+
+The visitor does not enqueue jobs. A background pass on `operations-prompt` takes up to 50 completion handoffs and up to 50 hook handoffs. Recorded executor results take priority over publishing missing orders. Each set runs oldest first. The scheduler checks for eligible work every five seconds. It recovers a wake with no publication or result after six seconds. The completion job is due six seconds after publication, or at once if the publication receipt is missing but a result exists. A late `done` or `partial` succeeds; `refused` fails with `executor.wake_refused`, `failed` with `executor.wake_failed`, and no result with `executor.wake_timeout`. A terminal Operation keeps its end.
+
+The pass records a lease in a short write, then enqueues outside the writer. A failed enqueue leaves pending work. If the job is lost or exhausts its retries, the handoff becomes eligible again 60 seconds after the job was due. Recovery also handles wakes admitted before the setting was turned off.
+
+Success records a pending lifecycle follow-up with the terminal result. A local kernel lock prevents two hook workers from running it at once, even if the enqueue lease has expired. The hooks run without the SQLite writer; only then does the worker commit the delivery receipt. If it dies before that receipt, the next delivery reconciles any work already recorded by the hooks.
+
+Conn reuses admitted session work. Its vault copy runs at native start. A failed retry of the queue push leaves the existing renewal able to start or finish. The wake worker leaves its hook undelivered and retries the same renewal.
+
+Operation notices are saved with the change and relayed to `operations-prompt` after commit, keeping their recorded sequence. A retried relay may deliver the same sequence again. Queue, vault and notice delivery do not run in the activation request or its termination callbacks.
+
+The Gateway removes neither the container nor its marker on failure. A missing result fails to confirm the wake; the executor may still finish later. Its eventual result remains recorded without overwriting the terminal Operation. An explicit retry admits a new wake. This slice adds no SSH relay or Swamp fallback; slice 7 replaces this temporary failure policy with the ADR's fallback. Leave the setting off until slices 5 and 7 land. The Python path stays installed until slice 8.
+
+The Valkey host prerequisite is `hz 100`, applied by the orchestrator, as [the hand-off](#the-listener-and-the-hand-off) explains. Even then the server tick can make a timeout run a little late; a late successful reply must not authorize the original request.
+
+### Slice 6 proof case
+
+Subtask 5775 ran `executor-wake-visits` on the nested fleet of copy 3602. Clone 3 ran T3 0.1.7 and Vite 7.2.2. Only the nested Gateway enabled executor wakes, with the 500 ms bound and Valkey `hz 100`. Each signed sleep froze the clone and left 404,697,088–418,557,952 bytes in swap. The client timed real HTTPS through the clone's Caddy Route, from request start to the first body byte carrying the app's own response. A progress-first visit includes the wait for the first successful 250 ms poll; it does not count the progress page's bytes. Percentiles use nearest rank.
+
+| Visitor path | Visits | App first | Progress first | Errors | p50 | p95 | Max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Signed executor wake | 50 | 21 | 29 | 0 | 953.989 ms | 2,431.347 ms | 3,380.199 ms |
+| Existing Python path, same clone | 50 | 0 | 50 | 0 | 781.802 ms | 1,834.957 ms | 2,126.676 ms |
+
+Each visit on both paths produced one successful `instance.wake` Operation. The executor returned 49 `done` results and one `partial` (`instance.restore_stalled`). Every signed wake ended running, removed the marker and closed the swap limit. The 500 ms bound applies to publication and result waiting, not to full client latency.
+
+The earlier ADR 0266 reference was 1.5 s warm and 2.4 s cold. On this clone the executor bypassed the page for 21 visits, but Python had lower overall first-byte latencies. The Python sleeps froze into swap and skipped restore-plan capture as `placement_unproven` in all 50 visits. Both rows measure what visitors received; they do not compare equivalent restore work or reproduce the earlier warm and cold runs.
+
+A separate in-bound POST returned the app's own 202 in 396.736 ms, preserving the method, encoded path, query and body in one exchange (Operation 283). With the executor paused until after the first response, Caddy returned `401 pending` in 686.749 ms; the unmodified poll reached the app at 1,007.345 ms (Operation 285). Dropping the Valkey result after the listener recorded it did not stop Operation 287 from succeeding. A signed repeat returned its first result in 10.272 ms, with one journal completion. An admission left without publication recovered on the first sweep without a new visit; a second sweep did no work, and Operation 289 recorded the successful follow-up receipt.
+
+The case evidence is in `swamp/proof/node/converge.cases.yaml`. Raw timings, Operation records, journal matches and recovery receipts are under `.orbit-artifacts/5775/visitor-wake/` in the copy. The 108 signed Operations across the timed visits and four extra checks each match one Node journal completion. The shared runner did not run: it cannot yet prepare this clone and measure the visitor Route and poll. Both case files keep only that runner prerequisite.
+
+#### Rerun with durable Conn launches
+
+After merging durable Conn launches, the same nested clone ran 50 more visits on each path at merge `5c2d0edc25`. The signed path again used a 500 ms bound and Valkey `hz 100`. Every signed sleep froze into swap, and all 50 wakes returned `done`. Python again skipped plan capture as `placement_unproven`.
+
+| Visitor path | Visits | App first | Progress first | Errors | p50 | p95 | Max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Signed executor wake | 50 | 41 | 9 | 0 | 630.099 ms | 1,012.139 ms | 1,427.739 ms |
+| Existing Python path, same clone | 50 | 0 | 50 | 0 | 985.991 ms | 1,276.521 ms | 1,306.622 ms |
+
+The original POST returned the app's own 202 (Operation 494), and the forced over-bound visit returned the progress page before the poll got the app (496). Both durable-result replay (498) and missing-publication recovery (500) passed. The real queue published a Conn-owned wake before any visit. A visitor then joined it and reached the app, and cancelling the launch left its shared wake succeeded (503). This checks the Conn wake child, not the first-message handoff. All 110 signed Operations had one journal completion each. The separate raw receipts are in `.orbit-artifacts/5775/conflict-2754/`.
 
 ## Checks
 
@@ -268,7 +328,7 @@ The executor wrote its `done` record 3–4 ms after the publish (median of 50 or
 
 **The tail is not explained yet.** The `accepted` line shows the same tail: its p95 was 1.6–22.8 ms and its max up to 33.7 ms with `TCP_NODELAY`. That line leaves the executor at once, so the tail comes before the executor answers, on the publish or the Reverb side.
 
-**The lost result.** In each of the six lost-result runs the second waiter timed out. Its bound was 500 ms (`ORBIT_EXECUTOR_WAIT_MS`), and it returned after 504–575 ms. This lateness is the one [the waiting request](#the-listener-and-the-hand-off) describes: Valkey checks a blocked `BLPOP`'s timeout on its server tick, and the nested Gateway's Valkey runs the default `hz 10`. Slice 6 plans `hz 100`. The repeat then brought the first result back in 7–19 ms. The journal held `open`, `done` and `seen` for that Operation: one run.
+**The lost result.** In each of the six lost-result runs the second waiter timed out. Its bound was 500 ms (`ORBIT_EXECUTOR_WAIT_MS`), and it returned after 504–575 ms. This lateness is the one [the waiting request](#the-listener-and-the-hand-off) describes: Valkey checks a blocked `BLPOP`'s timeout on its server tick, and the nested Gateway's Valkey runs the default `hz 10`. The activation path requires the orchestrator to set `hz 100`. The repeat then brought the first result back in 7–19 ms. The journal held `open`, `done` and `seen` for that Operation: one run.
 
 **Status.** The copy has the required 2,000,000 ID map and the Instance host’s stock image, so the proof plan omits `waits: idmap`. Both cases keep `fails_today`, because the pinned agent delivery has no `executor-linux-x86_64` and no observer release with the pass-through yet. The converge and no-op cases have not been rerun.
 

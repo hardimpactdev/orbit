@@ -222,7 +222,7 @@ class GatewayRealClientsPolicyTest(unittest.TestCase):
         self.assertEqual(artifact['with']['if-no-files-found'], 'error')
         self.assertIn('--log-junit="$RUNNER_TEMP/gateway-real-clients.xml"', test['run'])
         self.assertEqual(artifact['with']['path'], '${{ runner.temp }}/gateway-real-clients.xml')
-        for gate in ('required', 'delivery'):
+        for gate in ('required',):
             self.assertIn('gateway-real-clients', jobs[gate]['needs'])
         excluded = ET.parse(ROOT / 'apps/gateway/phpunit.xml').findall('./groups/exclude/group')
         self.assertIn('privileged', [group.text for group in excluded])

@@ -34,7 +34,7 @@ orbit instance:migrate 12 --force --json > migrate.json
 
 A linked worktree can move while its owner remains an active host checkout on the same Node. Migration starts from the stock image and copies this Instance's workspace; it needs no migrated default or seed. A non-default gets T3 even while Conn or ai-router is off. Its result records `model_route` at admission: `{"ready": true}` or `{"ready": false, "error_code": "…", "message": "…"}`. With no ready route, T3 cannot reach a model; human output prints the reason. Migrate the owner after its last dependent leaves.
 
-The command moves one checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on the same Node. It is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
+The command moves one checkout Instance into an [Instance container](/reference/development-containers#migrate-a-checkout-instance) on the same app-dev Node, without a build-list opt-in. It is temporary: [Old paths](/reference/old-paths) lists it until a live inventory confirms the last development checkout Instance has moved. Existing checkout PHP-FPM pools stay until then.
 
 In a terminal, the CLI asks to confirm that the Instance goes down during the move and that its checkout leaves the live path after it, with No selected. Declining, Ctrl-C or end of input ends with `input.cancelled` and starts no move.
 
@@ -248,7 +248,7 @@ Only after all data is saved and no surviving worktree uses a retained Git direc
 
 ## Before you start
 
-- **Node.** The Instance's Node is on the [build list](/reference/development-containers#the-build-list).
+- **Node.** The Instance's Node has the app-dev role and is prepared to host containers.
 - **PHP version.** A web-serving Project needs its PHP version recorded before the move. A missing version refuses with `project.source_defaults_incomplete`. Set `require.php` in `composer.json` on the default branch, then run `orbit project:update PROJECT --source-access=github_app` to record it. This command also enables source access for a `gh_cli` Project.
 - **Service hosts.** In the initial preflight, before creating the container or probing a target, Orbit checks service hosts in the application directory’s `.env` and files named by this Instance’s Process units or Schedules. The application directory follows the same root/subfolder rule as the container; each Schedule names its source working directory’s `.env`. Each admitted Process also selects its working directory’s `.env` when that directory is inside the checkout. Orbit never discovers environment files by walking the checkout, so dependency fixtures under `vendor` or `node_modules` are excluded unless a unit explicitly names one. An answering direct service requires exactly the same host and port as an endpoint admitted by the container access plan from the Instance’s attached targets. Fleet or WireGuard membership alone grants no access. The check uses the recorded endpoint used by the container ACL, firewall and database probe; an address projected for the target’s selected network does not grant access to that different address. HTTP publisher endpoints use the existing [public egress policy](/reference/development-containers#egress-and-dns): its private IPv4 ranges, Node addresses, IPv6 and private DNS domains are refused. The exception is a [private name of the access plan](/reference/development-containers#private-names-of-the-access-plan) at exactly its port: an Instance that holds a private websocket app may name `REVERB_HOST=reverb.orbit` with `REVERB_PORT=8443`. Port 443 of that name stays refused. For an app attached before port 8443, run `orbit instance:websocket:add <app> --instance=<id>` again, which stores 8443, then `orbit env:sync` on the checkout. Public names are left for the proxy to resolve and enforce at connection time. Other unresolved names and values refuse conservatively. Attached endpoints keep their existing admission checks; this does not prove that the container can reach them. Orbit neither rewrites service hosts nor creates targets from `.env`. It repeats the check before quiesce.
 - **Branch.** The checkout is on the branch that Orbit records for the Instance.
@@ -354,7 +354,7 @@ A clear that fails records `instance.migrate_cache_clear_failed` in `warnings`, 
 | `instance.id_invalid` | The Instance is missing in a call that cannot prompt, or is not a positive integer. |
 | `input.cancelled` | You declined, pressed Ctrl-C, or the input ended. |
 | `instance.confirmation_required` | The call cannot prompt and has no `--force`. |
-| `instance.migrate_unsupported` | The Instance already runs in a container, is not active, is a production Instance, or its Node is not on the [build list](/reference/development-containers#the-build-list). |
+| `instance.migrate_unsupported` | The Instance already runs in a container, is not active, is a production Instance (also on a mixed-role Node), or is not on an app-dev Node. |
 | `instance.default_missing` | A non-default Instance has no Project default on the same Node. |
 | `instance.lifecycle_busy` | A deployment, transfer, removal or another move of the Instance is unfinished. |
 | `instance.migrate_unsupported` | The Instance has a Route beside its own. |

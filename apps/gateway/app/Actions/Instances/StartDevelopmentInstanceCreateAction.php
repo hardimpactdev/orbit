@@ -10,7 +10,6 @@ use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlan;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DefaultInstanceName;
@@ -26,7 +25,6 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
 use App\Domain\Instances\OwnedDatabaseSlug;
-use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
@@ -61,7 +59,6 @@ final readonly class StartDevelopmentInstanceCreateAction
         private StartOperationAction $operations,
         private OperationIdempotency $idempotency,
         private NodeSettingsNormalizer $nodeSettings,
-        private ManagedCheckoutOverlap $overlap,
         private InstanceDatabaseClonePlanner $databases,
         private DevelopmentInstanceCreateAdmission $admission,
     ) {}
@@ -145,7 +142,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             ) {
                 throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
             }
-            if (! $instance instanceof Instance && $container) {
+            if (! $instance instanceof Instance) {
                 $instance = Instance::query()->create([
                     'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
                     'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/var/lib/orbit/instance-reservations/'.Str::uuid(),
@@ -159,17 +156,6 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $instance->update(['checkout_path' => InstanceContainer::workspaceOnNode($instance)]);
             } elseif ($container) {
                 app(InstanceContainer::class)->reserve($instance, $node, $source);
-            }
-            if (! $instance instanceof Instance) {
-                $checkout = StoragePath::parse($sourceRoot)->append($project->slug, $name);
-                $this->overlap->assertAvailable($node->id, $checkout,
-                    $name === 'default' ? 'instance.default_path_occupied' : 'instance.path_taken');
-                $instance = Instance::query()->create([
-                    'project_id' => $project->id, 'node_id' => $node->id, 'name' => $name,
-                    'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => $checkout->value,
-                    'source_prepare_id' => (string) Str::uuid(), 'root' => $root, 'branch_override' => $data->branch,
-                    'status' => InstanceState::Reserved, 'first_setup_pending' => true,
-                ]);
             }
 
             if (! $container) {
@@ -379,8 +365,8 @@ final readonly class StartDevelopmentInstanceCreateAction
 
     /**
      * Whether this create makes a container Instance, and of which default (docs/reference/development-containers.md#lifecycle). The
-     * Project's one `default` in the fleet is a container on a Node of the build list, and every other Instance of the Project is a
-     * clone of it on its Node.
+     * Project's one new `default` is a container, and every new non-default clones it on its Node. An existing checkout keeps
+     * its retry path until it migrates; no new checkout is reserved here.
      *
      * @return array{0: bool, 1: Instance|null} Whether it is a container, and the default it clones
      */
@@ -407,15 +393,13 @@ final readonly class StartDevelopmentInstanceCreateAction
 
             return [true, $default];
         }
-        if (! app(ContainerNodes::class)->includes($node)) {
-            return [false, null];
-        }
         if ($name !== 'default') {
             if (! $default instanceof Instance) {
                 throw new ResourceOperationException('instance.default_missing', 'Create the Project\'s default Instance on this Node first.', 409);
             }
 
-            return [false, null];
+            throw new ResourceOperationException('instance.container_required',
+                "The Project's default Instance is a host checkout. Run instance:migrate {$default->id} before creating another Instance.", 409);
         }
         $this->assertContainerProject($project);
 

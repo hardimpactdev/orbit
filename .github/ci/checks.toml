@@ -47,7 +47,6 @@ capacity_gap = [
   "swamp/tests/ansible_instance_container_test.ts",
   # A case above the 150-second lane on the self-hosted pool; ADR 0262 names each case.
   "swamp/tests/ansible_instance_host_test.ts",
-  "swamp/tests/ansible_instance_host_acl_test.ts",
   "swamp/tests/ansible_wireguard_hub_lan_rules_test.py",
 ]
 

@@ -119,7 +119,7 @@ describe('the Instance egress proxy', function (): void {
             'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '10.44.0.11', 'user' => 'orbit',
         ]));
         Cluster::query()->create(['name' => 'home', 'tld' => 'test']);
-        config(['instances.container_nodes' => [$node->id]]);
+        $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
         app(InstanceHostIntent::class)->prepare($node);
 
         expect(app(InstanceHostIntent::class)->for($node)['egress']['squid'])->toContain('acl private_name dstdomain .orbit .test');

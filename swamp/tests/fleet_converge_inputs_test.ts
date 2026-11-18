@@ -377,10 +377,8 @@ Deno.test("the refresh hashes the listed inputs and the inner Gateway's base int
   const refresh = read("swamp/ansible/tasks/instance-fleet-refresh.yml");
   assert(refresh.includes("fleet-converge-inputs.json"), "the refresh reads the list");
   assert(refresh.includes("orbit:node-converge-digest"), "the refresh reads the inner Gateway's base intent digests");
-  // The whole of `swamp` is the grants' input only; the converge digest is one per Node from the listed files' IDs. The two IDs before
-  // `swamp`, `swamp/ansible` and the machine-software recipe, are the Instance host's input only.
-  assert(refresh.includes("fleet_swamp_ids: \"{{ fleet_ids[2:-3] }}\""), "the converge digest takes the listed files' IDs, not the whole of swamp");
-  assert(refresh.includes("'HEAD:swamp/ansible', 'HEAD:apps/gateway/resources/machine-software', 'HEAD:swamp'"), "the host's two inputs come just before swamp");
+  assert(refresh.includes("fleet_swamp_ids: \"{{ fleet_ids[2:-1] }}\""), "the converge digest takes the listed files' IDs, not the whole of swamp");
+  assert(refresh.includes("'ls-tree', '-r', '-t', '--full-tree', 'HEAD', '--'] + fleet_host_roots"), "the host digest discovers the committed inputs in its own read");
   assert(refresh.includes("'converge_' ~ (role | replace('-', '_'))"), "the refresh keeps one converge digest per Node");
 });
 
