@@ -173,7 +173,7 @@
 
 # A run that fails between the flip and the last restart leaves this marker, so the next run restarts the containers again.
 - name: Mark the restart of what runs from the folder
-  when: folder_current.stat.exists and folder_current.stat.lnk_target != folder.version and not (folder_same.stdout | from_json).same
+  when: not (folder_pinned_releases | default(false)) and folder_current.stat.exists and folder_current.stat.lnk_target != folder.version and not (folder_same.stdout | from_json).same
   ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: touch, mode: "0644" }
 
 - name: Read the restart mark
@@ -188,7 +188,7 @@
 # (the T3 drop-in step of instance-host.yml): with the folder's restart, which reaches it anyway, or alone. Either way T3 restarts once,
 # and never while it has an open turn: that container waits on the Node's list for a converge that finds it idle.
 - name: Restart what runs from the folder in each running container
-  when: folder_restart.stat.exists or (folder_name == 'agent' and instance_t3_reload | length > 0)
+  when: not (folder_pinned_releases | default(false)) and (folder_restart.stat.exists or (folder_name == 'agent' and instance_t3_reload | length > 0))
   block:
     - name: Read the running containers
       ansible.builtin.command:
@@ -267,6 +267,7 @@
   loop: "{{ folder_versions.files }}"
   loop_control: { label: "{{ item.path | basename }}" }
   when:
+    - not (folder_pinned_releases | default(false))
     - item.path | basename != folder.version
     - (item.path ~ '/') not in folder_used.stdout_lines
 

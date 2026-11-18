@@ -1,0 +1,51 @@
+"""Verify target ownership and route recovery at the AppProd publishing boundary."""
+import importlib.util
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("release_routes", ROOT / "ansible/files/instance-release-routes.py")
+routes = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(routes)
+
+
+def site(role, scope, listener, home):
+    return f"# orbit: {role} {scope}\n{listener} {{\n    tls internal\n    root * {home}/current/public\nphp_fastcgi unix//tmp/php.sock\nfile_server\n}}\n"
+
+
+class ProductionReleaseHostTest(unittest.TestCase):
+    def test_public_and_private_routes_bind_to_the_same_approved_instance(self):
+        private = site("app-prod", "app-instance-19", "https://one.test", "/home/orbit-app-2")
+        public = site("ingress", "route-14-ingress", "one.test", "/home/orbit-app-2")
+        neighbor = site("ingress", "route-24-ingress", "two.test", "/home/orbit-app-7")
+        declaration = [{"id":14,"domain":"one.test"}]
+        before = private + public + neighbor
+        after = routes.with_import(before, 19, declaration, "/home/orbit-app-2")
+        self.assertEqual(after.count("import /var/lib/orbit/production/19/selected/*.caddy"), 2)
+        self.assertTrue(after.endswith(neighbor))
+        self.assertEqual(routes.with_import(after, 19, declaration, "/home/orbit-app-2"), after)
+        with self.assertRaises(ValueError):
+            routes.with_import(public, 19, declaration, "/home/orbit-app-7")
+        with self.assertRaises(ValueError):
+            routes.with_import(private, 19, [{"id":14,"domain":"another.test"}], "/home/orbit-app-2")
+
+    def test_restore_removes_first_selection_and_preserves_an_existing_container_upstream(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(routes, "BASE", Path(temp)):
+            root = Path(temp) / "31"
+            directory = root / "selected"
+            directory.mkdir(parents=True)
+            (root/"live").symlink_to("instance-31-" + "f"*12)
+            selected = directory / "upstream.caddy"
+            selected.symlink_to("../upstream.caddy")
+            routes.execute("restore", 31, 8, {"sha":"f"*40, "previous":"b"*40})
+            self.assertTrue(selected.is_symlink())
+            routes.execute("restore", 31, 8, {"sha":"f"*40, "previous":None})
+            self.assertFalse(selected.is_symlink())
+
+    def test_shared_path_cannot_escape_the_admitted_home(self):
+        for value in ["../other", "database.sqlite", ".ssh", "folder//window", "/srv/tmp", "foo/../../bar"]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                list(routes.local_paths([value]))
+        self.assertEqual(list(routes.local_paths(["storage/app"])), [Path("storage/app")])

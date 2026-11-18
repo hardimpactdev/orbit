@@ -111,10 +111,7 @@ final readonly class NodeDesiredConvergeInput
             // As StartNodeConvergeAction admits it: the role that runs the Instance container branch gets its bridge before the capture.
             $node = Node::query()->findOrFail($node->id);
             $selected = NodeConvergeScope::roles($node, false, null);
-            $host = app(InstanceHostIntent::class)->role($node);
-            if ($host !== null && in_array($host->value, $selected, true)) {
-                app(InstanceHostIntent::class)->prepare($node);
-            }
+            app(InstanceHostIntent::class)->prepare($node, $selected);
             $intent = $this->capture($node, $selected, true, $operation, NodeNetworkReservation::hub())['intent'];
         } finally {
             DB::rollBack();

@@ -33,6 +33,20 @@ additionalFiles:
   - ansible/operation-node-converge.yml
   - ansible/fleet-converge-inputs.json
   - ansible/tasks/node-role-runtime.yml
+  - ansible/tasks/production-release-host.yml
+  - ansible/tasks/production-container-process.yml
+  - ansible/files/production-release-host.py
+  - ansible/files/instance-release-prepare.py
+  - ansible/files/instance-release-routes.py
+  - ansible/files/instance-release-phase.py
+  - ansible/files/instance-release-control.py
+  - ansible/files/instance-control-schedule.py
+  - ansible/files/instance-control-process.py
+  - ansible/files/instance-legacy-schedule.py
+  - ansible/files/instance-control-environment.py
+  - ansible/files/instance-release-guest.py
+  - scripts/release-container.py
+  - scripts/production-release-phase
   - ansible/tasks/proof-seed-listener.yml
   - ansible/tasks/proof-seed-listen.yml
   - ansible/tasks/proof-seed-certificate.yml

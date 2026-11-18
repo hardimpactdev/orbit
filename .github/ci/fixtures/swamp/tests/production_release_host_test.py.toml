@@ -1,0 +1,12 @@
+file = "swamp/tests/production_release_host_test.py"
+cost = 1
+inputs = [
+  "swamp/ansible/files/instance-release-routes.py",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+]
+cases = [
+  "test_public_and_private_routes_bind_to_the_same_approved_instance",
+  "test_restore_removes_first_selection_and_preserves_an_existing_container_upstream",
+  "test_shared_path_cannot_escape_the_admitted_home",
+]

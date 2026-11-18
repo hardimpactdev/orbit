@@ -131,6 +131,8 @@ final readonly class DevelopmentCaddyConfigRenderer
         $php = $site->phpVersion === null ? null : $this->phpHandler($site);
         $application = implode(PHP_EOL, array_filter([$root, $php, $site->checkoutPath === '' ? null : 'file_server']));
 
+        $application = $this->productionHandlers($site, $application);
+
         return <<<CADDY
             http://{$site->localUnixUpstream} {
                 bind {$site->localUnixUpstream}
@@ -277,7 +279,7 @@ final readonly class DevelopmentCaddyConfigRenderer
         ]));
 
         if ($site->environment === 'production') {
-            return $application;
+            return $this->productionHandlers($site, $application);
         }
 
         $handlers = $this->withDevelopmentServer($application, $site->vitePort === null ? null : DevelopmentServerEndpoint::upstream($site->vitePort));
@@ -442,6 +444,15 @@ final readonly class DevelopmentCaddyConfigRenderer
                 {$applicationHandler}
             }
             CADDY;
+    }
+
+    private function productionHandlers(DevelopmentSite $site, string $application): string
+    {
+        if ($site->productionInstanceId === null) {
+            return $application;
+        }
+
+        return "route {\n    import /var/lib/orbit/production/{$site->productionInstanceId}/selected/*.caddy\n{$application}\n}";
     }
 
     private function phpHandler(DevelopmentSite $site): string

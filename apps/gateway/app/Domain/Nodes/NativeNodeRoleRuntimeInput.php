@@ -7,18 +7,26 @@ namespace App\Domain\Nodes;
 use App\Domain\Analytics\PlausibleProcess;
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Instances\InstanceEgress;
+use App\Domain\Instances\InstanceFleetGateway;
+use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Metrics\MetricsContainerPlan;
 use App\Domain\Processes\ProcessLifecycleInput;
 use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WebSocket\WebSocketServiceUnitRenderer;
+use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -90,6 +98,30 @@ final readonly class NativeNodeRoleRuntimeInput
         // A desired-state read cannot allocate a bridge. Admission prepares it before capturing the applied plan.
         $instances = $hosts->role($node) === $assignment->role && ($operation !== null || $node->instance_bridge !== null)
             ? $hosts->for($node) : null;
+        if ($assignment->role === RoleName::AppProd && $node->instance_bridge !== null) {
+            $recipe = app(CurrentRecipe::class)->currentRecipe();
+            $architecture = MachineRecipe::architecture($node->architecture);
+            $incus = $architecture === null ? null : $recipe->incus($architecture);
+            if ($incus === null || $recipe->instances === null) {
+                throw new ResourceOperationException('deployment.node_runtime_missing', 'No production container runtime is published for this Node.', 409);
+            }
+            $subnet = Ipv4Subnet::from($node->instance_bridge);
+            $gateway = $subnet->usableRange()[0];
+            $nested = InstanceFleetGateway::holds() && $node->public_ssh_host === NestedFleetLayout::Layout['app-prod']['address'];
+            $parent = $nested ? InstanceFleetGateway::egressProxy() : null;
+            if ($nested && $parent === null) {
+                throw new ResourceOperationException('instance.fleet_egress_unavailable', 'The nested production Node needs its fleet egress proxy.', 409);
+            }
+            $runtime['production_releases'] = [
+                'gateway' => $gateway,
+                'cidr' => $node->instance_bridge,
+                'egress' => InstanceEgress::for(InstanceHostIntent::Network, $gateway, $node->instance_bridge, app(PeerDnsPolicy::class)->domains(), $parent),
+                'node_id' => $node->id,
+                'nested' => $nested,
+                'incus' => $incus,
+                'folder' => [...InstanceFolderPlan::for($recipe->instances, InstanceFolderPlan::shift($node))['runtime'], 'path' => '/opt/orbit-production-runtime'],
+            ];
+        }
         if ($instances !== null) {
             $runtime['instances'] = $instances;
         }
