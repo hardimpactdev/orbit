@@ -649,7 +649,9 @@ Swamp resolves each phase's files from the staged bundle when it prepares the in
 3. The roles phase also starts at the local DNS wrapper playbook, because the roles phase may run that playbook instead.
 4. It follows every bundle file that a reached file names, by path or by file name.
 5. It follows a Python file by its module name. So Ansible modules, `module_utils` files and imported helpers count.
-6. It follows a folder with every file under it. A folder counts when a path of two or more parts names it, when a path ends in `/`, or when a local `copy`, `template` or `synchronize` source or a fileglob names it.
+6. It follows a named folder with every file under it.
+
+A path names a folder when it has two or more parts or ends in `/`. A local `copy`, `template` or `synchronize` source and a fileglob also name a folder.
 
 A full-line comment is not read. A file that more than one phase reaches is in each of those phases. `ansible.cfg`, `build_vars.py` and both converge playbooks are in every phase. `build_vars.py` is the role materializer.
 
