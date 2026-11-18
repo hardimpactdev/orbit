@@ -50,6 +50,16 @@
         - { path: /etc/systemd/system/orbit-executor.service, content: "{{ intent.executor.unit }}" }
       loop_control: { label: "{{ item.path }}" }
       register: executor_files
+    # The machine bus (ADR 0271): the Gateway's NATS address and this Node's user JWT, root only. A changed file restarts the executor.
+    - name: Reconcile the executor's bus settings
+      ansible.builtin.copy: { dest: "{{ intent.executor.bus_path }}", content: "{{ secrets.executor_bus }}", owner: root, group: root, mode: "0600" }
+      when: intent.executor.bus | default(false) and secrets.executor_bus is defined
+      no_log: true
+      register: executor_bus_present
+    - name: Remove the executor's bus settings when the Gateway has no engine keys
+      ansible.builtin.file: { path: "{{ intent.executor.bus_path }}", state: absent }
+      when: not (intent.executor.bus | default(false))
+      register: executor_bus_absent
     - name: Allow the Node user the one relay command
       ansible.builtin.copy:
         dest: /etc/sudoers.d/orbit-executor-relay
@@ -63,4 +73,4 @@
         name: orbit-executor.service
         enabled: true
         daemon_reload: "{{ executor_files is changed }}"
-        state: "{{ 'restarted' if executor_binary_changed or executor_files is changed else 'started' }}"
+        state: "{{ 'restarted' if executor_binary_changed or executor_files is changed or executor_bus_present is changed or executor_bus_absent is changed else 'started' }}"

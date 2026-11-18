@@ -24,12 +24,19 @@ pub const BLOBS_PATH: &str = "/var/lib/orbit/executor/blobs";
 const PROGRESS_EVERY: Duration = Duration::from_secs(2);
 const RECONNECT_AFTER: Duration = Duration::from_secs(1);
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
+    /// `nats://<gateway>:4222`, over WireGuard.
     url: String,
-    user: String,
-    password: String,
+    /// The Node's `.creds`: a user JWT the Gateway signed, with only this Node's subjects, and its nkey seed.
+    credentials: String,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config").field("url", &self.url).finish_non_exhaustive()
+    }
 }
 
 /// Orders running at once: two per CPU, between 2 and 8. In an Incus container the CPU quota sits on the host side and the
@@ -78,9 +85,7 @@ async fn consume<R: Run + 'static>(
     executor: &Arc<Executor<R>>,
     log: Log,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = async_nats::ConnectOptions::with_user_and_password(config.user.clone(), config.password.clone())
-        .connect(config.url.as_str())
-        .await?;
+    let client = async_nats::ConnectOptions::with_credentials(&config.credentials)?.connect(config.url.as_str()).await?;
     let context = jetstream::new(client.clone());
     let node = settings.node.as_str().to_owned();
     let consumer: jetstream::consumer::PullConsumer =

@@ -89,8 +89,10 @@ return [
         'nats' => [
             'host' => env('ORBIT_NATS_HOST', '127.0.0.1'),
             'port' => (int) env('ORBIT_NATS_PORT', 4222),
-            'user' => env('ORBIT_NATS_USER', 'gateway'),
-            'password' => env('ORBIT_NATS_PASSWORD'),
+            // nkey seeds (`orbit:engine-keys`): the operator, the ORBIT account and the system account. Users derive from the account.
+            'operator_seed' => env('ORBIT_NATS_OPERATOR_SEED'),
+            'account_seed' => env('ORBIT_NATS_ACCOUNT_SEED'),
+            'system_seed' => env('ORBIT_NATS_SYSTEM_SEED'),
         ],
     ],
 

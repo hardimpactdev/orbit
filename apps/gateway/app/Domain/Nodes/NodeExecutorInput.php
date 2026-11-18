@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Domain\Engine\NodeBusCredentials;
 use App\Models\Node;
 use App\Models\NodeRole;
 
@@ -31,7 +32,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['proof', 'power']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof']];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
@@ -39,8 +40,12 @@ final readonly class NodeExecutorInput
         $roles = array_values($node->roles()->get()->map(static fn (NodeRole $assignment): RoleName => $assignment->role)->all());
         $keys = config('orbit.executor.public_keys');
 
-        return self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,
+        $intent = self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,
             app(AgentDelivery::class)->artifacts(), is_array($keys) ? array_values(array_filter($keys, is_string(...))) : []);
+
+        // The machine bus (ADR 0271): the credentials travel as the converge's private `executor_bus` copy; the intent says only whether
+        // they exist. Without the engine's keys the file is removed, and the executor serves its socket alone.
+        return $intent === null ? null : [...$intent, 'bus' => NodeBusCredentials::for($node) !== null, 'bus_path' => NodeBusCredentials::Path];
     }
 
     /**

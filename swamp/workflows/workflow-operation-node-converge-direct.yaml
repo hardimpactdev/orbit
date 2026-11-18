@@ -173,12 +173,38 @@ jobs:
               ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.analytics_environment.key) }}'
         guard: '${{ !("analytics_environment" in inputs.execution_secrets) }}'
   -
-    name: prepare
+    name: private-executor_bus
     labels:
       role: swamp
     dependsOn:
       -
         job: private-analytics_environment
+        condition:
+          type: succeeded
+    steps:
+      -
+        name: 'Write executor_bus'
+        labels:
+          role: swamp
+        writes: true
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "node-converge-write-executor_bus" }}
+          methodName: execute
+          inputs:
+            run: "umask 077\nprintf %s \"$ORBIT_VALUE\" > \"$ORBIT_FILE\""
+            env:
+              ORBIT_FILE: '${{ "/tmp/orbit-ansible-" + run.id + "/secret-executor_bus" }}'
+              ORBIT_VALUE: '${{ vault.get("orbit-control-inputs", inputs.execution_secrets.executor_bus.key) }}'
+        guard: '${{ !("executor_bus" in inputs.execution_secrets) }}'
+  -
+    name: prepare
+    labels:
+      role: swamp
+    dependsOn:
+      -
+        job: private-executor_bus
         condition:
           type: succeeded
     steps:

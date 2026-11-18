@@ -43,13 +43,15 @@ final class EngineBus implements MachineBus
         $nats = config('orbit.engine.nats');
         $host = is_array($nats) ? ($nats['host'] ?? null) : null;
         $port = is_array($nats) ? ($nats['port'] ?? null) : null;
-        $user = is_array($nats) ? ($nats['user'] ?? null) : null;
-        $password = is_array($nats) ? ($nats['password'] ?? null) : null;
-        if (! is_string($host) || ! is_int($port) || ! is_string($user) || ! is_string($password) || $password === '') {
+        $account = is_array($nats) ? ($nats['account_seed'] ?? null) : null;
+        if (! is_string($host) || ! is_int($port) || ! is_string($account) || $account === '') {
             throw new RuntimeException('engine.bus_unconfigured');
         }
+        // The Gateway's own user may use every subject of the account.
+        $seed = NatsCredentials::userSeed($account, 'gateway');
 
-        return new Client(new Configuration(host: $host, port: $port, user: $user, pass: $password, timeout: 2));
+        return new Client(new Configuration(host: $host, port: $port, jwt: NatsCredentials::userJwt($account, NatsCredentials::publicKey($seed),
+            'gateway', ['>'], ['>']), nkey: $seed, timeout: 2));
     }
 
     /** The streams; idempotent. Work queues keep nothing once acknowledged, and every stream ages out. */

@@ -63,6 +63,8 @@ return ['node.add' => [
     'terminal_result' => ['job' => 'converge', 'step' => 'Report Node converge', 'data' => 'node-converge-result'],
     'execution_copies' => [
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-converge-operation-[1-9][0-9]*-agent-verifier$'],
+        // The executor's machine bus credentials (ADR 0271).
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-converge-operation-[1-9][0-9]*-executor-bus$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-operation-[1-9][0-9]*-[a-z-]+$'],
     ],
 ], 'node.role_add' => [
