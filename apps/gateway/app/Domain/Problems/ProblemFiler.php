@@ -35,6 +35,9 @@ final readonly class ProblemFiler
 
     private const int BriefLimit = 8000;
 
+    /** A fingerprint whose last occurrence is older than this is not filed until it occurs again. */
+    private const int RecentDays = 7;
+
     public function __construct(
         private CreateTaskGroupAction $groups,
         private ProblemEvidence $evidence,
@@ -188,6 +191,9 @@ final readonly class ProblemFiler
                 $query->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release, ProblemSource::Swamp])
                     ->orWhere('occurrences', '>=', 3);
             })
+            ->where(function (Builder $query): void {
+                $query->where('source', ProblemSource::Release)->orWhere('last_seen', '>=', now()->subDays(self::RecentDays));
+            })
             ->orderByRaw('case when source = ? then 0 else 1 end', [ProblemSource::Release->value])
             ->orderByDesc('occurrences')
             ->orderByRaw('case when first_seen is null then 1 else 0 end')
@@ -246,7 +252,7 @@ final readonly class ProblemFiler
 
     private function canFile(ProblemFingerprint $row): bool
     {
-        if (isset($row->evidence['resolved_at']) || $this->suppression->blocksFiling($row) || ! $this->isReady($row)) {
+        if (isset($row->evidence['resolved_at']) || $this->suppression->blocksFiling($row) || ! $this->isRecent($row) || ! $this->isReady($row)) {
             return false;
         }
 
@@ -261,6 +267,19 @@ final readonly class ProblemFiler
         $task = Task::query()->withoutGlobalScope('subtask')->find($row->task_group_id);
 
         return $task instanceof Task && ! $this->isOpen($task);
+    }
+
+    /**
+     * A release alert is pushed once per incident and stays open until ProblemRecovery resolves it, so its last
+     * occurrence does not age. Every other source records each new occurrence, which sets last_seen again.
+     */
+    private function isRecent(ProblemFingerprint $row): bool
+    {
+        if ($row->source === ProblemSource::Release) {
+            return true;
+        }
+
+        return $row->last_seen instanceof CarbonInterface && $row->last_seen->gte(now()->subDays(self::RecentDays));
     }
 
     private function isReady(ProblemFingerprint $row): bool
