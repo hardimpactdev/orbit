@@ -48,6 +48,7 @@ additionalFiles:
   - extensions/behaviors/operations/instance-deploy/vp_requirements.ts
   - extensions/behaviors/operations/instance-vp-command/requirements.ts
   - ansible/files/instance-release-guest.py
+  - ansible/files/instance-release-sql.py
   - scripts/release-container.py
   - scripts/production-release-phase
   - ansible/tasks/proof-seed-listener.yml
