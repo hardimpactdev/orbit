@@ -1,10 +1,12 @@
 file = "swamp/tests/production_release_host_test.py"
 cost = 1
 inputs = [
+  "swamp/ansible/files/instance-release-prepare.py",
   "swamp/ansible/files/instance-release-routes.py",
   "swamp/ansible/module_utils/orbit_route_withdraw.py",
 ]
 cases = [
+  "test_stock_image_refresh_can_only_replace_a_verified_unserved_preparer",
   "test_first_move_detects_deletion_and_backdated_overwrite_and_resets_aborted_copy",
   "test_public_and_private_routes_bind_to_the_same_approved_instance",
   "test_repreparation_discards_abandoned_sqlite_sidecars_before_installing_the_source",

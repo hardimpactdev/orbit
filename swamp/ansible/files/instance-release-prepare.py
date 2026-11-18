@@ -75,6 +75,26 @@ def bind_vite_home(machine, prep, runtime):
         ensure_device(machine, "vite-plus", {"type":"disk","source":str(home),"path":str(home),"readonly":"true"})
 
 
+def refresh_image(machine, target, image, info):
+    tagged(info["config"], target)
+    if machine != "prepare-" + target or info["config"].get(ROLE) != "prepare" or info["profiles"]:
+        raise ValueError("Only the permanent preparation container can refresh its image")
+    previous = info["config"].get("volatile.base_image", "")
+    if not re.fullmatch(r"[0-9a-f]{64}", previous):
+        raise ValueError("Cannot establish the current preparation image")
+    if previous == image:
+        return info
+    if info["config"].get("boot.autostart") != "false" or query("/1.0/instances/" + machine + "/snapshots"):
+        raise ValueError("Preparation still has an active build snapshot or autostart")
+    # Clear this before replacing the root disk so a crash cannot skip stock guest setup on retry.
+    if "user.orbit.release.prepared" in info["config"]:
+        inc("config", "unset", machine, "user.orbit.release.prepared")
+    inc("rebuild", image, machine, "--force", timeout=900)
+    refreshed = query("/1.0/instances/" + machine)
+    if refreshed["config"].get("volatile.base_image") != image:
+        raise ValueError("Preparation did not adopt the required image")
+    return refreshed
+
 
 def prepare(instance, php):
     target = f"instance-{instance}"
@@ -132,11 +152,15 @@ def prepare(instance, php):
         inc("config","device","set",machine,"runtime","source="+str(runtime))
     ensure_device(machine, "runtime", runtime_device)
     bind_vite_home(machine, prep, runtime)
+    prep = refresh_image(machine, target, fingerprint, prep)
     if prep["status"] == "Stopped":
         inc("start", machine)
     if prep["config"].get("user.orbit.release.prepared") != "true":
         guest(machine, "sh", "-ec", GUEST, timeout=1200)
         inc("config", "set", machine, "user.orbit.release.prepared=true")
+    # Apply the distro's pending updates only in the off-traffic preparer. Retained releases keep their packages.
+    guest(machine, "env", "DEBIAN_FRONTEND=noninteractive", "sh", "-ec",
+          'apt-get -qq -o Acquire::Retries=2 update && apt-get -qq -y -o Dpkg::Options::=--force-confold upgrade', timeout=1200)
     # Default installation never enables the unit. Candidate readiness and the first verified switch own its service lifecycle.
     guest(machine, "sh", "-ec", 'cat >/etc/systemd/system/orbit-frankenphp.service && systemctl daemon-reload', stdin=UNIT.replace("@PHP@", php))
     guest(machine, "sh", "-ec", 'test -x /opt/orbit-runtime/current/php/"$1"/bin/frankenphp && install -d -o orbit -g orbit -m 0750 /srv/workspace /srv/shared', "sh", php)

@@ -1,6 +1,7 @@
 """Verify target ownership and route recovery at the AppProd publishing boundary."""
 import importlib.util
 import os
+import runpy
 import sqlite3
 import subprocess
 import sys
@@ -21,6 +22,25 @@ def site(role, scope, listener, home):
 
 
 class ProductionReleaseHostTest(unittest.TestCase):
+    def test_stock_image_refresh_can_only_replace_a_verified_unserved_preparer(self):
+        helper = runpy.run_path(str(ROOT / "ansible/files/instance-release-prepare.py"))["refresh_image"]
+        original = { "config": {"user.orbit.release.target": "instance-4", "user.orbit.release.role": "prepare",
+                                "boot.autostart": "false", "volatile.base_image": "a" * 64}, "profiles": []}
+        updated = {**original, "config": {**original["config"], "volatile.base_image": "b" * 64}}
+        calls = []
+        def command(*args, **kwargs):
+            calls.append(args)
+        def read(path):
+            return [] if path.endswith("/snapshots") else updated
+        with patch.dict(helper.__globals__, inc=command, query=read):
+            self.assertIs(helper("prepare-instance-4", "instance-4", "a" * 64, original), original)
+            for wrong in ("instance-4-aaaaaaaaaaaa", "prepare-instance-5"):
+                with self.assertRaises(ValueError):
+                    helper(wrong, "instance-4", "b" * 64, original)
+            self.assertEqual(calls, [])
+            self.assertIs(helper("prepare-instance-4", "instance-4", "b" * 64, original), updated)
+            self.assertEqual(calls, [("rebuild", "b" * 64, "prepare-instance-4", "--force")])
+
     def test_public_and_private_routes_bind_to_the_same_approved_instance(self):
         private = site("app-prod", "app-instance-19", "https://one.test", "/home/orbit-app-2")
         public = site("ingress", "route-14-ingress", "one.test", "/home/orbit-app-2")
