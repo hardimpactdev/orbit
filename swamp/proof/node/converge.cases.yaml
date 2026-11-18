@@ -235,6 +235,12 @@ cases:
     # Unpublished admission 289 recovered without a visit; two sweeps recovered 1 then 0 and the hook receipt was delivered.
     # All 108 signed sleep/wake Operations for the 50 visits and four checks match one Node journal completion each.
     # Doctor: healthy, seven checks and zero drift. Raw samples, Operations and receipts: .orbit-artifacts/5775/visitor-wake/.
+    # Handoff 2754 rerun on merge 5c2d0edc25, same clone and bound: 50 signed visits, 41 app-first and 9 progress-first, zero errors.
+    # Signed p50/p95/max 630.099/1012.139/1427.739 ms; all 50 done (wake IDs 394..492, even IDs), swap closed.
+    # Python 985.991/1276.521/1306.622 ms; 50 progress-first, zero errors (505..603, odd IDs), plan capture still placement_unproven.
+    # POST 494, forced poll 496, lost Valkey result 498 and unpublished wake 500 all passed.
+    # Conn 502 published its child 503 before any visitor; Caddy joined it and launch cancellation preserved the shared wake.
+    # All 110 signed Operations match one journal completion each. New samples and receipts: .orbit-artifacts/5775/conflict-2754/.
     act: []
     expect: []
 

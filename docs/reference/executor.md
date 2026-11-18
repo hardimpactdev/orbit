@@ -225,6 +225,17 @@ A separate in-bound POST returned the app's own 202 in 396.736 ms, preserving th
 
 The case evidence is in `swamp/proof/node/converge.cases.yaml`. Raw timings, Operation records, journal matches and recovery receipts are under `.orbit-artifacts/5775/visitor-wake/` in the copy. The 108 signed Operations across the timed visits and four extra checks each match one Node journal completion. The shared runner did not run: it cannot yet prepare this clone and measure the visitor Route and poll. Both case files keep only that runner prerequisite.
 
+#### Rerun with durable Conn launches
+
+After merging durable Conn launches, the same nested clone ran 50 more visits on each path at merge `5c2d0edc25`. The signed path again used a 500 ms bound and Valkey `hz 100`. Every signed sleep froze into swap, and all 50 wakes returned `done`. Python again skipped plan capture as `placement_unproven`.
+
+| Visitor path | Visits | App first | Progress first | Errors | p50 | p95 | Max |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Signed executor wake | 50 | 41 | 9 | 0 | 630.099 ms | 1,012.139 ms | 1,427.739 ms |
+| Existing Python path, same clone | 50 | 0 | 50 | 0 | 985.991 ms | 1,276.521 ms | 1,306.622 ms |
+
+The original POST returned the app's own 202 (Operation 494), and the forced over-bound visit returned the progress page before the poll got the app (496). Both durable-result replay (498) and missing-publication recovery (500) passed. The real queue published a Conn-owned wake before any visit. A visitor then joined it and reached the app, and cancelling the launch left its shared wake succeeded (503). This checks the Conn wake child, not the first-message handoff. All 110 signed Operations had one journal completion each. The separate raw receipts are in `.orbit-artifacts/5775/conflict-2754/`.
+
 ## Checks
 
 The executor crates set `[lints] workspace = true` and follow BeautifulRust ([ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor#rust-rules-p9)): its lints are the workspace's `[workspace.lints]`, and `clippy.toml` sits beside it. From `apps/agent`:
