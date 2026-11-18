@@ -255,11 +255,11 @@ final readonly class ProofSeeds
      *
      * @param  list<int>  $except
      */
-    public function admit(string $trigger, array $except = [], ?int $node = null): ?Operation
+    public function admit(string $trigger, array $except = [], ?int $node = null, ?InstanceRuntime $seed = null): ?Operation
     {
         try {
-            $source = $this->source();
-            $behind = $this->targets();
+            $source = $seed ?? $this->source();
+            $behind = $source === null ? [] : $this->ready($source, holding: false);
             $candidates = array_filter($behind, static fn (Node $target): bool => ! in_array($target->id, $except, true));
             $named = array_filter($candidates, static fn (Node $target): bool => $target->id === $node);
             $targets = array_slice([...$named, ...array_diff_key($candidates, $named)], 0, self::maxTargets());
@@ -366,13 +366,23 @@ final readonly class ProofSeeds
      * A missing admission is recoverable. The existing copy policy leaves a failed target for its next
      * converge or the next seed.
      *
-     * @return array{status: string, operation_ids: list<int>, published_nodes: list<int>, pending_nodes: list<int>}
+     * @param  array<int, array<string, mixed>>  $defaults
+     * @return array<string, mixed>
      */
-    public function releasePublication(string $commit): array
+    public function releasePublication(string $commit, array $defaults): array
     {
+        $proof = array_filter($defaults, static fn (array $row): bool => ($row['copies_to_ci'] ?? false) === true);
+        $id = array_key_first($proof);
+        $empty = ['operation_ids' => [], 'published_nodes' => [], 'pending_nodes' => []];
+        if ($id === null) {
+            return ['status' => 'not_required', ...$empty];
+        }
+        $takenAt = ValidatedData::string($proof[$id]['taken_at']);
+        $identity = ['instance_id' => $id, 'commit' => $commit, 'taken_at' => $takenAt];
         $source = $this->source();
-        if ($source === null || $source->seed_commit !== $commit) {
-            return ['status' => 'not_required', 'operation_ids' => [], 'published_nodes' => [], 'pending_nodes' => []];
+        if ($source === null || $source->instance_id !== $id || $source->seed_commit !== $commit
+            || $source->seed_taken_at?->toIso8601String() !== $takenAt) {
+            return ['status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$identity, ...$empty];
         }
         $copies = $this->copies($source);
         $behind = array_map(static fn (Node $node): int => $node->id, $this->ready($source, holding: false));
@@ -387,13 +397,13 @@ final readonly class ProofSeeds
                 $status = 'failed';
             } else {
                 $status = 'pending';
-                if (($copy = $this->admit('seed_copy', $tried)) !== null) {
+                if (($copy = $this->admit('seed_copy', $tried, seed: $source)) !== null) {
                     $ids[] = $copy->id;
                 }
             }
         }
 
-        return ['status' => $status, 'operation_ids' => $ids, 'published_nodes' => $published, 'pending_nodes' => $behind];
+        return ['status' => $status, ...$identity, 'operation_ids' => $ids, 'published_nodes' => $published, 'pending_nodes' => $behind];
     }
 
     /** @return Collection<int, Operation> */

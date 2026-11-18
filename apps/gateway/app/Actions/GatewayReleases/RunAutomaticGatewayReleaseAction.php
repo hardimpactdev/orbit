@@ -114,7 +114,7 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('no_deployed_release', errorCode: 'gateway.release_current_incomplete', message: "The current release [{$current}] has no readable REVISION.");
         }
 
-        $cycle = $this->pendingCycle($deployed);
+        $cycle = app(ContinueReleaseFleetAction::class)->pending($deployed);
         if ($cycle !== null) {
             try {
                 GatewaySchedule::dispatch(new AdmitFleetRollout($cycle->id));
@@ -181,7 +181,7 @@ final readonly class RunAutomaticGatewayReleaseAction
     private function release(string $sha, string $deployed): array
     {
         try {
-            $record = $this->admit->execute($sha, trigger: 'auto');
+            $record = $this->admit->execute($sha, trigger: 'auto', expectedServingSha: $deployed);
         } catch (GatewayReleaseException $exception) {
             if ($exception->errorCode === 'gateway.release_in_progress') {
                 return $this->stalled($deployed, 'busy', null, $exception->errorCode, $exception->getMessage(), $sha);
@@ -276,25 +276,6 @@ final readonly class RunAutomaticGatewayReleaseAction
             $this->source->checkName,
         ), 'head:'.$state['head'], 'branch_head_unreleased');
         $this->automation->branchHeadAlerted();
-    }
-
-    /** A serving release owns its downstream work until it settles or needs a forward fix. */
-    private function pendingCycle(string $deployed): ?GatewayRelease
-    {
-        $release = app(ContinueReleaseFleetAction::class)->current();
-        if ($release === null || $release->sha !== $deployed) {
-            return null;
-        }
-        $fleet = data_get($release->phases, 'fleet.status');
-        $refresh = data_get($release->phases, 'default_refresh.status');
-        $seed = data_get($release->phases, 'seed_publication.status');
-        if (in_array($fleet, ['pending', 'deferred'], true)
-            || ($fleet === 'current' && (in_array($refresh, [null, 'pending'], true)
-                || ($refresh === 'current' && in_array($seed, [null, 'pending'], true))))) {
-            return $release;
-        }
-
-        return null;
     }
 
     /** A commit that just failed for a transient reason waits before the next attempt. */

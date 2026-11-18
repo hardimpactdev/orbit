@@ -33,6 +33,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\StaticCliRelease;
+use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\Cluster;
 use App\Models\GatewayRelease;
@@ -425,6 +426,22 @@ it('preserves every prior host approval before an early halt and across a supers
     $action->execute($next);
     expect($next->refresh()->phases['fleet']['nodes'][$this->nodes['db']]['error_code'])->toBe('fleet.host_inputs_changed')
         ->and(Operation::query()->count())->toBe(0);
+});
+
+it('serializes fleet work and continues recorded refresh when rollout is disabled', function (): void {
+    Queue::fake();
+    config(['fleet.rollout' => false, 'instances.nested_fleet_refresh' => true]);
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'disabled', 'nodes' => []]]]);
+    $fleet = app(ContinueReleaseFleetAction::class);
+    $lock = app(GatewayReleaseLock::class);
+
+    expect($lock->run(fn (): ?int => $fleet->execute($release)))->toBe(15)
+        ->and($release->refresh()->phases)->not->toHaveKey('default_refresh');
+    expect($fleet->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('disabled')
+        ->and($release->phases['default_refresh']['status'])->toBe('current')
+        ->and($release->phases['seed_publication']['status'])->toBe('not_required');
 });
 
 it('detects membership, agent pin drift and late CLI publication on the daily pass after fleet current', function (string $change): void {

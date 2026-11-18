@@ -3121,9 +3121,9 @@ One seed copy takes at most as many targets as its [run budget](/reference/opera
 
 So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
 
-The automatic release tick advances the recorded fleet, default and seed phases. It resumes the existing Operations after a restart and verifies the default seed commit before it checks CI Node copies. An admission blocked by active work stays pending. A failed refresh Operation retries after ten minutes, up to three attempts for the release commit.
+The automatic release tick advances the recorded fleet, default and seed phases. It resumes the existing Operations after a restart and verifies the default seed commit before it checks CI Node copies. An admission blocked by active work stays pending. A failed refresh Operation or temporary source-read failure retries after ten minutes, up to three attempts for the release commit.
 
-The tick recovers a missing seed-copy admission from the current seed and the recorded attempts. A Node that failed a copy keeps its recorded seed and follows the existing retry rules above. The release records a terminal failed phase and a newer eligible revision can fix it forward.
+The tick recovers a missing seed-copy admission from the current seed and the recorded attempts. Publication tracks the seed commit and timestamp recorded by refresh. A source that moved fails that publication phase. A Node that failed a copy keeps its recorded seed and follows the existing retry rules above. The release records a terminal failed phase and a newer eligible revision can fix it forward.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 

@@ -7,10 +7,12 @@ namespace App\Domain\Instances;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -28,7 +30,7 @@ final readonly class NestedFleetRefresh
 
     private const int RetryMinutes = 10;
 
-    private const array DeferredRefusals = ['operation.target_busy', 'instance.clone_in_flight'];
+    private const array DeferredRefusals = ['operation.target_busy', 'instance.clone_in_flight', 'deployment.source_changed'];
 
     /** The line of a default whose admission failed with an error that is no refusal. */
     public const string AdmissionFailed = 'operation.admission_failed';
@@ -72,16 +74,24 @@ final readonly class NestedFleetRefresh
      * Continue the verified release from durable Operation and seed records. The release lock serializes callers
      * across fleet jobs. An Operation admitted just before a restart is found again by its pinned commit.
      *
+     * @param  array<string, mixed>  $previous
      * @return array{status: string, defaults: array<int, array<string, mixed>>}
      */
-    public function advance(string $commit): array
+    public function advance(string $commit, array $previous = []): array
     {
         if (! self::enabled()) {
             return ['status' => 'disabled', 'defaults' => []];
         }
         $defaults = [];
+        // Keep the completed seed identity even if the source disappears before publication.
+        foreach ((array) ($previous['defaults'] ?? []) as $id => $row) {
+            if (is_int($id) && is_array($row) && ($row['status'] ?? null) === 'current') {
+                $defaults[$id] = ValidatedData::object($row);
+            }
+        }
         foreach ($this->defaults() as $instance) {
-            $defaults[$instance->id] = $this->advanceDefault($instance, $commit);
+            $row = ValidatedData::object(data_get($previous, 'defaults.'.$instance->id, []));
+            $defaults[$instance->id] ??= $this->advanceDefault($instance, $commit, $row);
         }
         $states = array_column($defaults, 'status');
 
@@ -91,8 +101,11 @@ final readonly class NestedFleetRefresh
         ];
     }
 
-    /** @return array<string, mixed> */
-    private function advanceDefault(Instance $instance, string $commit): array
+    /**
+     * @param  array<string, mixed>  $previous
+     * @return array<string, mixed>
+     */
+    private function advanceDefault(Instance $instance, string $commit, array $previous): array
     {
         $attempts = Operation::query()->where('kind', OperationKinds::InstanceDeploy)
             ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)
@@ -104,7 +117,8 @@ final readonly class NestedFleetRefresh
         }
         $runtime = $instance->runtime;
         if ($runtime?->seed_commit === $commit && $runtime->seed_taken_at !== null) {
-            return ['status' => 'current', 'commit' => $commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(), ...$receipt];
+            return ['status' => 'current', 'commit' => $commit, 'taken_at' => $runtime->seed_taken_at->toIso8601String(),
+                'copies_to_ci' => app(ProofSeeds::class)->sends($instance, $runtime), ...$receipt];
         }
         if ($last !== null) {
             if ($last->status === OperationStatus::Succeeded) {
@@ -117,14 +131,26 @@ final readonly class NestedFleetRefresh
                 return ['status' => 'pending', 'error_code' => $last->error_code, ...$receipt];
             }
         }
+        if (($previous['error_code'] ?? null) === 'project.source_unavailable'
+            && (($previous['status'] ?? null) === 'failed' || now()->timestamp < ValidatedData::integer($previous['retry_at']))) {
+            return $previous;
+        }
+        $failures = ValidatedData::integer($previous['admission_failures'] ?? 0);
         try {
             $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit);
 
             return ['status' => 'pending', 'operation_id' => $operation->id];
         } catch (ResourceOperationException $refused) {
+            if ($refused->errorCode === 'project.source_unavailable') {
+                $failures++;
+
+                return ['status' => $failures >= self::Attempts ? 'failed' : 'pending',
+                    'error_code' => $refused->errorCode, 'admission_failures' => $failures,
+                    'retry_at' => now()->addMinutes(self::RetryMinutes)->timestamp, ...$receipt];
+            }
             $status = in_array($refused->errorCode, self::DeferredRefusals, true) ? 'pending' : 'failed';
 
-            return ['status' => $status, 'error_code' => $refused->errorCode, ...$receipt];
+            return ['status' => $status, 'error_code' => $refused->errorCode, 'admission_failures' => $failures, ...$receipt];
         }
     }
 

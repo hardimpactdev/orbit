@@ -8,7 +8,6 @@ use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubTokenGrant;
-use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -168,9 +167,6 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             DB::afterCommit(static function () use ($sha, $record): void {
                 try {
                     GatewaySchedule::dispatch(new AdmitFleetRollout($record->id));
-                    if (! config('fleet.rollout')) {
-                        app(NestedFleetRefresh::class)->admitAll($sha);
-                    }
                 } catch (Throwable) {
                     Log::warning('Could not queue the fleet work after a verified Gateway release.', ['release' => GatewayReleaseCommit::id($sha)]);
                 }

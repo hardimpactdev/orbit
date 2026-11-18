@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\GatewayReleases;
 
+use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
+use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -60,7 +63,7 @@ final readonly class AdmitSwampGatewayReleaseAction
         return $this->execute($sha, force: true, trigger: 'rollback');
     }
 
-    public function execute(string $commit, bool $force = false, string $trigger = 'deploy'): GatewayRelease
+    public function execute(string $commit, bool $force = false, string $trigger = 'deploy', ?string $expectedServingSha = null): GatewayRelease
     {
         if (! GatewayReleaseCommit::isSha($commit)) {
             throw new GatewayReleaseException('deploy', 'gateway.release_commit_invalid', 'A Swamp release needs the full commit SHA.', 422);
@@ -82,7 +85,7 @@ final readonly class AdmitSwampGatewayReleaseAction
         $horizon = GatewayHorizon::find($gateway);
 
         // The lock keeps the release unit and a second admission out until the run owns its record.
-        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $delivery, $web, $horizon, $gateway): GatewayRelease {
+        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $delivery, $web, $horizon, $gateway, $expectedServingSha): GatewayRelease {
             // An automatic record that waits for its commit's publication is superseded by begin().
             if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
                 ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
@@ -91,6 +94,17 @@ final readonly class AdmitSwampGatewayReleaseAction
             // A release that went live during the checks above is the one a failed check switches back to.
             if ($this->layout->currentReleaseId() !== $previous) {
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
+            }
+
+            if ($trigger === 'auto') {
+                $automation = app(GatewayReleaseAutomation::class);
+                $serving = $this->layout->observe()->commits[$previous] ?? null;
+                if ($expectedServingSha === null || $serving !== $expectedServingSha
+                    || ! $automation->enabled() || $automation->pause() !== null
+                    || FleetReboot::open() !== null || AdmitFleetRolloutAction::open()
+                    || app(ContinueReleaseFleetAction::class)->pending($expectedServingSha) !== null) {
+                    throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The serving release or its automatic release state changed during admission.');
+                }
             }
 
             return $this->admit($commit, $force, $trigger, $previous, $delivery['manifest'], $web, $horizon, $gateway);

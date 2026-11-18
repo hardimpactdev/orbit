@@ -1269,6 +1269,26 @@ it('backs off after a failed refresh and ends after the third attempt', function
     }
 });
 
+it('records a failed source read before admission and resumes it after backoff', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $commit = str_repeat('a', 40);
+    $instance = nestedFleetDefault();
+    $source = $this->mock(ProjectSourceReader::class);
+    $source->shouldReceive('read')->once()->ordered()
+        ->andThrow(new ResourceOperationException('project.source_unavailable', 'Temporary source failure.', 502));
+    $source->shouldReceive('read')->once()->ordered()->andReturn(deploySourceRead($commit));
+
+    $first = app(NestedFleetRefresh::class)->advance($commit);
+    expect($first['defaults'][$instance->id])->toMatchArray([
+        'status' => 'pending', 'error_code' => 'project.source_unavailable', 'admission_failures' => 1,
+    ])->and(app(NestedFleetRefresh::class)->advance($commit, $first))->toBe($first)
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(0);
+    $this->travel(10)->minutes();
+    $next = app(NestedFleetRefresh::class)->advance($commit, $first);
+    expect($next['defaults'][$instance->id]['operation_id'])->toBe(Operation::query()->where('kind', 'instance.deploy')->sole()->id);
+});
+
 it('reports a refused refresh and still ends the release step with success', function (): void {
     Queue::fake();
     config(['instances.nested_fleet_refresh' => true]);
