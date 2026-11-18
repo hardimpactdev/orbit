@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Console\Commands\FileProblemsCommand;
-use App\Console\Commands\TaskCopySettleCommand;
 use App\Console\Commands\TaskMergeRoundCommand;
 use App\Console\Commands\TaskPublishWhenDoneCommand;
 use App\Console\Commands\TaskPullRequestGateCommand;
+use App\Console\Commands\TaskSettleCommand;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
@@ -100,7 +100,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         $this->app->singleton(TaskExecutionLock::class, static fn (): TaskExecutionLock => new NativeTaskExecutionLock(
             rtrim(Config::string('orbit.home'), '/').'/locks/task-execution',
         ));
-        $this->app->singleton(TaskBroadcasts::class);
+        $this->app->scoped(TaskBroadcasts::class);
     }
 
     public function boot(): void
@@ -110,7 +110,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             TaskPullRequestGateCommand::class,
             TaskPublishWhenDoneCommand::class,
             TaskMergeRoundCommand::class,
-            TaskCopySettleCommand::class,
+            TaskSettleCommand::class,
         ]);
 
         // A canonical member selects either level. Internal Task queries keep their child scope.
@@ -125,9 +125,10 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         });
 
         // One notice per changed record, when the request or command that changed it ends (ADR 0151).
-        $this->app->terminating(function (): void {
-            if ($this->app->resolved(TaskBroadcasts::class)) {
-                $this->app->make(TaskBroadcasts::class)->flush();
+        $this->app->terminating(static function (): void {
+            $app = app();
+            if ($app->resolved(TaskBroadcasts::class)) {
+                $app->make(TaskBroadcasts::class)->flush();
             }
         });
     }

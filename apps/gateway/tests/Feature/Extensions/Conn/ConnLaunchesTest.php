@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Broadcasting\NamedBroadcast;
 use App\Domain\Extensions\ExtensionStore;
@@ -23,10 +24,13 @@ use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceStart;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Instances\Power\NodeFileTimes;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationVersionCleanup;
+use App\Domain\Operations\OperationVersions;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\Operations\DispatchExecutorWake;
@@ -38,6 +42,7 @@ use App\Models\Operation;
 use App\Models\ProcessDefinition;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionCommitting;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -51,6 +56,7 @@ use Orbit\Extensions\Conn\Actions\PublishConnLaunchAction;
 use Orbit\Extensions\Conn\Domain\ConnLaunchChild;
 use Orbit\Extensions\Conn\Domain\ConnLaunchDispatchSource;
 use Orbit\Extensions\Conn\Domain\ConnLaunchInstances;
+use Orbit\Extensions\Conn\Domain\ConnLaunchNativeWork;
 use Orbit\Extensions\Conn\Domain\ConnLaunchSettlement;
 use Orbit\Extensions\Conn\Domain\ConnLaunchStage;
 use Orbit\Extensions\Conn\Domain\ConnLaunchState;
@@ -148,6 +154,51 @@ function launchFixtureDefault(): Instance
         ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
 
     return $default;
+}
+
+/** @return array{Operation,Instance,Operation,Operation} */
+function launchFixtureFailedApplication(): array
+{
+    $default = launchFixtureDefault();
+    Operation::query()->where('kind', 'instance.create')->where('target_id', $default->id)->firstOrFail()
+        ->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    $body = test()->body;
+    $name = 'fixture-application-retry-clone';
+    $body['target'] = ['kind' => 'new', 'name' => $name];
+    $id = callLaunchApi(test()->phone, 'POST', 'conn/launches', $body, test()->key)->assertAccepted()->json('data.id');
+    $create = launchFixtureCreate($id, $name);
+    $create->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now(),
+        'result' => ['t3' => ['environment_id' => test()->environment->environment_id]]]);
+    $instance = Instance::query()->findOrFail($create->target_id);
+    $instance->update(['status' => InstanceState::SourceResolved, 'starting_commit' => str_repeat('c', 40)]);
+    $instance->runtime()->update(['power_state' => InstanceRuntimePowerState::Running]);
+    test()->environment->forceFill(['instance_id' => $instance->id])->save();
+
+    $launch = Operation::query()->findOrFail($id);
+    $failed = app(ConnLaunchInstances::class)->complete($launch, $instance);
+    $failed->update(['status' => OperationStatus::Failed, 'lock_key' => null, 'finished_at' => now(),
+        'error_code' => 'instance.container_process_inactive', 'result' => ['ready' => false]]);
+    $dispatch = launchFixtureDispatch($id);
+    $state = app(ConnLaunchState::class);
+    $state->accepted($id, $dispatch->id, now());
+    $state->published($id);
+    $dispatch->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+
+    return [$launch, $instance, $failed, $dispatch];
+}
+
+/** Switch to a later native declaration while preserving this launch's original children. */
+function upgradeLaunchChildVersions(string ...$kinds): void
+{
+    $policies = [];
+    foreach ($kinds as $kind) {
+        $retained = app(DirectOperation::class)->definition($kind);
+        $retained['workflow'] .= '-retained-v1';
+        $policies[$kind] = ['current' => 2, 'retained' => [1 => $retained], 'deprecated' => [1]];
+    }
+    config(['operation_versions' => $policies]);
+    app()->forgetInstance(DirectOperation::class);
+    app(OperationVersionCleanup::class)->fenceOnly();
 }
 
 function launchFixtureCreate(int $id, string $name): Operation
@@ -711,10 +762,11 @@ describe('launch control and progress', function (): void {
         $kind = $nested ? InstanceStart::Kind : InstanceWake::Kind;
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
         $launch = Operation::query()->findOrFail($id);
+        upgradeLaunchChildVersions($kind);
         $settlement = app(ConnLaunchSettlement::class);
         $settlement->advance($launch);
         $wake = ConnLaunchChild::Wake->operation($launch->refresh());
-        expect($wake->kind)->toBe($kind)->and($wake->status)->toBe(OperationStatus::Queued)
+        expect($wake->kind)->toBe($kind)->and($wake->parent_operation_id)->toBe($id)->and($wake->operation_version)->toBe(1)->and($wake->status)->toBe(OperationStatus::Queued)
             ->and($wake->state['conn_launch_owner'])->toBe($launch->id);
 
         $key = (string) Str::uuid();
@@ -1676,30 +1728,89 @@ describe('launch control and progress', function (): void {
             ->and(Operation::query()->where('kind', ConnLaunchDispatchSource::Kind)->count())->toBe(1);
     })->with(['existing target' => [false], 'new target' => [true]]);
 
-    it('adopts an ordinary completion admitted before an application Retry takes the Instance lock', function (bool $alreadyFinished): void {
-        $default = launchFixtureDefault();
-        Operation::query()->where('kind', 'instance.create')->where('target_id', $default->id)->firstOrFail()
-            ->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
-        $body = $this->body;
-        $name = 'fixture-application-retry-clone';
-        $body['target'] = ['kind' => 'new', 'name' => $name];
-        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->json('data.id');
-        $create = launchFixtureCreate($id, $name);
-        $create->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now(),
-            'result' => ['t3' => ['environment_id' => $this->environment->environment_id]]]);
-        $instance = Instance::query()->findOrFail($create->target_id);
-        $instance->update(['status' => InstanceState::SourceResolved, 'starting_commit' => str_repeat('c', 40)]);
-        $instance->runtime()->update(['power_state' => InstanceRuntimePowerState::Running]);
-        $this->environment->forceFill(['instance_id' => $instance->id])->save();
-
-        $launch = Operation::query()->findOrFail($id);
-        $failed = app(ConnLaunchInstances::class)->complete($launch, $instance);
-        $failed->update(['status' => OperationStatus::Failed, 'lock_key' => null, 'finished_at' => now(),
+    it('admits the exact v1 completion for an already-requested retry on a published launch', function (): void {
+        [$launch] = launchFixtureFailedApplication();
+        $path = 'conn/launches/'.$launch->id.'/retry';
+        callLaunchApi($this->phone, 'POST', $path, ['target' => 'application'])->assertAccepted();
+        $launch->refresh();
+        expect($launch->status)->toBe(OperationStatus::Succeeded);
+        upgradeLaunchChildVersions('instance.complete', OperationKinds::ConnLaunchInspect);
+        $versions = array_column(app(OperationVersionCleanup::class)->check()['versions'], 'eligible', 'kind');
+        expect($versions)->toBe([OperationKinds::ConnLaunchInspect => true, 'instance.complete' => false]);
+        app(ConnLaunchSettlement::class)->advance($launch);
+        $retry = ConnLaunchChild::Completion->operation($launch->refresh());
+        expect($retry->parent_operation_id)->toBe($launch->id)->and($retry->operation_version)->toBe(1)
+            ->and($retry->state['swamp_start']['workflow'])->toBe('operation-instance-complete-retained-v1')
+            ->and($launch->state['launch_retry_requests']['application'] ?? null)->toBeNull()
+            ->and(app(OperationVersionCleanup::class)->check()['eligible'])->toBeFalse();
+        $retry->update(['status' => OperationStatus::Failed, 'lock_key' => null, 'finished_at' => now(),
             'error_code' => 'instance.container_process_inactive', 'result' => ['ready' => false]]);
-        $dispatch = launchFixtureDispatch($id);
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeTrue();
+        callLaunchApi($this->phone, 'POST', $path, ['target' => 'application'])->assertStatus(409);
+    });
+
+    it('upgrades the existing v1 launch ledger without losing admitted identity or permitting edits to the new pins', function (): void {
+        $migration = require database_path('migrations/2027_03_08_000005_fence_conn_launch_retries.php');
+        $migration->down();
+        $legacy = Operation::query()->create(['kind' => OperationKinds::ConnLaunch, 'operation_version' => 1, 'child_versions' => [],
+            'target_type' => 'conn_profile', 'target_id' => $this->profile->id, 'node_id' => $this->host->id,
+            'input' => ['launch_id' => $this->key], 'state' => [], 'status' => OperationStatus::Waiting]);
+        $previous = DB::table('sqlite_schema')->whereIn('name', ['operations_version_immutable', 'operations_version_admission'])->orderBy('name')->pluck('sql')->all();
+        DB::statement("CREATE TRIGGER fixture_abort_launch_backfill BEFORE UPDATE OF child_versions ON operations
+            BEGIN SELECT RAISE(ABORT, 'fixture.launch_backfill_interrupted'); END");
+        expect(fn () => $migration->up())->toThrow(QueryException::class, 'fixture.launch_backfill_interrupted');
+        expect($legacy->refresh()->child_versions)->toBe([])->and(DB::table('sqlite_schema')
+            ->whereIn('name', ['operations_version_immutable', 'operations_version_admission'])->orderBy('name')->pluck('sql')->all())->toBe($previous)
+            ->and(DB::table('sqlite_schema')->where('name', 'operations_version_launch_retry')->exists())->toBeFalse();
+        DB::statement('DROP TRIGGER fixture_abort_launch_backfill');
+        $migration->up();
+        $migration->up();
+        expect($legacy->refresh()->child_versions)->toBe(OperationKinds::CoordinatorChildren[OperationKinds::ConnLaunch])
+            ->and($legacy->input['launch_id'])->toBe($this->key)->and($legacy->status)->toBe(OperationStatus::Waiting);
+        expect(fn () => $legacy->update(['child_versions' => []]))->toThrow(QueryException::class, 'operation.version_immutable');
+    });
+
+    it('retains the eight fixed v1 child pins for an earlier Gateway that admits a launch after backfill', function (): void {
+        $row = ['kind' => OperationKinds::ConnLaunch, 'operation_version' => 1, 'child_versions' => [],
+            'target_type' => 'conn_profile', 'target_id' => $this->profile->id, 'node_id' => $this->host->id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Waiting];
+        $launch = Operation::query()->create($row);
+        upgradeLaunchChildVersions(OperationKinds::ConnLaunchInspect);
+        expect(fn () => Operation::query()->create($row))->toThrow(QueryException::class, 'operation.version_deprecated');
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeFalse();
+        expect(app(DirectOperation::class)->pinnedChildVersions($launch))->toBe(OperationKinds::CoordinatorChildren[OperationKinds::ConnLaunch]);
+        $child = app(StartOperationAction::class)->execute(OperationKinds::ConnLaunchInspect, 'instance', $this->instance->id,
+            $this->host->id, ['launch_operation_id' => $launch->id], 'test', null, start: false, parent: $launch);
+        expect($child->operation_version)->toBe(1)->and($child->parent_operation_id)->toBe($launch->id);
+        $launch->update(['status' => OperationStatus::Succeeded]);
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeFalse();
+        $child->update(['status' => OperationStatus::Succeeded]);
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeTrue();
+    });
+
+    it('runs the old launch inspect and dispatch handlers after their versions close', function (): void {
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $launch = Operation::query()->findOrFail($id);
+        expect($launch->child_versions)->toBe(OperationKinds::CoordinatorChildren[OperationKinds::ConnLaunch]);
+        InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
+            'incus_project' => 'orbit-instances', 'container_name' => 'fixture-clone', 'bridge_address' => '10.253.0.2',
+            'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
+        upgradeLaunchChildVersions(OperationKinds::ConnLaunchInspect, OperationKinds::ConnLaunchDispatch);
+        $native = app(ConnLaunchNativeWork::class);
+        $inspect = $native->inspect($launch, $this->instance, $this->environment, null);
+        expect($inspect->parent_operation_id)->toBe($id)->and($inspect->operation_version)->toBe(1);
+        $inspect->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+        app(ConnLaunchState::class)->workspaceReady($id);
+        $dispatch = $native->dispatch($launch, $this->instance, 'fixture-environment', 'pinned-incarnation', 'fixture-project',
+            (object) ['providerInstanceId' => 'actual-provider', 'model' => 'actual-model', 'options' => (object) []]);
+        expect($dispatch->parent_operation_id)->toBe($id)->and($dispatch->operation_version)->toBe(1)
+            ->and($dispatch->state['swamp_start']['workflow'])->toBe('operation-conn-launch-retained-v1');
+    });
+
+    it('adopts an ordinary completion admitted before an application Retry takes the Instance lock', function (bool $alreadyFinished): void {
+        [$launch, $instance, $failed, $dispatch] = launchFixtureFailedApplication();
+        $id = $launch->id;
         $state = app(ConnLaunchState::class);
-        $state->accepted($id, $dispatch->id, now());
-        $state->published($id);
         $path = "conn/launches/{$id}";
         $before = callLaunchApi($this->phone, 'GET', $path)->assertOk()->assertJsonPath('data.phase', 'ready')
             ->assertJsonPath('data.children.completion_operation_id', $failed->id)->json('data');
@@ -1708,6 +1819,8 @@ describe('launch control and progress', function (): void {
             ->assertJsonPath('data.poll_after_seconds', 2)->json('data');
         expect(callLaunchApi($this->phone, 'POST', "{$path}/retry", $retry)->assertAccepted()->json('data'))->toBe($pending);
         $launch->refresh();
+        upgradeLaunchChildVersions('instance.complete');
+        expect(app(OperationVersionCleanup::class)->check()['eligible'])->toBeFalse();
         $request = $launch->state['launch_retry_requests']['application'];
         $prior = $launch->state['launch_children']['completion_operation_id'];
         $started = now()->subSecond();
@@ -1740,7 +1853,9 @@ describe('launch control and progress', function (): void {
                 ['target_type' => 'project'],
                 ['kind' => 'instance.create'],
             ] as $unrelated) {
-                launchNativeReceipt($launch, 'instance.complete')->update([...$unrelated, 'status' => OperationStatus::Succeeded, 'finished_at' => now()]);
+                $kind = $unrelated['kind'] ?? 'instance.complete';
+                Operation::query()->create(['kind' => $kind, 'operation_version' => OperationVersions::admit($kind), 'node_id' => $launch->node_id,
+                    'input' => [], 'target_type' => 'instance', 'target_id' => $instance->id, ...$unrelated, 'status' => OperationStatus::Succeeded, 'finished_at' => now()]);
             }
         });
         $settlement = app(ConnLaunchSettlement::class);
@@ -1776,6 +1891,7 @@ describe('launch control and progress', function (): void {
             ->and(ConnLaunchChild::completions()->where('target_id', $instance->id)->where('node_id', $instance->node_id)
                 ->orderBy('id')->pluck('id')->all())->toBe([$failed->id, $ordinary->id])
             ->and(Operation::query()->where('kind', ConnLaunchDispatchSource::Kind)->pluck('id')->all())->toBe([$dispatch->id]);
+        expect($ordinary->operation_version)->toBe(2)->and($ordinary->parent_operation_id)->toBeNull();
     })->with(['still open' => false, 'already terminal' => true]);
 
     it('settles the first ordinary completion on a ready existing launch', function (bool $recordedInstance): void {

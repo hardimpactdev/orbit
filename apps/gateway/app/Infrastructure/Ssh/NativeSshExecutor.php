@@ -7,6 +7,7 @@ namespace App\Infrastructure\Ssh;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Container\Attributes\Config;
 
 final readonly class NativeSshExecutor implements SshExecutor
 {
@@ -23,6 +24,7 @@ final readonly class NativeSshExecutor implements SshExecutor
     public function __construct(
         private ProcessRunner $runner,
         private SshControlGroup $group = new SshControlGroup,
+        #[Config('orbit.ssh_mux_directory')] private ?string $socketRoot = null,
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -113,7 +115,7 @@ final readonly class NativeSshExecutor implements SshExecutor
      */
     private function multiplexing(SshConnection $connection): array
     {
-        $directory = dirname($connection->identityFile).'/mux';
+        $directory = $this->socketRoot ?? dirname($connection->identityFile).'/mux';
         $jump = $connection->proxyJump;
         $mode = $connection->shareConnection ? $this->group->multiplexing() : SshMultiplexing::Alone;
 
@@ -129,6 +131,11 @@ final readonly class NativeSshExecutor implements SshExecutor
         $socket = $jump === null
             ? '%C'
             : sha1("{$jump->user}@{$jump->host}:{$jump->port}>{$connection->user}@{$connection->host}:{$connection->port}#{$connection->hostIdentity}");
+
+        // A container-local root serves multiple SSH identities. OpenSSH's %C omits the identity.
+        if ($this->socketRoot !== null) {
+            $socket = sha1(implode("\0", [$connection->identityFile, $connection->host, (string) $connection->port, $connection->user, $socket]));
+        }
 
         if ($mode === SshMultiplexing::Ride) {
             return ['-o', 'ControlMaster=no', '-o', "ControlPath={$directory}/{$socket}"];

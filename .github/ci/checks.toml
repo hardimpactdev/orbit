@@ -121,8 +121,10 @@ inputs = [
   "!swamp/**/*.mdx",
   "!swamp/**/*.mmd",
 ]
-cost = 92
-ceiling = 240
+# Hosted runs 44412013872 and 44413193830: a shard job takes 54 to 80 seconds, about 35 of them setup.
+# The ceiling keeps a run with cold dependency caches inside its limit.
+cost = 80
+ceiling = 180
 
 [check.gateway-real-clients]
 inputs = [

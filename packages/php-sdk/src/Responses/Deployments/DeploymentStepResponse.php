@@ -17,9 +17,10 @@ final readonly class DeploymentStepResponse implements JsonSerializable
         public string $command,
         public int $timeoutSeconds,
         public string $requestId = '',
+        public bool $required = true,
     ) {}
 
-    /** @return array{name: string, phase: string, command: string, timeout_seconds: int} */
+    /** @return array{name: string, phase: string, command: string, timeout_seconds: int, required: bool} */
     public function toArray(): array
     {
         return [
@@ -27,10 +28,11 @@ final readonly class DeploymentStepResponse implements JsonSerializable
             'phase' => $this->phase,
             'command' => $this->command,
             'timeout_seconds' => $this->timeoutSeconds,
+            'required' => $this->required,
         ];
     }
 
-    /** @return array{name: string, phase: string, command: string, timeout_seconds: int} */
+    /** @return array{name: string, phase: string, command: string, timeout_seconds: int, required: bool} */
     public function __debugInfo(): array
     {
         return [
@@ -38,10 +40,11 @@ final readonly class DeploymentStepResponse implements JsonSerializable
             'phase' => $this->phase,
             'command' => '[COMMAND]',
             'timeout_seconds' => $this->timeoutSeconds,
+            'required' => $this->required,
         ];
     }
 
-    /** @return array{type: class-string<self>, name: string, phase: string, command: string, timeout_seconds: int} */
+    /** @return array{type: class-string<self>, name: string, phase: string, command: string, timeout_seconds: int, required: bool} */
     public function jsonSerialize(): array
     {
         return ['type' => self::class, ...$this->__debugInfo()];

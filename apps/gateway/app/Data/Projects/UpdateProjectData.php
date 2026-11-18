@@ -36,7 +36,7 @@ final readonly class UpdateProjectData
         public ?string $name = null,
         public bool $nestedFleetProvided = false,
         public bool $nestedFleet = false,
-        /** @var array<string, string|null> the copy turn agent defaults to change, keyed by Project column; null clears one (TaskCopyAgent) */
+        /** @var array<string, string|null> the copy turn agent defaults to change, keyed by Project column; null clears one (TaskAgent) */
         public array $taskAgents = [],
         public bool $taskPrModeProvided = false,
         /** The mode of the Project's task copy groups that set none; null clears it, so the Gateway's default applies. */

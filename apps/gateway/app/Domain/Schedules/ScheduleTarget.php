@@ -20,7 +20,7 @@ final readonly class ScheduleTarget
         public ?string $shell,
         public bool $loginShell,
         public ?Instance $instance,
-        /** @var array{project:string,name:string}|null */
+        /** @var array{project:string,name:string,release?:string,instance_id?:int,node_id?:int}|null */
         public ?array $container = null,
     ) {}
 

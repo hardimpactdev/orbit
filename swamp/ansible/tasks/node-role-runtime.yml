@@ -164,3 +164,9 @@
   until: reverb_health is succeeded
   retries: 60
   delay: 1
+
+- name: Provision the production release host
+  when: rt.production_releases is defined
+  ansible.builtin.include_tasks: production-release-host.yml
+  vars:
+    production: "{{ rt.production_releases }}"

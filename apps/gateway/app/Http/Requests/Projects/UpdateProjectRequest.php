@@ -13,7 +13,7 @@ use App\Domain\Projects\ReviewAndMergeRequirements;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
-use App\Domain\Tasks\TaskCopyAgent;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskPrMode;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
@@ -44,7 +44,7 @@ final class UpdateProjectRequest extends FormRequest
             'merge_check' => ['sometimes', 'nullable', 'string', 'max:255'],
             'task_pr_mode' => ['sometimes', 'nullable', 'string', Rule::enum(TaskPrMode::class)],
             'container_server' => ['sometimes', 'required', 'string', Rule::enum(ContainerServer::class)],
-            ...TaskCopyAgent::rules('task_'),
+            ...TaskAgent::rules('task_'),
         ];
     }
 
@@ -54,7 +54,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', 'default_auto_deploy', 'task_pr_mode', 'container_server', ...TaskCopyAgent::fields('task_')],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', 'default_auto_deploy', 'task_pr_mode', 'container_server', ...TaskAgent::fields('task_')],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -81,7 +81,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('task_pr_mode')
                 && ! $this->exists('default_auto_deploy')
                 && ! $this->exists('container_server')
-                && ! $this->hasAny(TaskCopyAgent::fields('task_'))
+                && ! $this->hasAny(TaskAgent::fields('task_'))
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -144,7 +144,7 @@ final class UpdateProjectRequest extends FormRequest
             mergeCheck: is_string($validated['merge_check'] ?? null) && trim($validated['merge_check']) !== '' ? trim($validated['merge_check']) : null,
             nestedFleetProvided: array_key_exists('nested_fleet', $validated),
             nestedFleet: ($validated['nested_fleet'] ?? false) === true,
-            taskAgents: TaskCopyAgent::provided($validated, 'task_'),
+            taskAgents: TaskAgent::provided($validated, 'task_'),
             defaultAutoDeployProvided: array_key_exists('default_auto_deploy', $validated),
             defaultAutoDeploy: ($validated['default_auto_deploy'] ?? true) === true,
             taskPrModeProvided: array_key_exists('task_pr_mode', $validated),

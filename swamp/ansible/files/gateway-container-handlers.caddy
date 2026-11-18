@@ -1,0 +1,27 @@
+# The private bridge address changes at promotion. The host owns TLS and peer identity.
+import /etc/caddy/orbit-gateway-upstream.caddy
+
+handle_path /grafana/* {
+    forward_auth {http.vars.gateway_release_upstream} {
+        uri /api/v1/metrics/grafana/authorize
+        header_up X-Forwarded-For {remote_host}
+    }
+    reverse_proxy https://{args[0]} {
+        header_up Host metrics.orbit
+        transport http {
+            tls_server_name metrics.orbit
+            tls_trusted_ca_certs /etc/caddy/orbit-cert-current/root-ca.pem
+        }
+    }
+}
+
+handle {
+    reverse_proxy {http.vars.gateway_release_upstream} {
+        header_up X-Forwarded-For {remote_host}
+        flush_interval 1ms
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s
+        }
+    }
+}

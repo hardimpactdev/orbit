@@ -11,10 +11,12 @@ use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Domain\Tasks\TaskLifecycle;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,23 +34,34 @@ final readonly class OperationStore
     }
 
     /** @param array<string,mixed> $input */
-    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null): Operation
+    public function create(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null, ?Operation $parent = null): Operation
     {
+        $parent ??= $this->idempotency->parent($kind);
         if ($this->idempotency->key !== null && $this->idempotency->kind !== $kind) {
             throw new LogicException('The Operation kind must match the request idempotency key.');
+        }
+        if (($existing = $this->idempotency->replay($kind, $parent)) !== null) {
+            return $existing;
         }
         $gatewayJob = OperationKinds::gatewayJob($kind);
         OperationKinds::executor($kind);
         if ($nodeId === null) {
             throw new ResourceOperationException('operation.node_required', 'A direct Operation requires its admitted root Node.', 422);
         }
-        $definition = $gatewayJob ? [] : (app(DirectOperation::class)->definition($kind) ?? throw new LogicException('The admitted direct Operation declaration is unavailable.'));
-        $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
-        app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         try {
-            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition, $lockKey): Operation {
+            $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $gatewayJob, $lockKey, $parent): Operation {
                 app(NodeWorkAdmission::class)->check($kind, $nodeId, $input);
+                $direct = app(DirectOperation::class);
+                $version = $parent === null ? OperationVersions::admit($kind) : $this->childVersion($parent, $kind, $input);
+                $definition = $gatewayJob ? [] : ($direct->definition($kind, $version) ?? throw new ResourceOperationException('operation.version_unavailable', 'This Gateway does not have the pinned Operation handler.', 503));
+                $fields = array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
+                app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
+                $children = $direct->childVersions($kind, $version);
+                if ($parent === null) {
+                    $this->assertChildrenAdmissible($direct, $kind, $version);
+                }
                 $operation = Operation::query()->create([
+                    'operation_version' => $version, 'child_versions' => $children, 'parent_operation_id' => $parent?->id,
                     'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
                     'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId, 'lock_key' => $lockKey,
                     'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
@@ -68,7 +81,7 @@ final readonly class OperationStore
                 return $operation;
             });
         } catch (UniqueConstraintViolationException $exception) {
-            if (($existing = $this->idempotency->replay($kind)) !== null) {
+            if (($existing = $this->idempotency->replay($kind, $parent)) !== null) {
                 return $existing;
             }
             if ($lockKey !== null) {
@@ -76,10 +89,45 @@ final readonly class OperationStore
             }
 
             throw $exception;
+        } catch (QueryException $error) {
+            if (! str_contains($error->getMessage(), 'operation.version_deprecated')) {
+                throw $error;
+            }
+
+            return $this->idempotency->replay($kind, $parent) ?? throw OperationVersions::deprecated();
         }
         $this->broadcaster->created($operation);
 
         return $operation;
+    }
+
+    /** @param array<string,mixed> $input */
+    private function childVersion(Operation $parent, string $kind, array $input): int
+    {
+        $record = Operation::query()->lockForUpdate()->findOrFail($parent->id);
+        $children = app(DirectOperation::class)->pinnedChildVersions($record);
+        $retry = Arr::get($record->state ?? [], 'launch_retry_requests.application.id');
+        $applicationRetry = $record->kind === OperationKinds::ConnLaunch && $record->status === OperationStatus::Succeeded && $kind === 'instance.complete'
+            && is_string($retry) && $this->idempotency->key === 'conn-launch:'.$record->id.':complete:'.$retry;
+        if (($record->status->terminal() && ! $applicationRetry) || ! isset($children[$kind])
+            || ($kind === 'proof.command' && ($input['proof_operation_id'] ?? null) !== $record->id)
+            || (in_array($kind, [OperationKinds::ConnLaunchInspect, OperationKinds::ConnLaunchDispatch], true) && ($input['launch_operation_id'] ?? null) !== $record->id)) {
+            throw new ResourceOperationException('operation.child_unadmitted', 'The open parent has no admission for this child Operation.', 409);
+        }
+
+        return $children[$kind];
+    }
+
+    /** @param list<string> $path */
+    private function assertChildrenAdmissible(DirectOperation $direct, string $kind, int $version, array $path = []): void
+    {
+        if (in_array($kind.'@'.$version, $path, true)) {
+            throw new LogicException('A versioned Operation cannot depend on itself.');
+        }
+        foreach ($direct->childVersions($kind, $version) as $child => $pinned) {
+            OperationVersions::assertAdmissible($child, $pinned);
+            $this->assertChildrenAdmissible($direct, $child, $pinned, [...$path, $kind.'@'.$version]);
+        }
     }
 
     /**
@@ -90,27 +138,37 @@ final readonly class OperationStore
      */
     public function fenceAdmission(string $kind, string $key, string $fingerprint, string $targetType, int $targetId, ?int $nodeId, array $input, string $triggeredBy, string $requestId): Operation
     {
+        if (($existing = $this->fenceReceipt($kind, $key, $fingerprint)) !== null) {
+            return $existing;
+        }
         try {
             $operation = Operation::query()->create([
-                'kind' => $kind, 'idempotency_key' => $key, 'idempotency_fingerprint' => $fingerprint,
+                'kind' => $kind, 'operation_version' => OperationVersions::admit($kind), 'idempotency_key' => $key, 'idempotency_fingerprint' => $fingerprint,
                 'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId,
                 'input' => $input, 'triggered_by' => $triggeredBy, 'request_id' => $requestId,
                 'status' => OperationStatus::Cancelled, 'sequence' => 1, 'attempts' => 0,
                 'finished_at' => Carbon::now(), 'error_code' => 'operation.admission_fenced',
                 'result' => ['admission_fenced' => true],
             ]);
-        } catch (UniqueConstraintViolationException $exception) {
-            $operation = Operation::query()->where('kind', $kind)->where('idempotency_key', $key)->first();
-            if ($operation === null) {
-                throw $exception;
-            }
-            if ($operation->idempotency_fingerprint !== $fingerprint) {
-                throw new ResourceOperationException('operation.idempotency_conflict', 'The request key belongs to another caller, command, Instance, or input.', 409);
+        } catch (QueryException $exception) {
+            if ($exception instanceof UniqueConstraintViolationException || str_contains($exception->getMessage(), 'operation.version_deprecated')) {
+                return $this->fenceReceipt($kind, $key, $fingerprint) ?? throw ($exception instanceof UniqueConstraintViolationException ? $exception : OperationVersions::deprecated());
             }
 
-            return $operation;
+            throw $exception;
         }
         $this->broadcaster->created($operation);
+
+        return $operation;
+    }
+
+    /** @phpstan-impure Reads the receipt another admission may have committed. */
+    private function fenceReceipt(string $kind, string $key, string $fingerprint): ?Operation
+    {
+        $operation = Operation::query()->where('kind', $kind)->where('idempotency_key', $key)->first();
+        if ($operation !== null && $operation->idempotency_fingerprint !== $fingerprint) {
+            throw new ResourceOperationException('operation.idempotency_conflict', 'The request key belongs to another caller, command, Instance, or input.', 409);
+        }
 
         return $operation;
     }
@@ -137,7 +195,7 @@ final readonly class OperationStore
             // Every end of a create or of a clone's completion reaches here: a run's report, a refused start, a cancel before the run, an
             // expired budget. A task's copy moves its group on when it is active or failed; an Instance that no task owns changes nothing.
             if (in_array($operation->kind, ['instance.create', 'instance.complete'], true) && ! $current->status->terminal() && $operation->status->terminal()) {
-                app(TaskCopyLifecycle::class)->createEnded($operation);
+                app(TaskLifecycle::class)->createEnded($operation);
             }
             if (is_int($operation->state['conn_launch_owner'] ?? null)) {
                 $settlement = app(NativeRunCancellation::class);

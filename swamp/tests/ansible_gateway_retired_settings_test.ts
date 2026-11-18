@@ -61,3 +61,45 @@ Deno.test({
     Deno.removeSync(folder, { recursive: true });
   },
 });
+
+Deno.test("host recovery removal requires a committed handover in the recorded inventory version", () => {
+    const tasks = parse(Deno.readTextFileSync(
+        new URL("../ansible/tasks/gateway-retire.yml", import.meta.url),
+    )) as Record<string, unknown>[];
+    const fence = tasks.find((task) =>
+        String(task.name).startsWith("Require a completed container handover")
+    )!;
+    const { argv } = fence["ansible.builtin.command"] as { argv: string[] };
+    const folder = Deno.makeTempDirSync();
+    try {
+        const inventory = folder + "/inventory";
+        const marker = folder + "/host-retired";
+        const check = (old: string | null, host_retired: boolean, version = 1) => {
+            Deno.writeTextFileSync(
+                inventory,
+                JSON.stringify({
+                    version,
+                    live: "a".repeat(40),
+                    old,
+                    host_retired,
+                }),
+            );
+            return new Deno.Command(argv[0], {
+                args: [...argv.slice(1, -2), inventory, marker],
+            }).outputSync().success;
+        };
+        assertEquals(check("b".repeat(40), true), false);
+        Deno.writeTextFileSync(marker, "42");
+        assertEquals(check(null, false), false);
+        assertEquals(check("b".repeat(40), false), false);
+        assertEquals(check("a".repeat(40), true), false);
+        assertEquals(check("b".repeat(40), true), true);
+        assertEquals(check(null, true, 2), true);
+        // A version 2 inventory keeps the stopped old release for rollback, never live itself.
+        assertEquals(check("b".repeat(40), true, 2), true);
+        assertEquals(check("a".repeat(40), true, 2), false);
+        assertEquals(check(null, false, 2), false);
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+});

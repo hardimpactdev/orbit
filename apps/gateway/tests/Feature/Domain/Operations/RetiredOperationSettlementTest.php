@@ -88,3 +88,12 @@ it('leaves a finished Operation of a retired kind as it is', function (): void {
 
     expect($done->refresh()->status)->toBe(OperationStatus::Succeeded)->and($done->error_code)->toBeNull();
 });
+
+it('leaves a newly published unknown v1 kind to the worker that knows it', function (): void {
+    $operation = retiredKindOperation(kind: 'fixture.new_operation', minutes: 90, state: ['swamp_run_id' => 'a19c75d8-f298-45cc-a729-71e05eaa3081']);
+    $operation->update(['cancel_requested_at' => now()->subHour()]);
+
+    passOverRetiredKinds();
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and($operation->lock_key)->not->toBeNull();
+});

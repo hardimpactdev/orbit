@@ -15,12 +15,20 @@ final readonly class SwampReaderEnvironment
 {
     private const array Keys = ['ORBIT_SWAMP_READ_TOKEN', 'ORBIT_SWAMP_READ_TOKEN_NAME', 'ORBIT_SWAMP_READ_TOKEN_EXPIRES_AT'];
 
-    public function __construct(private GatewayReleaseLayout $layout) {}
+    public function __construct(
+        private GatewayReleaseLayout $layout,
+        private string $guestProjection = '/opt/orbit-gateway-environment',
+    ) {}
 
     public function contents(): string
     {
         $path = $this->layout->environmentPath();
         clearstatcache(true, $path);
+        if (is_link($path) && readlink($path) === $this->guestProjection.'/gateway.env') {
+            $this->privateDirectory($this->guestProjection);
+            $path = $this->guestProjection.'/gateway.env';
+            clearstatcache(true, $path);
+        }
         $stat = @lstat($path);
         if ($stat === false || ($stat['mode'] & 0170000) !== 0100000 || ($stat['mode'] & 07777) !== 0600
             || $stat['uid'] !== posix_geteuid() || $stat['size'] > 1_048_576) {
@@ -94,15 +102,16 @@ final readonly class SwampReaderEnvironment
             }
         }
         $path = $this->layout->environmentPath();
+        if (is_link($path)) {
+            throw new RuntimeException('Install Gateway credentials on the host.');
+        }
         $suffix = now()->utc()->format('Ymd\THis\Z').'-'.bin2hex(random_bytes(8));
         $backup = $path.'.before-swamp-'.$suffix;
         $temporary = dirname($path).'/.gateway.env.swamp-'.$suffix;
         $this->writePrivate($backup, $original);
         try {
             $this->writePrivate($temporary, $updated);
-            if (! @rename($temporary, $path)) {
-                throw new RuntimeException('Cannot publish the settings; the backup is retained.');
-            }
+            $this->publish($temporary, $path, $original);
         } finally {
             if (is_file($temporary)) {
                 @unlink($temporary);
@@ -110,6 +119,61 @@ final readonly class SwampReaderEnvironment
         }
 
         return $backup;
+    }
+
+    private function privateDirectory(string $directory): void
+    {
+        clearstatcache(true, $directory);
+        $stat = @lstat($directory);
+        if ($stat === false || ($stat['mode'] & 0177777) !== 0040700 || $stat['uid'] !== posix_geteuid()) {
+            throw new RuntimeException('The Gateway environment projection must be a private, owned directory.');
+        }
+    }
+
+    private function publish(string $temporary, string $path, #[\SensitiveParameter] string $original): void
+    {
+        $directory = dirname($path).'/.gateway-release-environment';
+        clearstatcache(true, $directory);
+        if (! file_exists($directory) && ! is_link($directory) && ! $this->layout->usesContainers()) {
+            if (! @rename($temporary, $path)) {
+                throw new RuntimeException('Cannot publish the host settings.');
+            }
+
+            return;
+        }
+
+        $this->privateDirectory($directory);
+        $lock = @fopen($directory, 'r');
+        if ($lock === false) {
+            throw new RuntimeException('Cannot open the Gateway environment projection.');
+        }
+        $staged = $temporary.'.projection';
+        try {
+            // The host refresh helper locks the same directory before selecting the current inode.
+            $folder = fstat($lock);
+            $candidate = stat($temporary);
+            if ($folder === false || $candidate === false || $folder['dev'] !== $candidate['dev']) {
+                throw new RuntimeException('The Gateway projection must share the host settings filesystem.');
+            }
+            if (! flock($lock, LOCK_EX) || ! @link($temporary, $staged)) {
+                throw new RuntimeException('Cannot stage the Gateway environment projection.');
+            }
+            if (! @rename($temporary, $path)) {
+                throw new RuntimeException('Cannot publish the host settings.');
+            }
+            if (! @rename($staged, $directory.'/gateway.env')) {
+                $this->writePrivate($temporary, $original);
+                if (! @rename($temporary, $path)) {
+                    throw new RuntimeException('Restore the protected Gateway backup and refresh the projection.');
+                }
+                throw new RuntimeException('Cannot publish the projected settings.');
+            }
+        } finally {
+            if (is_file($staged)) {
+                @unlink($staged);
+            }
+            fclose($lock);
+        }
     }
 
     private function writePrivate(string $path, #[\SensitiveParameter] string $contents): void

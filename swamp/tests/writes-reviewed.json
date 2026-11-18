@@ -295,11 +295,22 @@
   "operation-fleet-peer-dns": {
    "Check resolution": "read-only"
   },
+  "operation-gateway-reconcile": {
+   "Verify the serving release": "read-only"
+  },
+  "production-release": {
+   "Read the serving release": "read-only"
+  },
+  "production-release-activate": {
+   "Verify the serving release": "read-only",
+   "Wait for queued responses": "read-only"
+  },
   "operation-gateway-release": {
    "Wait for active Operations": "read-only"
   },
   "operation-gateway-swamp-load": {
-   "Check the Ansible collections": "read-only"
+   "Check the Ansible collections": "read-only",
+   "Check the release target": "read-only"
   },
   "operation-instance-complete": {
    "finish": "idempotent",

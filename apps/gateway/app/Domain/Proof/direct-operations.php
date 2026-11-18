@@ -16,7 +16,7 @@ return [
     // leaves the copy's removal to the Gateway (ProofCommandProjection). Its `Report` step joins the verdict lines; the Gateway reads
     // it once, when the run ends. Each child that ends records its batch on the run as it ends (ProofBatchProjection::applyChild), for a
     // run that reaches its budget.
-    'proof.command' => ['workflow' => 'operation-proof-run-copy', 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true,
+    'proof.command' => ['child_versions' => ['proof.verify' => 1], 'workflow' => 'operation-proof-run-copy', 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'prove', 'step' => 'Report', 'native' => true, 'captures' => ['report' => ['job' => 'prove', 'step' => 'Report', 'field' => 'stdout', 'artifact' => 'result']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$']]],
 ];

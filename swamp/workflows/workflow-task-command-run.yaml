@@ -56,6 +56,16 @@ inputs:
           - login_shell
           - timeout_seconds
           additionalProperties: false
+        production_control:
+          type: object
+          properties:
+            instance_id: {type: integer, minimum: 1}
+            release: {type: string, pattern: '^current$|^[a-f0-9]{40}$'}
+            node_id: {type: integer, minimum: 1}
+            name: {type: string}
+            project: {const: orbit-releases}
+          required: [instance_id, release]
+          additionalProperties: false
         container:
           type: object
           properties:
@@ -116,7 +126,18 @@ jobs:
         hosts: 'name:target'
         # The Node's existing privileged systemd-run owns the lifetime and journal. The optional Incus path is the same
         # container boundary used by Process control; no helper or privileged socket is exposed inside the container.
-        argv: '${{ ["/usr/bin/sudo", "-n", "--", "/usr/bin/systemd-run", "--quiet", "--wait", "--pipe", "--collect"] + ("container" in inputs.intent ? [] : ["--uid=" + inputs.intent.schedule.user]) + ["-p", "WorkingDirectory=" + ("container" in inputs.intent ? "/" : (inputs.intent.schedule.working_directory == "" ? "~" : inputs.intent.schedule.working_directory)), "-p", "RuntimeMaxSec=" + string(inputs.intent.schedule.timeout_seconds), "-p", "TimeoutStopSec=5", "/usr/bin/systemd-cat", "--identifier=orbit-schedule-" + inputs.intent.schedule.id] + ("container" in inputs.intent ? ["/usr/bin/incus", "exec", "--project", inputs.intent.container.project, inputs.intent.container.name, "--", "/usr/bin/systemd-run", "--quiet", "--wait", "--pipe", "--collect", "--uid=" + inputs.intent.schedule.user, "-p", "WorkingDirectory=" + inputs.intent.schedule.working_directory, "-p", "RuntimeMaxSec=" + string(inputs.intent.schedule.timeout_seconds), "-p", "TimeoutStopSec=5"] : []) + ["/bin/sh", "-c", "exec \"${1:-$SHELL}\" ${2:+--login} -s", "sh", inputs.intent.schedule.shell, inputs.intent.schedule.login_shell ? "1" : ""] }}'
+        argv: >-
+          ${{ has(inputs.intent.production_control)
+            ? ["/usr/bin/sudo", "-n", "--", "/usr/local/libexec/orbit-instance-release-control",
+               string(inputs.node_id), string(inputs.intent.production_control.instance_id), inputs.intent.production_control.release,
+               "schedule", "fire", inputs.intent.schedule.id, inputs.intent.schedule.command_hash,
+               string(inputs.intent.schedule.timeout_seconds), inputs.intent.schedule.working_directory]
+            : (!has(inputs.intent.container) && inputs.intent.schedule.user.startsWith("orbit-app-")
+              ? ["/bin/bash", "-c", "if test -d /var/lib/orbit/production; then exec sudo -n -- /usr/local/libexec/orbit-instance-legacy-schedule \"${@:1:7}\"; fi; shift 7; exec \"$@\"", "bash",
+                 inputs.intent.schedule.user, inputs.intent.schedule.working_directory, inputs.intent.schedule.shell,
+                 inputs.intent.schedule.login_shell ? "1" : "", string(inputs.intent.schedule.timeout_seconds),
+                 inputs.intent.schedule.id, inputs.intent.schedule.command_hash]
+              : []) + ["/usr/bin/sudo", "-n", "--", "/usr/bin/systemd-run", "--quiet", "--wait", "--pipe", "--collect"] + ("container" in inputs.intent ? [] : ["--uid=" + inputs.intent.schedule.user]) + ["-p", "WorkingDirectory=" + ("container" in inputs.intent ? "/" : (inputs.intent.schedule.working_directory == "" ? "~" : inputs.intent.schedule.working_directory)), "-p", "RuntimeMaxSec=" + string(inputs.intent.schedule.timeout_seconds), "-p", "TimeoutStopSec=5", "/usr/bin/systemd-cat", "--identifier=orbit-schedule-" + inputs.intent.schedule.id] + ("container" in inputs.intent ? ["/usr/bin/incus", "exec", "--project", inputs.intent.container.project, inputs.intent.container.name, "--", "/usr/bin/systemd-run", "--quiet", "--wait", "--pipe", "--collect", "--uid=" + inputs.intent.schedule.user, "-p", "WorkingDirectory=" + inputs.intent.schedule.working_directory, "-p", "RuntimeMaxSec=" + string(inputs.intent.schedule.timeout_seconds), "-p", "TimeoutStopSec=5"] : []) + ["/bin/sh", "-c", "exec \"${1:-$SHELL}\" ${2:+--login} -s", "sh", inputs.intent.schedule.shell, inputs.intent.schedule.login_shell ? "1" : ""] }}
         stdin: '${{ vault.get(inputs.execution_secrets.command.vault, inputs.execution_secrets.command.key) }}'
         timeoutSec: '${{ inputs.intent.schedule.timeout_seconds + 10 }}'
         captureOutput: false

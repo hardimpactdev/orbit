@@ -34,6 +34,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $retained_git_at
  * @property string|null $source_prepare_id
  * @property string|null $production_user
+ * @property Carbon|null $production_release_started_at
+ * @property array{live:string,old:?string,artifact:string}|null $production_release
  * @property string|null $production_home
  * @property string|null $production_php_service
  * @property string|null $production_php_pool
@@ -290,6 +292,11 @@ final class Instance extends Model
         return $this->morphMany(Task::class, 'taskable')->topLevel();
     }
 
+    public function hasProductionRelease(): bool
+    {
+        return $this->production_release_started_at !== null || $this->production_release !== null;
+    }
+
     public function usesProductionReleaseLayout(): bool
     {
         return
@@ -415,6 +422,8 @@ final class Instance extends Model
         return [
             'vp_environment' => 'array',
             'shared_paths' => 'array',
+            'production_release' => 'array',
+            'production_release_started_at' => 'immutable_datetime',
             'vite_port' => 'integer',
             'ssr_port' => 'integer',
             'clone_candidate_id' => 'integer',

@@ -88,7 +88,7 @@ final class GatewayRelease extends Model
     public static function failedShas(): array
     {
         return array_values(array_unique(self::query()
-            ->where('trigger', '!=', 'rollback')
+            ->whereNotIn('trigger', ['rollback', 'reconcile'])
             ->whereIn('outcome', [...self::FailedOutcomes, self::Interrupted])
             ->where('retryable', false)
             ->get(['sha', 'requested'])

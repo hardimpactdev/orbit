@@ -16,6 +16,9 @@ final readonly class RecipeLoader
 {
     public const array IncusPackages = ['incus', 'incus-base', 'incus-client'];
 
+    /** A process sees the source and the resolved text of one release, and of two during a release change. */
+    private const int KeptRecipes = 8;
+
     /** @return array<string, string> */
     public static function catalog(): array
     {
@@ -81,7 +84,26 @@ final readonly class RecipeLoader
         return $this->decode(json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
     }
 
+    /**
+     * A recipe is an immutable value that depends on its bytes alone, so one process parses and checks each
+     * distinct text once. A request reads the current recipe many times; a refused text is never kept.
+     */
     public function decode(string $json): MachineRecipe
+    {
+        /** @var array<string, MachineRecipe> $decoded */
+        static $decoded = [];
+        $key = hash('xxh128', $json);
+        if (isset($decoded[$key])) {
+            return $decoded[$key];
+        }
+        if (count($decoded) >= self::KeptRecipes) {
+            array_shift($decoded);
+        }
+
+        return $decoded[$key] = $this->parse($json);
+    }
+
+    private function parse(string $json): MachineRecipe
     {
         $data = json_decode($json, false, 64, JSON_THROW_ON_ERROR);
         $this->rejectDuplicateKeys($json);

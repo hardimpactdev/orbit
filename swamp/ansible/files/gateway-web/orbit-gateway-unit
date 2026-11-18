@@ -1,0 +1,198 @@
+#!/usr/bin/python3
+"""Control Gateway units under the release lock; carry their definitions into future releases."""
+import fcntl
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+HOME = Path("/home/orbit/.orbit")
+STATE = Path("/var/lib/orbit/gateway-processes")
+INCUS = ["incus", "--force-local", "--project", "orbit-releases"]
+SHA = re.compile("[0-9a-f]{40}")
+PROCESS = re.compile(r"orbit-process-([1-9][0-9]*)-(horizon|schedule-work)\.service")
+SYSTEM = re.compile(r"orbit-gateway-(schedule|horizon|web)\.service")
+# Atomic replacement also avoids following a systemd unit's existing mask symlink.
+INSTALL = """set -eu
+mkdir -p -- "${1%/*}"
+t=$(mktemp "${1%/*}/.orbit.XXXXXXXX")
+trap 'rm -f "$t"' EXIT
+cat >"$t"
+if test ! -L "$1" && test -f "$1" && cmp -s "$t" "$1" && test "$(stat -c %a "$1")" = "${2#0}"; then exit 0; fi
+chmod "$2" "$t"
+mv -fT -- "$t" "$1"
+exit 3
+"""
+MAX_RECORD = 1024 * 1024
+
+
+def checked_machine(name, **labels):
+    for key, value in {"target": "gateway", **labels}.items():
+        found = subprocess.check_output(INCUS + ["config", "get", name, "user.orbit.release." + key], text=True, timeout=3)
+        if found.strip() != value:
+            raise ValueError("Gateway release identity changed")
+
+
+def guest(name, *command, content=None, check=True):
+    return subprocess.run(INCUS + ["exec", name, "--", *command], input=content, text=True,
+                          stdin=subprocess.DEVNULL if content is None else None, check=check).returncode
+
+
+def persist(path, record):
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", dir=STATE, delete=False) as out:
+        try:
+            json.dump(record, out)
+            out.flush()
+            os.fsync(out.fileno())
+            os.replace(out.name, path)
+        finally:
+            Path(out.name).unlink(missing_ok=True)
+
+
+def definition(raw, unit):
+    data = json.loads(raw)
+    match = PROCESS.fullmatch(unit)
+    content, env, path = data["unit"], data["environment"], data["environment_path"]
+    if not match or data["desired"] not in {"running", "stopped"} or not isinstance(content, str) or not isinstance(env, str):
+        raise ValueError("invalid Gateway Process definition")
+    if not re.fullmatch(r"/etc/orbit/processes/" + match[1] + r"/[0-9a-f]{64}\.env", path):
+        raise ValueError("invalid Gateway Process environment path")
+    if env and Path(path).stem != hashlib.sha256(env.encode()).hexdigest():
+        raise ValueError("Gateway Process environment changed")
+    if not isinstance(data["mounts"], list) or any(not isinstance(p, str) or not p.startswith("/") for p in data["mounts"]):
+        raise ValueError("invalid Gateway Process mount")
+    return data
+
+
+def apply(name, unit, record, live=False):
+    def cmd(*args, **kwargs):
+        return guest(name, *args, **kwargs)
+
+    def install(path, mode, text):
+        result = cmd("sh", "-c", INSTALL, "install", path, mode, content=text, check=False)
+        if result not in {0, 3}:
+            raise ValueError("could not install the Gateway Process definition")
+        return result == 3
+
+    path = "/etc/systemd/system/" + unit
+    fallback = "orbit-gateway-" + ("horizon" if PROCESS.fullmatch(unit)[2] == "horizon" else "schedule") + ".service"
+    if record.get("removed"):
+        if cmd("test", "-e", path, check=False) == 0:
+            cmd("systemctl", "disable", "--now", "--", unit)
+        cmd("rm", "-f", "--", path, "/etc/systemd/system/multi-user.target.wants/" + unit)
+        cmd("rm", "-rf", "--", "/etc/orbit/processes/" + PROCESS.fullmatch(unit)[1])
+        if record.get("fallback_unit"):
+            install("/etc/systemd/system/" + fallback, "0644", record["fallback_unit"])
+        cmd("systemctl", "daemon-reload")
+        if record.get("fallback_unit"):
+            cmd("systemctl", "enable" if live else "disable", "--now", "--", fallback)
+        return
+
+    changed = False
+    data = record.get("definition")
+    if data is not None:
+        # The role provides a built-in unit until an operator creates the equivalent Node Process.
+        if cmd("test", "-f", "/etc/systemd/system/" + fallback, check=False) == 0:
+            cmd("systemctl", "disable", "--now", "--", fallback)
+        if record["desired"] == "running" and data["mounts"]:
+            cmd("stat", "--", *data["mounts"])
+        if data["environment"]:
+            changed = install(data["environment_path"], "0600", data["environment"])
+        changed = install(path, "0644", data["unit"]) or changed
+        cmd("systemctl", "daemon-reload")
+    if live:
+        if record["desired"] == "running":
+            cmd("systemctl", "enable", "--", unit)
+            cmd("systemctl", "restart" if changed or record.get("restart") else "start", "--", unit)
+            cmd("systemctl", "is-active", "--quiet", "--", unit)
+        else:
+            cmd("systemctl", "disable", "--now", "--", unit)
+    else:
+        # The release handover alone starts background work after private readiness.
+        cmd("systemctl", "disable", "--now", "--", unit)
+
+
+def replay(action, values):
+    if not re.fullmatch(r"[1-9][0-9]*", values[0]):
+        raise ValueError("invalid Gateway release operation")
+    if not STATE.is_dir() or not any(STATE.glob("*.json")):
+        return
+    if action == "apply-preparation" and len(values) == 1:
+        name = "prepare-gateway"
+        checked_machine(name, role="prepare", operation=values[0])
+    elif action == "apply-candidate" and len(values) == 2 and SHA.fullmatch(values[1]):
+        name = "gateway-" + values[1][:12]
+        checked_machine(name, role="candidate", commit=values[1])
+    else:
+        raise ValueError("invalid Gateway release target")
+    for item in sorted(STATE.glob("*.json")):
+        if not PROCESS.fullmatch(item.stem):
+            raise ValueError("invalid retained Gateway Process")
+        apply(name, item.stem, json.loads(item.read_bytes()))
+
+
+def live_command(revision, action, unit, *parameters):
+    if not SHA.fullmatch(revision) or not (PROCESS.fullmatch(unit) or SYSTEM.fullmatch(unit)):
+        raise ValueError("invalid Gateway unit target")
+    read = action in {"status", "logs", "is-active", "fleet-check"}
+    with (HOME / "gateway-release.lock").open("r") as lock:
+        fcntl.flock(lock, (fcntl.LOCK_SH if read else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+        inventory = json.loads((HOME / "gateway-containers.json").read_bytes())
+        if inventory.get("version") not in (1, 2) or inventory.get("live") != revision:
+            raise ValueError("serving Gateway changed")
+        name = "gateway-" + revision[:12]
+        checked_machine(name, role="candidate", commit=revision)
+        if action == "logs" and len(parameters) == 1 and re.fullmatch(r"[1-9][0-9]{0,2}|1000", parameters[0]):
+            return guest(name, "journalctl", "--no-pager", "--quiet", "--unit=" + unit, "--reverse", "--lines=" + parameters[0],
+                         "--output=short-iso", "--utc")
+        if parameters:
+            raise ValueError("unexpected Gateway unit arguments")
+        if action == "status":
+            return guest(name, "systemctl", "show", "--property=LoadState", "--property=ActiveState", "--", unit)
+        if action == "is-active":
+            return guest(name, "systemctl", "is-active", "--", unit, check=False)
+        if action in {"fleet-check", "drain", "resume"}:
+            path = STATE / (unit + ".json")
+            plan = json.loads(path.read_bytes()) if path.exists() else {}
+            if plan.get("removed") or plan.get("desired") == "stopped":
+                if action == "fleet-check":
+                    return int(guest(name, "systemctl", "is-active", "--quiet", "--", unit, check=False) == 0)
+                return 0
+            return guest(name, "systemctl", {"drain": "stop", "resume": "start", "fleet-check": "is-active"}[action], "--", unit, check=False)
+        if not PROCESS.fullmatch(unit):
+            raise ValueError("invalid managed Gateway Process")
+        path = STATE / (unit + ".json")
+        record = json.loads(path.read_bytes()) if path.exists() else {}
+        if action == "destroy":
+            fallback = json.load(sys.stdin)["fallback_unit"]
+            if not isinstance(fallback, str):
+                raise ValueError("invalid Gateway fallback unit")
+            record = {"removed": True, "fallback_unit": fallback}
+        elif action in {"create", "update"}:
+            raw = sys.stdin.buffer.read(MAX_RECORD + 1)
+            if len(raw) > MAX_RECORD:
+                raise ValueError("Gateway Process definition too large")
+            data = definition(raw, unit)
+            record = {"definition": data, "desired": data["desired"]}
+        elif action in {"start", "restart", "stop"} and not record.get("removed"):
+            record["desired"] = "stopped" if action == "stop" else "running"
+        else:
+            raise ValueError("invalid Gateway Process action")
+        # A retry or release can complete an interrupted apply using the admitted definition.
+        persist(path, record)
+        apply(name, unit, {**record, "restart": action == "restart"}, live=True)
+
+
+if __name__ == "__main__":
+    try:
+        if sys.argv[1] in {"apply-preparation", "apply-candidate"}:
+            replay(sys.argv[1], sys.argv[2:])
+        else:
+            sys.exit(live_command(*sys.argv[1:]))
+    except (IndexError, KeyError, TypeError, OSError, ValueError, subprocess.SubprocessError) as error:
+        sys.exit(str(error))

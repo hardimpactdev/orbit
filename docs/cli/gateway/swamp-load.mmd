@@ -13,6 +13,7 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant GW as Gateway<br/>release runner
   participant SW as Swamp<br/>serve on Node 209
+  participant GN as Gateway Node<br/>release host
   participant N as Node 209<br/>serve checkout
   Note over GW: Release reaches Load<br/>after migrate, before switch
   %%> When:
@@ -21,15 +22,19 @@ sequenceDiagram
   %%> - also for releases that change no Swamp file, so Gateway and Swamp always run the same commit
   %%> Not included:
   %%> - no CLI command of its own; the release runner is the only caller
-  Note over GW: Render target grants<br/>freeze grants and SSH target
+  Note over GW: Render target grants<br/>freeze grants and SSH targets
   GW->>SW: Start load run<br/>operation-gateway-swamp-load
   %%> What it does:
   %%> - records task #5150 with the release commit
   %%> - starts one Swamp run on serve, placed on the `swamp` role
   %%> Inputs:
-  %%> - the release commit, for example `a1b2c3d`, its rendered grants and the admitted SSH target
+  %%> - the release commit, for example `a1b2c3d`, its rendered grants and the admitted SSH targets for both Nodes
   %%> Retry:
   %%> - when serve is restarting, the start waits up to 10 minutes instead of pausing the release
+  SW->>GN: Check the release target<br/>journal · exact commit
+  %%> Requirements:
+  %%> - refuse an open traffic switch or an incompatible container release before editing the serve checkout, including on a resumed release
+  %%> - host PHP-FPM can load while no traffic switch is open
   SW->>N: checkout<br/>git checkout --detach a1b2c3d
   %%> Requirements:
   %%> - the new commit descends from the current one, unless the release is forced, as a rollback is
