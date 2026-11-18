@@ -170,7 +170,8 @@ class DestroyGitTest(unittest.TestCase):
         cases = ['directory', 'parent', 'marker', 'symlink-loop', 'fifo-config']
         for shape in cases:
             with self.subTest(shape=shape):
-                target = self.root / shape
+                # Always place the unreadable marker inside a real enclosing repository.
+                target = (self.owner if shape == 'marker' else self.root) / shape
                 self.git(self.root, 'clone', '-q', str(self.owner), str(target))
                 restore = None
                 if shape in ['directory', 'parent']:

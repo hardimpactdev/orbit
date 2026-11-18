@@ -9,6 +9,7 @@ covers:
   - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_03_01_000000_add_kind_to_instance_removals,2027_03_02_000000_allow_ci_only_proof_copy_removals,2027_03_04_000000_add_reaper_retries_to_instance_removals,2027_03_05_000000_add_start_refusal_to_instance_removals}.php
   - apps/cli/app/Commands/Instances/{DestroyInstanceCommand,UnregisterInstanceCommand}.php
   - swamp/{workflows/workflow-operation-instance-destroy.yaml,workflows/workflow-operation-instance-unregister.yaml,ansible/instance-container-destroy.yml}
+  - swamp/ansible/instance/destroy-git.py
 ---
 
 # Instance removal
@@ -35,7 +36,9 @@ An unreadable recorded checkout elsewhere does not block unrelated removal. Afte
 
 Missing or unreadable candidate paths, Git errors/timeouts and unreadable or malformed pointers proceed with typed `instance.checkout_unknown` warnings naming the path, recorded Instance IDs and cause. This includes mode-000 markers, FIFOs, symlink loops, unreadable commondir/alternates, oversized pointers and gitdir paths through regular files. Pointer files are opened non-blocking, must be regular and are capped at 4 KiB. Symlinks resolve before comparison.
 
-Only a confirmed dependency or a target read failure refuses. The target’s directory, pointer or Git failure names its path and the unreadable or timed_out cause. Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Admission warnings survive in the Operation result. As in transfer, human output names the warning code, path, Instance IDs and read cause; JSON keeps the typed warning. The Gateway inventory excludes containers and empty or relative paths; malformed candidate rows are bounded warnings, never a whole-call failure.
+Only a confirmed dependency or a target read failure refuses. The target’s directory, pointer or Git failure names its path and the unreadable or timed_out cause. Git discovery stops at the checkout's parent, so an unreadable nested checkout cannot borrow the enclosing repository's Git identity.
+
+Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Admission warnings survive in the Operation result. As in transfer, human output names the warning code, path, Instance IDs and read cause; JSON keeps the typed warning. The Gateway inventory excludes containers and empty or relative paths; malformed candidate rows are bounded warnings, never a whole-call failure.
 
 ## Replication slots
 

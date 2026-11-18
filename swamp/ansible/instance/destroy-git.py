@@ -17,6 +17,7 @@ def git(path, *args, timeout=3):
     result = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
                              '-C', str(path), *args], capture_output=True, check=True,
                             env={**environment, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
+                                 'GIT_CEILING_DIRECTORIES': str(path.resolve().parent),
                                  'GIT_TERMINAL_PROMPT': '0', 'GIT_OPTIONAL_LOCKS': '0'}, timeout=timeout)
     return result.stdout
 
