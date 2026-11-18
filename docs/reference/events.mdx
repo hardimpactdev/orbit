@@ -197,9 +197,9 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 | Event | Channel | When | `data` |
 | --- | --- | --- | --- |
-| `conn.profile.updated` | `private-conn-profile.{key}` | A Conn profile write committed. | `{ profile_id, version }` |
+| `conn.profile.updated` | `private-conn-profile.{key}` | A Conn profile write committed. | Payload `{ profile_id, version }`, no envelope |
 
-This event never goes out on `orbit`. Each key belongs to one Node's current profile binding, and only Conn's own `POST /api/v1/conn/broadcasting/auth` signs it, for that Node. [Profile events](/reference/conn#profile-events) owns the key, the audience and the loss rules.
+Its payload is exactly `{"profile_id": 1, "version": 7}`, without the [envelope](#envelope). This event never goes out on `orbit`. Each key is one generation of one Node's profile binding, and only Conn's own `POST /api/v1/conn/broadcasting/auth` signs it, for that Node. [Profile events](/reference/conn#profile-events) owns the key, the audience and the loss rules.
 
 ### Deploy step output
 

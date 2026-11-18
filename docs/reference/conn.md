@@ -218,29 +218,54 @@ Both run in one transaction on the locked profile row, so two writes from the sa
 
 After a profile write commits, the Gateway tells the Nodes bound to that profile its new document version over the Gateway's Reverb server. The event is a notice. It carries no settings, so the device reads them over HTTP. The HTTP reads stay the truth, and a lost event only delays a device until its next read.
 
-**Event.** `conn.profile.updated`, in the Gateway's [event envelope](/reference/events#envelope). `id` is the profile id. `data` is exactly `{"profile_id": 1, "version": 7}`. `version` is the committed document version: the `settings_version` of `GET /me` and the `version` of `GET /profiles/{id}/settings`. The event never names a section or a writer, and never carries a value. A write to any section moves this one counter, including a section added later.
+**Event.** The Pusher event name is `conn.profile.updated`. Its payload is exactly `{"profile_id": 1, "version": 7}`, with no other field. It does not use the Gateway's [event envelope](/reference/events#envelope), so it has no `type`, `id` or `at`. `version` is the committed document version: the `settings_version` of `GET /me` and the `version` of `GET /profiles/{id}/settings`. A write to any section moves this one counter, including a section added later. The frame on the socket carries only the Pusher protocol fields around it:
 
 ```json
-{"type": "conn.profile.updated", "id": 1, "at": "2026-11-18T15:00:00+00:00", "data": {"profile_id": 1, "version": 7}}
+{"event": "conn.profile.updated", "channel": "private-conn-profile.9f2c4e1ab07d4c3e8a5b6f0d1e2c3b4a", "data": "{\"profile_id\":1,\"version\":7}"}
 ```
 
-**Channel.** Each binding has its own private channel, `private-conn-profile.{key}`. `key` is 32 lowercase hex characters, 128 random bits. Every successful `PUT /me/profile` gives the binding a new key in the same write as the profile id, even when the Node binds the profile it already has. The key is stored on the binding row. A key is never reused. The Gateway never sends a Conn profile event on `orbit` or on any other channel.
+**Channel.** Each binding has one private channel, `private-conn-profile.{key}`. `key` is 32 lowercase hex characters, 128 random bits, stored on the binding row. A key is never reused. The Gateway never sends a Conn profile event on `orbit` or on any other channel.
 
-**Generation.** The key is the binding's generation. It ends when:
+**Generation.** The key is the binding's generation. A socket receives events only while its key is the binding's current key. The Gateway replaces the key in a write transaction on the binding row at each of these points:
 
-- **Rebind.** `PUT /me/profile` commits.
-- **Access removal.** `node:access:remove` leaves the Node with no node access to any Node (the [collection rule](#access)). Conn's `NodeAccessRemovalHook` then gives the binding a new key.
-- **Node removal.** The binding is deleted with the Node. Enrolling the machine again makes a new Node, with a new binding and key.
+- **Bind.** Every successful `PUT /me/profile`, also to the profile the Node already has.
+- **Status.** Every change of the Node's `status`, away from `active` or back to it.
+- **Authority stamp.** A change of the Node's authority stamp, found by a read, an auth or a send.
 
-For A to B to A the Node gets three keys. A socket on the first key gets no event for A after the last bind, although A is current again. Two binds in the same second also get two keys, because the key is random, not a time. A grant after an access removal does not bring the old key back. The device reads the new key from `GET /me`.
+A status change runs a new core plug-in point, `NodeStatusHook`, from the Node model's `updated` event. Conn contributes it, as [Add a plug-in point](/reference/extensions#add-a-plug-in-point) describes. Every status write on `main` goes through the Node model.
 
-A Node that leaves `active` without removal keeps its key. It is outside the audience and cannot subscribe while it is not active, as the next rule says.
+The authority stamp covers the Node's authority under the [collection rule](#access). The binding stores it. It is a hash of three inputs:
 
-Reverb gives the Gateway no way to unsubscribe a socket. So an old socket can stay subscribed to an ended key, and no event reaches that key again.
+- **Control plane.** Whether the Node is the Gateway Node or its serving host.
+- **Gateway.** The id of the active Gateway Node.
+- **Edges.** The sorted ids of the Node's node access edges.
 
-**Audience.** The Gateway reads the audience when it sends the event, not when the write commits. It is each binding to the written profile whose Node is active and passes the collection rule at that moment, each on its own current key. While the `conn` switch is off, the Gateway sends nothing. Access can also lapse without an edge removal, for example when the Gateway Node moves. Then the key stays, but no event goes to it while the Node fails the rule. Once the Node passes again, its device on the same binding gets events again.
+`GET /me`, `PUT /me/profile`, the auth route and each send recompute the stamp. The Gateway compares it with the stored stamp before it answers or sends. On a difference it stores the new stamp and replaces the key.
 
-**When.** Every write goes through `ApplyConnProfileSectionsAction`, which registers the event in its transaction. The event goes out only after the outermost transaction commits. Delivery is the same as for every Gateway event ([Transport](/reference/events#transport)): after the response in a request, at once in a job or a console command, to both servers during a `websocket` move. A rolled-back or refused write, such as a version conflict or `validation.failed`, sends nothing. A failed broadcast is logged and never fails the accepted write. The writers on `main` are:
+Edge ids come from an autoincrement key, so a granted edge never has the id of a removed one. So these lapses change the stamp, also when nothing observed the lapse itself:
+
+- **Edge removal.** `node:access:remove` deletes an edge, also when an edge is granted again at once.
+- **Cascade.** A serving Node's removal cascades its edges away, with no hook.
+- **Gateway move.** The active Gateway Node changes.
+
+A stamp change also replaces the key on a harmless change, such as a new edge, and the device then catches up at its next compare. Two replacements in the same second still give two keys, because the key is random, not a time. Node removal deletes the binding. Enrolling the machine again makes a new Node, binding and key.
+
+After a loss and a restoration, only a socket that subscribed after the restoration has the current key. Reverb cannot unsubscribe a socket, so an old socket stays subscribed to an ended key. The Gateway sends nothing to an ended key.
+
+**Audience.** `ApplyConnProfileSectionsAction` captures the audience inside its transaction, under the profile lock: each binding to the written profile, with its key at that moment. After the outermost transaction commits, the Gateway checks each captured binding again just before it sends. It sends to `private-conn-profile.{key}` only when all of these hold:
+
+- The binding still exists, names the same profile and holds the captured key.
+- The Node is `active`.
+- The Node passes the collection rule.
+- The stamp is unchanged.
+
+Otherwise it sends nothing to that binding. A changed stamp then replaces the key, as above. While the `conn` switch is off, the Gateway sends nothing.
+
+So a key created after the write never receives its event. Take the binding sequence A₁, B, A₂ around a write to A at A₁. The write captured A₁'s key. The check finds that key ended, so nothing is sent, and A₂'s key never gets this event. A device on A₂ learns the version from its compare after it subscribed.
+
+**Late frames.** The check and the publish request to Reverb are not atomic. If a rebind commits between them, the frame already in flight reaches sockets on the captured key only. Those sockets were authorized for that profile when the write committed. The Gateway never starts a publish to a key that its check found ended. A frame can also arrive late, twice, or out of order, or not arrive at all. No event leaves before its write commits, so a read after an event always shows that version or a later one.
+
+**When.** The writers on `main` are below; paths are under `apps/gateway`. A new writer must call `ApplyConnProfileSectionsAction`.
 
 | Writer | Path | Event |
 | --- | --- | --- |
@@ -250,30 +275,25 @@ Reverb gives the Gateway no way to unsubscribe a socket. So an old socket can st
 | Drop of a destroyed Instance's threads | `ConnAttachedThreads::drop()` in `extensions/conn/src/Domain/ConnAttachedThreads.php`, one transaction per profile | Yes, for each profile it changed |
 | `POST /profiles` | `extensions/conn/src/Actions/CreateConnProfileAction.php` | No: a new profile at version 1 has no binding |
 
-Paths are under `apps/gateway`. A new writer must call `ApplyConnProfileSectionsAction`. `PUT /me/profile` (`BindConnNodeProfileAction`) changes no document, so it sends no event. Its response carries the new channel.
+`PUT /me/profile` (`BindConnNodeProfileAction`) changes no document, so it sends no event. Its response carries the new channel.
 
-**Order and races.** Events can arrive late, twice, out of order, or not at all. Suppose a write to A is registered before a rebind of its Node to B and delivered after it:
+Delivery follows the rules of every Gateway event ([Transport](/reference/events#transport)): after the response in a request, at once in a job or a console command, and to both servers during a `websocket` move. A rolled-back or refused write, such as a version conflict or `validation.failed`, sends nothing. A failed broadcast is logged and never fails the accepted write.
 
-- **Rebind committed first.** The rebind commits before the Gateway reads the audience. The Node is not in A's audience, so nothing goes out to it.
-- **Rebind between read and send.** The rebind commits after the read and before the send. The event goes to the ended key only, so a socket on B's new key never gets it.
-- **Old socket.** A device that still holds the old socket discards the event by its `profile_id`.
+**Discovery.** `GET /api/v1/conn/realtime` answers `{"data": {"url": "wss://reverb.orbit", "key": "<reverb-app-key>"}, "meta": {"request_id": "..."}}`. `url` and `key` are both `null` when the Gateway resolves no Reverb connection: no `websocket` role, or a role whose Reverb process has not confirmed that it serves the Gateway app. The key is public. The channel comes from `GET /me`, not from here.
 
-No event comes before its write commits. So a device that reads after an event always sees that version or a later one.
-
-**Discovery.** `GET /api/v1/conn/realtime` answers `{"data": {"url": "wss://reverb.orbit", "key": "<reverb-app-key>"}, "meta": {...}}`. `url` and `key` are null when no `websocket` role is active. The key is public. The channel comes from `GET /me`, not from here.
-
-**Subscription.** `POST /api/v1/conn/broadcasting/auth` takes the Pusher form fields `socket_id` (`<digits>.<digits>`) and `channel_name`. It answers the bare Pusher body `{"auth": "<key>:<signature>"}`, which signs `socket_id:channel_name` with the Reverb app secret. It signs only a `channel_name` equal to the caller's current `profile_channel`. Anything else gets `broadcast.channel_forbidden` (403): another key, an ended key, another prefix, `orbit`, a `presence-*` channel, or a caller with no binding. Without a `websocket` role it answers `realtime.not_configured` (404).
+**Subscription.** `POST /api/v1/conn/broadcasting/auth` takes the Pusher form fields `socket_id` (`<digits>.<digits>`) and `channel_name`. It answers the bare Pusher body `{"auth": "<key>:<signature>"}`, with no `data` wrapper. The signature signs `socket_id:channel_name` with the Reverb app secret. The route signs only a `channel_name` equal to the caller's current `profile_channel`, after the stamp check. Anything else gets `broadcast.channel_forbidden` (403): another key, an ended key, another prefix, `orbit`, a `presence-*` channel, or a caller with no binding. When the Gateway resolves no Reverb connection, as for discovery, it answers `realtime.not_configured` (404).
 
 Both routes sit with the other Conn routes: active peer, `conn` switch, and the collection rule, as for `GET /me`. They record no command activity. They grant no Gateway realtime access: they never sign `orbit`, `private-operation.*` or a presence channel. The Gateway's `POST /api/v1/broadcasting/auth` keeps its authority and refuses every `private-conn-profile.*` channel with `broadcast.channel_forbidden`. `GET /api/v1/realtime` does not change. The HTTP profile routes and their authorization do not change.
 
-**Client.** `GET /me` returns `node.profile_channel`: the channel name, or `null` before a binding. `PUT /me/profile` returns the new one. The device:
+**Client.** `GET /me` and `PUT /me/profile` return the node directly in `data`, so the channel is at `data.profile_channel`. It is the channel name, or `null` without a binding. The device keeps one current scope: the profile id, the version and the channel of its last `GET /me`. It works like this:
 
-1. **Subscribe.** It subscribes to `profile_channel` after each read of `GET /me` that changed it, and unsubscribes from the old one.
-2. **Compare.** It reads `GET /me` and compares `profile.id` and `profile.settings_version` with what it holds. A newer version or another profile starts a settings read.
-3. **Compare times.** It compares after a successful subscription, after each reconnect, on return to the foreground, and every 10 minutes during a subscription.
-4. **Ignore.** It ignores an event for another `profile_id` than the bound `profile.id`. It also ignores a `version` that is not above the version it holds.
-5. **Discard.** It throws away the answer of a settings read that it started for an earlier profile or channel.
-6. **Refusal.** On `broadcast.channel_forbidden` it reads `GET /me` again and subscribes to the returned channel. A `null` channel means no subscription.
+1. **Compare.** It reads `GET /me` and compares `profile.id`, `profile.settings_version` and `profile_channel` with its scope. A newer version or another profile starts a settings read. Another channel ends the old subscription and starts a new one.
+2. **Compare times.** It compares at start, after a successful subscription, after each reconnect, and on return to the foreground.
+3. **Steady compare.** It also compares every 10 minutes in every state: subscribed, disconnected, unbound, or with `null` discovery.
+4. **Discovery.** With `null` discovery it reads `GET /conn/realtime` again at each compare. It subscribes once `url` is set and `profile_channel` is not `null`.
+5. **Ignore.** It ignores an event for another `profile_id` than the scope's profile, or with a `version` that is not above the scope's version.
+6. **Discard.** It drops each answer or callback from an earlier scope. This includes `GET /me` answers, settings reads and socket callbacks.
+7. **Refusal.** On `broadcast.channel_forbidden` it compares again. A `null` channel means no subscription.
 
 ## Registration
 
@@ -1097,9 +1117,9 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 
 | Method and path | Request | Response `data` |
 | --- | --- | --- |
-| `GET /me` | — | node, with `profile` `null` before a binding |
+| `GET /me` | — | node, with `profile` and `profile_channel` `null` before a binding |
 | `PUT /me/profile` | `{"profile_id": 1}` | node, with a new `profile_channel` |
-| `GET /realtime` | — | `{"url", "key"}` ([Profile events](#profile-events)) |
+| `GET /realtime` | — | `{"url", "key"}`, both `null` without a resolved Reverb connection ([Profile events](#profile-events)) |
 | `POST /broadcasting/auth` | `socket_id`, `channel_name` | `{"auth"}`, bare, without `data` ([Profile events](#profile-events)) |
 | `GET /profiles` | — | list of profile |
 | `POST /profiles` | `{"name": "Nick"}` | profile (201) |
@@ -1157,7 +1177,7 @@ The objects:
 | `instance.complete_unavailable` | 409 | The clone is not `source_resolved` with its starting commit and a registered T3 server. |
 | `validation.failed` | 422 | The request breaks a rule; `details` names each field. This includes an attached thread whose environment is new to the set and is gone or not one the caller may see. |
 | `broadcast.channel_forbidden` | 403 | `POST /broadcasting/auth` named a channel other than the caller's current `profile_channel`. |
-| `realtime.not_configured` | 404 | `POST /broadcasting/auth` found no active `websocket` role. |
+| `realtime.not_configured` | 404 | `POST /broadcasting/auth` resolved no Reverb connection: no `websocket` role, or none whose Reverb process confirmed serving. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
@@ -1208,7 +1228,11 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 ### Why profile events use a key per binding
 
-A channel named after the profile would let any Node that may read profiles subscribe to every profile. A channel named after the Node would stay the same across a rebind, and Reverb cannot drop a socket that subscribed before it. A random key that every bind replaces solves both. The Gateway sends only to keys that are current when it sends, so a socket from an earlier binding never hears of a profile again. Conn's own routes sign only that key, so a device gets no Gateway realtime access through Conn.
+A channel named after the profile would let any Node that may read profiles subscribe to every profile. A channel named after the Node would stay the same across a rebind or a loss of authority, and Reverb cannot drop a socket that subscribed before. A random key that every bind and every change of authority replaces solves both. Only a socket authorized after the change holds the new key.
+
+Not every loss of authority has a hook. A serving Node's removal cascades its edges away, and a Gateway move changes no edge. The stamp catches these at the next read or send, because a regrant makes a new edge id. A status change leaves no such trace, so it gets its own hook.
+
+The Gateway captures the keys with the write and checks them again before it sends. So a slow send never reaches a binding that came later. Conn's own routes sign only the current key, so a device gets no Gateway realtime access through Conn.
 
 The event carries only the version. The device must read the settings over HTTP anyway, and that read applies the same authority.
 
