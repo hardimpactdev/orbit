@@ -8,13 +8,17 @@ repo=/home/orbit/shared/orbit.git
 script=swamp/scripts/gateway-release-container.sh
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  switch|restore|switch-back|start-horizon|retire|prune|release-unused)
+  switch|restore|switch-back|start-horizon|retire|prune|prune-pending|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9<>/home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
     fi
     ;;
 esac
+# A failed deletion must complete before a new build can reuse the previous SHA.
+if [[ $phase == build && -f /var/lib/orbit/gateway-release-switch/pending-prune ]]; then
+  "$0" prune-pending "$sha" "$operation"
+fi
 if [[ $phase == retire ]]; then
   # Avoid handing the scheduler over at the first or last two seconds of a minute.
   second=$((10#$(date -u +%S)))

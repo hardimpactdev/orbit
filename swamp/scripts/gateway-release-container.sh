@@ -42,7 +42,8 @@ cache_config() {
   [[ $before == "$after" ]] || fail 'Gateway environment changed while caching'
   printf '%s\n' "$after" | user "$machine" tee "$root/.gateway-env-digest" >/dev/null
 }
-private_ready() { bash <(src bin/gateway-release-check) "$sha" "$(ctl address gateway "$id")"; }
+check_release() { src bin/gateway-release-check | bash -se -- "$@"; }
+private_ready() { check_release "$sha" "$(ctl address gateway "$id")"; }
 
 journal=/var/lib/orbit/gateway-release-switch
 # A delete may fail after promotion. Keep its exact SHA across journal rotation.
@@ -55,7 +56,7 @@ prune_previous() {
   live=$(field '.live')
   old=$(jq -er '.old // ""' "$inventory")
   [[ $live =~ ^[a-f0-9]{40}$ && ( -z $old || $old =~ ^[a-f0-9]{40}$ ) ]] || fail 'invalid live container inventory'
-  if [[ $discarded != "$live" && $discarded != "$old" ]]; then
+  if [[ $discarded != "$live" ]] && [[ $discarded != "$old" ]]; then
     other=gateway-${discarded:0:12}
     matches=$("${incus_cli[@]}" list "$other" --format json | jq -er --arg name "$other" '[.[] | select(.name==$name)] | length')
     if [[ $matches != 0 ]]; then
@@ -124,12 +125,11 @@ drain_active_horizons() {
   [[ -z $(active_horizons "$machine") ]] || fail 'previous Gateway still has active Horizon consumers'
 }
 wanted_horizons() {
-  local admitted=$1
+  local admitted=$1 observed=/dev/null
   if [[ -f $journal/horizons && -f $journal/candidate && $(cat "$journal/candidate") == "$sha" ]]; then
-    python3 <(src swamp/scripts/gateway-release-horizons.py) "$admitted" < "$journal/horizons"
-  else
-    python3 <(src swamp/scripts/gateway-release-horizons.py) "$admitted" </dev/null
+    observed=$journal/horizons
   fi
+  src swamp/scripts/gateway-release-horizons.py | python3 - "$admitted" "$observed"
 }
 start_horizons() {
   local machine=$1 selected=$2 unit selected_units
@@ -137,7 +137,7 @@ start_horizons() {
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
     unit_wanted "$unit" || continue
-    if [[ $unit == orbit-gateway-horizon.service && $machine != host ]]; then
+    if [[ $unit == orbit-gateway-horizon.service ]] && [[ $machine != host ]]; then
       # Laravel resolves the authoritative Gateway queue in this release.
       # shellcheck disable=SC2016
       configured=$(php "$machine" -r 'require $argv[1]."/vendor/autoload.php"; $app=require $argv[1]."/bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo App\Infrastructure\Gateway\GatewayQueueRedis::configured() ? "yes" : "no";' "$app")
@@ -173,7 +173,7 @@ restore_switch() {
     ctl resume gateway "${previous#gateway-}" "$operation" >&2
     /usr/local/libexec/orbit-gateway-release-phase ready "$previous_sha" "$operation" >&2
     address=$(ctl address gateway "${previous#gateway-}")
-    bash <(src bin/gateway-release-check) "$previous_sha" "$address"
+    check_release "$previous_sha" "$address"
     cp -- "$upstream" "$journal/recovery-source-upstream"
     set_upstream "$address"
     if ! /usr/local/libexec/orbit-gateway-site container >&2; then
@@ -201,13 +201,6 @@ restore_switch() {
 case "$action" in
   build)
     force=$1 manifest=$2 rollback=${3:-false}
-    if [[ -f $journal/pending-prune ]]; then
-      if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} == 1 ]]; then
-        prune_previous
-      else
-        (flock -w 130 9 && prune_previous) 9<>"$home/gateway-release.lock"
-      fi
-    fi
     if [[ $rollback == true ]]; then
       [[ $(field '.old') == "$sha" ]] || fail 'retained rollback changed after admission'
     fi
@@ -395,7 +388,7 @@ case "$action" in
     printf '%s\n' "$generations"
     ;;
   public-ready)
-    bash <(src bin/gateway-release-check) "$sha"
+    check_release "$sha"
     ;;
   restore|switch-back)
     restore_switch
@@ -459,12 +452,12 @@ case "$action" in
       # A graceful unit stop waits for the FrankenPHP workers and their in-flight requests.
       enter "$prev" systemctl restart orbit-gateway-web.service
       previous_sha=$(owned_sha "$prev")
-      bash <(src bin/gateway-release-check) "$previous_sha" "$(ctl address gateway "${prev#gateway-}")"
+      check_release "$previous_sha" "$(ctl address gateway "${prev#gateway-}")"
       ctl retire gateway "${prev#gateway-}" "$operation"
     fi
     if [[ -f $journal/inventory ]]; then
       discarded=$(jq -er '.old // ""' "$journal/inventory")
-      if [[ -n $discarded && $discarded != "$sha" && gateway-${discarded:0:12} != "$prev" ]]; then
+      if [[ -n $discarded ]] && [[ $discarded != "$sha" ]] && [[ gateway-${discarded:0:12} != "$prev" ]]; then
         [[ $discarded =~ ^[a-f0-9]{40}$ ]] || fail 'invalid former rollback identity'
         printf '%s\n' "$discarded" > "$journal/pending-prune.next"
         mv -T "$journal/pending-prune.next" "$journal/pending-prune"
@@ -478,6 +471,9 @@ case "$action" in
       mv -fT "$journal/operation" "$journal/host-retired"
       if ! jq -e '.host_retired == true' "$inventory" >/dev/null; then set_inventory "$sha" "$(field '.old')"; fi
     fi
+    ;;
+  prune-pending)
+    prune_previous
     ;;
   prune)
     [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'

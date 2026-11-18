@@ -24,3 +24,7 @@ class HorizonSelection(unittest.TestCase):
 
     def test_inactive_host_fallback_stays_inactive_at_first_move(self):
         self.assertEqual(module.select("", [], {}), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

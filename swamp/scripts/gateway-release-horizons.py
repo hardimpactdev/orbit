@@ -25,5 +25,5 @@ def select(admitted, active, definitions):
 if __name__ == "__main__":
     root = Path("/var/lib/orbit/gateway-processes")
     records = {p.stem: json.loads(p.read_bytes()) for p in root.glob("orbit-process-*-horizon.service.json")}
-    for name in select(sys.argv[1], sys.stdin.read().splitlines(), records):
+    for name in select(sys.argv[1], Path(sys.argv[2]).read_text().splitlines(), records):
         print(name)
