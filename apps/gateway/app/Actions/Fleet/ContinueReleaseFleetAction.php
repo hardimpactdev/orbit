@@ -192,15 +192,18 @@ final readonly class ContinueReleaseFleetAction
         if ($current?->id !== $release->id || ! in_array(data_get($current->phases, 'fleet.status'), ['current', 'disabled'], true)) {
             return null;
         }
-        $phases = $current->phases;
-        $refresh = app(NestedFleetRefresh::class)->advance((string) $current->sha, ValidatedData::object($phases['default_refresh'] ?? []));
-        $phases['default_refresh'] = $refresh;
-        if ($refresh['status'] === 'current' && data_get($phases, 'seed_publication.status') !== 'current') {
-            $phases['seed_publication'] = app(ProofSeeds::class)->releasePublication((string) $current->sha, $refresh['defaults']);
-        }
-        $current->forceFill(['phases' => $phases])->save();
+        $refresh = app(NestedFleetRefresh::class)->advance((string) $current->sha, ValidatedData::object($current->phases['default_refresh'] ?? []));
 
-        return null;
+        return DB::transaction(function () use ($current, $refresh): ?int {
+            // The database writer orders publication and its receipt with the default's seed projection.
+            $phases = [...$current->phases, 'default_refresh' => $refresh];
+            if ($refresh['status'] === 'current' && data_get($phases, 'seed_publication.status') !== 'current') {
+                $phases['seed_publication'] = app(ProofSeeds::class)->releasePublication((string) $current->sha, $refresh['defaults']);
+            }
+            $current->forceFill(['phases' => $phases])->save();
+
+            return $refresh['status'] === 'pending' || data_get($phases, 'seed_publication.status') === 'pending' ? 60 : null;
+        });
     }
 
     /** @return list<Node> */

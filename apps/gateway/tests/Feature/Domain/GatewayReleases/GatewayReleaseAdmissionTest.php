@@ -95,6 +95,19 @@ it('records a refused automatic attempt, so the resolver leaves the commit out',
         ->and(GatewayRelease::query()->count())->toBe(1);
 });
 
+it('does not spend an automatic attempt when the serving release pauses during a failed preflight', function (): void {
+    $this->mock(GreenCommitResolver::class)->shouldReceive('resolve')->once()
+        ->andReturn(new GreenCommit(ReleaseC, new GitHubCheckRun('Required checks', 'success', null)));
+    releaseAgent(static function (): never {
+        app(GatewayReleaseAutomation::class)->pauseFor('rollback');
+
+        throw new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'Bad provenance.', 422, sha: ReleaseC);
+    });
+
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray(['result' => 'busy', 'sha' => ReleaseC])
+        ->and(GatewayRelease::query()->count())->toBe(0);
+});
+
 it('requeues the serving cycle after a restart and waits before admitting the latest eligible commit', function (): void {
     Queue::fake();
     app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/releases/'.substr(ReleaseA, 0, 12).'/apps/gateway'));
@@ -171,8 +184,7 @@ it('rechecks the serving release and rollback or fleet state before admission', 
         return ['sha' => $revision, 'manifest' => '{}'];
     });
 
-    $expected = $race === 'changed during preflight' ? 'The current release changed during admission.'
-        : 'The serving release or its automatic release state changed during admission.';
+    $expected = 'The serving release or its automatic release state changed during admission.';
     expect(fn () => app(AdmitSwampGatewayReleaseAction::class)->execute(ReleaseC, trigger: 'auto', expectedServingSha: ReleaseA))
         ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])
             ->toBe(['gateway.release_in_progress', $expected]))

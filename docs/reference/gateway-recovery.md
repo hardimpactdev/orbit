@@ -427,7 +427,7 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 7. It requeues any pending fleet, default or seed work and waits for the serving cycle to settle.
 8. It respects a manual pin and the retry delay, then admits the [Swamp run](#release-as-a-swamp-run) with trigger `auto`.
 
-The [green checks](/reference/github-app#find-the-newest-green-commit) certify a tested landed tree and a promoted web artifact. The tick records the candidate while it waits for the serving cycle. Admission checks the serving revision, pause and cycle again under the release lock.
+The [green checks](/reference/github-app#find-the-newest-green-commit) certify a tested landed tree and a promoted web artifact. The tick records the candidate while it waits for the serving cycle. Admission and preflight failures recheck the serving revision, pause and cycle under the release lock.
 
 The fleet phase fails if the CLI delivery is still unavailable after its publication wait and a completed search finds no compatible ancestor. A newer eligible revision can fix a terminal downstream failure forward.
 
@@ -602,7 +602,7 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `deferred`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
 
-The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
+The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam when either fleet rollout or default refresh is enabled. Pending default and seed work keeps that job active even while automatic Gateway admission is paused. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
 
 Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Orbit resolves any required CLI release before reserving the fleet visit and uses that pin for admission. Under the database writer lock, each pass confirms that its release still serves before it records or admits fleet work.
 

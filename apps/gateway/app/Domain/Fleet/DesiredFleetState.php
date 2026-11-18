@@ -214,20 +214,29 @@ final readonly class DesiredFleetState
      */
     private function fallback(string $commit): array
     {
+        $ancestors = $this->history->ancestors($commit, self::FallbackDepth);
+        if ($ancestors === null) {
+            return [null, false];
+        }
         $candidates = [];
 
-        foreach ($this->history->ancestors($commit, self::FallbackDepth) as $ancestor) {
+        foreach ($ancestors as $ancestor) {
             $number = $this->history->count($ancestor);
 
-            if ($number !== null && $number > 0) {
-                $candidates[] = [$ancestor, $number];
+            if ($number === null || $number < 1) {
+                return [null, false];
             }
+            $candidates[] = [$ancestor, $number];
         }
 
         usort($candidates, static fn (array $left, array $right): int => $right[1] <=> $left[1]);
 
         foreach ($candidates as [$ancestor, $number]) {
-            if (! $this->history->unchanged($ancestor, $commit, CliReleaseName::BuildInputs)) {
+            $unchanged = $this->history->unchanged($ancestor, $commit, CliReleaseName::BuildInputs);
+            if ($unchanged === null) {
+                return [null, false];
+            }
+            if (! $unchanged) {
                 continue;
             }
 
@@ -237,7 +246,7 @@ final readonly class DesiredFleetState
                 return [$found, true];
             }
 
-            if ($found->reason === CliReleaseUnavailableReason::GitHubUnavailable) {
+            if (in_array($found->reason, [CliReleaseUnavailableReason::GitHubUnavailable, CliReleaseUnavailableReason::ProvenanceUnconfigured], true)) {
                 return [null, false];
             }
         }

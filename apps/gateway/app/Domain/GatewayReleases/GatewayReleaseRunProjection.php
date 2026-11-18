@@ -90,13 +90,22 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $snapshot = ValidatedData::object($data['result'] ?? [])['snapshot'] ?? null;
         $snapshot = is_string($snapshot) && trim($snapshot) !== '' ? trim($snapshot) : null;
         $status = $data['status'] ?? null;
-        $projected = app(DirectOperation::class)->project($operation, $data, $status === 'succeeded' ? ['sha' => $operation->input['sha'],
-            'previous' => $operation->input['previous'], 'snapshot' => $snapshot] : []);
-        if (in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
-            $this->finish($operation, $data, $snapshot);
+        $pin = null;
+        if ($status === 'succeeded' && GatewayRelease::query()->whereKey($operation->target_id)
+            ->where('trigger', 'deploy')->where('outcome', GatewayRelease::Running)->exists()) {
+            // Resolve the pin while the running Operation still owns the unfinished release.
+            $pin = app(GatewayReleaseSupersession::class)->check(ValidatedData::string($operation->input['sha']));
         }
 
-        return $projected;
+        return DB::transaction(function () use ($operation, $data, $status, $snapshot, $pin): Operation {
+            $projected = app(DirectOperation::class)->project($operation, $data, $status === 'succeeded' ? ['sha' => $operation->input['sha'],
+                'previous' => $operation->input['previous'], 'snapshot' => $snapshot] : []);
+            if (in_array($status, ['succeeded', 'failed', 'cancelled', 'interrupted'], true)) {
+                $this->finish($operation, $data, $snapshot, $pin);
+            }
+
+            return $projected;
+        });
     }
 
     /** The run may still be working on the Gateway Node, or ended with no readable result, so its release pauses with the old or new code live. */
@@ -106,8 +115,11 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         $this->finish($operation, ['status' => $timedOut ? 'timed_out' : 'failed', 'error_code' => $operation->error_code], null);
     }
 
-    /** @param array<string, mixed> $data */
-    private function finish(Operation $operation, array $data, ?string $snapshot): void
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array{outcome: string, sha?: string, error?: string}|null  $pin
+     */
+    private function finish(Operation $operation, array $data, ?string $snapshot, ?array $pin = null): void
     {
         $record = GatewayRelease::query()->find($operation->target_id);
         if (! $record instanceof GatewayRelease || $record->finished()) {
@@ -142,6 +154,9 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             app(ContinueReleaseFleetAction::class)->preserveHostBaselines($previous);
             $phases['fleet'] = ['status' => config('fleet.rollout') ? 'pending' : 'disabled', 'nodes' => []];
         }
+        if ($code === null && $record->trigger === 'deploy') {
+            $phases['newest_green'] = $pin ?? ['outcome' => 'unknown'];
+        }
         $recorder = app(GatewayReleaseRecorder::class);
         $recorder->write(new DeployedGatewayRelease(
             id: GatewayReleaseCommit::id($sha),
@@ -159,10 +174,6 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             errorCode: $code,
             message: $code === null ? null : "Swamp run for Operation {$operation->id} ended {$status}".($step === null ? '.' : " at {$step}.").self::failureOutput($data, $phase),
         ), $record);
-        if ($code === null && $record->trigger === 'deploy') {
-            // As the legacy runner: whether this manual deploy pins an older commit decides if automation pauses.
-            $recorder->progress($record->refresh(), [...$record->phases, 'newest_green' => app(GatewayReleaseSupersession::class)->check($sha)]);
-        }
         if ($code === null) {
             DB::afterCommit(static function () use ($sha, $record): void {
                 try {

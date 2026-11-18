@@ -19,6 +19,7 @@ use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -86,29 +87,42 @@ final readonly class AdmitSwampGatewayReleaseAction
 
         // The lock keeps the release unit and a second admission out until the run owns its record.
         return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $delivery, $web, $horizon, $gateway, $expectedServingSha): GatewayRelease {
-            // An automatic record that waits for its commit's publication is superseded by begin().
-            if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
-                ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
-                throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
+            if ($trigger === 'auto') {
+                $this->assertAutomaticState($expectedServingSha);
+            } else {
+                $this->assertReleaseIdle();
             }
             // A release that went live during the checks above is the one a failed check switches back to.
             if ($this->layout->currentReleaseId() !== $previous) {
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
             }
 
-            if ($trigger === 'auto') {
-                $automation = app(GatewayReleaseAutomation::class);
-                $serving = $this->layout->observe()->commits[$previous] ?? null;
-                if ($expectedServingSha === null || $serving !== $expectedServingSha
-                    || ! $automation->enabled() || $automation->pause() !== null
-                    || FleetReboot::open() !== null || AdmitFleetRolloutAction::open()
-                    || app(ContinueReleaseFleetAction::class)->pending($expectedServingSha) !== null) {
-                    throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The serving release or its automatic release state changed during admission.');
-                }
-            }
-
             return $this->admit($commit, $force, $trigger, $previous, $delivery['manifest'], $web, $horizon, $gateway);
         });
+    }
+
+    /** Call under the release lock, before storing either an admission or its preflight refusal. */
+    public function assertAutomaticState(?string $expectedServingSha): void
+    {
+        $this->assertReleaseIdle();
+        $automation = app(GatewayReleaseAutomation::class);
+        $inventory = $this->layout->observe();
+        $serving = $inventory->current === null ? null : ($inventory->commits[$inventory->current] ?? null);
+        if ($expectedServingSha === null || $serving !== $expectedServingSha
+            || ! $automation->enabled() || $automation->pause() !== null
+            || GatewayReleaseSupersession::manualPin(GatewayReleaseCommit::id($expectedServingSha), $automation->resumedAfter()) !== null
+            || FleetReboot::open() !== null || AdmitFleetRolloutAction::open()
+            || app(ContinueReleaseFleetAction::class)->pending($expectedServingSha) !== null) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The serving release or its automatic release state changed during admission.');
+        }
+    }
+
+    private function assertReleaseIdle(): void
+    {
+        if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
+            ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
+        }
     }
 
     /**

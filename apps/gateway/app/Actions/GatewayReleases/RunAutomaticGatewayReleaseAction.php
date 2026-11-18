@@ -156,7 +156,7 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('up_to_date', $deployed);
         }
 
-        $manual = $this->manualRelease($current);
+        $manual = GatewayReleaseSupersession::manualPin($current, $this->automation->resumedAfter());
 
         if ($manual instanceof GatewayRelease) {
             $this->automation->pauseFor('manual_deploy', $manual);
@@ -191,13 +191,18 @@ final readonly class RunAutomaticGatewayReleaseAction
             }
             // A refusal before the run, such as an expired web build, is a failed attempt: the resolver leaves the
             // commit out, or tries it again under the retry limit.
-            $record = $this->lock->run(function () use ($sha, $exception): ?GatewayRelease {
-                $record = $this->recorder->begin('auto', $sha);
-                $this->recorder->fail($record, $exception, retryable: $this->retry->retryable($exception->errorCode, $sha, $record?->id),
-                    durationMs: 0, phase: $exception->step);
+            try {
+                $record = $this->lock->run(function () use ($sha, $deployed, $exception): ?GatewayRelease {
+                    $this->admit->assertAutomaticState($deployed);
+                    $record = $this->recorder->begin('auto', $sha);
+                    $this->recorder->fail($record, $exception, retryable: $this->retry->retryable($exception->errorCode, $sha, $record?->id),
+                        durationMs: 0, phase: $exception->step);
 
-                return $record?->refresh();
-            });
+                    return $record?->refresh();
+                });
+            } catch (GatewayReleaseException $changed) {
+                return $this->stalled($deployed, 'busy', null, $changed->errorCode, $changed->getMessage(), $sha);
+            }
             if ($record instanceof GatewayRelease && ! $record->retryable) {
                 $this->automation->clearStall();
 
@@ -325,24 +330,5 @@ final readonly class RunAutomaticGatewayReleaseAction
         $current = $inventory->current;
 
         return $current === null ? null : ($inventory->commits[$current] ?? null);
-    }
-
-    /**
-     * The verified manual deploy that put the current release live after the last resume while a
-     * newer green commit existed, a deliberate pin of an older commit. A manual deploy of the newest
-     * green commit, an automatic release, an adoption, or an earlier resume hands back to automation.
-     */
-    private function manualRelease(string $current): ?GatewayRelease
-    {
-        $live = GatewayRelease::query()
-            ->where('release_id', $current)
-            ->where('outcome', 'verified')
-            ->latest('id')
-            ->first();
-
-        return $live instanceof GatewayRelease
-            && $live->trigger === 'deploy'
-            && $live->id > $this->automation->resumedAfter()
-            && GatewayReleaseSupersession::superseded($live) ? $live : null;
     }
 }
