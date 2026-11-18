@@ -199,7 +199,18 @@ Deno.test("Gateway and AppProd share the clone, handover, compensation and readb
   }
   const verify = find(handover, "Verify the serving release");
   assertEquals(find(handover, "Switch back").dependsOn, [{ step: verify.name, condition: { type: "failed" } }]);
-  assert(find(handover, "Retire the previous live").dependsOn?.some((edge) =>
-    edge.step === verify.name && edge.condition.type === "succeeded"));
+  assertEquals(find(handover, "Switch back").guard, '${{ inputs.kind == "gateway.release" }}');
+  assertEquals(release.some((step) => step.name === "Wait for active Operations"), false);
+  assertEquals(find(handover, "Start Horizon").dependsOn, [
+    { step: "Switch the release", condition: { type: "succeeded" } },
+  ]);
+  const retire = find(handover, "Retire the previous live");
+  assert(retire.dependsOn?.some((edge) => edge.step === verify.name &&
+    edge.condition.conditions?.some((condition) => condition.type === "failed")));
+  assertEquals(find(handover, "Check deprecated operation versions").dependsOn, [
+    { step: retire.name, condition: { type: "succeeded" } },
+  ]);
+  assert(find(handover, "Confirm the Gateway handover").dependsOn?.some((edge) =>
+    edge.step === retire.name && edge.condition.type === "always"));
   assert(find(release, "Read the serving release").dependsOn?.every((edge) => edge.condition.type === "always"));
 });

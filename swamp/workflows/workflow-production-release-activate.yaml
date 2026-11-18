@@ -1,7 +1,8 @@
+# orbit-gateway-recovery-protocol: 2
 id: 653c7a78-56d3-49af-89fe-27c72b11c662
 name: production-release-activate
 autoContinue: false
-description: Switch one target, check its public route, hand over background work and park its former live.
+description: Switch one target, check its public route, hand over background work and retire its former live.
 queueTimeout: 120
 vaults: []
 inputs:
@@ -85,6 +86,7 @@ jobs:
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
   - name: Switch back
+    guard: '${{ inputs.kind == "gateway.release" }}'
     labels: {role: swamp}
     writes: true
     dependsOn:
@@ -112,7 +114,7 @@ jobs:
     writes: true
     guard: '${{ inputs.kind != "gateway.release" }}'
     dependsOn:
-    - {step: Verify the serving release, condition: {type: succeeded}}
+    - {step: Switch the release, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -152,9 +154,9 @@ jobs:
   - name: Retire the previous live
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    guard: '${{ inputs.kind == "gateway.release" ? steps["Start Horizon"].status != "succeeded" : steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     dependsOn:
-    - {step: Verify the serving release, condition: {type: succeeded}}
+    - {step: Verify the serving release, condition: {type: or, conditions: [{type: succeeded}, {type: failed}]}}
     - {step: Start Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Run after activation steps, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
@@ -219,3 +221,38 @@ jobs:
         - prune
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
+  - name: Check deprecated operation versions
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.kind != "gateway.release" }}'
+    dependsOn:
+    - {step: Retire the previous live, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ ("release-check-versions-" + inputs.intent.target).split(".").join("-") }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 330
+        argv:
+        - /usr/bin/timeout
+        - "300"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - cleanup-versions
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Confirm the Gateway handover
+    labels: {role: swamp}
+    guard: '${{ inputs.kind != "gateway.release" || steps["Switch the release"].status != "succeeded" }}'
+    dependsOn:
+    - {step: Verify the serving release, condition: {type: always}}
+    - {step: Retire the previous live, condition: {type: always}}
+    task:
+      type: assert
+      severity: high
+      expr: 'steps["Verify the serving release"].status == "succeeded" && steps["Retire the previous live"].status == "succeeded"'
+      message: Check the selected Gateway release and its drain journal. Repair the serving release forward.

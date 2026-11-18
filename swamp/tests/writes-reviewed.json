@@ -299,8 +299,6 @@
    "Verify the serving release": "read-only"
   },
   "production-release": {
-   "Wait for active Operations": "read-only",
-   "Read the activation workflow": "read-only",
    "Read the serving release": "read-only"
   },
   "production-release-activate": {

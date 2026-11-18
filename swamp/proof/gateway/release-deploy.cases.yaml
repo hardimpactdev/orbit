@@ -4,9 +4,9 @@ target: gateway
 sources: [gateway]
 baseline: [operations]
 uncovered:
-  main: "Deploy two releases from the same preparation container. Verify the sealed commit and web digest, private readiness, and that only the selected clone serves or processes jobs. Check swap use for preparation and rollback after the handover and resume each for its intended operation."
-  retry: "Interrupt preparation before the seal. Retry with the same commit and verify that partial web assets cannot enter the snapshot."
-  recovery: "Exercise both sides of the switch: a failed private check leaves live untouched, and a failed public check restores the previous live. A request started before the switch finishes there. Rollback resumes old and switches only after readiness."
+  main: "Release two commits from the same preparation checkout with active Operations. Observe at most three containers. Verify private readiness, public traffic and new jobs on the selected release, and sleeping preparation."
+  retry: "Interrupt preparation before sealing. Retry and verify that partial web assets cannot enter the release."
+  recovery: "Hold a request and a Horizon job across cutover. Keep the outgoing container until both finish. Fail private readiness before switch and public verification after switch. Verify the selected SHA and repair forward."
 cases:
   - id: invalid-commit
     batch: fresh-fleet

@@ -102,15 +102,15 @@ The archive contains secrets. Do not attach it to a bug report or commit it to G
 
 The Gateway Node keeps Caddy, WireGuard, the SQLite database and the Gateway identity. An unprivileged container runs the application with FrankenPHP in Laravel Octane worker mode. The first move runs the same commit and uses the same database on both sides of the switch.
 
-Keep console access and a verified off-host recovery copy. Check space for four containers during a switch. Frozen containers still use storage and swap. Test queue and cache access from the private bridge. A host-loopback address points into the container.
+Keep console access and a verified off-host recovery copy. Check space for up to three Gateway containers. Frozen containers still use storage and swap. Test queue and cache access from the private bridge. A host-loopback address points into the container.
 
 Before waking preparation, each new build measures the serving workload, free RAM, free swap and free space in the release pool. A capacity refusal reports the resource and the required and available bytes. A later attempt can release the same commit when space is available. See the [production capacity rules](/reference/production-containers#capacity).
 
-The admitted commit pins PHP, FrankenPHP and Composer. The Node installs a changed runtime in its own immutable directory and mounts it read-only in preparation. The candidate inherits this mount. The serving and rollback containers keep the runtime selected by their own commits.
+The admitted commit pins PHP, FrankenPHP and Composer. The Node installs a changed runtime in its own immutable directory and mounts it read-only in preparation. The candidate inherits this mount. Each release keeps the runtime selected by its commit until it drains.
 
-Preparation updates the monorepo checkout in place. Composer installs the locked production packages in `apps/gateway`. The Gateway loads two PHP SDK log-stream types through its own autoloader. Its install hook reads SDK and CLI source to generate the API contracts. CI builds `apps/web` with Bun. The release installs that commit's verified web artifact at `/home/orbit/web/current` before cloning. At boot, Incus mounts the candidate’s checkout and web tree read-only. Laravel can write its bootstrap cache and shared storage. Preparation keeps its writable checkout. The candidate serves the web app and the Laravel API together. A container rollback restores both from the retained release.
+Preparation updates the monorepo checkout in place. Composer installs the locked production packages in `apps/gateway`. The Gateway loads two PHP SDK log-stream types through its own autoloader. Its install hook reads SDK and CLI source to generate the API contracts. CI builds `apps/web` with Bun. The release installs that commit's verified web artifact at `/home/orbit/web/current` before cloning. At boot, Incus mounts the candidate’s checkout and web tree read-only. Laravel can write its bootstrap cache and shared storage. Preparation keeps its writable checkout. The candidate serves the web app and the Laravel API together.
 
-After preparation is asleep, the candidate runs pending Laravel migrations directly against the production SQLite database before traffic switches. The container release takes no pre-migration database copy. If another migration holds the lock or a migration fails, the previous container keeps serving and the release records the error. Repair the database with a corrective migration or an operator change. A retained container rollback leaves the database at its current state.
+After preparation is asleep, the candidate runs pending Laravel migrations directly against the production SQLite database before traffic switches. The container release takes no pre-migration database copy. If another migration holds the lock or a migration fails, the previous container keeps serving and the release records the error. Repair the database with a corrective migration or an operator change.
 
 The Gateway expects its managed Horizon and scheduler Processes to be named `horizon` and `schedule-work`. Preflight reports a custom name before the move. Record the Process configuration and desired state, recreate it under the expected name, then verify a host release to obtain a current Operation receipt.
 
@@ -119,23 +119,14 @@ The Gateway expects its managed Horizon and scheduler Processes to be named `hor
 3. Run `bin/gateway-container-prepare` in check mode with the Node's storage, network and image settings. Apply the same settings.
 4. From the verified host release, run `sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>`. This moves the same commit and preserves the database.
 5. Check `/up`, `orbit gateway:status` and an authenticated peer request through the public Gateway name. Check the background workers.
-6. To undo the first move, use `sudo /usr/local/libexec/orbit-gateway-rollback --host` while the host is still the recovery target.
-7. Deploy the next commit with `orbit gateway:release:deploy`. Check that it serves and both preparation and the previous live are frozen.
-8. Converge the Gateway role to remove host PHP-FPM once a container rollback exists. Restore the previous automation setting.
-
-The first move records which Horizon units are running before it drains them. A registered Process that was stopped stays stopped across the move and a return to the host. If the move is interrupted after that point, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` from the Node console.
-
-Host rollback checks the PHP-FPM listener and its release before draining the container. It keeps the container available until the host passes public verification. If verification fails, the command restores the container. After an interruption, `--recover` restores the container or finishes cleanup if the host switch was already committed.
+6. If the move was interrupted, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` at the Node console. Inspect the selected commit, public traffic and background services.
+7. Release the next forward commit. Check that preparation is frozen and that the former live disappears after its HTTP requests and Horizon jobs finish. Converge the Gateway role to retire host PHP-FPM and restore the previous automation setting.
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
-Once established, each target has three containers. A release wakes preparation, installs the exact commit and web archive, and clones the sealed result. Preparation can sleep while the candidate starts. The existing container serves while the candidate passes its private check. Under the release lock, Orbit records the active Horizon units in the switch journal, drains them, then switches Caddy. The candidate must pass the public check before Orbit freezes the former live for rollback. Orbit then removes the older rollback.
+An established Gateway has a sleeping preparation container and a serving container. It can hold one more container during deployment. Orbit finishes an interrupted handover before allocating another candidate. It updates preparation in place, seals it, freezes it and takes a filesystem clone. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
 
-Use `orbit gateway:release:rollback` to select the retained release. The installed host helper checks the retained commit's activation workflow and recovery script before waking it. If either predates the container recovery protocol, rollback fails with `gateway.release_recovery_incompatible` before loading its Swamp workflows, draining Horizon or switching traffic. A compatible retained commit can differ from the serving commit.
-
-Recovery wakes that container or cold starts it after a Node reboot. It keeps the current database and skips the build, web download and migration. If a switch was interrupted and the Gateway or Swamp is unavailable, use `sudo /usr/local/libexec/orbit-gateway-rollback --recover` from the Node console. For an ordinary offline rollback, pass the retained 12-digit release ID to the same helper. A new offline rollback requires the same recovery protocol.
-
-An interrupted switch uses its saved candidate and Operation ID, even when the switch began before this admission check. Host preparation refuses to replace helpers while that journal is open, including before the first container inventory is written. Recovery checks `/up` and the restored release's version through Caddy at `https://gateway.orbit` before clearing the journal. If recovery fails or is interrupted, fix the reported problem and run `--recover` again.
+The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch forward. A failed public check reports a failed release. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal, then deploy a corrective commit. Once the old Horizon workers and HTTP connections have drained, Orbit removes the former release and checks which deprecated Operation versions are safe to retire.
 
 ## Release layout
 
@@ -166,7 +157,7 @@ The Gateway admits the run. It needs the full commit and no other queued or runn
 
 The long steps run script files from `swamp/scripts/`, which `bin/swamp-shape-gate` lints with shellcheck. Every script comes from the commit being released, so a release never runs the scripts of another. The build step pipes its script out of the fetched commit in `shared/orbit.git`. In the host PHP-FPM workflow, the web and snapshot steps run theirs from the sealed release, `/home/orbit/releases/<id>/swamp/scripts/`, and so does the activate child. A Swamp-run release or rollback of a commit from before these scripts fails at the build with `gateway.release_script_missing`: switch to such a release with `bin/gateway-rollback`.
 
-The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
+The container workflow is described under [Move the Gateway to release containers](#move-the-gateway-to-release-containers). The host PHP-FPM `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
 
 | Step | What it does |
 | --- | --- |
@@ -209,6 +200,8 @@ Read release records with `orbit gateway:release:list` and `orbit gateway:releas
 After verification, pruning keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` sealed releases, plus the current and previous releases and the build served by `web/current`. The setting defaults to 3 and has a minimum of 2. Pruning also removes incomplete releases older than one hour and web builds with no retained release. A pruning failure leaves the release live; a later release retries.
 
 ### Release idle guard
+
+This guard applies to the host PHP-FPM release path. Container Gateway releases allow Operations to continue across cutover.
 
 A kind needs this guard when its execution input is built or its execution code is read after admission, so switching Gateway code can change the outcome of already admitted work. A whole execution plan captured at admission can continue independently. The guard currently covers these kinds:
 
@@ -412,25 +405,19 @@ A failed snapshot leaves the live database unchanged. A failed migration may hav
 
 ### Roll back
 
-To return to a retained release, run:
+Container Gateways use the forward recovery procedure above. On a host PHP-FPM Gateway, run the following command to return to a retained release.
 
 ```bash
 orbit gateway:release:rollback <id>
 ```
 
-`<id>` is the first 12 hex digits of its commit. The Gateway resolves that release's full commit and admits a forced `gateway.release` run with trigger `rollback`. Force skips the ancestry check. The build reuses the sealed release and refreshes its configuration. The load step brings back that commit's Swamp workflows. The host PHP-FPM workflow snapshots the database, runs migrations, switches both links and verifies the Gateway. Container rollback wakes the retained application and preserves the database.
+`<id>` is the first 12 hex digits of its commit. The Gateway resolves that release's full commit and admits a forced `gateway.release` run with trigger `rollback`. Force skips the ancestry check. The build reuses the sealed release and refreshes its configuration. The load step brings back that commit's Swamp workflows. The host PHP-FPM workflow snapshots the database, runs migrations, switches both links and verifies the Gateway.
 
 Rollback needs the target commit's verified agent delivery and a valid web build. Migrations must use expand and contract so the retained code can use the current database. Rollback does not restore data. If you need to restore a snapshot, follow [Recover a failed update](#recover-a-failed-update). A successful rollback pauses automatic releases with reason `rollback`.
 
 ### Roll back without Swamp
 
-On a prepared Gateway Node, run the root-owned recovery helper. Use the first 12 hex digits of the retained container commit.
-
-```bash
-sudo /usr/local/libexec/orbit-gateway-rollback <id>
-```
-
-If a traffic switch was interrupted, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` first. It restores the previous route and background services using the switch journal. A failed public check leaves the journal in place for another recovery attempt. To undo the initial container move while the host is still the recovery target, use `--host`. Check the public Gateway address and the scheduler and Horizon units after recovery.
+For an interrupted container handover, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` on the Gateway Node. It resumes the durable switch and drain. After the journal clears, fix a broken application with a forward release.
 
 On a host deployment **before container preparation**, use the host release script:
 
@@ -442,9 +429,9 @@ It needs only the release directories. It refuses an id that is not 12 hex digit
 
 It reloads PHP-FPM, so every request runs the release and OPcache starts empty. Then it restarts each running service whose working directory is under the application, such as Horizon, the scheduler and agent-view. A stopped Process stays stopped, Horizon included: after a release run that ended before its Horizon start, run `orbit process:start` for it, or `systemctl start orbit-process-<id>-horizon.service` on the Gateway when Orbit does not answer. The release run switches forward with the same script. A restart of Horizon by the script waits for its running jobs, up to the drain.
 
-It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, run `orbit gateway:release:deploy <full-serving-sha> --reconcile` for a container Gateway. It checks the public Gateway and the full serving commit, waits for protected Operations, reloads the retained workflows and verifies the serving release again. It records the result and pauses automatic releases after a verified rollback. Preparation, rollback, traffic, schema and fleet selection stay in place. A host release uses the regular deploy command to reconcile.
+The host script preserves the shared database. It loads no Swamp definitions and writes no release record. A host deployment uses the regular deploy command to reconcile.
 
-Reconciliation holds the serving generation while Node 209 publishes workflows and grants. A concurrent release or offline rollback waits for that operation to end. If the Swamp run was interrupted, confirm on Node 209 that the run is terminal and its publish step has stopped. On the Gateway console, read `/var/lib/orbit/gateway-release-switch/reconcile` for its Operation ID and full SHA. Run `sudo /usr/local/libexec/orbit-gateway-release-phase reconcile-end <sha> <operation-id>` to clear that exact lease, then retry reconciliation.
+On a container Gateway, `orbit gateway:release:deploy <full-serving-sha> --reconcile` reloads the selected release’s workflows and verifies its public version. Reconciliation holds the serving generation during publication. If the run was interrupted, confirm on Node 209 that it is terminal and publication has stopped. Read the Operation ID and full SHA from `/var/lib/orbit/gateway-release-switch/reconcile`. Run `sudo /usr/local/libexec/orbit-gateway-release-phase reconcile-end <sha> <operation-id>` to clear that exact lease, then retry.
 
 ### Apply an env change
 

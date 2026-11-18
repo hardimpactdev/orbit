@@ -46,16 +46,15 @@ jobs:
       message: The target or private input belongs to a different Operation.
       expr: >-
         inputs.kind == "gateway.release"
-          ? inputs.intent.target == "gateway" && !has(inputs.intent.instance_id) && (has(inputs.intent.retained) && inputs.intent.retained
-              ? size(inputs.execution_secrets) == 0
-              : has(inputs.execution_secrets.github_token) && inputs.execution_secrets.github_token.key == "gateway-release-" + string(inputs.operation_id))
+          ? inputs.intent.target == "gateway" && !has(inputs.intent.instance_id) && !(has(inputs.intent.retained) && inputs.intent.retained)
+              && has(inputs.execution_secrets.github_token) && inputs.execution_secrets.github_token.key == "gateway-release-" + string(inputs.operation_id)
           : has(inputs.intent.instance_id) && inputs.intent.target == "instance-" + string(inputs.intent.instance_id) && has(inputs.execution_secrets.release)
               && inputs.execution_secrets.release.key == "production-release-operation-" + string(inputs.operation_id)
   - name: Fetch the commit
     dependsOn: [{step: Check release ownership, condition: {type: succeeded}}]
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    guard: '${{ inputs.kind != "gateway.release" }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -102,7 +101,7 @@ jobs:
         sudo: true
         timeoutSec: 2430
         argv: >-
-          ${{ ["/usr/bin/timeout", "2400", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "build-checked", inputs.intent.sha, string(inputs.operation_id)] + [string((has(inputs.intent.force) ? inputs.intent.force : false)), has(inputs.intent.manifest) ? inputs.intent.manifest : "", string((has(inputs.intent.retained) && inputs.intent.retained))] }}
+          ${{ ["/usr/bin/timeout", "2400", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "build-checked", inputs.intent.sha, string(inputs.operation_id)] + [string((has(inputs.intent.force) ? inputs.intent.force : false)), has(inputs.intent.manifest) ? inputs.intent.manifest : "", "false"] }}
   - name: Build the Instance release
     labels: {role: swamp}
     writes: true
@@ -131,7 +130,7 @@ jobs:
   - name: Install the web build
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
     dependsOn:
     - {step: Build the release, condition: {type: succeeded}}
     task:
@@ -150,7 +149,7 @@ jobs:
   - name: Clone the prepared release
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.kind == "instance.rollback" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || (has(inputs.intent.retained) && inputs.intent.retained) }}'
+    guard: '${{ inputs.kind == "instance.rollback" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     dependsOn:
     - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -225,29 +224,6 @@ jobs:
     dependsOn:
     - {step: Migrate, condition: {type: succeeded}}
     task: {type: assert, expr: 'steps["Migrate"].outputs.stdout.trim().endsWith("migrate-exit=0")', severity: high, message: The Gateway database migration failed.}
-  - name: Wait for active Operations
-    labels: {role: swamp}
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
-    dependsOn:
-    - {step: Check the migration, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      methodName: exec
-      behaviorName: '${{ ("release-wait-idle-" + inputs.intent.target).split(".").join("-") }}'
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        timeoutSec: 660
-        argv:
-        - /usr/bin/timeout
-        - "630"
-        - /usr/local/libexec/orbit-production-release-phase
-        - '${{ inputs.intent.target }}'
-        - wait-idle
-        - '${{ inputs.intent.sha }}'
-        - '${{ string(inputs.operation_id) }}'
   - name: Check the Instance candidate
     labels: {role: swamp}
     writes: true
@@ -284,7 +260,7 @@ jobs:
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Wait for active Operations, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Check the migration, condition: {type: succeeded}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -318,46 +294,22 @@ jobs:
         intent:
           sha: '${{ inputs.intent.sha }}'
           force: '${{ (has(inputs.intent.force) ? inputs.intent.force : false) }}'
-          retained: '${{ has(inputs.intent.retained) && inputs.intent.retained }}'
+          retained: false
           grants:
             grants/orbit-gateway.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[0] }}'
             grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'
           ssh: '${{ (has(inputs.intent.swamp_ssh) ? inputs.intent.swamp_ssh : {}) }}'
           gateway_ssh: '${{ inputs.intent.ssh }}'
         execution_secrets: {}
-  - name: Read the activation workflow
-    labels: {role: swamp}
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
-    dependsOn:
-    - {step: Check the candidate, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      methodName: exec
-      behaviorName: '${{ ("release-activation-workflow-" + inputs.intent.target).split(".").join("-") }}'
-      globalArgs: *ssh
-      inputs:
-        hosts: name:target
-        sudo: true
-        timeoutSec: 60
-        argv:
-        - /usr/bin/timeout
-        - "30"
-        - /usr/local/libexec/orbit-production-release-phase
-        - '${{ inputs.intent.target }}'
-        - activation-workflow
-        - '${{ inputs.intent.sha }}'
-        - '${{ string(inputs.operation_id) }}'
   - name: Hand over the release
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || (inputs.kind == "gateway.release" && steps["Read the activation workflow"].outputs.stdout.trim() == "gateway-release-activate") }}'
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     dependsOn:
     - {step: Check the candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Check the Instance candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Sleep preparation, condition: {type: succeeded}}
     - {step: Load Swamp on Node 209, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Read the activation workflow, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: workflow
       workflowIdOrName: production-release-activate
@@ -366,38 +318,12 @@ jobs:
         node_id: '${{ inputs.node_id }}'
         kind: '${{ inputs.kind }}'
         intent: '${{ inputs.intent }}'
-  - name: Hand over a retained Gateway release
-    labels: {role: swamp}
-    writes: true
-    guard: '${{ inputs.kind != "gateway.release" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || steps["Read the activation workflow"].outputs.stdout.trim() != "gateway-release-activate" }}'
-    dependsOn:
-    - {step: Check the candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Check the Instance candidate, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Sleep preparation, condition: {type: succeeded}}
-    - {step: Load Swamp on Node 209, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Read the activation workflow, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    task:
-      type: workflow
-      workflowIdOrName: gateway-release-activate
-      inputs:
-        operation_id: '${{ inputs.operation_id }}'
-        node_id: '${{ inputs.node_id }}'
-        kind: gateway.release
-        intent:
-          sha: '${{ inputs.intent.sha }}'
-          id: '${{ (has(inputs.intent.id) ? inputs.intent.id : "") }}'
-          previous: '${{ (has(inputs.intent.previous) ? inputs.intent.previous : "") }}'
-          horizon_unit: '${{ (has(inputs.intent.horizon_unit) ? inputs.intent.horizon_unit : "") }}'
-          horizon_drain_seconds: '${{ (has(inputs.intent.horizon_drain_seconds) ? inputs.intent.horizon_drain_seconds : 120) }}'
-          keep: '${{ (has(inputs.intent.keep) ? inputs.intent.keep : 2) }}'
-          ssh: '${{ inputs.intent.ssh }}'
   - name: Release unused candidate
     guard: '${{ steps["Check release ownership"].status != "succeeded" }}'
     labels: {role: swamp}
     writes: true
     dependsOn:
     - {step: Hand over the release, condition: {type: always}}
-    - {step: Hand over a retained Gateway release, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -422,7 +348,6 @@ jobs:
     dependsOn:
     - {step: Release unused candidate, condition: {type: always}}
     - {step: Hand over the release, condition: {type: always}}
-    - {step: Hand over a retained Gateway release, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

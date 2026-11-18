@@ -7,7 +7,7 @@ description: "Build each production Instance release in its off-traffic preparat
 
 # Production containers
 
-Gateway and app-prod Instances use the `production-release` Swamp workflow. Admission fixes the Node, Instance and commit before work starts. The Node builds in the target’s own preparation container. Swamp checks the new clone, switches that target’s traffic and keeps the former live as rollback. See [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers).
+Gateway and app-prod Instances use the `production-release` Swamp workflow. Admission fixes the Node, Instance and commit before work starts. The Node builds in the target’s own preparation container. Swamp checks the new clone and switches that target’s traffic. AppProd keeps the former live for rollback. The Gateway removes its former live after HTTP and Horizon drain. See [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers).
 
 A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route. [ADR 0265](/decisions/0265-sleep-idle-production-containers) describes the separate plan for [sleeping an idle live Instance](#sleep-and-wake).
 
