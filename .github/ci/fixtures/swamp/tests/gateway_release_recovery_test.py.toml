@@ -1,5 +1,7 @@
 order = 776
 cases = [
+  "test_first_move_and_host_rollback_preserve_a_stopped_registered_process",
+  "test_switch_rebuilds_the_candidate_after_configuration_changes_at_readiness",
   "test_matching_earlier_container_switch_recovers_only_after_public_verification",
   "test_earlier_first_move_recovers_before_inventory_and_blocks_new_offline_rollback",
   "test_first_move_recovers_before_drain",
@@ -21,7 +23,7 @@ cases = [
   "test_ordinary_fpm_release_and_rollback",
 ]
 file = "swamp/tests/gateway_release_recovery_test.py"
-cost = 128
+cost = 139
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-container-rollback",
@@ -56,3 +58,5 @@ inputs = [
 "test_ordinary_fpm_release_and_rollback" = 3
 "test_matching_earlier_container_switch_recovers_only_after_public_verification" = 10
 "test_earlier_first_move_recovers_before_inventory_and_blocks_new_offline_rollback" = 6
+"test_first_move_and_host_rollback_preserve_a_stopped_registered_process" = 5
+"test_switch_rebuilds_the_candidate_after_configuration_changes_at_readiness" = 6

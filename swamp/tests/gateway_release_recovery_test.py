@@ -46,6 +46,8 @@ def stub(name, args):
             print('{"generations":[]}' if "gateway:release:cleanup" in command else (state / "receipt").read_text())
         else:
             return subprocess.call(command)
+    elif name == "orbit-gateway-environment":
+        assert action == "refresh"
     elif name == "orbit-gateway-site":
         (state / "site").write_text(action)
         event(f"site {action}")
@@ -112,7 +114,29 @@ def stub(name, args):
             machine = args[1]
             command = args[args.index("--") + 1:]
             env = {**os.environ, "FIXTURE_MACHINE": machine}
-            if command[0] in ("systemctl", "/bin/sh", "bash"):
+            if "sha256sum" in command:
+                print(hashlib.sha256((state / "env").read_bytes()).hexdigest(), command[-1])
+            elif command[-1].endswith("/.gateway-env-digest"):
+                marker = state / (machine + "-digest")
+                if "cat" in command:
+                    if not marker.exists():
+                        return 1
+                    print(marker.read_text(), end="")
+                elif "rm" in command:
+                    marker.unlink(missing_ok=True)
+                elif "tee" in command:
+                    marker.write_bytes(sys.stdin.buffer.read())
+                return 0
+            elif "config:cache" in command:
+                if (state / "broken-config").exists():
+                    return 1
+                (state / (machine + "-cache")).write_bytes((state / "env").read_bytes())
+            elif command[0] == "systemctl" and command[1] == "restart" and command[-1] == "orbit-gateway-web.service":
+                cached = state / (machine + "-cache")
+                if cached.exists():
+                    (state / (machine + "-worker")).write_bytes(cached.read_bytes())
+                (state / (machine + "-orbit-gateway-web.service")).touch()
+            elif command[0] in ("systemctl", "/bin/sh", "bash"):
                 return subprocess.call(command, env=env)
             if "gateway:release:cleanup" in command:
                 print('{"generations":[]}')
@@ -213,6 +237,7 @@ class GatewayReleaseRecovery(unittest.TestCase):
         }))
         (self.state / "site").write_text("host")
         (self.state / "events").touch()
+        (self.state / "env").write_text("A")
         (self.state / f"host-{HORIZON}").touch()
 
         self.env = {**os.environ, "PATH": f"{self.stubs}:{os.environ['PATH']}",
@@ -224,7 +249,7 @@ class GatewayReleaseRecovery(unittest.TestCase):
 
         for name in ("runuser", "systemctl", "incus", "curl", "chown", "install"):
             self.make_stub(self.stubs / name)
-        for name in ("orbit-gateway-site", "orbit-gateway-unit"):
+        for name in ("orbit-gateway-site", "orbit-gateway-unit", "orbit-gateway-environment"):
             self.make_stub(self.libexec / name)
 
         self.move = self.copy("bin/gateway-container-move", self.root / "move")
@@ -545,6 +570,35 @@ esac
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_host_serves()
         self.assertIn(f"public host {self.sha}", events.read_text()[len(before):])
+
+    def test_first_move_and_host_rollback_preserve_a_stopped_registered_process(self):
+        receipt = json.loads((self.state / "receipt").read_text())
+        (self.state / "receipt").write_text(json.dumps({**receipt, "horizon_unit": MANAGED_HORIZON}))
+        (self.state / f"host-{HORIZON}").unlink()
+        self.assert_ok(self.run_move())
+        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
+        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
+        self.listener()
+        self.assert_ok(self.run_script(self.console, "--host"))
+        self.assertFalse((self.state / f"host-{MANAGED_HORIZON}").exists())
+        self.assertFalse((self.state / f"host-{HORIZON}").exists())
+
+    def test_switch_rebuilds_the_candidate_after_configuration_changes_at_readiness(self):
+        self.retained_releases()
+        marker = self.state / (self.retained + "-digest")
+        marker.write_text(hashlib.sha256(b"A").hexdigest() + " " + str(self.home / "shared/gateway.env") + "\n")
+        (self.state / (self.retained + "-worker")).write_text("A")
+        (self.state / (self.retained + "-orbit-gateway-web.service")).touch()
+        (self.state / "env").write_text("B")
+        broken = self.state / "broken-config"
+        broken.touch()
+        result = self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON)
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_container_serves()
+        self.assertFalse(marker.exists())
+        broken.unlink()
+        self.assert_ok(self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON))
+        self.assertEqual((self.state / (self.retained + "-worker")).read_text(), "B")
 
     def test_first_move_recovers_before_drain(self):
         self.listener()

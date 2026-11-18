@@ -56,6 +56,13 @@ final readonly class ConfigureGatewayReleaseAction
                     throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed',
                         'config:cache failed: '.mb_substr(trim($cached->errorOutput()), -500), 500, sha: $sha);
                 }
+                if ($container) {
+                    // A retained worker must rebuild from the current env before it can serve again.
+                    $marker = $this->layout->basePath().'/.gateway-env-digest';
+                    if ((file_exists($marker) || is_link($marker)) && ! @unlink($marker)) {
+                        throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed', 'Could not invalidate the release configuration digest.', 500, sha: $sha);
+                    }
+                }
                 if (($container && ! @link($current, $previous)) || ! @rename($candidate, $current)) {
                     throw new GatewayReleaseException('configuration', 'gateway.release_configuration_failed', 'Could not publish the new configuration.', 500, sha: $sha);
                 }

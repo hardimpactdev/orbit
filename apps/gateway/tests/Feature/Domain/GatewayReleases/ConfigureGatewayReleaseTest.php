@@ -77,6 +77,9 @@ describe('configure a Gateway release', function (): void {
         });
         Http::fake(['http://localhost/frankenphp/workers/restart' => Http::sequence()->push('', $reloadFails ? 503 : 200)->push('')]);
 
+        $marker = $this->layout->basePath().'/.gateway-env-digest';
+        file_put_contents($marker, 'previous digest');
+
         if ($reloadFails) {
             expect(fn () => $this->action->execute())->toThrow(GatewayReleaseException::class, 'previous configuration was restored')
                 ->and(file_get_contents($this->cache))->toBe('previous');
@@ -87,6 +90,7 @@ describe('configure a Gateway release', function (): void {
                 ->and(fileperms($this->cache) & 0777)->toBe(0600);
             Http::assertSentCount(1);
         }
-        expect(glob($this->cache.'.next-*'))->toBe([]);
+        expect(glob($this->cache.'.next-*'))->toBe([])
+            ->and(file_exists($marker))->toBeFalse();
     })->with([false, true]);
 });

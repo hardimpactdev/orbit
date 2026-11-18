@@ -22,6 +22,13 @@ class HorizonSelection(unittest.TestCase):
         records[new] = {"desired": "running"}
         self.assertEqual(module.select(old, [old], records), [new])
 
+    def test_receipt_identifies_a_process_without_starting_it(self):
+        unit = "orbit-process-21-horizon.service"
+        self.assertEqual(module.select(unit, [], {}), [])
+        self.assertEqual(module.select(unit, [module.FALLBACK], {}), [module.FALLBACK])
+        self.assertEqual(module.select(unit, [unit], {}), [unit])
+        self.assertEqual(module.select(unit, [unit], {unit: {"desired": "stopped"}}), [])
+
     def test_inactive_host_fallback_stays_inactive_at_first_move(self):
         self.assertEqual(module.select("", [], {}), [])
 
