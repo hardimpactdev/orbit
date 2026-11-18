@@ -16,6 +16,7 @@ use DateTimeInterface;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use Orbit\Extensions\Conn\Data\ConnLaunchRequestData;
 use Orbit\Extensions\Conn\Data\ConnLaunchSnapshot;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnLaunchIntent;
@@ -266,7 +267,7 @@ final readonly class ConnLaunchState
     /** @param  stdClass|array<array-key, mixed>  $model */
     public static function modelSelectionFits(#[SensitiveParameter] stdClass|array $model): bool
     {
-        return strlen(json_encode($model, JSON_THROW_ON_ERROR)) <= 16_384;
+        return strlen(json_encode($model, ConnLaunchRequestData::EncodingFlags)) <= 16_384;
     }
 
     private function freeze(Operation $launch, string $environmentId, string $incarnation, string $t3ProjectId, #[SensitiveParameter] stdClass $model): void
@@ -292,7 +293,7 @@ final readonly class ConnLaunchState
             'workspaceStrategy' => ['type' => 'root'],
             'creationSource' => $launch->input['source'],
             'initialMessage' => ['messageId' => $request->message_id, 'text' => $request->prompt, 'attachments' => []],
-        ]], JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION)]);
+        ]], ConnLaunchRequestData::EncodingFlags)]);
     }
 
     /** Record only the timestamp of an acceptance verified by the native handoff; the identities come from the frozen request. */
@@ -319,7 +320,7 @@ final readonly class ConnLaunchState
                 'message_id' => $frozen->request->initialMessage->messageId,
                 'model_selection' => $frozen->request->modelSelection,
                 'accepted_at' => $acceptedAt->format(DateTimeInterface::RFC3339_EXTENDED),
-            ], JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+            ], ConnLaunchRequestData::EncodingFlags);
             Arr::forget($state, 'launch_retry_requests.launch');
             $state['launch_phase'] = 'publishing';
             $state = self::stage($state, ConnLaunchStage::FirstMessage, 'succeeded', now());

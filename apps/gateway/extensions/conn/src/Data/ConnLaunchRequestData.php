@@ -9,6 +9,8 @@ use stdClass;
 
 final readonly class ConnLaunchRequestData
 {
+    public const int EncodingFlags = JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION;
+
     public function __construct(
         public string $launchId,
         public int $expectedProfileId,
@@ -31,7 +33,7 @@ final readonly class ConnLaunchRequestData
 
     public function privateRequest(): string
     {
-        return json_encode($this->body, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+        return json_encode($this->body, self::EncodingFlags);
     }
 
     /** @return array{launch_id: string, project_id: int, target_kind: string} */

@@ -67,14 +67,14 @@ function launchNode(string $name, string $ip): Node
 }
 
 /** @param array<string, mixed> $body */
-function callLaunchApi(?Node $caller, string $method, string $path, array $body = [], ?string $key = null): TestResponse
+function callLaunchApi(?Node $caller, string $method, string $path, array $body = [], ?string $key = null, int $jsonFlags = 0): TestResponse
 {
     $client = test()->withServerVariables(['REMOTE_ADDR' => $caller?->wireguard_ip ?? '192.0.2.1']);
     if ($method === 'POST' && $body === [] && str_ends_with($path, '/cancel')) {
         return $client->post('/api/v1/'.$path, [], ['Accept' => 'application/json']);
     }
 
-    return $client->json($method, '/api/v1/'.$path, $body, $key === null ? [] : ['Idempotency-Key' => $key]);
+    return $client->json($method, '/api/v1/'.$path, $body, $key === null ? [] : ['Idempotency-Key' => $key], $jsonFlags);
 }
 
 /** @return array<string, mixed> */
@@ -107,13 +107,13 @@ function launchNativeReceipt(Operation $launch, string $kind, ?string $key = nul
         'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0, 'idempotency_key' => $key]);
 }
 
-function launchFixtureDispatch(int $id): Operation
+function launchFixtureDispatch(int $id, ?stdClass $model = null): Operation
 {
     $state = app(ConnLaunchState::class);
     $state->workspaceReady($id);
 
     return $state->admitDispatch($id, 'fixture-environment', 'pinned-incarnation', 'fixture-t3-project',
-        (object) ['providerInstanceId' => 'actual-provider', 'model' => 'actual-model', 'options' => (object) []],
+        $model ?? (object) ['providerInstanceId' => 'actual-provider', 'model' => 'actual-model', 'options' => (object) []],
         function (Operation $launch, bool $recovery): Operation {
             expect($recovery)->toBeFalse()->and($launch->state['dispatch_committed_at'])->not->toBeNull();
 
@@ -478,28 +478,57 @@ describe('launch admission', function (): void {
         expect(launchRecords())->toBe($baseline);
     });
 
+    it('refuses a legacy model selection when preserving an integral float puts its stored JSON over the limit', function (bool $newTarget, int $storedBytes): void {
+        $body = $this->body;
+        if ($newTarget) {
+            launchFixtureDefault();
+            $body['target'] = ['kind' => 'new', 'name' => 'fixture-float-bound'];
+        }
+        $baseline = launchRecords();
+        $selection = ['instanceId' => 'codex', 'model' => 'valid-model', 'options' => (object) ['fixture' => '', 'integral' => 1.0, 'fractional' => 0.125]];
+        $flags = JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION;
+        $selection['options']->fixture = str_repeat('a', $storedBytes - strlen(json_encode($selection, $flags)));
+        expect(strlen(json_encode($selection, $flags)))->toBe($storedBytes)
+            ->and(strlen(json_encode($selection, JSON_THROW_ON_ERROR)))->toBe($storedBytes - 2);
+
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$body, 'model_selection' => $selection], $this->key, $flags)
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonStructure(['error' => ['details' => ['model_selection']]])->assertJsonMissingPath('data');
+        expect(launchRecords())->toBe($baseline);
+    })->with(['existing target, one byte over' => [false, 16_385], 'new target, two bytes over' => [true, 16_386]]);
+
     it('admits the encoded model limit with a large first message and replays the same request', function (): void {
-        $selection = ['instanceId' => 'codex', 'model' => 'valid-model', 'options' => (object) ['value' => '']];
-        $remaining = 16_384 - strlen(json_encode($selection, JSON_THROW_ON_ERROR));
+        $selection = ['instanceId' => 'codex', 'model' => 'valid-model', 'options' => (object) ['value' => '', 'integral' => 1.0, 'fractional' => 0.125]];
+        $flags = JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION;
+        $remaining = 16_384 - strlen(json_encode($selection, $flags));
         $selection['options']->value = str_repeat('π', intdiv($remaining, 6)).str_repeat('a', $remaining % 6);
-        expect(strlen(json_encode($selection, JSON_THROW_ON_ERROR)))->toBe(16_384);
+        $encoded = json_encode($selection, $flags);
+        expect(strlen($encoded))->toBe(16_384);
         $body = [...$this->body, 'model_selection' => $selection, 'prompt' => str_repeat('π', 70_001)];
         $baseline = launchRecords();
 
-        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->json('data.id');
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key, $flags)->assertAccepted()->json('data.id');
         $admitted = launchRecords();
         expect($admitted)->toBe(['operations' => $baseline['operations'] + 1, 'intents' => $baseline['intents'] + 1,
             'instances' => $baseline['instances']]);
         $request = json_decode(ConnLaunchIntent::query()->findOrFail($id)->request, flags: JSON_THROW_ON_ERROR);
-        expect($request->prompt)->toBe($body['prompt']);
+        expect($request->prompt)->toBe($body['prompt'])
+            ->and(json_encode($request->model_selection, $flags))->toBe($encoded)
+            ->and($request->model_selection->options->integral)->toBe(1.0)
+            ->and($request->model_selection->options->fractional)->toBe(0.125);
 
-        callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->assertJsonPath('data.id', $id);
+        callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key, $flags)->assertAccepted()->assertJsonPath('data.id', $id);
         $selection['options']->value .= 'a';
-        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$body, 'model_selection' => $selection], (string) Str::uuid())
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$body, 'model_selection' => $selection], (string) Str::uuid(), $flags)
             ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection']]]);
-        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$body, 'model_selection' => $selection], $this->key)
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$body, 'model_selection' => $selection], $this->key, $flags)
             ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict')->assertJsonMissingPath('data');
         expect(launchRecords())->toBe($admitted);
+
+        $child = launchFixtureDispatch($id, $request->model_selection);
+        $frozen = app(ConnLaunchDispatchSource::class)->resolve($child, $id, '', ConnLaunchDispatchSource::Field)->value;
+        expect(json_encode($frozen->request->modelSelection, $flags))->toBe($encoded)
+            ->and($frozen->request->initialMessage->text)->toBe($body['prompt']);
     });
 
     it('refuses unrepresentable model option numbers before admission or replay', function (): void {

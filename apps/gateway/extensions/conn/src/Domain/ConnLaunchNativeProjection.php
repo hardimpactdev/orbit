@@ -13,6 +13,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Orbit\Extensions\Conn\Data\ConnLaunchRequestData;
 
 final readonly class ConnLaunchNativeProjection implements DirectOperationProjection
 {
@@ -41,7 +42,7 @@ final readonly class ConnLaunchNativeProjection implements DirectOperationProjec
         if ($operation->kind === ConnLaunchDispatchSource::Kind) {
             $launchId = ValidatedData::integer($operation->input['launch_operation_id']);
             $source = $this->source->resolve($operation, $launchId, '', ConnLaunchDispatchSource::Field);
-            $value = json_encode($source->value, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+            $value = json_encode($source->value, ConnLaunchRequestData::EncodingFlags);
             $secrets[ConnLaunchDispatchSource::Field] = $this->swamp->executionCopy(self::Vault, self::executionCopyKey($operation), $value);
         }
 
