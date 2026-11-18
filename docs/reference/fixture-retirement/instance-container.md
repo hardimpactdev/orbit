@@ -111,7 +111,7 @@ This file runs the shipped `instance-container.yml` and the Instance host prepar
 | 3326 | The inner volume is flushed before its half of every seed | Copy path | A failed flush: dropped |
 | 3373 | A failed volume snapshot keeps the older pair | Dropped | An Incus fault |
 | 3401 | A same-commit pair retake takes both halves under `next-` first | Copy path | |
-| 3444 | A `next-` pair left by an earlier run takes the seed's name; a half is dropped | Dropped | A crash between two snapshot calls. The [blocking rule](/reference/tasks#reviewer-outcomes) asks no guard |
+| 3444 | A `next-` pair left by an earlier run takes the seed's name; a half is dropped | Dropped | A crash between two snapshot calls. The [reviewer rule](/reference/tasks#the-reviewer-rule) asks no guard |
 | 3485 | A failed deployment of a default with an inner volume restores both halves | Copy path | |
 | 3516 | A default converted in place starts only with both records | Designed away | A one-time hand conversion of a default made before the inner volume ([Convert a default](/reference/development-containers#convert-a-default)). No default made today takes this branch |
 | 3570 | A normal default seeds, retakes and restores with no volume call | New | `instance:deploy` `deploy-fails-restores`. The shape without an inner volume: designed away, as line 2588 |
