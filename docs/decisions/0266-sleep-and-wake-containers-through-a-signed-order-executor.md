@@ -118,7 +118,7 @@ An explicit signed wake queues delivery and follows its Operation, like Conn. On
 - **A terminal wake result arrives.** Once the result is durable, the listener queues completion of the signed wake immediately. The worker projects the result and sends the Operation's notices without waiting for the sweep. The job that runs after 6 s still covers a missing result or a missed handoff.
 - **Still no result.** The Operation starts its Swamp run. Just before the fixed relay call, the machine phase asks the Gateway to sign a fresh order for that Operation. The action, Node and target come only from the committed admission, never from the request. The signer accepts only the authorized workflow identity, its bound run and an active, uncancelled Operation. Only the phase sees the order; it goes to relay stdin, never to run inputs, arguments or output. Swamp holds no signing key. The executor returns the stored result or acts once.
 
-Engine choice stays on the Operation after admission, including across a setting change. The signed engine is off by default. Before disabling it for handback, stop admitting signed sleeps, drain signed Operations, and wake Instances that still have a Rust sleep plan with the signed engine. Do not hand a frozen Rust plan to Python or a Python plan to Rust. A stopped container has no resumable memory; its ordinary lifecycle may boot it after the applicable guard and cleanup.
+Engine choice stays on the Operation after admission, including across a setting change. The signed engine is off by default. A frozen Instance wakes through the engine that froze it whatever the settings say (R3), so neither switch needs a drain: turning the settings off is the whole rollback. Only before retiring the executor from a Node, wake the Instances that still have a Rust sleep plan. Do not hand a frozen Rust plan to Python or a Python plan to Rust. A stopped container has no resumable memory; its ordinary lifecycle may boot it after the applicable guard and cleanup.
 
 A start or deploy admitted to resume a signed freeze requires a matching executor receipt. An already-running container that needs no resume or discard can still take its usual lifecycle path without a receipt.
 
@@ -140,7 +140,7 @@ The visitor's request bound is part of the wake, not of the current settings: a 
 `ORBIT_EXECUTOR_WAKE_ENABLED` and `ORBIT_EXECUTOR_POWER_ENABLED` stay off until each item here is cleared. Open blockers from review: none.
 
 - **Cleared.** Every app-dev Node runs the same executor build as the Gateway expects: the pin moved to `cli-v0.10774.0`, the delivery built from #4032's commit, so the next Gateway release's fleet rollout installs that build on every `app-dev` Node. [`orbit:executor-parity`](/reference/executor#build-parity) compares each Node's executor SHA-256 with the pin and names every Node that differs. The switch runs it first and changes no flag while it fails.
-- Every Instance already asleep wakes through the engine that froze it, or is drained before the switch.
+- **Cleared.** Every Instance already asleep wakes through the engine that froze it, so the switch needs no drain. R3 already records the owner on the freezing sleep, and every wake entry point reads it before the settings: `instance:wake` and its API, the visitor's activation, Conn, and a start or deploy that resumes. The idle sweep only sleeps, so its next sleep takes the new setting. Subtask 5911 proved both directions on the nested fleet ([Switching engines](/reference/executor#switching-engines)).
 
 ### What this supersedes and changes
 

@@ -249,7 +249,29 @@ The handoff to Swamp does not make a delivered action cancellable. Recovery allo
 
 The signed `power_check` is `route` for a sleep with a published Route, `no_web` for a wake with no web unit, or `resume` for the resume of a deploy or start, whose workflow owns readiness and the marker. Any other pairing of check and action refuses with `bad_payload`. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 
-The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission. Before handback, stop admitting signed sleeps, let open signed Operations finish, and wake any frozen signed Instances with the signed engine. Verify that any failed sleep left either a running container or a recovered container before you retire the executor from the Node. Disabling the setting does not transfer a frozen plan between engines. Keep the executor installed and reachable until those plans are drained. Python remains installed until slice 8.
+The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission.
+
+### Switching engines
+
+A frozen Instance belongs to the engine whose sleep froze it ([ADR 0266, R3](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#four-rules-for-every-signed-outcome)). The freezing sleep's `signed_power` input records it, and `ExecutorPowerIntent::forInstance()` and `lifecycle()` read it before the settings. Every wake goes through them: `instance:wake` and its API, the visitor's activation, Conn, and a start or deploy that resumes the freeze. So a switch in either direction needs no drain.
+
+When the settings go on, Instances that Python froze still wake through Python as they are used. Every sleep after the switch is signed, including the idle sweep's.
+
+Turning both settings off is the one-step rollback. Instances that the executor froze still wake through it, with the visitor's request bound. Every new sleep goes back to Python.
+
+Only before you retire the executor from a Node, wake the Instances that still have a Rust sleep plan, and check that every failed sleep left a running or recovered container. Until then keep the executor installed and reachable. Python stays installed until slice 8.
+
+Subtask 5911 proved both directions on the nested fleet, with container default Instance 2, a Laravel app, in this order:
+
+| Operations | Settings | What happened | Engine |
+| --- | --- | --- | --- |
+| Sleep 204 | Off | Froze | Python |
+| Wake 205, by `instance:wake` | On | Resumed; the app then answered 200 | Python |
+| Sleep 206, then wake 207 by a visit | Off for the sleep, on for the wake | The visit got the progress page; its next request got the app | Python |
+| Sleep 208, wake 209 | On | Both `done` over the WebSocket | Executor |
+| Sleep 210; wake 211, by `instance:wake` | On for the sleep, off for the wake | Both `done` | Executor |
+| Sleep 212; wake 213, by a visit | On for the sleep, off for the wake | The visit got the app's own 200 in 353 ms | Executor |
+| Sleep 214, wake 215 | Off | Froze, resumed | Python |
 
 The Valkey host prerequisite is `hz 100`, applied by the orchestrator, as [the hand-off](#the-listener-and-the-hand-off) explains. Even then the server tick can make a timeout run a little late; a late successful reply must not authorize the original request.
 
