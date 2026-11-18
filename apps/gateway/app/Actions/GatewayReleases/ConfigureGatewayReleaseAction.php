@@ -48,6 +48,7 @@ final readonly class ConfigureGatewayReleaseAction
                 $environment = ['APP_CONFIG_CACHE' => $candidate, 'ORBIT_AGENT_DELIVERY' => $release.'/apps/agent/delivery/manifest.json'];
                 if ($container) {
                     $environment['ORBIT_GATEWAY_SSH_MUX'] = '/run/orbit/ssh-mux';
+                    $environment['ORBIT_GATEWAY_CONTAINER'] = '1';
                 }
                 $cached = Process::path($application)->timeout(120)
                     ->env($environment)
