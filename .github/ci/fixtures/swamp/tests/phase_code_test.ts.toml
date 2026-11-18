@@ -18,6 +18,8 @@ cases = [
   "a bare fileglob counts every bundle file it can match, so a matched file moves the phase that globs it",
   "a template's literal include joins its phase, and an include by a variable name makes the phase read the whole bundle",
   "unresolved() accepts literal Jinja includes, imports and extends and refuses any other name",
+  "a loop item source whose values the task lists literally joins its phase; an unbounded one makes the phase read the whole bundle",
+  "a Python file may read its own source by __file__, but a path beside it makes the phase read the whole bundle",
 ]
 file = "swamp/tests/phase_code_test.ts"
 cost = 4

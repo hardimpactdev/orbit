@@ -671,7 +671,7 @@ Some references cannot be resolved. Each of them makes its phase read the whole 
 
 The tasks that a phase selects in a converge playbook get the same check as the task files.
 
-The resolver does resolve four forms: a playbook-relative path that ends in a literal file name, a run-folder path, a loop item of a literal loop, and a fileglob item.
+The resolver does resolve four forms: a playbook-relative path that ends in a literal file name, a run-folder path, a fileglob item, and a loop item. A loop item source such as `{{ item.src }}` resolves when the task's own `loop`, `with_items` or `with_list` writes every value literally. A value may start with `{{ playbook_dir }}/`. A Python file that reads its own source by `__file__` is resolved too.
 
 Each bundle file is in exactly one of four classes. The resolver checks them in this order:
 

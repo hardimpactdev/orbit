@@ -1,10 +1,16 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { fileURLToPath } from "node:url";
 import { phaseCodeDigests } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
-import { classify, named, phases, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
+import { classify, named, phases, type Resolution, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
 import { codeTree } from "./phase_code_fixture.ts";
 
 const shipped = fileURLToPath(new URL("../ansible", import.meta.url));
+
+/** A phase's files; a phase that reads the whole bundle fails with its reason instead of a null read. */
+function filesOf(resolution: Resolution, phase: string): string[] {
+    if (resolution.whole) throw new Error(`${phase} reads the whole bundle: ${resolution.reason}`);
+    return resolution.files;
+}
 
 // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
 Deno.test("each phase of the shipped bundle resolves to its own bounded files, and shared files are in every phase", async () => {
@@ -14,7 +20,7 @@ Deno.test("each phase of the shipped bundle resolves to its own bounded files, a
         assertEquals(resolution.whole, false, resolution.whole ? resolution.reason : phase);
         for (const file of shared) assertEquals(resolution.files!.includes(file), true, `${phase} ${file}`);
     }
-    const has = (phase: typeof phases[number], file: string) => resolved[phase].files!.includes(file);
+    const has = (phase: typeof phases[number], file: string) => filesOf(resolved[phase], phase).includes(file);
     // The proof's probes: a network-only and a roles-only task file.
     assertEquals(phases.filter((phase) => has(phase, "tasks/node-converge-hub-prune.yml")), ["network"]);
     assertEquals(phases.filter((phase) => has(phase, "tasks/node-role-runtime.yml")), ["roles"]);
@@ -30,7 +36,7 @@ Deno.test("every bundle file that a reached file names is in that phase's set", 
     const files: string[] = [];
     for await (const entry of Deno.readDir(`${shipped}/tasks`)) files.push(`tasks/${entry.name}`);
     for (const phase of phases) {
-        const set = new Set(resolved[phase].files!);
+        const set = new Set(filesOf(resolved[phase], phase));
         // A file no phase names is in every set whole; it is not loaded by a name, so nothing it includes is.
         for (const file of [...set].filter((file) => !resolved[phase].everyPhase.includes(file))) {
             if (shared.includes(file) && file.endsWith(".yml")) continue;
@@ -52,9 +58,9 @@ Deno.test("a reference the resolver cannot name makes only its phase read the wh
         // The files nothing reaches (the check phase's file and an unused one) and the implicit module are in every phase.
         assertEquals(before.network.files, ["ansible.cfg", "build_vars.py", "library/orbit_artifact.py", "operation-node-converge-local-dns.yml", "operation-node-converge.yml",
             "tasks/check.yml", "tasks/network.yml", "tasks/shared.yml", "tasks/unused.yml"]);
-        assertEquals(before.software.files!.includes("library/orbit_artifact.py"), true);
-        assertEquals(before.roles.files!.includes("helper.py"), true);
-        assertEquals(before.agent.files!.includes("tasks/network.yml"), false);
+        assertEquals(filesOf(before.software, "software").includes("library/orbit_artifact.py"), true);
+        assertEquals(filesOf(before.roles, "roles").includes("helper.py"), true);
+        assertEquals(filesOf(before.agent, "agent").includes("tasks/network.yml"), false);
         await Deno.writeTextFile(`${ansible}/tasks/tools.yml`, '- ansible.builtin.include_tasks: "tool-{{ kind }}.yml"\n');
         const after = await resolvePhases(ansible);
         assertEquals(after.tools.whole, true);
@@ -131,8 +137,8 @@ Deno.test("a statically imported file with a task tagged in a list, and a play's
         await Deno.writeTextFile(`${ansible}/operation-node-converge.yml`, (await Deno.readTextFile(`${ansible}/operation-node-converge.yml`))
             .replace("  tasks:\n", "  handlers:\n    - { name: reload, ansible.builtin.import_tasks: tasks/unused.yml }\n  tasks:\n"));
         const resolved = await resolvePhases(ansible);
-        assertEquals(resolved.network.files!.includes("tasks/agent.yml") && resolved.network.files!.includes("tasks/check.yml"), true);
-        for (const phase of phases) assertEquals(resolved[phase].files!.includes("tasks/unused.yml"), true, phase);
+        assertEquals(filesOf(resolved.network, "network").includes("tasks/agent.yml") && filesOf(resolved.network, "network").includes("tasks/check.yml"), true);
+        for (const phase of phases) assertEquals(filesOf(resolved[phase], phase).includes("tasks/unused.yml"), true, phase);
     } finally { await Deno.remove(tree, { recursive: true }); }
 });
 
@@ -156,11 +162,11 @@ Deno.test("a bundle file that no phase names, such as the collection pins, moves
         await Deno.writeTextFile(`${code[0]}/requirements.yml`, "collections:\n  - { name: ansible.posix, version: 2.0.0 }\n");
         const now = await phaseCodeDigests(code);
         assertEquals(phases.filter((phase) => now[phase] !== first[phase]), [...phases]);
-        for (const phase of phases) assertEquals((await resolvePhases(code[0]))[phase].files!.includes("requirements.yml"), true, phase);
+        for (const phase of phases) assertEquals(filesOf((await resolvePhases(code[0]))[phase], phase).includes("requirements.yml"), true, phase);
     } finally { await Deno.remove(tree, { recursive: true }); }
     // The shipped collection pins are in every phase.
     const resolved = await resolvePhases(shipped);
-    for (const phase of phases) assertEquals(resolved[phase].files!.includes("requirements.yml"), true, phase);
+    for (const phase of phases) assertEquals(filesOf(resolved[phase], phase).includes("requirements.yml"), true, phase);
 });
 
 Deno.test("a templated include in an entry playbook makes its phase read the whole bundle", async () => {
@@ -188,8 +194,8 @@ Deno.test("a changed file inside a copied folder moves the phase that copies it"
         await Deno.writeTextFile(`${ansible}/tasks/network.yml`, "- ansible.builtin.copy: { src: net/, dest: /etc/net/ }\n");
         await Deno.writeTextFile(`${ansible}/tasks/agent.yml`, "- ansible.builtin.copy: { src: \"{{ item }}\", dest: /etc/ }\n  with_fileglob: [\"glob/*.txt\"]\n");
         const resolved = await resolvePhases(ansible);
-        assertEquals(phases.filter((phase) => resolved[phase].files!.includes("files/net/a.conf")), ["network"]);
-        assertEquals(resolved.agent.files!.includes("files/glob/a.txt"), true);
+        assertEquals(phases.filter((phase) => filesOf(resolved[phase], phase).includes("files/net/a.conf")), ["network"]);
+        assertEquals(filesOf(resolved.agent, "agent").includes("files/glob/a.txt"), true);
         const first = await phaseCodeDigests(code);
         await Deno.writeTextFile(`${ansible}/files/net/a.conf`, "two\n");
         const now = await phaseCodeDigests(code);
@@ -205,7 +211,7 @@ Deno.test("each shipped bundle file is in exactly one class, and another Operati
     const resolved = await resolvePhases(shipped);
     for (const file of ["instance-container-power.yml", "instance-container.yml", "tasks/instance-container-phase.yml", "tasks/instance-container-run-phase.yml", "tasks/executor-power-relay.yml"]) {
         assertEquals(classes.c.includes(file), true, file);
-        for (const phase of phases) assertEquals(resolved[phase].files!.includes(file), false, `${phase} ${file}`);
+        for (const phase of phases) assertEquals(filesOf(resolved[phase], phase).includes(file), false, `${phase} ${file}`);
     }
     for (const file of ["ansible.cfg", "requirements.yml", "build_vars.py", "library/orbit_artifact.py"]) assertEquals(classes.b.includes(file), true, file);
 });
@@ -303,4 +309,36 @@ Deno.test("unresolved() accepts literal Jinja includes, imports and extends and 
     for (const text of ["{% include name %}", "{% include 'a' ~ kind ~ '.j2' %}", "{% import macros as m %}", "{% extends parent %}"]) {
         assertEquals(unresolved("templates/t.j2", text) === null, false, text);
     }
+});
+
+Deno.test("a loop item source whose values the task lists literally joins its phase; an unbounded one makes the phase read the whole bundle", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const [ansible] = code;
+        await Deno.mkdir(`${ansible}/files`);
+        await Deno.writeTextFile(`${ansible}/files/release-phase.py`, "one\n");
+        await Deno.writeTextFile(`${ansible}/instance-release.yml`, "- hosts: target\n  tasks:\n    - ansible.builtin.copy: { src: files/release-phase.py, dest: /x }\n");
+        await Deno.writeTextFile(`${ansible}/tasks/roles.yml`, [
+            "- ansible.builtin.copy: { src: \"{{ item.src }}\", dest: \"/usr/local/libexec/{{ item.name }}\" }",
+            "  loop:",
+            "    - { src: files/release-phase.py, name: orbit-release-phase }",
+            "    - { src: \"{{ playbook_dir }}/../scripts/outside\", name: orbit-outside }",
+            "",
+        ].join("\n"));
+        assertEquals((await classify(ansible)).a.get("files/release-phase.py"), ["roles"]);
+        const first = await phaseCodeDigests(code);
+        await Deno.writeTextFile(`${ansible}/files/release-phase.py`, "two\n");
+        const now = await phaseCodeDigests(code);
+        assertEquals(phases.filter((phase) => now[phase] !== first[phase]), ["roles"]);
+        await Deno.writeTextFile(`${ansible}/tasks/roles.yml`, "- ansible.builtin.copy: { src: \"{{ item.src }}\", dest: /x }\n  loop: \"{{ release_files }}\"\n");
+        assertEquals((await resolvePhases(ansible)).roles.whole, true);
+        await Deno.writeTextFile(`${ansible}/tasks/roles.yml`, "- ansible.builtin.copy: { src: \"{{ item.src }}\", dest: /x }\n  with_items: [{ src: \"{{ name }}.py\" }]\n");
+        assertEquals((await resolvePhases(ansible)).roles.whole, true);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+Deno.test("a Python file may read its own source by __file__, but a path beside it makes the phase read the whole bundle", () => {
+    assertEquals(unresolved("files/a.py", "source = Path(__file__).read_text()\n"), null);
+    for (const text of ["HERE = Path(__file__).parent / 'b.py'\n", "b = Path(__file__) / '..' / 'b.py'\n", "b = os.path.join(os.path.dirname(__file__), 'b.py')\n",
+        "b = Path(__file__).with_name('b.py')\n"]) assertEquals(unresolved("files/a.py", text) === null, false, text);
 });

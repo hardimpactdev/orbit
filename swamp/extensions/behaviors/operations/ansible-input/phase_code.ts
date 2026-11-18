@@ -155,8 +155,8 @@ export function unresolved(file: string, text: string): string | null {
         const names = match[2].trim().replace(/\s+as\s+\w+$/, "");
         if (!/^(('[^'{}]*'|"[^"{}]*")|\[\s*(('[^'{}]*'|"[^"{}]*")\s*,?\s*)+\])$/.test(names)) return `${file}: ${match[0].slice(0, 120)}`;
     }
-    // A script may run itself again by its own path; one that opens files beside itself names them dynamically.
-    if (file.endsWith(".py") && text.split("\n").some((line) => /\b__file__\b/.test(line) && /\bdirname\b|\.parent\b|Path\(\s*__file__|join\(/.test(line))) return `${file}: __file__`;
+    // A script may run or read itself by its own path; one that opens files beside itself names them dynamically.
+    if (file.endsWith(".py") && text.split("\n").some((line) => /\b__file__\b/.test(line) && /\bdirname\b|\.parent\b|join(path)?\(|\.with_\w+\(|Path\(\s*__file__\s*\)(\.resolve\(\))?\s*\//.test(line))) return `${file}: __file__`;
     if (!/\.ya?ml$/.test(file)) return null;
     let documents: unknown;
     try {
@@ -169,6 +169,18 @@ export function unresolved(file: string, text: string): string | null {
 
 const includes = /^(ansible\.builtin\.)?(include_tasks|import_tasks|import_playbook|include_role|import_role|include_vars|include)$/;
 const localSource = /^((ansible\.builtin\.)?(template|copy|script|unarchive)|(ansible\.posix\.)?synchronize)$/;
+
+/** A source that is a loop item (`{{ item }}`, `{{ item.src }}`, optionally under `{{ playbook_dir }}/`) whose every value is written
+ * literally in the task's own `loop`, `with_items` or `with_list`, or a fileglob item, whose glob names its files. */
+function loopItems(record: Record<string, unknown>, source: string): boolean {
+    const match = source.match(/^(\{\{\s*playbook_dir\s*\}\}\/)?\{\{\s*item(?:\.(\w+))?\s*\}\}$/);
+    if (!match) return false;
+    if (!match[1] && !match[2] && record.with_fileglob !== undefined) return true;
+    const list = record.loop ?? record.with_items ?? record.with_list;
+    if (!Array.isArray(list) || list.length === 0) return false;
+    const plain = (value: unknown) => typeof value === "string" && (!value.includes("{{") || /^\{\{\s*playbook_dir\s*\}\}\/[^{}]+$/.test(value));
+    return list.every((item) => plain(match[2] ? (item as Record<string, unknown> | null)?.[match[2]] : item));
+}
 
 function taskUnresolved(file: string, node: unknown): string | null {
     if (Array.isArray(node)) {
@@ -191,9 +203,7 @@ function taskUnresolved(file: string, node: unknown): string | null {
             const source = args?.src;
             const remote = args?.remote_src === true || args?.remote_src === "true" || args?.remote_src === "yes";
             // A loop item names its file literally in the same task, so the file is named in the text.
-            const fromLoop = (/^\{\{\s*playbook_dir\s*\}\}\/\{\{\s*item(\.\w+)?\s*\}\}$/.test(String(source)) && Array.isArray(record.loop) && !JSON.stringify(record.loop).includes("{{"))
-                // A fileglob item: the glob names its folder literally (with_fileglob with a templated glob is refused above).
-                || (/^\{\{\s*item\s*\}\}$/.test(String(source)) && record.with_fileglob !== undefined);
+            const fromLoop = loopItems(record, String(source));
             if (typeof source === "string" && source.includes("{{") && !remote && !fromLoop && !/^\{\{\s*playbook_dir\s*\}\}\/[^{}]+$/.test(source)) {
                 return `${file}: ${key} src ${JSON.stringify(source)}`;
             }
