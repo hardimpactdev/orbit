@@ -119,7 +119,7 @@ final readonly class OperationStore
     {
         $before = $operation->status;
         $cancelRequested = array_key_exists('cancel_requested_at', $changes) && $operation->cancel_requested_at === null;
-        $written = DB::transaction(function () use ($operation, $changes, $onlyWhileOpen): bool {
+        $written = DB::transaction(function () use ($operation, $changes, $onlyWhileOpen, $before, $cancelRequested): bool {
             $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             $operation->setRawAttributes($current->getAttributes(), true);
             if ($onlyWhileOpen && $current->status->terminal()) {
@@ -136,7 +136,7 @@ final readonly class OperationStore
             }
             if (is_int($operation->state['conn_launch_owner'] ?? null)) {
                 $settlement = app(NativeRunCancellation::class);
-                if ($settlement->settled($operation) && ! $settlement->settled($current)) {
+                if (! OperationBroadcaster::usesWakeOutbox($operation) && $settlement->settled($operation) && ! $settlement->settled($current)) {
                     ReconcileSwampOperations::dispatch()->afterCommit();
                 }
             }
@@ -156,13 +156,18 @@ final readonly class OperationStore
             if (ProofSeeds::claimFreed($current, $operation)) {
                 DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('seed'));
             }
+            if (OperationBroadcaster::usesWakeOutbox($operation)) {
+                $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
+            }
 
             return true;
         });
         if (! $written) {
             return;
         }
-        $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
+        if (! OperationBroadcaster::usesWakeOutbox($operation)) {
+            $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
+        }
         // The terminal state frees the Nodes of a Route write; a timed-out one keeps them until Swamp confirms that its run stopped.
         if ($operation->status->terminal() && RoutePublicationHolds::tracks($operation->kind) && ! RoutePublicationHolds::keepsNodes($operation)) {
             app(RoutePublicationHolds::class)->release($operation->id, $before === OperationStatus::Waiting);

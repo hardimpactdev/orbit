@@ -27,7 +27,7 @@ final class DispatchExecutorWake implements ShouldQueue
         try {
             $wake->continueHandoff($this->operationId);
         } catch (Throwable $exception) {
-            Log::warning('The deferred executor wake handoff failed; the minute sweep retries.',
+            Log::warning('The deferred executor wake handoff failed; the wake sweep retries.',
                 ['operation_id' => $this->operationId, 'exception_type' => $exception::class]);
         }
     }

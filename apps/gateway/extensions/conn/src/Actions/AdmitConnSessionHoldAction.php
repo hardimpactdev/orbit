@@ -11,7 +11,7 @@ use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +54,11 @@ final readonly class AdmitConnSessionHoldAction
             $open = Operation::query()->where('kind', ConnHeldSessions::Kind)->where('input->conn_environment_id', $environment->id)
                 ->where('input->caller_node_id', $node->id)->whereNotIn('status', OperationStatus::terminalValues())->first();
             if ($open instanceof Operation) {
+                if ($renews !== null && $open->status === OperationStatus::Queued && $open->attempts === 0
+                    && $open->cancel_requested_at === null && ($open->input['renews_pairing_id'] ?? null) === $renews->id) {
+                    app(SwampDispatch::class)->start($open);
+                }
+
                 return $open;
             }
             if (! $renews instanceof ConnPairing && ($current = $this->held->current($node, $environment)) instanceof ConnPairing) {
@@ -63,18 +68,14 @@ final readonly class AdmitConnSessionHoldAction
             $pairing = ConnPairing::query()->create(['node_id' => $node->id, 'conn_environment_id' => $environment->id, 'held' => true,
                 'client_label' => $node->name.' via Orbit '.Str::lower(Str::random(8))]);
             $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-session-hold-'.Str::uuid()];
-            $operation = $this->operations->execute(ConnHeldSessions::Kind, 'conn_pairing', $pairing->id, $gateway, [
+
+            return $this->operations->execute(ConnHeldSessions::Kind, 'conn_pairing', $pairing->id, $gateway, [
                 'conn_environment_id' => $environment->id, 'caller_node_id' => $node->id, 'pairing_ids' => [$pairing->id],
                 'renews_pairing_id' => $renews?->id,
                 'intent' => ['url' => $environment->url, 'environment' => $environment->id, 'pairing_id' => $pairing->id, 'label' => $pairing->client_label,
                     'request_body' => json_encode(['label' => $pairing->client_label, 'scopes' => IssueConnPairingAction::Scopes], JSON_THROW_ON_ERROR)],
                 'execution_secrets' => ['admin_session' => $reference],
             ], $renews instanceof ConnPairing ? 'schedule' : 'operator', null);
-            if ($operation->wasRecentlyCreated) {
-                app(SwampCommandStep::class)->executionCopy($reference['vault'], $reference['key'], $environment->admin_session);
-            }
-
-            return $operation;
         });
     }
 

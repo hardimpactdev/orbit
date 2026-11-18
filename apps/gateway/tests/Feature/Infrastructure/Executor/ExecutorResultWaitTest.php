@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Executor\ExecutorReply;
@@ -175,6 +176,32 @@ it('does not count a reply released after the bound', function (string $status):
         ->and($result->acceptedMs)->toBeNull()->and($result->elapsedMs)->toBe(575.0);
 })->with(['done', 'accepted']);
 
+it('checks the durable wake result without starting a socket operation close to the deadline', function (): void {
+    $queue = Mockery::mock(ExecutorResultQueue::class);
+    $queue->shouldNotReceive('pop');
+    $reads = 0;
+    $wait = new ExecutorResultWait($queue, static fn (): float => hrtime(true) / 1e9, $queue);
+
+    $reply = $wait->wait(5, 0.1, static function () use (&$reads): ?array {
+        return ++$reads === 1 ? null : ['status' => 'done'];
+    });
+
+    expect($reply->status)->toBe(ExecutorWaitStatus::Done)->and($reads)->toBe(2);
+});
+
+it('still checks the durable wake result after the dedicated socket fails', function (): void {
+    $queue = Mockery::mock(ExecutorResultQueue::class);
+    $queue->shouldReceive('pop')->once()->with([ExecutorResults::resultKey(5)], 0.025)->andThrow(RuntimeException::class);
+    $reads = 0;
+    $wait = new ExecutorResultWait($queue, static fn (): float => hrtime(true) / 1e9, $queue);
+
+    $reply = $wait->wait(5, 0.5, static function () use (&$reads): ?array {
+        return ++$reads < 3 ? null : ['status' => 'partial'];
+    });
+
+    expect($reply->status)->toBe(ExecutorWaitStatus::Partial)->and($reads)->toBe(3);
+});
+
 describe('against a real valkey-server', function (): void {
     beforeEach(function (): void {
         if (! isset($GLOBALS['executorValkeyPort'])) {
@@ -190,7 +217,7 @@ describe('against a real valkey-server', function (): void {
             'public_ssh_host' => '10.44.0.8', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:test',
         ]));
         $this->operation = Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => 7,
-            'node_id' => $this->node->id, 'status' => OperationStatus::Running, 'input' => []]);
+            'node_id' => $this->node->id, 'status' => OperationStatus::Running, 'input' => [], 'state' => [ExecutorWake::State => true]]);
         $queue = new ValkeyExecutorResultQueue($this->redis);
         $this->results = new ExecutorResults($queue, new NullLogger, app(CommandActivityInputSanitizer::class));
         $this->wait = new ExecutorResultWait($queue, static fn (): float => microtime(true));
@@ -198,7 +225,7 @@ describe('against a real valkey-server', function (): void {
 
     it('pushes both lines with a 60 s expiry and hands a result over at once', function (): void {
         $id = $this->operation->id;
-        $done = ['operation' => (string) $id, 'status' => 'done', 'repeat' => false];
+        $done = ['operation' => (string) $id, 'action' => 'wake', 'target' => (string) $this->operation->target_id, 'status' => 'done', 'repeat' => false];
         executorHandOff($this, ['status' => 'accepted']);
         executorHandOff($this, $done);
 

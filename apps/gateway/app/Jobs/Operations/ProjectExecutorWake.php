@@ -8,6 +8,7 @@ use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\OperationStatus;
+use App\Infrastructure\Executor\ExecutorWakeLock;
 use App\Models\Instance;
 use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,8 +33,8 @@ final class ProjectExecutorWake implements ShouldQueue
 
     public function handle(InstanceLifecycleContributions $contributions): void
     {
-        DB::transaction(function () use ($contributions): void {
-            $operation = Operation::query()->whereKey($this->operationId)->lockForUpdate()->first();
+        app(ExecutorWakeLock::class)->run('hook', $this->operationId, function () use ($contributions): void {
+            $operation = Operation::query()->find($this->operationId);
             if ($operation === null || ! ExecutorWake::owns($operation) || $operation->status !== OperationStatus::Succeeded
                 || ($operation->state[self::Receipt] ?? false) === true) {
                 return;
@@ -41,7 +42,10 @@ final class ProjectExecutorWake implements ShouldQueue
             if (($instance = Instance::query()->find($operation->target_id)) !== null) {
                 $contributions->projectWake($instance);
             }
-            $operation->forceFill(['state' => [...($operation->state ?? []), self::Receipt => true, ExecutorWake::FollowUpState => 'delivered']])->save();
+            DB::transaction(static function () use ($operation): void {
+                $operation->refresh();
+                $operation->forceFill(['state' => [...($operation->state ?? []), self::Receipt => true, ExecutorWake::FollowUpState => 'delivered']])->save();
+            });
         });
     }
 }

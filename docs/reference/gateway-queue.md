@@ -99,7 +99,7 @@ While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands ru
 
 Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue; the end of a root run also queues `ProjectEndedNativeRun` for that Operation on `operations-prompt` ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
 
-That minute pass also recovers pending executor wake completion handoffs after six seconds and [executor wake hook handoffs](/reference/executor#the-wake-inside-the-request) that remain pending after the completion job exhausts its retries. It publishes a missing wake order for the same Operation before enqueueing completion on `operations-prompt`, which also carries the hooks. It runs none of the hooks in the scheduler or an activation request.
+The scheduler checks for committed executor wake work every five seconds. When work is due, it queues the unique `ReconcileExecutorWakes` job on `operations-prompt`. That job relays notices and leases completion and hook handoffs, including lost or exhausted jobs. It runs apart from native reconciliation and never enqueues while it holds SQLite's writer. See [Wake handoff recovery](/reference/executor#wake-handoff-recovery).
 
 ## Horizon
 

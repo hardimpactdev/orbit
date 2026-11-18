@@ -315,6 +315,7 @@ final readonly class InstanceWake extends InstancePower
      */
     public function activate(Instance $instance, bool $retry, string $caller): string|true|null
     {
+        $budget = ExecutorWake::enabled() ? new ExecutorWakeBudget : null;
         if (! $retry) {
             $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
                 ->where('target_id', $instance->id)->orderByDesc('id')->first();
@@ -323,10 +324,12 @@ final readonly class InstanceWake extends InstancePower
             }
         }
         try {
-            $operation = $this->admitWake($instance, $caller, null);
-            if (ExecutorWake::enabled()) {
-                return app(ExecutorWake::class)->request($operation) ? true : null;
+            if ($budget !== null) {
+                $operation = $budget->write(fn (): Operation => $this->admitWake($instance, $caller, null));
+
+                return $operation !== null && app(ExecutorWake::class)->request($operation, $budget) ? true : null;
             }
+            $operation = $this->admitWake($instance, $caller, null);
 
             if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
                 // A 401 page is no success, so the callback must run always. A worker that dies here leaves the safety net's run.

@@ -6,6 +6,7 @@ namespace App\Domain\Executor;
 
 use App\Domain\Broadcasting\RealtimeConnection;
 use App\Models\Operation;
+use Closure;
 use Illuminate\Contracts\Broadcasting\Broadcaster;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,8 @@ use Throwable;
  */
 final readonly class ExecutorOrderPublisher
 {
-    public function __construct(private RealtimeConnection $realtime) {}
+    /** @param (Closure():float)|null $clock */
+    public function __construct(private RealtimeConnection $realtime, private ?Closure $clock = null) {}
 
     /**
      * Publishes the order of this Operation on the channel of the Operation's `node_id`.
@@ -40,7 +42,7 @@ final readonly class ExecutorOrderPublisher
         }
         $original = config('broadcasting');
         try {
-            $this->send($operation, $order, hrtime(true) / 1e9 + $boundSeconds);
+            $this->send($operation, $order, $this->monotonic() + $boundSeconds);
         } finally {
             config(['broadcasting' => $original]);
             Broadcast::purge('reverb');
@@ -69,10 +71,14 @@ final readonly class ExecutorOrderPublisher
         }
 
         foreach (array_slice($connections, 1) as $connection) {
+            if ($deadline !== null && $deadline - $this->monotonic() < 0.001) {
+                break;
+            }
             if ($this->realtime->oldServerSkipped($connection)) {
                 continue;
             }
 
+            $attempted = false;
             try {
                 $this->realtime->configureBroadcasting($connection, oldServer: true);
                 $this->limit($deadline);
@@ -81,12 +87,15 @@ final readonly class ExecutorOrderPublisher
                 if (! $broadcaster instanceof Broadcaster) {
                     throw new RuntimeException('The reverb broadcaster is unavailable.');
                 }
+                $attempted = true;
                 $broadcaster->broadcast($event->broadcastOn(), $event->broadcastAs(), $event->broadcastWith());
                 $this->realtime->recordOldServer($connection, true);
             } catch (Throwable $exception) {
                 // The order's wire form is a signed, short-lived credential: log only the Node and the Operation.
                 Log::warning('Failed to publish an executor order to the old websocket server.', ['node' => $nodeId, 'operation' => $order->operation, 'exception_type' => $exception::class]);
-                $this->realtime->recordOldServer($connection, false);
+                if ($attempted) {
+                    $this->realtime->recordOldServer($connection, false);
+                }
             }
         }
 
@@ -106,7 +115,7 @@ final readonly class ExecutorOrderPublisher
         if ($deadline === null) {
             return;
         }
-        $left = $deadline - hrtime(true) / 1e9;
+        $left = $deadline - $this->monotonic();
         if ($left < 0.001) {
             throw new RuntimeException('The executor publish budget ended.');
         }
@@ -116,5 +125,10 @@ final readonly class ExecutorOrderPublisher
             'broadcasting.connections.reverb.client_options.connect_timeout' => $left,
         ]);
         Broadcast::purge('reverb');
+    }
+
+    private function monotonic(): float
+    {
+        return $this->clock === null ? hrtime(true) / 1e9 : ($this->clock)();
     }
 }

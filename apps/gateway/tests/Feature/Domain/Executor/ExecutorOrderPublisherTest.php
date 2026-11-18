@@ -10,7 +10,10 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Models\Operation;
 use Illuminate\Broadcasting\Channel;
+use Illuminate\Contracts\Broadcasting\Broadcaster;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Testing\Fakes\EventFake;
 
 beforeEach(function (): void {
@@ -93,3 +96,34 @@ it('sends nothing once the publish budget has ended', function (): void {
 
     Event::assertNotDispatched(ExecutorOrderBroadcast::class);
 });
+
+it('only marks the old Reverb down for an attempted failing send', function (bool $attempt): void {
+    $home = sys_get_temp_dir().'/orbit-old-executor-reverb-'.bin2hex(random_bytes(8));
+    $manager = $this->mock(WebSocketCredentialManager::class);
+    $manager->shouldReceive('current')->andReturn(new WebSocketCredentials('fixture-app', 'fixture-key', 'fixture-secret',
+        servingAddresses: ['192.0.2.11', '192.0.2.12']));
+    $realtime = new RealtimeConnection($manager, $home);
+    [, $old] = $realtime->all();
+    $broadcaster = $this->mock(Broadcaster::class);
+    if ($attempt) {
+        $broadcaster->shouldReceive('broadcast')->once()->andThrow(new RuntimeException('Fixture send failed.'));
+    } else {
+        $broadcaster->shouldNotReceive('broadcast');
+    }
+    Broadcast::extend('reverb', fn () => $broadcaster);
+    $checks = 0;
+    $clock = static function () use ($attempt, &$checks): float {
+        $checks++;
+
+        return ! $attempt && $checks >= 4 ? 1.0 : 0.0;
+    };
+
+    try {
+        (new ExecutorOrderPublisher($realtime, $clock))->publish($this->operation, $this->order, 0.5);
+
+        Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
+        expect($realtime->oldServerSkipped($old))->toBe($attempt);
+    } finally {
+        File::deleteDirectory($home);
+    }
+})->with(['expired before old send' => [false], 'attempted old send fails' => [true]]);

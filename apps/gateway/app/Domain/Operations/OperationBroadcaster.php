@@ -7,13 +7,9 @@ namespace App\Domain\Operations;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\ExecutorWakeNotices;
 use App\Domain\Instances\Power\InstanceWake;
-use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Models\Operation;
-use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
  * Sends an operation's notices (docs/reference/events.mdx#operation): every change on the operation's own channel,
@@ -21,7 +17,7 @@ use Throwable;
  */
 final readonly class OperationBroadcaster
 {
-    public function __construct(private RecordEventBroadcaster $broadcaster) {}
+    public function __construct(private RecordEventBroadcaster $broadcaster, private ExecutorWakeNotices $wakeNotices) {}
 
     public static function channel(int $operationId): string
     {
@@ -42,24 +38,19 @@ final readonly class OperationBroadcaster
         }
     }
 
-    /** Creation precedes the executor state stamp; an admitted executor wake also stays queued if the setting changes. */
+    public static function usesWakeOutbox(Operation $operation): bool
+    {
+        return $operation->kind === InstanceWake::Kind && (ExecutorWake::enabled() || ExecutorWake::owns($operation));
+    }
+
     private function broadcast(Operation $operation, RecordEventType $type, string $channel = 'orbit'): void
     {
         if (in_array($operation->kind, OperationKinds::PrivateConnKinds, true)) {
             return;
         }
         $notice = self::notice($operation);
-        if ($operation->kind === InstanceWake::Kind && (ExecutorWake::enabled() || ExecutorWake::owns($operation))) {
-            $id = $operation->id;
-            DB::afterCommit(static function () use ($type, $id, $notice, $channel): void {
-                try {
-                    Bus::dispatch(new BroadcastOperationNotice($type, $id, $notice, $channel));
-                } catch (Throwable $exception) {
-                    Log::warning('An executor wake notice could not be queued.', [
-                        'operation_id' => $id, 'event_type' => $type->value, 'exception_type' => $exception::class,
-                    ]);
-                }
-            });
+        if (self::usesWakeOutbox($operation)) {
+            $this->wakeNotices->record($operation, $type, $notice, $channel);
 
             return;
         }

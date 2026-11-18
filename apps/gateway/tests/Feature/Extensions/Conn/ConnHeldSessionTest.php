@@ -9,11 +9,13 @@ use App\Domain\Nodes\NodeAccessRemovalHook;
 use App\Domain\Nodes\NodeRemovalHook;
 use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -343,6 +345,25 @@ describe('installed clients', function (): void {
 });
 
 describe('renewal', function (): void {
+    it('recovers the same unstarted renewal and stages its vault copy only at native start', function (): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $original = holdOperation($this->phone, $this->environment);
+        endHold($original);
+        $pairing = ConnPairing::query()->findOrFail($original->target_id);
+        $admit = app(AdmitConnSessionHoldAction::class);
+
+        $renewal = $admit->renew($pairing);
+        Queue::fake([StartAdmittedSwampRun::class]);
+        $retried = $admit->renew($pairing);
+
+        expect($retried->id)->toBe($renewal->id)
+            ->and(ConnPairing::query()->count())->toBe(2)
+            ->and(collect($this->vault->sent)->where('type', 'vault.put'))->toHaveCount(0);
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $renewal->id);
+        app(DirectOperation::class)->workflowInputs($retried);
+        expect(collect($this->vault->sent)->where('type', 'vault.put'))->toHaveCount(1);
+    });
+
     it('renews a held session within seven days of its end with no device online, then revokes the old one', function (): void {
         endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
         $old = ConnPairing::query()->where('held', true)->sole();

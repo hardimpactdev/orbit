@@ -52,24 +52,22 @@ sequenceDiagram
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
     %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
-    %%> - record a pending handoff with admission; publish outside the database transaction under a non-blocking per-Operation cache lock, then commit a publication receipt and enqueue completion
-    %%> - when Conn admits a new wake without waiting, queue its publication after the launch and wake commit; the visitor, job and sweep share the same handoff
-    %%> - the minute reconciler retries up to 50 pending handoffs, oldest first, after 6 s; publish a missing order for the same Operation before enqueueing completion, and skip a recorded publication
-    %%> - hand Operation notices to operations-prompt after commit; no Reverb delivery remains in the request's termination callbacks
+    %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; a pre-send cancellation wins if no caller has shared it
+    %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
+    %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it publishes any missing order for the same Operation
+    %%> - record Operation notices locally and hand them to operations-prompt in the background; the request never enqueues a job
     %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
     GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
     %%> Result:
-    %%> - a joined visit also reads the durable result, because another waiter may have consumed its Valkey copy
-    %%> - the waiter reads the observer's replies in arrival order; a reply released after the bound cannot authorize the original request
+    %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
+    %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
     alt done or partial within the bound
       GW-->>CL: 200, continue request<br/>original method, URI and body
       %%> Result:
       %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
       %%> - the Operation succeeds and records the runtime running
-      %%> - record the pending lifecycle follow-up with success, then enqueue it before terminal notices; a notice enqueue failure cannot lose it
-      %%> - a failed hook enqueue is logged and stays pending for recovery; it cannot change an in-bound success from 200 to the progress page
-      %%> - a later completion retries a pending handoff even on a succeeded Operation; a queued handoff and the successful hook receipt prevent duplicates
-      %%> - the minute reconciliation pass also retries up to 50 pending handoffs, oldest first, after a 30 s grace; exhausted completion retries need no new visit
+      %%> - record the pending lifecycle follow-up with success; a background worker runs the hook without a database writer and records its receipt after it returns
+      %%> - reclaim old handoffs in batches of up to 50; the per-Operation hook lock and receipt keep concurrent deliveries from running the hook twice
     else no successful result in time
       %% path: executor-pending
       GW-->>CL: 401 progress page<br/>activation state pending

@@ -12,15 +12,16 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
+use App\Infrastructure\Executor\ExecutorWakeLock;
 use App\Jobs\Operations\CompleteExecutorWake;
 use App\Jobs\Operations\DispatchExecutorWake;
 use App\Jobs\Operations\ProjectExecutorWake;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -39,15 +40,11 @@ final readonly class ExecutorWake
 
     public const int CompletionSeconds = 6;
 
-    private const int PublicationLockSeconds = 30;
+    public const int HandoffLeaseSeconds = 60;
 
-    private const int FollowUpGraceSeconds = 30;
+    private const int BatchSize = 50;
 
-    private const int FollowUpBatchSize = 50;
-
-    private const int CompletionBatchSize = 50;
-
-    public function __construct(private ExecutorOrderPublisher $publisher, private ExecutorResultWait $wait, private OperationStore $operations) {}
+    public function __construct(private ExecutorOrderPublisher $publisher, private ExecutorResultWait $wait, private OperationStore $operations, private ExecutorWakeLock $lock) {}
 
     public static function enabled(): bool
     {
@@ -55,7 +52,7 @@ final readonly class ExecutorWake
     }
 
     /**
-     * Called only by InstanceWake's admission under the Instance lock. The Operation commits before request() signs anything.
+     * Called only inside the Instance admission transaction. The publisher claims the committed Operation before signing.
      *
      * @param  array<string, mixed>  $input
      */
@@ -66,110 +63,100 @@ final readonly class ExecutorWake
         if ($operation->wasRecentlyCreated) {
             $state = [...($operation->state ?? []), self::State => true, self::CompletionState => 'pending'];
             unset($state['swamp_start']);
-            $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now(), 'attempts' => 1, 'state' => $state]);
+            $operation->forceFill(['state' => $state])->save();
         }
 
         return $operation;
     }
 
+    /** Conn calls this from its launch worker; the committed handoff also survives a lost enqueue. */
     public function dispatchDeferred(int $operationId): void
     {
         DB::afterCommit(static function () use ($operationId): void {
             try {
                 Bus::dispatch(new DispatchExecutorWake($operationId));
             } catch (Throwable $exception) {
-                Log::warning('The deferred executor wake could not be queued; the minute sweep retries.',
+                Log::warning('The deferred executor wake could not be queued; reconciliation retries.',
                     ['operation_id' => $operationId, 'exception_type' => $exception::class]);
             }
         });
     }
 
-    /** True only when this request sees a successful wake within its publish-and-wait budget. */
-    public function request(Operation $operation): bool
+    /** True only when this request observes and commits a successful wake within its budget. */
+    public function request(Operation $operation, ?ExecutorWakeBudget $budget = null): bool
     {
         if (! self::owns($operation)) {
             return false;
         }
-        $bound = ExecutorResultWait::boundSeconds();
-        $deadline = hrtime(true) / 1e9 + $bound;
-        $completedBy = now()->addMilliseconds($bound * 1000);
+        $budget ??= new ExecutorWakeBudget;
 
         try {
-            if ($this->publishOnce($operation->id, $deadline)) {
-                try {
-                    $this->enqueueCompletion($operation->id);
-                } catch (Throwable $exception) {
-                    Log::warning('The executor wake completion could not be queued; the minute sweep retries.',
-                        ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
-                }
-            }
-            $operation->refresh();
-            $line = $operation->executor_result;
-            if ($line === null && ! $operation->status->terminal()) {
-                $left = $deadline - hrtime(true) / 1e9;
-                if ($left < 0.001) {
-                    return false;
-                }
-                $reply = $this->wait->wait($operation->id, $left);
-                $operation->refresh();
-                // BLPOP has one consumer. A sibling may have taken the line and completed the same wake during our wait.
-                if ($reply->status === ExecutorWaitStatus::Timeout && $operation->status === OperationStatus::Succeeded
-                    && $operation->finished_at !== null && $operation->finished_at->lte($completedBy)) {
-                    return true;
-                }
-                if (! in_array($reply->status, [ExecutorWaitStatus::Done, ExecutorWaitStatus::Partial], true)) {
-                    return false;
-                }
-                $line = $operation->executor_result;
-            }
-            if (hrtime(true) / 1e9 > $deadline || ! in_array($line['status'] ?? null, ['done', 'partial'], true)) {
+            $this->publishOnce($operation->id, $budget);
+            $remaining = $budget->left();
+            if ($remaining < 0.001) {
                 return false;
             }
-            try {
-                $this->complete($operation);
-            } catch (Throwable $exception) {
-                if ($operation->refresh()->status !== OperationStatus::Succeeded) {
-                    throw $exception;
-                }
-                Log::warning('The executor wake succeeded but its follow-up could not be queued; the minute sweep retries.',
-                    ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+            $reply = $this->wait->wait($operation->id, $remaining, function () use ($operation, $budget): ?array {
+                $operation->refresh();
+                $receipt = $operation->executor_result_received_us;
+
+                return $receipt !== null && $receipt <= $budget->receiptDeadline && ! in_array($operation->status, [OperationStatus::Failed, OperationStatus::Cancelled, OperationStatus::Interrupted], true)
+                    ? $operation->executor_result : null;
+            });
+            if (! in_array($reply->status, [ExecutorWaitStatus::Done, ExecutorWaitStatus::Partial], true) || $budget->left() <= 0) {
+                return false;
+            }
+            if ($operation->status !== OperationStatus::Succeeded) {
+                $budget->write(fn (): bool => $this->complete($operation));
             }
 
-            return $operation->refresh()->status === OperationStatus::Succeeded;
+            return $budget->left() > 0 && $operation->status === OperationStatus::Succeeded;
         } catch (Throwable $exception) {
-            // Neither exception text nor the signed order may enter logs: either can carry a credential.
             Log::warning('The executor wake request could not obtain its result.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
 
             return false;
         }
     }
 
-    /** Publishing holds only the cache lock: a sibling visit can still read and wait without a SQLite writer. */
-    private function publishOnce(int $operationId, float $deadline): bool
+    private function publishOnce(int $operationId, ExecutorWakeBudget $budget): bool
     {
-        return Cache::lock('orbit:executor-wake-publish:'.$operationId, self::PublicationLockSeconds)->get(function () use ($operationId, $deadline): bool {
+        return $this->lock->run('publish', $operationId, function () use ($operationId, $budget): bool {
             $operation = Operation::query()->find($operationId);
             if ($operation === null || ! self::owns($operation) || $operation->status->terminal()) {
                 return false;
             }
-            if (self::completionDeadline($operation) !== null) {
+            if (self::completionDeadline($operation) !== null || $operation->executor_result !== null) {
                 return true;
             }
-            $left = $deadline - hrtime(true) / 1e9;
-            if ($left < 0.001) {
+            if ($operation->status === OperationStatus::Queued) {
+                $claimed = $budget->write(fn (): bool => DB::transaction(function () use ($operation): bool {
+                    $operation->refresh();
+                    if ($operation->status !== OperationStatus::Queued || $operation->attempts !== 0 || $operation->cancel_requested_at !== null) {
+                        return false;
+                    }
+                    $this->operations->change($operation, ['status' => OperationStatus::Running, 'started_at' => now(), 'attempts' => 1]);
+
+                    return true;
+                }));
+                if ($claimed !== true) {
+                    return false;
+                }
+            }
+            if ($operation->status !== OperationStatus::Running || $budget->left() < 0.001) {
                 return false;
             }
             $order = ExecutorOrderSigner::fromConfig()->sign($operation, 'wake', (string) $operation->target_id);
-            $this->publisher->publish($operation, $order, $left);
+            $this->publisher->publish($operation, $order, $budget->left());
             $publishedAt = now()->getTimestampMs();
-            DB::transaction(static function () use ($operationId, $publishedAt): void {
-                $current = Operation::query()->whereKey($operationId)->lockForUpdate()->firstOrFail();
-                if (self::completionDeadline($current) === null) {
-                    $current->forceFill(['state' => [...($current->state ?? []), self::PublishedAt => $publishedAt]])->save();
-                }
-            });
 
-            return true;
+            return $budget->write(static fn (): bool => DB::transaction(static function () use ($operation, $publishedAt): bool {
+                $operation->refresh();
+                if (! $operation->status->terminal()) {
+                    $operation->forceFill(['state' => [...($operation->state ?? []), self::PublishedAt => $publishedAt]])->save();
+                }
+
+                return true;
+            })) === true;
         }) === true;
     }
 
@@ -185,38 +172,24 @@ final readonly class ExecutorWake
         return $operation->kind === InstanceWake::Kind && ($operation->state[self::State] ?? false) === true;
     }
 
-    /**
-     * The request calls this only on success. The queued completion calls it 6 s after publication with expire=true, closing every other
-     * result as a failure until slice 7 supplies the relay and Swamp fallback. It never blocks, signs or publishes.
-     */
-    public function complete(Operation $operation, bool $expire = false): void
+    /** The request only closes a success. The background completion also closes a refusal, failure or expired wake. */
+    public function complete(Operation $operation, bool $expire = false): bool
     {
-        DB::transaction(function () use ($operation, $expire): void {
-            $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            if (! self::owns($operation)) {
-                return;
-            }
-            if ($operation->status->terminal()) {
-                if ($operation->status === OperationStatus::Succeeded && ($operation->state[self::FollowUpState] ?? null) === 'pending') {
-                    DB::afterCommit(fn () => $this->enqueueHooks($operation->id));
-                }
-
-                return;
+        return DB::transaction(function () use ($operation, $expire): bool {
+            $operation->refresh();
+            if (! self::owns($operation) || $operation->status !== OperationStatus::Running) {
+                return $operation->status === OperationStatus::Succeeded;
             }
             $line = $operation->executor_result;
             $success = in_array($line['status'] ?? null, ['done', 'partial'], true);
             if (! $success && ! $expire) {
-                return;
+                return false;
             }
             $code = match ($line['status'] ?? null) {
                 'refused' => 'executor.wake_refused',
                 'failed' => 'executor.wake_failed',
                 default => 'executor.wake_timeout',
             };
-            if ($success) {
-                // Register before change() registers the terminal notices; the pending handoff commits with success.
-                DB::afterCommit(fn () => $this->enqueueHooks($operation->id));
-            }
             $this->operations->change($operation, ['status' => $success ? OperationStatus::Succeeded : OperationStatus::Failed,
                 'finished_at' => now(), 'lock_key' => null, 'error_code' => $success ? null : $code,
                 ...($success ? ['state' => [...($operation->state ?? []), self::FollowUpState => 'pending']] : []),
@@ -224,102 +197,117 @@ final readonly class ExecutorWake
             if ($success) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => InstanceRuntimePowerState::Running]);
             }
+
+            return $success;
         });
     }
 
-    /** Recovers the initial handoff without another visit, including a request that stopped before publishing its order. */
+    public function hasHandoffs(): bool
+    {
+        return $this->completions()->exists() || $this->hooks()->exists();
+    }
+
+    /** Recovers abandoned publication as well as lost completion jobs. */
     public function recoverPendingCompletions(): int
     {
-        $pending = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')
-            ->where('status', OperationStatus::Running)->where('state->'.self::State, true)
-            ->where('state->'.self::CompletionState, 'pending')
-            ->where('started_at', '<=', now()->subSeconds(self::CompletionSeconds))
-            ->orderBy('started_at')->orderBy('id')->limit(self::CompletionBatchSize)->get(['id']);
-        $recovered = [];
-        foreach ($pending as $operation) {
-            try {
-                if ($this->continueHandoff($operation->id)) {
-                    $recovered[] = $operation->id;
-                }
-            } catch (Throwable $exception) {
-                Log::warning('An executor wake completion handoff could not be recovered; the next pass tries again.',
-                    ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
-                break;
-            }
-        }
-        if ($recovered !== []) {
-            Log::info('Executor wake completion handoffs recovered.', ['recovered' => count($recovered), 'operation_ids' => $recovered]);
-        }
-
-        return count($recovered);
+        return $this->recover($this->completions()->orderByRaw('coalesce(started_at, created_at)'), $this->continueHandoff(...), 'completion');
     }
 
     public function continueHandoff(int $operationId): bool
     {
-        return $this->publishOnce($operationId, hrtime(true) / 1e9 + min(0.5, ExecutorResultWait::boundSeconds()))
-            && $this->enqueueCompletion($operationId);
+        $operation = Operation::query()->find($operationId);
+        if ($operation === null || ! self::owns($operation) || $operation->status->terminal()) {
+            return false;
+        }
+        if (self::completionDeadline($operation) === null && $operation->executor_result === null && ! $this->publishOnce($operationId, new ExecutorWakeBudget)) {
+            return false;
+        }
+
+        return $this->enqueue($operationId, self::CompletionState, OperationStatus::Running);
     }
 
-    private function enqueueCompletion(int $operationId): bool
-    {
-        return DB::transaction(static function () use ($operationId): bool {
-            $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
-            if ($operation === null || ! self::owns($operation) || $operation->status !== OperationStatus::Running
-                || ($operation->state[self::CompletionState] ?? null) !== 'pending') {
-                return false;
-            }
-            $deadline = self::completionDeadline($operation);
-            if ($deadline === null) {
-                return false;
-            }
-            Bus::dispatch((new CompleteExecutorWake($operation->id))->beforeCommit()->delay($deadline));
-            $operation->forceFill(['state' => [...($operation->state ?? []), self::CompletionState => 'queued']])->save();
-
-            return true;
-        });
-    }
-
-    /** Recovers admitted work even if executor wakes are now disabled or completion exhausted its retries. */
     public function recoverPendingHooks(): int
     {
-        $pending = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')
-            ->where('status', OperationStatus::Succeeded)->where('state->'.self::State, true)
-            ->where('state->'.self::FollowUpState, 'pending')
-            ->where('finished_at', '<=', now()->subSeconds(self::FollowUpGraceSeconds))
-            ->orderBy('finished_at')->orderBy('id')->limit(self::FollowUpBatchSize)->get(['id']);
+        return $this->recover($this->hooks()->orderBy('finished_at'), fn (int $id): bool => $this->enqueue($id, self::FollowUpState, OperationStatus::Succeeded), 'hook');
+    }
+
+    /** @return Builder<Operation> */
+    private function completions(): Builder
+    {
+        return $this->eligible(self::CompletionState)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running])
+            ->where(fn ($query) => $query->whereNotNull('state->'.self::PublishedAt)->orWhereNotNull('executor_result')
+                ->orWhereRaw('coalesce(started_at, created_at) <= ?', [now()->subSeconds(self::CompletionSeconds)->toDateTimeString()]));
+    }
+
+    /** @return Builder<Operation> */
+    private function hooks(): Builder
+    {
+        return $this->eligible(self::FollowUpState)->where('status', OperationStatus::Succeeded)->whereNotNull('finished_at');
+    }
+
+    /** @return Builder<Operation> */
+    private function eligible(string $state): Builder
+    {
+        return Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('state->'.self::State, true)
+            ->where(fn ($query) => $query->where('state->'.$state, 'pending')
+                ->orWhere(fn ($query) => $query->where('state->'.$state, 'queued')->where('state->'.$state.'_until', '<=', now()->timestamp)));
+    }
+
+    /** @param Builder<Operation> $query
+     * @param  callable(int):bool  $handoff
+     */
+    private function recover(Builder $query, callable $handoff, string $kind): int
+    {
         $recovered = [];
-        foreach ($pending as $operation) {
+        foreach ($query->orderBy('id')->limit(self::BatchSize)->get(['id']) as $operation) {
             try {
-                if ($this->enqueueHooks($operation->id)) {
+                if ($handoff($operation->id)) {
                     $recovered[] = $operation->id;
                 }
             } catch (Throwable $exception) {
-                Log::warning('An executor wake hook handoff could not be recovered; the next pass tries again.',
+                Log::warning('An executor wake '.$kind.' handoff could not be recovered; the next pass tries again.',
                     ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
                 break;
             }
         }
         if ($recovered !== []) {
-            Log::info('Executor wake hook handoffs recovered.', ['recovered' => count($recovered), 'operation_ids' => $recovered]);
+            Log::info('Executor wake '.$kind.' handoffs recovered.', ['recovered' => count($recovered), 'operation_ids' => $recovered]);
         }
 
         return count($recovered);
     }
 
-    /** Success is already committed. A failed enqueue leaves the handoff for completion or the minute sweep. */
-    private function enqueueHooks(int $operationId): bool
+    private function enqueue(int $operationId, string $state, OperationStatus $status): bool
     {
-        return DB::transaction(static function () use ($operationId): bool {
-            $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
-            if ($operation === null || ! self::owns($operation) || $operation->status !== OperationStatus::Succeeded
-                || ($operation->state[self::FollowUpState] ?? null) !== 'pending') {
-                return false;
+        $leaseKey = $state.'_until';
+        $claim = DB::transaction(function () use ($operationId, $state, $status, $leaseKey): ?array {
+            $operation = $this->eligible($state)->whereKey($operationId)->where('status', $status)->first();
+            if ($operation === null) {
+                return null;
             }
-            // The Gateway queue defaults to after_commit: enqueue now so a failure rolls back the queued marker.
-            Bus::dispatch((new ProjectExecutorWake($operation->id))->beforeCommit());
-            $operation->forceFill(['state' => [...($operation->state ?? []), self::FollowUpState => 'queued']])->save();
+            $due = $state === self::CompletionState ? self::completionDeadline($operation) : null;
+            $lease = max(now()->getTimestamp(), $due?->getTimestamp() ?? 0) + self::HandoffLeaseSeconds;
+            $operation->forceFill(['state' => [...($operation->state ?? []), $state => 'queued', $leaseKey => $lease]])->save();
 
-            return true;
+            return [$due, $lease];
         });
+        if ($claim === null) {
+            return false;
+        }
+        [$due, $lease] = $claim;
+        try {
+            Bus::dispatch($state === self::CompletionState ? (new CompleteExecutorWake($operationId))->delay($due) : new ProjectExecutorWake($operationId));
+        } catch (Throwable $exception) {
+            DB::transaction(static function () use ($operationId, $state, $leaseKey, $lease, $status): void {
+                $operation = Operation::query()->whereKey($operationId)->where('status', $status)->where('state->'.$state, 'queued')
+                    ->where('state->'.$leaseKey, $lease)->first();
+                if ($operation !== null) {
+                    $operation->forceFill(['state' => [...($operation->state ?? []), $state => 'pending', $leaseKey => null]])->save();
+                }
+            });
+            throw $exception;
+        }
+
+        return true;
     }
 }
