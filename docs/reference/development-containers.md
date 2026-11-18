@@ -579,7 +579,7 @@ T3 never restarts in the middle of a turn. Right before each T3 restart, whether
 Then:
 
 - An open turn defers the restart. The drop-in is written and systemd reloads, but T3 keeps running.
-- A deferred container stays on the Node's list. The converge reports it under `deferred`, with its reason.
+- A deferred container stays on the Node's list. The Node converge Operation lists its identity in `t3_restart_deferred`. A [release rollout](/reference/gateway-recovery#fleet-rollout) keeps that Node pending and retries.
 - When `t3.service` is active but the read fails or times out, the container counts as busy too. T3 never restarts blind.
 - A missing store, or one whose tables changed, fails the read.
 - When `t3.service` is not active, nothing is asked. `try-restart` does nothing there, and the entry leaves the list.
@@ -2772,15 +2772,15 @@ Each Ansible step costs about 2.5 s to start its play (Python, the address play 
 
 Each phase writes the result file as it ends, as its own play did, with the phases that passed so far as `phases_passed`. So a step killed in a later phase, by its timeout or a lost Node, keeps what the passed phases wrote, such as the Club key's word. A failed phase stops the step. The result file names it as `failed_phase`, and the code is the phase's own refusal or `instance.container_<phase>_failed`. The container counts as started once `start` is among the passed phases; otherwise its power state stays as it was.
 
-The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fleets --commit <release>` from the new release. It admits one deployment per nested-fleet default. With none, it prints one line and admits nothing. A default whose admission fails with an error that is no refusal gets the line `operation.admission_failed`; the other defaults are still admitted.
+When nested-fleet refresh is enabled, the Gateway tries to admit one deployment per nested-fleet default when the verified release first becomes [fleet current](/reference/gateway-recovery#fleet-rollout). If fleet rollout is disabled, it tries at verification. A pending, deferred or failed rollout postpones admission until the fleet becomes current. The deployment has its own admission rules and can still be refused. The Gateway logs each admission result. A failure for one default leaves the other defaults eligible.
 
-The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) turns the step on. It is off by default; while it is off, the step prints one line and admits nothing. The live fleet has it on since 13 November 2026. An operator turns it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
+The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) enables refresh. It is off by default. Enable it only after the Club key lives off the default's disk and a safety snapshot of the default exists.
 
 The run deploys the release commit itself. A commit missing from the Project's repository refuses the admission with `project.source_unavailable`. A commit off the Project's branch fails the fetch with `deployment.commit_not_on_branch`, and the old seed stays. When the Project's repository is Orbit's own, the release commit is on its `main` already, and no step pushes it. A Project whose repository is a hand-kept copy of `main`, such as a trial repository, needs the release commit pushed there before the release.
 
 | Rule | What happens |
 | --- | --- |
-| Best effort | The release step allows failure, and nothing in the release waits for the run. A refusal or a failed run leaves the release live |
+| Best effort | The release stays live if admission is refused or a deployment fails. The fleet result tracks the Nodes. Each deployment reports its own result |
 | No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
@@ -2798,7 +2798,7 @@ The nested Nodes' `/` lies in the inner pool: a directory pool on the outer cont
 
 A refresh writes up to 2 GiB more before its readiness wait: on Instance 2454 a seed after a refresh that retook `base` held 1.66 GiB of its own blocks, and each refresh added 0.1 to 0.3 GiB of data. The check refuses when the free space minus 2 GiB is under the floor, before anything changes. On a quota that counts snapshots, the seeds that copies still pin count too.
 
-The release step that admits the refresh ends before the refresh does. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
+The fleet admission job ends after it queues the refresh. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
 
 The checkout moves under the running nested Gateway, with its old schema and processes. So the run's one fleet check, before the checkout, starts what is stopped and checks only that the containers run and the tunnel reaches the hub. Nothing in the run stops the fleet before the refresh, so no second start follows. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
 

@@ -70,6 +70,7 @@ sequenceDiagram
     %%> - target, scope, recorded roles, Tools, network and vault key names; playbooks read release pins
     %%> - the Gateway includes a CLI plan only for a Node with a recorded `ci-runner` assignment that is not being removed; scope flags do not change that decision
     %%> - reserve the Node and its recorded hub until the Operation settles; two base converges of different Nodes pass each other, the hub's own included (a base intent has no network)
+    %%> - automatic release role work waits for Instance and task Operations that participate on its target Node
     %%> - the seven Ansible plays lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`), so converges of different Nodes run side by side
     GW-->>CLI: 202 Accepted<br/>Operation ID
     %%> Result:

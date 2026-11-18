@@ -27,7 +27,7 @@ final readonly class NodeRoleDirectInput
         private CliConvergePlan $cli, private NodeRoleRuntimeInput $runtime, private ToolManagerIntent $managers) {}
 
     /** @return array<string,mixed> */
-    public function capture(Node $node, NodeRole $assignment, bool $created): array
+    public function capture(Node $node, NodeRole $assignment, bool $created, bool $includeCli = true): array
     {
         if ($assignment->node_id !== $node->id) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The role snapshot requires its admitted Node assignment.', 422);
@@ -55,7 +55,7 @@ final readonly class NodeRoleDirectInput
             'certificates' => app(NodeRoleCertificateInput::class)->captureForExecution($node, $role),
             'metrics_fleet' => app(NodeRoleMetricsInput::class)->capture($assignment),
             'gateway_dns' => $role === RoleName::Gateway ? app(GatewayPrivateDnsInput::class)->capture($node) : null,
-            'cli' => $this->cli->input($node), 'runtime' => $this->runtime->capture($node, $assignment)];
+            'cli' => $includeCli ? $this->cli->input($node) : null, 'runtime' => $this->runtime->capture($node, $assignment)];
     }
 
     /** Canonical read-only ownership check for the role root and its protected hash source. */

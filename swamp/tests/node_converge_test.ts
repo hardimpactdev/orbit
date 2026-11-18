@@ -16,7 +16,7 @@ async function reports(folder: string, failure?: string) {
         await Deno.writeTextFile(`${folder}/${name}-meta.json`, JSON.stringify({ exit_code: name === failure ? 2 : 0, elapsed_seconds: 1 }));
     }
     await Deno.writeTextFile(`${folder}/tools-result.json`, "[]");
-    await Deno.writeTextFile(`${folder}/roles-result.json`, JSON.stringify({ browser_trust: [] }));
+    await Deno.writeTextFile(`${folder}/roles-result.json`, JSON.stringify({ browser_trust: [], t3_restart_deferred: [] }));
 }
 
 Deno.test("converge reports each container without Chromium's trust store and why, and only those fixed reasons", async () => {
@@ -28,12 +28,13 @@ Deno.test("converge reports each container without Chromium's trust store and wh
             { container: "orbit-instances/instance-8", reason: "path refused: /home/agent/.pki/nssdb/pkcs11.txt is symlink" },
             { container: "orbit-instances-nested/instance-9", reason: "no agent home" },
         ];
-        await Deno.writeTextFile(`${folder}/roles-result.json`, JSON.stringify({ browser_trust: listed }));
+        await Deno.writeTextFile(`${folder}/roles-result.json`, JSON.stringify({ browser_trust: listed, t3_restart_deferred: ["orbit-instances/instance-7"] }));
         const result = await convergeResult(folder);
         assertEquals(result.browser_trust, listed);
+        assertEquals(result.t3_restart_deferred, ["orbit-instances/instance-7"]);
         assertEquals(result.failed_phase, undefined);
         // Free text from a container never reaches the result: the roles phase fails instead of passing it on.
-        await Deno.writeTextFile(`${folder}/roles-result.json`, JSON.stringify({ browser_trust: [{ container: "orbit-instances/instance-7", reason: "version mismatch: $(id) != 0.26.2-2" }] }));
+        await Deno.writeTextFile(`${folder}/roles-result.json`, JSON.stringify({ t3_restart_deferred: [], browser_trust: [{ container: "orbit-instances/instance-7", reason: "version mismatch: $(id) != 0.26.2-2" }] }));
         const refused = await convergeResult(folder);
         assertEquals([refused.failed_phase, refused.browser_trust], ["roles", []]);
     } finally { await Deno.remove(folder, { recursive: true }); }

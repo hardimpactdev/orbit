@@ -9,7 +9,6 @@ use App\Domain\Fleet\FleetReboot;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\SwampNode;
 use App\Domain\Operations\OperationIdempotency;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\GatewayRelease;
@@ -47,10 +46,11 @@ final readonly class AdmitFleetRebootAction
         if ($root === null || ! Config::boolean('fleet.reboot')) {
             throw new ResourceOperationException('fleet.reboot_not_ready', 'Fleet reboots are off on this Gateway.', 409);
         }
+        Node::query()->whereKey($root)->lockForUpdate()->firstOrFail();
         if (FleetReboot::open() instanceof Operation) {
             throw new ResourceOperationException('fleet.reboot_busy', 'A fleet reboot pass is already running.', 409);
         }
-        if (Operation::query()->where('kind', 'fleet.rollout')->whereNotIn('status', OperationStatus::terminalValues())->exists()
+        if (AdmitFleetRolloutAction::open()
             || GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
                 ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
             throw new ResourceOperationException('fleet.reboot_waiting', 'A fleet rollout or a Gateway release runs; the pass waits for it.', 409);
