@@ -2090,11 +2090,12 @@ The worker counts the turn as launched only when `getThreadProjection` shows the
 
 | Result | `sent` | `launched` | `ended` |
 | --- | --- | --- | --- |
-| Nothing sent | `false` | `false` | `true` |
+| Nothing sent | `false` | `false` | `true`, unless the checkout is detached |
+| Nothing sent, over a detached checkout not restored | `false` | `false` | `false` |
 | Possibly sent, no confirmed run | `true` | `false` | `false` |
 | Confirmed launch | `true` | `true` | As the run went |
 
-`TaskCopyTurnProjection::record` replaces a thread's stored questions only when `launched` is `true`. So a possibly sent answer keeps the questions. `ended: false` keeps the hold through `TaskCopyTurn::unsettled`.
+`TaskCopyTurnProjection::record` replaces a thread's stored questions only when `launched` is `true`. So a possibly sent answer keeps the questions. `ended: false` keeps the hold through `TaskCopyTurn::unsettled`. A reviewer's turn cut after its detach and before its send holds the group too, as it does today with `tasks.copy_review_unrestored`.
 
 #### Recovery of a lost reply
 
@@ -2123,7 +2124,11 @@ No target makes this check today. Item 4 supplies it. Until it lands, the worker
 
 #### Earlier turns
 
-The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) stops the thread's current active run. That run may be a person's by then. So under this contract, capture passes, for each unsettled turn, its thread ID, its frozen message ID and any run ID it recorded. The earlier worker may have died after the target started the run but before it recorded the ID. So the next turn finds the earlier run by its link to the frozen message, never as the thread's current active run:
+The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) stops the thread's current active run. That run may be a person's by then. So under this contract, capture passes, for each unsettled turn, its thread ID, its frozen message ID, any run ID it recorded, its `sent` and its `answered` list. A turn with no result counts as possibly sent.
+
+An earlier turn whose result says `sent: false` has no message and no run to find. Only its marked checkout holds it. The worker restores and verifies that checkout, then names the turn settled.
+
+For any other earlier turn, the earlier worker may have died after the target started the run but before it recorded the ID. So the next turn finds the earlier run by its link to the frozen message, never as the thread's current active run:
 
 - Exactly one run started from the message, and it has ended: the run is over.
 - Exactly one run started from the message, and it is active: the worker interrupts that exact run and waits for proof of its end.
@@ -2134,6 +2139,10 @@ The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-tha
 A recorded run ID must equal the run that the link finds. Otherwise the earlier turn stays unsettled.
 
 Settling keeps today's order. First the worker proves that the earlier run ended. Then, for a reviewer's turn whose detach mark is set, it restores the checkout and verifies it, only when the restore is safe as [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) says. Only then does it name the turn settled. A reviewer's run that ended over a checkout not yet restored leaves the turn unsettled. A reviewer's turn without the mark is settled once its run is over, as today.
+
+An earlier answer turn may prove launched only at this point: its `answered` list is not empty, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears the thread's stored questions when their request IDs are exactly the spent ones. It does not wait for the earlier Operation, which is not recorded a second time.
+
+The current turn froze its prompt at capture, so it may quote those spent questions as the question it answers. When its own `answered` list holds a spent request, it launches nothing and fails with `tasks.copy_question_answered`. The caller sends its prompt again. The next capture composes it without the spent questions.
 
 #### Questions
 
@@ -2169,6 +2178,7 @@ The grant holds an allowlist, fixed at capture:
 | Allows | On |
 | --- | --- |
 | `getThreadProjection` and the thread's subscriptions | The admitted thread: its messages, runs and requests, also an empty thread right after create |
+| `getThreadProjection` | Each earlier turn's thread named at capture, also another role's thread: only to find the run of its frozen message, its end and its requests |
 | `thread.create` | The admitted thread ID, with the frozen body |
 | `message.dispatch` | The admitted message ID on the admitted thread, under the owner check |
 | `run.interrupt` | The run that the target started from the admitted message |
@@ -2213,6 +2223,9 @@ Task 5873 proves this on one isolated copy. Each case passes only on its observa
 | A person's run is active during cleanup | The earlier turn's run is stopped only if it is its own. The person's run goes on. The reviewer checkout is untouched while unsettled |
 | The earlier worker died before it recorded its run ID | The next turn finds that run by its message and stops only it |
 | A reviewer's run ended, then the worker died before the restore | The turn stays unsettled until the next turn restores and verifies the checkout |
+| A reviewer's turn cut after its detach and before its send | The turn stays unsettled with no message sent. The next turn restores and verifies the checkout, then settles it without looking for a run |
+| A reviewer turn follows an interrupted implementer turn | The reviewer's worker reads the implementer thread, stops only the run of its frozen message, then settles it |
+| A possibly sent answer that ran | The next turn finds its run, names its stored requests spent, and fails with `tasks.copy_question_answered` when its own prompt quotes them. The turn after that sends no stale question |
 | A stored request already resolved on the answer turn | No cancel is sent, and the answer runs as a new run |
 | A live question | The questions are stored with owner run, the run is interrupted, and the turn is `asking_for_input` |
 | A stale question on the answer turn | Only the stored request is cancelled, then the answer runs as a new run |
