@@ -24,6 +24,9 @@ pub enum Action {
     Wake,
     /// Drop a stopped or replaced Instance's prepared state.
     Discard,
+    /// Converge one ufw rule to its desired state (ADR 0271). Its target is the Node itself, so the Node's firewall
+    /// changes run one at a time.
+    UfwEnsureRule,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -42,13 +45,14 @@ impl Action {
         match self {
             Self::ProofNoop => Family::Proof,
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
+            Self::UfwEnsureRule => Family::Firewall,
         }
     }
 
     /// What the action's target names.
     pub fn target_kind(self) -> TargetKind {
         match self {
-            Self::ProofNoop => TargetKind::Node,
+            Self::ProofNoop | Self::UfwEnsureRule => TargetKind::Node,
             Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
         }
     }
@@ -60,6 +64,7 @@ impl Action {
             Self::Sleep => "sleep",
             Self::Wake => "wake",
             Self::Discard => "discard",
+            Self::UfwEnsureRule => "ufw.ensure_rule",
         }
     }
 }
@@ -78,6 +83,7 @@ impl FromStr for Action {
             "sleep" => Ok(Self::Sleep),
             "wake" => Ok(Self::Wake),
             "discard" => Ok(Self::Discard),
+            "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
             _ => Err(UnknownActionError),
         }
     }
@@ -111,6 +117,8 @@ pub enum Family {
     Proof,
     /// Whole-container sleep, wake and discard.
     Power,
+    /// Desired-state firewall rules (ADR 0271).
+    Firewall,
 }
 
 /// The family name is unknown to this executor.
@@ -126,6 +134,7 @@ impl Family {
         match raw {
             "proof" => Some(Self::Proof),
             "power" => Some(Self::Power),
+            "firewall" => Some(Self::Firewall),
             _ => None,
         }
     }

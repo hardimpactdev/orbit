@@ -138,6 +138,13 @@ impl Run for Families {
                     .to_owned(),
                 },
             },
+            Action::UfwEnsureRule => match orbit_executor_firewall::ensure_rule(&orbit_executor_firewall::NodeUfw, order.input()) {
+                Ok(changes) => Outcome::Applied { changes },
+                Err(failure) => {
+                    log(&format!("ufw.ensure_rule {} failed: {} {}", order.operation(), failure.code, failure.detail));
+                    Outcome::Failed { code: failure.code.to_owned() }
+                }
+            },
         }
     }
 }

@@ -68,6 +68,12 @@ pub enum Outcome {
         /// The failure's code.
         code: String,
     },
+    /// A desired-state primitive converged its resource and checked it (ADR 0271). A journal holding this outcome
+    /// needs an executor that knows it: roll back only to a release that has the firewall family.
+    Applied {
+        /// How many changes it made; 0 means the resource was already right.
+        changes: u32,
+    },
 }
 
 /// An order the journal recorded as open whose key has no result yet: crash recovery finishes it.

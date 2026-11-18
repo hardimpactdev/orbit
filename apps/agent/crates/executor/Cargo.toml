@@ -17,6 +17,7 @@ path = "src/main.rs"
 orbit-executor-core = { path = "../executor-core" }
 
 orbit-executor-power = { path = "../power" }
+orbit-executor-firewall = { path = "../firewall" }
 serde_json = "1"
 
 [lints]
