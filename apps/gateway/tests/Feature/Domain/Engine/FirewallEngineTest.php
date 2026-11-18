@@ -233,3 +233,20 @@ it('signs the input the executor\'s ufw.ensure_rule reads, as the shared contrac
 
     expect($this->bus->payload(0)['input'])->toBe($fixture['input']);
 });
+
+it('records a remove that found no line as already removed', function (): void {
+    $allow = ($this->allow)();
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $allow->id]);
+    ($this->receipt)($allow, ['status' => 'applied', 'changes' => 1]);
+
+    $response = $this->postJson('/api/v1/nodes/'.$this->node->id.'/firewall-rules/remove', ['port' => '443', 'protocol' => 'tcp', 'source' => '192.0.2.1']);
+    $response->assertStatus(202);
+    $remove = Operation::query()->findOrFail($response->json('data.id'));
+    app(StartSwampRun::class)->start($remove);
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $remove->id]);
+    expect($this->bus->payload(1)['input']['ensure'])->toBe('absent');
+    ($this->receipt)($remove, ['status' => 'applied', 'changes' => 0]);
+
+    expect($remove->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($remove->result)->toBe(['backend' => 'absent', 'skipped' => 'firewall.rule_absent']);
+});

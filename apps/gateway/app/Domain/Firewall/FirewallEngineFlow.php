@@ -54,7 +54,7 @@ final readonly class FirewallEngineFlow implements EngineDefinition
             $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
                 'failure' => ['failed_step' => $failed->name, 'stderr_recorded' => false], 'result' => ['error_code' => $failed->error_code]],
             default => ['status' => 'succeeded', 'error_code' => null, 'result' => ['backend' => $absent ? 'absent' : 'active',
-                ...($run->changes() === 0 && ! $absent ? ['skipped' => 'firewall.rule_exists'] : [])]],
+                ...($run->changes() === 0 ? ['skipped' => $absent ? 'firewall.rule_absent' : 'firewall.rule_exists'] : [])]],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
     }
