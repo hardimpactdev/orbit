@@ -160,7 +160,7 @@ class InstanceExecutionProofTest(unittest.TestCase):
         self.assertFalse(any(c['enforced'] for c in coverage))
         files = [str(p.relative_to(ROOT)) for p in (ROOT / 'swamp/proof').glob('*/*.cases.yaml')]
         selected = plan.proof_cases(paths, mapping, read, files, coverage)
-        self.assertEqual({entry['command'] for entry in selected}, {'instance:migrate', 'instance:destroy'})
+        self.assertEqual({entry['command'] for entry in selected}, {'instance:create', 'instance:clone', 'instance:migrate', 'instance:destroy'})
         self.assertTrue(all(entry['only'] == [] for entry in selected))
 
     def test_documentation_and_fixtures_do_not_warn(self):

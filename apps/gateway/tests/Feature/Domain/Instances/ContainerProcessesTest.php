@@ -10,7 +10,6 @@ use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\ListProcessesAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
-use App\Domain\Instances\ContainerNodes;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -60,7 +59,6 @@ function processContainerNode(): Node
         'settings' => ['apps' => ['path' => '/home/orbit/apps']],
     ]));
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
-    config(['instances.container_nodes' => [...app(ContainerNodes::class)->ids(), $node->id]]);
     app(AllocateInstanceBridgeAction::class)->execute($node);
 
     return $node->refresh();

@@ -1,0 +1,19 @@
+command: instance:register
+chart: instance/register
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  new-host-refused: "Gateway HTTP tests require instance.container_required (409) and no Instance, Route or Operation. Fleet proof is owed; the runner lacks an unregistered checkout fixture for this command."
+  existing-registration: "Gateway tests keep record-only and repair repeats of an existing registered checkout. End-to-end task-copy proof cannot run in the Amp orb and is still owed."
+cases:
+  - id: invalid-project
+    batch: fresh-fleet
+    covers: []
+    summary: Refuse a nonnumeric Project before inspecting source.
+    act:
+      - cli:
+          run: [instance:register, "--project=invalid", --yes]
+          expect: {exit: 1, code: project.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}
