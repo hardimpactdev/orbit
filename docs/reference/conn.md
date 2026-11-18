@@ -740,7 +740,7 @@ If Cancel wins, settle owned child work before admitting teardown. If a probe ti
 
 Use the ordinary Conn workspace check and confirm there is no T3 activity before removing a launch-owned clone, even if its create failed. A reservation whose create never ran needs no workspace read. Keep cleanup pending if the workspace is dirty, a required read fails, or another launch uses the Instance. Admission of a launch on an existing clone and admission of its cleanup both lock the Instance. If the other launch claims it first, cleanup waits. If cleanup claims it first, the other launch is refused.
 
-Verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart.
+Verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart. If the launch's own removal stopped the container before it failed, Orbit can retry that removal while the workspace reports the container stopped. The ownership and other-launch checks still apply.
 
 Preserve pre-existing Instances and unrelated work. Restore a launch-owned wake through native sleep when the lifecycle guard proves the Instance has no other consumer. Keep a shared wake and any Instance with recognized activity since the wake began. A failed activity read keeps cleanup pending with `conn.launch_wake_restore_unproven`.
 

@@ -9,6 +9,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -761,6 +762,48 @@ describe('launch control and progress', function (): void {
         callLaunchApi($this->desktop, 'POST', 'conn/launches', $body, (string) Str::uuid())->assertConflict()
             ->assertJsonPath('error.code', 'conn.launch_target_unavailable');
     });
+
+    it('retries only an owned container removal with a recorded stop', function (string $failedStep, string $stop, bool $owned, string $reason, bool $retries): void {
+        [$launch, $instance] = launchCleanupFixture(OperationStatus::Succeeded);
+        $reader = workspaceReader(launchWorkspaceAnswer());
+        Http::fake(['http://10.44.0.30:3773/*' => Http::response(['threads' => []])]);
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance($launch);
+        $destroy = ConnLaunchChild::Destroy->operation($launch->refresh());
+        $nativeState = [...$destroy->state, 'swamp_run_id' => 'failed-destroy-run'];
+        if (! $owned) {
+            unset($nativeState['conn_launch_owner']);
+        }
+        $destroy->update(['status' => OperationStatus::Running, 'state' => $nativeState]);
+        app(DevelopmentInstanceDestroyProjection::class)->apply($destroy, [
+            'status' => 'failed', 'run_id' => 'failed-destroy-run', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+            'result' => ['summary' => ['failed_steps' => [$failedStep]], 'steps' => [
+                'Stop the container' => ['status' => $stop],
+                $failedStep => ['status' => 'failed'],
+            ]],
+        ]);
+        $reader->answer = json_encode(['state' => 'unknown', 'reason' => $reason], JSON_THROW_ON_ERROR);
+
+        $settlement->sweep();
+
+        $current = ConnLaunchChild::Destroy->operation($launch->refresh());
+        expect($instance->refresh()->status)->toBe(InstanceState::Removing);
+        if ($retries) {
+            expect($current?->id)->not->toBe($destroy->id)
+                ->and($current?->target_id)->toBe($instance->id)
+                ->and($current?->state['conn_launch_owner'])->toBe($launch->id)
+                ->and($current?->idempotency_key)->toBe("conn-launch:{$launch->id}:destroy:{$destroy->id}")
+                ->and($current?->input['removal_id'])->toBe($destroy->input['removal_id']);
+        } else {
+            expect($current?->id)->toBe($destroy->id)->and($launch->error_code)->toBe('instance.unsaved_work');
+        }
+    })->with([
+        'owned database drop failure' => ['Drop owned databases-0', 'succeeded', true, 'stopped', true],
+        'owned container delete failure' => ['Delete the container', 'succeeded', true, 'stopped', true],
+        'stop failure' => ['Stop the container', 'failed', true, 'stopped', false],
+        'unowned destroy' => ['Delete the container', 'succeeded', false, 'stopped', false],
+        'workspace read timeout' => ['Drop owned databases-0', 'succeeded', true, 'timeout', false],
+    ]);
 
     it('restores only a launch-owned wake with verified idle evidence', function (): void {
         $this->instance->update(['status' => InstanceState::Active]);

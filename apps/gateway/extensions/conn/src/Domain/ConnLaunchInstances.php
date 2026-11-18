@@ -123,7 +123,7 @@ final readonly class ConnLaunchInstances
     public function destroy(Operation $launch, Instance $instance): Operation
     {
         $create = ConnLaunchChild::Create->operation($launch);
-        $previous = ConnLaunchChild::Destroy->operation($launch);
+        $previous = $this->ownedDestroy($launch);
         $unstarted = $create !== null && self::unstartedReservation($instance, $create);
         if (! $unstarted) {
             $this->assertCleanupSafe($instance, $previous);
@@ -138,6 +138,7 @@ final readonly class ConnLaunchInstances
                         $owned = ConnLaunchChild::Create->operation($parent);
                         if ($owned === null || $owned->id !== $create?->id || ($owned->state['conn_launch_owner'] ?? null) !== $parent->id
                             || $target->source_prepare_id === null || $target->source_prepare_id !== ($owned->input['prepare_id'] ?? null)
+                            || ConnLaunchChild::Destroy->operationId($parent) !== $previous?->id
                             || ($target->status === InstanceState::Removing && $previous === null)
                             || ($unstarted && ! self::unstartedReservation($target, $owned))) {
                             throw new ResourceOperationException('instance.unsaved_work', 'The launch cannot prove it still owns this clone.', 409);
@@ -169,12 +170,21 @@ final readonly class ConnLaunchInstances
             ->exists();
     }
 
+    private function ownedDestroy(Operation $launch): ?Operation
+    {
+        $record = Arr::get($launch->state ?? [], 'launch_children.'.ConnLaunchChild::Destroy->value);
+        $previous = ConnLaunchChild::Destroy->operation($launch);
+
+        return $previous !== null && is_array($record) && ($record['owned'] ?? null) === true && is_string($record['key'] ?? null)
+            && $previous->idempotency_key === $record['key'] && $previous->triggered_by === $launch->triggered_by
+            && ($previous->state['conn_launch_owner'] ?? null) === $launch->id ? $previous : null;
+    }
+
     private function assertCleanupSafe(Instance $instance, ?Operation $previous): void
     {
         $work = $this->work->read($instance);
-        // A retry after the owned removal reached deletion can find the exact container stopped by that removal.
-        $stoppedByRemoval = ($work['reason'] ?? null) === 'stopped'
-            && ($previous?->result['failed_step'] ?? null) === 'Delete the container';
+        $stoppedByRemoval = ($work['reason'] ?? null) === 'stopped' && $instance->status === InstanceState::Removing
+            && ($previous?->state['container_stop_succeeded'] ?? null) === true;
         if ($stoppedByRemoval) {
             return;
         }
