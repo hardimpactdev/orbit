@@ -251,8 +251,8 @@ Deno.test("a resumed load checks the exact Gateway target before changing the st
         const libexec = `${folder}/libexec`;
         const controller = "swamp/scripts/gateway-release-container.sh";
         const activate =
-            "swamp/workflows/workflow-gateway-release-activate.yaml";
-        const marker = "# orbit-gateway-recovery-protocol: 1";
+            "swamp/workflows/workflow-production-release-activate.yaml";
+        const marker = "# orbit-gateway-recovery-protocol: 2";
         await Deno.mkdir(`${mirror}/swamp/scripts`, { recursive: true });
         await Deno.mkdir(`${mirror}/swamp/workflows`);
         await Deno.mkdir(state);
@@ -346,7 +346,7 @@ Deno.test("a resumed load checks the exact Gateway target before changing the st
             assertEquals(result.code, 1);
             assertEquals(
                 new TextDecoder().decode(result.stderr).trim(),
-                `gateway.release_recovery_incompatible: ${sha} lacks container recovery protocol 1 in ${missing}`,
+                `gateway.release_recovery_incompatible: ${sha} lacks container fix-forward protocol 2 in ${missing}`,
             );
             assertEquals(await git(staging, "rev-parse", "HEAD"), live);
         }
