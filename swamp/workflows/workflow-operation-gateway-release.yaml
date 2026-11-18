@@ -357,6 +357,7 @@ jobs:
             grants/orbit-gateway.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[0] }}'
             grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'
           ssh: ${{ inputs.intent.swamp_ssh }}
+          gateway_ssh: ${{ inputs.intent.ssh }}
         execution_secrets: {}
     # The child runs the new commit's handoff, including the new Horizon start.
   - name: Hand over the release

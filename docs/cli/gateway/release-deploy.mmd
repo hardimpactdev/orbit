@@ -74,7 +74,7 @@ sequenceDiagram
     %%> - discard the candidate; live keeps serving and the Swamp load does not start
     Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
     %%> What it does:
-    %%> - the load child: checkout, grants the new release rendered, serve reload
+    %%> - the load child checks the target on the Gateway Node before updating the checkout, grants and loaded workflows
     Note over SW: Hand over the release<br/>gateway-release-activate
     %%> Why:
     %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps

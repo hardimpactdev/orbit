@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ANSIBLE = ROOT / "swamp/ansible"
 SERVICE_HOME = Path("/home/orbit")
+JOURNAL = Path("/var/lib/orbit/gateway-release-switch")
 NETWORK = "orbitgw0"
 PRIVATE_SUBNETS = tuple(map(ipaddress.IPv4Network, ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")))
 
@@ -160,6 +161,8 @@ def admission_lock():
             fcntl.flock(opened, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise ValueError("another Gateway release or configuration is active") from error
+        if (JOURNAL / "operation").exists():
+            raise ValueError("recover the interrupted Gateway switch with --recover before replacing its helpers")
         if (state / "gateway-containers.json").exists():
             raise ValueError("the Gateway has already moved to release containers")
         yield

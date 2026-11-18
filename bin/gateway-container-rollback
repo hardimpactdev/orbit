@@ -17,6 +17,8 @@ def implementation(inventory, journal, host, action):
         if not (journal / "operation").is_file():
             raise ValueError("there is no interrupted Gateway traffic switch")
         sha = (journal / "candidate").read_text().strip()
+    elif (journal / "operation").exists():
+        raise ValueError("recover the interrupted Gateway switch with --recover first")
     elif inventory.is_file():
         sha = json.loads(inventory.read_text())["live"]
     elif action == "--host":

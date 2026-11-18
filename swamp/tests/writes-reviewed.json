@@ -299,7 +299,8 @@
    "Wait for active Operations": "read-only"
   },
   "operation-gateway-swamp-load": {
-   "Check the Ansible collections": "read-only"
+   "Check the Ansible collections": "read-only",
+   "Check the release target": "read-only"
   },
   "operation-instance-complete": {
    "finish": "idempotent",

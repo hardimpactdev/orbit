@@ -24,7 +24,8 @@ inputs:
           required: [grants/orbit-gateway.yaml, grants/orbit-serve.yaml]
           additionalProperties: false
         ssh: {type: object}
-      required: [sha, force, grants, ssh]
+        gateway_ssh: {type: object}
+      required: [sha, force, grants, ssh, gateway_ssh]
       additionalProperties: false
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
@@ -32,11 +33,44 @@ inputs:
 jobs:
   - name: load
     steps:
+      - name: Check the release target
+        labels: {role: swamp}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "gateway-swamp-check-target-" + string(inputs.node_id) }}'
+          methodName: exec
+          globalArgs:
+            name: '${{ "gateway-swamp-check-ssh-" + string(inputs.node_id) }}'
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.gateway_ssh.target.user }}
+              port: ${{ inputs.intent.gateway_ssh.target.port }}
+              identityFile: ${{ inputs.intent.gateway_ssh.identity_file }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.gateway_ssh.target.host }}
+                transport: {hostKeys: '${{ inputs.intent.gateway_ssh.target.host_keys }}'}
+          inputs:
+            hosts: name:target
+            sudo: true
+            timeoutSec: 165
+            argv:
+              - /usr/bin/timeout
+              - '150'
+              - /bin/sh
+              - -c
+              - 'if test -f /home/orbit/.orbit/gateway-containers.json || test -e /var/lib/orbit/gateway-release-switch/operation; then exec /usr/local/libexec/orbit-gateway-release-phase "$@"; fi'
+              - sh
+              - check-load
+              - '${{ inputs.intent.sha }}'
+              - '${{ string(inputs.operation_id) }}'
       # Forward only unless the release is forced, as a rollback is: the same rule as the release build, checked here too because a
       # release resumed at Load or a direct start does not pass the build again.
       - name: checkout
         labels: {role: swamp}
         writes: true
+        dependsOn: [{step: Check the release target, condition: {type: succeeded}}]
         task:
           type: behavior
           behaviorType: command/shell

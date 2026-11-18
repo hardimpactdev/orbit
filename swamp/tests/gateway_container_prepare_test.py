@@ -93,6 +93,23 @@ class BootstrapTest(unittest.TestCase):
             attach.assert_not_called()
             incus.assert_not_called()
 
+    def test_preparation_fences_an_open_switch_before_first_inventory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp) / "home"
+            state = home / ".orbit"
+            state.mkdir(parents=True)
+            (state / "gateway-release.lock").touch()
+            journal = Path(temp) / "journal"
+            journal.mkdir()
+            operation = journal / "operation"
+            operation.write_text("42\n")
+            with patch.object(prep, "SERVICE_HOME", home), patch.object(prep, "JOURNAL", journal):
+                with self.assertRaisesRegex(ValueError, "--recover"), prep.admission_lock():
+                    self.fail("preparation reached the helper installation")
+                operation.unlink()
+                with prep.admission_lock():
+                    pass
+
     def test_offline_recovery_selects_the_journaled_live_or_host_program(self):
         with tempfile.TemporaryDirectory() as temp:
             journal = Path(temp)
@@ -108,6 +125,8 @@ class BootstrapTest(unittest.TestCase):
             (journal / "candidate").write_text(second)
             (journal / "operation").write_text("42")
             self.assertEqual(select("--recover"), journal / ("rollback-" + second))
+            with self.assertRaisesRegex(ValueError, "--recover"):
+                select(first[:12])
             (journal / "operation").unlink()
             inventory.write_text(json.dumps({"live": second, "old": first}))
             self.assertEqual(select(first[:12]), journal / ("rollback-" + second))

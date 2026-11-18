@@ -71,6 +71,7 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     exit
 fi
 
+[[ ! -e $journal/operation ]] || fail "an interrupted switch must first be restored with --recover"
 [[ $id =~ ^[0-9a-f]{12}$ ]] || { echo 'usage: sudo bin/gateway-rollback <12-digit release id>' >&2; exit 64; }
 sha=$(cat "$base/releases/$id/REVISION" 2>/dev/null) || fail "release $id is not sealed: $base/releases/$id/REVISION is missing"
 [[ $sha == "$id"* ]] || fail "release $id holds REVISION $sha"

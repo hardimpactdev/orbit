@@ -231,6 +231,10 @@ class GatewayReleaseRecovery(unittest.TestCase):
         self.rollback = self.copy("bin/gateway-rollback", self.libexec / "orbit-gateway-rollback-host")
         self.console = self.copy("bin/gateway-container-rollback", self.root / "console")
         self.phase = self.libexec / "orbit-gateway-release-phase"
+        self.install_phase()
+        self.copy("swamp/scripts/gateway-release-drain.sh", self.checkout / "swamp/scripts/gateway-release-drain.sh")
+
+    def install_phase(self, revision=None):
         # Stub preparation work only after the installed phase has checked the
         # selected recovery protocol against the real Git objects.
         prepare = """case "$phase" in
@@ -244,9 +248,20 @@ class GatewayReleaseRecovery(unittest.TestCase):
 esac
 """
         marker = "# A failed deletion must complete before a new build"
-        phase = self.copy("bin/gateway-release-phase", self.phase)
-        phase.write_text(phase.read_text().replace(marker, prepare + marker, 1))
-        self.copy("swamp/scripts/gateway-release-drain.sh", self.checkout / "swamp/scripts/gateway-release-drain.sh")
+        phase = self.source("bin/gateway-release-phase", revision)
+        self.phase.write_text(phase.replace(marker, prepare + marker, 1))
+        self.phase.chmod(0o755)
+
+    def install_earlier_phase(self):
+        revision = os.environ.get("GATEWAY_RECOVERY_TEST_PREVIOUS_DISPATCHER")
+        if revision:
+            self.install_phase(revision)
+        else:
+            # The earlier dispatcher let the same switch code run before
+            # protocol declarations were required.
+            phase = self.phase.read_text()
+            self.phase.write_text(phase.replace("# Manual moves", "check_recovery() { :; }\n# Manual moves", 1))
+
 
     def git(self, *args):
         return subprocess.check_output(
@@ -321,9 +336,9 @@ esac
         self.assertFalse(self.upstream.exists())
         self.assertFalse((self.journal / "operation").exists())
 
-    def assert_container_serves(self):
+    def assert_container_serves(self, horizon=HORIZON):
         self.assertEqual((self.state / "site").read_text(), "container")
-        self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
+        self.assertTrue((self.state / f"{self.candidate}-{horizon}").exists())
         self.assertFalse((self.state / f"host-{HORIZON}").exists())
         self.assertTrue((self.state / "candidate").exists())
         self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
@@ -457,6 +472,79 @@ esac
         unavailable.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
+
+    def test_matching_earlier_container_switch_recovers_only_after_public_verification(self):
+        self.retained_releases(CONTROLLER, WORKFLOW)
+        (self.state / f"{self.candidate}-{MANAGED_HORIZON}").touch()
+        self.install_earlier_phase()
+        interrupted = self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON,
+                                      interrupt="after container switch")
+        self.assertEqual(interrupted.returncode, -signal.SIGKILL, interrupted.stderr)
+        self.assert_pending(self.old)
+        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
+
+        self.install_phase()
+        events = self.state / "events"
+        wrong = self.state / f"wrong-public-{self.sha}"
+        wrong.touch()
+        result = self.run_script(self.phase, "switch-back", self.old, OPERATION)
+        self.assertIn(f"public Gateway did not verify restored release {self.sha}", result.stderr)
+        self.assert_pending(self.old)
+        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
+        wrong.unlink()
+
+        before = events.read_bytes()
+        for phase, sha, operation in (
+            ("restore", self.sha, OPERATION),
+            ("switch-back", self.old, "43"),
+            ("switch", self.sha, OPERATION),
+        ):
+            result = self.run_script(self.phase, phase, sha, operation, self.old[:12], HORIZON)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("switch", result.stderr)
+            self.assert_pending(self.old)
+            self.assertEqual(events.read_bytes(), before)
+
+        result = self.run_script(self.phase, "switch-back", self.old, OPERATION,
+                                 interrupt="during container public status")
+        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+        self.assert_pending(self.old)
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assert_container_serves(horizon=MANAGED_HORIZON)
+        self.assertIn(f"public container {self.sha}", events.read_text())
+
+    def test_earlier_first_move_recovers_before_inventory_and_blocks_new_offline_rollback(self):
+        previous = os.environ.get("GATEWAY_RECOVERY_TEST_PREVIOUS_DISPATCHER")
+        for name in (CONTROLLER, WORKFLOW):
+            text = self.source(name, previous) if previous else self.source(name).replace(PROTOCOL, "")
+            (self.mirror / name).write_text(text)
+        self.sha = self.commit("first move before compatibility admission")
+        self.candidate = f"gateway-{self.sha[:12]}"
+        self.env["FIXTURE_SHA"] = self.sha
+        (self.checkout / "REVISION").write_text(self.sha)
+        self.listener()
+        self.install_earlier_phase()
+        self.assert_interrupted(self.run_move(interrupt="after host drain"))
+        self.assertFalse(self.inventory.exists())
+        self.assertFalse((self.state / f"host-{HORIZON}").exists())
+        events = self.state / "events"
+        before = events.read_bytes()
+
+        self.install_phase()
+        result = self.run_script(self.console, "--recover", interrupt="during host public status")
+        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
+        self.assert_interrupted(result)
+        self.assertFalse((self.state / f"host-{HORIZON}").exists())
+        (self.home / "releases" / self.sha[:12]).symlink_to(self.checkout)
+        before_retry = events.read_bytes()
+        result = self.run_script(self.console, self.sha[:12])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--recover", result.stderr)
+        self.assertEqual(events.read_bytes(), before_retry)
+
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assert_host_serves()
+        self.assertIn(f"public host {self.sha}", events.read_text()[len(before):])
 
     def test_first_move_recovers_before_drain(self):
         self.listener()

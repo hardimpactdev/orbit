@@ -123,7 +123,9 @@ Once established, each target has three containers. A release wakes preparation,
 
 Use `orbit gateway:release:rollback` to select the retained release. The installed host helper checks the retained commit's activation workflow and recovery script before waking it. If either predates the container recovery protocol, rollback fails with `gateway.release_recovery_incompatible` before loading its Swamp workflows, draining Horizon or switching traffic. A compatible retained commit can differ from the serving commit.
 
-Recovery wakes that container or cold starts it after a Node reboot. It keeps the current database and skips the build, web download and migration. If a switch was interrupted and the Gateway or Swamp is unavailable, use `sudo /usr/local/libexec/orbit-gateway-rollback --recover` from the Node console. For an ordinary offline rollback, pass the retained 12-digit release ID to the same helper. The offline path requires the same recovery protocol. Recovery checks `/up` and the restored release's version through Caddy at `https://gateway.orbit` before clearing the journal. If recovery fails or is interrupted, fix the reported problem and run `--recover` again.
+Recovery wakes that container or cold starts it after a Node reboot. It keeps the current database and skips the build, web download and migration. If a switch was interrupted and the Gateway or Swamp is unavailable, use `sudo /usr/local/libexec/orbit-gateway-rollback --recover` from the Node console. For an ordinary offline rollback, pass the retained 12-digit release ID to the same helper. A new offline rollback requires the same recovery protocol.
+
+An interrupted switch uses its saved candidate and Operation ID, even when the switch began before this admission check. Host preparation refuses to replace helpers while that journal is open, including before the first container inventory is written. Recovery checks `/up` and the restored release's version through Caddy at `https://gateway.orbit` before clearing the journal. If recovery fails or is interrupted, fix the reported problem and run `--recover` again.
 
 ## Release layout
 
@@ -249,19 +251,22 @@ On timeout, stderr names every remaining Operation ID with `gateway.release_busy
 
 ### Load Swamp
 
-Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The build renders both grants files from the target release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and Node 209's SSH target in the load intent. This uses the target release, not the running Gateway's older manifests. The release run starts `operation-gateway-swamp-load` as a child with the release commit. That workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
+Swamp serve on Node 209 reads `swamp/` from a Git checkout of the Orbit repository at `/home/orbit/apps/orbit-monorepo-staging/checkout`, and runs with `--hot-reload`. A release loads Swamp in one step, after the migration and before the switch. The build renders both grants files from the target release's `swamp/config/gateway-workflow-grants.json` and `swamp/config/serve-grants.json`, before switching code. It freezes their content and both Nodes' SSH targets in the load intent. This uses the target release, not the running Gateway's older manifests. The release run starts `operation-gateway-swamp-load` as a child with the release commit. That workflow follows its [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/swamp-load.mmd) and runs on the `swamp` role on 209:
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 
-1. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
-2. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
-3. beside them, it compares the commit's `swamp/ansible/requirements.yml` with the pin the swamp role last installed collections from, `/opt/orbit/ansible/requirements.yml`, and installs nothing;
-4. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
-5. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
-6. it sets the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node) from `swamp/config/swamp-node-schedules.json` as serve trigger overrides, with `swamp workflow trigger set`;
-7. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
+1. it checks the target commit and looks for an open switch on the Gateway Node before changing the staging checkout;
+2. it fetches the commit and checks it out in the serve checkout; a rollback loads the retained commit;
+3. two parallel official `@swamp/cfgmgmt/file` actions write the captured grant content into `swamp/grants/orbit-gateway.yaml` and `swamp/grants/orbit-serve.yaml`, as `orbit:orbit`, mode `0640`, through the admitted SSH identity;
+4. beside them, it compares the commit's `swamp/ansible/requirements.yml` with the pin the swamp role last installed collections from, `/opt/orbit/ansible/requirements.yml`, and installs nothing;
+5. it asks serve to reload, as hot reload would, and waits for the acknowledgement;
+6. it runs `swamp access reload`, so serve creates, revokes or keeps grants to match the file;
+7. it sets the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node) from `swamp/config/swamp-node-schedules.json` as serve trigger overrides, with `swamp workflow trigger set`;
+8. it compares the workflows serve lists with the workflows on disk, leaving out the `schedule-<uuid>` workflows that [Schedules](/reference/schedules) write into serve at any time.
 
-A load-input change must release before a workflow requires its new fields. Retire a checkout script mode only after the served workflow has stopped calling it: a load checks out the target before reloading the workflow.
+The check also runs when a resumed release reuses Build. Host PHP-FPM releases can load without the container protocol when no switch is open.
+
+The release and load definitions ship together. A load refuses an older caller that cannot supply the Gateway SSH target. Retire a checkout script mode only after the served workflow has stopped calling it: a load checks out the target before reloading the workflow.
 
 Required checks invoke the Gateway renderer without deployment credentials and validate both grant files with the pinned serve startup parser before the commit can release.
 
@@ -273,7 +278,7 @@ A schedule that serve does not confirm fails the load. These workflows have no b
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 
-The load is forward only unless the release is forced, as a rollback is: an unforced load of a commit that does not descend from the serve checkout fails with `gateway.release_downgrade` and leaves the checkout alone. Resume or start the release itself, never its load run: the release passes its `force` flag to the load, and a load run started before that flag existed cannot be resumed.
+The load is forward only unless the release is forced, as a rollback is: an unforced load of a commit that does not descend from the serve checkout fails with `gateway.release_downgrade` and leaves the checkout alone. Resume the release itself after Swamp serves the updated release and load definitions. The release starts a fresh load with the admitted inputs and checks the target again.
 
 Serve's reload re-reads each extension manifest's `additionalFiles` ([Lab #4282](https://swamp-club.com/lab/4282), fixed in Swamp `20261103.000636.0-sha.db3f6373`), so a newly shipped file reaches workers without a restart. The load never restarts serve or a worker.
 

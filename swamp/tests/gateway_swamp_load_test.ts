@@ -108,6 +108,7 @@ Deno.test("a pin from another requirements.yml fails the check with the converge
 
 type Checkout = {
     name: string;
+    dependsOn?: { step: string; condition: { type: string } }[];
     task: { inputs: { run: string; env: Record<string, string> } };
 };
 const checkout = ((workflow.jobs[0].steps as unknown) as Checkout[]).find((
@@ -216,6 +217,7 @@ Deno.test("the release passes its force flag to the load", async () => {
         step.name === "Load Swamp on Node 209"
     )!;
     assertEquals(load.task.inputs?.intent?.force, "${{ inputs.intent.force }}");
+    assertEquals(load.task.inputs?.intent?.gateway_ssh, "${{ inputs.intent.ssh }}");
 });
 
 Deno.test("the checkout reads the release commit and the force flag from the load intent", () => {
@@ -229,4 +231,150 @@ Deno.test("the checkout reads the release commit and the force flag from the loa
 Deno.test("retained rollback checks out the sealed commit with an unavailable origin", async () => {
     const result = await runCheckout("back", true, true);
     assertEquals(result.code, 0);
+});
+
+Deno.test("a resumed load checks the exact Gateway target before changing the staging checkout", async () => {
+    const steps = workflow.jobs[0].steps as unknown as {
+        name: string;
+        dependsOn?: { step: string; condition: { type: string } }[];
+        task: { inputs: { argv?: string[] } };
+    }[];
+    const gate = steps.find((step) => step.name === "Check the release target");
+    assertEquals(checkout.dependsOn, [
+        { step: "Check the release target", condition: { type: "succeeded" } },
+    ]);
+    const folder = await Deno.makeTempDir();
+    try {
+        const mirror = `${folder}/shared/orbit.git`;
+        const state = `${folder}/.orbit`;
+        const journal = `${folder}/var/gateway-release-switch`;
+        const libexec = `${folder}/libexec`;
+        const controller = "swamp/scripts/gateway-release-container.sh";
+        const activate =
+            "swamp/workflows/workflow-gateway-release-activate.yaml";
+        const marker = "# orbit-gateway-recovery-protocol: 1";
+        await Deno.mkdir(`${mirror}/swamp/scripts`, { recursive: true });
+        await Deno.mkdir(`${mirror}/swamp/workflows`);
+        await Deno.mkdir(state);
+        await Deno.mkdir(libexec);
+        await Deno.writeTextFile(`${state}/gateway-release.lock`, "");
+
+        function hostPaths(script: string) {
+            return script.replaceAll("/home/orbit", folder)
+                .replaceAll("/var/lib/orbit", `${folder}/var`)
+                .replaceAll("/usr/local/libexec", libexec);
+        }
+        const dispatcher = await Deno.readTextFile(
+            new URL("../../bin/gateway-release-phase", import.meta.url),
+        );
+        await Deno.writeTextFile(
+            `${libexec}/orbit-gateway-release-phase`,
+            hostPaths(dispatcher),
+            { mode: 0o700 },
+        );
+        await git(mirror, "init", "--quiet");
+        async function commit(
+            name: string,
+            controllerMarker: boolean,
+            workflowMarker: boolean,
+        ) {
+            for (
+                const [path, present] of [[controller, controllerMarker], [
+                    activate,
+                    workflowMarker,
+                ]] as const
+            ) {
+                await Deno.writeTextFile(
+                    `${mirror}/${path}`,
+                    `${present ? marker : ""}\n# ${name}\n`,
+                );
+            }
+            await git(mirror, "add", ".");
+            await git(mirror, "commit", "--quiet", "-m", name);
+            return await git(mirror, "rev-parse", "HEAD");
+        }
+        const old = await commit("both old", false, false);
+        const oldController = await commit("old controller", false, true);
+        const oldWorkflow = await commit("old workflow", true, false);
+        const retained = await commit("compatible retained", true, true);
+        const live = await commit("compatible live", true, true);
+        await git(folder, "clone", "--quiet", mirror, "staging");
+        const staging = `${folder}/staging`;
+        await Deno.writeTextFile(
+            `${state}/gateway-containers.json`,
+            JSON.stringify({ live, old: retained }),
+        );
+        const checkArgv = gate!.task.inputs.argv!;
+
+        async function enterLoad(sha: string) {
+            const env = { PATH: `${folder}:${Deno.env.get("PATH")}` };
+            const check = await new Deno.Command(checkArgv[0], {
+                args: checkArgv.slice(1).map((arg) => {
+                    if (arg === "${{ inputs.intent.sha }}") return sha;
+                    if (arg === "${{ string(inputs.operation_id) }}") {
+                        return "42";
+                    }
+                    return hostPaths(arg);
+                }),
+                env,
+            }).output();
+            if (!check.success) return check;
+            return await new Deno.Command("sh", {
+                args: [
+                    "-c",
+                    checkout.task.inputs.run.replace(
+                        "/home/orbit/apps/orbit-monorepo-staging/checkout",
+                        staging,
+                    ),
+                ],
+                env: {
+                    ...env,
+                    RELEASE_SHA: sha,
+                    FORCE: "true",
+                    RETAINED: "true",
+                },
+            }).output();
+        }
+
+        for (
+            const [sha, missing] of [[old, controller], [
+                oldController,
+                controller,
+            ], [oldWorkflow, activate]]
+        ) {
+            const result = await enterLoad(sha);
+            assertEquals(result.code, 1);
+            assertEquals(
+                new TextDecoder().decode(result.stderr).trim(),
+                `gateway.release_recovery_incompatible: ${sha} lacks container recovery protocol 1 in ${missing}`,
+            );
+            assertEquals(await git(staging, "rev-parse", "HEAD"), live);
+        }
+        for (const sha of [retained, live]) {
+            const result = await enterLoad(sha);
+            assertEquals(
+                result.code,
+                0,
+                new TextDecoder().decode(result.stderr),
+            );
+            assertEquals(await git(staging, "rev-parse", "HEAD"), sha);
+        }
+
+        await Deno.remove(`${state}/gateway-containers.json`);
+        await Deno.mkdir(journal, { recursive: true });
+        await Deno.writeTextFile(`${journal}/operation`, "42\n");
+        await Deno.writeTextFile(`${journal}/candidate`, retained);
+        for (const sha of [retained, live]) {
+            const refused = await enterLoad(sha);
+            assertEquals(refused.code, 1);
+            assertEquals(await git(staging, "rev-parse", "HEAD"), live);
+        }
+        await Deno.remove(`${journal}/operation`);
+        await Deno.remove(`${libexec}/orbit-gateway-release-phase`);
+        const host = await enterLoad(old);
+        assertEquals(host.code, 0, new TextDecoder().decode(host.stderr));
+        assertEquals(await git(staging, "rev-parse", "HEAD"), old);
+    } finally {
+        await Deno.remove(folder, { recursive: true });
+    }
 });

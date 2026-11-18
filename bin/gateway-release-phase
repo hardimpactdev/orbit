@@ -8,6 +8,7 @@ repo=/home/orbit/shared/orbit.git
 script=swamp/scripts/gateway-release-container.sh
 workflow=swamp/workflows/workflow-gateway-release-activate.yaml
 inventory=/home/orbit/.orbit/gateway-containers.json
+journal=/var/lib/orbit/gateway-release-switch
 check_recovery() {
   local path
   for path in "$script" "$workflow"; do
@@ -19,30 +20,39 @@ check_recovery() {
 }
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
+  check-load|check-recovery|switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
-      exec 9<>/home/orbit/.orbit/gateway-release.lock
+      exec 9</home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
       export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
     fi
     ;;
 esac
-# Admit only controllers that journal the drain and verify public recovery.
-# The native workflow uses build-checked so an older installed dispatcher fails
-# before it can build the candidate or load the candidate's Swamp workflows.
+# Check compatibility before starting new work. Recovery of a durable switch
+# uses its exact candidate and operation, including switches made before this check.
 case "$phase" in
   drain)
     echo 'gateway.release_recovery_incompatible: container Horizon must drain inside the journaled switch' >&2
     exit 1
     ;;
-  build|build-checked|switch|restore|switch-back|restore-host|check-recovery)
-    check_recovery
+  build|build-checked|switch|restore-host|check-recovery|check-load)
+    [[ ! -e $journal/operation ]] || { echo 'Recover the interrupted Gateway switch with --recover first' >&2; exit 1; }
+    if [[ $phase != check-load || -f $inventory ]]; then check_recovery; fi
+    ;;
+  restore|switch-back|start-horizon|retire)
+    if [[ -e $journal/operation || $phase == restore || $phase == switch-back ]]; then
+      [[ -f $journal/operation && -f $journal/candidate &&
+        $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
+        { echo 'There is no matching Gateway switch' >&2; exit 1; }
+    fi
     ;;
 esac
-if [[ $phase == check-recovery ]]; then exit 0; fi
+# The native workflow uses the checked entry points so an older installed
+# dispatcher refuses before Build or Load can change the target.
+if [[ $phase == check-recovery || $phase == check-load ]]; then exit 0; fi
 if [[ $phase == build-checked ]]; then phase=build; fi
 # A failed deletion must complete before a new build can reuse the previous SHA.
-if [[ $phase == build && -f /var/lib/orbit/gateway-release-switch/pending-prune ]]; then
+if [[ $phase == build && -f $journal/pending-prune ]]; then
   "$0" prune-pending "$sha" "$operation"
 fi
 if [[ $phase == retire ]]; then
@@ -53,7 +63,6 @@ fi
 # Cleanup belongs to the current host controller, including a rollback to an older
 # sealed release whose script predates this phase. A failed fetch can have no object.
 if [[ $phase == park-preparation || $phase == release-unused ]]; then
-  journal=/var/lib/orbit/gateway-release-switch
   candidate=gateway-${sha:0:12}
   incus_cli=(incus --force-local --project orbit-releases)
   ctl() { python3 <(git -c safe.directory="$repo" -C "$repo" show "$sha:swamp/scripts/release-container.py") "$@"; }
