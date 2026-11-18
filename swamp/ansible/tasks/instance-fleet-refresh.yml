@@ -657,9 +657,43 @@
       when: not fleet_queue_room | bool
       ansible.builtin.set_fact:
         fleet_base_mode: stopped
+    # The freeze may stall, and a hold that ends while it waits would let writes in that `base` misses. So the freeze has the hold's
+    # time left minus 5 s (60 s without a hold), and after it the hold is read again before any snapshot: a freeze that failed or ran
+    # out, or a hold with under 5 s left, resumes each target (best effort), lets the writes go, cancels the armed thaw, and takes the
+    # stopped path. No `base` of the running fleet is taken then.
     - name: Freeze the nested containers
-      ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['pause'] + fleet_base_targets }}" }
+      vars:
+        fleet_freeze_seconds: >-
+          {{ 60 if intent.fleet.guests.gateway not in fleet_base_targets
+             else [((fleet_queue_pause_ms | default(30000) | int) / 1000 - 5 - (now(utc=true).timestamp() - (fleet_queue_hold_at | float))) | int, 1] | max }}
+      ansible.builtin.command: { argv: "{{ ['timeout', fleet_freeze_seconds | string] + fleet_incus + ['pause'] + fleet_base_targets }}" }
+      register: fleet_freeze
       changed_when: true
+      failed_when: false
+    - name: Name whether base can be taken of the frozen fleet
+      ansible.builtin.set_fact:
+        fleet_frozen_in_time: >-
+          {{ fleet_freeze.rc == 0 and (intent.fleet.guests.gateway not in fleet_base_targets
+             or (now(utc=true).timestamp() - (fleet_queue_hold_at | float)) < (fleet_queue_pause_ms | default(30000) | int) / 1000 - 5) }}
+    - name: Resume the nested containers when the freeze came too late
+      when: not fleet_frozen_in_time | bool
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '60'] + fleet_outer + ['sh', '-c', 'for n do incus resume \"$n\" || true; done', 'sh'] + fleet_base_targets }}"
+      changed_when: true
+    - name: Let the queue writes go when the freeze came too late
+      when: not fleet_frozen_in_time | bool and intent.fleet.guests.gateway in fleet_base_targets
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'CLIENT', 'UNPAUSE'] }}" }
+      changed_when: false
+      failed_when: false
+    - name: Cancel the armed thaw when the freeze came too late
+      when: not fleet_frozen_in_time | bool
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['systemctl', 'stop', fleet_thaw_unit ~ '.timer'] }}" }
+      changed_when: false
+      failed_when: false
+    - name: Take the stopped path when the freeze came too late
+      when: not fleet_frozen_in_time | bool
+      ansible.builtin.set_fact:
+        fleet_base_mode: stopped
     - name: Take base of the frozen containers
       ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['snapshot', 'create', item, 'base'] }}" }
       loop: "{{ fleet_base_targets }}"

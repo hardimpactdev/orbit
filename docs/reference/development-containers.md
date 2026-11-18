@@ -3185,8 +3185,9 @@ A btrfs snapshot of a running container is atomic. So on the btrfs pool `inner` 
 2. It deletes the old `base` of each target.
 3. It holds the writes of the nested Gateway's Valkey clients with `valkey-cli CLIENT PAUSE 30000 WRITE`, then saves the queues with `valkey-cli SAVE`.
 4. It arms a thaw in the Instance container. Only this step runs between the save and the freeze.
-5. It checks that the hold has at least 10 s left, then freezes the targets in one `incus pause` and snapshots each.
-6. It thaws them in one `incus resume`, cancels the armed thaw, and lets the Valkey writes go with `valkey-cli CLIENT UNPAUSE`.
+5. It checks that the hold has at least 10 s left, then freezes the targets in one `incus pause`. The freeze may take the hold's time left minus 5 s.
+6. It checks that at least 5 s of the hold are left, then snapshots each target.
+7. It thaws them in one `incus resume`, cancels the armed thaw, and lets the Valkey writes go with `valkey-cli CLIENT UNPAUSE`.
 
 Nothing stops, boots or waits again. The thaw runs also when a snapshot fails; the refresh then fails, and the run restores the old seed.
 
@@ -3194,7 +3195,9 @@ The armed thaw does not need the controller. It is a transient systemd timer, `o
 
 The snapshot is what a power cut would leave. The nested Gateway's SQLite database recovers from its journal, as after a crash; no other database runs in the three. Valkey keeps the queues in memory, without an append-only file, and writes them only on its save schedule. Without the save, `base` held a `dump.rdb` about 85 s older than the snapshot.
 
-A write acknowledged between the save and the freeze would still be missing from `base`, so the writes are held from before the save until after the thaw. The hold ends by itself after 30 s (`fleet_queue_pause_ms`), so a lost controller cannot hold them longer. A write acknowledged after the hold ended would be missing from `base` too. So right before the freeze, a hold with less than 10 s left is refused: the writes go, the armed thaw is cancelled, and the stopped path takes `base`. A hold or a save that fails lets the writes go and takes the stopped path.
+A write acknowledged between the save and the freeze would still be missing from `base`, so the writes are held from before the save until after the thaw. The hold ends by itself after 30 s (`fleet_queue_pause_ms`), so a lost controller cannot hold them longer. A write acknowledged after the hold ended would be missing from `base` too. So right before the freeze, a hold with less than 10 s left is refused: the writes go, the armed thaw is cancelled, and the stopped path takes `base`.
+
+A freeze that fails, runs out of its time, or ends with under 5 s of the hold left is refused the same way, after each target is resumed: no `base` of the running fleet is taken. A hold or a save that fails lets the writes go and takes the stopped path.
 
 In task copy 3717 a writer pushed one list element every 100 ms across a retake of `nested-gateway` and `nested-app-dev`. After a reset from that `base`, all 1,424 elements acknowledged before the freeze were there, and none acknowledged after it. The one write sent during the hold waited 8.7 s, until the writes were let go after the thaw. With the deletion moved before the hold, a second run kept all 1,391 elements acknowledged before the freeze; the freeze came 0.8 s after the hold, and the longest write waited 8.5 s. The median write took 6 ms.
 

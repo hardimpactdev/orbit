@@ -80,6 +80,12 @@ if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
   done({ changed });
 }
 if (command[0] === "systemctl" && command[1] === "try-restart") done();
+// The refresh's best-effort resume of each target: a frozen one runs again, any other stays as it is.
+if (command[0] === "sh" && command[1] === "-c" && command[2] === 'for n do incus resume "$n" || true; done' && command[3] === "sh") {
+  for (const name of command.slice(4)) if (state.containers[name]?.status === "Frozen") state.containers[name].status = "Running";
+  state.resumedLate = command.slice(4);
+  done();
+}
 // The thaw timer of a running `base` (instance-fleet-refresh.yml): `thawArmed` holds the names it would resume, until a stop of its timer.
 if (command[0] === "systemd-run" && command[1] === "--unit" && command[2] === "orbit-fleet-thaw") {
   if (state.thawArmed) fail("Unit orbit-fleet-thaw.timer was already loaded or has a fragment file.");
@@ -286,6 +292,8 @@ if (command[0] === "incus") {
     const found = inner.slice(1).map(container);
     if (found.length === 0) fail("No instance named");
     const from = inner[0] === "pause" ? "Running" : "Frozen";
+    // `pauseDelay`: seconds a freeze stalls before it takes effect; a caller's `timeout` that ends it first leaves nothing frozen.
+    if (inner[0] === "pause" && state.pauseDelay) await new Promise((resolve) => setTimeout(resolve, state.pauseDelay * 1000));
     if (found.some((value) => value.status !== from)) fail(inner[0] === "pause" ? "The instance isn't running" : "The instance isn't frozen");
     for (const value of found) value.status = inner[0] === "pause" ? "Frozen" : "Running";
     done();

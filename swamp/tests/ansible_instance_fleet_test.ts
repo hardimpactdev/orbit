@@ -2678,7 +2678,7 @@ Deno.test({
 const grantsDue = (state: Record<string, unknown>) => Object.assign(state, { grantsChanged: 2, digests: { "apps/gateway": "a1", swamp: "e2" } });
 
 Deno.test({
-  name: "on a btrfs inner pool a failed hold of the queue writes, a failed queue save or a hold without room lets the writes go and takes base with the fleet stopped",
+  name: "on a btrfs inner pool a failed hold of the queue writes, a failed queue save, a hold without room or a stalled freeze lets the writes go and takes base with the fleet stopped",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -2719,6 +2719,24 @@ Deno.test({
       assertEquals(lateCalls.filter((call) => call === "incus snapshot delete nested-gateway base").length, 1);
       assertEquals([f.state().queuePaused, f.state().thawArmed], [undefined, undefined]);
       assertEquals(f.refreshed()?.base_mode, "stopped");
+      // A freeze that stalls past the hold's time left minus 5 s is ended by its timeout: each target is resumed, the writes go, the armed
+      // thaw is cancelled, nothing stays frozen, and the stopped path takes base. A 16 s hold leaves the freeze at most 10 s.
+      f.change((state) => {
+        grantsDue(state);
+        state.digests = { "apps/gateway": "a1", swamp: "e7" };
+        state.pauseDelay = 11;
+      });
+      const stalled = f.run("refresh", ["-e", "fleet_queue_pause_ms=16000"]);
+      assert(stalled.ok, stalled.output);
+      const stalledCalls = f.calls();
+      const freeze = stalledCalls.find((call) => call.startsWith("incus pause "));
+      assertEquals(freeze, "incus pause nested-gateway");
+      assert(!stalledCalls.some((call) => call.startsWith("incus snapshot create") && stalledCalls.indexOf(call) < stalledCalls.indexOf("incus stop nested-gateway --timeout 90")), stalledCalls.join("\n"));
+      assertEquals(f.state().resumedLate, ["nested-gateway"]);
+      assertEquals([f.state().queuePaused, f.state().thawArmed], [undefined, undefined]);
+      assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      assertEquals(f.refreshed()?.base_mode, "stopped");
+      f.change((state) => delete state.pauseDelay);
     } finally {
       f.cleanup();
     }
