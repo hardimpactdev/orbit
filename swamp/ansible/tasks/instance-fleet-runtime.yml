@@ -1,0 +1,13 @@
+---
+# Clear the inner Incus's network runtime files (each managed bridge's dnsmasq.pid) from the stopped nested containers that
+# `fleet_runtime_names` names (instance_fleet_runtime.py). The refresh runs it before it takes `base`, so no `base` holds one; the start
+# runs it before it boots stopped containers, so a reset to an older `base` that holds one, or a copied seed, starts its bridges clean.
+# An empty pid file stopped `orbitinst0` on nested-app-dev, and every Instance create there failed. Input: instance-fleet.yml.
+- name: Clear the network runtime files of the stopped nested containers
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '60'] + fleet_outer
+         + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_fleet_runtime.py'), fleet_inner_pools]
+         + fleet_runtime_names }}
+  register: fleet_runtime
+  changed_when: (fleet_runtime.stdout_lines | last | from_json).removed | length > 0

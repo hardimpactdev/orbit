@@ -105,6 +105,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet-refresh.yml
   - ansible/tasks/instance-fleet-mounts.yml
   - ansible/tasks/instance-fleet-room.yml
+  - ansible/tasks/instance-fleet-runtime.yml
   - ansible/tasks/instance-fleet-converge-node.yml
   - ansible/tasks/instance-fleet-files.yml
   - ansible/tasks/instance-fleet-reset.yml
@@ -202,6 +203,7 @@ additionalFiles:
   - ansible/instance_shape_tools.py
   - ansible/shape_tool_names.py
   - ansible/instance_fleet_shrink.py
+  - ansible/instance_fleet_runtime.py
   - ansible/instance_mail.py
   - ansible/instance_mail_line.py
   - ansible/instance/destroy-git.py

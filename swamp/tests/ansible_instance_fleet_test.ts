@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "room", "migrate", "known-hosts", "converge-node", "reset", "resume", ""];
+const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "room", "migrate", "known-hosts", "converge-node", "reset", "resume", "runtime", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -112,6 +112,7 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   // The refresh sends instance_shape_tools.py into the container the same way.
   Deno.copyFileSync(new URL("instance_shape_tools.py", root), `${folder}/instance_shape_tools.py`);
   Deno.copyFileSync(new URL("instance_fleet_shrink.py", root), `${folder}/instance_fleet_shrink.py`);
+  Deno.copyFileSync(new URL("instance_fleet_runtime.py", root), `${folder}/instance_fleet_runtime.py`);
   Deno.writeTextFileSync(`${folder}/play.yml`, [
     "- name: Run one phase of the fleet step",
     "  hosts: localhost",
@@ -267,8 +268,11 @@ const startReads = ["incus admin waitready --timeout 80", ...compareReads];
 const instanceHostReads = names.map((name) => `incus exec ${name} -- test -f /etc/orbit/instance-fleet-node`);
 const knownHostsList = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan list --raw --no-interaction";
 const knownHostsSync = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan gateway:known-hosts:sync --no-interaction";
+/** Before base and before a start, the stopped nested containers lose the inner Incus's network pid files (instance_fleet_runtime.py). */
+const runtimeCall = (stopped: string[]) => `python3 -I -c <instance_fleet_runtime.py> /var/lib/incus/storage-pools ${stopped.join(" ")}`;
 const startCalls = [
   "incus list --format csv --columns ns",
+  runtimeCall(names),
   ...names.map((name) => `incus start ${name}`),
   ...instanceHostReads,
   knownHostsList, knownHostsSync,
@@ -645,6 +649,8 @@ Deno.test({
       f.calls();
       // A device Orbit owns went missing while the fleet ran: the refresh puts it back before it takes base.
       f.change((state) => delete state.containers["nested-app-prod"].devices["apparmor-off"]);
+      // The inner bridge's dnsmasq wrote its pid file on nested-app-dev's disk: base never holds it.
+      f.change((state) => state.containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"] = "pid: 4242\n");
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
@@ -688,10 +694,12 @@ Deno.test({
         "incus config device add nested-app-prod apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
         ...reads,
         ...names.map((name) => `incus snapshot delete ${name} base`),
+        runtimeCall(names),
         ...names.map((name) => `incus snapshot create ${name} base`),
         // The containers start again: the seed holds a running, ready fleet, and no step after the refresh starts it.
         ...startReads,
         "incus list --format csv --columns ns",
+        runtimeCall(names),
         ...names.map((name) => `incus start ${name}`),
         ...instanceHostReads,
         knownHostsList, knownHostsSync,
@@ -716,6 +724,7 @@ Deno.test({
         assertEquals(state.containers[name].snapshots.base.taken, "Stopped");
         assertEquals(state.containers[name].snapshots.base.devices, ruled()[name].devices);
         assertEquals(state.containers[name].snapshots.base.config, ruled()[name].config);
+        assertEquals(Object.keys(state.containers[name].snapshots.base.files).filter((path) => path.endsWith("/dnsmasq.pid")), []);
       }
     } finally {
       f.cleanup();
@@ -830,6 +839,8 @@ Deno.test({
       f.calls();
       // Work in the fleet changed a device of a nested container; the restore takes base's back.
       f.change((state) => state.containers["nested-app-dev"].devices.checkout.shift = "true");
+      // An older base holds the empty pid file of the inner bridge's dnsmasq that a copy of a running fleet left: the start clears it.
+      f.change((state) => state.containers["nested-app-dev"].snapshots.base.files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"] = "");
       // Doctor answers unhealthy once, so the readiness wait polls again after the reset's own delay.
       f.change((state) => {
         state.doctorCalls = 0;
@@ -845,6 +856,7 @@ Deno.test({
         ...names.map((name) => `incus snapshot restore ${name} base`),
         ...startReads,
         "incus list --format csv --columns ns",
+        runtimeCall(names),
         // One call starts the three after the rules check: Incus boots them in parallel.
         `incus start ${names.join(" ")}`,
         ...instanceHostReads,
@@ -868,6 +880,7 @@ Deno.test({
       ]);
       assertKeyUntouched(calls, reset.output);
       assertEquals(f.state().containers["nested-app-dev"].devices.checkout.shift, "false");
+      assertEquals(f.state().containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"], undefined);
       assertEquals(f.state().runningRestores ?? 0, 0, "a restore of a running container boots it on its own");
       // The waits poll every second within the 300 s bound: 300 retries, where the refresh's 5 s give 60.
       assertStringIncludes(reset.output, "FAILED - RETRYING: [localhost]: Wait for Doctor of the nested Gateway (300 retries left)");

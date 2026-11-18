@@ -63,7 +63,7 @@ No proof can cover the code that makes, starts, resets or removes the proof copy
 
 The exception covers exactly this code:
 
-- The nested fleet in an Instance container: `swamp/ansible/instance_nested.py`, `swamp/ansible/instance_nested_club_key.sh`, `swamp/ansible/instance_fleet_shrink.py`, `swamp/ansible/fleet-converge-inputs.json`, `swamp/ansible/tasks/instance-nested-club-key.yml` and `swamp/ansible/tasks/instance-fleet*.yml`.
+- The nested fleet in an Instance container: `swamp/ansible/instance_nested.py`, `swamp/ansible/instance_nested_club_key.sh`, `swamp/ansible/instance_fleet_shrink.py`, `swamp/ansible/instance_fleet_runtime.py`, `swamp/ansible/fleet-converge-inputs.json`, `swamp/ansible/tasks/instance-nested-club-key.yml` and `swamp/ansible/tasks/instance-fleet*.yml`.
 - The nested-fleet preparation of a switched-on Instance host in `swamp/ansible/tasks/instance-host.yml`: the subordinate ID check before nesting, the nested project and profile, and the nested-fleet image build with the record of its failure.
 - The nested-fleet branch of `swamp/ansible/instance-container.yml` and `swamp/ansible/instance-container-destroy.yml`: the start gate, the inner volume and its seed pair, the Club key, the fleet step and the release of the CI place (`swamp/ansible/tasks/task-copy-base-names.yml`). This branch only reads the nested project, profile and image record that the host preparation makes.
 - The nested-fleet sleep and wake: the nested branch of `swamp/ansible/tasks/instance-container-power.yml`, which keeps a nested-fleet container running when its memory stays in RAM; the nested project and the inner cgroups in `swamp/ansible/files/instance-container-power.py`; and the nested-fleet refusal of `swamp/ansible/files/instance-container-wake.sh`.

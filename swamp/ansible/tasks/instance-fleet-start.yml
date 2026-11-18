@@ -30,6 +30,11 @@
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
   register: fleet_start_list
   changed_when: false
+- name: Clear the network runtime files before the start
+  vars:
+    fleet_runtime_names: "{{ fleet_names | reject('in', fleet_start_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list) | list }}"
+  when: fleet_runtime_names | length > 0
+  ansible.builtin.include_tasks: instance-fleet-runtime.yml
 # One by one, so one that fails names itself. The reset (`fleet_start_together`) starts the stopped ones in one call: Incus boots them in
 # parallel, 0.44 s for the three against one boot after the other.
 - name: Start the nested containers

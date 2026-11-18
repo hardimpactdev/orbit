@@ -11,10 +11,13 @@ const state = JSON.parse(Deno.readTextFileSync(file));
 const args = [...Deno.args];
 // A script sent with `python3 -c` (instance_node_services.py) or `python3 -I -c` (instance_shape_tools.py, and instance_fleet_shrink.py,
 // whose first argument is its mode) is recorded by its name.
+// instance_fleet_runtime.py's first argument is the inner pools folder.
 const shrinkScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && ["check", "run"].includes(args[9]);
+const runtimeScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && args[9] === "/var/lib/incus/storage-pools";
 const recorded = args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)]
   : args[5] === "python3" && args[6] === "-I" && args[7] === "-c"
-  ? [...args.slice(0, 8), shrinkScript ? "<instance_fleet_shrink.py>" : "<instance_shape_tools.py>", ...args.slice(9)] : args;
+  ? [...args.slice(0, 8), shrinkScript ? "<instance_fleet_shrink.py>" : runtimeScript ? "<instance_fleet_runtime.py>" : "<instance_shape_tools.py>",
+    ...args.slice(9)] : args;
 Deno.writeTextFileSync(`${folder}/${args[0] === "--project" ? "calls" : "node-calls"}`, JSON.stringify(recorded) + "\n", { append: true });
 const save = () => Deno.writeTextFileSync(file, JSON.stringify(state));
 const fail = (message: string, code = 1): never => {
@@ -87,6 +90,22 @@ if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c" && ["
   const result = state.shrinkResult ?? { shrink: "ran", relinked: 345, dedupe: "ran" };
   if (result.shrink === "ran") state.shrink = { due: false, reason: "current" };
   done(JSON.stringify(result));
+}
+
+// instance_fleet_runtime.py in the Instance container: it removes each `dnsmasq.pid` of the inner Incus's networks from the files of the
+// named nested containers. A nested container that runs fails it: a live dnsmasq may own its file.
+if (runtimeScript) {
+  const removed: string[] = [];
+  for (const name of command.slice(5)) {
+    if (container(name).status === "Running") fail(`The runtime files of ${name} were cleared while it runs`);
+    for (const path of Object.keys(container(name).files ?? {})) {
+      const network = path.match(/^\/var\/lib\/incus\/networks\/([^/]+)\/dnsmasq\.pid$/)?.[1];
+      if (network === undefined) continue;
+      delete container(name).files![path];
+      removed.push(`${name}/${network}`);
+    }
+  }
+  done(JSON.stringify({ removed }));
 }
 
 // instance_shape_tools.py in the Instance container: its last line is the result, and its programs write to standard error.
