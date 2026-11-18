@@ -1,0 +1,21 @@
+file = "swamp/tests/release_container_test.py"
+cost = 1
+inputs = [
+  "swamp/scripts/release-container.py",
+  "swamp/ansible/files/instance-container-power.py",
+]
+cases = [
+  "test_address_is_reserved_once_and_cannot_silently_drift_after_boot",
+  "test_cold_resume_waits_for_eth0_when_another_interface_gets_ipv4_first",
+  "test_missing_eth0_address_uses_one_deadline_for_reads_and_sleeps",
+  "test_incus_read_timeout_reports_address_unavailable",
+  "test_non_timeout_incus_failure_remains_a_command_failure",
+  "test_wrong_or_ambiguous_eth0_addresses_refuse_immediately",
+  "test_ready_eth0_returns_the_reserved_address_without_polling",
+  "test_one_operation_uses_the_same_candidate_without_a_second_copy",
+  "test_existing_candidate_from_another_operation_is_untouched",
+  "test_an_existing_snapshot_must_match_the_entire_commit_and_artifact",
+  "test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build",
+  "test_power_target_must_match_the_fixed_project_and_complete_container_name",
+  "test_an_instance_and_its_preparer_have_independent_receipts",
+]
