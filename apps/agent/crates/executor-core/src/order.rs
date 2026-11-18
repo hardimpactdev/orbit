@@ -6,7 +6,7 @@
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use ed25519_dalek::{Signature, VerifyingKey};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::action::{Action, Enabled, TargetKind};
 use crate::ids::{NodeId, Nonce, OperationId, TargetId};
@@ -85,6 +85,24 @@ struct Payload {
     operation: OperationId,
     nonce: Nonce,
     expires_ms: u64,
+    #[serde(default)]
+    power_check: PowerCheck,
+}
+
+/// An additional requirement or exception derived from the admitted container intent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum PowerCheck {
+    /// Use the action's normal checks.
+    #[default]
+    Default,
+    /// Sleep requires Caddy's marker rule.
+    Route,
+    /// Wake an Instance that has no web unit without probing its app port.
+    NoWeb,
+    /// Resume for a deploy or start. The workflow owns readiness and the marker.
+    Resume,
 }
 
 /// An order that passed every stateless check. Only [`check`] makes one.
@@ -95,18 +113,24 @@ pub struct VerifiedOrder {
     operation: OperationId,
     nonce: Nonce,
     expires_ms: u64,
+    power_check: PowerCheck,
 }
 
 impl VerifiedOrder {
     /// Rebuilds an order that the journal recorded as open, for crash recovery. Its checks passed before it
     /// was journaled.
-    pub(crate) fn recovered(nonce: Nonce, key: &crate::journal::DoneKey) -> Self {
+    pub(crate) fn recovered(
+        nonce: Nonce,
+        key: &crate::journal::DoneKey,
+        power_check: PowerCheck,
+    ) -> Self {
         Self {
             action: key.action,
             target: key.target.clone(),
             operation: key.operation.clone(),
             nonce,
             expires_ms: 0,
+            power_check,
         }
     }
 
@@ -133,6 +157,11 @@ impl VerifiedOrder {
     /// When the order expires, in Unix milliseconds.
     pub fn expires_ms(&self) -> u64 {
         self.expires_ms
+    }
+
+    /// The power check the Gateway signed for this action.
+    pub fn power_check(&self) -> PowerCheck {
+        self.power_check
     }
 }
 
@@ -249,6 +278,14 @@ pub fn check_with_target(
         .action
         .parse()
         .map_err(|_| OrderRefusal::UnknownAction)?;
+    if !matches!(
+        (payload.power_check, action),
+        (PowerCheck::Default, _)
+            | (PowerCheck::Route, Action::Sleep)
+            | (PowerCheck::NoWeb | PowerCheck::Resume, Action::Wake)
+    ) {
+        return Err(OrderRefusal::BadPayload);
+    }
     if !checks.enabled.allows(action) {
         return Err(OrderRefusal::ActionNotEnabled);
     }
@@ -274,6 +311,7 @@ pub fn check_with_target(
         operation: payload.operation,
         nonce: payload.nonce,
         expires_ms: payload.expires_ms,
+        power_check: payload.power_check,
     })
 }
 

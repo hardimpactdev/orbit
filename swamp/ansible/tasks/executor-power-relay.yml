@@ -1,0 +1,85 @@
+---
+- name: Sign the admitted executor order
+  ansible.builtin.uri:
+    url: "https://gateway.orbit/api/v1/direct-operations/{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') | int }}/executor/sign"
+    method: POST
+    body_format: json
+    body:
+      run_id: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+      phase: "{{ executor_phase }}"
+    ca_path: /usr/local/share/ca-certificates/orbit-managed-root-ca.crt
+    use_proxy: false
+    follow_redirects: none
+    timeout: 3
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  register: executor_signed
+  no_log: true
+  failed_when: false
+  until: executor_signed.json.error.code | default('') != 'operation.run_unbound'
+  retries: 3
+  delay: 1
+
+- name: Refuse an order the signer did not issue
+  ansible.builtin.assert:
+    that: executor_signed.status | default(0) == 200
+    fail_msg: executor.sign_failed
+    quiet: true
+
+- name: Relay the order on stdin
+  ansible.builtin.command:
+    argv: [sudo, -n, -u, orbit-executor-relay, /usr/local/libexec/orbit-executor, relay]
+    stdin: "{{ executor_signed.json.data.order }}"
+  become: false
+  register: executor_relay
+  no_log: true
+  changed_when: true
+  failed_when: false
+
+- name: Require a terminal executor line
+  ansible.builtin.assert:
+    that: executor_relay.stdout_lines | default([]) | length == 2
+    fail_msg: executor.relay_transport
+    quiet: true
+
+- name: Decode the terminal executor line
+  ansible.builtin.set_fact:
+    executor_raw: "{{ executor_relay.stdout_lines[-1] | from_json }}"
+  no_log: true
+
+- name: Select the executor's first result
+  ansible.builtin.set_fact:
+    executor_receipt: >-
+      {{ ((executor_raw.first | default({}, true)) if executor_raw.status == 'refused'
+            and executor_raw.reason | default('') == 'replayed_nonce' else executor_raw)
+         | combine({'delivery': 'swamp'}) }}
+  no_log: true
+
+- name: Check the executor receipt belongs to this admitted action
+  ansible.builtin.assert:
+    that:
+      - executor_receipt.status | default('') in ['done', 'partial', 'failed', 'refused']
+      - (executor_receipt.operation | default(executor_operation if executor_refused else '')) == executor_operation
+      - (executor_receipt.action | default(executor_action if executor_refused else '')) == executor_action
+      - (executor_receipt.target | default(executor_target if executor_refused else '')) == executor_target
+    fail_msg: executor.relay_transport
+    quiet: true
+  vars:
+    executor_refused: "{{ executor_receipt.status | default('') == 'refused' }}"
+    executor_operation: "{{ lookup('ansible.builtin.env', 'ORBIT_OPERATION_ID') }}"
+    executor_target: "{{ container.instance_id | string }}"
+
+- name: Respect the executor's terminal outcome
+  when: >-
+    executor_receipt.status not in ['done', 'partial'] and not
+    (executor_may_boot | default(false) and executor_receipt.status == 'failed'
+      and executor_receipt.code | default('') == 'instance.container_stopped')
+  ansible.builtin.fail:
+    msg: >-
+      {{ executor_receipt.code if executor_receipt.status == 'failed'
+         and executor_receipt.code | default('') is match('^[a-z]+\.[a-z0-9_]+$')
+         else 'executor.order_refused' if executor_receipt.status == 'refused' else 'executor.power_failed' }}

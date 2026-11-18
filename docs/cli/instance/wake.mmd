@@ -3,7 +3,7 @@ sequenceDiagram
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
-  %% ADR 0266 slice 5: the proof-only executor.power_proof Operation signs wake; production instance.wake stays below until slices 6-8.
+  %% ADR 0266 slice 7: signed power applies to ordinary wakes and recovers through the same Operation.
   autonumber
   %% lane CL icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
@@ -13,7 +13,7 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>workflow execution
   participant N as app-dev Node<br/>Instance container
-  Note over GW,N: Slice 5 proof: Rust wake<br/>pool restore → Incus unfreeze
+  Note over GW,N: Signed Rust wake<br/>pool restore → Incus unfreeze
   %%> Executor proof path:
   %%> - a durable executor.power_proof Operation signs `wake`; the observer only relays bytes; the reply is `accepted`, then one result line
   %%> - before any memory syscall: boot id, cgroup inode and Incus incarnation against the plan, then each process's start time through a pidfd; any mismatch drops the plan and the wake goes on without a restore (`partial`, `instance.restore_plan_stale`)
@@ -21,7 +21,6 @@ sequenceDiagram
   %%> - unfreeze through the Incus local API with its 5 s bounds, then wait up to 5 s for the kernel thaw; a kernel freeze that stays, or one Incus lost before the wake, fails `instance.container_frozen_unmanaged` with no cgroup write
   %%> - close exactly the recorded swap limits, with no disk sync; one readiness request to the web port until an answer below 500, within 1.5 s, else `instance.web_unready` and the marker stays; then remove the asleep marker
   %%> - a stopped container fails `instance.container_stopped` and drops its plan: a boot is the run's work; a running one gets only the steps after the unfreeze (`done`), so crash recovery and a repeat are safe
-  %%> - no production flow switches in this slice: slice 6 has the Gateway call it, slice 7 Swamp and the relay
   CL->>GW: instance:wake INSTANCE
   %%> Command:
   %%> - `orbit instance:wake INSTANCE`
@@ -40,43 +39,62 @@ sequenceDiagram
   %%> When:
   %%> - an active development container, a default and a nested-fleet Instance included
   %%> - planned: a production Instance's live release container; the wake is admitted beside an open deploy or rollback, which changes live only after its switch; the switch and the wake take the Instance's power lock
-  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) only with executor wakes off, and a nested-fleet default refuses: only its deployment starts it
+  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd), and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
   %%> - an open wake of the Instance is joined: a second caller gets the same Operation; Caddy waits within the bound for a signed wake and otherwise gets the progress page
   %%> - a join to a Conn launch's wake records shared use while locking the wake Operation. If launch cleanup already cancelled the queued wake, a new request admits a new wake
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
   %%> - no container, a non-development Instance, a nested-fleet Instance that cannot take the wake or its start, or other lifecycle work admits no wake
-  alt executor wake enabled
+  alt signed wake admitted
     %% path: executor
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
     %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
+    %%> - CLI, API and Conn queue the signed wake and follow the Operation; their relay is not limited by Caddy's request budget
     %%> - keep the admitted wake queued with zero attempts until the publisher atomically claims it; Conn records cancellation of an unshared queued executor wake in the launch cancel transaction, before a publisher can claim it
     %%> - sign and publish outside the database transaction under the non-blocking per-Operation publication lock, then record the publication receipt
     %%> - the background pass takes committed completion handoffs, including old queued handoffs whose jobs did not finish; it recovers recorded results before publishing any missing order for the same Operation
-    %%> - record Operation notices locally and hand them to operations-prompt in the background; the request never enqueues a job
-    %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
-    GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
-    %%> Result:
-    %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
-    %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
-    alt done or partial within the bound
-      GW-->>CL: 200, continue request<br/>original method, URI and body
-      %%> Result:
-      %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
-      %%> - the Operation succeeds and records the runtime running
-      %%> - record the pending lifecycle follow-up with success; a background worker runs the hook without a database writer and records its receipt after it returns
-      %%> - reclaim old handoffs in batches of up to 50; the per-Operation hook lock and receipt keep concurrent deliveries from running the hook twice
-    else no successful result in time
-      %% path: executor-pending
-      GW-->>CL: 401 progress page<br/>activation state pending
-      %%> Result:
-      %%> - the existing page polls every 250 ms and loads the app when the marker goes
-      %%> - a queued completion reads the durable result 6 s after publication, without holding a request worker; done or partial succeeds, refused or failed fails, and no result fails executor.wake_timeout
-      %%> - slice 7 adds the relay and Swamp fallback; until then this path fails without calling either, and the setting stays off by default
+    %%> - record Operation notices locally; delivering them never holds the visitor request
+    %%> - the observer passes the order unread to the executor; the normal path needs no SSH, Python or marker/times command
+    opt no accepted line within 150 ms
+      GW->>N: Relay same order<br/>SSH · stdin
+      %%> - The relay and observer can race. A replay without a terminal result does not prove failure or success.
     end
-  else executor wake disabled
+    opt Caddy, for a visit
+      GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
+      %%> Result:
+      %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
+      %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
+      alt done or partial within the bound
+        GW-->>CL: 200, continue request<br/>original method, URI and body
+        %%> Result:
+        %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
+        %%> - the Operation succeeds and records the runtime running
+      else no successful result in time
+        %% path: executor-pending
+        GW-->>CL: 401 progress page<br/>activation state pending
+        %%> Result:
+        %%> - the existing page polls every 250 ms and loads the app when the marker goes
+      end
+    end
+    Note over GW: Project the receipt<br/>end the Operation
+    %%> - R1: the matching receipt decides; done or partial succeeds, refused or failed fails with the receipt's code; a transport failure never overrides a recorded receipt
+    %%> - R2: once an order was signed, no receipt ends interrupted with `executor.result_unknown` and keeps the Instance lock; cancel is refused
+    %%> - R4: Caddy shows a failed or interrupted wake as failed with Try again; a retry under the held lock shows the same failure
+    %%> - the worker sends the Operation's notices without waiting for the sweep
+    %%> - the job after 6 s still recovers an absent result and finishes a known result if the immediate job did not run
+    %%> - a background worker runs the lifecycle hook after success without holding a database writer, and records it once per Operation
+    opt no terminal result within 6 s, or a legitimate stopped container needs boot
+      GW->>SW: Continue Operation<br/>operation-instance-wake
+      SW->>GW: Sign fresh order<br/>bound Operation
+      SW->>N: Relay fresh order<br/>SSH · stdin
+      %%> - The journal returns the first result or acts once. A confirmed stopped container takes its existing boot and readiness phase; an unmanaged stopped nested default never boots here.
+      %%> - After that boot, the boot's own readiness result decides, never the earlier `container_stopped` line (R1)
+      %%> - R3: the engine that froze the container wakes it; a later cancelled or failed sleep and the current settings change nothing
+      SW-->>GW: Return result<br/>terminal projection
+    end
+  else Python wake admitted
   opt Caddy, for a development visit
     GW-->>CL: 401 progress page, at once<br/>spinner only
     %%> Result:

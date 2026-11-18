@@ -13,6 +13,8 @@ covers:
 
 Put one development container Instance to sleep now. Orbit freezes the whole container and moves its memory to swap, so it holds almost no RAM. Its processes, disk, databases, Route, T3 threads and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
+With signed power enabled, the command and idle sweep use the same executor and record the same `instance.sleep` Operation. The Gateway chooses the engine at admission. Relay recovery keeps that Operation; it does not create a second sleep.
+
 Every development container sleeps the same way: a clone, its Project's default, and an Instance of a nested-fleet Project. What keeps an Instance awake is data, never its name: a keep-alive Process, a Node service, an open Operation, a task, the never-sleep list, or recent traffic.
 
 **This command does not check T3.** If an agent turn runs in the Instance, the freeze holds it, and a model provider may drop its connection during a long sleep. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. The [idle sleep](/reference/development-containers#sleep-and-wake) after an idle hour does check T3 first, never cuts a turn, and admits the same Operation; its result says `t3_turn: idle`. An Instance without a T3 server, such as a default, has no turn to check: either result says `t3_turn: no_server`. It never puts an Instance to sleep before it has watched it for one idle window, and never one that uses a Node service.
@@ -34,13 +36,15 @@ Orbit first writes the asleep marker on the Node. From then on, each request to 
 
 Before Orbit admits the sleep of an Instance with a T3 server, the [Conn thread index](/reference/conn#thread-index) reads the container's T3 threads one last time, while its switch is on. It reads after the refusals, so a refused or repeated request does not wait, and it waits at most 3 seconds. A device then still lists the asleep Instance's threads. A failed read does not stop the sleep.
 
+When a sleep stops rather than freezes the container, the command says that its next wake starts it without restoring memory. In JSON, `sleep: stopped` and `prepared_restore.status: skipped` distinguish this from a frozen sleep.
+
 The Instance must be a development container. No other lifecycle work and no task may run in it. Planned: a production Instance is accepted too, and the command puts its live release container to sleep ([Production containers](/reference/production-containers#sleep-and-wake)).
 
-Sleeping an Instance that already sleeps runs again and changes nothing. A freeze that fails removes the marker, and the container runs as before. Run the command again to retry.
+Sleeping an Instance that already sleeps runs again and changes nothing. If the freeze fails and the container still runs, Orbit removes the marker. If signed sleep fails after freezing, it reports the failure and keeps the marker and swap state. Wake the Instance through the same engine.
 
 The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sleep` Operation. The MCP tool is `instance-sleep`.
 
-The Rust executor also implements sleep for signed proof orders ([Executor](/reference/executor#rust-sleep-and-discard)). This command keeps the Python path until ADR 0266 slices 7/8.
+The command uses [signed power routing](/reference/executor#signed-power-delivery) when `ORBIT_EXECUTOR_POWER_ENABLED` is on. It defaults to off and keeps the Python path when off.
 
 ## How it works
 
@@ -60,3 +64,6 @@ The Rust executor also implements sleep for signed proof orders ([Executor](/ref
 | `instance.power_helper_failed` | The power helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. Retry, or read the Node's journal. |
 | `instance.container_frozen_unmanaged` | The kernel already holds the container frozen while Incus calls it running. The sleep changed nothing and the marker stays, so the next visit wakes it. See [a freeze that Incus lost](/reference/prepared-restore#a-freeze-that-incus-lost). |
 | `instance.container_freeze_failed` | The container could not be frozen, the stop after a full swap failed, or swap could not take a nested-fleet Instance's memory. The marker is gone when the container still runs. |
+| `instance.container_sleep_incomplete` | The signed sleep failed after the Instance became unavailable. The executor keeps the marker and saved swap limits so it can wake the Instance. |
+| `executor.sign_failed` | The Gateway could not sign an order. Nothing was sent. |
+| `executor.result_unknown` | Recovery ended without an executor receipt. The Instance stays fenced until the Node's outcome is verified. |
