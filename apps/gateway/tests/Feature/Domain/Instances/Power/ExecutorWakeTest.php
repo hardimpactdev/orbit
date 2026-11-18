@@ -261,15 +261,16 @@ it('keeps the existing wake when the setting is off and requires no signing key'
     Queue::assertPushed(StartAdmittedSwampRun::class, 1);
 });
 
-it('does not enter a nested-fleet clone start or SSH when executor wakes are enabled', function (): void {
+it('does not enter a nested-fleet clone start or SSH for a recorded executor freeze', function (): void {
     $instance = executorWakeInstance();
+    config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
     $runtime = $instance->runtime()->firstOrFail();
     $attributes = $runtime->getAttributes();
     $runtime->delete();
     unset($attributes['id']);
     InstanceRuntime::query()->forceCreate([...$attributes, 'incus_project' => InstancePlacement::NestedProject, 'idmap_size' => 101000000]);
     Operation::query()->create(['kind' => 'instance.sleep', 'target_type' => 'instance', 'target_id' => $instance->id,
-        'node_id' => $instance->node_id, 'status' => 'succeeded', 'input' => [], 'result' => ['sleep' => 'frozen']]);
+        'node_id' => $instance->node_id, 'status' => 'succeeded', 'input' => ['signed_power' => true], 'result' => ['sleep' => 'frozen']]);
 
     executorWakeVisit($instance)->assertUnauthorized();
 

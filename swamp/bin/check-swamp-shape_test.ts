@@ -2014,6 +2014,7 @@ Deno.test("Gateway primitive exceptions require exact POST routes, never endpoin
     assertEquals(GATEWAY_PRIMITIVES, [
         "/api/v1/direct-operations/{operation_id}/github-token",
         "/api/v1/direct-operations/{operation_id}/certificates/sign",
+        "/api/v1/direct-operations/{operation_id}/executor/sign",
     ]);
     for (const route of GATEWAY_PRIMITIVES) {
         const path = route.replace("{operation_id}", "19");

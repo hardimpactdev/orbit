@@ -84,6 +84,8 @@ The global options block is the same on every Node. Nothing else on a Node can a
 
 A version holds only its `Caddyfile`. It imports nothing. The version name is the first 32 hexadecimal characters of the file's SHA-256 digest.
 
+Before freezing an Instance with a Route, the [executor](/reference/executor#signed-power-delivery) checks Caddy's loaded `/config/` for the asleep marker rule. The request uses the loopback admin address and sends its full authority, including port `2019`. Caddy rejects a portless `Host` on that listener, even when the connection comes from loopback.
+
 ## Node Caddy build
 
 The Gateway renders the sites from committed database state only, so the same state always gives the same file. Each core site source declares its render order: Gateway web, Metrics, service metrics, Routes, WebSocket, then analytics. Family providers register their own sources; provider discovery does not change the rendered order. Extension sources declare their own order and render after core sites. Route transitions are [stored state](/reference/routes#stored-transitions): a Route that is being published or withdrawn, an Instance that is being removed, a placement change, and a Router replacement each have a record that the build reads.

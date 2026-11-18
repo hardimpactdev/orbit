@@ -6,6 +6,7 @@ use App\Domain\Executor\ExecutorOrderBroadcast;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContribution;
 use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Operations\OperationStatus;
 use App\Jobs\Operations\CompleteExecutorWake;
@@ -174,4 +175,21 @@ it('does not inherit the multi-second SQLite busy timeout for a visitor', functi
     config(['orbit.executor.wait_ms' => 500]);
     executorWakeVisit($instance)->assertUnauthorized();
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole())->status->toBe(OperationStatus::Running);
+});
+
+it('keeps the visitor bound for a signed freeze after the signed settings went off', function (): void {
+    $instance = executorWakeInstance();
+    config(['orbit.executor.power_enabled' => true, 'orbit.executor.wake_enabled' => false]);
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    $sleep->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'result' => ['sleep' => 'frozen']]);
+    config(['orbit.executor.power_enabled' => false, 'orbit.executor.wait_ms' => 50]);
+    $writer = new PDO('sqlite:'.$this->database);
+    $writer->exec('BEGIN IMMEDIATE');
+    try {
+        $started = hrtime(true);
+        expect(app(InstanceWake::class)->activate($instance, false, 'node'))->toBeNull();
+        expect((hrtime(true) - $started) / 1e6)->toBeLessThan(300);
+    } finally {
+        $writer->exec('ROLLBACK');
+    }
 });

@@ -204,6 +204,10 @@
               ansible.builtin.include_tasks: { file: tasks/instance-power-call.yml, apply: {tags: [always]} }
               vars:
                 power_call: ['discard', '--instance', '{{ container.instance_id }}']
+            # The Rust executor's freeze state of the Instance goes too: its plan, swap limits record and receipt. The container is
+            # gone, so a late signed sleep or wake has nothing to act on. Signed destroy follows separately (ADR 0266).
+            - name: Remove this Instance's executor power state
+              ansible.builtin.file: {path: "/var/lib/orbit/executor/power/{{ container.instance_id }}", state: absent}
             - name: Remove the Node repository mirror
               ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }
             # A task copy's base scratch, which a cancelled task:sync may leave; it holds no credential. The intent names no Instance id,

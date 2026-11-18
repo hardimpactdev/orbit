@@ -328,7 +328,8 @@ fn operation_idempotency_and_open_journal_recovery_run_real_power_actions() {
             serde_json::to_string(&Record::Open {
                 nonce: first.nonce(),
                 key,
-                expires_ms: 6000
+                expires_ms: 6000,
+                power_check: orbit_executor_core::order::PowerCheck::Default,
             })
             .expect("record")
         ),
@@ -423,6 +424,20 @@ fn swap_full_resumes_a_nested_fleet_and_never_stops_it() {
 }
 
 #[test]
+fn a_capture_failure_after_freeze_reports_incomplete_sleep() {
+    let (_dir, power, api) = fixture();
+    fs::remove_file(api.root.join("memory.stat")).expect("remove stats to interrupt capture");
+
+    let error = power
+        .sleep_with(&api, "2", "op1")
+        .expect_err("incomplete sleep");
+    assert_eq!(error.to_string(), "instance.container_sleep_incomplete");
+    assert_eq!(api.instance.lock().expect("instance").status, "frozen");
+    assert!(power.markers.join("app-instance-2.asleep").exists());
+    assert!(power.state.join("2/limits.json").exists());
+}
+
+#[test]
 fn a_refused_incus_freeze_restores_all_original_swap_limits() {
     struct RefuseFreeze<'a>(&'a Fake);
     impl Api for RefuseFreeze<'_> {
@@ -445,6 +460,150 @@ fn a_refused_incus_freeze_restores_all_original_swap_limits() {
         "1234"
     );
     assert!(!power.state.join("2/limits.json").exists());
+}
+
+#[test]
+fn caddy_admin_requires_the_full_loopback_authority() {
+    use std::io::{BufRead as _, BufReader};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+    let address = listener.local_addr().expect("listener address");
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("admin connection");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("bound fixture read");
+        let mut lines = BufReader::new(&mut stream).lines();
+        let request = lines.next().expect("request line").expect("read request");
+        let host = lines.next().expect("host header").expect("read authority");
+        let _end = lines.next().expect("blank line").expect("read terminator");
+        let response: &[u8] = if request == "GET /config/ HTTP/1.0"
+            && host == format!("Host: {address}")
+        {
+            b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}"
+        } else {
+            b"HTTP/1.0 403 Forbidden\r\n\r\n"
+        };
+        stream.write_all(response).expect("write response");
+    });
+
+    let response = caddy_config(address).expect("Caddy admin response");
+    server.join().expect("fixture server ended");
+    assert!(route_checks(
+        &response,
+        Path::new("/markers/app-instance-2.asleep")
+    ));
+}
+
+#[test]
+fn caddy_must_have_the_exact_markers_matcher_in_its_loaded_config() {
+    let instance_marker = Path::new("/markers/app-instance-2.asleep");
+    assert!(route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"method\":\"GET\",\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}",
+        instance_marker,
+    ));
+    // The exact matcher alone is not enough: its route must forward the visit to activation (ADR 0266).
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"static_response\",\"status_code\":503}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/20\"}}]}",
+        instance_marker,
+    ));
+    // Caddy's `log_skip` for the same matcher passes the visit on, so the activation proxy after it still runs.
+    assert!(route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"routes\":[{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]},\"not\":[{\"header\":{\"X-Probe\":[\"1\"]}}]}],\"handle\":[{\"handler\":\"vars\",\"skip_log\":true}]},{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"method\":\"GET\",\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}]}",
+        instance_marker,
+    ));
+    // Review 2838 (M10): a terminal 503 before the activation proxy answers the visitor, so the proxy never runs.
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"static_response\",\"status_code\":503},{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}",
+        instance_marker,
+    ));
+    // Review 2838 (M10): an ordinary proxy without a rewrite is refused, not a panic.
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"upstreams\":[{\"dial\":\"127.0.0.1:5173\"}]}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-20.asleep\"]}}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep.old\"]}}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"try_files\":[\"/app-instance-2.asleep\"]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.1 503\r\n\r\n/app-instance-2.asleep",
+        instance_marker
+    ));
+}
+
+#[test]
+fn lifecycle_resume_does_not_need_the_old_app_and_leaves_the_marker() {
+    let (_dir, power, api) = fixture();
+    power.sleep_with(&api, "2", "op1").expect("freeze");
+    assert!(api.instance.lock().expect("instance").address.is_none());
+    power
+        .wake_checked(&api, "2", WebProbe::Lifecycle)
+        .expect("resume without the app");
+    assert_eq!(api.instance.lock().expect("instance").status, "running");
+    assert!(power.markers.join("app-instance-2.asleep").exists());
+    assert_eq!(
+        read(&api.root.join("memory.swap.max")).expect("restored swap limit"),
+        "0"
+    );
+}
+
+#[test]
+fn signed_discard_cannot_delete_the_state_of_a_frozen_target() {
+    let (_dir, power, api) = fixture();
+    power.sleep_with(&api, "2", "op1").expect("freeze");
+    assert!(power.discard_stopped_with(&api, "2").is_err());
+    assert!(power.state.join("2/limits.json").exists());
+    api.instance.lock().expect("instance").status = "stopped".to_owned();
+    power
+        .discard_stopped_with(&api, "2")
+        .expect("discard after stop");
+    assert!(!power.state.join("2/limits.json").exists());
+}
+
+#[test]
+fn the_asleep_marker_is_visible_before_incus_freezes_the_container() {
+    struct CheckMarker<'a> {
+        api: &'a Fake,
+        marker: PathBuf,
+    }
+    impl Api for CheckMarker<'_> {
+        fn instance(&self, id: &str) -> io::Result<Option<Instance>> {
+            self.api.instance(id)
+        }
+        fn change(&self, instance: &Instance, action: &str) -> io::Result<()> {
+            if action == "freeze" && !self.marker.is_file() {
+                return Err(io::Error::other("asleep marker missing before freeze"));
+            }
+            self.api.change(instance, action)
+        }
+    }
+    let (_dir, power, api) = fixture();
+    let checked = CheckMarker {
+        api: &api,
+        marker: power.marker("2"),
+    };
+    assert_eq!(
+        power.sleep_with(&checked, "2", "op1").expect("sleep").sleep,
+        "frozen"
+    );
 }
 
 /// Answers each request on a stand-in Incus socket and returns the request lines and bodies it saw.
@@ -778,6 +937,16 @@ fn an_unready_app_fails_the_wake_and_keeps_the_marker() {
 }
 
 #[test]
+fn a_headless_wake_needs_no_web_unit_and_removes_the_marker() {
+    let (_dir, power, api) = asleep(503);
+    power
+        .wake_checked(&api, "2", WebProbe::NotConfigured)
+        .expect("headless wake");
+    assert!(!marker(&power).exists());
+    assert_eq!(swap_limits(&api), ["0", "0"]);
+}
+
+#[test]
 fn a_stopped_container_is_left_to_the_run_and_its_plan_dropped() {
     let (_dir, power, api) = asleep(200);
     "stopped".clone_into(&mut api.instance.lock().expect("instance").status);
@@ -826,7 +995,8 @@ fn crash_recovery_after_the_unfreeze_finishes_the_wake_and_a_repeat_returns_it()
                     action: order.action(),
                     target: order.target().clone(),
                 },
-                expires_ms: 6000
+                expires_ms: 6000,
+                power_check: orbit_executor_core::order::PowerCheck::Default,
             })
             .expect("record")
         ),
