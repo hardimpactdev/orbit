@@ -8,6 +8,7 @@ import json
 import os
 import re
 import runpy
+import stat
 import subprocess
 import sys
 import tempfile
@@ -63,15 +64,27 @@ def save(path, value):
 
 @contextmanager
 def lock(path):
-    with path.open("a+") as fd:
+    relative = path.relative_to(BASE).as_posix()
+    if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
+        raise Refusal("unrecognized production resource lock")
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        owner = os.fstat(fd)
+        if not stat.S_ISREG(owner.st_mode) or owner.st_uid != os.geteuid() or stat.S_IMODE(owner.st_mode) != 0o600:
+            raise Refusal("unexpected production resource lock ownership")
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
+    finally:
+        os.close(fd)
 
 
 def run(args, *, data=None, timeout=150, check=True):
     # Keep program text, credentials, private command output and host environment out of run history.
-    result = subprocess.run(args, check=False, input=data, stdin=subprocess.DEVNULL if data is None else None,
-                            text=True, capture_output=True, timeout=timeout)
+    if str(args[0]) not in {"incus", "caddy", "curl", "systemctl", "runuser", "tail",
+                            str(LIB / "orbit-instance-release-routes"), str(LIB / "orbit-instance-release-prepare")}:
+        raise Refusal("unrecognized production Node executable")
+    result = subprocess.run(["/usr/bin/timeout", "--kill-after=5", str(timeout), *args], check=False, input=data, stdin=subprocess.DEVNULL if data is None else None,
+                            text=True, capture_output=True, timeout=timeout + 6)
     if check and result.returncode:
         raise Refusal(f"deployment.step_failed: {Path(args[0]).name} exited {result.returncode}")
     return result
@@ -383,9 +396,12 @@ class Release:
                 save(marker, self.operation)
 
     def probe(self, address=None):
+        # Curl owns transient transport/HTTP retries. Count only consecutive 200 responses:
+        # a retry interrupts the streak, and all routes share one wall-clock deadline.
         successes = 0
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
+            retried = False
             for route in self.state["routes"]:
                 domain = route["domain"]
                 if address:
@@ -396,18 +412,19 @@ class Release:
                     headers = []
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    break
-                result = run(["curl", "-sS", "--noproxy", "*", "--max-time", str(min(5, remaining)),
-                              "-o", "/dev/null", "-w", "%{http_code}", *headers, "--", url], check=False, timeout=7)
-                if result.returncode or result.stdout != "200":
-                    successes = 0
-                    break
-            else:
-                successes += 1
-                if successes >= (3 if address else 1):
-                    return
-            time.sleep(min(1, max(deadline - time.monotonic(), 0)))
-        raise Refusal("deployment.not_ready: the production Route health check failed")
+                    raise Refusal("deployment.not_ready: timed out checking production Routes")
+                result = run(["curl", "-fsS", "--noproxy", "*", "--max-time", str(min(5, remaining)),
+                              "--retry", "60", "--retry-all-errors", "--retry-delay", "1",
+                              "-o", "/dev/null", "-w", "%{http_code} %{num_retries}", *headers, "--", url],
+                             check=False, timeout=remaining)
+                code, _, retries = result.stdout.partition(" ")
+                if result.returncode or code != "200" or not retries.isdecimal():
+                    raise Refusal("deployment.not_ready: the production Route health check failed")
+                retried |= int(retries) > 0
+            successes = 1 if retried else successes + 1
+            if successes >= (3 if address else 1):
+                return
+        raise Refusal("deployment.not_ready: timed out checking production Routes")
 
     def ready(self):
         info = self.identity(self.sha)
@@ -459,11 +476,24 @@ class Release:
         for timer in timers:
             service = timer.removesuffix(".timer") + ".service"
             deadline = time.monotonic() + 120
-            while self.units(machine, "show", "-p", "ActiveState", "--value", service).stdout.strip() in (
-                    "active", "activating", "deactivating", "reloading"):
-                if time.monotonic() >= deadline:
-                    raise Refusal("deployment.step_failed: a Schedule is still running")
-                time.sleep(1)
+            properties = ("show", "-p", "ActiveState,MainPID,ControlPID", service)
+            while time.monotonic() < deadline:
+                state = dict(line.split("=", 1) for line in self.units(machine, *properties).stdout.splitlines())
+                if state["ActiveState"] not in ("active", "activating", "deactivating", "reloading"):
+                    break
+                # Wait for the observed fire without signaling it. Query its unit again afterwards:
+                # an additional ExecStart or ExecStop can acquire the unit before it becomes inactive.
+                pid = int(state["MainPID"]) or int(state["ControlPID"])
+                if pid <= 0:
+                    raise Refusal("deployment.step_failed: running Schedule has no observable process")
+                args = ["tail", f"--pid={pid}", "--follow", "/dev/null"]
+                remaining = max(0.01, deadline - time.monotonic())
+                if machine == "host":
+                    run(args, timeout=remaining)
+                else:
+                    self.guest(machine, *args, timeout=remaining)
+            else:
+                raise Refusal("deployment.step_failed: a Schedule is still running")
         for name in names:
             if name not in timers and not name.startswith("orbit-schedule-"):
                 self.units(machine, "disable", "--now", "--", name)

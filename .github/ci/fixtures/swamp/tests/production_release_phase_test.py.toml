@@ -1,0 +1,20 @@
+file = "swamp/tests/production_release_phase_test.py"
+cost = 1
+inputs = [
+  "swamp/ansible/files/instance-release-phase.py",
+  "swamp/ansible/files/instance-release-guest.py",
+  "swamp/scripts/release-container.py",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+]
+cases = [
+  "test_all_private_identities_are_bound_before_a_guest_operation",
+  "test_shape_admits_only_the_owned_host_transaction",
+  "test_a_changed_live_link_never_enters_preparation",
+  "test_reload_failure_restores_only_the_selected_instance_before_unlocking_caddy",
+  "test_the_earlier_rollback_survives_a_failed_swap_reclaim",
+  "test_an_interrupted_non_idempotent_application_step_is_not_replayed",
+  "test_swap_and_pool_reservations_cover_other_active_instances",
+  "test_untrusted_checkout_paths_cannot_traverse_the_persistent_volume",
+  "test_seal_accounts_for_file_content_and_executability_but_excludes_external_storage",
+]

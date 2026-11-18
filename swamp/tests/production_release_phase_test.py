@@ -2,6 +2,8 @@
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import ExitStack
@@ -58,6 +60,21 @@ class ProductionReleaseTest(unittest.TestCase):
                 self.r.parse_plan({**self.plan, key: changed})
         with self.assertRaisesRegex(phase.Refusal, "first move"):
             self.r.parse_plan({**self.plan, "legacy": {"project_id": 2, "home": "/home/orbit-app-2", "units": [], "commit": CURRENT}})
+
+    def test_shape_admits_only_the_owned_host_transaction(self):
+        path = "ansible/files/instance-release-phase.py"
+        source = (SWAMP / path).read_text()
+        for code, allowed in [
+            (source, True),
+            (source.replace('Path("/var/lib/orbit/production")', 'Path("/tmp")'), False),
+            (source.replace('os.O_NOFOLLOW | ', ''), False),
+            (source.replace('not re.fullmatch(r"[.]capacity', 'not re.search(r"[.]capacity'), False),
+        ]:
+            with self.subTest(allowed=allowed):
+                output = subprocess.run([sys.executable, SWAMP / "bin/swamp-shape-python.py", "[]", "--source-context"],
+                                        input=json.dumps({"source": code, "sources": {path: code}}),
+                                        text=True, capture_output=True, check=True)
+                self.assertEqual(all(finding["rule"] != "custom-control" for finding in json.loads(output.stdout)), allowed)
 
     def test_a_changed_live_link_never_enters_preparation(self):
         self.r.link(OLD)
