@@ -874,8 +874,8 @@ mod tests {
             power_check: PowerCheck::Default,
             input: serde_json::json!({"rule": "443/tcp"}),
         };
-        let line = serde_json::to_string(&with_input).expect("record");
-        let live = Live::from_records([record, serde_json::from_str(&line).expect("round trip")]);
+        let encoded = serde_json::to_string(&with_input).expect("record");
+        let live = Live::from_records([record, serde_json::from_str(&encoded).expect("round trip")]);
         let compacted = Live::from_records(live.records());
         let inputs: Vec<serde_json::Value> = compacted.unfinished().into_iter().map(|open| open.input).collect();
         assert_eq!(inputs, vec![serde_json::Value::Null, serde_json::json!({"rule": "443/tcp"})]);
