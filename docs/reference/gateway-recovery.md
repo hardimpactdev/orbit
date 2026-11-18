@@ -139,7 +139,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 
 The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
 
-The Gateway queues the fleet pass when it records verification. The first transition to `current` permits the Gateway to try the [nested-fleet refresh](/reference/development-containers#refresh-after-a-release), when refresh is enabled. With rollout disabled, verification permits the same attempt. The release can stay verified while the fleet is pending, deferred or failed. The refresh has its own admission and result. The refresh can keep a current nested app-dev host when a release changes only the play that launches Conn or the helper that starts a task turn. The refresh result records why each Node converged or skipped and which base snapshots it retook.
+The Gateway queues the fleet pass when it records verification. Fleet `current` permits the Gateway to advance [the default refresh and seed publication](/reference/development-containers#refresh-after-a-release), when refresh is enabled. Each has its own status and Operation receipts in the release record. With rollout disabled, verification permits the same attempt. The release can stay verified while the fleet is pending, deferred or failed. The refresh has its own admission and result. The refresh can keep a current nested app-dev host when a release changes only the play that launches Conn or the helper that starts a task turn. The refresh result records why each Node converged or skipped and which base snapshots it retook.
 
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
@@ -238,6 +238,8 @@ Grant rendering stays in the Gateway; no Node script renders or publishes grants
 
 When the two files differ, the `Check the Ansible collections` step fails. The load and the release go on, and the release record gets `phases.swamp` with `warning: swamp.collections_drift` and `fix: orbit node:role:add 209 swamp --converge`. The swamp role converge is the one path that installs collections.
 
+The load reads the JSON replies of `swamp serve reload`, `swamp access reload` and `swamp workflow list` with `jq`. The `swamp` role installs `jq` with its packages, so a Node that only the roles provisioned can run the load.
+
 A schedule that serve does not confirm fails the load. These workflows have no built-in trigger, so this step is the only place that schedules them. A Swamp Node with no overrides runs neither `swamp-credential-monitor` nor `swamp-datastore-watch` until the next release Swamp load. That is a Gateway that bootstraps its own Swamp Node, or a serve that lost `.swamp/serve.yaml`. Nothing reports the gap: a run that never fires raises nothing ([Schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node)).
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
@@ -334,7 +336,7 @@ The attest action is pinned by commit SHA, so its bundle format changes only whe
 
 #### Web build
 
-CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main CI run publishes it. It either builds it or verifies and republishes the artifact from a green PR run with the same tested Git tree; see [CI tree reuse](/reference/implementation-loop#reuse-a-green-pr-tree-on-main). PR artifacts alone cannot authorize release.
+CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main delivery run verifies and republishes the artifact from a green PR run with the same tested Git tree; see [CI tree reuse](/reference/implementation-loop#reuse-a-green-pr-tree-on-main). PR artifacts alone cannot authorize release.
 
 The Swamp step downloads the artifact with the run's GitHub token, checks its digest and extracts it into a private staging directory. It accepts only regular files and directories with safe relative names. It refuses links, special files, absolute paths, `..`, more than 20,000 entries or more than 512 MiB of files. The build must have `index.html` at its root. The step gives Caddy access and moves the build into `web/releases/<id>` with one rename. A complete build is reused.
 
@@ -342,7 +344,7 @@ The activate child switches `web/current` together with the Gateway code, before
 
 A missing or expired artifact refuses admission with `gateway.release_web_build_missing`. An invalid artifact returns `gateway.release_web_build_invalid`. A deploy or rollback needs a valid artifact even when it can reuse a sealed release.
 
-CI's `Required checks` needs the Web job, which uploads the artifact before it succeeds. Automatic releases also need `Gateway release inputs`. Every main commit runs both, including Swamp-only changes, because the release also [loads Swamp](#load-swamp).
+The main `Required checks` and `Gateway release inputs` checks depend on successful promotion of the PR build. Swamp-only changes use the same delivery path because the release also [loads Swamp](#load-swamp).
 
 ##### Accepted CI runs
 
@@ -402,7 +404,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 ## Automatic releases
 
-The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default, and they are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
+The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It reconciles the serving release and looks for the newest eligible main commit. It admits the next Swamp release after the preceding cycle settles. Automatic releases are disabled by default, and they are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
 A release admits no refresh of the task VM base snapshots: that step, its daily schedule and its artisan commands are removed ([refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot)).
 
@@ -423,8 +425,13 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 3. It settles dead records and stops if this creates a pause.
 4. It reads the current release and its `REVISION`. An invalid layout stops the tick.
 5. It reads the repository origin locally with `git --git-dir <shared>/orbit.git config --get remote.origin.url`.
-6. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) that descends from the current release.
-7. It respects a manual pin and the retry delay, then admits the [Swamp run](#release-as-a-swamp-run) with trigger `auto`.
+6. It asks GitHub for the newest first-parent main commit that descends from the current release and passes both delivery checks.
+7. It requeues any pending fleet, default or seed work and waits for the serving cycle to settle.
+8. It respects a manual pin and the retry delay, then admits the [Swamp run](#release-as-a-swamp-run) with trigger `auto`.
+
+The [green checks](/reference/github-app#find-the-newest-green-commit) certify a tested landed tree and a promoted web artifact. The tick records the candidate while it waits for the serving cycle. Admission and preflight failures recheck the serving revision, pause and cycle under the release lock.
+
+The fleet phase fails if the CLI delivery is still unavailable after its publication wait and a completed search finds no compatible ancestor. A newer eligible revision can fix a terminal downstream failure forward.
 
 `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and check, by default `main` and `Required checks`. A retryable failure waits 10 minutes between attempts, up to three attempts. Waiting for agent delivery spends no retry budget.
 
@@ -438,6 +445,7 @@ Every tick stores its result and prints one JSON object. It exits 1 for a manual
 | `busy` | Another release holds the lock or has an active run; this counts toward a stall |
 | `not_adopted`, `no_deployed_release` | The Gateway has no valid current release or readable `REVISION`; repair the release layout |
 | `up_to_date` | No newer commit qualifies |
+| `waiting_for_release_cycle` | The serving release still has fleet, default or seed work to finish |
 | `waiting_for_agent_delivery` | The candidate's agent delivery is not available; the next tick checks again |
 | `backing_off` | A retryable failure is less than 10 minutes old |
 | `source_unavailable` | GitHub, the App, or the shared repository's origin could not be read |
@@ -596,7 +604,7 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 A release is **fleet current** when the `phases.fleet.status` field in `gateway:release:show` is `current`. The release first reports `verified` when the Gateway switch passes its health check. The fleet phase can then be `pending`, `deferred`, `failed`, or `disabled`. It lists each Node's status, delivery and converge Operation IDs, and role results. A fleet failure leaves the verified Gateway serving.
 
-The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
+The existing fleet admission job runs after verification and at 03:05 Europe/Amsterdam when either fleet rollout or default refresh is enabled. Pending default and seed work keeps that job active even while automatic Gateway admission is paused. Each daily pass checks the serving release again, including when it already reports fleet current. It discovers membership changes, checks agent pins and reported versions, picks up late CLI publications, and compares rendered role inputs with the applied records. It visits eligible Nodes in order, with the serving Gateway last. A missing role record needs a first apply.
 
 Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Orbit resolves any required CLI release before reserving the fleet visit and uses that pin for admission. Under the database writer lock, each pass confirms that its release still serves before it records or admits fleet work.
 

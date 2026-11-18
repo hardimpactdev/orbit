@@ -295,7 +295,7 @@ A proof copy on a CI-only Node is a development Instance. Its destroy and a canc
 
 A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. [proof:run](/cli/proof/run#the-run) decides which Node takes each proof copy: one copy per free place, on every Node that offers proof places. Orbit never adds `app-dev` to a CI Node to host proof copies.
 
-On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent, with its `nested` part, for two kinds of Node: an `app-dev` Node on the build list, and a CI-only Node. The role runtime runs the branch for either one. The CI Node gets no `app-dev` role for this.
+On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent for every app-dev Node and every CI-only Node. Its `nested` part applies on an app-dev Node with nested-fleet hosting on, or on a CI-only Node. The role runtime runs the branch for either kind. The CI Node gets no `app-dev` role for this.
 
 The branch prepares:
 
@@ -509,7 +509,7 @@ A failure keeps an existing Node's earlier recorded identity, settings and statu
 
 ### Instance containers on an app-dev Node
 
-An `app-dev` Node on the Gateway's build list of [development containers](/reference/development-containers#the-build-list) also gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. A task VM never does, and every other `app-dev` Node installs what it did before. The Node must provide the Incus storage pool `orbit-instances`. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every app-dev Node gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. The Node must provide the Incus storage pool `orbit-instances`. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 Each such converge also writes every Instance container's [presented machine name](/reference/development-containers#the-machine-name) into its `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts`, through the Incus file API, whether the container runs, is stopped or is frozen. Nothing restarts: the kernel hostname follows at the container's next start, and T3's label at T3's next start.
 
@@ -538,7 +538,7 @@ The Gateway captures the recipe versions, downloads and digests at admission. Sw
 
 Completion requires a successful keyed installer step with `outcome: current|applied`. Source refusals keep `app-prod.php_package_source_unavailable`; other installer refusals keep `app-prod.php_install_failed`. Results expose the outcome, fixed error code and bounded `stale_masters` and `deferred` lists. The Gateway logs those FPM master warnings. Missing result data or an outcome other than `current` or `applied` fails with `app-prod.php_install_failed`. A lost reply uses the same Operation and target receipt. The child requires Kit C list enforcement; admission is unavailable until it lands.
 
-On build-list Nodes, the `app-dev` converge also prepares the [Instance container host](/reference/compute-drivers#prepare-an-instance-container-host), including the image, bridge ingress, DNS shutdown and egress proxy rule; task VM tasks and place counts stay unchanged.
+On every app-dev Node, the `app-dev` converge also prepares the [Instance container host](/reference/compute-drivers#prepare-an-instance-container-host), including the image, bridge ingress, DNS shutdown and egress proxy rule.
 
 ## Orbit CLI
 
@@ -576,7 +576,7 @@ To install, `@swamp/cfgmgmt/fetch` downloads the binary to `/usr/local/bin/orbit
 | `cli.install_failed` | The download, its checksum, its version check, the link or the profile failed. The link stays as it was when the switch did not happen |
 | `cli.configuration_failed` | The profile could not be written, or the Gateway has no WireGuard address |
 
-A Node of the build list keeps a mirror of each container Instance's repository at `/var/lib/orbit/instance-repositories/<id>.git`, owned by root. The create and deploy flows fetch into it. See [the default Instance](/reference/development-containers#the-default-instance).
+An app-dev Node keeps a mirror of each container Instance's repository at `/var/lib/orbit/instance-repositories/<id>.git`, owned by root. The create and deploy flows fetch into it. See [the default Instance](/reference/development-containers#the-default-instance).
 
 [Instance removal](/reference/development-containers#destroy) deletes its container, mirror and owned rules. Its `instance-<id>` network ACL lives in Incus project `default` and is removed after the container.
 
@@ -754,6 +754,8 @@ The fleet phase reconciles the checkout’s scoped Swamp grants before candidate
 ## Gateway bootstrap prerequisites
 
 A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow (`swamp/workflows/workflow-gateway-bootstrap.yaml`), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
+
+The Swamp role installs `jq`, which a release's Swamp load uses on the Swamp Node. The release's verify step also runs `jq` on the Gateway Node, and the Gateway role does not install it yet: a Gateway without the Swamp role needs `jq` installed by hand.
 
 The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
 

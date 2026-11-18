@@ -110,7 +110,7 @@ An available release is kept for its commit for 30 days, because a published rel
 
 ### Fallback to an ancestor release
 
-Sometimes a green commit never gets its CLI release. After a newer commit reached `main`, GitHub refuses to tag the older commit when its workflow files differ from the tip's ([Commits without a release](/reference/cli-binaries#commits-without-a-release)). Without a fallback, the fleet would wait until a newer commit is merged and released.
+Sometimes a green commit never gets its CLI release. After a newer commit reached `main`, GitHub refuses to tag the older commit when its workflow files differ from the tip's ([Commits without a release](/reference/cli-binaries#commits-without-a-release)). If a complete fallback search finds no compatible release, or the commit’s release fails provenance verification, the fleet phase fails and keeps its evidence. A newer eligible commit can then release.
 
 When the commit's release stays `release_missing`, `release_mismatch`, or `release_incomplete` for 30 minutes, the Gateway names the newest published release of an ancestor instead:
 

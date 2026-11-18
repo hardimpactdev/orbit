@@ -45,11 +45,11 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 ## CI
 
-Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main can [reuse a green PR tree](#reuse-a-green-pr-tree-on-main).
+Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main verifies [the tree tested on the PR](#reuse-a-green-pr-tree-on-main) and publishes delivery inputs.
 
 The separate [Git build watch](/reference/compute-drivers#show-and-validate-the-recipe) is an advisory update signal, not a Required check. Each job has a timeout, including time spent on retries and pagination. Only scheduled or manual main runs can publish an update issue.
 
-Pull requests and main pushes run the fast Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. Ordinary and [tool-dependent fixture shards](#self-hosted-fixture-shards) both pack and run two workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
+Pull requests run the selected Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. Ordinary and [tool-dependent fixture shards](#self-hosted-fixture-shards) both pack and run two workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
 
 Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
 
@@ -87,7 +87,7 @@ A separate remote Node service access fixture covers exact TCP admission, proxy 
 
 The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site.
 
-CI has [no after-merge stage](#no-after-merge-stage): apart from main's own CI run, no workflow runs fixtures or proof after a merge. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+CI runs fixtures and proof before the merge. The main workflow verifies the PR evidence and promotes the tested web build. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 Withdrawal fixtures also check that publication stops when the live checksum differs from the base used for composition. The Node helper tests use temporary files, fake Caddy commands and real file locks; they cover contention, holder death and reload failure.
 
@@ -108,30 +108,17 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. When it runs, it gates Required checks; see [the proof run job](#the-proof-run-job) |
 | Required checks | On PRs, require selected builds, static checks, Pest suites, fixture shards, including capacity, and the selected proof. Untouched jobs, metadata-ineligible proofs and proofs while proof admission is off may skip |
-| Main delivery checks | On main, require the selected jobs and fixture shards with the same capacity and result rules as PRs; a verified tree receipt reuses its passed fixtures. Main runs no proof |
-| Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; report publication never gates delivery |
-
-`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `gateway-real-clients`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `docs`, `api-reference`, `web`, `agent`, `proof`, `gateway-release`, `changes`, `swamp`, `fixtures` and `self-hosted-fixtures`. `Required checks` depends on the same jobs. These are the existing builds, Pest suites, static checks, contracts and selected fixture shards, hosted and self-hosted. It adds no test or build. `Start the CLI release` depends on this result.
-
-The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because publishing the fixture report failed; a failed selected fixture blocks delivery. Old commits without this result cannot be backfilled.
-
-Gateway automatic releases retain the `Required checks` name: on main, `main-required` verifies the exact SHA and main CI run before forwarding a successful `Main delivery checks` result. Its summary links the source CI and fixture report. Its delivery dependency waits for selected fixtures. A failed, cancelled or incomplete delivery makes main Required fail, rather than skip. Skipped gates have distinct names in each event, so a skipped PR gate cannot invalidate the main result. The Gateway also requires `Gateway release inputs`, preserving its current reader and rollout guards.
+| Main delivery checks | On main, require the CI policy check, verification of the landed tree, and promotion of its web artifact |
 
 ### Reuse a green PR tree on main
 
-When main moves after a PR's green run, update the branch, wait for green, and merge promptly. Main CI compares the merged Git tree with the merge-ref tree that the PR run actually checked out, not the PR head tree. A match reuses the green checks. A different tree, missing evidence, or an API failure runs normal main CI.
+Main CI compares the landed Git tree with the merge-ref tree that the PR run checked out. Squash and merge commits can have different commit IDs and still have the same tree. If main moves while a PR waits, update the branch and wait for Required checks again. For outside changes, a maintainer can use a reviewed branch in the repository.
 
-Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main's own CI verifies the repository, workflow identity, PR event, final PR head, latest Required job, which must have succeeded, checkout log, Git tree and live body hash.
+Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main verifies the repository, workflow identity, merged PR, final PR head, latest Required job, actual checkout logs, Git tree and current PR body hash. It verifies the downloaded ZIP against its recorded digest before publishing `web-dist-<main SHA>`. A changed PR body needs a successful Docs run with the new body. A failed-only rerun that copies Required without its corresponding receipt cannot authorize publication.
 
-It reads job logs and artifact archives as bytes with `gh api --allow-escape-sequences`; those bytes are parsed or hashed, never printed to a terminal. It downloads and verifies the source artifact before publishing `web-dist-<main SHA>`. A changed body needs a new successful Docs run; rerunning only Required cannot bless an old acknowledgement. If a failed-only rerun copies a successful Required job into a new attempt without producing its receipt, main runs normal CI.
+A missing receipt, different tree or unreadable GitHub response fails delivery. Rerun delivery for a transient error. If the tree has no matching evidence, update the next PR branch to include that revision and run CI. PR planning compares the tested tree with the latest verified main delivery on its base history. The plan selects checks for carried changes as well as the PR. The same main SHA can be retried by rerunning its delivery job. Main runs no product tests, fixtures or proof.
 
-The receipt keeps `Main delivery checks`, `Required checks` and `Gateway release inputs` on the main SHA. Release readers and CLI dispatch keep their existing names and lookup rules. Selected main fixtures skip for a reused tree because the receipt proves that tree passed in its PR. Without a receipt, a selected fixture failure, cancellation, unexpected skip or capacity error blocks delivery and Required. Shard budgets stay unchanged; Required keeps its five-minute target. Main runs no proof: a green PR merges without a second proof run.
-
-`Resolve release` gates `Build CLI`, `Build Linux agent` and `Build macOS agent`; `Publish release` requires the resolver and those builds. Version, main ancestry, tags, provenance and publication guards still apply. Selected fixture results reach the resolver through main delivery.
-
-`Main fixture report` runs for main pushes and manual main runs that do not reuse PR evidence, after `changes` and `fixtures`. The job has two minutes for API reads and comment writes. It reports the exact tested SHA, source run, fixture job URLs, matrix outcome and capacity errors. Only merged PRs into this repository's main whose merge SHA equals the tested SHA receive a comment. A main push containing several merges reports only the PR for its tested head; a direct push has no causal PR comment. The comment is updated on reruns.
-
-Missing attribution is explicit in the CI summary; API errors fail the report job. A failed fixture or capacity result also leaves the report job red after writing its evidence. The release summary links the source CI and this report, including pending fixtures, without waiting for either.
+Main retains `Main delivery checks`, `Required checks` and `Gateway release inputs` on the landed SHA. CLI dispatch and docs publication use that delivery result. The signed release, ancestry and provenance checks remain in force. See [Automatic releases](/reference/gateway-recovery#automatic-releases) for the Gateway poll.
 
 The Gateway Pest job installs Gateway and CLI dev Composer dependencies and regenerates both autoloaders with `composer install --no-scripts`. It then runs `bin/build-api` so tests read the current OpenAPI and MCP contracts; these generated outputs are not cached. NodeMetrics runs the CLI's PHP consent fixture. Separate vendor caches use each project's manifest and lockfile, PHP 8.5, the runner OS and SDK Composer metadata; they never restore the runtime-only Gateway cache.
 
@@ -278,7 +265,7 @@ No switch makes a check report-only. A check that runs is part of its gate.
 
 The plan job reads the checks table once. Selected jobs start after it; unselected jobs are skipped before a runner starts. A docs-only change starts three jobs: Select build inputs, Docs build and Required checks. Reusable workflows receive the plan's selection instead of calculating it again.
 
-Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. Commits added only to main after a pull request branches do not select checks for that pull request. For an ordinary main push, the previous main commit is the merge base, so selection covers the pushed changes.
+Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. For a PR to main, CI uses the latest verified delivery on the tested base history. If main has undelivered changes, the PR head must include them and CI selects checks for them.
 
 A fixture can list individual declared YAML paths in `parsed_yaml_inputs` when it observes only their parsed values. Check subprocesses and helpers as well as direct reads before adding a path. Fixtures that inspect source text, its copies or its digests keep selection. Mandatory inputs, unclassified inputs and unmapped paths also keep selection.
 
@@ -400,7 +387,7 @@ While `ORBIT_PROOF_ENABLED` is `true`, a selected proof gates `Required checks`;
 
 A new push cancels the previous proof. The runner rechecks eligibility immediately before calling Orbit. Lost eligibility produces a `skipped` outcome, never a passing proof. An explicit `proof.commit_untrusted` admission refusal with a failed result and an empty cases list also produces `skipped`. Executed cases, interrupted execution and all other failures retain their existing failure semantics. GitHub cannot change a running job to skipped: these runtime skips exit successfully but say `skipped` in the step output, receipt and summary. Required checks permits this explicit skip too.
 
-A fork keeps its separate trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. While proof admission is on, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job.
+A fork keeps its separate trusted base-branch workflow, a maintainer's approval of the head and the `run-proofs` label; fork code never runs on the managed runner. That workflow publishes `Orbit outside proof` on the exact head. While proof admission is on, Required checks reads its latest trusted status and fails if it is missing, pending or failed. After the outside proof succeeds, rerun the failed Required job. A proof that includes undelivered main changes needs a same-repository branch, so its CI job can pass the verified delivery base to Orbit and require passing cases for the range.
 
 CI proofs join one FIFO admission queue. Its front takes one copy of the Orbit container in each free CI place across the CI Nodes. Orbit balances batches by measured case time, splits a long batch that changes the fleet by case, runs them in the copies' inner fleets, merges the verdicts and destroys the copies. Capacity waits within a two-hour admission budget and then fails clearly. See [proof:run](/cli/proof/run).
 

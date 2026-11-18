@@ -132,15 +132,15 @@ describe('the one placement rule', function (): void {
     it('places a normal Project as before and a nested-fleet Project only in a container of the nested project on a switched-on Node', function (): void {
         $listed = nestedSwitch(containerDefaultNode(), true);
         $off = containerDefaultNode('off', '10.44.0.8');
-        $unlisted = nestedSwitch(containerDefaultNode('unlisted', '10.44.0.9', false), true);
+        $unprepared = nestedSwitch(containerDefaultNode('unprepared', '10.44.0.9', false), true);
         $normal = containerDefaultProject();
         $nested = otherProject('nested', true);
 
         expect(InstancePlacement::place($normal, $listed, true))->toBe('orbit-instances')
             ->and(InstancePlacement::place($normal, $off, true))->toBe('orbit-instances')
-            ->and(InstancePlacement::place($normal, $unlisted, false))->toBeNull()
+            ->and(InstancePlacement::place($normal, $unprepared, false))->toBeNull()
             ->and(placementRefusal(fn () => InstancePlacement::place($nested, $off, true)))->toBe('instance.nested_fleet_host_unavailable 409')
-            ->and(placementRefusal(fn () => InstancePlacement::place($nested, $unlisted, true)))->toBe('instance.nested_fleet_container_required 409')
+            ->and(InstancePlacement::place($nested, $unprepared, true))->toBe('orbit-instances-nested')
             ->and(placementRefusal(fn () => InstancePlacement::place($nested, $listed, false)))->toBe('instance.nested_fleet_container_required 409')
             ->and(InstancePlacement::place($nested, $listed, true))->toBe('orbit-instances-nested');
     });
@@ -301,7 +301,6 @@ describe('a CI Node that hosts proof copies', function (): void {
         $before = ciRunnerRuntime($none);
         $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
         $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
-        config(['instances.container_nodes' => [$both->id]]);
         app(NodeRoleRuntimeInput::class)->prepare($none, $none->roles()->sole());
 
         expect($before)->not->toHaveKey('instances')
@@ -772,6 +771,38 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($problem->properties['operation_id'])->toBe($operation->id);
         // A Node that failed at the same seed waits for the next seed or its own converge: a lasting failure does not repeat.
         expect(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
+    });
+
+    it('recovers a lost seed admission and records the exact published seed once', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        $commit = str_repeat('a', 40);
+        $seeds = app(ProofSeeds::class);
+        $takenAt = $default->runtime()->sole()->seed_taken_at->toIso8601String();
+        $identity = ['instance_id' => $default->id, 'commit' => $commit, 'taken_at' => $takenAt];
+        $defaults = [$default->id => ['copies_to_ci' => true, 'taken_at' => $takenAt]];
+        $pending = $seeds->releasePublication($commit, $defaults);
+        $copy = Operation::query()->where('kind', ProofSeeds::Kind)->sole();
+
+        expect($pending)->toBe(['status' => 'pending', ...$identity, 'operation_ids' => [$copy->id], 'published_nodes' => [], 'pending_nodes' => [$node->id]])
+            ->and($seeds->releasePublication($commit, $defaults))->toBe($pending)
+            ->and($copy->target_id)->toBe($default->id);
+
+        $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-release-seed']])->save();
+        app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'succeeded', 'run_id' => 'run-release-seed', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $node->id, 'status' => 'succeeded']]]]);
+        expect($seeds->releasePublication($commit, $defaults))->toBe([
+            'status' => 'current', ...$identity, 'operation_ids' => [$copy->id], 'published_nodes' => [$node->id], 'pending_nodes' => [],
+        ])->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(1);
+
+        // A same-commit retake is a different seed, even though it keeps the snapshot name.
+        $default->runtime()->update(['seed_taken_at' => '2026-11-17 00:00:00']);
+        expect($seeds->releasePublication($commit, $defaults))->toMatchArray([
+            'status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$identity,
+        ])->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(1);
     });
 
     it('admits the next copy at its end for every Node behind a seed that moved, and else only for Nodes that no copy has tried', function (): void {

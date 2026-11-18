@@ -102,10 +102,18 @@ final readonly class DesiredFleetState
 
     private function resolveAndStore(string $revision): DesiredFleetStateData
     {
-        [$commit, $cli, $seconds] = $this->resolve($revision);
-        $this->cache->put($this->key($revision), ['commit' => $commit, 'cli' => $cli->toArray()], $seconds);
+        [$commit, $cli, $seconds, $exhausted] = $this->resolve($revision);
+        $this->cache->put($this->key($revision), ['commit' => $commit, 'cli' => $cli->toArray(), 'cli_fallback_exhausted' => $exhausted], $seconds);
 
         return new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromDelivery($this->delivery));
+    }
+
+    /** True only after the missing-publication window and a complete search with no compatible release. */
+    public function cliFallbackExhausted(string $commit): bool
+    {
+        $stored = $this->cache->get($this->key($this->revision()));
+
+        return is_array($stored) && ($stored['commit'] ?? null) === $commit && ($stored['cli_fallback_exhausted'] ?? false) === true;
     }
 
     /** The state from the cache alone, without Git or GitHub, or null when nothing is cached for this commit. */
@@ -138,14 +146,14 @@ final readonly class DesiredFleetState
     }
 
     /**
-     * The commit, its CLI release, and how long to keep that answer.
+     * The commit, its CLI release, cache lifetime, and whether fallback was exhausted.
      *
-     * @return array{?string, DesiredCliReleaseData, int}
+     * @return array{?string, DesiredCliReleaseData, int, bool}
      */
     private function resolve(string $revision): array
     {
         if (preg_match('/\A[0-9a-f]{7,40}\z/D', $revision) !== 1) {
-            return [null, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::GatewayCommitUnknown), self::UnavailableSeconds];
+            return [null, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::GatewayCommitUnknown), self::UnavailableSeconds, false];
         }
 
         $commit = $this->history->commit($revision);
@@ -154,46 +162,46 @@ final readonly class DesiredFleetState
             return [
                 strlen($revision) === 40 ? $revision : null,
                 DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::GatewayCommitUnknown),
-                self::UnavailableSeconds,
+                self::UnavailableSeconds, false,
             ];
         }
 
         $count = $this->history->count($commit);
 
         if ($count === null || $count < 1) {
-            return [$commit, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::HistoryUnavailable), self::UnavailableSeconds];
+            return [$commit, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::HistoryUnavailable), self::UnavailableSeconds, false];
         }
 
         $release = $this->catalog->find($commit, new CliReleaseName($count));
 
         if ($release->isAvailable()) {
-            return [$commit, $release, self::AvailableSeconds];
+            return [$commit, $release, self::AvailableSeconds, false];
         }
 
         // A fallback, once found, stays until the commit's own release appears. A GitHub error never drops it.
         $kept = DesiredCliReleaseData::fromArray($this->cache->get(self::FallbackKey.hash('sha256', $revision)));
 
         if ($kept instanceof DesiredCliReleaseData && $kept->isAvailable()) {
-            return [$commit, $kept, self::FallbackSeconds];
+            return [$commit, $kept, self::FallbackSeconds, false];
         }
 
         $reason = $release->reason;
 
         if (! $reason instanceof CliReleaseUnavailableReason || ! in_array($reason, self::FallbackReasons, true) || ! $this->missingLongEnough($revision)) {
-            return [$commit, $release, self::UnavailableSeconds];
+            return [$commit, $release, self::UnavailableSeconds, false];
         }
 
         [$fallback, $searched] = $this->fallback($commit);
 
         if (! $fallback instanceof DesiredCliReleaseData) {
             // A search that found nothing runs again after a while, not on every lookup.
-            return [$commit, $release, $searched ? self::FallbackSeconds : self::UnavailableSeconds];
+            return [$commit, $release, $searched ? self::FallbackSeconds : self::UnavailableSeconds, $searched];
         }
 
         $fallback = $fallback->fallbackFor($reason);
         $this->cache->put(self::FallbackKey.hash('sha256', $revision), $fallback->toArray(), self::AvailableSeconds);
 
-        return [$commit, $fallback, self::FallbackSeconds];
+        return [$commit, $fallback, self::FallbackSeconds, false];
     }
 
     /**
@@ -206,20 +214,29 @@ final readonly class DesiredFleetState
      */
     private function fallback(string $commit): array
     {
+        $ancestors = $this->history->ancestors($commit, self::FallbackDepth);
+        if ($ancestors === null) {
+            return [null, false];
+        }
         $candidates = [];
 
-        foreach ($this->history->ancestors($commit, self::FallbackDepth) as $ancestor) {
+        foreach ($ancestors as $ancestor) {
             $number = $this->history->count($ancestor);
 
-            if ($number !== null && $number > 0) {
-                $candidates[] = [$ancestor, $number];
+            if ($number === null || $number < 1) {
+                return [null, false];
             }
+            $candidates[] = [$ancestor, $number];
         }
 
         usort($candidates, static fn (array $left, array $right): int => $right[1] <=> $left[1]);
 
         foreach ($candidates as [$ancestor, $number]) {
-            if (! $this->history->unchanged($ancestor, $commit, CliReleaseName::BuildInputs)) {
+            $unchanged = $this->history->unchanged($ancestor, $commit, CliReleaseName::BuildInputs);
+            if ($unchanged === null) {
+                return [null, false];
+            }
+            if (! $unchanged) {
                 continue;
             }
 
@@ -229,7 +246,7 @@ final readonly class DesiredFleetState
                 return [$found, true];
             }
 
-            if ($found->reason === CliReleaseUnavailableReason::GitHubUnavailable) {
+            if (in_array($found->reason, [CliReleaseUnavailableReason::GitHubUnavailable, CliReleaseUnavailableReason::ProvenanceUnconfigured], true)) {
                 return [null, false];
             }
         }

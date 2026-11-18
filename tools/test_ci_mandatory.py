@@ -76,8 +76,8 @@ class MandatoryAdmissionTest(unittest.TestCase):
         for case in ['host proof', *self.image['cases']]:
             self.assertIn(case, summary)
         self.assertIn('Required checks will fail', summary)
-        for gate in ('required', 'delivery'):
-            needs = needs_for(gate)
+        for gate in ('required',):
+            needs = needs_for()
             needs['changes']['outputs']['fixture_capacity'] = json.dumps(result['capacity'])
             with self.subTest(gate=gate), self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded'):
                 delivery.validate(needs)

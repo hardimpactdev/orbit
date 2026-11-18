@@ -149,7 +149,7 @@ final readonly class InstanceContainer
 
     /**
      * Refuses a command that works on an Instance's checkout from its Node, for an Instance in a container: its workspace lives in the
-     * container. Destroy, setup, the environment file, transfer, rename and clone reach a container in later parts of the runtime.
+     * container. Destroy, setup, the environment file, transfer and rename reach a container in later parts of the runtime.
      */
     public static function assertCheckout(Instance $instance): void
     {

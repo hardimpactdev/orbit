@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Data\Instances\CreateInstanceData;
-use App\Domain\Instances\ContainerNodes;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
@@ -35,7 +34,6 @@ function containerDefaultNode(string $name = 'beast', string $ip = '10.44.0.7', 
     ]));
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     if ($listed) {
-        config(['instances.container_nodes' => [...app(ContainerNodes::class)->ids(), $node->id]]);
         app(AllocateInstanceBridgeAction::class)->execute($node);
     }
 

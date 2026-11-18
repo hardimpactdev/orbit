@@ -97,17 +97,15 @@ class RequiredGateTest(unittest.TestCase):
             self.assertNotIn('merge_group', source)
             self.assertIn('github.event.pull_request.base.sha || github.event.before', source)
 
-    def test_run_on_main_builds_and_publishes_the_release_web_build(self):
-        # Required checks pass in the run on main, so that run must hold the Gateway release's web build.
-        caller = (ROOT / '.github/workflows/ci.yml').read_text()
-        for source in [caller.split('  changes:\n')[1].split('\n  swamp:\n')[0]]:
-            self.assertIn("MAIN: ${{ github.ref == 'refs/heads/main' }}", source)
+    def test_main_promotes_the_verified_web_artifact_from_the_pr(self):
         import yaml
-        steps = yaml.safe_load(caller)['jobs']['web']['steps']
-        publish = next(s for s in steps if s.get('id') == 'web-artifact')
-        self.assertEqual(publish['if'], "github.event_name == 'pull_request' || github.ref == 'refs/heads/main'")
-        self.assertIn("format('web-dist-{0}', github.sha)", publish['with']['name'])
-        self.assertIn("format('web-pr-{0}-{1}', github.run_id, github.run_attempt)", publish['with']['name'])
+        caller = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+        publish = next(step for step in caller['web']['steps'] if step.get('id') == 'web-artifact')
+        self.assertEqual(publish['if'], "github.event_name == 'pull_request'")
+        self.assertEqual(publish['with']['name'], 'web-pr-${{ github.run_id }}-${{ github.run_attempt }}')
+        promote = next(step for step in caller['changes']['steps'] if step.get('name') == 'Publish the verified web build for main')
+        self.assertEqual(promote['if'], "steps.reuse.outputs.reuse == 'true'")
+        self.assertEqual(promote['with']['name'], 'web-dist-${{ github.sha }}')
 
     def test_web_tests_gate_the_build_with_locked_browsers(self):
         import yaml
