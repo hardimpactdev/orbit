@@ -12,6 +12,8 @@ source_git=(git --no-replace-objects -c safe.directory="$mirror" -C "$mirror")
 
 # REVISION is published only after Composer, configuration and the web build succeed.
 # Consume it before touching the checkout so a killed build cannot pass partial dependencies to its retry.
+# The positional arguments and paths in both command strings are expanded in the preparer.
+# shellcheck disable=SC2016
 previous=$("$@" sh -eu -c '
   test ! -L "$1"
   mkdir -p -- "$1"
@@ -32,6 +34,7 @@ else
   # discard incomplete packages and Git objects outside the newly admitted history.
   previous=''
 fi
+# shellcheck disable=SC2016
 printf '%s\n' "${revisions[@]}" | "${source_git[@]}" pack-objects --stdout --revs | "$@" bash -euo pipefail -c '
   cd "$1"
   keep=()
