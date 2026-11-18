@@ -318,8 +318,6 @@ case "$action" in
     pinned_runtime=$(release_runtime)
     ctl wake gateway "$operation" >&2
     python3 <(src swamp/ansible/files/gateway-release-guest.py) --runtime "$operation" "$pinned_runtime" >&2
-    # The candidate owns its sealed checkout as root. Trust only that path for fleet history reads as orbit.
-    enter "$prep" git config --system --fixed-value --replace-all safe.directory "$checkout" "$checkout"
     bash <(src swamp/scripts/gateway-release-checkout.sh) "$mirror" "$sha" "$checkout" \
       "${incus_cli[@]}" exec "$prep" -- runuser -u orbit --
     user "$prep" sh -eu -c '
