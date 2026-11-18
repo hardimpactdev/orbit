@@ -42,6 +42,7 @@ contexts:
       root_disk_size: 80GiB
       allowed_devices:
         root: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
   root-larger:
     phase: start
     container_read:
@@ -51,6 +52,7 @@ contexts:
       root_disk_size: 40GiB
       allowed_devices:
         root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
   root-odd-form:
     phase: start
     container_read:
@@ -60,6 +62,27 @@ contexts:
       root_disk_size: 40GiB
       allowed_devices:
         root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+  # A btrfs nested app-dev Node: the root device without a size, so it never grows (2026-11-18, copy 5892).
+  root-unsized:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "40GiB", "type": "disk"}}}'
+    container:
+      root_disk_size: 80GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances}
+  # instance_root_disk.py's output for a 40GiB intent on a btrfs pool and on a ZFS pool.
+  root-disk-btrfs:
+    config_args: ['--config', 'limits.cpu=2']
+    root_disk_read:
+      stdout: '{"type": "disk", "path": "/", "pool": "orbit-instances"}'
+  root-disk-zfs:
+    config_args: ['--config', 'limits.cpu=2']
+    root_disk_read:
+      stdout: '{"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"}'
   grants-current:
     fleet_grants:
       stdout: 'localhost : ok=3 changed=0 unreachable=0 failed=0'
@@ -2503,6 +2526,21 @@ cases:
   field: when
   context: root-odd-form
   expected: false
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-unsized
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Name the root disk arguments
+  field: ansible.builtin.set_fact.resource_args
+  context: root-disk-btrfs
+  expected: ['--config', 'limits.cpu=2', '--device', 'root,type=disk', '--device', 'root,path=/', '--device', 'root,pool=orbit-instances']
+- file: tasks/instance-container-phase.yml
+  task: Name the root disk arguments
+  field: ansible.builtin.set_fact.resource_args
+  context: root-disk-zfs
+  expected: ['--config', 'limits.cpu=2', '--device', 'root,type=disk', '--device', 'root,path=/', '--device', 'root,pool=orbit-instances', '--device', 'root,size=40GiB']
 - file: tasks/instance-container-phase.yml
   task: Read the deploy step inputs at the commit
   field: ansible.builtin.command.stdin
