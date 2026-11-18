@@ -53,8 +53,16 @@ enum ConnLaunchStage: string
         if ($this === self::Workspace && $code === 'instance.t3_unready') {
             return ['code' => $code, 'detail' => 'The Instance did not report a ready T3 server.'];
         }
-        if ($this === self::Application && $code === 'instance.container_process_inactive') {
-            return ['code' => $code, 'detail' => 'An application process did not become active.'];
+        if ($this === self::Application) {
+            $detail = match ($code) {
+                'instance.container_process_inactive' => 'An application process did not become active.',
+                'instance.complete_unavailable' => 'The Instance cannot currently be completed.',
+                'operation.target_busy' => 'The Instance still has lifecycle work to settle.',
+                default => null,
+            };
+            if ($detail !== null) {
+                return ['code' => $code, 'detail' => $detail];
+            }
         }
 
         if ($this === self::Cleanup) {

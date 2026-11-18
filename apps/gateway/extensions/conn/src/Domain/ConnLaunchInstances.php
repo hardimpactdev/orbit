@@ -115,6 +115,16 @@ final readonly class ConnLaunchInstances
             }));
     }
 
+    public function retryExistingApplication(Operation $launch, Instance $instance, string $retryId): void
+    {
+        $key = self::key($launch, 'complete', 'application');
+        $this->keyed(StartInstanceCompleteAction::Kind, $key, fn (): ?Operation => $this->state->admitExistingApplicationRetry(
+            $launch->id, $retryId, $key, fn (Operation $parent): array => [
+                'operation' => $this->complete->execute($instance, $parent->triggered_by, $parent->request_id),
+                'owned' => true,
+            ]));
+    }
+
     public function destroy(Operation $launch, Instance $instance): Operation
     {
         $create = ConnLaunchChild::Create->operation($launch);

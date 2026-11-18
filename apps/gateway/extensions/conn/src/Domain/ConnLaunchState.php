@@ -8,6 +8,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
 use Closure;
@@ -45,6 +46,12 @@ final readonly class ConnLaunchState
         return $this->setChild($id, $role, $key, $admit);
     }
 
+    /** @param Closure(Operation): array{operation: Operation, owned: bool} $admit */
+    public function admitExistingApplicationRetry(int $id, string $retryId, string $key, Closure $admit): ?Operation
+    {
+        return $this->setChild($id, ConnLaunchChild::Completion, $key, $admit, applicationRetryId: $retryId);
+    }
+
     public function observeCompletion(int $id, Operation $completion): ?Operation
     {
         return $this->setChild($id, ConnLaunchChild::Completion, 'observe-completion:'.$completion->id,
@@ -52,9 +59,9 @@ final readonly class ConnLaunchState
     }
 
     /** @param Closure(Operation): array{operation: Operation, owned: bool} $admit */
-    private function setChild(int $id, ConnLaunchChild $role, string $key, Closure $admit, ?int $observedCompletionId = null): ?Operation
+    private function setChild(int $id, ConnLaunchChild $role, string $key, Closure $admit, ?int $observedCompletionId = null, ?string $applicationRetryId = null): ?Operation
     {
-        return DB::transaction(function () use ($id, $role, $key, $admit, $observedCompletionId): ?Operation {
+        return DB::transaction(function () use ($id, $role, $key, $admit, $observedCompletionId, $applicationRetryId): ?Operation {
             $launch = $this->locked($id);
             $observingReadyLaunch = $observedCompletionId !== null && $launch->status === OperationStatus::Succeeded;
             if (($launch->cancel_requested_at !== null) !== ($role === ConnLaunchChild::Destroy)
@@ -64,6 +71,11 @@ final readonly class ConnLaunchState
             }
 
             $state = $launch->state ?? [];
+            $applicationRetry = Arr::get($state, 'launch_retry_requests.application');
+            if ($applicationRetryId !== null && ($launch->status !== OperationStatus::Succeeded || ($launch->input['target_kind'] ?? null) !== 'existing'
+                || ! is_array($applicationRetry) || ($applicationRetry['id'] ?? null) !== $applicationRetryId)) {
+                return null;
+            }
             $recorded = Arr::get($state, 'launch_children.'.$role->value);
             if (is_array($recorded)) {
                 $previous = $role->operation($launch) ?? throw new LogicException('The launch child is missing.');
@@ -87,7 +99,20 @@ final readonly class ConnLaunchState
                 $state = $this->retainCompletedStages($launch);
             }
 
-            ['operation' => $child, 'owned' => $owned] = $admit($launch);
+            try {
+                ['operation' => $child, 'owned' => $owned] = $admit($launch);
+            } catch (ResourceOperationException $error) {
+                if ($applicationRetryId === null) {
+                    throw $error;
+                }
+                $requestedAt = $applicationRetry['requested_at'] ?? null;
+                $state['launch_application_refusal'] = ConnLaunchStage::Application->fact('failed',
+                    is_string($requestedAt) ? $requestedAt : null, ConnLaunchStage::at(now()), $error->errorCode);
+                Arr::forget($state, 'launch_retry_requests.application');
+                $this->store->change($launch, ['state' => $state]);
+
+                return null;
+            }
             $instanceId = ConnLaunchChild::instanceId($launch);
             $newTarget = ($launch->input['target_kind'] ?? null) === 'new';
             if (! $role->accepts($child->kind) || $child->target_type !== 'instance' || $child->node_id !== $launch->node_id
@@ -110,7 +135,7 @@ final readonly class ConnLaunchState
             Arr::set($state, 'launch_children.'.$role->value, ['id' => $child->id, 'key' => $key, 'kind' => $child->kind,
                 'instance_id' => $child->target_id, 'node_id' => $child->node_id, 'owned' => $owned]);
             if ($role === ConnLaunchChild::Completion) {
-                Arr::forget($state, 'launch_retry_requests.application');
+                Arr::forget($state, ['launch_retry_requests.application', 'launch_application_refusal']);
             }
             if (in_array($role, [ConnLaunchChild::Create, ConnLaunchChild::Wake], true)) {
                 Arr::forget($state, ['launch_retry_requests.launch', 'launch_stages.'.ConnLaunchStage::Workspace->value]);

@@ -29,6 +29,7 @@ sequenceDiagram
     S-->>G: Verified acceptance
     Note over G: Publish the thread
     %%> Retry only publication after acceptance. Leave a deleted workspace absent.
+    %%> If completion admission refuses an application Retry on an existing Instance, end that retry with a sanitized preview error. Keep the ready thread and the last admitted completion.
     %%> After a failed application completion, settlement records a later completion for this Instance and Node on the same ready launch.
   end
   C->>G: Follow or control

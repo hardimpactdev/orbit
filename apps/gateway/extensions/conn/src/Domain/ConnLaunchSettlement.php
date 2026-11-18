@@ -174,11 +174,16 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
     private function application(Operation $launch, Instance $instance): void
     {
         $complete = $this->instances->observeCompletion($launch);
-        $retry = Arr::has($launch->refresh()->state ?? [], 'launch_retry_requests.application');
-        if ($complete !== null && (! $retry || ! $this->nativeCancellation->settled($complete))) {
+        $retryId = Arr::get($launch->refresh()->state ?? [], 'launch_retry_requests.application.id');
+        if ($complete !== null && (! is_string($retryId) || ! $this->nativeCancellation->settled($complete))) {
             return;
         }
-        if ($instance->refresh()->status === InstanceState::SourceResolved && ($retry || ($launch->input['target_kind'] ?? null) === 'new')) {
+        if (is_string($retryId) && ($launch->input['target_kind'] ?? null) === 'existing') {
+            $this->instances->retryExistingApplication($launch, $instance, $retryId);
+
+            return;
+        }
+        if ($instance->refresh()->status === InstanceState::SourceResolved && ($launch->input['target_kind'] ?? null) === 'new') {
             $this->instances->complete($launch, $instance);
 
             return;

@@ -151,7 +151,9 @@ final readonly class ConnLaunchSnapshot
             $stages[$stage->value] = $stage->recorded(Arr::get($launch->state ?? [], 'launch_stages.'.$stage->value));
         }
         $stages['workspace_server'] = $this->workspaceStage($launch);
-        if ($completion !== null && $launch->status !== OperationStatus::Cancelled) {
+        if (isset($launch->state['launch_application_refusal'])) {
+            $stages['application_preview'] = ConnLaunchStage::Application->recorded($launch->state['launch_application_refusal']);
+        } elseif ($completion !== null && $launch->status !== OperationStatus::Cancelled) {
             $stages['application_preview'] = self::childStage(ConnLaunchStage::Application, $completion, ($completion->result['ready'] ?? null) === true);
         }
         $destroy = ConnLaunchChild::Destroy->operation($launch);

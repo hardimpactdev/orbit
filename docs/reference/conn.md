@@ -750,6 +750,8 @@ Once `dispatch_committed` is recorded, Cancel answers `409 conn.launch_handoff_c
 
 `POST /launches/{operation_id}/retry` accepts `{ "target": "launch" }` for the same launch, or `{ "target": "application" }` to retry application completion alone. Launch retry resumes from the recorded child or receipt and respects the same dispatch fence and replay rules. Application retry uses the existing completion admission and can fail or succeed independently once the thread is ready. It never restarts T3 or sends a message. Report a known prerequisite, such as `project_process_definition`, before offering a retry that cannot work.
 
+If admission refuses a retry on an existing Instance, Orbit ends that retry and reports a sanitized error in `application_preview`. The launch stays `ready` and keeps the last admitted completion ID. A later admitted completion replaces the refusal in the snapshot.
+
 ### Launch snapshot
 
 Project the safe fields of `OperationData::summary`: `id`, `kind`, `status`, `created_at`, `started_at`, `finished_at`, `cancel_requested`, `poll_after_seconds`, and `error_code`. The `kind` is `conn.launch`. Do not include raw Operation input, state, result or native diagnostics. Add these fields:
