@@ -84,10 +84,10 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             return;
         }
         if ($launch->status === OperationStatus::Succeeded) {
-            if (Arr::has($launch->state ?? [], 'launch_retry_requests.application')) {
-                $this->application($launch, $this->instance($launch));
-            } else {
-                $this->instances->observeCompletion($launch);
+            $retryId = Arr::get($launch->state ?? [], 'launch_retry_requests.application.id');
+            $this->instances->observeCompletion($launch);
+            if (is_string($retryId)) {
+                $this->instances->retryApplication($launch, $retryId);
             }
 
             return;
@@ -179,14 +179,7 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
 
     private function application(Operation $launch, Instance $instance): void
     {
-        $complete = $this->instances->observeCompletion($launch);
-        $retryId = Arr::get($launch->refresh()->state ?? [], 'launch_retry_requests.application.id');
-        if ($complete !== null && (! is_string($retryId) || ! $this->nativeCancellation->settled($complete))) {
-            return;
-        }
-        if (is_string($retryId) && ($launch->input['target_kind'] ?? null) === 'existing') {
-            $this->instances->retryExistingApplication($launch, $instance, $retryId);
-
+        if ($this->instances->observeCompletion($launch) !== null) {
             return;
         }
         if ($instance->refresh()->status === InstanceState::SourceResolved && ($launch->input['target_kind'] ?? null) === 'new') {
@@ -194,9 +187,7 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
 
             return;
         }
-        if ($complete === null) {
-            $this->state->applicationNotRequired($launch->id);
-        }
+        $this->state->applicationNotRequired($launch->id);
     }
 
     private function handoff(Operation $launch): void

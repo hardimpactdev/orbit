@@ -132,34 +132,45 @@ final readonly class ConnLaunchInstances
 
     public function complete(Operation $launch, Instance $instance): Operation
     {
-        $key = self::key($launch, 'complete', 'application');
-        $retry = Arr::has($launch->state ?? [], 'launch_retry_requests.application');
+        $key = self::key($launch, 'complete');
 
         return $this->keyed(StartInstanceCompleteAction::Kind, $key, fn (): Operation => $this->record($launch, ConnLaunchChild::Completion, $key,
-            function () use ($launch, $instance, $retry): Operation {
-                try {
-                    return DB::transaction(fn (): Operation => $retry
-                        ? $this->complete->execute($instance, $launch->triggered_by, $launch->request_id)
-                        : $this->complete->admit($instance, $launch->triggered_by, $launch->request_id));
-                } catch (ResourceOperationException $error) {
-                    $create = ConnLaunchChild::Create->operation($launch);
-                    if ($create === null) {
-                        throw $error;
-                    }
+            fn (): Operation => $this->admitCloneCompletion($launch, $instance, retry: false)));
+    }
 
-                    return $this->complete->refused($instance, $create, $error->errorCode, 'The application completion could not be admitted.', keyed: true);
+    public function retryApplication(Operation $launch, string $retryId): void
+    {
+        $key = self::key($launch, 'complete', 'application');
+        $this->keyed(StartInstanceCompleteAction::Kind, $key, fn (): ?Operation => $this->state->admitApplicationRetry(
+            $launch->id, $retryId, $key, function (Operation $parent): array {
+                $instance = Instance::query()->where('node_id', $parent->node_id)->where('project_id', $parent->input['project_id'])
+                    ->lockForUpdate()->find(ConnLaunchChild::instanceId($parent));
+                if ($instance === null) {
+                    StartInstanceCompleteAction::refuse('The launch target Instance is unavailable.');
                 }
+
+                $operation = ($parent->input['target_kind'] ?? null) === 'new'
+                    ? $this->admitCloneCompletion($parent, $instance, retry: true)
+                    : $this->complete->execute($instance, $parent->triggered_by, $parent->request_id);
+
+                return ['operation' => $operation, 'owned' => true];
             }));
     }
 
-    public function retryExistingApplication(Operation $launch, Instance $instance, string $retryId): void
+    private function admitCloneCompletion(Operation $launch, Instance $instance, bool $retry): Operation
     {
-        $key = self::key($launch, 'complete', 'application');
-        $this->keyed(StartInstanceCompleteAction::Kind, $key, fn (): ?Operation => $this->state->admitExistingApplicationRetry(
-            $launch->id, $retryId, $key, fn (Operation $parent): array => [
-                'operation' => $this->complete->execute($instance, $parent->triggered_by, $parent->request_id),
-                'owned' => true,
-            ]));
+        try {
+            return DB::transaction(fn (): Operation => $retry
+                ? $this->complete->execute($instance, $launch->triggered_by, $launch->request_id)
+                : $this->complete->admit($instance, $launch->triggered_by, $launch->request_id));
+        } catch (ResourceOperationException $error) {
+            $create = ConnLaunchChild::Create->operation($launch);
+            if ($create === null) {
+                throw $error;
+            }
+
+            return $this->complete->refused($instance, $create, $error->errorCode, 'The application completion could not be admitted.', keyed: true);
+        }
     }
 
     public function destroy(Operation $launch, Instance $instance): Operation

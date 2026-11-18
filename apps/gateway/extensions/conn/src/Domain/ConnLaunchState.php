@@ -47,7 +47,7 @@ final readonly class ConnLaunchState
     }
 
     /** @param Closure(Operation): array{operation: Operation, owned: bool} $admit */
-    public function admitExistingApplicationRetry(int $id, string $retryId, string $key, Closure $admit): ?Operation
+    public function admitApplicationRetry(int $id, string $retryId, string $key, Closure $admit): ?Operation
     {
         return $this->setChild($id, ConnLaunchChild::Completion, $key, $admit, applicationRetryId: $retryId);
     }
@@ -72,8 +72,7 @@ final readonly class ConnLaunchState
 
             $state = $launch->state ?? [];
             $applicationRetry = Arr::get($state, 'launch_retry_requests.application');
-            if ($applicationRetryId !== null && ($launch->status !== OperationStatus::Succeeded || ($launch->input['target_kind'] ?? null) !== 'existing'
-                || ! is_array($applicationRetry) || ($applicationRetry['id'] ?? null) !== $applicationRetryId)) {
+            if ($applicationRetryId !== null && ($launch->status !== OperationStatus::Succeeded || ! is_array($applicationRetry) || ($applicationRetry['id'] ?? null) !== $applicationRetryId)) {
                 return null;
             }
             $recorded = Arr::get($state, 'launch_children.'.$role->value);
