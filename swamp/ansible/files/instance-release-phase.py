@@ -6,8 +6,10 @@ import hashlib
 import ipaddress
 import json
 import os
+import pwd
 import re
 import runpy
+import secrets
 import stat
 import subprocess
 import sys
@@ -63,16 +65,18 @@ def save(path, value):
 
 
 @contextmanager
-def lock(path):
+def lock(path, *, shared=False):
     relative = path.relative_to(BASE).as_posix()
-    if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
+    if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|legacy-schedules/[1-9][0-9]*/lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
         raise Refusal("unrecognized production resource lock")
+    if shared and not relative.startswith("legacy-schedules/"):
+        raise Refusal("shared access requires a production Schedule lock")
     fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
         owner = os.fstat(fd)
         if not stat.S_ISREG(owner.st_mode) or owner.st_uid != os.geteuid() or stat.S_IMODE(owner.st_mode) != 0o600:
             raise Refusal("unexpected production resource lock ownership")
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        fcntl.flock(fd, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
         yield
     finally:
         os.close(fd)
@@ -102,6 +106,14 @@ def positive(value):
     if not re.fullmatch(r"[1-9][0-9]*", str(value)):
         raise Refusal("deployment.selection_invalid: invalid identity")
     return int(value)
+
+
+@contextmanager
+def legacy_schedule_lock(project, *, shared=False):
+    directory = BASE / "legacy-schedules" / str(positive(project))
+    directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+    with lock(directory / "lock", shared=shared):
+        yield directory / "adopted"
 
 
 class Release:
@@ -148,8 +160,13 @@ class Release:
 
     def guest_action(self, machine, action, plan=None):
         script = (LIB / "orbit-instance-release-guest").read_text()
-        return self.user(machine, "/usr/bin/python3", "-c", script, action, cwd="/srv/workspace",
-                         data=json.dumps(plan) if plan is not None else None, timeout=1500).stdout.strip()
+        result = self.user(machine, "/usr/bin/python3", "-c", script, action, cwd="/srv/workspace",
+                           data=json.dumps(plan) if plan is not None else None, timeout=1500, check=False)
+        if result.returncode == 78 and action == "checkout":
+            raise Refusal("deployment.commit_not_on_branch: commit is outside the admitted branch's first-parent history")
+        if result.returncode:
+            raise Refusal(f"deployment.step_failed: guest {action} failed")
+        return result.stdout.strip()
 
     def primitive(self, action, *args):
         return self.ctl["main"]([action, self.owner, *map(str, args)])
@@ -187,7 +204,11 @@ class Release:
         for unit in plan.get("units", []):
             if not UNIT.fullmatch(unit["name"]) or unit["desired"] not in ("running", "stopped"):
                 raise Refusal("deployment.selection_invalid: invalid application unit")
+        if len(plan["steps"]) > 32:
+            raise Refusal("deployment.selection_invalid: too many deployment steps")
         for step in plan["steps"]:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", step["name"]) or not isinstance(step.get("required", True), bool):
+                raise Refusal("deployment.selection_invalid: invalid deployment step identity")
             if step["phase"] not in ("before_activation", "after_activation") or positive(step["timeout_seconds"]) > 86400:
                 raise Refusal("deployment.selection_invalid: invalid deployment step")
         legacy = plan.get("legacy")
@@ -260,6 +281,10 @@ class Release:
 
     def build(self, plan):
         self.parse_plan(plan)
+        if legacy := plan.get("legacy"):
+            with legacy_schedule_lock(legacy["project_id"], shared=True) as marker:
+                if marker.exists() or self.legacy_commit(legacy) != legacy["commit"]:
+                    raise Refusal("deployment.selection_invalid: physical legacy checkout differs from the admitted commit")
         self.check_selection(plan["expected_live"])
         if self.inventory["live"] != plan["expected_live"]:
             raise Refusal("deployment.selection_invalid: admitted live differs from release inventory")
@@ -273,7 +298,7 @@ class Release:
         else:
             safe = {key: plan[key] for key in ("action", "routes", "health_path", "php_version", "application_suffix")}
             self.persist(**safe, operation=self.operation, sha=self.sha, plan_digest=fingerprint, previous=self.inventory["live"],
-                         previous_old=self.inventory["old"], legacy=plan.get("legacy"), shared_paths=plan["shared_paths"], units=[], completed_steps=[])
+                         previous_old=self.inventory["old"], legacy=plan.get("legacy"), shared_paths=plan["shared_paths"], units=[], completed_steps=[], step_outcomes=[])
         if plan["action"] == "rollback":
             if self.inventory["old"] != self.sha:
                 raise Refusal("rollback.release_not_retained: selected release is not old")
@@ -319,16 +344,32 @@ class Release:
         config = ["{", "  admin off", "  auto_https off", "  frankenphp", "}"]
         for route in plan["routes"]:
             domain, web = route["domain"], localpath(route["web_root"])
-            config.extend([f"http://{domain}:8080 {{", f'  root * "{WORK}/{web}"',
-                           "  php_server {", "    env HTTPS on", "    env SERVER_PORT 443", "  }", "}"])
+            config.extend([f"http://{domain}:8080 {{", f'  root * "{WORK}/{web}"', "  route {"])
+            # Match every path component, including nested project roots. Keep request filtering
+            # ahead of PHP rewriting and static dispatch inside an ordered Caddy route.
+            config.extend([
+                r"    @private path_regexp private (?i)(^|/)([.][^/]*|node_modules|vendor|composer[.](json|lock)|package(-lock)?[.]json|artisan)(/|$)|[.](sqlite[0-9]*(-wal|-shm)?|sql|pem|key|log|bak|phar)(/|$)|~$",
+                "    respond @private 404",
+            ])
+            if not web:
+                # A repository root can also contain a real static site. Only its normal web
+                # assets and front controller are public. A designated public/ directory can
+                # continue to serve application-defined assets, including Laravel public/storage.
+                private_roots = sorted({"app", "apps", "bootstrap", "config", "database", "keys", "private", "resources", "routes", "secrets", "src", "storage", "tests", "var"}
+                                       | {localpath(path).split("/")[0] for path in plan["shared_paths"]})
+                patterns = [pattern for item in private_roots for pattern in ("/" + item, "/" + item + "/*")]
+                config.extend(["    @source path " + " ".join(patterns), "    respond @source 404",
+                               "    @unpublished {", "      file {path}",
+                               r"      not path_regexp public_asset (?i)(/$|^/index[.]php$|^/(robots[.]txt|sitemap[.]xml|manifest[.]json)$|[.](html?|css|m?js|png|jpe?g|svg|gif|webp|avif|ico|woff2?|ttf|otf|eot|mp[34]|webm|webmanifest|wasm)$)",
+                               "    }", "    respond @unpublished 404"])
+            config.extend(["    php_server {", "      env HTTPS on", "      env SERVER_PORT 443", "    }", "  }", "}"])
         self.guest(self.prep, "tee", "/etc/orbit/release-web.caddy", data="\n".join(config) + "\n")
 
     def install_units(self, machine, plan):
         units = []
         admitted = {unit["name"] for unit in plan.get("units", [])}
         # The off-traffic preparer may still hold definitions the Instance has since removed.
-        previous = self.guest(machine, "systemctl", "list-unit-files", "--no-legend", "--plain",
-                              "orbit-process-*", "orbit-schedule-*").stdout.splitlines()
+        previous = self.guest(machine, "systemctl", "list-unit-files", "--no-legend", "--plain").stdout.splitlines()
         for row in previous:
             name = row.split()[0]
             if UNIT.fullmatch(name) and name not in admitted:
@@ -363,15 +404,25 @@ class Release:
             key = f"{phase}-{index}"
             if key in self.state["completed_steps"]:
                 continue
+            required = step.get("required", True)
             if self.state.get("executing") == key:
-                raise Refusal("deployment.step_failed: an interrupted application step requires reconciliation")
-            self.persist(executing=key)
-            limit = positive(step["timeout_seconds"])
-            result = self.user(machine, "timeout", "--kill-after=10", str(limit), "/bin/bash", "--noprofile", "--norc", "-eu",
-                               cwd=WORK + self.state["application_suffix"], data=step["command"], timeout=limit+20, check=False)
-            if result.returncode:
-                raise Refusal(f"deployment.step_failed: {phase} step {index + 1} exited {result.returncode}")
-            self.persist(executing=None, completed_steps=[*self.state["completed_steps"], key])
+                if required:
+                    raise Refusal("deployment.step_failed: an interrupted application step requires reconciliation")
+                # The command may have completed. A missing receipt for an optional step leaves
+                # its exit status unknown and must never cause the command to run twice.
+                code = None
+            else:
+                self.persist(executing=key)
+                limit = positive(step["timeout_seconds"])
+                result = self.user(machine, "timeout", "--kill-after=10", str(limit), "/bin/bash", "--noprofile", "--norc", "-eu",
+                                   cwd=WORK + self.state["application_suffix"], data=step["command"], timeout=limit+20, check=False)
+                code = result.returncode if 0 <= result.returncode <= 255 else None
+            row = {"name": step["name"], "phase": step["phase"], "required": required, "exit_code": code}
+            outcomes = [*self.state.get("step_outcomes", []), row]
+            if required and code != 0:
+                self.persist(step_outcomes=outcomes)
+                raise Refusal(f"deployment.step_failed: {phase} step {index + 1} exited {code}")
+            self.persist(executing=None, completed_steps=[*self.state["completed_steps"], key], step_outcomes=outcomes)
 
     def clone(self):
         if self.state["action"] == "rollback":
@@ -395,27 +446,30 @@ class Release:
                     self.primitive("sleep", self.operation)
                 save(marker, self.operation)
 
-    def probe(self, address=None):
+    def probe(self, address=None, *, routes=None, health=None, verify_token=None):
         # Curl owns transient transport/HTTP retries. Count only consecutive 200 responses:
         # a retry interrupts the streak, and all routes share one wall-clock deadline.
+        routes = self.state["routes"] if routes is None else routes
+        health = self.state["health_path"] if health is None else health
         successes = 0
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             retried = False
-            for route in self.state["routes"]:
+            for route in routes:
                 domain = route["domain"]
                 if address:
-                    url = f"http://{address}:8080" + self.state["health_path"]
+                    url = f"http://{address}:8080" + health
                     headers = ["-H", "Host: " + domain, "-H", "X-Forwarded-Proto: https"]
                 else:
-                    url = "https://" + domain + self.state["health_path"]
-                    headers = []
+                    url = "https://" + domain + health
+                    headers = ["--header", "@-"] if verify_token else []
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise Refusal("deployment.not_ready: timed out checking production Routes")
                 result = run(["curl", "-fsS", "--noproxy", "*", "--max-time", str(min(5, remaining)),
                               "--retry", "60", "--retry-all-errors", "--retry-delay", "1",
                               "-o", "/dev/null", "-w", "%{http_code} %{num_retries}", *headers, "--", url],
+                             data="X-Orbit-Release-Verify: " + verify_token + "\n" if verify_token else None,
                              check=False, timeout=remaining)
                 code, _, retries = result.stdout.partition(" ")
                 if result.returncode or code != "200" or not retries.isdecimal():
@@ -453,6 +507,9 @@ class Release:
         legacy = self.state["legacy"] or {}
         source = [u["name"] for u in read(self.record(previous))["units"]] if previous else legacy.get("units", [])
         machine = self.previous_machine()
+        if previous:
+            files = self.units(machine, "list-unit-files", "--plain", "--no-legend").stdout
+            source = sorted({line.split()[0] for line in files.splitlines() if line and UNIT.fullmatch(line.split()[0])})
         if machine == "host":
             for name in source:
                 if not UNIT.fullmatch(name):
@@ -509,7 +566,7 @@ class Release:
                 self.units(machine, "is-active", "--quiet", "--", unit["name"])
 
     def route_files(self, phase):
-        payload = {key: self.state.get(key) for key in ("routes", "legacy", "shared_paths", "sha")}
+        payload = {key: self.state.get(key) for key in ("routes", "legacy", "shared_paths", "sha", "health_path", "verify_token", "previous")}
         run([LIB / "orbit-instance-release-routes", phase, str(self.instance), str(self.operation)],
             data=json.dumps(payload), timeout=1200)
 
@@ -545,6 +602,124 @@ class Release:
                     run(["systemctl", "reload", "caddy.service"])
                 raise
 
+    @contextmanager
+    def migration_lock(self):
+        with legacy_schedule_lock(self.state["legacy"]["project_id"]) as marker:
+            if marker.is_symlink() or (marker.is_file() and marker.read_text() != f"{self.instance}\n"):
+                raise Refusal("deployment.selection_invalid: legacy account is fenced for another Instance")
+            yield marker
+
+    def fence(self, enabled):
+        with lock(BASE / ".routing.lock"):
+            self.route_files("fence" if enabled else "unfence")
+            run(["caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"])
+            run(["systemctl", "reload", "caddy.service"])
+
+    def check_legacy_quiet(self):
+        account = "orbit-app-" + str(self.state["legacy"]["project_id"])
+        uid = str(pwd.getpwnam(account).pw_uid)
+        for status in Path("/proc").glob("[0-9]*/status"):
+            try:
+                fields = status.read_text(errors="replace").splitlines()
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            if any(row.startswith("Uid:") and uid in row.split()[1:] for row in fields):
+                raise Refusal("deployment.switch_failed: the legacy application account still has a running process")
+
+    def enable_candidate(self):
+        for unit in self.state["units"]:
+            if unit["desired"] == "running":
+                self.units(self.name, "enable", "--now", "--", unit["name"])
+                self.units(self.name, "is-active", "--quiet", "--", unit["name"])
+        self.guest(self.name, "systemctl", "enable", "--now", "orbit-frankenphp.service")
+        self.incus("config", "set", self.name, "boot.autostart=true")
+
+    def move_legacy(self):
+        with self.migration_lock() as marker:
+            if not self.state.get("migration_committed") and self.legacy_commit() != self.state["legacy"]["commit"]:
+                raise Refusal("deployment.selection_invalid: physical legacy checkout changed before transfer")
+            # The old schedule dispatcher takes this same lock shared. The marker also blocks
+            # a queued fire after this process dies or the Node reboots mid-migration.
+            atomic(marker, f"{self.instance}\n")
+            if not self.state.get("migration_committed"):
+                self.fence(True)
+                self.stop_work("host", [unit["name"] for unit in self.state["previous_work"]])
+                self.check_legacy_quiet()
+                self.route_switch()
+                self.check_selection(self.sha)
+                self.probe(self.state["address"])
+                self.probe(verify_token=self.state["verify_token"])
+                self.check_legacy_quiet()
+                if self.legacy_commit() != self.state["legacy"]["commit"]:
+                    raise Refusal("deployment.selection_invalid: physical legacy checkout changed during transfer")
+                self.persist(migration_committed=True)
+            # A candidate job, or the first public request after unfencing, can write to the
+            # new backing. Never copy the old backing again after this durable commit.
+            self.check_selection(self.sha)
+            self.identity(self.sha)
+            self.primitive("resume", self.sha[:12], self.operation)
+            self.enable_candidate()
+            self.fence(False)
+            self.persist(switched=True)
+
+    def legacy_commit(self, legacy=None):
+        legacy = self.state["legacy"] if legacy is None else legacy
+        return run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--", "git",
+                    "--no-replace-objects", "-C", legacy["home"] + "/current", "rev-parse", "HEAD"]).stdout.strip()
+
+    def legacy_witness(self):
+        legacy = self.state["legacy"]
+        if not self.state.get("cleaned") or self.state.get("migration_committed") or not legacy:
+            return {}
+        if self.state.get("switch_started") and not self.state.get("reversed"):
+            return {}
+        with self.migration_lock() as marker:
+            if marker.exists() or (self.root / "selected/upstream.caddy").is_symlink() or (self.root / "selected/00-release-fence.caddy").exists():
+                return {}
+            revision = self.legacy_commit()
+            if revision != legacy["commit"]:
+                return {}
+            for unit in self.state.get("previous_work", []):
+                active = self.units("host", "is-active", "--quiet", "--", unit["name"], check=False).returncode == 0
+                enabled = self.units("host", "is-enabled", "--quiet", "--", unit["name"], check=False).returncode == 0
+                if unit["active"] != active or unit["enabled"] != enabled:
+                    return {}
+            self.probe()
+            return {"legacy_restored": True, "legacy_commit": revision}
+
+    def verify_restored(self):
+        previous = self.state["previous"]
+        inventory = read(self.private / "inventory.json", {"live": None, "old": None})
+        if inventory != {"live": previous, "old": self.state["previous_old"]}:
+            raise Refusal("deployment.selection_invalid: different inventory after switch-back")
+        self.check_selection(previous)
+        if (self.root / "upstream.caddy").read_text() != self.state["saved_upstream"]:
+            raise Refusal("deployment.selection_invalid: different upstream after switch-back")
+        if previous:
+            former = read(self.record(previous))
+            self.readback()
+            self.probe(routes=former["routes"], health=former.get("health_path", self.state["health_path"]))
+        elif legacy := self.state["legacy"]:
+            revision = self.legacy_commit()
+            if revision != legacy["commit"]:
+                raise Refusal("deployment.selection_invalid: different legacy commit after switch-back")
+            self.probe(verify_token=self.state["verify_token"])
+        else:
+            # A new Instance has no former release. Check the public response from its existing
+            # preview Route against the baseline captured before applying the switch.
+            if self.public_statuses() != self.state["initial_statuses"]:
+                raise Refusal("deployment.switch_failed: the original preview response was not restored")
+
+    def public_statuses(self):
+        statuses = []
+        for route in self.state["routes"]:
+            result = run(["curl", "-sS", "--noproxy", "*", "--max-time", "5", "-o", "/dev/null", "-w", "%{http_code}",
+                          "--", "https://" + route["domain"] + self.state["health_path"]])
+            if not re.fullmatch(r"[1-5][0-9][0-9]", result.stdout):
+                raise Refusal("deployment.not_ready: cannot observe the initial preview Route")
+            statuses.append(result.stdout)
+        return statuses
+
     def switch(self):
         if self.state.get("switched"):
             self.check_selection(self.sha)
@@ -556,13 +731,21 @@ class Release:
             if previous := self.state["previous"]:
                 self.identity(previous)
                 self.primitive("resume", previous[:12], self.operation)
-            self.persist(saved_upstream=(self.root / "upstream.caddy").read_text(), previous_work=self.capture_work(),
+            if legacy := self.state["legacy"]:
+                with self.migration_lock():
+                    if self.legacy_commit() != legacy["commit"]:
+                        raise Refusal("deployment.selection_invalid: physical legacy checkout changed before switching")
+            initial = self.public_statuses() if not self.state["previous"] and not self.state["legacy"] else []
+            self.persist(initial_statuses=initial, verify_token=secrets.token_hex(32) if self.state["legacy"] else None,
+                         saved_upstream=(self.root / "upstream.caddy").read_text(), previous_work=self.capture_work(),
                          switch_started=True)
-        if self.state.get("reversed"):
-            raise Refusal("deployment.switch_failed: this operation already restored its predecessor")
+        if self.state.get("reversed") or self.state.get("reversing"):
+            self.reverse()
+            raise Refusal("deployment.switch_failed: this operation is restoring its predecessor")
         try:
             if self.state["legacy"]:
-                self.stop_work("host", [u["name"] for u in self.state["previous_work"]])
+                self.move_legacy()
+                return
             self.route_switch()
             # Only one release may consume work even if the Node reboots mid-switch.
             previous = self.state["previous"]
@@ -570,20 +753,22 @@ class Release:
                 self.incus("config", "set", self.container(previous), "boot.autostart=false")
             if previous:
                 self.stop_work(self.container(previous), [u["name"] for u in self.state["previous_work"]])
-            for unit in self.state["units"]:
-                if unit["desired"] == "running":
-                    self.units(self.name, "enable", "--now", "--", unit["name"])
-                    self.units(self.name, "is-active", "--quiet", "--", unit["name"])
-            self.guest(self.name, "systemctl", "enable", "orbit-frankenphp.service")
-            self.incus("config", "set", self.name, "boot.autostart=true")
+            self.enable_candidate()
             self.persist(switched=True)
         except (Refusal, OSError, subprocess.SubprocessError) as error:
+            if self.state.get("migration_committed"):
+                raise Refusal("deployment.switch_failed: migration committed, recover the new release forward") from error
             self.reverse()
             raise Refusal("deployment.switch_failed: restored the previous selection") from error
 
     def reverse(self):
+        if self.state.get("migration_committed"):
+            self.move_legacy()
+            self.public_ready()
+            return
         if not self.state.get("switch_started") or self.state.get("reversed") or self.state.get("verified"):
             return
+        self.persist(reversing=True)
         self.identity(self.sha)
         self.stop_work(self.name, [u["name"] for u in self.state["units"]])
         self.guest(self.name, "systemctl", "disable", "orbit-frankenphp.service")
@@ -593,8 +778,19 @@ class Release:
             self.primitive("resume", previous[:12], self.operation)
             self.guest(self.container(previous), "systemctl", "enable", "--now", "orbit-frankenphp.service")
             self.incus("config", "set", self.container(previous), "boot.autostart=true")
-        self.restore_work(self.previous_machine(), self.state["previous_work"])
-        self.route_switch(reverse=True)
+        if self.state["legacy"]:
+            with self.migration_lock() as marker:
+                self.restore_work("host", self.state["previous_work"])
+                self.route_switch(reverse=True)
+                self.verify_restored()
+                self.fence(False)
+                self.probe()
+                marker.unlink(missing_ok=True)
+                sync_directory(marker.parent)
+        else:
+            self.restore_work(self.previous_machine(), self.state["previous_work"])
+            self.route_switch(reverse=True)
+            self.verify_restored()
         self.persist(switched=False, reversed=True)
 
     def public_ready(self):
@@ -607,7 +803,7 @@ class Release:
             if unit["desired"] == "running":
                 self.units(self.name, "is-active", "--quiet", "--", unit["name"])
         save(self.record(self.sha), {"artifact": self.state["artifact"], "units": self.state["units"],
-                                     "routes": self.state["routes"], "php_version": self.state["php_version"],
+                                     "routes": self.state["routes"], "health_path": self.state["health_path"], "php_version": self.state["php_version"],
                                      "build_bytes": self.state.get("build_bytes", read(self.record(self.sha), {}).get("build_bytes", 0))})
         save(self.private / "inventory.json", {"live": self.sha, "old": self.state["previous"]})
         self.persist(verified=True)
@@ -650,6 +846,9 @@ class Release:
         (self.private / "after.json").unlink(missing_ok=True)
 
     def release_unused(self):
+        if self.state.get("migration_committed") and not self.state.get("verified"):
+            self.move_legacy()
+            self.public_ready()
         if self.state.get("verified"):
             if not self.state.get("retired"):
                 self.retire()
@@ -681,6 +880,13 @@ class Release:
         self.check_selection(live)
         result = {"instance_id": self.instance, "operation_id": self.operation, "node_id": positive(self.node["node_id"]),
                   "live": live, "old": inventory["old"], "name": None, "address": None, "release": None, "artifact": None}
+        if self.state.get("operation") == self.operation and self.state["sha"] == self.sha:
+            if live is None and self.state.get("legacy"):
+                result.update(self.legacy_witness())
+            outcomes = self.state.get("step_outcomes", [])
+            result["step_outcomes"] = outcomes
+            result["best_effort_steps"] = [{key: step[key] for key in ("name", "phase", "exit_code")}
+                                           for step in outcomes if not step["required"]]
         if live:
             record = self.identity(live)
             name = self.container(live)

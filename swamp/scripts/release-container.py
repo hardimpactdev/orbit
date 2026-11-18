@@ -32,7 +32,7 @@ def matches(pattern):
 
 def incus(*args, timeout=900):
     return subprocess.run(
-        ["incus", "--force-local", "--project", PROJECT, *args], capture_output=True,
+        ["incus", "--force-local", "--project", PROJECT, *args], stdin=subprocess.DEVNULL, capture_output=True,
         text=True, check=True, timeout=timeout,
     ).stdout
 

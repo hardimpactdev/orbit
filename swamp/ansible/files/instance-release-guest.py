@@ -60,6 +60,31 @@ def repository(url):
     return "https://github.com/" + "/".join(match.groups())
 
 
+class CommitOutsideBranch(ValueError):
+    pass
+
+
+def select_commit(git, url, branch, sha, env):
+    remote = "refs/orbit/admitted"
+    branch_ref = "refs/heads/" + branch
+    options = {"env": env, "timeout": 900, "stderr": subprocess.DEVNULL}
+    subprocess.run([*git, "check-ref-format", branch_ref], check=True, stdout=subprocess.DEVNULL, **options)
+    subprocess.run([*git, "fetch", "--no-tags", "--no-recurse-submodules", "--quiet", "--", url,
+                    "+" + branch_ref + ":" + remote], check=True, stdout=subprocess.DEVNULL, **options)
+    # Count first-parent commits newer than the requested commit, then name that exact
+    # ancestor. A commit reachable only through a merge's other parent fails this check.
+    distance = subprocess.run([*git, "rev-list", "--first-parent", "--count", sha + ".." + remote],
+                              check=False, capture_output=False, stdout=subprocess.PIPE, text=True, **options)
+    if distance.returncode or not distance.stdout.strip().isdecimal():
+        raise CommitOutsideBranch()
+    selected = subprocess.run([*git, "rev-parse", "--verify", "--quiet", remote + "~" + distance.stdout.strip() + "^{commit}"],
+                              check=False, stdout=subprocess.PIPE, text=True, **options)
+    if selected.returncode or selected.stdout.strip() != sha:
+        raise CommitOutsideBranch()
+    subprocess.run([*git, "-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", sha],
+                   check=True, stdout=subprocess.DEVNULL, **options)
+
+
 def checkout(plan):
     sha = plan["sha"]
     if not SHA.fullmatch(sha):
@@ -77,9 +102,9 @@ def checkout(plan):
         file_bytes(credential, plan.get("credential", ""))
         git = ["git", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=",
                "-c", "credential.helper=store --file=" + str(credential), "-c", "http.followRedirects=false", "-C", staging]
-        for arguments in (["init", "-q", "--template="], ["fetch", "--no-tags", "--quiet", "--depth=1", "--", url, sha],
-                          ["-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", sha]):
-            subprocess.run([*git, *arguments], env=clean_env, check=True, timeout=900, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([*git, "init", "-q", "--template="], env=clean_env, check=True, timeout=60,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        select_commit(git, url, plan["branch"], sha, clean_env)
         head = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True, env=clean_env).strip()
         if head != sha:
             raise ValueError("checkout returned a different commit")
@@ -160,6 +185,8 @@ def main(action):
 if __name__ == "__main__":
     try:
         main(sys.argv[1])
+    except CommitOutsideBranch:
+        sys.exit(78)
     except (ValueError, KeyError, OSError, subprocess.SubprocessError) as error:
         # A credential or private build command must never reach Operation history.
         sys.exit(f"deployment.step_failed: guest {sys.argv[1]} failed ({type(error).__name__})")

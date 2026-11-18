@@ -2,10 +2,15 @@
 import importlib.util
 import json
 import os
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+import urllib.error
+import urllib.request
 from contextlib import ExitStack
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -114,7 +119,7 @@ class ProductionReleaseTest(unittest.TestCase):
             discard.assert_not_called()
 
     def test_an_interrupted_non_idempotent_application_step_is_not_replayed(self):
-        step = {"command": "echo migrated", "timeout_seconds": 15}
+        step = {"name": "migrate", "phase": "before_activation", "command": "echo migrated", "timeout_seconds": 15}
         with patch.object(self.r, "user", return_value=CompletedProcess([], 0)) as run:
             self.r.steps(self.r.prep, [step], "before")
             self.r.steps(self.r.prep, [step], "before")
@@ -123,6 +128,167 @@ class ProductionReleaseTest(unittest.TestCase):
             with self.assertRaisesRegex(phase.Refusal, "interrupted"):
                 self.r.steps(self.r.name, [step], "after")
             run.assert_called_once()
+
+    def test_best_effort_steps_record_bounded_exit_status_on_both_sides_of_activation(self):
+        first = {"name": "warm", "phase": "before_activation", "command": "exit 17", "timeout_seconds": 15, "required": False}
+        second = {**first, "name": "publish", "phase": "after_activation"}
+        with patch.object(self.r, "user", side_effect=[CompletedProcess([], 17), CompletedProcess([], 0)]) as command:
+            self.r.steps(self.r.prep, [first], "before")
+            self.r.steps(self.r.name, [second], "after")
+            self.r.steps(self.r.prep, [first], "before")
+            self.assertEqual(command.call_count, 2)
+        self.r.link(None)
+        receipt = self.r.readback()
+        self.assertEqual(receipt["best_effort_steps"],
+                         [{"name":"warm", "phase":"before_activation", "exit_code":17},
+                          {"name":"publish", "phase":"after_activation", "exit_code":0}])
+        self.r.operation += 1
+        self.assertNotIn("best_effort_steps", self.r.readback())
+
+    def test_frankenphp_serves_public_assets_and_denies_private_files_at_both_web_roots(self):
+        php = shutil.which("frankenphp") or "/opt/orbit-runtime/current/php/8.5/bin/frankenphp"
+        if not os.access(php, os.X_OK):
+            self.skipTest("requires the pinned FrankenPHP runtime")
+        root = self.r.root / "site"
+        for name in (".env", ".env.production", ".git/HEAD", "config/private.php", "storage/logs/test.log",
+                     "private.yaml", "public/.env", "public/.git/HEAD"):
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("private fixture contents")
+        for name in ("index.html", "assets/site.css", "public/index.html", "public/storage/visible.txt"):
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("public fixture")
+        plan = {"routes": [{"domain":"root.test", "web_root":"."}, {"domain":"public.test", "web_root":"public"}],
+                "shared_paths": ["storage"]}
+        with patch.object(self.r, "guest") as write, patch.object(phase, "WORK", str(root)):
+            self.r.write_service(plan)
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        caddy = self.r.root / "Caddyfile"
+        caddy.write_text(write.call_args.kwargs["data"].replace(":8080", f":{port}"))
+        env = {**os.environ, "XDG_DATA_HOME":str(self.r.root), "XDG_CONFIG_HOME":str(self.r.root)}
+        with subprocess.Popen([php, "run", "--config", caddy, "--adapter", "caddyfile"], env=env, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL) as child:
+            try:
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    try:
+                        with socket.create_connection(("127.0.0.1", port), timeout=.2):
+                            break
+                    except OSError:
+                        self.assertIsNone(child.poll())
+                        time.sleep(.05)
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                for host, paths in {"root.test": {"/":200,"/assets/site.css":200,"/.env":404,"/.env.production":404,"/.git/HEAD":404,
+                                                  "/config/private.php":404,"/storage/logs/test.log":404,"/private.yaml":404},
+                                    "public.test": {"/":200,"/.env":404,"/.git/HEAD":404,"/storage/visible.txt":200}}.items():
+                    for path, status in paths.items():
+                        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers={"Host":host})
+                        with self.subTest(host=host, path=path):
+                            if status == 200:
+                                with opener.open(req, timeout=3) as response:
+                                    self.assertEqual(response.read(), b"public fixture")
+                            else:
+                                with self.assertRaises(urllib.error.HTTPError) as refused:
+                                    opener.open(req, timeout=3)
+                                with refused.exception as response:
+                                    self.assertEqual(response.code, status)
+                                    self.assertNotIn(b"private fixture contents", response.read())
+            finally:
+                child.terminate()
+
+    def test_detached_checkout_accepts_only_the_admitted_branch_first_parent_chain(self):
+        source = self.r.root / "source"
+        checkout = self.r.root / "checkout"
+        for directory in (source, checkout):
+            directory.mkdir()
+            subprocess.run(["git", "-C", directory, "init", "-q", "-b", "main"], check=True)
+        git = ["git", "-C", source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test"]
+        def commit(message):
+            subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", message], check=True)
+            return subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+        ancestor = commit("base")
+        subprocess.run([*git, "switch", "-qc", "side"], check=True)
+        side = commit("side")
+        subprocess.run([*git, "switch", "-q", "main"], check=True)
+        commit("main")
+        subprocess.run([*git, "merge", "--no-ff", "-qm", "merge side", "side"], check=True)
+        tip = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+        commands = ["git", "-C", checkout]
+        for sha in (ancestor, tip):
+            guest.select_commit(commands, str(source), "main", sha, os.environ)
+            self.assertEqual(subprocess.check_output([*commands, "rev-parse", "HEAD"], text=True).strip(), sha)
+            self.assertEqual(subprocess.run([*commands, "symbolic-ref", "-q", "HEAD"], check=False).returncode, 1)
+        with self.assertRaises(guest.CommitOutsideBranch):
+            guest.select_commit(commands, str(source), "main", side, os.environ)
+        with self.assertRaises(subprocess.CalledProcessError):
+            guest.select_commit(commands, str(source), "invalid:ref", tip, os.environ)
+
+    def test_first_move_accepts_writes_on_one_backing_across_an_interrupted_commit(self):
+        self.r.state.update(legacy={"project_id":7, "commit": NEXT}, previous=None, previous_old=None, previous_work=[],
+                            address="10.0.0.8", verify_token="f"*64)
+        legacy_data = ["write-before-fence"]
+        candidate = []
+        def transfer():
+            self.assertTrue(self.marker.exists())
+            candidate[:] = legacy_data
+            self.r.link(NEXT)
+        self.marker = phase.BASE / "legacy-schedules/7/adopted"
+        events = []
+        def fence(enabled):
+            if not enabled:
+                self.assertTrue(self.r.state["migration_committed"])
+                candidate.append("write-after-opening")
+            events.append(enabled)
+        with patch.object(self.r, "legacy_commit", return_value=NEXT), \
+                patch.object(self.r, "fence", side_effect=fence), patch.object(self.r, "check_legacy_quiet"), \
+                patch.object(self.r, "stop_work"), patch.object(self.r, "route_switch", side_effect=transfer) as copied, \
+                patch.object(self.r, "probe"), patch.object(self.r, "identity"), patch.object(self.r, "primitive"), \
+                patch.object(self.r, "enable_candidate", side_effect=[OSError("interruption"), None]):
+            with self.assertRaises(OSError):
+                self.r.move_legacy()
+            self.assertEqual(events, [True])
+            self.assertTrue(phase.read(self.r.operation_file)["migration_committed"])
+            self.r.state = phase.read(self.r.operation_file)
+            with patch.object(self.r, "public_ready") as verified:
+                self.r.reverse()
+                verified.assert_called_once()
+            copied.assert_called_once()
+            self.assertEqual(events, [True, False])
+            self.assertEqual(candidate, ["write-before-fence", "write-after-opening"])
+            self.assertEqual(self.marker.read_text(), "21\n")
+
+    def test_changed_physical_legacy_head_refuses_before_source_copy_and_before_commit(self):
+        self.r.state.update(legacy={"project_id":7,"commit":NEXT}, previous=None, previous_work=[], address="10.0.0.8",
+                            verify_token="f"*64)
+        for heads, copied in [([OLD], False), ([NEXT, OLD], True)]:
+            with self.subTest(copied=copied), patch.object(self.r, "legacy_commit", side_effect=heads), \
+                    patch.object(self.r, "fence"), patch.object(self.r, "stop_work"), patch.object(self.r, "check_legacy_quiet"), \
+                    patch.object(self.r, "route_switch") as transfer, patch.object(self.r, "check_selection"), \
+                    patch.object(self.r, "probe"), patch.object(self.r, "enable_candidate") as enable, \
+                    self.assertRaisesRegex(phase.Refusal, "physical legacy checkout"):
+                try:
+                    self.r.move_legacy()
+                finally:
+                    self.assertEqual(transfer.called, copied)
+                    self.assertFalse(self.r.state.get("migration_committed"))
+                    enable.assert_not_called()
+
+    def test_unverified_previous_route_keeps_its_recovery_journal(self):
+        self.r.state.update(switch_started=True, previous_work=[], saved_upstream=self.upstream.read_text())
+        phase.save(self.r.private / "inventory.json", {"live":CURRENT, "old":OLD})
+        phase.save(self.r.record(CURRENT), {"routes": [], "health_path":"/up"})
+        self.r.state["health_path"] = "/up"
+        with patch.object(self.r, "identity"), patch.object(self.r, "stop_work"), patch.object(self.r, "guest"), \
+                patch.object(self.r, "incus"), patch.object(self.r, "primitive"), patch.object(self.r, "restore_work"), \
+                patch.object(self.r, "route_switch"), patch.object(self.r, "readback"), \
+                patch.object(self.r, "probe", side_effect=phase.Refusal("unhealthy")), self.assertRaisesRegex(phase.Refusal, "unhealthy"):
+            self.r.reverse()
+        journal = phase.read(self.r.operation_file)
+        self.assertTrue(journal["reversing"])
+        self.assertFalse(journal.get("reversed"))
 
     def test_swap_and_pool_reservations_cover_other_active_instances(self):
         self.r.ctl["instance"] = MagicMock(return_value=None)

@@ -20,16 +20,18 @@ def production_release_transaction(tree, sources, acquire):
     transaction = next((part for part in tree.body if isinstance(part, ast.FunctionDef) and part.name == "lock"), None)
     contract = ast.parse(r"""
 @contextmanager
-def lock(path):
+def lock(path, *, shared=False):
     relative = path.relative_to(BASE).as_posix()
-    if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
+    if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|legacy-schedules/[1-9][0-9]*/lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
         raise Refusal("unrecognized production resource lock")
+    if shared and not relative.startswith("legacy-schedules/"):
+        raise Refusal("shared access requires a production Schedule lock")
     fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
         owner = os.fstat(fd)
         if not stat.S_ISREG(owner.st_mode) or owner.st_uid != os.geteuid() or stat.S_IMODE(owner.st_mode) != 0o600:
             raise Refusal("unexpected production resource lock ownership")
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        fcntl.flock(fd, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
         yield
     finally:
         os.close(fd)
