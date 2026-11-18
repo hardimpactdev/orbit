@@ -8,6 +8,7 @@ use App\Data\Instances\CreateInstanceData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -147,6 +148,43 @@ function launchFixtureCreate(int $id, string $name): Operation
                 agentFiles: [])),
         'owned' => true,
     ]);
+}
+
+/** @return array{Operation, Instance} */
+function launchCleanupFixture(OperationStatus $status): array
+{
+    $default = launchFixtureDefault();
+    // The default's create no longer holds its target. The launch owns only its clone.
+    Operation::query()->where('kind', 'instance.create')->where('target_id', $default->id)->firstOrFail()
+        ->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    $body = test()->body;
+    $name = 'fixture-cleanup-clone';
+    $body['target'] = ['kind' => 'new', 'name' => $name];
+    $id = callLaunchApi(test()->phone, 'POST', 'conn/launches', $body, test()->key)->assertAccepted()->json('data.id');
+    $create = launchFixtureCreate($id, $name);
+    $unstarted = $status === OperationStatus::Cancelled;
+    $create->update(['status' => $status, 'attempts' => $unstarted ? 0 : 1, 'lock_key' => null,
+        'started_at' => $unstarted ? null : now(), 'finished_at' => now(),
+        'error_code' => $status === OperationStatus::Failed ? DevelopmentInstanceCreateProjection::BaselineUnavailable : null]);
+    $instance = Instance::query()->findOrFail($create->target_id);
+    if (! $unstarted) {
+        $instance->update(['status' => InstanceState::SourceResolved, 'starting_commit' => str_repeat('c', 40)]);
+        $instance->runtime()->update(['power_state' => InstanceRuntimePowerState::Running]);
+    }
+    if ($status === OperationStatus::Succeeded) {
+        test()->environment->forceFill(['instance_id' => $instance->id])->save();
+    }
+    callLaunchApi(test()->desktop, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+
+    return [Operation::query()->findOrFail($id), $instance];
+}
+
+function launchWorkspaceAnswer(int $modified = 0): string
+{
+    return json_encode(['state' => $modified === 0 ? 'clean' : 'dirty', 'baseline' => 'recorded',
+        'head_commit' => str_repeat('c', 40), 'modified' => ['count' => $modified, 'names' => $modified === 0 ? [] : ['README.md']],
+        'untracked' => ['count' => 0, 'names' => []], 'stashes' => ['count' => 0, 'names' => []],
+        'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => [], 'head' => 0]], JSON_THROW_ON_ERROR);
 }
 
 function copyLaunchFixtureToFile(string $path): void
@@ -643,6 +681,85 @@ describe('launch control and progress', function (): void {
             ->assertJsonPath('data.stages.workspace_server.finished_at', $finished->toAtomString())
             ->assertJsonPath('data.children.destroy_operation_id', null);
         expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue();
+    });
+
+    it('preserves work on a usable clone whose create failed', function (): void {
+        [$launch, $instance] = launchCleanupFixture(OperationStatus::Failed);
+        $reader = workspaceReader(launchWorkspaceAnswer(modified: 1));
+
+        app(ConnLaunchSettlement::class)->sweep();
+
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$launch->id}")->assertOk()
+            ->assertJsonPath('data.phase', 'cancelling')
+            ->assertJsonPath('data.stages.cleanup.error.code', 'instance.unsaved_work')
+            ->assertJsonPath('data.children.destroy_operation_id', null);
+        expect($reader->calls)->toHaveCount(1)
+            ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $instance->id)->exists())->toBeFalse();
+    });
+
+    it('preserves a clean clone when its failed create left T3 activity unreadable', function (): void {
+        [$launch, $instance] = launchCleanupFixture(OperationStatus::Failed);
+        $reader = workspaceReader(launchWorkspaceAnswer());
+
+        app(ConnLaunchSettlement::class)->sweep();
+
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$launch->id}")->assertOk()
+            ->assertJsonPath('data.phase', 'cancelling')
+            ->assertJsonPath('data.stages.cleanup.error.code', 'instance.unsaved_work')
+            ->assertJsonPath('data.children.destroy_operation_id', null);
+        expect($reader->calls)->toHaveCount(1)
+            ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved);
+    });
+
+    it('removes an unstarted launch reservation without a workspace read', function (): void {
+        [$launch, $instance] = launchCleanupFixture(OperationStatus::Cancelled);
+        $reader = workspaceReader();
+
+        app(ConnLaunchSettlement::class)->advance($launch);
+
+        expect($reader->calls)->toBeEmpty()
+            ->and(ConnLaunchChild::Destroy->operation($launch->refresh())?->target_id)->toBe($instance->id);
+    });
+
+    it('preserves the launch that claims a clone during the cleanup preflight', function (): void {
+        [$launch, $instance] = launchCleanupFixture(OperationStatus::Succeeded);
+        workspaceReader(launchWorkspaceAnswer());
+        $body = launchBody($this->desktop, $this->profile);
+        $body['target']['instance_id'] = $instance->id;
+        $consumer = null;
+        Http::fake(['http://10.44.0.30:3773/*' => function () use ($body, &$consumer) {
+            $consumer = callLaunchApi($this->desktop, 'POST', 'conn/launches', $body, (string) Str::uuid())
+                ->assertAccepted()->json('data.id');
+
+            return Http::response(['threads' => []]);
+        }]);
+
+        expect(fn () => app(ConnLaunchSettlement::class)->advance($launch))
+            ->toThrow(ResourceOperationException::class, 'Another Conn launch uses this Instance.');
+
+        expect($consumer)->toBeInt()
+            ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $instance->id)->exists())->toBeFalse();
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$consumer}")->assertOk()
+            ->assertJsonPath('data.instance_id', $instance->id)
+            ->assertJsonPath('data.phase', 'preparing');
+    });
+
+    it('admits cleanup for an exclusively owned clean clone and refuses a later claim', function (): void {
+        [$launch, $instance] = launchCleanupFixture(OperationStatus::Succeeded);
+        workspaceReader(launchWorkspaceAnswer());
+        Http::fake(['http://10.44.0.30:3773/*' => Http::response(['threads' => []])]);
+
+        app(ConnLaunchSettlement::class)->advance($launch);
+
+        $destroy = ConnLaunchChild::Destroy->operation($launch->refresh());
+        expect($destroy?->target_id)->toBe($instance->id)
+            ->and($instance->refresh()->status)->toBe(InstanceState::Removing);
+        $body = launchBody($this->desktop, $this->profile);
+        $body['target']['instance_id'] = $instance->id;
+        callLaunchApi($this->desktop, 'POST', 'conn/launches', $body, (string) Str::uuid())->assertConflict()
+            ->assertJsonPath('error.code', 'conn.launch_target_unavailable');
     });
 
     it('restores only a launch-owned wake with verified idle evidence', function (): void {

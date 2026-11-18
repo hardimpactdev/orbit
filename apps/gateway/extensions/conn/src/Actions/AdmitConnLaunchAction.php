@@ -112,7 +112,7 @@ final readonly class AdmitConnLaunchAction
             return $default;
         }
 
-        $instance = Instance::query()->where('project_id', $project->id)->findOrFail($input->instanceId);
+        $instance = Instance::query()->where('project_id', $project->id)->lockForUpdate()->findOrFail($input->instanceId);
         $this->assertTargetAccess($caller, $instance->node_id);
         if ($instance->status === InstanceState::Removing || ! ConnEnvironment::query()->where('instance_id', $instance->id)
             ->where('node_id', $instance->node_id)->exists()) {

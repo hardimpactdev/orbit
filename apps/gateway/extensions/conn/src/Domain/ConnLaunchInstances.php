@@ -10,6 +10,7 @@ use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\InstanceBranchSelection;
 use App\Domain\Instances\InstanceDestroyKind;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Operations\OperationIdempotency;
@@ -121,15 +122,40 @@ final readonly class ConnLaunchInstances
 
     public function destroy(Operation $launch, Instance $instance): Operation
     {
+        $create = ConnLaunchChild::Create->operation($launch);
         $previous = ConnLaunchChild::Destroy->operation($launch);
-        if (ConnLaunchChild::Create->operation($launch)?->status === OperationStatus::Succeeded) {
-            $this->assertCleanupSafe($launch, $instance, $previous);
+        $unstarted = $create !== null && self::unstartedReservation($instance, $create);
+        if (! $unstarted) {
+            $this->assertCleanupSafe($instance, $previous);
         }
         $key = self::key($launch, 'destroy', predecessor: $previous?->id);
 
         return $this->keyed(InstanceDestroyKind::forInstance($instance), $key,
             fn (): Operation => $this->destroy->execute($instance, true, $launch->triggered_by, $launch->request_id,
-                within: fn (Closure $record): Operation => $this->record($launch, ConnLaunchChild::Destroy, $key, $record)));
+                within: fn (Closure $record): Operation => $this->state->admitChild($launch->id, ConnLaunchChild::Destroy, $key,
+                    function (Operation $parent) use ($instance, $create, $previous, $unstarted, $record): array {
+                        $target = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+                        $owned = ConnLaunchChild::Create->operation($parent);
+                        if ($owned === null || $owned->id !== $create?->id || ($owned->state['conn_launch_owner'] ?? null) !== $parent->id
+                            || $target->source_prepare_id === null || $target->source_prepare_id !== ($owned->input['prepare_id'] ?? null)
+                            || ($target->status === InstanceState::Removing && $previous === null)
+                            || ($unstarted && ! self::unstartedReservation($target, $owned))) {
+                            throw new ResourceOperationException('instance.unsaved_work', 'The launch cannot prove it still owns this clone.', 409);
+                        }
+                        if ($this->usedByAnotherLaunch($parent, $target)) {
+                            throw new ResourceOperationException('instance.unsaved_work', 'Another Conn launch uses this Instance.', 409);
+                        }
+
+                        return ['operation' => $record(), 'owned' => true];
+                    }) ?? throw new ResourceOperationException('conn.launch_fence_closed', 'The launch cannot admit more work.', 409)));
+    }
+
+    private static function unstartedReservation(Instance $instance, Operation $create): bool
+    {
+        return $instance->status === InstanceState::Reserved && $create->status !== OperationStatus::Succeeded
+            && $create->attempts === 0 && ! isset($create->state['swamp_run_id'])
+            && ! Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
+                ->where('target_id', $instance->id)->whereKeyNot($create->id)->exists();
     }
 
     public function usedByAnotherLaunch(Operation $launch, Instance $instance, ?DateTimeInterface $since = null): bool
@@ -143,12 +169,8 @@ final readonly class ConnLaunchInstances
             ->exists();
     }
 
-    private function assertCleanupSafe(Operation $launch, Instance $instance, ?Operation $previous): void
+    private function assertCleanupSafe(Instance $instance, ?Operation $previous): void
     {
-        if ($this->usedByAnotherLaunch($launch, $instance)) {
-            throw new ResourceOperationException('instance.unsaved_work', 'Another Conn launch uses this Instance.', 409);
-        }
-
         $work = $this->work->read($instance);
         // A retry after the owned removal reached deletion can find the exact container stopped by that removal.
         $stoppedByRemoval = ($work['reason'] ?? null) === 'stopped'

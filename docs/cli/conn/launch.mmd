@@ -16,6 +16,8 @@ sequenceDiagram
   alt Cancel wins the Operation lock
     %% path: cancel
     G->>S: Remove owned work
+    %%> Check the clone for work and T3 activity even when its create failed.
+    %%> Lock the Instance and check for other launches before admitting teardown.
     %%> Verified cleanup ends the launch. A failed or unproven cleanup remains Cancelling.
     S-->>G: Cleanup proof
   else Dispatch wins the Operation lock
