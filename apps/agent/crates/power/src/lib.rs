@@ -710,12 +710,35 @@ fn route_checks(response: &[u8], marker: &Path) -> bool {
     else {
         return false;
     };
-    serde_json::from_slice(&response[headers + 4..]).is_ok_and(|config| {
-        matches_marker(&config, root, &format!("/{filename}"), &activation)
-    })
+    serde_json::from_slice(&response[headers + 4..])
+        .is_ok_and(|config| matches_marker(&config, root, &format!("/{filename}"), &activation))
 }
 
 fn matches_marker(config: &serde_json::Value, root: &str, file: &str, activation: &str) -> bool {
+    // The first handler that a marked visit reaches must be the activation proxy. Only `vars` (Caddy's `log_skip`) passes the
+    // visit on before it; any other first handler (a 503, an ordinary proxy) answers the visitor instead.
+    let mut handlers = Vec::new();
+    marker_handlers(config, root, file, &mut handlers);
+    handlers
+        .into_iter()
+        .find(|handler| handler.get("handler").and_then(serde_json::Value::as_str) != Some("vars"))
+        .is_some_and(|handler| {
+            handler.get("handler").and_then(serde_json::Value::as_str) == Some("reverse_proxy")
+                && handler
+                    .get("rewrite")
+                    .and_then(|rewrite| rewrite.get("uri"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some(activation)
+        })
+}
+
+/// The handlers of every route with the exact marker matcher, in the order Caddy runs them.
+fn marker_handlers<'a>(
+    config: &'a serde_json::Value,
+    root: &str,
+    file: &str,
+    handlers: &mut Vec<&'a serde_json::Value>,
+) {
     match config {
         serde_json::Value::Object(object) => {
             let exact = object
@@ -723,36 +746,36 @@ fn matches_marker(config: &serde_json::Value, root: &str, file: &str, activation
                 .and_then(serde_json::Value::as_array)
                 .is_some_and(|matchers| {
                     matchers.iter().any(|matcher| {
-                        let files = &matcher["file"];
-                        files["root"].as_str() == Some(root)
-                            && files["try_files"].as_array().is_some_and(|candidates| {
-                                candidates
-                                    .iter()
-                                    .any(|candidate| candidate.as_str() == Some(file))
-                            })
+                        let files = matcher.get("file");
+                        files
+                            .and_then(|f| f.get("root"))
+                            .and_then(serde_json::Value::as_str)
+                            == Some(root)
+                            && files
+                                .and_then(|f| f.get("try_files"))
+                                .and_then(serde_json::Value::as_array)
+                                .is_some_and(|candidates| {
+                                    candidates
+                                        .iter()
+                                        .any(|candidate| candidate.as_str() == Some(file))
+                                })
                     })
                 });
-            (exact && object.get("handle").is_some_and(|handle| activates(handle, activation)))
-                || object
-                    .values()
-                    .any(|value| matches_marker(value, root, file, activation))
+            if exact {
+                if let Some(handle) = object.get("handle").and_then(serde_json::Value::as_array) {
+                    handlers.extend(handle);
+                }
+            }
+            for value in object.values() {
+                marker_handlers(value, root, file, handlers);
+            }
         }
-        serde_json::Value::Array(values) => values
-            .iter()
-            .any(|value| matches_marker(value, root, file, activation)),
-        _ => false,
-    }
-}
-
-fn activates(handle: &serde_json::Value, activation: &str) -> bool {
-    match handle {
-        serde_json::Value::Object(object) => {
-            (object.get("handler").and_then(serde_json::Value::as_str) == Some("reverse_proxy")
-                && object["rewrite"]["uri"].as_str() == Some(activation))
-                || object.values().any(|value| activates(value, activation))
+        serde_json::Value::Array(values) => {
+            for value in values {
+                marker_handlers(value, root, file, handlers);
+            }
         }
-        serde_json::Value::Array(values) => values.iter().any(|value| activates(value, activation)),
-        _ => false,
+        _ => {}
     }
 }
 

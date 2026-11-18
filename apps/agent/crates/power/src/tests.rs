@@ -516,6 +516,21 @@ fn caddy_must_have_the_exact_markers_matcher_in_its_loaded_config() {
         b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/20\"}}]}",
         instance_marker,
     ));
+    // Caddy's `log_skip` for the same matcher passes the visit on, so the activation proxy after it still runs.
+    assert!(route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"routes\":[{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]},\"not\":[{\"header\":{\"X-Probe\":[\"1\"]}}]}],\"handle\":[{\"handler\":\"vars\",\"skip_log\":true}]},{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"method\":\"GET\",\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}]}",
+        instance_marker,
+    ));
+    // Review 2838 (M10): a terminal 503 before the activation proxy answers the visitor, so the proxy never runs.
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"static_response\",\"status_code\":503},{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}",
+        instance_marker,
+    ));
+    // Review 2838 (M10): an ordinary proxy without a rewrite is refused, not a panic.
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"upstreams\":[{\"dial\":\"127.0.0.1:5173\"}]}]}",
+        instance_marker,
+    ));
     assert!(!route_checks(
         b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-20.asleep\"]}}]}",
         instance_marker,
