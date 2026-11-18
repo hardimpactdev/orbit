@@ -2944,14 +2944,28 @@ Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It ho
 
 #### How `base` is taken
 
-A btrfs snapshot of a running container is atomic. So on the btrfs pool `inner` of the [inner volume](#the-inner-volume), the refresh takes `base` of the running fleet. It deletes the old `base` of each target, freezes the targets in one `incus pause`, snapshots each, and thaws them in one `incus resume`. Nothing stops, boots or waits again. The thaw runs also when a snapshot fails; the refresh then fails, and the run restores the old seed. The one readiness wait of the run comes before the freeze, so `base` holds a ready fleet.
+A btrfs snapshot of a running container is atomic. So on the btrfs pool `inner` of the [inner volume](#the-inner-volume), the refresh takes `base` of the running fleet. It runs these steps in order:
+
+1. It waits for readiness, the run's one readiness wait, so `base` holds a ready fleet.
+2. It saves the nested Gateway's queues with `valkey-cli SAVE`.
+3. It deletes the old `base` of each target.
+4. It arms a thaw in the Instance container.
+5. It freezes the targets in one `incus pause` and snapshots each.
+6. It thaws them in one `incus resume` and cancels the armed thaw.
+
+Nothing stops, boots or waits again. The thaw runs also when a snapshot fails; the refresh then fails, and the run restores the old seed.
+
+The armed thaw does not need the controller. It is a transient systemd timer, `orbit-fleet-thaw`, that resumes each target 60 s after it was armed (`fleet_thaw_seconds`). A resume of a running container only fails. So a refresh whose controller is lost while the fleet is frozen leaves it frozen for at most 60 s. In task copy 3717 the controller was killed right after the freeze, and the two containers ran again 60.3 s after the timer was armed.
+
+The snapshot is what a power cut would leave. The nested Gateway's SQLite database recovers from its journal, as after a crash; no other database runs in the three. Valkey keeps the queues in memory, without an append-only file, and writes them only on its save schedule. Without the save, `base` held a `dump.rdb` about 85 s older than the snapshot. A save that fails takes the stopped path.
 
 The freeze gives the set one point in time across the containers, as a stop did. It lasts as long as Incus takes to snapshot the targets: about 0.4 s for the freeze and the thaw, plus 1.3 to 2 s for each app container and about 5 s for `nested-gateway`. The btrfs snapshot itself takes 0.04 s. Incus spends the rest of that time in its own snapshot step for each container (measured in task copy 3717 on 2026-11-18).
 
 The refresh stops the targets as before, and takes `base` of the stopped fleet, when:
 
 - an inner pool is not btrfs, such as the directory pool of a default made before the inner volume. There a snapshot of a running container is a file copy.
-- the pools cannot be read. The refresh reads them once, with `incus query /1.0/storage-pools?recursion=1`.
+- the pools cannot be read, or the read gives anything but one driver name per line. The refresh reads them once, with `incus storage list --format csv --columns D`.
+- the save of the nested Gateway's queues fails.
 - a fleet rule or file differed on the running fleet. The rules are written with the three stopped.
 - a [shrink](#the-inner-machines-stay-small) is due. The relink and the dedupe need the three stopped.
 
@@ -2959,13 +2973,13 @@ The result says which way ran: `base_mode` is `running`, `stopped`, or `none` wh
 
 A running fleet is not compared again before its snapshot. So a run whose converge ran after it read the fleet files reads them again before `base`, on the running fleet. A file that differs there makes `base` due for all three, with the fleet stopped.
 
-A `base` of the running fleet holds the live pid file of each network of the nested Incus, such as `orbitinst0` on `nested-app-dev`. The [reset](#no-stale-network-pid-file) is the only place that restores `base`. It clears those files after the restore and before the start. A `base` of the stopped fleet holds none: the refresh clears them before that snapshot.
+A `base` of the running fleet holds the live pid file of each network of the nested Incus, such as `orbitinst0` on `nested-app-dev`. The [reset](#no-stale-network-pid-file) is the only place that restores `base`. It clears those files after the restore and before the start. Only a `base` of the stopped fleet is cleared before it is taken, so only it holds none.
 
 On the copy that measured it, a refresh that retook `base` of `nested-gateway` and `nested-app-dev` spent 9 to 10 s on `base` against 59 to 66 s with the stop, start and second readiness wait. The whole refresh took 32 s against 89 to 95 s.
 
 With only some containers stopped, the rules only compare. A rule that differs on a running container fails the refresh, so the refresh never writes to a container whose `base` it keeps. Each container to retake stops; the others keep running. While the nested Gateway is stopped, the agents of the other two lose it and connect again after its start, as after the restart of its services.
 
-After a `base` of the stopped fleet, the refresh starts what stopped and waits for readiness, its one readiness wait in that case. After a `base` of the running fleet, or when nothing changed, the fleet keeps running, and the refresh waits for readiness before `base` and the tools.
+The refresh waits for readiness once in every run. After a `base` of the stopped fleet, that wait follows the start of what stopped. After a `base` of the running fleet, or when nothing changed, the fleet keeps running, and the wait comes before `base` and the tools.
 
 If that start fails, the refresh fails and the run restores the old seed. The new `base` snapshots are inside the outer container's disk, so the restore takes them back too. The default then runs on the old seed's commit with the old seed's fleet, as before the run. Existing copies are clones of older seeds and stay as they are. New copies clone the restored seed until the next release.
 
@@ -3323,7 +3337,7 @@ So a daemon restart keeps the live dnsmasq's file, and every other pid file goes
 
 **The host clears stopped disks.** `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of stopped nested containers. It reads each container from the inner Incus and clears only the root disk in the pool of its `root` device. Three steps run it:
 
-- The refresh runs it before it takes `base`, so a new `base` holds no pid file.
+- The refresh runs it before it takes a `base` of the stopped fleet, so such a `base` holds no pid file. A `base` of the [running fleet](#how-base-is-taken) is not cleared.
 - The reset runs it between the restore of `base` and the start. A `base` taken before the heal existed holds neither the heal nor a clean disk, and this clears it before it boots.
 - The reset's rescue runs it, best effort, before it starts the containers again. The reset keeps its own error.
 

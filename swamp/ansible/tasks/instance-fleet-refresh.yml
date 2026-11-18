@@ -539,19 +539,20 @@
 # How `base` is taken (docs/reference/development-containers.md#how-base-is-taken). A btrfs snapshot of a running container is atomic: `running`
 # freezes the targets, snapshots each and thaws them, so the fleet never stops. `stopped` stops them first, as a directory pool needs (a
 # snapshot of a running container there is a file copy, not a consistent state), and so do a rule or file that differed here (the rules
-# are written with the three stopped) and a due shrink (the relink and the dedupe need the three stopped). The pool driver is read once;
-# a read that fails, or any inner pool that is not btrfs, takes `stopped`.
+# are written with the three stopped) and a due shrink (the relink and the dedupe need the three stopped). The pool drivers are read
+# once, one per line; a read that fails, a line that is not a driver name, or any inner pool that is not btrfs takes `stopped`.
 - name: Read the inner storage pools
   when: fleet_base_targets | length > 0
-  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['query', '/1.0/storage-pools?recursion=1'] }}" }
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['storage', 'list', '--format', 'csv', '--columns', 'D'] }}" }
   register: fleet_pools_read
   changed_when: false
   failed_when: false
 - name: Choose how base is taken
   vars:
     fleet_pool_drivers: >-
-      {{ (fleet_pools_read.stdout | from_json | map(attribute='driver') | unique | list)
-         if fleet_pools_read.rc | default(1) == 0 and fleet_pools_read.stdout | trim is match('(?s)^\[.*\]$') else [] }}
+      {{ (fleet_pools_read.stdout_lines | unique | list)
+         if fleet_pools_read.rc | default(1) == 0 and fleet_pools_read.stdout_lines | default([]) | length > 0
+           and fleet_pools_read.stdout_lines | reject('match', '^[a-z0-9]+$') | list | length == 0 else [] }}
   ansible.builtin.set_fact:
     fleet_base_mode: >-
       {{ 'none' if fleet_base_targets | length == 0
@@ -570,18 +571,44 @@
 
 # `base` of the running fleet: the old one goes, then the targets freeze in one call, each is snapshotted, and they thaw in one call,
 # also when a snapshot fails. Their processes pause while Incus snapshots them (about 5 s for the nested Gateway, 2 s for an app Node);
-# nothing stops, boots or waits again, and the readiness above
-# holds. Such a `base` holds the network pid files of the running nested Incus (an Instance host's `orbitinst0`): the reset clears them
-# after its restore (instance-fleet-runtime.yml), the only place a `base` is restored. A failure fails the refresh, and the run
-# restores the old seed, `base` snapshots included: they live on the outer container's disk.
+# nothing stops, boots or waits again, and the readiness above holds. The atomic snapshot is what a power cut leaves: the nested
+# Gateway's SQLite database recovers from its journal. Its Valkey keeps the queues and writes them only on its save schedule (no
+# append-only file), so a synchronous `SAVE` comes first; a save that fails takes the stopped path. Such a `base` holds the network pid
+# files of the running nested Incus (an Instance host's `orbitinst0`): the reset clears them after its restore
+# (instance-fleet-runtime.yml), the only place a `base` is restored. A failure fails the refresh, and the run restores the old seed,
+# `base` snapshots included: they live on the outer container's disk.
 - name: Retake base of the running fleet
   when: fleet_base_mode == 'running'
   block:
+    - name: Save the queue state of the nested Gateway
+      when: intent.fleet.guests.gateway in fleet_base_targets
+      ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'valkey-cli', 'SAVE'] }}" }
+      register: fleet_queue_save
+      changed_when: false
+      failed_when: false
+    - name: Take the stopped path when the queue state was not saved
+      when: fleet_queue_save is not skipped and (fleet_queue_save.rc != 0 or fleet_queue_save.stdout | trim != 'OK')
+      ansible.builtin.set_fact:
+        fleet_base_mode: stopped
     - name: Delete the old base before the freeze
       ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['snapshot', 'delete', item.item, 'base'] }}" }
       when: "item.item in fleet_base_targets and 'base' in (item.stdout | from_json | map(attribute='name') | list)"
       loop: "{{ fleet_snapshots.results }}"
       loop_control: { label: "{{ item.item }}" }
+      changed_when: true
+    # The `always` thaw needs the controller. A thaw armed in the Instance container first does not: a transient timer resumes each
+    # target `fleet_thaw_seconds` (60) after the freeze unless the run cancels it, so a lost controller leaves no frozen fleet. A resume
+    # of a running container only fails, and the next one still runs. A timer left by an earlier run goes first.
+    - name: Clear an earlier thaw timer
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['systemctl', 'stop', fleet_thaw_unit ~ '.timer', fleet_thaw_unit ~ '.service'] }}" }
+      changed_when: false
+      failed_when: false
+    - name: Arm the thaw in the Instance container
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '30'] + fleet_outer + ['systemd-run', '--unit', fleet_thaw_unit, '--collect',
+              '--on-active', (fleet_thaw_seconds | default(60) | int | string) ~ 's', '--timer-property', 'AccuracySec=1s', '--',
+              'sh', '-c', 'for n do incus resume "$n" || true; done', 'sh'] + fleet_base_targets }}
       changed_when: true
     - name: Freeze the nested containers
       ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['pause'] + fleet_base_targets }}" }
@@ -594,6 +621,10 @@
     - name: Thaw the nested containers
       ansible.builtin.command: { argv: "{{ ['timeout', '60'] + fleet_incus + ['resume'] + fleet_base_targets }}" }
       changed_when: true
+    - name: Cancel the armed thaw
+      ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['systemctl', 'stop', fleet_thaw_unit ~ '.timer'] }}" }
+      changed_when: true
+      failed_when: false
 
 # A snapshot of a running container on a directory pool is a file copy, not a consistent state: each container stops first. They start
 # again after `base` and the refresh waits for readiness, so the seed holds a running, ready fleet. A start that fails fails the refresh,

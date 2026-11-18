@@ -80,6 +80,17 @@ if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
   done({ changed });
 }
 if (command[0] === "systemctl" && command[1] === "try-restart") done();
+// The thaw timer of a running `base` (instance-fleet-refresh.yml): `thawArmed` holds the names it would resume, until a stop of its timer.
+if (command[0] === "systemd-run" && command[1] === "--unit" && command[2] === "orbit-fleet-thaw") {
+  if (state.thawArmed) fail("Unit orbit-fleet-thaw.timer was already loaded or has a fragment file.");
+  state.thawArmed = command.slice(command.indexOf("sh", command.indexOf("-c")) + 1);
+  state.thawArmedTimes = (state.thawArmedTimes ?? 0) + 1;
+  done();
+}
+if (command[0] === "systemctl" && command[1] === "stop" && command[2] === "orbit-fleet-thaw.timer") {
+  delete state.thawArmed;
+  done();
+}
 
 // instance_fleet_shrink.py in the Instance container: `check` answers `shrink` (by default not due), `run` answers `shrinkResult` (by
 // default both parts ran) and makes the next check current; `shrinkExit` ends either with that code and no result line.
@@ -234,11 +245,11 @@ if (command[0] === "incus") {
     Object.assign(state.network.config, pairs(inner.slice(3)));
     done();
   }
-  // The inner storage pools: `poolDriver` is the driver of the one pool (a directory pool unless a test says otherwise);
-  // `poolsUnreadable` makes the read fail.
-  if (inner[0] === "query" && inner[1] === "/1.0/storage-pools?recursion=1") {
+  // The drivers of the inner storage pools, one per line: `poolDriver` is the one pool's (a directory pool unless a test says
+  // otherwise); `poolsUnreadable` makes the read fail, and `poolsOutput` is printed as it is with exit 0.
+  if (inner.join(" ") === "storage list --format csv --columns D") {
     if (state.poolsUnreadable) fail("Failed to list storage pools");
-    done([{ name: "inner", driver: state.poolDriver ?? "dir", status: "Created" }]);
+    done(state.poolsOutput ?? state.poolDriver ?? "dir");
   }
   if (inner[0] === "query") {
     const [route, query] = inner[1].slice("/1.0/instances/".length).split("?");
@@ -366,6 +377,12 @@ if (command[0] === "incus") {
     const asOrbit = rest[0] === "runuser" && rest[1] === "-u" && rest[2] === "orbit" && rest[3] === "--";
     if ((rest[0] === "install" || rest[0] === "php") && !asOrbit) fail(`${rest[0]} as root: the app user runs it`);
     if (asOrbit) rest = rest.slice(4);
+    // The nested Gateway's Valkey: `SAVE` answers OK unless `queueSaveFails`; `queueSaved` counts the saves.
+    if (rest.join(" ") === "valkey-cli SAVE" && name === "nested-gateway") {
+      if (state.queueSaveFails) fail("ERR Background save already in progress");
+      state.queueSaved = (state.queueSaved ?? 0) + 1;
+      done("OK");
+    }
     if (rest.join(" ") === "php artisan list --raw --no-interaction") {
       if (!asOrbit || name !== "nested-gateway" || !inner.includes("/home/orbit/orbit/apps/gateway")) fail("Wrong command-list context");
       if (state.failCommandList) fail("Gateway command list unavailable");

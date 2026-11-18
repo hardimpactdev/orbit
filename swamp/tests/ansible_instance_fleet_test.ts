@@ -752,7 +752,7 @@ Deno.test({
         shrinkCall + "check " + shrinkArgs,
         // The converge ran after the files were read: they are read again before base, and the pool driver once.
         ...reads,
-        "incus query /1.0/storage-pools?recursion=1",
+        "incus storage list --format csv --columns D",
         // `base` is due for all three, so readiness waits until they run again.
         ...names.map((name) => `incus stop ${name} --timeout 90`),
         "incus list --format csv --columns ns",
@@ -2613,27 +2613,39 @@ Deno.test({
     const f = refreshedOnce();
     try {
       f.change((state) => grantsDue(Object.assign(state, { poolDriver: "btrfs" })));
-      // The inner bridge's dnsmasq runs on nested-app-dev: a `base` of the running fleet holds its pid file, and the reset clears it.
-      f.change((state) => state.containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"] = "pid: 4242\n");
+      // nested-app-dev lost its base too, so it is retaken: the inner bridge's dnsmasq runs there, a `base` of the running fleet holds
+      // its pid file, and the reset clears it.
+      f.change((state) => {
+        delete state.containers["nested-app-dev"].snapshots.base;
+        state.containers["nested-app-dev"].files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"] = "pid: 4242\n";
+      });
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const base = calls.slice(calls.indexOf("incus query /1.0/storage-pools?recursion=1"));
-      // Readiness first, on the running fleet; then the old base goes, and the freeze, the snapshot and the thaw follow one another.
-      assertEquals(base.filter((call) => readyCalls.includes(call) || /^incus (stop|start|pause|resume|snapshot) /.test(call)), [
+      const base = calls.slice(calls.indexOf("incus storage list --format csv --columns D"));
+      const targets = ["nested-gateway", "nested-app-dev"];
+      // Readiness first, on the running fleet; then the queues are saved, the old base goes, the thaw is armed in the Instance container,
+      // and the freeze, the snapshots, the thaw and the cancel of the armed thaw follow one another.
+      assertEquals(base.filter((call) => readyCalls.includes(call) || /^(incus (stop|start|pause|resume|snapshot) |incus exec nested-gateway -- valkey-cli|systemd-run|systemctl stop orbit-fleet-thaw)/.test(call)), [
         ...readyCalls,
+        "incus exec nested-gateway -- valkey-cli SAVE",
         "incus snapshot delete nested-gateway base",
-        "incus pause nested-gateway",
-        "incus snapshot create nested-gateway base",
-        "incus resume nested-gateway",
+        "systemctl stop orbit-fleet-thaw.timer orbit-fleet-thaw.service",
+        `systemd-run --unit orbit-fleet-thaw --collect --on-active 60s --timer-property AccuracySec=1s -- sh -c for n do incus resume "$n" || true; done sh ${targets.join(" ")}`,
+        `incus pause ${targets.join(" ")}`,
+        ...targets.map((name) => `incus snapshot create ${name} base`),
+        `incus resume ${targets.join(" ")}`,
+        "systemctl stop orbit-fleet-thaw.timer",
       ]);
       assert(!calls.some((call) => call.includes("instance_fleet_runtime.py")), calls.join("\n"));
       assertEquals(calls.filter((call) => call.includes("/doctor")).length, 1);
       const result = f.refreshed();
-      assertEquals([result?.base, result?.base_mode, result?.base_containers], ["retaken", "running", ["nested-gateway"]]);
+      assertEquals([result?.base, result?.base_mode, result?.base_containers], ["retaken", "running", targets]);
       assertEquals(Object.keys(result?.seconds as Record<string, number>), ["gateway", "converge", "ready", "base", "tools"]);
       const state = f.state();
-      assertEquals(state.containers["nested-gateway"].snapshots.base.taken, "Frozen");
+      for (const name of targets) assertEquals(state.containers[name].snapshots.base.taken, "Frozen");
+      assertEquals(state.containers["nested-app-dev"].snapshots.base.files["/var/lib/incus/networks/orbitinst0/dnsmasq.pid"], "pid: 4242\n");
+      assertEquals([state.queueSaved, state.thawArmed], [1, undefined]);
       assertEquals(names.map((name) => state.containers[name].status), ["Running", "Running", "Running"]);
       // The reset restores that base and clears its pid file before the start.
       f.intent((intent) => intent.container.clone = { t3: { unit: "t3.service" } });
@@ -2651,7 +2663,20 @@ Deno.test({
       assert(f.calls().includes("incus resume nested-gateway"));
       assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
       assertEquals(f.state().outer.files[record], undefined);
+      assertEquals(f.state().thawArmed, undefined);
       f.change((state) => delete state.failSnapshot);
+      // A queue save that fails takes the stopped path: no freeze, no armed thaw.
+      f.change((state) => {
+        grantsDue(state);
+        state.digests = { "apps/gateway": "a1", swamp: "e4" };
+        state.queueSaveFails = true;
+      });
+      const unsaved = f.run("refresh");
+      assert(unsaved.ok, unsaved.output);
+      const unsavedCalls = f.calls();
+      assert(unsavedCalls.includes("incus stop nested-gateway --timeout 90"), unsavedCalls.join("\n"));
+      assert(!unsavedCalls.some((call) => call.startsWith("incus pause") || call.startsWith("systemd-run")), unsavedCalls.join("\n"));
+      assertEquals(f.refreshed()?.base_mode, "stopped");
     } finally {
       f.cleanup();
     }

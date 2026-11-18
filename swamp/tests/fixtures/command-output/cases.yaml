@@ -15,20 +15,16 @@ contexts:
   fleet-command-prefix:
     fleet_gateway_commands:
       stdout: "gateway:known-hosts:sync-other  Another command\n"
-  # `incus query /1.0/storage-pools?recursion=1` of the inner Incus, indented over several lines, cut to name, driver and status
-  # (task copy 3717, 2026-11-18); a default made before the inner volume has a directory pool; a read that fails prints nothing.
+  # `incus storage list --format csv --columns D` of the inner Incus: one driver per line (task copy 3717, 2026-11-18); a default made
+  # before the inner volume has a directory pool; a read that fails prints nothing; an exit 0 with other text is no driver list.
   fleet-pools-btrfs:
-    fleet_pools_read:
-      rc: 0
-      stdout: "[\n {\n  \"name\": \"inner\",\n  \"driver\": \"btrfs\",\n  \"status\": \"Created\"\n }\n]"
+    fleet_pools_read: {rc: 0, stdout: "btrfs", stdout_lines: [btrfs]}
   fleet-pools-dir:
-    fleet_pools_read:
-      rc: 0
-      stdout: "[\n {\n  \"name\": \"topology-seed\",\n  \"driver\": \"dir\",\n  \"status\": \"Created\"\n }\n]"
+    fleet_pools_read: {rc: 0, stdout: "dir", stdout_lines: [dir]}
   fleet-pools-unreadable:
-    fleet_pools_read:
-      rc: 1
-      stdout: ""
+    fleet_pools_read: {rc: 1, stdout: "", stdout_lines: []}
+  fleet-pools-malformed:
+    fleet_pools_read: {rc: 0, stdout: "[{\"driver\": \"btrfs\"", stdout_lines: ["[{\"driver\": \"btrfs\""]}
   # `incus query /1.0/instances/<name>` of a nested-fleet default, cut to its root disk (2026-11-14, Beast).
   root-smaller:
     phase: start
@@ -2121,6 +2117,11 @@ cases:
   task: Choose how base is taken
   field: vars.fleet_pool_drivers
   context: fleet-pools-unreadable
+  expected: []
+- file: tasks/instance-fleet-refresh.yml
+  task: Choose how base is taken
+  field: vars.fleet_pool_drivers
+  context: fleet-pools-malformed
   expected: []
 - file: tasks/instance-fleet-refresh.yml
   task: Name the due Instance host
