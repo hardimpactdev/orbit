@@ -126,5 +126,14 @@ opt-level = 3
 [profile.release]
 strip = "symbols"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# The executor mode (ADR 0271 N7): `orbit-agent execute`. Its socket, caller check and Incus calls are Linux-only.
+orbit-executor = { path = "crates/executor" }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+orbit-executor-core = { path = "crates/executor-core" }
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+tempfile = "3"
+
 [dev-dependencies]
 axum = { version = "0.8", features = ["ws"] }
