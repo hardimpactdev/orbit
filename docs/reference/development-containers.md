@@ -149,7 +149,7 @@ Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40
 
 Clone phases stage their release's helpers and intent once in a private folder for the run. Later phases run them by path. This keeps scripts off the SSH command and avoids its size limit. The repository credential stays on stdin. Cleanup removes the folder on success or failure, including a failed first launch.
 
-The clone copy supplies a complete root disk device, including its type, path, pool and size. This works when the seed inherits its root disk from a profile or stores it locally.
+The clone copy supplies a complete root disk device, including its type, path, pool and, except on a [btrfs pool](#the-root-disk), its size. This works when the seed inherits its root disk from a profile or stores it locally.
 
 Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users, `agent`'s sudo grant and the firewall.
 
@@ -2303,6 +2303,8 @@ Each runtime records its Incus project once. Every step that reaches the contain
 ### The root disk
 
 The root disk of a nested-fleet default has the size of the Gateway setting [`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`](/reference/gateway-environment), 80 GiB by default. Every other container, a copy of a default among them, keeps 40 GiB.
+
+On a btrfs pool, such as the pool of the nested proof Node `nested-app-dev`, the root disk has no size. Incus would set it with btrfs qgroups, which the unprivileged nested Node refuses, and the copy's own volume already caps that pool. The Node-side rule `instance_root_disk.py` drops the size there for create, clone, the start's grow and the guard alike, and keeps it on every ZFS pool.
 
 Incus sets the size as the ZFS `quota` of the container's dataset. A quota counts the dataset's snapshots. A default's seeds stay on its dataset while a copy made from them lives, as hidden `deleted-*` snapshots, and each one that a `base` retake replaced holds about 1.7 GiB. A copy's quota counts only its own blocks. The inner Doctor wants 2 GiB and 10% of the disk free, and a [refresh](#refresh-after-a-release) checks that room first. At 40 GiB, six living copies on old seeds left too little room on Instance 2454.
 

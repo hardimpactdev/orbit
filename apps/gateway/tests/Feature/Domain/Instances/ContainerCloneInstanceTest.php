@@ -471,6 +471,7 @@ it('frames the release scripts in one single-line launch copy beside the clone c
         ->and($payload['bundle'])->toBe([
             'node_services' => file_get_contents($swamp.'/ansible/instance_node_services.py'),
             'machine_name' => file_get_contents($swamp.'/ansible/instance_machine_name.py'),
+            'root_disk' => file_get_contents($swamp.'/ansible/instance_root_disk.py'),
             'mail' => file_get_contents($swamp.'/ansible/instance_mail.py'),
             'bridge' => file_get_contents($swamp.'/ansible/instance_bridge.py'),
             'node' => file_get_contents($swamp.'/ansible/instance_node_runtime.py'),
