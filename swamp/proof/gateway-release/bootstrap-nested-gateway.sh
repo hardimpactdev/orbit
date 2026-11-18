@@ -83,17 +83,19 @@ release)
   ;;
 swamp)
   # A sealed release is read-only, so Swamp serve gets its own writable checkout, as SwampRoleUnits::Checkout gives a real
-  # Gateway, with the nested fleet's Swamp state bound into it.
+  # Gateway, with the nested fleet's Swamp state, grants and vaults bound into it.
   sha=$2 checkout=$base/apps/orbit-monorepo-staging/checkout
   if [ ! -e "$checkout/.git" ]; then
     install -d -o orbit -g orbit "$base/apps" "$base/apps/orbit-monorepo-staging"
     as_orbit git -C "$base/shared/orbit.git" worktree add --quiet --detach "$checkout" "$sha"
   fi
-  rm -rf "$checkout/swamp/.swamp" && install -d -o orbit -g orbit "$checkout/swamp/.swamp"
+  for dir in .swamp grants vaults; do
+    rm -rf "${checkout:?}/swamp/$dir" && install -d -o orbit -g orbit "$checkout/swamp/$dir"
+  done
   exec=$(systemctl show -p ExecStart --value orbit-swamp-serve | sed -E 's/.*argv\[\]=([^;]*);.*/\1/' | sed "s#--repo-dir $base/orbit/swamp#--repo-dir $checkout/swamp#")
   install -d /etc/systemd/system/orbit-swamp-serve.service.d
-  printf '[Unit]\nRequiresMountsFor=\n[Service]\nBindPaths=/var/lib/orbit-checkout-state/swamp/.swamp:%s/swamp/.swamp\nWorkingDirectory=%s/swamp\nExecStart=\nExecStart=%s\n' \
-    "$checkout" "$checkout" "$exec" > /etc/systemd/system/orbit-swamp-serve.service.d/70-proof-swamp-repo.conf
+  printf '[Unit]\nRequiresMountsFor=\n[Service]\nBindPaths=/var/lib/orbit-checkout-state/swamp/.swamp:%s/swamp/.swamp\nBindPaths=/var/lib/orbit-checkout-state/swamp/grants:%s/swamp/grants\nBindPaths=/var/lib/orbit-checkout-state/swamp/vaults:%s/swamp/vaults\nWorkingDirectory=%s/swamp\nExecStart=\nExecStart=%s\n' \
+    "$checkout" "$checkout" "$checkout" "$checkout" "$exec" > /etc/systemd/system/orbit-swamp-serve.service.d/70-proof-swamp-repo.conf
   systemctl daemon-reload
   ;;
 esac
