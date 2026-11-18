@@ -26,6 +26,9 @@ final class SleepInstanceCommand extends GatewayCommand
 
     protected function writeOperationResult(OperationResponse $operation): void
     {
+        if (($operation->result['sleep'] ?? null) === 'stopped') {
+            $this->writeHumanMessage('The container is stopped, not frozen. Its next wake starts it without restoring memory.');
+        }
         if (($operation->result['t3_turn'] ?? null) === 'not_checked') {
             $this->writeHumanMessage('T3 was not checked: a running agent turn, if any, was cut. T3 continues it at the next wake.');
         }

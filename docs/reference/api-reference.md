@@ -13,6 +13,8 @@ covers:
 
 `POST /api/v1/nodes/{node}/executor/proof` and MCP tool `node-executor-proof` return a terminal `Operation`. See the [operator diagnostic](/reference/executor#the-proof-operation) for authorization and verdicts.
 
+`operation:direct:executor-sign` appears under Node callbacks, not operator Operations. Only the Swamp worker for the bound run can request an order. The Gateway takes the action, Node, and target from the admitted Operation. The MCP catalogue excludes this callback.
+
 The generator marks every DELETE route destructive with `x-orbit-destructive`, and each POST route in `DESTRUCTIVE_POSTS` of `bin/docs-openapi`, today only `instance:unregister`. The MCP manifest copies the mark as `destructive`, and the tool's `destructiveHint` annotation reads it.
 
 `instance:sleep` and `instance:wake` are POST `/api/v1/instances/{instance}/sleep` and `/wake`. Each returns an Operation receipt; a wake of an Instance with an open wake returns that Operation. The sleep's result names `sleep` (`frozen` or `stopped`), `swap_subtree` (the inner cgroups the freeze opened) and `t3_turn` (`idle`, `not_checked` or `no_server`); the wake's names its path in `wake`. A wake of a nested-fleet clone that no sleep froze returns an `instance.start` Operation instead. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) pages define their prerequisites and failure behavior.

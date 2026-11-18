@@ -652,7 +652,7 @@ final class AgentViewSubscriber
 
     /**
      * Hands one executor reply line to the waiting request (ADR 0266 "The path", step 4). Only the Node's own agent
-     * can send it, as for `client-log`. The record write and the Valkey push are the only waits on the loop.
+     * can send it, as for `client-log`. Completion stays off the loop and off the waiting request.
      *
      * @param  array<string, mixed>  $message
      * @param  array<string, mixed>  $data

@@ -2024,8 +2024,8 @@ describe('a turn of a group that owns a copy', function (): void {
             // then sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
             ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::ReviewRule."\n\n".TaskTurn::PrTextRule)
             ->and(substr_count($review->input['turn']['prompt'], TaskTurn::ReviewRule))->toBe(1)
-            // The scope bounds the findings, not a count.
-            ->and(TaskTurn::ReviewRule)->toContain('Report every finding inside that scope.')->not->toMatch('/at most|\bno more than\b/i')
+            // The scope and the impact bar bound the findings (docs/reference/tasks.md#the-reviewer-rule).
+            ->and(TaskTurn::ReviewRule)->toContain('A finding blocks only if a normal run, or a likely failure')->not->toContain('Report every finding')
             ->and($implementer->input['turn']['prompt'])->not->toContain(TaskTurn::ReviewRule)
             ->and($implementer->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::AskRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)

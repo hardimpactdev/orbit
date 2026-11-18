@@ -606,7 +606,7 @@ When a workspace of an unfinished task reports a new `head` or new diff counts, 
 
 ### Result listener
 
-The subscriber is also the listener for the [executor](/reference/executor#the-listener-and-the-hand-off)'s results ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor)). It accepts `client-executor-result` only from `agent.{id}` on that Node's `presence-node.{id}` channel. It records a result on its Operation with one conditional write, then pushes it to the Valkey key `executor:op:<operation>` for the waiting request. An `accepted` line goes only to Valkey. Both steps run in the socket loop, because a child process would add its start-up time to every wake: together they take about 0.2 ms.
+The subscriber is also the listener for the [executor](/reference/executor#the-listener-and-the-hand-off)'s results ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor)). It accepts `client-executor-result` only from `agent.{id}` on that Node's `presence-node.{id}` channel. It records the first matching result on the Operation and pushes the line to the Valkey key `executor:op:<operation>` for the waiter. For signed power, it also records when the first WebSocket `accepted` line arrived. When it records a result for a running signed wake, it queues completion instead of waiting for the recovery job.
 
 ### Process usage
 

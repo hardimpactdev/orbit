@@ -9,7 +9,7 @@ cases = [
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"
 self_hosted = true
 host_programs = ["zip", "unzip"]
-cost = 465
+cost = 355
 slices = 5
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
@@ -44,10 +44,11 @@ inputs = [
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
-# Scoped subsystem case costs are ESTIMATES pending managed-pool receipts.
+# Each case costs its largest passed time on the self-hosted pool, rounded up: tools/tests/ci-host-pool-cost-evidence.json.
+# The planner adds startup.
 [case_costs]
-"the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 45
-"a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 70
-"the runtime builds its Vite+ home and reuses it in another folder version" = 110
-"a mapped Vite+ home stays until no process maps it and no folder version links it" = 140
-"a Vite+ home with the wrong Node version is refused without replacing current" = 100
+"the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 31
+"a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 58
+"the runtime builds its Vite+ home and reuses it in another folder version" = 87
+"a mapped Vite+ home stays until no process maps it and no folder version links it" = 111
+"a Vite+ home with the wrong Node version is refused without replacing current" = 68

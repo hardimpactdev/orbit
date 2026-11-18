@@ -198,6 +198,8 @@ Each registry entry of a `self_hosted` file names the source of its cost:
 - When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
 - A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
 
+The scoped host files (`ansible_instance_host_runtime_test.ts`, `ansible_instance_host_browser_test.ts`, `ansible_instance_host_updates_test.ts` and `ansible_instance_t3_restart_test.ts`) follow the first rule: each case costs its largest passed pool time, rounded up. `tools/tests/ci-host-pool-cost-evidence.json` names the runs and the times, and `tools/test_ci_cost_evidence.py` binds the registry to them.
+
 ### Shared fixture capacity
 
 The capacity model lives in `.github/ci/checks.toml`. `[runner-pool].slots` records the observed shared Sabre and Shark pool size for pressure reports, not an online inventory or a reservation. In `[budget]`, `runner_shards` bounds planned fixture jobs across both classes per run; `pr_shards` and `self_hosted_shards` also bound their respective classes. Mandatory cases reserve plan capacity first; named capacity gaps stay last. Selected work beyond those limits fails `Required checks`, with the named-gap exception below.
@@ -281,7 +283,11 @@ Each registered fixture has one metadata file under `.github/ci/fixtures/`, mirr
 
 The Swamp host retention fixture runs the shipped Ansible tasks against temporary version folders and process-map records. It checks selected, previous and mapped binaries, unknown or missing rollback targets, and an unchanged repeat. It also executes the worker's startup cleanup against a temporary cache and verifies that its machine identity and configuration survive. It starts no service and needs no fleet access.
 
-`bin/ci-registry` is the loader for fixture selection and execution. Editing what a fixture tests selects only that fixture, using the same merge base as path selection: its cases, its inputs or any other key except the scheduling keys. The scheduling keys are `self_hosted`, `cost`, `case_costs` and `slices`. Removing the old `after_merge`, `after_merge_cases` and `reason` keys counts as a scheduling edit too. An edit that changes only them is a machinery change: it selects the machinery canary set, not the fixture. Formatting and edits to check definitions select no extra fixture bodies.
+`bin/ci-registry` is the loader for fixture selection and execution. Editing what a fixture tests selects only that fixture, using the same merge base as path selection: its cases, its inputs or any other key except the scheduling keys. The scheduling keys are `self_hosted`, `cost`, `case_costs` and `slices`. Removing the old `after_merge`, `after_merge_cases` and `reason` keys counts as a scheduling edit too. An edit that changes only them is a machinery change: it selects the machinery canary set, not the fixture.
+
+An edit that only narrows `inputs` is a machinery change too. The list is narrowed when each pattern it gains matches tracked files, and the old list matched every one of them. The same change must also touch no path that only the old list names.
+
+The fixture then has nothing new to test: a changed path that the list still names selects the fixture by that path. A list that names a file the old list did not match, or a file that does not exist, selects the fixture. So does a list that drops a file which the same change edits or deletes. Formatting and edits to check definitions select no extra fixture bodies.
 
 A change to the shared fixture machinery does not select every fixture. The machinery is the fixture list, budgets, defaults and fixture order in `checks.toml`, the loader, the planner, the runner, the slice preload, the shape gate `bin/swamp-shape-gate` and the Ansible toolchain pins: `swamp/ansible/ansible.cfg` and the files `requirements.txt`, `requirements.yml` and `shape-gate-requirements.txt` beside it. A fixture that lists one of these paths as an input is not selected by it.
 

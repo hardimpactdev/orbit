@@ -75,6 +75,7 @@ return [
     // libsodium secret key, readable only by `orbit` (docs/reference/executor.md#rollout). Never log or print it.
     'executor' => [
         'wake_enabled' => (bool) env('ORBIT_EXECUTOR_WAKE_ENABLED', false),
+        'power_enabled' => (bool) env('ORBIT_EXECUTOR_POWER_ENABLED', false),
         'public_keys' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('ORBIT_EXECUTOR_PUBLIC_KEYS', ''))))),
         'signing_key' => env('ORBIT_EXECUTOR_SIGNING_KEY'),
         // The shared publish-and-wait budget of a container wake request (ADR 0266 slice 6). Valkey needs hz 100.

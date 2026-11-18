@@ -15,8 +15,16 @@ uncovered:
   # Crash injection delayed the first restore read by 1 s. One open/done/seen record; repeat=true.
   failed: "A wake that fails before the app answers keeps power_state; one whose T3 stays silent records running; Pest covers both projections."
 waits:
+  executor-power-runner: "The coordinated fixture window must supply a disposable swap-backed clone with T3 and Vite, and isolated observer and listener fault controls."
   executor-visitor-runner: "The fleet-reset runner does not yet prepare a swap-backed T3/Vite clone and time the visitor Route and its poll. The live manual proof is recorded in node/converge.cases.yaml."
 cases:
+  - id: executor-wake-relay
+    batch: fresh-fleet
+    covers: [executor, executor-pending]
+    summary: Disconnect the observer, then lose an accepted result and overlap delivery; require the same Operation, one action, restored limits and the same app and T3 identities.
+    waits: executor-power-runner
+    act: []
+    expect: []
   - id: invalid-id
     batch: fresh-fleet
     covers: []
