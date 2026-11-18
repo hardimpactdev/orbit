@@ -93,11 +93,16 @@ def capacity(target, live, host_gateway):
     if host_gateway and target != "gateway":
         raise ValueError("host PHP-FPM measurement applies only to the Gateway migration")
     served = host_gateway_memory() if host_gateway else memory_use(release(target, live))
-    prep_need, prep_resident, prep_swap = memory_use(prep)
+    preparation = memory_use(prep)
+    if max(preparation[0], served[0]) <= 0:
+        raise ValueError("cannot estimate candidate memory")
+    return capacity_estimate(preparation, served, prep["expanded_devices"]["root"]["pool"])
+
+
+def capacity_estimate(preparation, served, pool):
+    prep_need, prep_resident, prep_swap = preparation
     live_need, live_resident, live_swap = served
     working = max(prep_need, live_need)
-    if working <= 0:
-        raise ValueError("cannot estimate candidate memory")
     # Keep live available while preparation and hot overlap. Existing resident memory and
     # swap slots are already excluded from the Node's free counts.
     ram = 2 * working - prep_resident + max(0, live_need - live_resident) + 1024**3
@@ -107,7 +112,6 @@ def capacity(target, live, host_gateway):
         key, values = line.split(":", 1)
         if key in ("MemAvailable", "SwapFree"):
             meminfo[key] = int(values.split()[0]) * 1024
-    pool = prep["expanded_devices"]["root"]["pool"]
     if not re.fullmatch(r"[a-zA-Z0-9_.-]+", pool):
         raise ValueError("invalid preparation pool")
     pool_info = subprocess.check_output(
