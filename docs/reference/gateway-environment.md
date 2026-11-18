@@ -178,6 +178,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `ORBIT_GATEWAY_CHECKOUT` | Stable path of the Gateway checkout. The [release layout](/reference/gateway-recovery#release-layout) and the Gateway's Node agent units use it. It defaults to `/home/orbit/orbit/apps/gateway`. |
 | `ORBIT_HIBERNATION_IDLE_SECONDS`, `ORBIT_HIBERNATION_SWEEP_SECONDS`, `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` | Development runtime hibernation timing. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation). |
 | `ORBIT_CONN_HELD_SESSION_PREMINT` | The pre-mint of held Conn sessions when a container Instance's T3 server is recorded. Off by default; a Node's first read makes its session. See [Held sessions](/reference/conn#how-the-gateway-makes-one). |
+| `ORBIT_CONN_MANAGED_TARGETS` | The routes of managed Conn grant revocation for lab targets. Off by default; edge removal records managed revisions either way. See [Managed grant revocation](/reference/conn#managed-grant-revocation). |
 | `ORBIT_CONN_THREAD_INDEX_POLL` | The reads of the Conn thread index: the minute poll, the list's read-through and the last read before a sleep. Off by default. See [Thread index](/reference/conn#thread-index). |
 | `ORBIT_HIBERNATION_CONTAINER_SLEEP`, `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP` | Which containers the idle sleep acts on: `false` (the default, also when invalid), `without_t3` or `true`; and the Instance ids it skips. Planned: production lives too ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Sleep and wake](/reference/development-containers#sleep-and-wake). |
 | `PHP_CLI_SERVER_WORKERS` | Number of workers for `php artisan serve` in local development. |
@@ -190,7 +191,8 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `ORBIT_GATEWAY_QUEUE_CONNECTION`, `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | The Redis Database connection and database index of the [Gateway queue](/reference/gateway-queue), which Laravel Horizon works. Empty, the scheduler runs its commands itself. Tests set `ORBIT_GATEWAY_QUEUE_DRIVER=database` to keep the queue in SQLite. |
 | `ORBIT_EXECUTOR_PUBLIC_KEYS` | One or two base64 Ed25519 public keys, comma-separated, that every [executor](/reference/executor) Node pins. Until it is set, converges skip the executor install. See [Rollout](/reference/executor#rollout) |
 | `ORBIT_EXECUTOR_SIGNING_KEY` | The base64 64-byte Ed25519 secret key that signs every [executor](/reference/executor) order, whose public half is one of `ORBIT_EXECUTOR_PUBLIC_KEYS`. Only `orbit` reads it, and it is never printed or logged. See [Rollout](/reference/executor#rollout) |
-| `ORBIT_EXECUTOR_WAIT_MS` | How long a waiting request waits on Valkey for an executor result; default 500. See [The listener and the hand-off](/reference/executor#the-listener-and-the-hand-off). Nothing reads it in a request until slice 6 of ADR 0266 |
+| `ORBIT_EXECUTOR_WAIT_MS` | The [executor wake budget](/reference/executor#the-wake-inside-the-request) in milliseconds, from admission through recording in-bound success. Default 500. The orchestrator sets Gateway Valkey to `hz 100` |
+| `ORBIT_EXECUTOR_WAKE_ENABLED` | Enable [executor container wakes](/reference/executor#the-wake-inside-the-request); default `false`. Requires ADR 0266 slices 5 and 7 before rollout; when enabled, wakes use only the executor |
 | `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT` | Defaults for the `websocket` Node role, with repository `https://github.com/hardimpactdev/orbit-reverb.git`. See [Realtime events with Reverb](/solutions/realtime-reverb). Each Gateway release pins a server commit for the [live registry](/reference/websocket-apps#the-reverb-server). |
 | `TYPESAFE_API_KEY` | Key for the Jev classifier in [Tasks](/reference/tasks). |
 | `ORBIT_TASKS_COPIES_MAX` | How many nested-fleet [task copies](/reference/tasks#task-copy) one Node holds at once; default 1, minimum 0. `task:start` counts at admission. A copy of any other Project does not count. |
@@ -213,7 +215,7 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 The fleet-owned `instances.mailpit` configuration names the main Docker Node Process and SMTP port. It needs no Gateway environment key or contributor setting; [development mail](/reference/development-containers#development-mail) applies only on a Node with that active publication.
 
-`ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default. A nested Gateway of an Instance fleet adds its fleet's `app-dev` Node without it.
+Containers need no environment opt-in or allow list. See [Container-only admission](/reference/development-containers#container-only-admission).
 
 `ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set allow list of nested-fleet Projects, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. List only the Orbit Project, whose container holds an inner fleet, and disposable trial Projects.
 

@@ -24,13 +24,15 @@ Per-minute schedulers on production Instances, such as `laravel-scheduler` and `
 
 An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization and cleaning, Horizon metrics snapshots, batch and failed-job pruning, and the minute [reconciler](/reference/swamp-command-steps#reconciler) that settles Operations with their Swamp runs. Hourly `problems:file` stays in the Gateway scheduler with its lock. Every minute the Gateway scheduler also checks the container defaults against their branch heads; it starts a Swamp policy run only for the defaults behind, independently of the production policy schedule and its pause. See [Automatic development defaults](/reference/deployments#automatic-development-defaults).
 
+The Gateway also checks for [executor wake handoffs](/reference/gateway-queue#scheduled-work) every five seconds. This check does not run an Orbit Schedule or a Swamp workflow.
+
 The shared native `automatic-production-deploy` producer schedules [automatic deployments](/reference/deployments#automatic-development-defaults) at second 30 of each minute, subject to its enabled and paused policy setting. The PHP `orbit:auto-deploy` command and schedule are removed. This producer installs no timer on an app-dev Node. Every hour at minute 41, `automatic-deploy-memory-refresh` keeps that producer's [policy memory](/reference/deployments#automatic-deployments) inside Swamp data retention, also while the producer is paused. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
 
 The Gateway schedules no task VM job: the [host sweep](/reference/compute-drivers#sweep-task-vm-hosts), the [idle release](/reference/tasks#release-an-idle-task-vm) and the observation of parked VMs are removed with the [task VM runtime](/reference/tasks#task-runtime).
 
 No schedule starts the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the task VM hosts any more: the 03:20 daily refresh is removed.
 
-While the [fleet rollout](/reference/gateway-recovery#fleet-rollout) is on, the Gateway queues its admission every day at 03:05 Europe/Amsterdam, when the window of the non-daytime Nodes opens. A verified release queues the same admission. The job waits a minute at a time while the commit has no CLI release yet or a rollout runs.
+The Gateway queues the [fleet and seed continuation](/reference/gateway-recovery#fleet-rollout) after verification and daily at 03:05 Europe/Amsterdam when fleet rollout or default refresh is enabled. That is when the Nodes outside the daytime set can start their rollout. The job revisits pending default refresh and seed publication each minute.
 
 Every five minutes the Gateway also frees the target of a timed-out Operation that nothing has proved ended for 60 minutes. See [Operations](/reference/operations).
 

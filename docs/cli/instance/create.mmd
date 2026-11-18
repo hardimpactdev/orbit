@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Decided by the orchestrator, for Nick's review (2026-11-06): a withdrawal clears the Router answers of the Route from the private DNS catalog in the same step, not only its records.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Gateway holds each Route-serving Node from admission to the terminal state; a second Route write on it waits (docs/reference/routes.md#coordinate-publication).
-  %% Target design: ADR 0244 task + full intent as inputs, token minted at admission (vault.get), Gateway renders .env from the Project env template, run budget per swamp-operation-time-budgets.
+  %% Target design: new development Instances are containers. The container charts own their execution; the checkout phases below apply only to retries of existing checkout Instances.
   %% Tightened: flow-tighten, rules 1-28 (rule 22: Ansible phases, 0600 credential file for the private fetch).
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the Node work is two Ansible phases, `checkout` (clone, check out, write .env) and `setup`, behind one input step. Measured on Node 209: every placed Swamp step costs about 1.1 s of dispatch before it does any work, and the old flow ran 8 steps for the checkout and one per setup step.
   %% Decided by the orchestrator, for Nick's review (2026-11-06): the run-folder cleanup runs beside the result step, not before it (a Swamp job runs steps by dependency depth, so they were one after the other in a create without setup or Route). Since 2026-11-14 a ready create's result step removes the run folder itself, and the cleanup runs only after a failure or a failed removal.
@@ -24,6 +24,10 @@ sequenceDiagram
   CLI->>GW: instance:create<br/>PROJECT NODE NAME
   %%> Command:
   %%> - `orbit instance:create PROJECT NODE NAME`
+  %%> Admission:
+  %%> - every new default is a container on an app-dev Node; there is no build list
+  %%> - every new non-default clones the container default; no default refuses with instance.default_missing, a checkout default refuses with instance.container_required (409) and must migrate first
+  %%> - new containers follow instance/container/create-default and instance/container/create; only an existing checkout may retry the host phases below
   %%> - syntax: `<project> <node> <name> [--root=PATH] [--domain=HOST] [--branch=BRANCH] [--database-server=SLUG] [--wait-active]`
   %%> Input:
   %%> - the Project, the Node, and the Instance name
@@ -33,7 +37,7 @@ sequenceDiagram
   Note over GW: Validate, reserve Instance<br/>render .env
   %%> Requirements:
   %%> - the calling Node has an access grant to the target Node
-  %%> - a Project with `nested_fleet` on is admitted only as a container in the nested Incus project: `instance.nested_fleet_host_unavailable` (409) when the Node hosts no nested fleets (its switch is off, and it is no CI-only Node whose `ci-runner` converge recorded nested hosting), `instance.nested_fleet_container_required` (409) when the Node is not on the build list or the result is a host checkout, both before any record; this holds on a retry of a failed create too
+  %%> - nested_fleet requires a Node that hosts nested fleets, else instance.nested_fleet_host_unavailable (409); an existing checkout retry for that Project refuses with instance.nested_fleet_container_required (409), before any record
   %%> - the name is one DNS label of at most 63 characters; a web Route has labels of at most 63 characters and at most 64 characters in total while the Node CSR uses the domain as its common name (`route.domain_invalid`), checked before the Operation starts
   %%> - the target is an active `app-dev` Node and not a task VM; a production Node is refused (`instance.candidate_required`)
   %%> - a CI-only Node (`ci-runner`, CI places, no `app-dev`) is refused first, `instance.node_ci_only` (409), before any record: only a proof copy is made there (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node)

@@ -8,8 +8,8 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The sections of a profile's settings document. Each section has its own version, so two devices that
- * change different sections never conflict. A section is `workspaces`, `appearance`, `attachedThreads`, or
- * `devices.<type>`, where `<type>` names a kind of device such as `desktop` or `iphone`.
+ * change different sections never conflict. A section is `workspaces`, `appearance`, `attachedThreads`,
+ * `sidebarHiddenThreads`, or `devices.<type>`, where `<type>` names a kind of device such as `desktop` or `iphone`.
  */
 final readonly class ConnProfileSections
 {
@@ -20,8 +20,14 @@ final readonly class ConnProfileSections
     /** The threads the profile has attached: the servers its devices connect to ({@see ConnAttachedThreads}). */
     public const string AttachedThreads = 'attachedThreads';
 
+    /**
+     * The threads the profile's sidebars hide. A display choice only: it takes the form and limits of `attachedThreads`, but
+     * it never attaches a thread, connects a server, or opens access, so no environment is looked up for it.
+     */
+    public const string SidebarHiddenThreads = 'sidebarHiddenThreads';
+
     /** The sections that are one name each; the device sections are `devices.<type>`. */
-    public const array Named = [self::Workspaces, self::Appearance, self::AttachedThreads];
+    public const array Named = [self::Workspaces, self::Appearance, self::AttachedThreads, self::SidebarHiddenThreads];
 
     private const string DevicePrefix = 'devices.';
 
@@ -40,6 +46,12 @@ final readonly class ConnProfileSections
 
     public const int MaxDocumentBytes = 4 * 1024 * 1024;
 
+    /**
+     * What a null or empty `sidebarHiddenThreads` stores, whatever schema an empty list was sent with: one canonical empty
+     * list, so a read confirms that the last hidden thread was shown.
+     */
+    public const array EmptySidebarHiddenThreads = ['schema' => 1, 'threads' => []];
+
     public static function device(string $type): string
     {
         return self::DevicePrefix.$type;
@@ -57,14 +69,22 @@ final readonly class ConnProfileSections
         return preg_match(self::DeviceTypePattern, $type) === 1 ? $type : null;
     }
 
+    /** Whether the section is a thread set: `{"schema": 1, "threads": [...]}`. */
+    public static function isThreadSet(string $section): bool
+    {
+        return $section === self::AttachedThreads || $section === self::SidebarHiddenThreads;
+    }
+
     public static function isKnown(string $section): bool
     {
         return in_array($section, self::Named, true) || self::deviceType($section) !== null;
     }
 
     /**
-     * The document with one section replaced. A null value removes any section but `workspaces`, and
-     * `devices` goes away with its last device. `workspaces` always stays a list.
+     * The document with one section replaced. A null value removes any section but `workspaces` and
+     * `sidebarHiddenThreads`, which stores the canonical empty list as it does for any empty list, and `devices`
+     * goes away with its last device.
+     * `workspaces` always stays a list.
      *
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
@@ -72,6 +92,10 @@ final readonly class ConnProfileSections
     public static function with(array $settings, string $section, mixed $value): array
     {
         $type = self::deviceType($section);
+
+        if ($section === self::SidebarHiddenThreads && ($value === null || (is_array($value) && ($value['threads'] ?? null) === []))) {
+            $value = self::EmptySidebarHiddenThreads;
+        }
 
         if ($type === null) {
             if ($value === null) {

@@ -20,7 +20,7 @@ class DocsImpactPolicyTest(unittest.TestCase):
         self.assertIsNone(CI[True]['pull_request'])
         jobs = CI['jobs']
         selection = next(step for step in jobs['changes']['steps'] if step.get('id') == 'plan')
-        self.assertIn('if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--pull-request); fi', selection['run'])
+        self.assertIn('args+=(--pull-request)', selection['run'])
         self.assertIn('"${args[@]}"', selection['run'])
         self.assertIn('docs', jobs['required']['needs'])
         self.assertEqual(jobs['docs']['timeout-minutes'], 2)
@@ -35,6 +35,7 @@ class DocsImpactPolicyTest(unittest.TestCase):
         self.assertEqual(CI['jobs']['docs']['permissions'], {'contents': 'read', 'pull-requests': 'read'})
         self.assertEqual(step['env']['GH_TOKEN'], '${{ github.token }}')
         self.assertEqual(step['env']['PR_HEAD'], '${{ github.event.pull_request.head.sha }}')
+        self.assertEqual(step['env']['DOCS_IMPACT_BASE'], "${{ needs.changes.outputs.delivery_base || 'HEAD^1' }}")
         self.assertLess(next(i for i, s in enumerate(steps) if 'bin/build-api' in s.get('run', '')), steps.index(step))
         for body, code, api_failure, moved in ((None, 0, False, False), ('Docs-unaffected: docs/a.md: $(touch injected); `touch injected`', 1, False, False), ('valid', 1, True, False), ('valid', 1, False, True)):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as directory:
@@ -55,7 +56,7 @@ class DocsImpactPolicyTest(unittest.TestCase):
                 result = subprocess.run(['bash', '-e', '-c', step['run']], cwd=root,
                                         env=os.environ | {'GITHUB_EVENT_PATH': str(root / 'event.json'),
                                                           'RUNNER_TEMP': directory, 'GITHUB_OUTPUT': str(root / 'output'), 'GH_REPO': 'owner/repo', 'PR_NUMBER': '123',
-                                                          'PR_HEAD': 'checked-head', 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH']},
+                                                          'PR_HEAD': 'checked-head', 'DOCS_IMPACT_BASE': 'b' * 40, 'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH']},
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, code, result.stderr)
                 self.assertEqual(json.loads((root / 'api-args.json').read_text()), ['api', 'repos/owner/repo/pulls/123'])
@@ -64,7 +65,7 @@ class DocsImpactPolicyTest(unittest.TestCase):
                     continue
                 self.assertEqual((root / 'docs-impact-pr-body.txt').read_text(), body or '')
                 self.assertEqual(json.loads((root / 'args.json').read_text()),
-                                 ['--gate', '--base', 'HEAD^1', '--pr-body-file', str(root / 'docs-impact-pr-body.txt')])
+                                 ['--gate', '--base', 'b' * 40, '--pr-body-file', str(root / 'docs-impact-pr-body.txt')])
                 self.assertFalse((root / 'injected').exists())
 
     def test_uncovered_pr_still_blocks_required_when_docs_fails_or_is_skipped(self):

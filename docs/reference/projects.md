@@ -23,8 +23,8 @@ A Project records one Git repository and the defaults for running it. New Instan
 Every Instance of a Project with the flag on is a container in the nested Incus project, made from the [nested-fleet image](/reference/development-containers#the-nested-fleet-image). One placement rule in the Gateway decides this for every path that writes an Instance or its runtime. Only development create, its retry and Conn create make such an Instance: the Project's default, or a clone of it. They refuse every other result before any record:
 
 - the Node hosts no nested fleets: `instance.nested_fleet_host_unavailable` (409);
-- the Node is not on the [build list](/reference/development-containers#the-build-list): `instance.nested_fleet_container_required` (409);
-- the result would be a host checkout, such as a clone of a default that is a checkout: the same code.
+- an existing checkout retry would not be a container: `instance.nested_fleet_container_required` (409);
+- a new non-default has a checkout default: `instance.container_required` (409); migrate the default first.
 
 A Node hosts nested fleets in two cases. Its [nested-fleet switch](/reference/node-settings#nested-fleet-instance-hosting) is on. Or it is a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node), and its last `ci-runner` converge prepared nested hosting. A CI-only Node takes only a proof copy. It refuses every other create with `instance.node_ci_only` first.
 
@@ -34,10 +34,10 @@ The same placement rule also says where a new Instance lives:
 
 | Project | Node | Result |
 | --- | --- | --- |
-| Flag off | Any | A container in the Incus project `orbit-instances` on a Node of the [build list](/reference/development-containers#the-build-list), else a host checkout |
+| Flag off | app-dev | A new container in the Incus project `orbit-instances`; existing checkouts keep working |
 | Flag on | The Node hosts no nested fleets: switch off, and no CI-only Node with nested hosting | Refused with `instance.nested_fleet_host_unavailable` (409) |
-| Flag on | Hosts nested fleets, but the result is not a container: the Node is not on the build list, or the Project's default Instance is a host checkout | Refused with `instance.nested_fleet_container_required` (409) |
-| Flag on | Hosts nested fleets, on the build list or CI-only, and a container result | A container in the Incus project `orbit-instances-nested` |
+| Flag on | Hosts nested fleets, but an existing retry would use a host checkout | Refused with `instance.nested_fleet_container_required` (409) |
+| Flag on | Hosts nested fleets and a container result | A container in the Incus project `orbit-instances-nested`; CI-only Nodes take only proof copies |
 
 Each writer calls the rule's entry for its kind. Development create, Conn create and the runtime reservation can make a container. Register, migration and the production clone read or make a host checkout. Task work and `proof:run` make a task workspace.
 
@@ -422,4 +422,3 @@ Renaming the monorepo folders, the Laravel root namespace, the `app/` source fol
 Reading a stored placeholder or activity class under a different spelling, as if it were the current name, was rejected: that reading is an alias, and synchronization and activity resolution then fail on rows that use the other spelling. There is no compatibility view and no dual-write. A caller that sends a removed field, or code that imports a removed class, fails. There is no compatibility period.
 
 A repository check fails when an App-domain name is present in app code, database code, the SDK, the CLI, web sources, or these pages. A monorepo path under `apps/` is not that name. A `covers:` glob names a file that exists, and the check rejects an App-domain name left in that glob. The same check rejects the Node names the web app used before [Concepts](/concepts) settled on Nodes with roles and roleless Nodes.
-

@@ -51,11 +51,13 @@ The calling Node becomes the server's Node. Once a Node registered an environmen
 
 Removing an edge ends the sessions the Gateway holds for the consumer on the servers that the consumer now cannot reach. The Gateway stops serving them at once and admits their revoke on each server ([Held sessions](#held-sessions)). It does not revoke sessions that the consumer's device paired itself. Revoke those with `POST /environments/{environment_id}/pairings/revoke` and the consumer's `node_id`.
 
+On a managed target, the same removal also revokes the edge's managed tokens and makes the target fence the grant: see [Managed grant revocation](#managed-grant-revocation).
+
 ## Profiles
 
 A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/conn/me`. Every Node that may use profiles ([Access](#access)) sees every profile.
 
-A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has four kinds of section:
+A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has five kinds of section:
 
 ```json
 {
@@ -89,11 +91,15 @@ A profile holds one settings document. Its keys follow Conn's stores, so they st
   "attachedThreads": {
     "schema": 1,
     "threads": [{"environmentId": "env-fix-login", "threadId": "thread-7d2a"}]
+  },
+  "sidebarHiddenThreads": {
+    "schema": 1,
+    "threads": [{"environmentId": "env-beast", "threadId": "thread-41c0"}]
   }
 }
 ```
 
-A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
+A section is `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
 
 | Field | Rule |
 | --- | --- |
@@ -116,9 +122,14 @@ A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`.
 | `devices.<type>.values` | Required flat map of at most 128 entries. |
 | `attachedThreads` | Object of at most 64 KB, serialized. |
 | `attachedThreads.schema` | Required integer, 1 or more. |
-| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. |
+| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. An object, even `{}`, is refused. |
 | `attachedThreads.threads[].environmentId` | Required: the `environment_id` of a Conn environment, at most 255 characters, no spaces or colons. See [Attached threads](#attached-threads) for which environments a write may name. |
 | `attachedThreads.threads[].threadId` | Required: the T3 thread id, at most 255 characters, no spaces. |
+| `sidebarHiddenThreads` | Object of at most 64 KB, serialized, with the same keys and rules as `attachedThreads`. |
+| `sidebarHiddenThreads.schema` | Required integer, 1 to 1000. |
+| `sidebarHiddenThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. An object, even `{}`, is refused. |
+| `sidebarHiddenThreads.threads[].environmentId` | Required: a Conn `environment_id`, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab, and no colon. The Gateway checks only its form ([Sidebar hidden threads](#sidebar-hidden-threads)). |
+| `sidebarHiddenThreads.threads[].threadId` | Required: the T3 thread id, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab. |
 
 A device type is 2 to 24 lowercase letters, digits, and hyphens, and starts with a letter, such as `desktop` or `iphone`.
 
@@ -190,9 +201,58 @@ A failure of the drop never stops the destroy:
 - **Problem.** The Gateway logs `conn.attached_threads_drop_failed` with the profile and the environments. Its log collector records that error as a Problem. A log channel that fails is ignored.
 - **Hidden entries.** The skipped entries stay stored, and every read leaves them out.
 
-A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
+A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write, and from a [profile event](#profile-events) that names the new version.
 
 A profile from before this section has no `attachedThreads` key and no version for it. It reads as no attached threads, at section version 0, so the first patch sends version 0. No migration runs. A client that does not know the section keeps working: it ignores the key, `PUT` cannot send it and keeps it as it is, and a patch changes only the sections it names.
+
+### Sidebar hidden threads
+
+`sidebarHiddenThreads` is the profile's list of threads that the sidebar hides. It is a display choice that every device on the profile shares. A device that reads a thread on this list leaves it out of its sidebar. Showing the thread again removes it from the list.
+
+An entry names one thread on one server, as `environmentId` and `threadId`, as in `attachedThreads`. The pair is stable: it names the same thread on every device and after a restart, so a device matches it without any local id.
+
+The list changes only what a sidebar shows:
+
+- **No detach.** Hiding a thread does not detach it. Showing it does not attach it.
+- **Apart from attachment.** A write of this section leaves `attachedThreads` as it is. A write of `attachedThreads` leaves this section as it is.
+- **Destroy.** Orbit's drop of a removed Instance's threads changes only `attachedThreads`.
+- **No connection.** Hiding or showing a thread never changes which servers a device connects to. That set comes only from `attachedThreads` and `GET /environments` ([Attached threads](#attached-threads)).
+- **Container servers.** A hidden mark cannot keep a container server connected. Detaching its last attached thread takes the server out of the set.
+- **Host servers.** A device keeps a host server connected even with no attached thread, whether its threads are hidden or not.
+
+The list also opens no access:
+
+- **No registration.** An entry never registers, enables, or pairs an environment.
+- **No access.** An entry grants no access. It may name a thread that is not attached, or a server the writing device cannot see.
+- **Form only.** The Gateway checks only the form of an entry and the limits in the table above.
+- **No lookup.** It does not look the environment up or check node access. So a write never fails on another device's access.
+- **Same boundary.** Who may read and write the section is the same as for every profile section ([Access](#access)).
+- **Gone servers.** The Gateway keeps the entries of a deleted environment, at removal and on read.
+- **Stale entry.** Such an entry hides nothing, because no device lists that thread. A client may remove it at its next write.
+
+Write the section with `PATCH`, as the whole list, with the section version the client read. The envelope is the one `attachedThreads` uses:
+
+```json
+{"sections": {"sidebarHiddenThreads": {"version": 2, "value": {"schema": 1, "threads": [
+  {"environmentId": "env-beast", "threadId": "thread-41c0"}
+]}}}}
+```
+
+To hide a thread, send the list with it added. To show it, send the list without it. To show every thread, send `{"schema": 1, "threads": []}` or `null`. A bare `[]` lacks both required keys and is refused with `validation.failed` (422). Unlike other sections, `null` does not remove this section: the Gateway stores `{"schema": 1, "threads": []}`. It stores the same value for an empty list sent with another schema. Each of these writes adds 1 to the section version and to the document version.
+
+Two devices that change the list at the same time are handled by the section version ([Versions](#versions)). The second write gets `conn.settings_version_conflict` (409). That client reads the section again and merges three ways, as for attached threads: the remote list, plus the threads it hid since its base, minus the threads it showed since its base. Then it retries with the new version. A patch is all or nothing. A patch that also holds `attachedThreads` is refused as a whole when one of its attached entries is refused.
+
+A read shows the section by its version:
+
+- **Version 0.** A profile whose section was never written has no `sidebarHiddenThreads` key and no entry for it in `sections`. It reads as no hidden threads, so the first patch sends version 0. No migration runs.
+- **Version 1 or more.** Once the section has been written, `GET /profiles/{id}/settings` and the `PATCH` reply always hold its stored value in `settings.sidebarHiddenThreads`. Its version is in `sections`.
+- **Empty list.** After a write of `null` or of an empty list, with any schema, the value is `{"schema": 1, "threads": []}`.
+- **Confirm a show.** So a client confirms a write that shows the last hidden thread from the value, not only from the version.
+- **Other sections.** They keep their own rules: a section that was removed with `null` is absent.
+
+Every write of the section moves the document version, which `profile.settings_version` in `GET /me` shows. So a device that follows the document version, by any means, sees a change to this list as it sees any other section.
+
+A `PUT` cannot send this section and keeps it as it is ([Versions](#versions)). So a client that does not know the section, and writes only `workspaces`, never erases the threads another device hid. If its document version is behind a hide, the `PUT` gets a conflict; the client reads again and sends its workspaces without the section.
 
 ### Versions
 
@@ -206,13 +266,105 @@ There are two ways to write. Prefer `PATCH`.
 
 `PUT /profiles/{id}/settings` replaces the sections it holds and keeps the others. It checks the document version, as it always did.
 
-A `PUT` accepts only `workspaces`, `appearance`, and `devices`. A body with any other section, such as `attachedThreads`, is refused with `validation.failed` (422) and writes nothing. So a client that sends back the whole document as it read it gets a refusal. A client must not send `attachedThreads` in a `PUT`; it changes the set with `PATCH`. Every installed Conn client sends only `workspaces` here, and patches the other sections. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
+A `PUT` accepts only `workspaces`, `appearance`, and `devices`. A body with any other section, such as `attachedThreads` or `sidebarHiddenThreads`, is refused with `validation.failed` (422) and writes nothing. So a client that sends back the whole document as it read it gets a refusal. A client must not send `attachedThreads` or `sidebarHiddenThreads` in a `PUT`; it changes them with `PATCH`. A `PUT` keeps `sidebarHiddenThreads`, which it cannot send, at its value and version. Every installed Conn client sends only `workspaces` here, and patches the other sections. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
 
 A patch whose section is at another version is refused with `conn.settings_version_conflict` (409), and the Gateway writes nothing. `details.current_version` is the document version. `details.sections` holds the current version of each section the request named. The client reads again, merges the sections that changed, and retries.
 
-A `value` of `null` removes any section but `workspaces`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
+A `value` of `null` removes any section but `workspaces` and `sidebarHiddenThreads`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. A `null` for `sidebarHiddenThreads` stores an empty list ([Sidebar hidden threads](#sidebar-hidden-threads)). Only an explicit `null` removes a section. An empty or blank string, including one of Unicode spaces such as a no-break space, is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
 
 Both run in one transaction on the locked profile row, so two writes from the same version cannot both win. A section name that Conn does not know, such as `theme`, `devices`, or `devices.Phone`, is refused with `validation.failed`. A rule error names its field with dots, such as `sections.devices.iphone.value.values.baseFontSize`.
+
+### Profile events
+
+After a profile write commits, the Gateway tells the Nodes bound to that profile its new document version over the Gateway's Reverb server. The event is a notice. It carries no settings, so the device reads them over HTTP. The HTTP reads stay the truth, and a lost event only delays a device until its next read.
+
+**Event.** The Pusher event name is `conn.profile.updated`. Its payload is exactly `{"profile_id": 1, "version": 7}`, with no other field. It does not use the Gateway's [event envelope](/reference/events#envelope), so it has no `type`, `id` or `at`. `version` is the committed document version: the `settings_version` of `GET /me` and the `version` of `GET /profiles/{id}/settings`. A write to any section moves this one counter, including a section added later. The frame on the socket carries only the Pusher protocol fields around it:
+
+```json
+{"event": "conn.profile.updated", "channel": "private-conn-profile.9f2c4e1ab07d4c3e8a5b6f0d1e2c3b4a", "data": "{\"profile_id\":1,\"version\":7}"}
+```
+
+**Channel.** Each binding has one private channel, `private-conn-profile.{key}`. `key` is 32 lowercase hex characters, 128 random bits, stored on the binding row. A key is never reused. The Gateway never sends a Conn profile event on `orbit` or on any other channel.
+
+**Generation.** The key is the binding's generation. A socket receives events only while its key is current. A key ends when the Gateway replaces it, and at the latest 15 minutes after it was issued. The Gateway replaces the key in a write transaction on the binding row:
+
+- **Bind.** Every successful `PUT /me/profile`, also to the profile the Node already has.
+- **Renewal.** `GET /me` issues a new key once a key is 5 minutes old or has ended. It only reads a younger key. `PUT /me/profile` always issues a new one, as **Bind** says.
+- **Edge removal.** Conn's existing `NodeAccessRemovalHook` replaces the key on every `node:access:remove` of the Node's edges, whatever access remains.
+- **Serving Node removal.** Conn's existing `NodeRemovalHook` replaces the key of every Node with an edge to the removed Node, before the cascade deletes those edges.
+- **Observed lapse.** A send that finds the Node not `active`, or failing the [collection rule](#access), replaces the key.
+
+Node removal deletes the binding. Keys are random, so two replacements in the same second still give two keys.
+
+`RemoveNodeAccessAction` deletes the edge and runs `NodeAccessRemovalHook` in one database transaction. That transaction commits before any fallible side effect, such as the Metrics access revoker. So no committed deletion leaves the old key, and a regrant cannot fall between the deletion and the new key.
+
+A device that compares every 10 minutes recovers before its key would expire. Another client on the same Node can still renew or rebind in between, so the cadence does not promise an unbroken subscription.
+
+**Bound.** Some authority changes have no hook and can return to the same state:
+
+- **Node status.** The Node leaves `active` and returns, also through `BootstrapGatewayAction`, which writes without model events.
+- **Peer identity.** An enrolled Node enrolls again with another WireGuard address or key and stays `active`.
+- **Gateway role.** The Gateway role, or its status, moves away from the Node and back.
+- **Serving host.** The serving host setting moves away from the Node and back.
+
+A hook at each of these would touch every role status writer, so the Gateway does not add one. The 15-minute lifetime bounds them instead. Suppose such a change happens, and no send finds the lapse. Then an old socket on that key can receive notices until the key ends: at most 15 minutes after the key was issued. A notice carries only the id and version of the profile the Node is bound to now. Every settings read still checks the current authority.
+
+Reverb cannot unsubscribe a socket, so an old socket stays subscribed to an ended key. The Gateway sends nothing to an ended key.
+
+**Audience.** `ApplyConnProfileSectionsAction` captures the audience inside its transaction, under the profile lock: each binding to the written profile, with its key at that moment. After the outermost transaction commits, the Gateway checks each captured binding again just before it sends. It sends to `private-conn-profile.{key}` only when all of these hold:
+
+- The binding still exists, names the same profile and holds the captured key.
+- The key has not ended.
+- The Node is `active`.
+- The Node passes the collection rule.
+
+Otherwise it sends nothing to that binding. While the `conn` switch is off, the Gateway sends nothing.
+
+So a key created after the write never receives its event. Take the binding sequence A₁, B, A₂ around a write to A at A₁. The write captured A₁'s key. The check finds that key ended, so nothing is sent, and A₂'s key never gets this event. A device on A₂ learns the version from its compare after it subscribed.
+
+**Late frames.** The check and the publish request to Reverb are not atomic.
+
+The guarantee is this: a withdrawal still in effect at the final check prevents publication. A frame admitted before a withdrawal or expiry can arrive after it. So if a rebind commits after the check, the frame in flight reaches sockets on the captured key only. The Gateway never starts a publish to a key that its check found ended. A frame can also arrive late, twice, or out of order, or not arrive at all. No event leaves before its write commits, so a read after an event always shows that version or a later one.
+
+**When.** The writers on `main` are below; paths are under `apps/gateway`. A new writer must call `ApplyConnProfileSectionsAction`.
+
+| Writer | Path | Event |
+| --- | --- | --- |
+| `PATCH /profiles/{id}/settings` | `extensions/conn/src/Actions/PatchConnProfileSettingsAction.php` | Yes |
+| `PUT /profiles/{id}/settings` | `extensions/conn/src/Actions/ReplaceConnProfileSettingsAction.php` | Yes |
+| Launch attachment and workspace ref | `extensions/conn/src/Actions/PublishConnLaunchAction.php`, inside the launch transaction | Yes, after that transaction commits |
+| Drop of a destroyed Instance's threads | `ConnAttachedThreads::drop()` in `extensions/conn/src/Domain/ConnAttachedThreads.php`, one transaction per profile | Yes, for each profile it changed |
+| `POST /profiles` | `extensions/conn/src/Actions/CreateConnProfileAction.php` | No: a new profile at version 1 has no binding |
+
+`PUT /me/profile` (`BindConnNodeProfileAction`) changes no document, so it sends no event. Its response carries the new channel.
+
+Delivery follows the rules of every Gateway event ([Transport](/reference/events#transport)): after the response in a request, at once in a job or a console command, and to both servers during a `websocket` move. A rolled-back or refused write, such as a version conflict or `validation.failed`, sends nothing. A failed broadcast is logged and never fails the accepted write.
+
+**Discovery.** `GET /api/v1/conn/realtime` answers `{"data": {"url": "wss://reverb.orbit", "key": "<reverb-app-key>"}, "meta": {"request_id": "..."}}`. `url` and `key` are both `null` when the Gateway resolves no Reverb connection: no `websocket` role, or a role whose Reverb process has not confirmed that it serves the Gateway app. The key is public. The channel comes from `GET /me`, not from here.
+
+**Subscription.** `POST /api/v1/conn/broadcasting/auth` takes the Pusher form fields `socket_id` (exactly `<digits>.<digits>`, with nothing before or after) and `channel_name`. It answers the bare Pusher body `{"auth": "<key>:<signature>"}`, with no `data` wrapper. The signature signs `socket_id:channel_name` with the Reverb app secret. The route signs only a `channel_name` equal to the caller's current `profile_channel`, while that key has not ended. Anything else gets `broadcast.channel_forbidden` (403): another key, an ended key, another prefix, `orbit`, a `presence-*` channel, or a caller with no binding. When the Gateway resolves no Reverb connection, as for discovery, it answers `realtime.not_configured` (404).
+
+Both routes sit with the other Conn routes: active peer, `conn` switch, and the collection rule, as for `GET /me`. They record no command activity. They grant no Gateway realtime access: they never sign `orbit`, `private-operation.*` or a presence channel. The Gateway's `POST /api/v1/broadcasting/auth` keeps its authority and refuses every `private-conn-profile.*` channel with `broadcast.channel_forbidden`. `GET /api/v1/realtime` does not change. The HTTP profile routes and their authorization do not change.
+
+**Client.** `GET /me` and `PUT /me/profile` return the node directly in `data`, so the channel is at `data.profile_channel`. It is the channel name, or `null` without a binding. The device keeps two things apart:
+
+- **Binding.** The profile id and the channel of its last successful `GET /me`.
+- **Applied version.** The `version` of the last settings read it applied. Only a successful settings read moves it.
+
+It compares and reads like this:
+
+1. **Compare.** It reads `GET /me`. Another `profile.id` or `profile_channel` replaces the binding, ends the old subscription and starts a new one. A new profile resets the applied version.
+2. **Read.** It reads the settings for a `profile.settings_version` above the applied version.
+3. **Retry.** It retries a failed read with backoff from 5 seconds to 5 minutes. It stops at a successful read or a new binding.
+
+It keeps up to date like this:
+
+1. **Compare times.** It compares at start, after a successful subscription, after each reconnect, and on return to the foreground.
+2. **Steady compare.** It also compares every 10 minutes in every state: subscribed, disconnected, unbound, or with `null` discovery.
+3. **Discovery.** With `null` discovery it reads `GET /api/v1/conn/realtime` again at each compare. It subscribes once `url` is set and `profile_channel` is not `null`.
+4. **Event.** It ignores an event for another `profile_id` than the binding's profile. An event `version` above the applied version starts a settings read.
+5. **Discard.** It drops each answer or callback from an earlier binding. This includes `GET /me` answers, settings reads and socket callbacks.
+6. **Refusal.** On `broadcast.channel_forbidden` it compares again. A `null` channel means no subscription.
 
 ## Registration
 
@@ -927,6 +1079,8 @@ Refusals before any Operation:
 
 ### How the Gateway makes one
 
+Admission records the held-session Operation and a vault reference. The start worker copies the current admin session to that reference before it submits the run, outside the database writer. If a wake retries delivery and finds its renewal still queued and unstarted, it can submit the same Operation again without creating another pairing.
+
 The run `operation-conn-session-hold` runs on the Swamp worker:
 
 | Step | What it does |
@@ -1028,19 +1182,347 @@ Host servers are not covered: their devices pair with them as before. The same r
 - renew the held sessions of host servers in the hourly tick;
 - decide how a host that was down for longer than the margin comes back, because Orbit cannot wake a host.
 
+## Managed grant revocation
+
+This section is the contract for the first isolated proof: a lab Gateway removes one direct Node edge, and a disposable Rust Conn target fences that grant at once. It covers one manually enrolled lab target. It changes no live Node, edge, grant policy or legacy credential.
+
+A managed target is a registered Conn environment with one managed target record. The record holds the environment UUID, the registration generation, the serving Node and the digest of the target's service credential. The serving Node is the environment's registered Node.
+
+The switch `orbit.conn.managed_targets` (`ORBIT_CONN_MANAGED_TARGETS`) is off by default. While it is off, every route below refuses with `conn.managed_disabled` (404), before any peer, extension or input check. The switch gates only the routes. Edge removal writes managed revisions for every enrolled target whether the switch is on or off. So a target cannot probe while the switch is off, its lease ends, and it fails closed. When the switch is on again, the target sees every removal it missed.
+
+### Credentials
+
+The proof uses two new secrets: one that proves the target and one that proves a caller.
+
+| Credential | Format | Holder | The Gateway stores |
+| --- | --- | --- | --- |
+| Service credential | `conn_svc_` and 43 base64url characters from 32 random bytes | The Rust target process only, in a file with mode `0600` that the target user owns | Its SHA-256 digest, the environment UUID, the generation and the serving Node ID |
+| Managed token | `conn_mt_` and 43 base64url characters from 32 random bytes | One caller Node | Its SHA-256 digest, the target record, the generation, the caller Node ID, the `node_access` row ID, the fixed scopes, the expiry, and the revision that revoked it |
+
+No log, response or Activity row holds token or credential material, apart from the one response that returns a new managed token. The prefixes keep managed tokens apart from native Conn tokens.
+
+### Enrol a lab target
+
+An operator on the Gateway runs `php artisan conn:managed-target:enrol {environment_id} --credential-file=<path>`. The environment must be registered, its Node active, and its ID a lowercase canonical UUID; registration itself accepts any string without whitespace, so enrolment checks the UUID and refuses with `conn.managed_environment_id_invalid` (422).
+
+The command starts generation 1 at revision 0, or replaces the generation of an existing record with the next one. It writes the new credential to the file with mode `0600` and never prints it. The file is delivered as the last step before the commit: when delivery fails, the command fails and the current generation, credential and owed rows stay as they were. A new generation refuses the old credential, every token of the old generation, and every owed acknowledgement of the old generation at once.
+
+The operator gives the target its protected provisioning input: the Gateway URL, the path of the lab Orbit CA, the expected environment UUID, the generation and the credential file path. The target treats the UUID and the generation as fixed. A clone or a replacement at the same address is enrolled again before its service starts. An ordinary service restart keeps the generation and the credential. The public instance file never holds these values.
+
+### Target routes
+
+The target calls these routes over HTTPS. It verifies the Gateway name against the lab Orbit CA only. Every request carries `Authorization: Bearer conn_svc_…`, the `environment_id` and the `generation`. The Gateway accepts the request only when:
+
+- the WireGuard peer is the target's serving Node, by the rule of `RequireActiveWireGuardPeer`;
+- the credential digest matches the record of that environment;
+- the environment UUID and generation are the current ones of that record.
+
+A managed token, a native Conn token, or a credential of another target on the same Node never passes. Each route reads and writes in one transaction that checks the generation again, so a request authenticated before a rotation never reads or settles the new generation's state. The ordinary `/api/v1/realtime` and `/api/v1/broadcasting/auth` stay out of this path.
+
+| Method and path under `/api/v1/conn/managed` | Request | Response `data` |
+| --- | --- | --- |
+| `POST /realtime` | — | `url`, `key` and `channel`: `private-conn-target.{target_id}.{generation}` for the current generation |
+| `POST /broadcasting/auth` | `socket_id`, `channel_name` | Pusher `auth` for the current generation's channel only |
+| `POST /authority` | `nonce`, `after_revision`: an integer or `null` | The [authority state](#authority-state) |
+| `POST /introspect` | `nonce`, `token`, `peer_address`: the TCP peer of the Conn socket | The [token claims](#token-claims) |
+| `POST /ack` | `revision`, `kind`: `observed` or `recovered`, `notice_received_at`, `fenced_at`, `handlers_closed_at`, `recovered_at` | `environment_id`, `generation`, `revision`, `kind`, `acknowledged_at` |
+
+A `nonce` is 16 to 64 base64url characters that the target draws at random for each request. Every reply of `/authority` and `/introspect` echoes `nonce`, `environment_id` and `generation`. The target accepts a reply only when all three match the one request it has outstanding on that path. It drops a reply whose nonce it already consumed or never sent.
+
+### Caller route
+
+`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The input holds `purpose` and nothing else, as JSON, form fields or query: any other field, such as `scopes`, is refused even when it is empty or `null`. `reader` maps to `orchestration:read` and `terminal:read`. The response (201) holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
+
+The token expires 15 minutes after issue, at a whole second, and has no renewal; the caller asks for a new one. Introspection enforces exactly the advertised `expires_at`. This lifetime is a lab choice. It does not bound enforcement: revocation ends a token at once, whatever its expiry.
+
+Issue runs in the same transaction kind as edge removal. It reads the edge row and the target's revision under the write lock, so no token is issued against an edge that is already removed.
+
+### Token claims
+
+The target calls `/introspect` at the first transport admission of each managed bearer: an HTTP request, an RPC WebSocket upgrade or a media ticket redemption. The Gateway accepts the token only when:
+
+- the token belongs to the authenticated target record;
+- the token's generation is the current one;
+- `peer_address` resolves by the active Node rule to the token's caller Node;
+- the token's edge row still exists, and the token is neither revoked nor expired.
+
+So two environments on one serving Node never accept each other's tokens, even at the same generation and with the same caller edge.
+
+The reply holds `nonce`, `environment_id`, `generation`, `token_id`, `caller_node_id`, `edge_id`, `scopes`, `expires_at` and `revision`: the target's committed revision when the reply was read.
+
+The target admits the token only when all of these hold:
+
+- `nonce`, `environment_id` and `generation` match its request and its own provisioning;
+- `revision` is not greater than its applied revision; otherwise it reconciles first and introspects again;
+- `edge_id` is in neither its confirmed nor its provisional fenced set;
+- its authority lease is live;
+- `expires_at` is in the future.
+
+A verified reply is the only way an edge ID enters the target's admitted set. No cache extends the expiry. A forwarding header is never read. The target never substitutes the serving Node's address for a caller.
+
+### Revision order
+
+Each managed target has one committed revision, which starts at 0 and counts removals only. Adding an edge does not raise it: the new edge gets a new ID, which only a verified introspection can admit. `node_access` IDs are never reused, so re-adding an edge between the same pair never revives the old ID.
+
+Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consumerNode}` ([node:access-remove](/cli/node/access-remove)) runs one IMMEDIATE transaction. Core calls Conn inside it through the `NodeAccessRemovalTransactionHook` plug-in point ([Extensions](/reference/extensions#plug-in-points)):
+
+1. Lock the edge row and capture its ID, then lock the managed targets of its serving Node in ascending ID order.
+2. Delete the edge.
+3. Raise each target's revision by one, and record the removed edge ID at that revision.
+4. Mark the edge's managed tokens as revoked at that revision.
+5. Record one owed acknowledgement for each target: its environment UUID, generation, revision and `committed_at`.
+
+The transaction captures each target's generation with its revision. After the outermost commit, the Gateway records `commit_observed_at` and publishes `conn.authority.revoked` on the channel of that captured generation, `private-conn-target.{target_id}.{generation}`, and never on another. Its data are `environment_id`, the captured `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`.
+
+Publication and every enrolment of one environment, the first included, take that environment's lock. It is a cache lock keyed by the environment UUID with a 30-second lease, not the database writer lock. Publication holds it across the generation check, the send and its record. Each database step is its own short transaction, so a slow Reverb never makes a probe wait on the database. The notices of the targets that one removal affects still go out one after another.
+
+Right before the send, the publisher checks that it still owns the lock and that the lease covers the whole publish: Reverb's 2-second connect and 5-second request limits plus a 3-second margin. Otherwise it skips the send. Enrolment checks that it still owns the lock right before its commit, and refuses with `conn.managed_target_busy` otherwise. An enrolment that finds the lock taken waits up to 10 seconds, then refuses the same way.
+
+One window remains. A publisher that passed its check and then stalls before its request leaves, for longer than the rest of its lease, at least 20 seconds, can send after a rotation. That notice can only restrict:
+
+- it names the replaced generation and goes only to that generation's channel;
+- the Gateway signs that channel for nobody, and the replaced credential fails every route;
+- a target accepts a notice only for its own generation, and a notice only fences.
+
+So it can reach only a process of the replaced generation, which already fails closed, and it grants no access.
+
+A notice can go unsent for three reasons, each recorded on the revision:
+
+| Record | When | Enforcement |
+| --- | --- | --- |
+| `notice_suppressed_at` | A new generation replaced the captured one | The replaced generation fails closed; its owed rows are `superseded` |
+| `notice_deferred_at`, reason `lock_busy` | The lock stayed taken for 10 seconds | The generation may be current: the revision stays owed, and the target's next probe gets it in `delta` and `owed` |
+| `notice_deferred_at`, reason `lease_short` | The holder lost the lock, or its lease could not cover the publish | The same as `lock_busy` |
+
+When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing.
+
+The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) records its revoke obligation in the same deletion transaction: there, each held pairing on a server the consumer cannot reach after the delete is withdrawn. Only the native revoke on the T3 server waits for the outermost commit. A grant added again before that keeps the revoke owed, and the hourly sweep admits a revoke the callback did not. It checks broader server access and is neither managed enforcement nor its acknowledgement.
+
+A replaced target keeps no notice path: its old subscription is on the old generation's channel, which carries no notice of a later generation, and the Gateway signs only the current one. The owed rows of a replaced generation become `superseded`: enrolment records `superseded_at` in its transaction. They are never recorded as acknowledged, and `/ack` for them refuses with `conn.managed_generation_mismatch`.
+
+### Authority state
+
+`/authority` reads the current committed state. Besides the echoed `nonce`, `environment_id` and `generation`, every reply holds `head_revision`, `server_time`, `owed` and one of three kinds:
+
+| `kind` | When | Content |
+| --- | --- | --- |
+| `snapshot` | `after_revision` is `null` | `edges`: every direct edge to the serving Node now, as `edge_id` and `consumer_node_id` |
+| `delta` | `after_revision` is below the head | `revisions`: each revision after `after_revision` up to the head, in order, with its `edge_ids` |
+| `current` | `after_revision` equals the head | Nothing more: no revision happened since |
+
+`owed` lists every owed acknowledgement of this generation that is not settled, as `revision` and `edge_ids`.
+
+A target starts with a snapshot after connect or restart, and takes one to recover from failing closed. It never takes one while managed access is open. Only a target that has not failed closed reconciles through `delta` and `current` replies. Each snapshot runs behind a barrier:
+
+1. Pause managed admission. Callers that arrive wait.
+2. Drop every outstanding introspection: its reply is discarded when it arrives.
+3. Send the snapshot request and apply its reply.
+4. Introspect each waiting caller afresh.
+
+When it applies a snapshot, the target confirms the fence of every edge ID it had admitted that the snapshot does not list, before any dispatch or output resumes. The barrier makes this safe: every admitted ID came from a reply that the Gateway read before the snapshot. A listed edge is not yet admitted: it needs a verified introspection like any other.
+
+The target keeps two fenced sets:
+
+| Set | Filled by | Ends |
+| --- | --- | --- |
+| Provisional | A notice | When verified state for that revision applies, or a probe sent after the notice disproves it |
+| Confirmed | A verified `delta`, `owed` list or snapshot | Never, for the life of the generation |
+
+When verified state for a revision applies, the target moves each of its edge IDs to the confirmed set and closes any of their handlers still open. It then clears each provisional ID of that revision that the verified state does not name. A cleared ID can be admitted again only by a fresh introspection. Clearing never reopens a socket that the fence closed.
+
+A notice can also be disproved. The target records the monotonic time each notice arrived. When it applies a verified `current` or `delta` reply to a probe it sent after that time, and that reply's head is below the notice's revision, the notice named a revision that does not exist. The target clears that notice's provisional IDs, under the same rules as above. A reply to a probe sent before the notice arrived never clears it.
+
+It runs one probe at a time for both its timer and Reverb notices. When a greater revision becomes known while a probe runs, it probes again at once.
+
+| The target sees | It does |
+| --- | --- |
+| A notice for its next revision | Fences those edges provisionally at once: closes their handlers and refuses their admission. Other edges keep their live lease while a probe confirms the change. |
+| A stale or duplicate notice | Ignores it. A notice only restricts access. |
+| A `current` reply to its outstanding probe | Renews the lease from that probe's send time. |
+| A reply whose nonce it already consumed or never sent | Drops it. It renews nothing. |
+| A revision ahead of its next one, without a contiguous edge list | Blocks every managed admission, dispatch and output until a probe applies the head. |
+| A missing revision, a wrong generation, a failed check, a closed control connection, or an expired lease | Fails closed for all managed access. It recovers only through the snapshot barrier above, with a live lease. A `delta` never reopens access after failing closed. |
+
+A notice is not proof of what the Gateway committed. Only an applied HTTPS reply moves the confirmed revision forward, renews the lease or names the edges of a revision. A Reverb message, presence or a WebSocket ping never renews authority.
+
+### Lease
+
+For the lab, the target probes every second. The lease ends 3 seconds after the monotonic send time of the last probe whose reply it applied. These two values are lab hypotheses. Their measurements set later production values. A reply that arrives after its lease ended cannot renew it or reopen a socket. An independent timer fences idle sockets. The target compares monotonic time at every admission and data boundary. There is no grace period.
+
+A revoked grant and unavailable authority are two states. A revoked edge stays refused after the authority returns. Unavailable authority refuses all managed access until it returns, then the unrelated edges recover.
+
+### Fence and acknowledgement
+
+On a revocation, the target blocks the edge and cancels every connection, subscription, queued frame, media viewer and unspent ticket of that edge in one synchronized step. It registers each managed socket before its upgrade completes, so an upgrade cannot pass the fence. It checks expiry, revision and edge at admission, before each RPC dispatch and before each application frame. Other edges keep their streams. Work that the server already accepted, such as an engine run, stays with the server.
+
+The target acknowledges one revision at a time. It sends `/ack` for a revision only when:
+
+- it learned that revision's edges from a verified `delta` or from `owed`, never from a notice alone;
+- every handler of those edges has ended, and no queued frame of them can be sent.
+
+Bytes already passed to the operating system cannot be recalled. `notice_received_at` is `null` when no notice arrived for that revision. An `observed` ACK carries the measured `fenced_at` and `handlers_closed_at`, and `recovered_at` is `null`. `handlers_closed_at` is the time the target verified, after the fence, that the edges had no handler left and no queued frame that could still be sent. It is the same rule when that was already true at the fence, such as for an edge that never opened a handler.
+
+A restarted target observed no close: its handlers ended with the old process. Once it has applied the snapshot, it sends a `recovered` ACK for each `owed` revision. That ACK confirms that no affected handler remains. Its `recovered_at` is the time it applied the snapshot, an upper bound on the close; `fenced_at`, `handlers_closed_at` and `notice_received_at` are `null`. The timing proof leaves `recovered` ACKs out of every fence and close measure.
+
+The Gateway settles only the owed row with the same environment UUID, generation and revision. One ACK never settles another revision. It records `acknowledged_at` and the reported target times on the first valid ACK. An exact retry answers that first result and changes nothing.
+
+`revision` is a JSON integer. Every reported time is an RFC 3339 string with an offset that names a real date and time, and `handlers_closed_at` is not earlier than `fenced_at`, compared at every fractional digit. An ACK that breaks this is refused with `validation.failed` (422), and the revision stays owed. A lost request leaves the row owed, and the target sends it again while `owed` lists it.
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `conn.managed_disabled` | 404 | The switch is off. |
+| `conn.managed_target_unknown` | 404 | The environment has no managed target record. |
+| `conn.managed_environment_id_invalid` | 422 | Enrolment names an environment ID that is not a canonical UUID. |
+| `conn.managed_target_identity` | 403 | The peer is not the serving Node, or the service credential does not match. |
+| `conn.managed_generation_mismatch` | 409 | The generation is not the current one. |
+| `conn.managed_revision_future` | 409 | `after_revision` names a revision above the head. |
+| `conn.managed_ack_unknown` | 409 | The ACK names no owed revision of this target and generation. |
+| `conn.managed_direct_edge_required` | 403 | The caller has no direct edge to the serving Node. |
+| `conn.managed_token_invalid` | 403 | The token is unknown, expired, revoked, of another target or of another generation. |
+| `conn.managed_peer_mismatch` | 403 | The socket peer does not resolve to the token's caller. |
+| `conn.managed_channel_forbidden` | 403 | The channel is not the current generation's channel of this target. |
+| `conn.managed_target_busy` | 409 | Enrolment found the environment's lock taken for 10 seconds, or lost it before its commit; enrol again. |
+
+An owed row without `acknowledged_at` means enforcement is unconfirmed: the target, its probe or its ACK did not arrive.
+
+### Managed ingress
+
+The target serves managed callers on a managed ingress, separate from its unmanaged ingress. Every path of the managed ingress needs a managed principal, including RPC and media ticket redemption. A native session, a native bearer, a cookie or a device-paired credential is refused there, even on an endpoint the reader profile allows. A `conn_mt_` token validates only through the Gateway, and a failed one never falls through to native auth. Native credentials keep their own rules on the unmanaged ingress.
+
+The `reader` profile allows shell and thread snapshots and subscriptions, `terminal.observe`, `subscribeTerminalMetadata`, and a read-only viewer of a known test tab. RPC and media tickets are allowed only when they carry the exact managed principal and expiry. The target refuses on this ingress: pairing and credential administration, MCP, asset and upload URL minting, interactive preview, terminal writes, agent delegation and every other endpoint the proof has not covered. It also refuses native pairing exchange there and shows no startup pairing code. Fixture setup, such as seeding a terminal and a preview, runs on its separate restricted path.
+
+### Timestamps
+
+The Gateway and the target record these times separately, so the proof can measure each step.
+
+| Time | Clock | Recorded by |
+| --- | --- | --- |
+| `committed_at` | Gateway | Inside the edge-removal transaction, before its writes: a lower bound on the commit |
+| `commit_observed_at` | Gateway | In the after-commit callback, before the publish: an upper bound on the commit |
+| `notice_sent_at` | Gateway | After the Reverb publish returns success; a later rotation records `superseded_at` and leaves it |
+| `notice_received_at` | Target | On the notice, reported in the ACK; `null` when none arrived |
+| `fenced_at` | Target | When the edge is blocked; `null` in a `recovered` ACK |
+| `handlers_closed_at` | Target | When, after the fence, the target verified zero affected handlers and no sendable queued frame, including when that was already true; `null` in a `recovered` ACK |
+| `recovered_at` | Target | When a restarted target applied the snapshot; only in a `recovered` ACK, and only an upper bound on the close |
+| `notice_suppressed_at` | Gateway | When the Gateway skipped the notice because its generation was replaced |
+| `notice_deferred_at`, `notice_deferred_reason` | Gateway | When the Gateway skipped the send for `lock_busy` or `lease_short`; the revision stays owed |
+| `acknowledged_at` | Gateway | On the first valid ACK of that revision |
+| `superseded_at` | Gateway | When enrolment started a new generation before the row was acknowledged |
+
+The proof reports fault to detection, last confirmed probe send to fence, commit to fence, and fence to ACK, with maximum values for idle and busy runs. It records the clock offset bounds between Gateway and target, from `server_time` and the probe round trip.
+
+### Preflight
+
+The preflight ran in the group's task copy against its nested fleet, with a disposable container on the nested `app-dev` Node. It showed network identity only:
+
+- A plain TCP listener in the container, not Rust Conn, saw four distinct caller addresses through the NAT-mode proxy.
+- That path needed the per-container route rule that Orbit adds for a T3 port; the lab added it by hand.
+- The Gateway saw the container's outbound requests as the serving Node.
+- TLS to Gateway and Reverb verified their names against the lab Orbit CA.
+
+It did not show credential isolation. It checked selected environment variable names, `/etc/orbit` and a listing of `/root` without hidden files. It did not check hidden files, `/home/agent` or mounted inputs.
+
+It proved no enforcement. The nested fleet had no Conn registration and one edge, from the operator Node to the Gateway Node, so no second clean caller and no direct edge to the serving Node. The copy had no Rust toolchain, so no Conn target ran.
+
+### Gateway receipts
+
+One run on 2026-11-18 from 17:37 to 17:38 UTC retains every case below. It ran in task copy `task-5868` (Instance 3705) against its nested fleet. The nested Gateway served the copy's checkout at the final Gateway head `03af5e15961b`, with no local changes and the switch on for the run only. That tree holds this task's changes on top of `main` as merged at `6ff52d812`, including that merge's other changes under `apps/gateway`. A later merge from `main` is not part of this run. Commits after `03af5e15961b` in this task change only documentation.
+
+The target was a scripted Bun process on the nested `app-dev` Node, not Rust Conn. It drove the real routes with a 1 s probe and a 3 s lease, and served a small managed ingress with RPC and long streams of one frame every 200 ms. The preflight's fixture container was gone, so the script ran on the serving Node's host. All machines share one host clock, so the times compare directly. Target times have millisecond resolution; caller times have microseconds.
+
+The fixtures were target 1, for a lab environment row with no T3 server, on Node 3 (`app-dev`, 10.45.0.2). Caller A was Node 4 (`app-prod`, 10.45.0.3). Caller B was Node 2 (`operator`, 10.45.0.10), the copy itself; it also holds the operator's edge to the Gateway Node. Caller C was Node 1, the Gateway Node, with no direct edge. Edges were added and removed through `node:access:add` and `node:access:remove`. No notice was suppressed or deferred in this run.
+
+#### Commit and fence
+
+The Gateway brackets each commit: `committed_at` is sampled inside the transaction before its writes, and `commit_observed_at` in the after-commit callback. Each interval below is measured from both bounds, from `commit_observed_at` first.
+
+Revision 1 removed A's edge 22 while A and B held streams. The commit lies between 21.520782 and 21.525605. Then:
+
+| Step | Time | After the commit |
+| --- | --- | --- |
+| Notice received, fence | 21.537 | 11.4 to 16.2 ms |
+| Reverb publish returned, `notice_sent_at` | 21.537640 | 12.0 to 16.9 ms |
+| A's client reads end of stream, after its frame 14 at 21.445347 | 21.537813 | 12.2 to 17.0 ms |
+| Verified handler close, from the verified `delta` | 21.579 | 53.4 to 58.2 ms |
+| ACK settled | 21.626721 | 101.1 to 105.9 ms |
+
+B's client kept its 200 ms cadence across A's fence: frame 14 at 21.476365, frame 15 at 21.675210, and frames up to 43 at 27.279745, 29 frames after the fence, until its client timeout. B's token still introspected. A's old token got `conn.managed_token_invalid`. A new token request got `conn.managed_direct_edge_required`, as did caller C.
+
+#### Recovery
+
+Adding A's edge again gave the new edge ID 24. The old token stayed refused, and a new token was admitted on edge 24.
+
+For revision 2 the target dropped the notice. Its probe fenced, closed and verified at 32.470, 31.0 to 35.7 ms after the commit, because a probe happened to leave just after it. A's client read the end of its stream at 32.470865. The `observed` ACK settled at 32.528956 with `notice_received_at` `null`.
+
+For revision 3 the target sent no ACK, and the row stayed owed. After a restart, the snapshot listed `owed: [3]`, and the `recovered` ACK settled 33 ms later. An exact retry returned the first result. An ACK of revision 99 got `conn.managed_ack_unknown`.
+
+#### Rotation
+
+Revision 4 removed A's edge 26 while the target sent no ACK. Its notice was sent at 44.204673. Enrolment then rotated the target to generation 2 and recorded `superseded_at` at 47.552906; the row keeps its `notice_sent_at`. The old process's next probe, 101 ms after enrolment returned, got `conn.managed_target_identity`. Generation 2 started with `owed: []`. B's generation 1 token got `conn.managed_token_invalid`, and a new token was admitted.
+
+An ACK of revision 4, a generation 1 revision, after the rotation:
+
+| Credential | Requested generation | Response |
+| --- | --- | --- |
+| Generation 1 | 1 | 403 `conn.managed_target_identity` |
+| Generation 1 | 2 | 403 `conn.managed_target_identity` |
+| Generation 2 | 1 | 409 `conn.managed_generation_mismatch`: the request names a replaced generation |
+| Generation 2 | 2 | 409 `conn.managed_generation_mismatch`: the revision belongs to a replaced generation |
+
+#### Authority loss
+
+The rotation was a clean loss: the old process failed closed on the refused probe at 47.678, and B's client read the end of its stream at 47.679422.
+
+For a silent loss, the serving Node dropped its traffic to the Gateway at 55.207098. The target failed closed at 57.697, 2.490 s after the fault and 22.6 ms after its lease ended. B's client read the end of its stream at 57.698660. A snapshot recovered the target at 01.757, 0.447 s after the fault ended at 01.309573. B came back only through a fresh introspection.
+
+The teardown removal of B's edge 23 committed revision 5 and sent its notice. The target was already stopped, so that row stays owed: enforcement unconfirmed.
+
+Teardown removed both lab edges, the target and environment rows, every lab credential and token file, the packet filter and the switch. It turned Conn off again in the nested Gateway. No live Node, edge or grant changed.
+
+The Rust target proof still has to show:
+
+- the Rust fence on real RPC, terminal and preview streams;
+- media tickets, including a stale one;
+- reconnect of a Rust RPC or media session after revocation;
+- the managed ingress refusing native credentials;
+- the caller's address, seen through the NAT-mode proxy from a container;
+- target egress through a product route instead of the serving host;
+- a second caller that holds no Gateway edge, beside an unrelated one;
+- fence, close and ACK times under busy load.
+
+### Limits
+
+These limits come from the preflight and from paths this slice does not cover.
+
+#### Ingress
+
+A caller on the serving Node shows as the serving Node. A path through Caddy, the egress proxy or a relay hides the caller, so managed tokens refuse it. A Rust Conn server behind the NAT-mode proxy must still show that it sees the caller's address on RPC and media.
+
+#### Target egress
+
+The Gateway sees a container on its bridge as its serving Node. Other containers on that Node share this address; only the service credential tells them apart.
+
+No product route lets an Instance container reach the Gateway or Reverb today. The container ACLs reject the traffic, and the egress proxy refuses private addresses. The lab admits port 443 of Gateway and Reverb for the target alone, by a lab-only ACL and forward rule. The product route belongs to the container network owners.
+
+#### Other paths
+
+Node removal, disable, registration reassignment and Gateway authority bypass this transaction. A later slice covers them. Stock T3, its device proxy and relay, and host servers cannot claim this guarantee. Legacy held, phone-paired and peer-linked credentials stay as they are on unmanaged paths.
+
 ## API
 
 Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data": ..., "meta": {"request_id": ...}}`. A failure answers `{"error": {"code", "message", "details"}}`. The generated [API reference](/api/overview) lists the same operations with their schemas.
 
 | Method and path | Request | Response `data` |
 | --- | --- | --- |
-| `GET /me` | — | node, with `profile` `null` before a binding |
-| `PUT /me/profile` | `{"profile_id": 1}` | node |
+| `GET /me` | — | node, with `profile` and `profile_channel` `null` before a binding |
+| `PUT /me/profile` | `{"profile_id": 1}` | node, with a new `profile_channel` |
+| `GET /realtime` | — | `{"url", "key"}`, both `null` without a resolved Reverb connection ([Profile events](#profile-events)) |
+| `POST /broadcasting/auth` | `socket_id`, `channel_name` | `{"auth"}`, bare, without `data` ([Profile events](#profile-events)) |
 | `GET /profiles` | — | list of profile |
 | `POST /profiles` | `{"name": "Nick"}` | profile (201) |
 | `GET /profiles/{id}/settings` | — | settings |
 | `PUT /profiles/{id}/settings` | `{"version": 3, "settings": {"workspaces": [...]}}`; any of `workspaces`, `appearance`, `devices` | settings |
-| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`; any of `workspaces`, `appearance`, `attachedThreads`, `devices.<type>` | settings |
+| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`; any of `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads`, `devices.<type>` | settings |
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
@@ -1068,7 +1550,7 @@ The objects:
 
 ```json
 {
-  "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}},
+  "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}, "profile_channel": "private-conn-profile.9f2c4e1ab07d4c3e8a5b6f0d1e2c3b4a"},
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null, "renewal_error_code": null, "renewal_checked_at": null},
@@ -1091,6 +1573,8 @@ The objects:
 | `instance.default_missing` | 409 | The Project has no default Instance in a container that is active and has a seed snapshot. |
 | `instance.complete_unavailable` | 409 | The clone is not `source_resolved` with its starting commit and a registered T3 server. |
 | `validation.failed` | 422 | The request breaks a rule; `details` names each field. This includes an attached thread whose environment is new to the set and is gone or not one the caller may see. |
+| `broadcast.channel_forbidden` | 403 | `POST /broadcasting/auth` named a channel other than the caller's current `profile_channel`. |
+| `realtime.not_configured` | 404 | `POST /broadcasting/auth` resolved no Reverb connection: no `websocket` role, or none whose Reverb process confirmed serving. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
@@ -1139,9 +1623,27 @@ The Gateway stores the versions apart from the document, in `section_meta` on th
 
 `PUT` stays for clients that only know workspaces. It replaces just the sections it sends, so such a client cannot erase the appearance or device settings that a newer client wrote.
 
+### Why profile events use a key per binding
+
+A channel named after the profile would let any Node that may read profiles subscribe to every profile. A channel named after the Node would stay the same across a rebind or a loss of authority, and Reverb cannot drop a socket that subscribed before. A random key that every bind replaces solves the rebind, and the existing access hooks replace it on an edge removal.
+
+Node status, peer identity, the Gateway role and the serving host can each leave and come back with no hook and no new row id. Closing each of them would mean a hook in every role status writer. A key that ends after 15 minutes bounds them all with one rule, and a notice carries nothing that the Node may not read.
+
+The Gateway captures the keys with the write and checks them again before it sends. So a slow send never reaches a binding that came later. Conn's own routes sign only the current key, so a device gets no Gateway realtime access through Conn.
+
+The event carries only the version. The device must read the settings over HTTP anyway, and that read applies the same authority.
+
 ### Why the attached set is a profile section
 
 The devices on a profile should connect to the same servers, so the set lives in the profile, beside the settings every device already reads. As a section it gets its own version, so attaching a thread never conflicts with a theme change, and it needs no new route and no client clock. A set merges three ways without loss, so the per-section version and a client retry are enough. The Gateway still checks the entries, so a device cannot attach a server it may not reach, and a removed Instance leaves no entry behind.
+
+### Why hidden threads are their own section
+
+Hiding is a display choice, and attaching decides which servers a device connects to. Hiding or showing a thread never changes the connection state: a hidden mark cannot keep a container server connected after its last attachment goes, and a host server stays connected with no attached thread.
+
+With one list for both, hiding a thread could disconnect a container server if that thread were its last attachment, and a device could not hide a thread without the Gateway's attachment check. So the hidden list is a section of its own, with its own version. A hide on one device never conflicts with an attach on another. It grants nothing, so the Gateway checks only its form.
+
+A `null` keeps the section as an empty list rather than removing it. A removed section would read like a section that was never written, and a client that showed its last hidden thread could not tell its write from an old profile.
 
 ## Session cleanup
 

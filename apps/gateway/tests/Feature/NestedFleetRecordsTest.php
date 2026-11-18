@@ -257,7 +257,7 @@ function expectNestedFleetHostRefusal(Closure $write): void
 }
 
 describe('development create', function (): void {
-    it('refuses a nested-fleet Project before any record, on a container or a checkout Node', function (string $name, bool $listed): void {
+    it('refuses a nested-fleet Project before any record on a Node with hosting off', function (string $name, bool $listed): void {
         $node = containerDefaultNode(listed: $listed);
         $project = nestedFleetProject();
         if ($name !== 'default') {
@@ -267,7 +267,7 @@ describe('development create', function (): void {
         expectNestedFleetHostRefusal(fn () => containerCreate($project, $node, $name));
         expect(nestedFleetRows())->toBe($before);
         Queue::assertNothingPushed();
-    })->with(['default' => ['default'], 'other Instance' => ['feature']])->with(['build-list Node' => [true], 'checkout Node' => [false]]);
+    })->with(['default' => ['default'], 'other Instance' => ['feature']])->with(['prepared Node' => [true], 'unprepared Node' => [false]]);
 
     it('refuses before it captures missing source facts', function (): void {
         $node = containerDefaultNode();
@@ -319,7 +319,7 @@ describe('development create', function (): void {
         expect(InstanceRuntime::query()->count())->toBe(1)->and(Instance::query()->count())->toBe(1);
     });
 
-    it('admits a nested-fleet default on a switched-on build-list Node, in the nested project, from the nested-fleet image', function (): void {
+    it('admits a nested-fleet default on a switched-on app-dev Node, in the nested project, from the nested-fleet image', function (): void {
         SwampNodeFixture::ensure();
         $node = containerDefaultNode();
         $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
@@ -332,13 +332,13 @@ describe('development create', function (): void {
             ->and($intent['config']['security.nesting'] ?? null)->toBe('true');
     });
 
-    it('refuses a nested-fleet Project on a switched-on Node off the build list before any record', function (): void {
+    it('refuses a nested-fleet Project on an unprepared switched-on Node before any record', function (): void {
         $node = containerDefaultNode(listed: false);
         $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
         $project = nestedFleetProject();
         $before = nestedFleetRows();
         expect(fn () => containerCreate($project, $node))->toThrow(function (ResourceOperationException $error): void {
-            expect($error->errorCode)->toBe('instance.nested_fleet_container_required')->and($error->status)->toBe(409);
+            expect($error->errorCode)->toBe('instance.host_unavailable')->and($error->status)->toBe(409);
         });
         expect(nestedFleetRows())->toBe($before);
         Queue::assertNothingPushed();
@@ -392,37 +392,50 @@ describe('production clone', function (): void {
 });
 
 describe('register', function (): void {
-    it('admits a normal checkout and refuses a nested-fleet Project at both admission reads', function (string $mode): void {
+    it('repairs an existing registration and refuses a nested-fleet Project', function (string $mode): void {
         $this->freezeTime();
         $node = containerDefaultNode();
         Node::withoutEvents(fn () => $node->update(['ssh_host_fingerprint' => 'fixture']));
         $project = $mode === 'early' ? nestedFleetProject() : containerDefaultProject();
         $path = '/home/orbit/apps/tool/default';
+        $existing = null;
+        if ($mode !== 'early') {
+            $existing = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+                'checkout_path' => $path, 'registration_request_id' => 'existing-registration', 'registration_original_path' => $path, 'status' => 'reserved']);
+        }
+        if ($mode === 'protected') {
+            SwampNodeFixture::ensure();
+        }
         NodeFact::query()->create(['node_id' => $node->id, 'kind' => 'checkout', 'subject' => $path,
             'digest' => str_repeat('a', 64), 'observed_at' => now(), 'received_at' => now(),
             'data' => ['application' => $path, 'top_level' => $path, 'common_dir' => $path.'/.git', 'linked' => false,
                 'worktrees' => [$path], 'origin' => $project->repository_url, 'owner' => 'orbit', 'head' => str_repeat('c', 40),
-                'branch' => 'main', 'default_branch' => 'main', 'artisan' => 'absent', 'composer' => null, 'env' => null]]);
+                'branch' => 'main', 'default_branch' => 'main', 'artisan' => 'absent', 'composer' => null,
+                'env' => $mode === 'protected' ? ['kind' => 'regular', 'owner' => 'orbit', 'mode' => '0644'] : null]]);
         $view = Mockery::mock(AgentStateView::class);
         if ($mode === 'early') {
             $view->shouldNotReceive('subscriber');
         } else {
             $clock = (float) now()->format('U.u');
             $view->shouldReceive('subscriber')->andReturn(new AgentViewSubscriberHealth($clock, true, true, 1));
-            $view->shouldReceive('node')->with($node->id)->andReturnUsing(function () use ($mode, $project, $node, $clock): AgentNodeView {
-                if ($mode === 'during observation') {
-                    // The flag changes only while the Project has no Instance, which is the case during this observation.
-                    DB::table('projects')->where('id', $project->id)->update(['nested_fleet' => true]);
-                }
-
-                return new AgentNodeView($node->id, AgentViewFreshness::Fresh, receivedAt: $clock);
-            });
+            $view->shouldReceive('node')->with($node->id)->andReturn(new AgentNodeView($node->id, AgentViewFreshness::Fresh, receivedAt: $clock));
         }
         app()->instance(AgentStateView::class, $view);
         $register = fn () => app(RegisterInstanceAction::class)->execute($node, new RegisterInstanceData($path, $project->id, 'default', null, null));
         if ($mode === 'normal') {
             $result = $register();
             expect($result)->toBeInstanceOf(Instance::class)->and($result->checkout_path)->toBe($path)->and($result->status->value)->toBe('active');
+            expect($register()->id)->toBe($existing->id)
+                ->and($existing->refresh()->registration_request_id)->toBe('existing-registration');
+            $this->assertDatabaseCount('instances', 1);
+        } elseif ($mode === 'protected') {
+            $result = $register();
+            expect($result)->toBeInstanceOf(Operation::class)->and($result->kind)->toBe('instance.register')
+                ->and($result->target_id)->toBe($existing->id)
+                ->and($result->input['registration_id'])->toBe('existing-registration')
+                ->and($result->input['protect_environment'])->toBeTrue()
+                ->and($existing->refresh()->checkout_path)->toBe($path)
+                ->and($existing->registration_request_id)->toBe('existing-registration');
             $this->assertDatabaseCount('instances', 1);
         } else {
             expectNestedFleetRefusal($register);
@@ -430,6 +443,6 @@ describe('register', function (): void {
             Queue::assertNothingPushed();
         }
         $this->assertDatabaseCount('instance_runtimes', 0);
-        expect(Operation::query()->count())->toBe(0);
-    })->with(['normal', 'early', 'during observation']);
+        expect(Operation::query()->count())->toBe($mode === 'protected' ? 1 : 0);
+    })->with(['normal', 'protected', 'early']);
 });

@@ -31,7 +31,8 @@ final class NodeBootstrapPackageCatalog
             RoleName::Vpn => ['bind9-dnsutils', 'dnsmasq', 'openssl'],
             RoleName::Router => ['caddy', 'openssl'],
             RoleName::Ingress => ['caddy'],
-            RoleName::Swamp => ['caddy', 'python3-venv'],
+            // The release's Swamp load and other command steps on the Swamp Node read JSON with jq.
+            RoleName::Swamp => ['caddy', 'jq', 'python3-venv'],
             RoleName::AppDev, RoleName::AppProd => [
                 'acl',
                 'attr',

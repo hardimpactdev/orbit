@@ -38,7 +38,7 @@ class HostProbeAdmissionTest(unittest.TestCase):
         budget = {**budget, 'pr_shards': 1, 'shard_workers': 1, 'shard_seconds': fixtures[FILE]['cost'] - 1}
         result = units.plan([INPUTS[0]], budget, {FILE: fixtures[FILE]}, [])
         self.assertTrue(result['capacity'][0]['mandatory'])
-        needs = needs_for('required')
+        needs = needs_for()
         needs['changes']['outputs']['fixture_capacity'] = json.dumps(result['capacity'])
         with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded'):
             delivery.validate(needs)

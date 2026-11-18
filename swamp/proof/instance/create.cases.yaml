@@ -1,0 +1,21 @@
+command: instance:create
+chart: instance/create
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  container-default: "Gateway tests admit a container with no build-list setting and refuse an unprepared host without recording a checkout. End-to-end task-copy proof is owed; it cannot run in the Amp orb."
+  container-clone: "Gateway tests cover container-default cloning and repeat identity. The task-copy fleet must prove the resulting container and Route."
+  checkout-default: "Gateway tests refuse a new non-default behind a checkout default with instance.container_required and no new records. Fleet proof needs an existing-checkout fixture."
+  existing-checkout: "Gateway tests preserve existing checkout retries and migration. Fleet proof must confirm host Processes and PHP-FPM pools remain usable."
+cases:
+  - id: invalid-project
+    batch: fresh-fleet
+    covers: []
+    summary: Refuse a nonnumeric Project before admission.
+    act:
+      - cli:
+          run: [instance:create, invalid, "1", default]
+          expect: {exit: 1, code: project.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

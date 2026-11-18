@@ -123,6 +123,28 @@ it('lets a second SQLite connection commit an unrelated write during cold catalo
         ]);
 });
 
+it('does not exhaust CLI fallback when a history read failed', function (string $failure): void {
+    $head = $this->commit;
+    $older = str_repeat('b', 40);
+    $history = $this->mock(ReleaseHistory::class);
+    $history->shouldReceive('commit')->with($head)->andReturn($head);
+    $history->shouldReceive('count')->with($head)->andReturn(9001);
+    $history->shouldReceive('ancestors')->with($head, DesiredFleetState::FallbackDepth)->once()->andReturn($failure === 'walk' ? null : [$older]);
+    if ($failure !== 'walk') {
+        $history->shouldReceive('count')->with($older)->once()->andReturn($failure === 'count' ? null : 9000);
+    }
+    if ($failure === 'diff') {
+        $history->shouldReceive('unchanged')->with($older, $head, CliReleaseName::BuildInputs)->once()->andReturnNull();
+    }
+    $this->mock(CliReleaseCatalog::class)->shouldReceive('find')->with($head, Mockery::type(CliReleaseName::class))
+        ->twice()->andReturnUsing(static fn (string $commit, CliReleaseName $name): DesiredCliReleaseData => DesiredCliReleaseData::pending($name, $commit));
+    $desired = app(DesiredFleetState::class);
+    expect($desired->current()->cli->isAvailable())->toBeFalse();
+    $this->travel(31)->minutes();
+    expect($desired->current()->cli->isAvailable())->toBeFalse()
+        ->and($desired->cliFallbackExhausted($head))->toBeFalse();
+})->with(['walk', 'count', 'diff']);
+
 it('does not admit work for a release superseded before a pass without a CLI pin takes the writer', function (): void {
     $this->mock(CliReleaseCatalog::class)->shouldNotReceive('find');
     $gateway = SwampNodeFixture::ensure();

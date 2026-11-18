@@ -10,7 +10,9 @@ cases = [
   "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed",
   "a deployment refuses a pinned commit off the branch at its fetch, and dirty or diverged work at its checkout",
-  "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
+  "merged deploy steps keep the commit, checkout, bundle and seed, and flush each phase's handlers before the next",
+  "separate deploy plays keep the commit, checkout, bundle and seed, and flush each phase's handlers before the next",
+  "an interrupted merged deploy retains passed phases, and a later failure names its phase",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a start moves an older container's orbit and work to www-data before its units run again; a second start changes nothing",
   "a start writes the swap file into an older container that lacks it and moves the app account in the same run; a second start writes nothing",
@@ -103,7 +105,9 @@ cases = [
   "the proof default's retake keeps the seed that a CI Node holds as its one base pair, and a second retake at that commit keeps it",
   "the proof default's retake at a new commit keeps the seed that a CI Node holds as the base and drops every other base pair",
   "the proof default's retake at a new commit keeps the base it holds while the Gateway names it, and drops it once the Gateway names none",
-  "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
+  "the inner volume is flushed right before its half of every seed, and a failed flush fails the seed by name",
+  "a nested default without an inner volume skips its flush",
+  "a normal default without an inner volume skips its flush",
   "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
   "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
   "a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped",
@@ -114,12 +118,13 @@ cases = [
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 self_hosted = true
-cost = 8752
+cost = 9280
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 # Each retained case cost is its measured time on hosted run 43787856522 (PR 3857, 2026-11-16) x 1.15, rounded up;
 # a split or moved part is an ESTIMATE from its plays' share of the measured case. Startup is added per slice.
+# The six newly split cases use completed local observations in tools/tests/ci-container-split-costs.json x 2.1, rounded up + 1s.
 # Every registered case has its own slice; startup is added separately.
-slices = 110
+slices = 115
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/instance_workspace_owner.py",
@@ -242,10 +247,14 @@ inputs = [
 "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one" = 119 # ESTIMATE: local 56s * 2.1, rounded up + 1s
 "a wake of a container that Incus calls Running but the kernel holds frozen thaws it through the helper, or fails clearly before any exec" = 117 # ESTIMATE: local 55s * 2.1, rounded up + 1s
 "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait" = 90 # ESTIMATE: local 42s * 2.1, rounded up + 1s
-"one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase" = 164 # local 142s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
+"merged deploy steps keep the commit, checkout, bundle and seed, and flush each phase's handlers before the next" = 173 # LOCAL: 81.604s x 2.1, rounded up + 1s; remains explicit oversized debt
+"separate deploy plays keep the commit, checkout, bundle and seed, and flush each phase's handlers before the next" = 176 # LOCAL: 82.890s x 2.1, rounded up + 1s; remains explicit oversized debt
+"an interrupted merged deploy retains passed phases, and a later failure names its phase" = 136 # LOCAL: 63.939s x 2.1, rounded up + 1s
 "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing" = 96 # ESTIMATE: local 45s * 2.1, rounded up + 1s
 "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs" = 94 # ESTIMATE: local 44s * 2.1, rounded up + 1s
-"the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes" = 173 # local 150s x 1.15; above the 150-second lane, a named capacity gap (ADR 0262)
+"the inner volume is flushed right before its half of every seed, and a failed flush fails the seed by name" = 177 # LOCAL: 83.789s x 2.1, rounded up + 1s; remains explicit oversized debt
+"a nested default without an inner volume skips its flush" = 103 # LOCAL: 48.505s x 2.1, rounded up + 1s
+"a normal default without an inner volume skips its flush" = 100 # LOCAL: 47.036s x 2.1, rounded up + 1s
 "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
 "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s
 "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole" = 127 # ESTIMATE: local 30-60s; 60s * 2.1, rounded up + 1s

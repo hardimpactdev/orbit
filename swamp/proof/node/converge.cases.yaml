@@ -7,6 +7,9 @@ sources: [gateway, app-prod]
 baseline: [ufw, firewall_records, operations, listeners]
 parallel: 1
 
+waits:
+  executor-visitor-runner: "The fleet-reset runner needs a real T3/Vite clone with swap, a pinned power executor and observer, and steps to sample the TLS Route and its poll after each signed sleep. The live manual proof below ran on copy 3602."
+
 uncovered:
   "cli:caller-only": "Need CLI release publication fault control and managed-file fixtures to prove no-caller convergence succeeds with release_missing, removes the managed link, versioned binaries and root profile, and changes nothing on repeat; a ci-runner Node still requires its pin. Gateway admission tests and swamp/tests/node_converge_cli_test.ts cover these boundaries locally. Task VM proof retains the checkout source CLI."
   "phases:ordered-desired-state": "Need ordered Operation-phase and Ansible-result assertions to prove input, agent, software, roles, tools, network, check on every run, with recipe.json pins held and an unchanged phase skipped by its digest. Current code uses a digest-selected artifact plan and lacks this phase pipeline, the CLI installation and general role/software/Tool application."
@@ -212,6 +215,34 @@ cases:
       - executor_power: {on: app-dev, instance: executor-sleep-clone, operation: whole-container-sleep}
     expect:
       - service: {on: app-dev, name: orbit-executor.service, state: active}
+
+  - id: executor-wake-visits
+    batch: fresh-fleet
+    covers: []
+    summary: Measure 50 visits through Caddy to a real sleeping T3/Vite clone on the signed wake path, and compare the Python path on that same clone.
+    waits: executor-visitor-runner
+    # Task 5775, copy 3602: clone 3, create and completion Operations 176/177, T3 0.1.7, Vite 7.2.2.
+    # Power executor and observer built from merge 4f05b4020b; nested Gateway only, 500 ms bound, Valkey hz 100.
+    # 50 frozen signed sleeps (404697088..418557952 swap bytes), 50 successful visitor Operations 183..281 (odd IDs).
+    # First app body byte p50/p95/max: 953.989/2431.347/3380.199 ms; 21 app-first, 29 progress-first, zero errors.
+    # 49 done, one partial (restore_stalled); each resumed, removed its marker, and closed its swap limit.
+    # Same clone, setting off: 50 frozen Python sleeps and fast resumes (wake Operations 293..391, odd IDs).
+    # Python 781.802/1834.957/2126.676 ms, 50 progress-first, zero errors; plan capture skipped as placement_unproven.
+    # ADR reference 1.5 s warm / 2.4 s cold; these live series were not split into warm and cold trials.
+    # POST 283 served original method, URI, query and body in one exchange, app HTTP 202 at 396.736 ms.
+    # Forced over-bound 285 returned 401 pending at 686.749 ms; the existing poll got the app at 1007.345 ms.
+    # Lost Valkey result 287 completed from its durable result; a signed repeat returned done, one journal completion.
+    # Unpublished admission 289 recovered without a visit; two sweeps recovered 1 then 0 and the hook receipt was delivered.
+    # All 108 signed sleep/wake Operations for the 50 visits and four checks match one Node journal completion each.
+    # Doctor: healthy, seven checks and zero drift. Raw samples, Operations and receipts: .orbit-artifacts/5775/visitor-wake/.
+    # Handoff 2754 rerun on merge 5c2d0edc25, same clone and bound: 50 signed visits, 41 app-first and 9 progress-first, zero errors.
+    # Signed p50/p95/max 630.099/1012.139/1427.739 ms; all 50 done (wake IDs 394..492, even IDs), swap closed.
+    # Python 985.991/1276.521/1306.622 ms; 50 progress-first, zero errors (505..603, odd IDs), plan capture still placement_unproven.
+    # POST 494, forced poll 496, lost Valkey result 498 and unpublished wake 500 all passed.
+    # Conn 502 published its child 503 before any visitor; Caddy joined it and launch cancellation preserved the shared wake.
+    # All 110 signed Operations match one journal completion each. New samples and receipts: .orbit-artifacts/5775/conflict-2754/.
+    act: []
+    expect: []
 
   - id: unknown-node
     batch: fresh-fleet

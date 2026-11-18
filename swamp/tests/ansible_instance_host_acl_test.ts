@@ -1,11 +1,33 @@
 /** Exercise host ACL convergence and effective NIC audits against disposable local boundaries. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { fixture, hasAnsible } from "./_support/instance_host.ts";
+import { fixture as rawFixture, hasAnsible } from "./_support/instance_host.ts";
 import { readBoundaries, restore } from "./_support/host_image_boundary.ts";
 
 const boundaries = readBoundaries();
 
-// Each case is one stage that fits a 150-second lane: the initial converge, then the converges its own check needs.
+async function fixture(options: Parameters<typeof rawFixture>[0]) {
+    const f = await rawFixture(options);
+    try {
+        const path = `${f.folder}/tasks/instance-host.yml`;
+        const tasks = JSON.parse(Deno.readTextFileSync(path)) as { name: string }[];
+        const names = [
+            "Read the common NIC ACL", "Create the common NIC ACL", "Converge the common NIC ACL",
+            "Prepare the Instance bridge, project and profile", "Move existing NICs off the bridge union ACL",
+            "Reconcile the bridge endpoint union from Gateway intent", "Bring the existing containers to the image's shared files",
+            "Check every Instance bridge NIC at the end of the role", "Require bridge default reject and unchanged ingress isolation",
+        ];
+        const selected = tasks.filter((task) => names.includes(task.name));
+        assertEquals(selected.map((task) => task.name), names);
+        restore(f, boundaries["dir-system"]);
+        f.calls();
+        Deno.writeTextFileSync(path, JSON.stringify([
+            { "ansible.builtin.include_vars": `${f.folder}/boundary-facts.json` }, ...selected,
+        ]));
+    } catch (error) { f.cleanup(); throw error; }
+    return f;
+}
+
+// Keep the initial ACL converge and the later audit on the same real network state.
 for (const status of ["Running", "Stopped"]) {
     const name = status === "Running" ? "profile-only-instance" : "orbit-instance-build";
     Deno.test({

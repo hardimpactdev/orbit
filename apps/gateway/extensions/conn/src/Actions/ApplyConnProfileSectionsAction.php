@@ -9,6 +9,7 @@ use App\Models\Node;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\ConnAttachedThreads;
+use Orbit\Extensions\Conn\Domain\ConnProfileEvents;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnProfile;
@@ -16,11 +17,12 @@ use Orbit\Extensions\Conn\Models\ConnProfile;
 /**
  * Writes sections of a profile's settings document in one transaction, all or none. The profile row is
  * locked while the versions are checked, so two devices that write from the same version cannot both win.
- * Each written section moves to its next version, and so does the document.
+ * Each written section moves to its next version, and so does the document. Every profile write goes through here, so
+ * this is where the bound Nodes are told the committed version ([Profile events](/reference/conn#profile-events)).
  */
 final readonly class ApplyConnProfileSectionsAction
 {
-    public function __construct(private ConnAttachedThreads $attached) {}
+    public function __construct(private ConnAttachedThreads $attached, private ConnProfileEvents $events) {}
 
     /**
      * @param  array<string, mixed>  $writes  The new value of each section by name; null removes a section. The name `devices`
@@ -88,6 +90,8 @@ final readonly class ApplyConnProfileSectionsAction
                 'settings_version' => $locked->settings_version + 1,
                 'updated_at' => Carbon::now(),
             ]);
+
+            $this->events->publish($locked->id, $locked->settings_version + 1);
         });
 
         return $profile->refresh();

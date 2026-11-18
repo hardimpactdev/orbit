@@ -1,7 +1,7 @@
 name: Docs site
 
 # Mintlify deploys the docs-site branch: main's tree plus the docs build outputs that Git ignores on main
-# (docs/docs.json, docs/openapi.json, docs/flows-data.js). Each green CI run on main rebuilds that branch.
+# (docs/docs.json, docs/openapi.json, docs/flows-data.js). Each successful main delivery rebuilds that branch.
 on:
   workflow_run:
     workflows: [CI]
@@ -22,21 +22,28 @@ env:
 jobs:
   publish:
     name: Publish docs-site
-    if: github.repository == 'hardimpactdev/orbit' && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    if: github.repository == 'hardimpactdev/orbit' && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event)))
     runs-on: ubuntu-26.04
     permissions:
       contents: write
+      actions: read
     env:
       SOURCE: ${{ github.event.workflow_run.head_sha || github.sha }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SOURCE }}
           persist-credentials: false
+      - name: Require exact main delivery evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: python3 bin/ci-delivery verify --sha "$SOURCE"
       # A slower run for an older commit must not replace a newer build.
       - name: Skip a commit older than the published one
         id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           published=$(gh api "repos/${{ github.repository }}/commits/docs-site" --jq '.parents[0].sha' 2>/dev/null || true)
           if [ -n "$published" ] && [ "$(gh api "repos/${{ github.repository }}/compare/$published...$SOURCE" --jq .status)" = behind ]; then
@@ -62,6 +69,8 @@ jobs:
           composer docs-build
       - name: Push docs-site
         if: steps.fresh.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
