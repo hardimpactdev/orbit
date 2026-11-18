@@ -209,11 +209,11 @@ FrankenPHP serves every release container in classic mode, from the runtime fold
 
 ## First release and migration
 
-Two planned charts cover the two ways to the first release container: `docs/cli/instance/container/create-production.mmd` for a clone and `docs/cli/instance/container/migrate-production.mmd` for a checkout.
-
 ### After a clone
 
-[`instance:clone`](/reference/instance-cloning) records the production Instance, its environment, its Process and Schedule copies, its preview Route and its storage volume. It makes no container. It writes the Instance's upstream file with a `503` answer, so the preview Route's site serves before the first release. With `--sqlite-source-path`, the clone writes the seeded database into the volume as `database.sqlite`, and the rendered `.env` names `/srv/shared/database.sqlite`. The first deploy creates the preparation container, builds the commit there and switches to the verified release clone. The Gateway sets the triggers of the native Schedules when that deploy records a live release.
+[`instance:clone`](/reference/instance-cloning) creates a production checkout in the project's host account. With `--sqlite-source-path`, it seeds `database.sqlite` in that account's home. Its first container deployment follows the checkout migration below.
+
+A placement that has never had a host production checkout can start directly with a preparation container and an empty per-Instance volume. Its first successful release establishes live. The next establishes a rollback.
 
 ### A checkout production Instance
 
