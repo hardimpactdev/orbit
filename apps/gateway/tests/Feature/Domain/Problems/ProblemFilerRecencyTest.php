@@ -43,12 +43,27 @@ it('leaves a log fingerprint unfiled when its last occurrence is older than seve
         ->and(Task::topLevel()->count())->toBe(1);
 });
 
-it('files a log fingerprint with the same counts when it last occurred an hour ago', function (): void {
-    $row = recencyProblem(ProblemSource::Log, 'log|RuntimeException|app/Recent.php:10', 10, now()->subHour());
+it('files the same log fingerprint with the same counts when it last occurred an hour ago', function (): void {
+    $row = recencyProblem(ProblemSource::Log, 'log|RuntimeException|app/Stale.php:10', 50, now()->subHour());
 
     $this->artisan('problems:file')->assertSuccessful();
 
     expect($row->fresh()->task_group_id)->not->toBeNull()->and($row->fresh()->filed_at)->not->toBeNull()
+        ->and(Task::topLevel()->count())->toBe(1);
+});
+
+it('rejects rows at the sub-second cutoff in the query too, so they do not fill the ready slots ahead of a recent row', function (): void {
+    $this->travelTo(new DateTimeImmutable('2026-11-18T12:00:00.500Z'));
+    // last_seen is stored at whole seconds: 2026-11-11 12:00:00, half a second older than seven days.
+    $boundary = collect(range(1, 50))->map(fn (int $index): ProblemFingerprint => recencyProblem(
+        ProblemSource::Log, "log|RuntimeException|app/Boundary{$index}.php:10", 100, now()->subDays(7)->subMilliseconds(500),
+    ));
+    $recent = recencyProblem(ProblemSource::Log, 'log|RuntimeException|app/Recent.php:10', 10, now()->subHour());
+
+    $this->artisan('problems:file')->assertSuccessful();
+
+    expect($recent->fresh()->task_group_id)->not->toBeNull()
+        ->and(ProblemFingerprint::query()->whereIn('id', $boundary->pluck('id'))->whereNotNull('task_group_id')->count())->toBe(0)
         ->and(Task::topLevel()->count())->toBe(1);
 });
 
