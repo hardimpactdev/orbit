@@ -1,12 +1,12 @@
 // Reads a waiting T3 run's question, resolves its stored answered requests, interrupts that run, stops a thread's active run, or creates a new thread, through the stock
 // T3 server's own WebSocket RPC in a task copy (docs/cli/task/copy-turn.mmd). task-copy-turn.yml runs it as agent in the copy, on stdin of
-// the runtime's Node: `node - T3 read THREAD`, `node - T3 interrupt THREAD RUN REQUESTS`, `node - T3 stop THREAD` and
-// `node - T3 answered THREAD REQUEST...` and `node - T3 create TITLE INSTANCE MODEL OPTIONS`, T3 being the admitted path of T3's command.
+// the runtime's Node: `node - T3 read THREAD`, `node - T3 interrupt THREAD RUN REQUESTS`, `node - T3 stop THREAD RUN` and
+// `node - T3 answered THREAD OWNER REQUEST...` and `node - T3 create TITLE INSTANCE MODEL OPTIONS`, T3 being the admitted path of T3's command.
 // Interrupt's REQUESTS are stored ids joined by newlines; answered takes one argument per id. OPTIONS is the thread's model options
 // as JSON. `create` makes the thread with no message: stock T3's `thread start` takes
 // no model options, and T3 0.1.7 runs a Codex thread at the effort of its `reasoningEffort` option alone. The first turn is then
-// `t3 thread send`. `stop` ends the run of a turn that is over in Orbit: one its bound cut,
-// or an earlier turn's. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
+// `t3 thread send`. `stop` ends the exact run of an earlier turn that is over in Orbit, never another run of its thread;
+// `answered` cancels only stored requests that the stored OWNER run owns. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
 // a question nor stop a run; its server can, for a session that
 // `t3 auth session issue` grants. The session lives only in this process: it is never written, printed or passed as an argument, and it
 // is revoked before the exit. Conn uses the same transport for `inspect-launch ENVIRONMENT [PROVIDER]`, `launch` and `reconcile-launch`.
@@ -35,13 +35,15 @@ const Over = new Set(["completed", "failed", "cancelled", "interrupted", "rolled
 const [T3, command, ...rest] = process.argv.slice(2);
 const launchCommand = ["inspect-launch", "launch", "reconcile-launch"].includes(command);
 const [threadId, runId, stored] = command === "create" || launchCommand ? [] : rest;
-const answeredRequests = command === "answered" ? rest.slice(1) : [];
+const answeredOwner = command === "answered" ? rest[1] : undefined;
+const answeredRequests = command === "answered" ? rest.slice(2) : [];
 const [title, instance, model, options] = command === "create" ? rest : [];
 if (!T3 || (!launchCommand && (!["read", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)))
     || (command === "inspect-launch" && (rest.length < 1 || rest.length > 2)) || (["launch", "reconcile-launch"].includes(command) && rest.length !== 0)
-    || (command === "interrupt" && (!runId || !stored)) || (command === "answered" && (answeredRequests.length === 0 || answeredRequests.some((id) => !id)))
+    || (command === "interrupt" && (!runId || !stored)) || (command === "stop" && !runId)
+    || (command === "answered" && (!answeredOwner || answeredRequests.length === 0 || answeredRequests.some((id) => !id)))
     || (command === "create" && (!title || !instance || !model || options === undefined))) {
-    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD REQUEST... | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS | T3 inspect-launch ENVIRONMENT [PROVIDER] | T3 launch | T3 reconcile-launch\n");
+    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD OWNER REQUEST... | T3 stop THREAD RUN | T3 create TITLE INSTANCE MODEL OPTIONS | T3 inspect-launch ENVIRONMENT [PROVIDER] | T3 launch | T3 reconcile-launch\n");
     process.exit(64);
 }
 
@@ -127,7 +129,8 @@ const live = (seen, run) => seen.runs.some((open) => open.id === run);
 async function answered(rpc) {
     const wanted = new Set(answeredRequests);
     const before = await state(rpc);
-    for (const request of before.requests.filter((request) => wanted.has(request.request_id) && request.kind === "user_input")) {
+    // A request that another run owns is never cancelled: it stays pending, and the readback refuses the launch.
+    for (const request of before.requests.filter((request) => wanted.has(request.request_id) && request.kind === "user_input" && request.run_id === answeredOwner)) {
         await rpc.call("orchestration.dispatchCommand", { type: "runtime-request.respond", commandId: `orbit:${randomUUID()}`,
             threadId, requestId: request.request_id, decision: "cancel" }).catch(() => {
                 // It may have been answered meanwhile. The readback decides whether the continued turn may launch.
@@ -380,13 +383,17 @@ try {
             : { error: "The run no longer waits for the stored questions: it was answered, or it asks something else.", after: await state(rpc) };
         out = { interrupted: error === null && !live(after, runId), error, runs: after.runs, pending: after.requests.length };
     } else {
-        // The run of a turn that is over in Orbit: whatever it does, it goes. Stopped only once T3 shows the thread with no active run.
-        const active = (await state(rpc)).runs.at(-1);
-        if (active === undefined) {
-            out = { stopped: false, run: null, state: null };
+        // The exact run of a turn that is over in Orbit, never another run of the thread. A run T3 shows over needs no stop; a run T3
+        // does not show at all is refused, so the turn holds.
+        const seen = await state(rpc);
+        const known = seen.all.find((run) => run.id === runId);
+        if (known === undefined) {
+            out = { stopped: false, run: runId, state: null, error: "T3 shows no run of this ID on the thread; nothing was stopped." };
+        } else if (!live(seen, runId)) {
+            out = { stopped: false, run: null, state: known.status };
         } else {
-            const { error, after } = await interrupt(rpc, active.id, "Orbit stopped the run: its turn is over in Orbit, cut by its bound, cancelled or lost.");
-            out = { stopped: error === null && after.runs.length === 0, run: active.id, state: after.all.find((run) => run.id === active.id)?.status ?? active.status };
+            const { error, after } = await interrupt(rpc, runId, "Orbit stopped the run: its turn is over in Orbit, cut by its bound, cancelled or lost.");
+            out = { stopped: error === null && !live(after, runId), run: runId, state: after.all.find((run) => run.id === runId)?.status ?? known.status };
         }
     }
 } catch (cause) {

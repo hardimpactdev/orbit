@@ -211,30 +211,34 @@ Deno.test({ name: "a session issue that prints no JSON fails without quoting it 
     assertEquals(broken.stderr.includes(token), false);
 } });
 
-Deno.test({ name: "the stop ends the thread's active run through the same interrupt and waits for its end; a thread with no active run is left alone",
+Deno.test({ name: "the stop ends exactly the named run through the same interrupt and waits for its end; a run already over is left alone",
     ignore: !available, async fn() {
         const state = waiting([], {});
-        const stopped = await helper(state, ["stop", thread]);
+        const stopped = await helper(state, ["stop", thread, run]);
         assertEquals([stopped.code, stopped.out, stopped.revoked], [0, { stopped: true, run, state: "interrupted" }, ["session-1"]]);
         assertEquals([state.commands.length, state.commands[0].type, state.commands[0].threadId, state.commands[0].runId], [1, "run.interrupt", thread, run]);
         // A run that asks is stopped too: its turn is over in Orbit, whatever the run waits for.
         const asking = waiting([{ id: "a1", kind: "approval", status: "pending" }], {});
-        assertEquals((await helper(asking, ["stop", thread])).out, { stopped: true, run, state: "interrupted" });
+        assertEquals((await helper(asking, ["stop", thread, run])).out, { stopped: true, run, state: "interrupted" });
         // T3 is already done with the run: nothing is sent.
         const over = { ...waiting([], {}), runStatus: "completed" };
-        const idle = await helper(over, ["stop", thread]);
-        assertEquals([idle.code, idle.out, over.commands, idle.revoked], [0, { stopped: false, run: null, state: null }, [], ["session-1"]]);
+        const idle = await helper(over, ["stop", thread, run]);
+        assertEquals([idle.code, idle.out, over.commands, idle.revoked], [0, { stopped: false, run: null, state: "completed" }, [], ["session-1"]]);
+        // Another run is active on the thread, but not the named one: nothing is stopped, and the answer says the run was not found.
+        const other = waiting([], {});
+        const refused = await helper(other, ["stop", thread, "orbit-run-A"]);
+        assertEquals([refused.code, refused.out!.stopped, refused.out!.run, other.commands], [0, false, "orbit-run-A", []]);
     } });
 
 Deno.test({ name: "a stop that T3 refuses, or a run that does not end within the deadline, answers stopped: false with the run's last state",
     ignore: !available, async fn() {
         const refusing = { ...waiting([], {}), interrupt: "refuse" as const };
-        const refused = await helper(refusing, ["stop", thread]);
+        const refused = await helper(refusing, ["stop", thread, run]);
         assertEquals([refused.code, refused.out, refusing.commands.length, refused.revoked], [0, { stopped: false, run, state: "running" }, 1, ["session-1"]]);
         // The wait ends inside the phase's 60 s bound, so the answer is always written.
         const stuck = { ...waiting([], {}), interrupt: "stuck" as const };
         const began = Date.now();
-        const kept = await helper(stuck, ["stop", thread]);
+        const kept = await helper(stuck, ["stop", thread, run]);
         assertEquals([kept.code, kept.out, kept.revoked], [0, { stopped: false, run, state: "running" }, ["session-1"]]);
         assert(Date.now() - began < 60000, `the stop took ${Date.now() - began} ms`);
     } });
@@ -272,27 +276,31 @@ Deno.test({ name: "answered resolves exactly the stored pending questions once a
         { id: "other", kind: "user_input", status: "pending" },
         { id: "approval", kind: "approval", status: "pending" },
     ], { r1: [color], r2: [color] }), runStatus: "interrupted" };
-    const resolved = await helper(state, ["answered", thread, "r1", "r2", "r1", "r3", "missing"]);
+    const resolved = await helper(state, ["answered", thread, run, "r1", "r2", "r1", "r3", "missing"]);
     assertEquals([resolved.code, resolved.out, resolved.revoked], [0, { resolved: true, pending: [], error: null }, ["session-1"]]);
     assertEquals(state.commands.map(({ commandId: _, ...command }) => command), ["r1", "r2"].map((requestId) => ({
         type: "runtime-request.respond", threadId: thread, requestId, decision: "cancel",
     })));
     assertEquals(state.requests.filter((r) => r.status === "pending").map((r) => r.id), ["other", "approval"]);
     state.commands = [];
-    assertEquals((await helper(state, ["answered", thread, "r1", "r2", "r3", "missing"])).out, { resolved: true, pending: [], error: null });
+    assertEquals((await helper(state, ["answered", thread, run, "r1", "r2", "r3", "missing"])).out, { resolved: true, pending: [], error: null });
     assertEquals(state.commands, []);
 } });
 
 Deno.test({ name: "answered confirms resolution after a concurrent answer and refuses a stored request that stays pending", ignore: !available, async fn() {
     for (const respond of ["refuse", "stuck", "raced"] as const) {
         const state = { ...waiting([{ id: "r1", kind: "user_input", status: "pending" }], { r1: [color] }), respond };
-        const done = await helper(state, ["answered", thread, "r1"]);
+        const done = await helper(state, ["answered", thread, run, "r1"]);
         assertEquals([done.code, done.out!.resolved, done.out!.pending, done.revoked], [0, respond === "raced", respond === "raced" ? [] : ["r1"], ["session-1"]]);
         assertEquals(done.out!.error === null, respond === "raced");
     }
     const approval = waiting([{ id: "a1", kind: "approval", status: "pending" }], {});
-    const refused = await helper(approval, ["answered", thread, "a1"]);
+    const refused = await helper(approval, ["answered", thread, run, "a1"]);
     assertEquals([refused.out!.resolved, refused.out!.pending, approval.commands], [false, ["a1"], []]);
+    // A stored request that another run owns is never cancelled: it stays pending, and the launch is refused.
+    const foreign = waiting([{ id: "r1", kind: "user_input", status: "pending", runId: "run:B" }], { r1: [color] });
+    const kept = await helper(foreign, ["answered", thread, run, "r1"]);
+    assertEquals([kept.out!.resolved, kept.out!.pending, foreign.commands], [false, ["r1"], []]);
 } });
 
 Deno.test({ name: "interrupt never stops a new run for a stored question owned by an earlier run", ignore: !available, async fn() {

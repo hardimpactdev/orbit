@@ -151,8 +151,8 @@ final readonly class TaskCopyTurn
                 'options' => $options, 'candidate' => $candidate, 'settle' => $settle,
                 // The thread as T3 is to know it, and the turn's own message ID, fixed before any send (docs/reference/development-containers.md#stable-ids).
                 't3_thread_id' => $thread->external_id, 'admission' => self::admission($thread), 'message_id' => (string) Str::uuid(),
-                'answered' => $provider === null ? array_values(array_unique(array_map(
-                    static fn (array $question): string => ValidatedData::string($question['request_id']), $thread->questions ?? []))) : [],
+                // The answer cancels only stored requests of the run that owns them; a stored question without one is not answerable.
+                ...self::answerable($provider === null ? $thread->questions ?? [] : []),
                 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
         ];
@@ -181,6 +181,24 @@ final readonly class TaskCopyTurn
             'run_id' => is_string($result['run_id'] ?? null) ? $result['run_id'] : null,
             'sent' => ($result['sent'] ?? $result['launched'] ?? true) !== false,
             'answered' => array_values(array_map(ValidatedData::string(...), is_array($intent['answered'] ?? null) ? $intent['answered'] : []))];
+    }
+
+    /**
+     * The stored requests a continued turn answers, and the one run that owns them all: the helper cancels only requests of that run
+     * (docs/reference/development-containers.md#questions). Questions without an owner, or of several runs, are answered by none.
+     *
+     * @param  list<array<string, mixed>>  $questions
+     * @return array{answered: list<string>, answered_run: string|null}
+     */
+    private static function answerable(array $questions): array
+    {
+        $owners = array_values(array_unique(array_map(static fn (array $question): string => is_string($question['run_id'] ?? null) ? $question['run_id'] : '', $questions)));
+        if (count($owners) !== 1 || $owners[0] === '') {
+            return ['answered' => [], 'answered_run' => null];
+        }
+
+        return ['answered' => array_values(array_unique(array_map(static fn (array $question): string => ValidatedData::string($question['request_id']), $questions))),
+            'answered_run' => $owners[0]];
     }
 
     private static function nonEmpty(mixed $value): ?string

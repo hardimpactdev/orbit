@@ -215,7 +215,7 @@ function shapeRun(evidence: Evidence): Turn {
         return { ...base, state: "failed", error: status, error_code: "tasks.turn_failed" };
     }
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
-        const stop = halted?.stopped ? "Orbit stopped its run." : base.ended ? "Its run has ended." : "Orbit could not stop its run; the next turn stops it.";
+        const stop = halted?.stopped ? "Orbit stopped its run." : base.ended ? "Its run has ended." : "Orbit did not stop its run; the turn holds until its run is over.";
         return { ...base, state: "failed", error: `The turn ran longer than its bound. ${stop}`, error_code: "tasks.turn_timeout" };
     }
     if (evidence.model !== null && !evidence.model.accepted) {
@@ -268,9 +268,9 @@ function shapeRun(evidence: Evidence): Turn {
  * | 1 | A reviewer's checkout detached and not restored | false |
  * | 2 | Nothing launched | true |
  * | 3 | The run asks, and Orbit stored its question with its owner run and confirmed the interrupt of that run | true |
- * | 4 | The run asks, and Orbit could not read its question, or its owner, or confirm the interrupt | false |
+ * | 4 | The run asks, and Orbit could not read its question, or a request is not this run's own, or the interrupt is not confirmed | false |
  * | 5 | The start printed a status that ends a run | true |
- * | 6 | The start printed a status Orbit does not know | false |
+ * | 6 | The start printed any other status: one of a run still going, such as `running` or `queued`, or one Orbit does not know | false |
  * | 7 | The stop of the run its bound cut proved its end | true |
  * | 8 | With no status of its run: T3 holds no thread of the title, or lists it in a state that runs nothing | true |
  * | 9 | Anything else: a thread listed active or in an unknown state, or no list | false |
@@ -280,7 +280,8 @@ export function over(evidence: Evidence, status: string | undefined, listed: z.i
     if (!evidence.launched) return true;
     if (status === "waiting") return question(evidence) === "stopped";
     if (status !== undefined && RunOver.has(status)) return true;
-    if (status !== undefined && !Active.has(status)) return false;
+    // A status Orbit does not know, or one of a run still going: only the run's own end ends it, never its thread's state.
+    if (status !== undefined) return false;
     if (cutEnded) return true;
     return listed?.found === 0 || (listed?.found === 1 && listed.status !== null && ThreadOver.has(listed.status));
 }
@@ -293,10 +294,11 @@ function question(evidence: Evidence): "unread" | "unstopped" | "stopped" {
     return stopped?.interrupted === true ? "stopped" : "unstopped";
 }
 
-/** Whether the question read names a request without the run that owns it. */
+/** Whether the question read names a request that this turn's run does not own: one without an owner, or another run's. */
 function ownerless(evidence: Evidence): boolean {
     const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
-    return read !== null && read.requests.some((request) => !request.run_id);
+    const own = evidence.start === null ? null : parse(Started, evidence.start.start)?.runId ?? null;
+    return read !== null && read.requests.some((request) => !request.run_id || request.run_id !== own);
 }
 
 /**

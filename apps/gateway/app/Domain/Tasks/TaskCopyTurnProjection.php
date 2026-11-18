@@ -70,11 +70,13 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
                 $result['effort'] = $thread->effort;
                 $result['agent_id'] = $thread->id;
                 $result['reply'] = self::reply($operation->target_id, $thread->id, $result['transcript'] ?? null);
-                // A question without the run that owns it could never be cancelled exactly: it is not stored, the turn did not read it, and
+                // A question that this turn's run does not own, without an owner or another run's, could never be cancelled exactly: it is
+                // not stored, the turn did not read it, and
                 // its run may still wait, so the turn holds the group until the next turn settles it. An unrestored reviewer checkout outranks
                 // the unread question: its code stays.
                 if (array_filter(is_array($result['questions'] ?? null) ? $result['questions'] : [],
-                    static fn (mixed $question): bool => ! is_array($question) || ! is_string($question['run_id'] ?? null) || $question['run_id'] === '') !== []) {
+                    static fn (mixed $question): bool => ! is_array($question) || ! is_string($question['run_id'] ?? null) || $question['run_id'] === ''
+                        || $question['run_id'] !== ($result['run_id'] ?? null)) !== []) {
                     $result = [...$result, 'questions' => [], 'ended' => false, 'error' => '',
                         'error_code' => ($result['error_code'] ?? null) === 'tasks.copy_review_unrestored' ? 'tasks.copy_review_unrestored' : 'tasks.copy_question_unread'];
                     $data['status'] = ($data['status'] ?? null) === 'succeeded' ? 'failed' : ($data['status'] ?? null);

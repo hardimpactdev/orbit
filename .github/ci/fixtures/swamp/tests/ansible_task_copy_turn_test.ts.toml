@@ -10,7 +10,7 @@ cases = [
   "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn",
   "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so",
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing",
-  "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds",
+  "a turn cut by its bound stops no run, since Orbit cannot name its run, and holds",
   "an intent outside the admitted shape runs nothing in the copy",
   "a thread list that is not JSON reads as no thread, and the start's end is still written",
   "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start",
@@ -67,7 +67,7 @@ inputs = [
   "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn" = 53
   "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so" = 97
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 33
-  "a turn cut by its bound stops its never-ending run before the read back and reads over; a stop T3 refuses holds" = 60
+  "a turn cut by its bound stops no run, since Orbit cannot name its run, and holds" = 60
   "an intent outside the admitted shape runs nothing in the copy" = 32
   "a thread list that is not JSON reads as no thread, and the start's end is still written" = 19
   "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start" = 40

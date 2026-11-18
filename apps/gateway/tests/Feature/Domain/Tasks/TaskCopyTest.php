@@ -1696,7 +1696,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(Arr::except($turn->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
                 'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
                 // Capture sets the new thread's ID and marks it admitted: T3 does not hold it yet.
-                't3_thread_id' => $thread->external_id, 'admission' => 'admitted', 'answered' => [], 'seconds' => 3600,
+                't3_thread_id' => $thread->external_id, 'admission' => 'admitted', 'answered' => [], 'answered_run' => null, 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             // The implementer learns how to ask: a question ends the turn.
             // The group's title and brief come first, the copy rules once, then the turn's clock: the admission's time and the end of its bound.
@@ -1956,7 +1956,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(Arr::except($next->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
                 'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
                 // The CLI driver reported its own thread ID over the admitted one: its provenance is not proven.
-                't3_thread_id' => 'mcp:66105c2c', 'admission' => 'overwritten', 'answered' => [], 'seconds' => 3600, 'title' => $first->input['turn']['title']])
+                't3_thread_id' => 'mcp:66105c2c', 'admission' => 'overwritten', 'answered' => [], 'answered_run' => null, 'seconds' => 3600, 'title' => $first->input['turn']['title']])
             ->and($next->input['turn']['message_id'])->not->toBe($first->input['turn']['message_id'])
             ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.\n\n".TaskCopyTurn::AskRule)
             ->and($named->input['thread_id'])->toBe($first->input['thread_id'])->and($named->input['turn']['thread'])->toBe('continue')
@@ -2481,6 +2481,8 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($answer->input['thread_id'])->toBe($asked->input['thread_id'])->and($answer->input['turn']['thread'])->toBe('continue')
             ->and($answer->input['turn']['answered'])->toBe(['request:1'])
+            // The answer cancels only requests of the run that owns them.
+            ->and($answer->input['turn']['answered_run'])->toBe('run:1')
             ->and($answer->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nYou asked in your last turn:\n[Color] Which color?\n- Red: Choose red\n"
                 ."- Blue: Choose blue\n\nAnswer:\nBlue.\n\n".TaskCopyTurn::AskRule);
         copyTurnEnded($answer, 'succeeded', copyTurnDone('mcp:1'));
@@ -3143,5 +3145,32 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
         expect($ended->error_code)->toBe('tasks.copy_turn_failed')->and($ended->result['error_code'])->toBe('tasks.copy_turn_failed')
             ->and($ended->result['error'])->toBe(TaskCopyTurnProjection::Errors['tasks.copy_turn_failed'])
             ->and(json_encode($ended->result, JSON_THROW_ON_ERROR))->not->toContain('juniper')->not->toContain('Juniper');
+    });
+
+    it('stores no question that another run owns, and holds the turn', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $foreign = copyTurnAsked('mcp:1');
+        $foreign['questions'] = array_map(static fn (array $question): array => [...$question, 'run_id' => 'run:B'], $foreign['questions']);
+
+        $asked = copyTurnEnded(copyTurn($group), 'succeeded', $foreign);
+
+        expect([$asked->status, $asked->error_code, $asked->result['questions'], $asked->result['ended']])
+            ->toBe([OperationStatus::Failed, 'tasks.copy_question_unread', [], false])
+            ->and(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull();
+    });
+
+    it('answers no stored question without an owner run, as a row from before the owner was stored holds', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $asked = copyTurnEnded(copyTurn($group), 'succeeded', copyTurnAsked('mcp:1'));
+        $thread = AgentThread::query()->findOrFail($asked->input['thread_id']);
+        $thread->update(['questions' => array_map(static fn (array $question): array => Arr::except($question, 'run_id'), $thread->questions ?? [])]);
+
+        $answer = copyTurn($group, ['prompt' => 'Blue.']);
+
+        expect([$answer->input['turn']['answered'], $answer->input['turn']['answered_run']])->toBe([[], null]);
     });
 });

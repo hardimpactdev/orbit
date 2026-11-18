@@ -29,6 +29,7 @@ cases = [
   "a run status outside T3's known statuses is not named and names no end",
   "ended follows the rows of over(), judged on this turn's run",
   "the settle in the phase knows the same thread states that run nothing as the result step",
+  "a question that another run owns is not stored, and the turn holds",
 ]
 file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
 cost = 2
