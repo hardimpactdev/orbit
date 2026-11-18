@@ -204,7 +204,7 @@ final readonly class ReleaseNodeInputs
                 ...(in_array('vp', $software, true) ? ['swamp/ansible/tasks/node-converge-javascript.yml', 'swamp/ansible/tasks/javascript-version.yml'] : []),
                 ...(in_array('chrome-headless-shell', $software, true) ? ['swamp/ansible/tasks/node-converge-browser.yml'] : []),
                 ...($executor !== null || $roleUnits !== [] ? ['swamp/ansible/tasks/node-converge-base.yml'] : []),
-                ...($executor !== null ? ['swamp/ansible/tasks/node-executor.yml', 'swamp/ansible/tasks/node-converge-replace.yml'] : []),
+                ...($executor !== null ? ['swamp/ansible/tasks/node-executor.yml'] : []),
                 ...($hostRole === $assignment->role ? self::InstanceHostFiles : []),
             ];
             $roles[$assignment->id] = ['role' => $role, 'digest' => self::digest(self::ordered([

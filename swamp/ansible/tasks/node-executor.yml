@@ -1,20 +1,19 @@
 ---
-# The executor install (ADR 0266 slice 1, ADR 0267 P10; docs/reference/executor.md). The Gateway's intent carries it only for a
-# Node whose roles enable an action family. The binary is pinned by its SHA-256 from the agent delivery. systemd only starts the
-# executor at boot and restarts it after a crash; the executor holds its own socket. A changed binary or file restarts it, and it
-# finishes any open order from its journal at start-up.
+# The executor (ADR 0266, ADR 0267, ADR 0271 N7; docs/reference/executor.md): the second process of the one `orbit-agent` binary,
+# which node-converge-base.yml has just reconciled. Every Node runs it; the per-role allowlist decides which families it runs. systemd
+# only starts the executor at boot and restarts it after a crash; the executor holds its own socket. A changed agent binary or file
+# restarts it, and it finishes any open order from its journal at start-up.
 #
-# Rollout (docs/reference/executor.md#rollout): until the pinned delivery carries the executor and the Gateway pins a key, the intent
-# names `skip` and the converge records that reason in its run and installs nothing. Nothing uses the executor before then.
-- name: Skip the executor install until its release and key are pinned
+# Until the Gateway pins a key, the intent names `skip` and the converge records that reason in its run and starts nothing.
+- name: Skip the executor until its key is pinned
   when: intent.executor.skip != None
   ansible.builtin.debug:
     msg: "executor install skipped: {{ intent.executor.skip }}"
-- name: Install the executor
+- name: Run the executor
   when: intent.executor.skip == None
   block:
     # Ansible 2.20 validates fail_msg as a string even when the assertion holds, so a null plan_error must render as text.
-    - name: Require a planned executor release and pinned keys
+    - name: Require pinned keys
       ansible.builtin.assert:
         that: [intent.executor.plan_error == None]
         fail_msg: "{{ intent.executor.plan_error | string }}"
@@ -27,19 +26,8 @@
         home: /nonexistent
         shell: /usr/sbin/nologin
         state: present
-    - name: Ensure the executor directories
-      ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
-      loop: [/usr/local/libexec, /etc/orbit/executor]
-    - name: Reconcile the pinned executor binary
-      ansible.builtin.import_tasks: node-converge-replace.yml
-      vars:
-        converge_replacement:
-          path: "{{ intent.executor.path }}"
-          url: "{{ intent.executor.url }}"
-          sha256: "{{ intent.executor.sha256 }}"
-    - name: Remember whether the executor binary changed
-      ansible.builtin.set_fact:
-        executor_binary_changed: "{{ converge_replacement_commit is changed or converge_replacement_metadata is changed }}"
+    - name: Ensure the executor directory
+      ansible.builtin.file: { path: /etc/orbit/executor, state: directory, owner: root, group: root, mode: "0755" }
     - name: Reconcile the executor's keys, Node id, allowlist, restore pool and unit
       ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
       loop:
@@ -63,4 +51,7 @@
         name: orbit-executor.service
         enabled: true
         daemon_reload: "{{ executor_files is changed }}"
-        state: "{{ 'restarted' if executor_binary_changed or executor_files is changed else 'started' }}"
+        state: "{{ 'restarted' if (agent_binary_changed | default(false)) or executor_files is changed else 'started' }}"
+    # After the service runs the agent binary, the separate binary of ADR 0266 has no user left.
+    - name: Remove the retired executor binary
+      ansible.builtin.file: { path: "{{ intent.executor.retired_binary }}", state: absent }
