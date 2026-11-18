@@ -15,6 +15,13 @@ A harness that drives the real five-minute `gateway:release:auto` tick of a copy
 4. Store a throwaway GitHub App identity with a locally generated key through `GitHubAppStore::put`, then enable automatic releases with `GatewayReleaseAutomation::enable`.
 5. Land a tree: set `main` in `state.json` to a newer commit and add it to `green`. The next tick starts the release.
 
+## Gaps this harness found
+
+- The release's Swamp load runs `jq`, which no role installed. The swamp role now installs it. On a nested Gateway built before that fix, install `jq` by hand.
+- The Gateway check pins the root CA under `/etc/caddy/orbit-cert-current`, which is `root:caddy 0750`. The check now runs with sudo. A release of a commit from before that fix loads the old check, so for such a commit add `orbit` to the `caddy` group in the nested Gateway.
+- The release fetch step sends the stub token to github.com. Fetch a landed commit into `/home/orbit/shared/orbit.git` from public GitHub first.
+- The default refresh and the seed publication act only on a nested-fleet default: `NestedFleetRefresh::defaults()` requires `InstancePlacement::keepsFleet`, so a plain container default is skipped. Without one, the refresh records `current` with no defaults and the seed publication records `not_required`.
+
 ## Cleanup
 
 Stop `orbit-proof-github-stub`, then `incus snapshot restore nested-gateway <snapshot>`. This brings back the workspace mount and the earlier Gateway state.
