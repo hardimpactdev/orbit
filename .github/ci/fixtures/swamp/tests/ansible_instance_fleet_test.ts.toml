@@ -99,6 +99,9 @@ inputs = [
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
+# Ansible loads the tasks. The fixture supplies checkout object IDs through its Incus stand-in.
+parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
+
 # One unit per case. Refreshed-boundary and seeded-record cases use the completed
 # four-worker local measurements in tools/tests/ci-fleet-cost-evidence.json:
 # ESTIMATE: ceil(seconds * 2.1) + 1; the planner adds 6s startup.

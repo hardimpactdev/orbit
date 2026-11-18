@@ -70,6 +70,7 @@ sequenceDiagram
     %%> - target, scope, recorded roles, Tools, network and vault key names; playbooks read release pins
     %%> - the Gateway includes a CLI plan only for a Node with a recorded `ci-runner` assignment that is not being removed; scope flags do not change that decision
     %%> - reserve the Node and its recorded hub until the Operation settles; two base converges of different Nodes pass each other, the hub's own included (a base intent has no network)
+    %%> - automatic release role work waits for Instance and task Operations that participate on its target Node
     %%> - the seven Ansible plays lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`), so converges of different Nodes run side by side
     GW-->>CLI: 202 Accepted<br/>Operation ID
     %%> Result:
@@ -77,7 +78,8 @@ sequenceDiagram
     SW->>SW: Prepare the input<br/>phase: input
     %%> What it does:
     %%> - writes private inventory, vars and known_hosts from schema-validated inputs
-    %%> - after it writes the files for the phases, computes each phase digest from what the phases read: those files with the Operation ID masked, the Ansible bundle and the Tool helper with its Tool files; lists the phases whose digest equals the record
+    %%> - stages the shipped Ansible files and Tool helper in the private run folder shared by the Swamp Node workers
+    %%> - after it writes the input files for the phases, computes each phase digest from what the phases read: those files with the Operation ID masked, the Ansible bundle and the Tool helper with its Tool files; lists the phases whose digest equals the record
     opt digest equals the record
       %% path: phase-unchanged
       Note over SW: Skip an unchanged phase

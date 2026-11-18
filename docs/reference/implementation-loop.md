@@ -59,7 +59,7 @@ The [task Instance workspace regression](/reference/task-instance-workspace#veri
 
 The migration environment fixtures cover dependency-file isolation and explicit application, Process and Schedule file selection. Clone runtime fixtures cover inherited-store reuse, empty-clone preparation followed by a later pinned Process, and same-commit seed refresh after conversion.
 
-Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. The phase fixtures disable automatic Git maintenance during setup, so a detached setup process cannot change repository bytes after the source snapshot. The comparison still includes every source file. The fixtures check that objects are independent, partial imports can repeat and retirement refuses later changes. The smaller Git checks run in selected PR shards; the large fixture that runs the migration phases runs in [self-hosted fixture shards](#self-hosted-fixture-shards).
+Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. Both the phase and retirement fixtures disable automatic Git maintenance during setup, so a detached setup process cannot change repository bytes after the source snapshot. The comparison still includes every source file. The fixtures check that objects are independent, partial imports can repeat and retirement refuses later changes. The smaller Git checks run in selected PR shards; the large fixture that runs the migration phases runs in [self-hosted fixture shards](#self-hosted-fixture-shards).
 
 Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
 
@@ -273,6 +273,10 @@ No switch makes a check report-only. A check that runs is part of its gate.
 The plan job reads the checks table once. Selected jobs start after it; unselected jobs are skipped before a runner starts. A docs-only change starts three jobs: Select build inputs, Docs build and Required checks. Reusable workflows receive the plan's selection instead of calculating it again.
 
 Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. Commits added only to main after a pull request branches do not select checks for that pull request. For an ordinary main push, the previous main commit is the merge base, so selection covers the pushed changes.
+
+A fixture can list individual declared YAML paths in `parsed_yaml_inputs` when it observes only their parsed values. Check subprocesses and helpers as well as direct reads before adding a path. Fixtures that inspect source text, its copies or its digests keep selection. Mandatory inputs, unclassified inputs and unmapped paths also keep selection.
+
+For those declared paths, the fixture planner skips comment edits only when both revisions have a regular file with the same mode, the syntax outside comments matches, the mapping keys are unambiguous strings, and scalar values match. This includes trailing line breaks in block scalars. Added and deleted files, invalid YAML, duplicate keys and uncertain comparisons select fixtures. If PyYAML is unavailable, all YAML changes keep their fixture selection. Build and proof selection still see every changed path.
 
 Every executable check job has a `timeout-minutes` equal to its table `ceiling`, rounded up to minutes. Plan, Gateway release inputs and CLI release dispatch have two-minute limits. Required checks has two minutes unless a pull request selects a proof while `ORBIT_PROOF_ENABLED` is `true`; then it retains the proof's 275-minute wait budget. CI proof keeps its own 275-minute exception.
 
@@ -651,7 +655,7 @@ A venv runs only with the interpreter that built it. A venv of another interpret
 
 So when the interpreter changes, the name changes too, and the gate never reuses a venv of another interpreter. It builds a new one. The CI cache key of these tools covers the version and the path of the job's interpreter beside the pin files, so CI never restores a venv of another interpreter. The rule lives in one file, `swamp/ansible/shape_tool_names.py`. The gate runs it in its own interpreter. The task VM role playbook runs it on the VM with the `python3` that builds the venv there.
 
-Independent non-shard commands use the `shard_workers` value from `.github/ci/checks.toml`, capped by available CPUs; `--workers N` overrides only that concurrency. The gate calls `bin/ci-units plan` against the same base and head as CI, then runs each admitted shard through `bin/ci-units run`. A local run processes the shards in order instead of allocating CI runners. Each shard retains the pool worker count used to pack it, even on a one-CPU host or with `--workers 1`: reducing its lanes would invalidate the plan's deadline.
+Independent non-shard commands use the `shard_workers` value from `.github/ci/checks.toml`, capped by available CPUs; `--workers N` overrides only that concurrency. The gate runs `bin/ci-units plan` with the prepared environment’s Python against the same base and head as CI, then runs each admitted shard through `bin/ci-units run`. A local run processes the shards in order instead of allocating CI runners. Each shard retains the pool worker count used to pack it, even on a one-CPU host or with `--workers 1`: reducing its lanes would invalidate the plan's deadline.
 
 Slice selection, receipt checks, the unit ceiling and the shard deadline are the same. Each slice of an Instance-host file gets its own deadline rather than sharing one twelve-minute budget across unsliced file isolates. The inner playbook hang guards remain, but CI's shorter unit ceiling bounds each slice.
 
@@ -733,7 +737,9 @@ bin/task-check --budget 200       # seconds for the whole run (default 270)
 bin/task-check --only pest,phpstan
 ```
 
-The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. It adds the job's pin tests, which the job selection alone chooses. The parts run in this order.
+The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Task check uses the prepared shape tool environment for fixture planning when it is already available.
+
+Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. It adds the job's pin tests, which the job selection alone chooses. The parts run in this order.
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |

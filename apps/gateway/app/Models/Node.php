@@ -36,6 +36,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property int|null $seed_sender_id
  * @property string|null $ci_hold_digest
  * @property array<string, string>|null $converge_digests
+ * @property array<string, mixed>|null $release_inputs
  * @property bool $ci_nested_hosting
  * @property int|null $t3_port_last
  * @property string|null $ssh_host_fingerprint
@@ -210,6 +211,7 @@ final class Node extends Model
             'public_ssh_port' => 'integer',
             'settings' => 'array',
             'converge_digests' => 'array',
+            'release_inputs' => 'array',
             'id_ranges' => 'array',
             'reboot_hold' => 'boolean',
             'ci_nested_hosting' => 'boolean',

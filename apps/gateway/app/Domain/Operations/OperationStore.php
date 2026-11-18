@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
@@ -45,6 +46,7 @@ final readonly class OperationStore
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         try {
             $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition, $lockKey): Operation {
+                app(NodeWorkAdmission::class)->check($kind, $nodeId, $input);
                 $operation = Operation::query()->create([
                     'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
                     'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId, 'lock_key' => $lockKey,
@@ -131,6 +133,12 @@ final readonly class OperationStore
             // expired budget. A task's copy moves its group on when it is active or failed; an Instance that no task owns changes nothing.
             if (in_array($operation->kind, ['instance.create', 'instance.complete'], true) && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(TaskCopyLifecycle::class)->createEnded($operation);
+            }
+            if (is_int($operation->state['conn_launch_owner'] ?? null)) {
+                $settlement = app(NativeRunCancellation::class);
+                if ($settlement->settled($operation) && ! $settlement->settled($current)) {
+                    ReconcileSwampOperations::dispatch()->afterCommit();
+                }
             }
             // Every end of a deploy reaches here too: a run's report, a refused start, a cancel before the run, an unreadable result, and
             // the settlement of a timed-out run. Its copies then leave the vault; a default is never destroyed, so nothing else removes them.

@@ -238,6 +238,13 @@
       when: folder_name == 'agent' and (folder_t3_restart.stdout | from_json).deferred | length > 0
       ansible.builtin.debug:
         msg: "{{ {'t3_restart': folder_t3_restart.stdout | from_json} }}"
+    - name: Keep deferred T3 restart identities
+      when: folder_name == 'agent'
+      ansible.builtin.set_fact:
+        instance_t3_restart_deferred: >-
+          {{ (folder_t3_restart.stdout | from_json).deferred
+             | map(attribute='project') | zip((folder_t3_restart.stdout | from_json).deferred | map(attribute='name'))
+             | map('join', '/') | list }}
     - name: Clear the restart mark
       when: folder_restart.stat.exists
       ansible.builtin.file: { path: "{{ folder.path }}/.restart", state: absent }

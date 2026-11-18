@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Operations\DirectOperationContribution;
+use App\Domain\Operations\OperationKinds;
 use Orbit\Extensions\Conn\Actions\AdmitConnEnvironmentRestartAction;
 
 final readonly class ConnDirectOperations implements DirectOperationContribution
@@ -47,6 +48,12 @@ final readonly class ConnDirectOperations implements DirectOperationContribution
         // A restart for the machine name reports through its own result step; the run takes no secret.
         $kinds[AdmitConnEnvironmentRestartAction::Kind] = ['workflow' => 'operation-conn-environment-restart', 'projection' => ConnEnvironmentRestartProjection::class,
             'workflow_inputs' => true, 'terminal_result' => ['job' => 'restart', 'step' => 'result']];
+
+        $launch = ['workflow' => 'operation-conn-launch', 'projection' => ConnLaunchNativeProjection::class,
+            'workflow_inputs' => true, 'terminal_result' => ['job' => 'launch', 'step' => 'result']];
+        $kinds[OperationKinds::ConnLaunchInspect] = $launch;
+        $kinds[OperationKinds::ConnLaunchDispatch] = [...$launch,
+            'execution_copies' => [['vault' => ConnLaunchNativeProjection::Vault, 'key_pattern' => '^conn-launch-dispatch-[1-9][0-9]*$']]];
 
         return $kinds;
     }

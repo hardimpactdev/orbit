@@ -458,11 +458,11 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
 });
 
 /** The roles-tagged tasks of the converge, each role standing in for a container step that kept `list` (none: no Instance host). */
-async function rolesPhase(folder: string, list?: unknown[]) {
+async function rolesPhase(folder: string, list?: unknown[], deferred: string[] = []) {
     const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("roles")));
     await Deno.writeTextFile(`${folder}/role.json`, JSON.stringify([list === undefined
         ? { name: "Apply a role without an Instance host", "ansible.builtin.debug": { msg: "no instance host" } }
-        : { name: "Keep the containers without the browser trust store", "ansible.builtin.set_fact": { instance_browser_trust: list } }]));
+        : { name: "Keep the containers without the browser trust store", "ansible.builtin.set_fact": { instance_browser_trust: list, instance_t3_restart_deferred: deferred } }]));
     for (const task of tasks) {
         const include = task["ansible.builtin.include_tasks"] as { file: string } | undefined;
         if (include) include.file = `${folder}/role.json`;
@@ -483,13 +483,14 @@ Deno.test("the roles phase records each container without Chromium's trust store
     const folder = await Deno.makeTempDir();
     try {
         const listed = [{ container: "orbit-instances/instance-7", reason: "not running" }];
-        let phase = await rolesPhase(folder, listed);
+        const deferred = ["orbit-instances/instance-7"];
+        let phase = await rolesPhase(folder, listed, deferred);
         assertEquals(phase.code, 0, phase.output);
-        assertEquals(phase.recorded, { browser_trust: listed });
+        assertEquals(phase.recorded, { browser_trust: listed, t3_restart_deferred: deferred });
         await Deno.remove(`${folder}/roles-result.json`);
         phase = await rolesPhase(folder);
         assertEquals(phase.code, 0, phase.output);
-        assertEquals(phase.recorded, { browser_trust: [] });
+        assertEquals(phase.recorded, { browser_trust: [], t3_restart_deferred: [] });
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 

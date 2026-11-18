@@ -87,7 +87,11 @@ final readonly class FleetReleaseLag
     public function behind(Node $node, ?array $visit, DesiredFleetStateData $state): ?string
     {
         if ($visit === null) {
-            return 'no visit yet';
+            $applied = $node->release_inputs ?? [];
+            if (! isset($applied['agent']) || $applied['agent'] !== $this->delivery->pin($node)) {
+                return 'no visit yet';
+            }
+            $visit = ['outcome' => 'unchanged', 'cli_version' => is_string($applied['cli'] ?? null) ? $applied['cli'] : null];
         }
 
         if (! in_array($visit['outcome'], ['converged', 'unchanged'], true)) {
