@@ -34,12 +34,18 @@ final class RequireActiveWireGuardPeer
     {
         $remoteAddress = $request->server('REMOTE_ADDR');
 
-        if (! is_string($remoteAddress) || filter_var($remoteAddress, FILTER_VALIDATE_IP) === false) {
+        return is_string($remoteAddress) ? self::activeNodeAt($remoteAddress) : null;
+    }
+
+    /** The active Node whose WireGuard address is this one, or null: the active Node rule for any peer address. */
+    public static function activeNodeAt(string $address): ?Node
+    {
+        if (filter_var($address, FILTER_VALIDATE_IP) === false) {
             return null;
         }
 
         return Node::query()
-            ->where('wireguard_ip', $remoteAddress)
+            ->where('wireguard_ip', $address)
             ->where('status', LifecycleStatus::Active->value)
             ->first();
     }

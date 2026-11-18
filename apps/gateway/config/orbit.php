@@ -162,5 +162,10 @@ return [
         // The held sessions a new clone's server gets for the creating profile's Nodes before their first read
         // (docs/reference/conn.md#held-sessions): off until the operator turns it on. The session handle, renewal and revoke always run.
         'held_session_premint' => (bool) env('ORBIT_CONN_HELD_SESSION_PREMINT', false),
+        // The routes of managed grant revocation (docs/reference/conn.md#managed-grant-revocation): off by default. Edge removal
+        // records managed revisions for every enrolled target whether this is on or off.
+        'managed_targets' => (bool) env('ORBIT_CONN_MANAGED_TARGETS', false),
+        // How long notice publication and rotation of one managed target wait for each other before they fail safe.
+        'managed_target_lock_wait_seconds' => 10,
     ],
 ];
