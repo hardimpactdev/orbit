@@ -323,7 +323,7 @@ final readonly class GatewayReleaseRecorder
         try {
             match (true) {
                 $release->outcome === 'paused' => $this->automation->pauseFor($release->errorCode === 'gateway.release_held' ? 'held' : 'migration_failure', $row),
-                $release->outcome === 'verified' && $release->trigger === 'rollback' => $this->pauseAfterRollback($row),
+                $release->outcome === 'verified' && in_array($release->trigger, ['rollback', 'reconcile'], true) => $this->pauseAfterRollback($row),
                 $release->outcome === 'verified' => $this->automation->clearPause(),
                 default => null,
             };
@@ -357,6 +357,11 @@ final readonly class GatewayReleaseRecorder
     private function pauseMarker(DeployedGatewayRelease $release): void
     {
         $path = $this->pauseMarkerPath();
+
+        if ($release->trigger === 'reconcile') {
+            // Recovering the serving definitions neither changes the schema nor releases a pre-migration backup.
+            return;
+        }
 
         if ($release->outcome !== 'paused') {
             // Only a verified release clears a pause: `resumed` checked serving, not the schema the pause is about.

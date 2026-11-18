@@ -18,6 +18,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
+use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\GatewayRelease;
 use App\Models\Node;
@@ -73,11 +74,21 @@ final readonly class AdmitSwampGatewayReleaseAction
             throw new GatewayReleaseException('deploy', 'gateway.release_not_adopted', 'The Gateway is not running from a release. Run gateway:release:adopt first.');
         }
         $gateway = GatewayCommandNode::find() ?? throw new GatewayReleaseException('deploy', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists.', 500);
-        if ($this->layout->usesContainers() && $previous === GatewayReleaseCommit::id($commit)) {
+        $reconcile = $trigger === 'reconcile';
+        if ($reconcile && (! $this->layout->usesContainers() || $this->layout->preparedCommit($previous) !== $commit)) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_reconcile_not_live', 'Reconciliation requires the full commit of the serving Gateway container.', 409);
+        }
+        if (! $reconcile && $this->layout->usesContainers() && $previous === GatewayReleaseCommit::id($commit)) {
             throw new GatewayReleaseException('deploy', 'gateway.release_already_current', 'This release already serves traffic.', 409);
         }
 
-        if ($this->layout->usesContainers() && $trigger === 'rollback') {
+        if ($reconcile) {
+            $checkout = $this->layout->currentPath();
+            if (trim((string) @file_get_contents($checkout.'/REVISION')) !== $commit) {
+                throw new GatewayReleaseException('deploy', 'gateway.release_reconcile_not_live', 'This Gateway process is running another commit.', 409);
+            }
+            $publication = ['reconcile' => true, 'grants' => app(SwampGrantRenderer::class)->render($checkout.'/swamp')];
+        } elseif ($this->layout->usesContainers() && $trigger === 'rollback') {
             $source = app(GatewayReleaseSource::class)->repository();
             $publication = ['retained' => true, 'repository' => $source->owner.'/'.$source->name];
         } else {
@@ -99,7 +110,8 @@ final readonly class AdmitSwampGatewayReleaseAction
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
             }
             // A release that went live during the checks above is the one a failed check switches back to.
-            if ($this->layout->currentReleaseId() !== $previous) {
+            if ($this->layout->currentReleaseId() !== $previous || ($trigger === 'reconcile'
+                && (! $this->layout->usesContainers() || $this->layout->preparedCommit($previous) !== $commit))) {
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
             }
 
@@ -108,7 +120,7 @@ final readonly class AdmitSwampGatewayReleaseAction
     }
 
     /**
-     * @param  array{repository: string, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
+     * @param  array{repository?: string, reconcile?: true, grants?: array<string, string>, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
     private function admit(string $commit, bool $force, string $trigger, string $previous, array $publication, string $horizon, Node $gateway): GatewayRelease
     {
@@ -140,7 +152,7 @@ final readonly class AdmitSwampGatewayReleaseAction
     }
 
     /**
-     * @param  array{repository: string, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
+     * @param  array{repository?: string, reconcile?: true, grants?: array<string, string>, retained?: true, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
     private function start(GatewayRelease $record, string $commit, bool $force, string $previous, array $publication, string $horizon, Node $gateway): Operation
     {

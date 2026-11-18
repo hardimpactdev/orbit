@@ -12,13 +12,13 @@ use Illuminate\Support\Facades\Queue;
 uses(LazilyRefreshDatabase::class);
 
 /** Ends one admitted `gateway.release` run with the given native terminal and returns its record. */
-function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = [], bool $retained = false): GatewayRelease
+function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = [], bool $retained = false, bool $reconcile = false): GatewayRelease
 {
     $sha = str_repeat('ab', 20);
-    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => 'auto', 'outcome' => GatewayRelease::Running,
+    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => $reconcile ? 'reconcile' : 'auto', 'outcome' => GatewayRelease::Running,
         'force' => false, 'phases' => [], 'duration_ms' => 0]);
     $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release', 'target_id' => $record->id,
-        'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6), 'retained' => $retained],
+        'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6), 'retained' => $retained, 'reconcile' => $reconcile],
         'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'native_progress' => ['steps' => $steps]]]);
     $record->update(['phases' => ['run' => ['operation_id' => $operation->id]]]);
     new GatewayReleaseRunProjection()->apply($operation, ['run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => $status,
@@ -132,3 +132,20 @@ it('pauses a release whose run ended without a readable result as a failed run, 
     'unreadable result' => ['operation.result_unreadable', 'gateway.release_run_failed'],
     'timeout' => ['operation.timed_out', 'gateway.release_run_timed_out'],
 ]);
+
+it('records a recovered serving release without a migration, a fleet rollout or a nested refresh', function (): void {
+    Queue::fake();
+    $record = endReleaseRun('succeeded', reconcile: true);
+    expect($record->outcome)->toBe('verified')
+        ->and($record->phases['verify']['version'])->toBe(str_repeat('ab', 20))
+        ->and($record->migrations_ran)->toBeFalse()
+        ->and($record->snapshot_path)->toBeNull()
+        ->and($record->phases)->not->toHaveKey('fleet');
+    Queue::assertNotPushed(AdmitFleetRollout::class);
+});
+
+it('keeps a failed recovery unverified after the serving revision changed', function (): void {
+    $record = endReleaseRun('failed', failedStep: 'Verify the serving release', reconcile: true);
+    expect($record->outcome)->toBe('paused')->and($record->migrations_ran)->toBeFalse()
+        ->and($record->error_code)->toBe('gateway.release_reconcile_not_live');
+});

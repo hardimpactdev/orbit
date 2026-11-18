@@ -16,6 +16,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GreenCommit;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Models\GatewayRelease;
@@ -25,6 +26,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -170,4 +172,31 @@ it('drains the container Horizon fallback only when the Gateway uses its queue',
         ->and(GatewayHorizon::releaseUnit($node, false))->toBe('');
     config(['orbit.gateway_queue.connection' => '']);
     expect(GatewayHorizon::releaseUnit($node, true))->toBe('');
+});
+
+it('admits only the exact serving container for reconciliation and uses no GitHub execution copy', function (): void {
+    Queue::fake();
+    Node::findOrFail(209)->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+    $admit = app(AdmitSwampGatewayReleaseAction::class);
+    $layout = GatewayReleaseLayout::fromConfig();
+    $refused = static fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_reconcile_not_live');
+    expect(fn () => $admit->execute(ReleaseA, trigger: 'reconcile'))->toThrow($refused);
+    mkdir(dirname($layout->containerInventoryPath()), 0700);
+    file_put_contents($layout->containerInventoryPath(), json_encode(['version' => 1, 'live' => ReleaseA, 'old' => ReleaseB]));
+    expect(fn () => $admit->execute(ReleaseB, trigger: 'reconcile'))->toThrow($refused)
+        ->and(fn () => $admit->execute(substr(ReleaseA, 0, 12).str_repeat('1', 28), trigger: 'reconcile'))->toThrow($refused)
+        ->and(fn () => $admit->execute(ReleaseA))->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_already_current'))
+        ->and(GatewayRelease::query()->count())->toBe(0);
+    symlink(base_path('../../swamp'), $layout->currentPath().'/swamp');
+    $record = $admit->execute(ReleaseA, trigger: 'reconcile');
+    $operation = Operation::findOrFail($record->phases['run']['operation_id']);
+    $input = app(GatewayReleaseRunProjection::class)->workflowInput($operation);
+
+    expect($record->trigger)->toBe('reconcile')
+        ->and(app(DirectOperation::class)->workflowFor($operation))->toBe('operation-gateway-reconcile')
+        ->and($input['intent']['sha'])->toBe(ReleaseA)
+        ->and($input['intent']['grants'])->toHaveKeys(['grants/orbit-gateway.yaml', 'grants/orbit-serve.yaml'])
+        ->and($input['intent'])->not->toHaveKeys(['manifest', 'web', 'repository'])
+        ->and(json_encode($input['execution_secrets']))->toBe('{}');
+    Http::assertNothingSent();
 });

@@ -13,6 +13,7 @@ use App\Domain\Logs\LogRedactor;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\DirectOperationWorkflowChoice;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeFailedStep;
 use App\Domain\Shared\ResourceOperationException;
@@ -35,10 +36,13 @@ use Throwable;
  * Actions and puts it in the vault; at its end the run's terminal result ends the release record through the same
  * recorder the legacy runner uses, so pauses, alerts and the fleet rollout follow it unchanged.
  */
-final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowInput
+final readonly class GatewayReleaseRunProjection implements DirectOperationProjection, DirectOperationTimeout, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
 {
     /** Each failed step, the release phase it ends and its error code. From Migrate on, migrations ran. */
     public const array Steps = [
+        'Check the serving release' => ['verify', 'gateway.release_reconcile_not_live', false],
+        'Reload serving workflows' => ['swamp', 'gateway.release_swamp_load_failed', true],
+        'Verify the serving release' => ['verify', 'gateway.release_reconcile_not_live', true],
         'Build the release' => ['prepare', 'gateway.release_prepare_failed', false],
         'Install the web build' => ['web', 'gateway.release_web_install_failed', false],
         'Clone the prepared release' => ['prepare', 'gateway.release_clone_failed', false],
@@ -64,15 +68,24 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         return array_any(is_array($progress) && is_array($progress['steps'] ?? null) ? $progress['steps'] : [], fn ($step) => is_array($step) && ($step['name'] ?? null) === 'Check the Ansible collections' && ($step['status'] ?? null) === 'failed');
     }
 
+    public function workflow(Operation $operation): string
+    {
+        return ($operation->input['reconcile'] ?? false) === true ? 'operation-gateway-reconcile' : 'operation-gateway-release';
+    }
+
     public function input(Operation $operation): array
     {
+        if (($operation->input['reconcile'] ?? false) === true) {
+            return ['intent' => array_intersect_key($operation->input, array_flip(['sha', 'ssh', 'swamp_ssh', 'grants']))];
+        }
+
         return ['intent' => array_intersect_key($operation->input, array_flip(['sha', 'id', 'force', 'previous', 'repository', 'manifest', 'web', 'retained',
             'horizon_unit', 'horizon_drain_seconds', 'keep', 'ssh', 'swamp_ssh']))];
     }
 
     public function workflowInput(Operation $operation): array
     {
-        if (($operation->input['retained'] ?? false) === true) {
+        if (($operation->input['retained'] ?? false) === true || ($operation->input['reconcile'] ?? false) === true) {
             return [...$this->input($operation), 'execution_secrets' => (object) []];
         }
 
@@ -129,7 +142,8 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         // A cancelled, interrupted or expired run, or one that stopped at an unknown step, may have migrated: it pauses.
         [$phase, $code, $mayHaveChangedState] = $status === 'succeeded' ? ['verify', null, true]
             : ($step === null ? ['run', $status === 'timed_out' ? 'gateway.release_run_timed_out' : 'gateway.release_run_failed', true] : self::Steps[$step]);
-        $retained = ($operation->input['retained'] ?? false) === true;
+        $reconcile = ($operation->input['reconcile'] ?? false) === true;
+        $retained = $reconcile || ($operation->input['retained'] ?? false) === true;
         // The step's own refusal code, such as gateway.release_downgrade, is more exact than the step's.
         $detail = is_array($data['failure'] ?? null) && is_string($data['failure']['detail'] ?? null) ? $data['failure']['detail'] : '';
         if ($code !== null && preg_match('/\b(gateway\.release_[a-z_]+):/', $detail, $refusal) === 1) {
@@ -148,7 +162,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             $phases[$phase]['error_code'] = $code;
             $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous];
         }
-        if ($code === null) {
+        if ($code === null && ! $reconcile) {
             app(ContinueReleaseFleetAction::class)->preserveHostBaselines($previous);
             $phases['fleet'] = ['status' => config('fleet.rollout') ? 'pending' : 'disabled', 'nodes' => []];
         }
@@ -173,7 +187,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             // As the legacy runner: whether this manual deploy pins an older commit decides if automation pauses.
             $recorder->progress($record->refresh(), [...$record->phases, 'newest_green' => app(GatewayReleaseSupersession::class)->check($sha)]);
         }
-        if ($code === null) {
+        if ($code === null && ! $reconcile) {
             DB::afterCommit(static function () use ($sha, $record): void {
                 try {
                     GatewaySchedule::dispatch(new AdmitFleetRollout($record->id));

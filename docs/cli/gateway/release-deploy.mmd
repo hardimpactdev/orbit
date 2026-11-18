@@ -16,6 +16,14 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant AC as Activate run<br/>child · new commit
   participant GN as Gateway Node<br/>Node 14
+  alt Recover Swamp after an offline rollback
+    TR->>GW: gateway:release:deploy --reconcile<br/>exact serving SHA
+    GW->>SW: operation-gateway-reconcile
+    SW->>GN: Confirm serving revision and wait for protected Operations
+    SW->>SW: Reload retained workflows on Node 209
+    SW->>GN: Verify public Gateway and exact live selection
+    SW-->>GW: Verified release record
+  else Deploy a release
   TR->>GW: gateway:release:deploy<br/>full sha
   %%> Command:
   %%> - `orbit gateway:release:deploy <full sha>`; the automatic tick admits the newest green commit the same way
@@ -125,3 +133,4 @@ sequenceDiagram
   end
   SW->>GN: Release unused candidate<br/>after handover or failure
   %%> Removes only an unpromoted clone owned by this Operation. Live and rollback remain protected.
+  end

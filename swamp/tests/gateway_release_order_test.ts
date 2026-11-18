@@ -162,3 +162,13 @@ Deno.test("cleanup resumes only after scheduler handover or switch-back has ende
   assert(cleanup.dependsOn?.some((edge) => edge.step === "Retire the previous live" && edge.condition.type === "always"));
   assert(cleanup.dependsOn?.some((edge) => edge.step === "Switch back" && edge.condition.type === "always"));
 });
+
+Deno.test("serving reconciliation brackets the retained workflow load with read-only checks", async () => {
+  const reconcile = await steps("workflow-operation-gateway-reconcile");
+  assertEquals(reconcile.map((step) => step.name), ["Check the serving release", "Reload serving workflows", "Verify the serving release"]);
+  assert(reconcile[0].task.inputs?.argv?.includes("reconcile-idle"));
+  assertEquals(reconcile[1].task.workflowIdOrName, "operation-gateway-swamp-load");
+  assertEquals(reconcile[1].dependsOn, [{ step: reconcile[0].name, condition: { type: "succeeded" } }]);
+  assertEquals(reconcile[2].dependsOn, [{ step: reconcile[1].name, condition: { type: "succeeded" } }]);
+  assert(reconcile[2].task.inputs?.argv?.includes("reconcile-verify"));
+});

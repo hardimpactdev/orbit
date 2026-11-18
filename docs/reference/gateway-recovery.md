@@ -436,7 +436,7 @@ It needs only the release directories. It refuses an id that is not 12 hex digit
 
 It reloads PHP-FPM, so every request runs the release and OPcache starts empty. Then it restarts each running service whose working directory is under the application, such as Horizon, the scheduler and agent-view. A stopped Process stays stopped, Horizon included: after a release run that ended before its Horizon start, run `orbit process:start` for it, or `systemctl start orbit-process-<id>-horizon.service` on the Gateway when Orbit does not answer. The release run switches forward with the same script. A restart of Horizon by the script waits for its running jobs, up to the drain.
 
-It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, admit a release of the serving commit to load its workflows and record a verified release.
+It changes no schema and restores no snapshot, so the database advice under [Roll back](#roll-back) holds here too. It also loads no Swamp definitions and writes no release record. When the Gateway answers again, run `orbit gateway:release:deploy <full-serving-sha> --reconcile` for a container Gateway. It checks the public Gateway and the full serving commit, waits for protected Operations, reloads the retained workflows and verifies the serving release again. It records the result and pauses automatic releases after a verified rollback. Preparation, rollback, traffic, schema and fleet selection stay in place. A host release uses the regular deploy command to reconcile.
 
 ### Apply an env change
 

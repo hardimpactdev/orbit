@@ -87,6 +87,12 @@ describe('gateway release contract', function (): void {
         $mock->assertSent(static fn ($request): bool => $request instanceof ShowGatewayReleaseRequest && $request->resolveEndpoint() === '/api/v1/gateway/releases/1');
     });
 
+    it('sends an explicit reconciliation request for the full serving commit', function (): void {
+        $mock = gateway_release_follow('gateway-releases/gateway-release-deploy/queued', ['gateway-releases/gateway-release-show/verified'], 'gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET, '--reconcile' => true, '--json' => true], 'gateway-releases/gateway-release-deploy/verified.json', 0);
+
+        $mock->assertSent(static fn ($request): bool => $request instanceof DeployGatewayReleaseRequest && $request->body()->all() === ['commit' => GATEWAY_RELEASE_TARGET, 'reconcile' => true]);
+    });
+
     it('fails when the followed release switched back or paused', function (): void {
         gateway_release_follow('gateway-releases/gateway-release-deploy/queued', ['gateway-releases/gateway-release-show/running', 'gateway-releases/gateway-release-show/switched-back'], 'gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET], 'gateway-releases/gateway-release-deploy/switched-back.human.txt', 1);
         gateway_release_follow('gateway-releases/gateway-release-deploy/queued', ['gateway-releases/gateway-release-show/switched-back'], 'gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET, '--json' => true], 'gateway-releases/gateway-release-deploy/switched-back.json', 1);

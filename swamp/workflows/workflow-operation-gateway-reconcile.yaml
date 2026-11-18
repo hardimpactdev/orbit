@@ -1,0 +1,88 @@
+id: a9f90fc9-f4b5-4abf-8e51-cb1249082c72
+name: operation-gateway-reconcile
+autoContinue: false
+description: Reload the serving Gateway container's workflows after an offline rollback and verify the public release.
+queueTimeout: 120
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: gateway.release}
+    intent:
+      type: object
+      properties:
+        sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+        ssh: {type: object}
+        swamp_ssh: {type: object}
+        grants:
+          type: object
+          properties:
+            grants/orbit-gateway.yaml: {type: string}
+            grants/orbit-serve.yaml: {type: string}
+          required: [grants/orbit-gateway.yaml, grants/orbit-serve.yaml]
+          additionalProperties: false
+      required: [sha, ssh, swamp_ssh, grants]
+      additionalProperties: false
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: release
+    labels: {role: swamp}
+    steps:
+      - name: Check the serving release
+        labels: {role: swamp}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "gateway-reconcile-idle-" + string(inputs.node_id) }}'
+          methodName: exec
+          globalArgs: &gateway
+            name: '${{ "gateway-reconcile-ssh-" + string(inputs.node_id) }}'
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh.target.user }}
+              port: ${{ inputs.intent.ssh.target.port }}
+              identityFile: ${{ inputs.intent.ssh.identity_file }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh.target.host }}
+                transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+          inputs:
+            hosts: name:target
+            timeoutSec: 810
+            argv: [/usr/bin/timeout, '795', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, reconcile-idle, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']
+      - name: Reload serving workflows
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Check the serving release, condition: {type: succeeded}}]
+        task:
+          type: workflow
+          workflowIdOrName: operation-gateway-swamp-load
+          inputs:
+            operation_id: ${{ inputs.operation_id }}
+            node_id: 209
+            kind: gateway.swamp_load
+            intent:
+              sha: ${{ inputs.intent.sha }}
+              force: true
+              retained: true
+              serving: true
+              grants: ${{ inputs.intent.grants }}
+              ssh: ${{ inputs.intent.swamp_ssh }}
+              gateway_ssh: ${{ inputs.intent.ssh }}
+            execution_secrets: {}
+      - name: Verify the serving release
+        labels: {role: swamp}
+        dependsOn: [{step: Reload serving workflows, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "gateway-reconcile-verify-" + string(inputs.node_id) }}'
+          methodName: exec
+          globalArgs: *gateway
+          inputs:
+            hosts: name:target
+            timeoutSec: 180
+            argv: [/usr/bin/timeout, '165', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, reconcile-verify, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']

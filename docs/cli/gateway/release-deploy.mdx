@@ -5,7 +5,7 @@ description: "Release one commit to the active Gateway, then follow it until it 
 ---
 
 ```bash
-orbit gateway:release:deploy [<commit>] [--json]
+orbit gateway:release:deploy [<commit>] [--reconcile] [--json]
 ```
 
 | Argument | Meaning |
@@ -13,6 +13,8 @@ orbit gateway:release:deploy [<commit>] [--json]
 | `commit` | The full 40-character SHA. In a terminal, an omitted value is asked for. |
 
 The Gateway checks the commit's agent pin and selects its web build. It then starts the `gateway.release` run on Node 209. The container release flow deploys the commit in a permanent preparation container that receives no traffic. Orbit clones the finished build, checks the clone, and switches traffic to it. After the clone exists, preparation can sleep while the clone is checked. Orbit records and drains the serving Horizon units before the switch. After verification, the previous container finishes serving its in-flight requests and sleeps for rollback. Both sleepers reclaim memory to swap. A rollback wakes the retained release and checks it before switching traffic. A failed check switches back to the previous release. Automatic releases run the same way. [Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run) describes the run.
+
+After an offline container rollback, run `orbit gateway:release:deploy <full-serving-sha> --reconcile` to reload Swamp and record the verified release. A different SHA or a host deployment returns `gateway.release_reconcile_not_live`. This mode checks the live selection before and after the load. It performs no build, migration, route switch or fleet rollout.
 
 The CLI reads the record every 2 seconds until the run ends. The record shows the run's Operation under `phases.run` and gets its outcome from the run's end. JSON prints the final record. The command exits 0 when the Gateway is `verified`. The fleet pass continues in the background. Read `phases.fleet` with `gateway:release:show` to see each Node and confirm that the release is fleet current.
 

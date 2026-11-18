@@ -295,6 +295,10 @@
   "operation-fleet-peer-dns": {
    "Check resolution": "read-only"
   },
+  "operation-gateway-reconcile": {
+   "Check the serving release": "read-only",
+   "Verify the serving release": "read-only"
+  },
   "operation-gateway-release": {
    "Wait for active Operations": "read-only"
   },

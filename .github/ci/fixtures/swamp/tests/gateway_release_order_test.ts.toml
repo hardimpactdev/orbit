@@ -10,6 +10,7 @@ cases = [
   "failure cleanup runs after every handover outcome",
   "failed web installation cannot migrate even when its clone is skipped",
   "cleanup resumes only after scheduler handover or switch-back has ended",
+  "serving reconciliation brackets the retained workflow load with read-only checks",
 ]
 file = "swamp/tests/gateway_release_order_test.ts"
 cost = 1
@@ -21,4 +22,5 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/workflows/workflow-gateway-release-activate.yaml",
   "swamp/workflows/workflow-operation-gateway-release.yaml",
+  "swamp/workflows/workflow-operation-gateway-reconcile.yaml",
 ]

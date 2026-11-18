@@ -20,7 +20,7 @@ check_recovery() {
 }
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  check-load|check-recovery|switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
+  reconcile-idle|reconcile-verify|check-load|check-recovery|switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9</home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
@@ -35,7 +35,7 @@ case "$phase" in
     echo 'gateway.release_recovery_incompatible: container Horizon must drain inside the journaled switch' >&2
     exit 1
     ;;
-  build|build-checked|switch|restore-host|check-recovery|check-load)
+  reconcile-idle|reconcile-verify|build|build-checked|switch|restore-host|check-recovery|check-load)
     [[ ! -e $journal/operation ]] || { echo 'Recover the interrupted Gateway switch with --recover first' >&2; exit 1; }
     if [[ $phase != check-load || -f $inventory ]]; then check_recovery; fi
     ;;
@@ -50,6 +50,17 @@ esac
 # The native workflow uses the checked entry points so an older installed
 # dispatcher refuses before Build or Load can change the target.
 if [[ $phase == check-recovery || $phase == check-load ]]; then exit 0; fi
+# Reconcile the exact serving container through its existing read-only checks.
+# Never resume, build or hand over a release when the caller asks to recover definitions.
+if [[ $phase == reconcile-idle || $phase == reconcile-verify ]]; then
+  [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]] || {
+    echo 'gateway.release_reconcile_not_live: the requested commit no longer serves traffic' >&2; exit 1;
+  }
+  if [[ $phase == reconcile-idle ]]; then
+    bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") wait-idle "$sha" "$operation" >&2
+  fi
+  phase=public-ready
+fi
 if [[ $phase == build-checked ]]; then phase=build; fi
 # A failed deletion must complete before a new build can reuse the previous SHA.
 if [[ $phase == build && -f $journal/pending-prune ]]; then

@@ -20,7 +20,7 @@ final class DeployGatewayReleaseRequest extends GatewayRequest implements HasBod
     #[\Override]
     protected Method $method = Method::POST;
 
-    public function __construct(public readonly string $commit)
+    public function __construct(public readonly string $commit, public readonly bool $reconcile = false)
     {
         if (preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1) {
             throw new InvalidArgumentException('Name the commit by its full 40-character SHA.');
@@ -37,9 +37,9 @@ final class DeployGatewayReleaseRequest extends GatewayRequest implements HasBod
         return GatewayReleaseResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array{commit: string} */
+    /** @return array{commit: string, reconcile?: true} */
     protected function defaultBody(): array
     {
-        return ['commit' => $this->commit];
+        return ['commit' => $this->commit, ...($this->reconcile ? ['reconcile' => true] : [])];
     }
 }
