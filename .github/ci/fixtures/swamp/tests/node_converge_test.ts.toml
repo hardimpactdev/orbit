@@ -68,6 +68,7 @@ cases = [
   "a node:add role run compares with the empty record its enrollment intent carries, and an intent with no record is refused",
   "each skippable role phase is guarded by the role digests; every other role step runs as before",
   "input preparation with an empty code list writes every phase digest and skips only on an equal record",
+  "the result names a phase whose digest always moves because code above the bundle cannot be read",
 ]
 file = "swamp/tests/node_converge_test.ts"
 cost = 4

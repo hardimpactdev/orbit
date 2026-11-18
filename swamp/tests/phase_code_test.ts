@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { fileURLToPath } from "node:url";
 import { phaseCodeDigests } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
-import { classify, named, phases, type Resolution, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
+import { classify, named, outsideNames, phases, type Resolution, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
 import { codeTree } from "./phase_code_fixture.ts";
 
 const shipped = fileURLToPath(new URL("../ansible", import.meta.url));
@@ -341,4 +341,43 @@ Deno.test("a Python file may read its own source by __file__, but a path beside 
     assertEquals(unresolved("files/a.py", "source = Path(__file__).read_text()\n"), null);
     for (const text of ["HERE = Path(__file__).parent / 'b.py'\n", "b = Path(__file__) / '..' / 'b.py'\n", "b = os.path.join(os.path.dirname(__file__), 'b.py')\n",
         "b = Path(__file__).with_name('b.py')\n"]) assertEquals(unresolved("files/a.py", text) === null, false, text);
+});
+
+// docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: files a phase names above the bundle.
+Deno.test("a release script the roles phase copies from above the bundle moves the roles digest only", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        // The shipped bundle and the scripts beside it, as the extension holds them.
+        const root = `${tree}/shipped`;
+        await Deno.mkdir(root, { recursive: true });
+        await new Deno.Command("cp", { args: ["-r", shipped, `${root}/ansible`] }).output();
+        await new Deno.Command("cp", { args: ["-r", fileURLToPath(new URL("../scripts", import.meta.url)), `${root}/scripts`] }).output();
+        const shippedCode: [string, string, string] = [`${root}/ansible`, code[1], code[2]];
+        assertEquals((await resolvePhases(`${root}/ansible`)).roles.outside.includes("../scripts/release-container.py"), true);
+        const moving = {};
+        const first = await phaseCodeDigests(shippedCode, moving);
+        assertEquals(moving, {});
+        await Deno.writeTextFile(`${root}/scripts/release-container.py`, "\n# changed\n", { append: true });
+        const now = await phaseCodeDigests(shippedCode);
+        assertEquals(phases.filter((phase) => now[phase] !== first[phase]), ["roles"]);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+Deno.test("a file named above the bundle that cannot be read gives its phase a digest that always moves, and says why", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const [ansible] = code;
+        await Deno.writeTextFile(`${ansible}/tasks/network.yml`, "- ansible.builtin.copy: { src: \"{{ playbook_dir }}/../scripts/missing\", dest: /x }\n");
+        assertEquals((await resolvePhases(ansible)).network.outside, ["../scripts/missing"]);
+        const moving: Record<string, string> = {};
+        const first = await phaseCodeDigests(code, moving);
+        const second = await phaseCodeDigests(code);
+        assertEquals(phases.filter((phase) => second[phase] !== first[phase]), ["network"]);
+        assertEquals(Object.keys(moving), ["network"]);
+        assertEquals(moving.network.startsWith("../scripts/missing cannot be read"), true);
+        // A Node path such as a link target is not a controller file.
+        assertEquals(outsideNames("tasks/php.yml", "- ansible.builtin.file: { src: ../../mods-available/x.ini, dest: /etc/x, state: link }\n"), []);
+        assertEquals(outsideNames("tasks/a.yml", "- ansible.builtin.copy: { src: ../../scripts/x, dest: /x }\n"), ["../scripts/x"]);
+        assertEquals(outsideNames("tasks/a.yml", "- ansible.builtin.copy: { src: ../files/x, dest: /x }\n"), []);
+    } finally { await Deno.remove(tree, { recursive: true }); }
 });

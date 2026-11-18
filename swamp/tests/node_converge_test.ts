@@ -705,3 +705,16 @@ Deno.test("input preparation with an empty code list writes every phase digest a
         assertEquals((await write(first.digests)).unchanged, [...skippable]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
+
+Deno.test("the result names a phase whose digest always moves because code above the bundle cannot be read", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await reports(folder);
+        const digests = Object.fromEntries(skippable.map((phase) => [phase, "a".repeat(64)]));
+        await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify({ digests, unchanged: [], moving: { roles: "../scripts/release-container.py cannot be read: NotFound" } }));
+        const result = await convergeResult(folder);
+        assertEquals(result.digests_moving, { roles: "../scripts/release-container.py cannot be read: NotFound" });
+        await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify({ digests, unchanged: [] }));
+        assertEquals("digests_moving" in await convergeResult(folder), false);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});

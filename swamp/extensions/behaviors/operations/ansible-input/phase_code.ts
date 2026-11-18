@@ -33,7 +33,53 @@ export const entries: Record<Phase, string[]> = {
 export const shared = ["ansible.cfg", "build_vars.py", ...new Set(Object.values(entries).flat())];
 
 /** `everyPhase` holds the bundle files of classes (b) and (d); each is in every phase that does not read the whole bundle. */
-export type Resolution = { files: string[]; whole: false; everyPhase: string[] } | { files: null; whole: true; reason: string; everyPhase: string[] };
+/** `outside` holds the files a phase names above the bundle, such as `{{ playbook_dir }}/../scripts/x`, relative to the bundle root. */
+export type Resolution = { files: string[]; whole: false; everyPhase: string[]; outside: string[] }
+    | { files: null; whole: true; reason: string; everyPhase: string[]; outside: string[] };
+
+/** A relative path joined to a folder of the bundle, with `.` and `..` folded; a result that starts with `../` is above the bundle. */
+function fold(folder: string, path: string): string {
+    const parts: string[] = [];
+    for (const part of [...folder.split("/"), ...path.split("/")]) {
+        if (part === "" || part === ".") continue;
+        if (part === ".." && parts.length && parts[parts.length - 1] !== "..") parts.pop();
+        else parts.push(part);
+    }
+    return parts.join("/");
+}
+
+/** The files above the bundle that a text names: a path from the playbook folder that climbs out of it, or a local source that climbs
+ * out of the bundle from its own file. */
+export function outsideNames(file: string, text: string): string[] {
+    const found = new Set<string>();
+    for (const match of text.matchAll(/\bplaybook_dir\s*(?:\}\}\s*\/|(?:~|\+)\s*'\/)((?:\.\.\/)+[^"'{}\s,)\]]+)/g)) {
+        const path = fold("", match[1]);
+        if (path.startsWith("../")) found.add(path);
+    }
+    let documents: unknown = null;
+    try {
+        documents = parse(text);
+    } catch {
+        // A task file that does not parse already makes its phase read the whole bundle (unresolved()).
+    }
+    const walk = (node: unknown): void => {
+        if (Array.isArray(node)) return node.forEach(walk);
+        if (node === null || typeof node !== "object") return;
+        for (const [key, value] of Object.entries(node)) {
+            if (localSource.test(key)) {
+                const args = typeof value === "string" ? Object.fromEntries(value.split(/\s+/).map((pair) => pair.split("=", 2))) : value as Record<string, unknown> | null;
+                const remote = args?.remote_src === true || args?.remote_src === "true" || args?.remote_src === "yes";
+                if (typeof args?.src === "string" && args.src.startsWith("../") && !remote) {
+                    const path = fold(file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "", args.src);
+                    if (path.startsWith("../")) found.add(path);
+                }
+            }
+            walk(value);
+        }
+    };
+    if (/\.ya?ml$/.test(file) || text.trimStart().startsWith("{")) walk(documents);
+    return [...found];
+}
 
 /** The class of each bundle file: `phases` names the phases of a class (a) file. */
 export type Classes = { a: Map<string, Phase[]>; b: string[]; c: string[]; d: string[] };
@@ -277,11 +323,12 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
             if (target) pending.push(target);
         }
     }
-    const reach = {} as Record<Phase, { reached: Set<string>; reason: string | null }>;
+    const reach = {} as Record<Phase, { reached: Set<string>; reason: string | null; outside: string[] }>;
     for (const phase of phases) {
         const reached = new Set<string>(shared);
         const queue: string[] = [];
         const via = new Map<string, string>();
+        const outside = new Set<string>();
         const visit = (names: string[], from = "") => {
             for (const name of names) if (!reached.has(name)) { reached.add(name); queue.push(name); via.set(name, from); }
         };
@@ -293,6 +340,7 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
                 // A selected task or play key of an entry playbook is checked as a task file is.
                 for (const root of playbookRoots(text(entry), phase)) {
                     reason ??= unresolved(entry, root);
+                    for (const path of outsideNames(entry, root)) outside.add(path);
                     visit(named(root, byPath, byStem, byDir), entry);
                 }
             } catch (error) {
@@ -307,18 +355,19 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
         while (queue.length) {
             const file = queue.shift()!;
             reason ??= unresolved(file, text(file));
+            for (const path of outsideNames(file, text(file))) outside.add(path);
             visit(named(text(file), byPath, byStem, byDir), file);
         }
         if (reason) for (let file = reason.split(":")[0]; file; file = via.get(file) ?? "") reason += ` <- ${via.get(file) || "root"}`;
-        reach[phase] = { reached, reason };
+        reach[phase] = { reached, reason, outside: [...outside].sort() };
     }
     const classes = classOf(files, texts, byPath, byStem, byDir, reach);
     const everyPhase = [...classes.b, ...classes.d].sort();
     const result = {} as Record<Phase, Resolution>;
     for (const phase of phases) {
-        const { reached, reason } = reach[phase];
-        result[phase] = reason ? { files: null, whole: true, reason, everyPhase }
-            : { files: [...new Set([...reached, ...everyPhase])].filter((file) => texts.has(file)).sort(), whole: false, everyPhase };
+        const { reached, reason, outside } = reach[phase];
+        result[phase] = reason ? { files: null, whole: true, reason, everyPhase, outside }
+            : { files: [...new Set([...reached, ...everyPhase])].filter((file) => texts.has(file)).sort(), whole: false, everyPhase, outside };
     }
     lastClasses.set(root, classes);
     return result;

@@ -94,9 +94,11 @@ export async function readDigest(folder: string, operationId: number, code: stri
 }
 
 /** The bundle files of each converge phase by relative path and content, or the whole bundle for a phase the resolver cannot bound
- * (phase_code.ts). The Tool helper and the Tool files it imports are in the tools and roles phases. A caller that ships no code (the
- * Gateway's materializer tests) passes an empty list: every phase then reads the same empty code, as codeDigest([]) does. */
-export async function phaseCodeDigests(code: [string, string, string] | []): Promise<Record<typeof skippable[number], string>> {
+ * (phase_code.ts), with the files the phase names above the bundle, read beside it from the same tree. The Tool helper and the Tool files
+ * it imports are in the tools and roles phases. A file above the bundle that cannot be read gives its phase a digest that always moves,
+ * and `moving` records why. A caller that ships no code (the Gateway's materializer tests) passes an empty list: every phase then reads
+ * the same empty code, as codeDigest([]) does. */
+export async function phaseCodeDigests(code: [string, string, string] | [], moving: Partial<Record<typeof skippable[number], string>> = {}): Promise<Record<typeof skippable[number], string>> {
     const digests = {} as Record<typeof skippable[number], string>;
     if (code.length === 0) {
         const none = await codeDigest([]);
@@ -109,6 +111,14 @@ export async function phaseCodeDigests(code: [string, string, string] | []): Pro
         const resolution = resolved[phase];
         const rows = resolution.whole ? [await codeDigest([ansible])]
             : await Promise.all(resolution.files.map(async (file) => `${file}\0${await sha256(await Deno.readFile(`${ansible}/${file}`))}`));
+        for (const path of resolution.outside) {
+            try {
+                rows.push(`${path}\0${await sha256(await Deno.readFile(`${ansible}/${path}`))}`);
+            } catch (error) {
+                moving[phase] = `${path} cannot be read: ${(error as Error).name}`;
+                rows.push(`${path}\0${crypto.randomUUID()}`);
+            }
+        }
         if (phase === "tools" || phase === "roles") rows.push(await codeDigest([helper, tools]));
         digests[phase] = await sha256(rows.join("\n"));
     }
@@ -189,9 +199,11 @@ export async function convergeInput(folder: string, operationId: number, builder
     }
     // After every file the phases read is written. Each phase reads the whole run folder and only its own code.
     const run = await runDigest(folder, operationId);
-    const codes = await phaseCodeDigests(code);
+    const moving: Partial<Record<typeof skippable[number], string>> = {};
+    const codes = await phaseCodeDigests(code, moving);
     const reads = Object.fromEntries(await Promise.all(skippable.map(async (phase) => [phase, await sha256(`${run}\n${codes[phase]}`)]))) as Record<typeof skippable[number], string>;
-    const phases = await phaseDigests(intent, reads, skippable);
+    // A phase whose code above the bundle cannot be read runs every time; the result names the file.
+    const phases = { ...await phaseDigests(intent, reads, skippable), ...(Object.keys(moving).length ? { moving } : {}) };
     await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
     return phases;
 }
