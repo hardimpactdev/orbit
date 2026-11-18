@@ -61,7 +61,7 @@ final readonly class StartInstanceDestroyAction
      * `$cancelCompletion`: a running `instance.complete` of the clone is cancelled, and the removal is admitted to start after it ends,
      * in the same transaction (docs/reference/conn.md#remove-an-instance). Without it such a removal refuses with `operation.target_busy`.
      *
-     * `$within`: a caller that records its own intent with the removal, such as the cancel of a task copy (TaskCopyEnd). It runs in the
+     * `$within`: a caller that records its own intent with the removal, such as the cancel of a task copy (TaskEnd). It runs in the
      * removal's transaction after every read of the admission, gets the closure that records the removal, and returns the Operation
      * that this call returns. A refusal it throws rolls the transaction back, so no removal is admitted.
      *
@@ -74,6 +74,7 @@ final readonly class StartInstanceDestroyAction
             return $replay;
         }
 
+        ContainerInstanceDestroy::assertReleaseRemovalAvailable($instance);
         if (! $force && $instance->project->source_access === ProjectSourceAccess::GhCli) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Native publication verification requires anonymous or scoped GitHub App repository access.', 503);
         }

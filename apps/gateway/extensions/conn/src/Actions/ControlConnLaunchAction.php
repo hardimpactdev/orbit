@@ -11,6 +11,7 @@ use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -78,7 +79,15 @@ final readonly class ControlConnLaunchAction
                     default => 'preparing',
                 };
             }
-            $this->store->change($launch, ['state' => $state, ...($target === 'launch' ? ['status' => OperationStatus::Waiting, 'error_code' => null] : [])]);
+            try {
+                $this->store->change($launch, ['state' => $state, ...($target === 'launch' ? ['status' => OperationStatus::Waiting, 'error_code' => null] : [])]);
+            } catch (QueryException $exception) {
+                if (! str_contains($exception->getMessage(), 'operation.version_retired')) {
+                    throw $exception;
+                }
+
+                throw new ResourceOperationException('conn.launch_retry_unavailable', 'The Operation version for this retry has retired.', 409);
+            }
             ReconcileSwampOperations::dispatch()->afterCommit();
         });
     }

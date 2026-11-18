@@ -11,6 +11,7 @@ use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\ProductionApplicationPaths;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -24,6 +25,7 @@ final readonly class InstanceEnvironmentContextResolver
         bool $requireActiveNode,
         bool $lockRoute = false,
         ?int $createOperationId = null,
+        bool $productionContainer = false,
     ): InstanceEnvironmentContext {
         $sourceIsLaravel = $instance->source_is_laravel;
         $environment = $instance->placementEnvironment();
@@ -84,7 +86,9 @@ final readonly class InstanceEnvironmentContextResolver
             $this->conflict();
         }
 
-        [$path, $executionUser] = $this->placement($instance, $node);
+        [$path, $executionUser] = $productionContainer && $environment === 'production'
+            ? ['/srv/workspace/current'.ProductionApplicationPaths::suffix($instance->root ?? $instance->project->root), 'orbit']
+            : $this->placement($instance, $node);
 
         return new InstanceEnvironmentContext(
             instanceId: $instance->id,
@@ -99,6 +103,7 @@ final readonly class InstanceEnvironmentContextResolver
             nodeStatus: $node->status->value,
             node: $node,
             createOperationId: $createOperationId,
+            productionContainer: $productionContainer,
         );
     }
 

@@ -34,6 +34,7 @@ final class DestroyInstanceDeployStepRequest extends GatewayRequest
             is_string($data['command'] ?? null) ? $data['command'] : '',
             is_int($data['timeout_seconds'] ?? null) ? $data['timeout_seconds'] : 0,
             $this->successRequestId($response),
+            ($data['required'] ?? true) !== false,
         );
     }
 }

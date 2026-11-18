@@ -23,7 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $driver
  * @property string $runtime_key
  * @property string $external_id
- * @property string|null $external_id_admission how a copy thread's external_id came to be (TaskCopyTurn::admission); null on rows made before it
+ * @property string|null $external_id_admission how a copy thread's external_id came to be (TaskTurn::admission); null on rows made before it
  * @property string $role
  * @property string|null $model
  * @property string|null $effort

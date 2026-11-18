@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Actions\Instances\StartInstanceUnregisterAction;
 use App\Data\Operations\OperationData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
@@ -679,3 +680,14 @@ it('names the planned databases in the slot read only through the drop\'s identi
         expect($refusal->errorCode)->toBe('database.server_admin_invalid');
     }
 });
+
+it('preserves the registration and storage of a production release before and after its first receipt', function (bool $verified): void {
+    $instance = destroyDefault();
+    $instance->forceFill(['production_release_started_at' => now(), 'production_release' => $verified
+        ? ['live' => str_repeat('a', 40), 'old' => null, 'artifact' => str_repeat('b', 64)] : null])->save();
+    $count = Operation::query()->count();
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($instance, true)))->toBe('operation.kind_unavailable')
+        ->and(containerRefusal(fn () => app(StartInstanceUnregisterAction::class)->execute($instance)))->toBe('operation.kind_unavailable')
+        ->and(Operation::query()->count())->toBe($count)
+        ->and($instance->fresh())->not->toBeNull();
+})->with([false, true]);

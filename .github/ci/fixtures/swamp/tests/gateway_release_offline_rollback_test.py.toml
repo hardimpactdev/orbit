@@ -1,0 +1,34 @@
+file = "swamp/tests/gateway_release_offline_rollback_test.py"
+cost = 102
+inputs = [
+  "bin/gateway-container-move",
+  "bin/gateway-container-rollback",
+  "bin/gateway-container-site",
+  "bin/gateway-release-check",
+  "bin/gateway-release-phase",
+  "bin/gateway-rollback",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-release-drain.sh",
+  "swamp/scripts/gateway-release-host-check.py",
+  "swamp/scripts/gateway-release-horizons.py",
+  "swamp/scripts/gateway-release-switch.sh",
+  "swamp/workflows/workflow-production-release-activate.yaml",
+  "swamp/tests/gateway_release_recovery_test.py",
+]
+cases = [
+  "test_reconciliation_fences_candidate_switches_until_its_own_finalizer",
+  "test_incompatible_target_is_refused_before_any_mutation",
+  "test_legacy_parked_release_is_deleted_before_another_clone_is_allowed",
+  "test_orphan_clone_refuses_a_fourth_gateway_container",
+  "test_retired_restore_and_switch_back_phases_are_refused",
+  "test_wrong_operation_cannot_finish_or_delete_the_committed_candidate",
+  "test_interrupted_console_recovery_still_uses_the_shared_lock",
+]
+[case_costs]
+"test_reconciliation_fences_candidate_switches_until_its_own_finalizer" = 12
+"test_incompatible_target_is_refused_before_any_mutation" = 10
+"test_legacy_parked_release_is_deleted_before_another_clone_is_allowed" = 10
+"test_orphan_clone_refuses_a_fourth_gateway_container" = 20
+"test_retired_restore_and_switch_back_phases_are_refused" = 14
+"test_wrong_operation_cannot_finish_or_delete_the_committed_candidate" = 20
+"test_interrupted_console_recovery_still_uses_the_shared_lock" = 16

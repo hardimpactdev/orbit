@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Routes\AdmitRouteOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Routes\NativeRouteRemovalProjection;
+use App\Domain\Routes\NativeRouteWorkloadPreparation;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -212,4 +214,20 @@ it('still refuses destruction of an active Instances Route before starting work'
     expect($error)->toBeInstanceOf(ResourceOperationException::class)
         ->and($error?->errorCode)->toBe('route.target_conflict');
     expect(Operation::query()->where('kind', 'route.destroy')->exists())->toBeFalse();
+});
+
+it('keeps Route withdrawal and convergence inside the confirmed AppProd release boundary', function (): void {
+    [$node] = destroyFleet();
+    $node->roles()->where('role', 'app-dev')->update(['role' => 'app-prod']);
+    $route = destroyFixture($node, 'active', 'container-origin');
+    $instance = $route->targets()->firstOrFail()->instance;
+    $instance->forceFill(['production_release_started_at' => now()])->save();
+    expect(fn () => app(InstanceDeploymentIntent::class)->runtimeIntent($instance, $route))
+        ->toThrow(ResourceOperationException::class, 'Wait for the serving production release');
+    $instance->forceFill(['production_release' => ['live' => str_repeat('3', 40), 'old' => null, 'artifact' => 'sha256:'.str_repeat('4', 64)]])->save();
+    expect(app(InstanceDeploymentIntent::class)->runtimeIntent($instance, $route))->toBe([null, null]);
+    $input = app(NativeRouteWorkloadPreparation::class)->capture($instance, $route, $route, true);
+    foreach (['prepare', 'selected', 'restore'] as $phase) {
+        expect($input[$phase])->toBe(['source_access' => null, 'served_roots' => null, 'runtime' => null, 'acl' => [], 'links' => []]);
+    }
 });

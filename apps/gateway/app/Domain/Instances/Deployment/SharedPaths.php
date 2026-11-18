@@ -18,6 +18,12 @@ final class SharedPaths
             return [];
         }
 
+        return self::forProduction($instance);
+    }
+
+    /** @return list<string> */
+    public static function forProduction(Instance $instance): array
+    {
         $instance->loadMissing('project');
         $paths = $instance->shared_paths;
 

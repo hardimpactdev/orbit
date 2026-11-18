@@ -74,7 +74,7 @@ final readonly class ConnLaunchNativeWork
 
         return $this->idempotency->under($kind, $key, hash('sha256', $kind."\0".$key),
             fn (): Operation => $this->start->execute($kind, 'instance', $instance->id, $launch->node_id, $input,
-                $launch->triggered_by, $launch->request_id, lockKey: OperationStore::lockKey('conn_launch', $launch->id)));
+                $launch->triggered_by, $launch->request_id, lockKey: OperationStore::lockKey('conn_launch', $launch->id)), parent: $launch);
     }
 
     public static function attempt(Operation $launch, string $field): ?Operation

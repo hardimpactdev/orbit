@@ -6,7 +6,7 @@ namespace Orbit\Extensions\AiRouter\Domain;
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\TaskCopyKey;
+use App\Domain\Tasks\TaskKey;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleShape;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
@@ -40,7 +40,7 @@ final readonly class AiRouterModelForwarder
     /** The oneshot unit that loads the table early at boot, before WireGuard, Docker and Incus; stopping it deletes the table. */
     public const string TableUnit = 'orbit-ai-router-forwarder-table.service';
 
-    /** The Orbit routes of a task copy, under {@see TaskCopyKey::Path}: each one exact path, sent to `/api/v1/copy/<route>`. */
+    /** The Orbit routes of a task copy, under {@see TaskKey::Path}: each one exact path, sent to `/api/v1/copy/<route>`. */
     public const array OrbitRoutes = ['whoami', 'pull-request'];
 
     /** The origin containers on the Node call. */
@@ -59,7 +59,7 @@ final readonly class AiRouterModelForwarder
         $port = self::Port;
         $routes = '';
         foreach (self::OrbitRoutes as $route) {
-            $routes .= "\thandle ".TaskCopyKey::Path."/{$route} {\n\t\trewrite * /api/v1/copy/{$route}\n"
+            $routes .= "\thandle ".TaskKey::Path."/{$route} {\n\t\trewrite * /api/v1/copy/{$route}\n"
                 ."\t\treverse_proxy https://{$gatewayAddress} {\n\t\t\theader_up Host {$gatewayAddress}\n"
                 ."\t\t\ttransport http {\n\t\t\t\ttls_trust_pool file ".NodeAgentFootprint::CertificatePath."\n\t\t\t}\n\t\t}\n\t}\n";
         }

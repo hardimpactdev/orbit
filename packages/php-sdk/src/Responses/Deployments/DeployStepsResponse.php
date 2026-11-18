@@ -12,7 +12,7 @@ final readonly class DeployStepsResponse
         public string $requestId,
     ) {}
 
-    /** @return array{steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>, request_id: string} */
+    /** @return array{steps: list<array{name: string, phase: string, command: string, timeout_seconds: int, required: bool}>, request_id: string} */
     public function toArray(): array
     {
         return [

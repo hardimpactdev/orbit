@@ -18,7 +18,7 @@ final class UpdateTaskGroupData extends Data
         public ?string $brief,
         public ?TaskGroupStatus $status,
         public ?bool $preview = null,
-        /** @var array<string, string|null> the copy turn agent values to change, keyed by field; null clears one (TaskCopyAgent) */
+        /** @var array<string, string|null> the copy turn agent values to change, keyed by field; null clears one (TaskAgent) */
         public array $agents = [],
         /** A new mode for the group; only until it has a pull request (docs/reference/tasks.md#where-the-mode-comes-from). */
         public ?TaskPrMode $prMode = null,

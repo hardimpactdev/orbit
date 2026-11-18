@@ -25,6 +25,7 @@ $gatewayPath = static fn (string $path): string => str_starts_with($path, '/') ?
 
 return [
     'recipe_snapshot_cache' => env('ORBIT_RECIPE_SNAPSHOT_CACHE'),
+    'ssh_mux_directory' => env('ORBIT_GATEWAY_SSH_MUX'),
     // The pinned agent and its command contract (docs/reference/node-agent.md#commands).
     'agent' => [
         'contract' => $gatewayPath((string) env('ORBIT_AGENT_CONTRACT', 'resources/agent/frozen-commands.json')),
@@ -109,7 +110,7 @@ return [
         // Unset or empty requests no one. The pull request author is omitted at request time.
         'review_request_logins' => (string) env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS', ''),
         // The Gateway's agent of a new thread in a task copy, per role: the last fallback after the group and the Project
-        // (TaskCopyAgent). The provider and the effort pick the copy's T3 provider instance.
+        // (TaskAgent). The provider and the effort pick the copy's T3 provider instance.
         'copy_agents' => [
             'implementer' => [
                 'provider' => $copyAgent('ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER', 'claude'),

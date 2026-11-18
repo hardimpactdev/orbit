@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\OperationStatus;
@@ -41,14 +42,27 @@ final readonly class NativeInstanceEnvironmentImportProjection implements Direct
     {
         $plan = ValidatedData::object($operation->input['direct_import']);
         $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
-        $context = $this->contexts->resolve($instance, true);
+        $target = $this->checkedTarget($instance, $operation);
+        $context = $this->contexts->resolve($instance, true, productionContainer: $target !== null);
         if ($operation->node_id !== $instance->node_id || $plan['node_id'] !== $context->nodeId || $plan['base'] !== $context->path
             || $plan['user'] !== $context->executionUser) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The Instance environment placement changed after admission.', 422);
         }
 
         return ['intent' => ['base' => $plan['base'], 'user' => $plan['user'],
+            ...($target !== null ? ['production_control' => $target] : []),
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node)], 'execution_secrets' => []];
+    }
+
+    /** @return array<string,mixed>|null */
+    private function checkedTarget(Instance $instance, Operation $operation): ?array
+    {
+        $target = ProductionContainerRelease::target($instance);
+        if ($target !== ($operation->input['production_control'] ?? null)) {
+            throw new ResourceOperationException('env.configuration_changed', 'The serving release changed after the import was admitted.', 409);
+        }
+
+        return $target;
     }
 
     public function apply(Operation $operation, array $data): Operation
@@ -90,7 +104,8 @@ final readonly class NativeInstanceEnvironmentImportProjection implements Direct
         $instance = Instance::query()->findOrFail($operation->target_id);
 
         return $this->lock->run([$instance->id], function () use ($instance, $operation, $contents): array {
-            $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
+            $target = $this->checkedTarget($instance->refresh(), $operation);
+            $context = $this->contexts->resolve($instance, requireActiveNode: true, productionContainer: $target !== null);
             $values = $this->importer->parse($contents);
             if ($context->laravel) {
                 $values['APP_URL'] = 'https://{{instance.domain}}';

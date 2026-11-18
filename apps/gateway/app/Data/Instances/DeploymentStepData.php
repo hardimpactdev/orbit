@@ -18,10 +18,11 @@ final class DeploymentStepData extends Data
         #[\SensitiveParameter]
         public string $command,
         public int $timeoutSeconds,
+        public bool $required = true,
     ) {}
 
     public static function fromDomain(DeploymentStep $step): self
     {
-        return new self($step->name, $step->phase->value, $step->command, $step->timeoutSeconds);
+        return new self($step->name, $step->phase->value, $step->command, $step->timeoutSeconds, $step->required);
     }
 }

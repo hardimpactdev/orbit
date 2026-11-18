@@ -28,6 +28,7 @@ final class StoreInstanceDeployStepRequest extends FormRequest
             'name' => ['required', 'string'],
             'command' => ['present', 'string'],
             'phase' => ['sometimes', Rule::enum(DeploymentPhase::class)],
+            'required' => ['sometimes', 'boolean'],
             'timeout_seconds' => ['sometimes', 'integer', 'min:1', 'max:900'],
             'before' => ['sometimes', 'string'],
             'after' => ['sometimes', 'string'],
@@ -40,7 +41,7 @@ final class StoreInstanceDeployStepRequest extends FormRequest
         try {
             $payload = app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['name', 'command', 'phase', 'timeout_seconds', 'before', 'after'],
+                ['name', 'command', 'phase', 'timeout_seconds', 'required', 'before', 'after'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -52,6 +53,10 @@ final class StoreInstanceDeployStepRequest extends FormRequest
 
         if (array_key_exists('phase', $payload) && ! is_string($payload['phase'])) {
             throw ValidationException::withMessages(['body' => ['The phase field must be a string.']]);
+        }
+
+        if (array_key_exists('required', $payload) && ! is_bool($payload['required'])) {
+            throw ValidationException::withMessages(['body' => ['The required field must be a boolean.']]);
         }
 
         if (array_key_exists('timeout_seconds', $payload) && ! is_int($payload['timeout_seconds'])) {
@@ -80,6 +85,7 @@ final class StoreInstanceDeployStepRequest extends FormRequest
                 is_int($payload['timeout_seconds'] ?? null)
                     ? $payload['timeout_seconds']
                     : DeploymentStep::DefaultTimeoutSeconds,
+                $payload['required'] ?? true,
             );
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['body' => ['A deployment step is invalid.']]);

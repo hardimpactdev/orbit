@@ -58,7 +58,7 @@ final readonly class ConnLaunchInstances
         $key = self::key($launch, 'create', 'launch');
         $data = new CreateInstanceData($project, $node, $name, null, null, $selection?->target, branchSelection: $selection);
 
-        return $this->keyed('instance.create', $key, fn (): Operation => $this->create->execute($data, $launch->triggered_by, $launch->request_id,
+        return $this->keyed($launch, 'instance.create', $key, fn (): Operation => $this->create->execute($data, $launch->triggered_by, $launch->request_id,
             connLaunchId: $launch->id, within: fn (Closure $record): Operation => $this->record($launch, ConnLaunchChild::Create, $key, $record)));
     }
 
@@ -67,7 +67,7 @@ final readonly class ConnLaunchInstances
         $key = self::key($launch, 'wake', 'launch');
 
         return $this->state->admitChild($launch->id, ConnLaunchChild::Wake, $key, function (Operation $parent) use ($instance, $key): array {
-            $operation = $this->keyed(InstanceWake::Kind, $key,
+            $operation = $this->keyed($parent, InstanceWake::Kind, $key,
                 fn (): Operation => $this->wake->admitDeferred($instance, $parent->triggered_by, $parent->request_id));
 
             return ['operation' => $operation, 'owned' => $operation->idempotency_key === $key && $operation->triggered_by === $parent->triggered_by];
@@ -92,7 +92,7 @@ final readonly class ConnLaunchInstances
     {
         $key = self::key($launch, 'restore-wake', predecessor: $previous?->id);
 
-        return $this->keyed(InstanceSleep::Kind, $key, fn (): ?Operation => $this->sleep->startIf(
+        return $this->keyed($launch, InstanceSleep::Kind, $key, fn (): ?Operation => $this->sleep->startIf(
             $instance, $launch->triggered_by, $launch->request_id,
             fn (Instance $target): bool => $this->ownsRestorableWake($launch->id, $target, $wake->id, $previous?->id),
         ));
@@ -139,14 +139,14 @@ final readonly class ConnLaunchInstances
     {
         $key = self::key($launch, 'complete');
 
-        return $this->keyed(StartInstanceCompleteAction::Kind, $key, fn (): Operation => $this->record($launch, ConnLaunchChild::Completion, $key,
+        return $this->keyed($launch, StartInstanceCompleteAction::Kind, $key, fn (): Operation => $this->record($launch, ConnLaunchChild::Completion, $key,
             fn (): Operation => $this->admitCloneCompletion($launch, $instance, retry: false)));
     }
 
     public function retryApplication(Operation $launch, string $retryId): void
     {
         $key = self::key($launch, 'complete', 'application');
-        $this->keyed(StartInstanceCompleteAction::Kind, $key, fn (): ?Operation => $this->state->admitApplicationRetry(
+        $this->keyed($launch, StartInstanceCompleteAction::Kind, $key, fn (): ?Operation => $this->state->admitApplicationRetry(
             $launch->id, $retryId, $key, function (Operation $parent): array {
                 $instance = Instance::query()->where('node_id', $parent->node_id)->where('project_id', $parent->input['project_id'])
                     ->lockForUpdate()->find(ConnLaunchChild::instanceId($parent));
@@ -191,7 +191,7 @@ final readonly class ConnLaunchInstances
         $stoppedRemoval = $unstarted ? null : $this->assertCleanupSafe($launch, $instance, $previous);
         $key = self::key($launch, 'destroy', predecessor: $previous?->id);
 
-        return $this->keyed(InstanceDestroyKind::forInstance($instance), $key,
+        return $this->keyed($launch, InstanceDestroyKind::forInstance($instance), $key,
             fn (): Operation => $this->destroy->execute($instance, true, $launch->triggered_by, $launch->request_id,
                 within: fn (Closure $record): Operation => $this->state->admitChild($launch->id, ConnLaunchChild::Destroy, $key,
                     function (Operation $parent) use ($instance, $create, $previous, $unstarted, $stoppedRemoval, $record): array {
@@ -301,9 +301,9 @@ final readonly class ConnLaunchInstances
      * @param  Closure(): T  $admit
      * @return T
      */
-    private function keyed(string $kind, string $key, Closure $admit): mixed
+    private function keyed(Operation $launch, string $kind, string $key, Closure $admit): mixed
     {
-        return $this->idempotency->under($kind, $key, hash('sha256', $kind."\0".$key), $admit);
+        return $this->idempotency->under($kind, $key, hash('sha256', $kind."\0".$key), $admit, parent: $launch);
     }
 
     public static function key(Operation $launch, string $phase, ?string $retry = null, ?int $predecessor = null): string
