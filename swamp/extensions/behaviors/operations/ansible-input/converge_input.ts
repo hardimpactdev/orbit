@@ -94,11 +94,17 @@ export async function readDigest(folder: string, operationId: number, code: stri
 }
 
 /** The bundle files of each converge phase by relative path and content, or the whole bundle for a phase the resolver cannot bound
- * (phase_code.ts). The Tool helper and the Tool files it imports are in the tools and roles phases. */
-export async function phaseCodeDigests(code: [string, string, string]): Promise<Record<typeof skippable[number], string>> {
+ * (phase_code.ts). The Tool helper and the Tool files it imports are in the tools and roles phases. A caller that ships no code (the
+ * Gateway's materializer tests) passes an empty list: every phase then reads the same empty code, as codeDigest([]) does. */
+export async function phaseCodeDigests(code: [string, string, string] | []): Promise<Record<typeof skippable[number], string>> {
+    const digests = {} as Record<typeof skippable[number], string>;
+    if (code.length === 0) {
+        const none = await codeDigest([]);
+        for (const phase of skippable) digests[phase] = none;
+        return digests;
+    }
     const [ansible, helper, tools] = code;
     const resolved = await resolvePhases(ansible);
-    const digests = {} as Record<typeof skippable[number], string>;
     for (const phase of skippable) {
         const resolution = resolved[phase];
         const rows = resolution.whole ? [await codeDigest([ansible])]
@@ -135,7 +141,7 @@ export async function roleDigests(folder: string, operationId: number, code: str
     return phases;
 }
 
-export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: [string, string, string]) {
+export async function convergeInput(folder: string, operationId: number, builder: string, toolHelper: string, code: [string, string, string] | []) {
     const intent = JSON.parse(await Deno.readTextFile(`${folder}/intent.json`));
     const hosts: Record<string, unknown> = {};
     const known = new Set<string>();

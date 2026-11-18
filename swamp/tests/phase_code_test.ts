@@ -130,3 +130,14 @@ Deno.test("a statically imported file with a task tagged in a list, and a play's
         for (const phase of phases) assertEquals(resolved[phase].files!.includes("tasks/unused.yml"), true, phase);
     } finally { await Deno.remove(tree, { recursive: true }); }
 });
+
+Deno.test("a caller with no shipped code gets one no-code digest per phase, and a changed input still moves every phase", async () => {
+    const digests = await phaseCodeDigests([]);
+    assertEquals(new Set(Object.values(digests)).size, 1);
+    assertEquals(Object.keys(digests), [...phases]);
+    const { tree, code } = await codeTree();
+    try {
+        const shippedDigests = await phaseCodeDigests(code);
+        for (const phase of phases) assertEquals(shippedDigests[phase] === digests[phase], false, phase);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});

@@ -689,3 +689,19 @@ Deno.test("each skippable role phase is guarded by the role digests; every other
         }
     }
 });
+
+Deno.test("input preparation with an empty code list writes every phase digest and skips only on an equal record", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
+        const write = async (recorded: Record<string, string>) => {
+            await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], recorded_digests: recorded }));
+            await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+            for await (const entry of Deno.readDir(folder)) if (!["intent.json", "plans.json"].includes(entry.name)) await Deno.remove(`${folder}/${entry.name}`, { recursive: true });
+            return await convergeInput(folder, 701, "/unused", "/fixture/converge_tool.ts", []);
+        };
+        const first = await write({});
+        assertEquals([Object.keys(first.digests), first.unchanged], [[...skippable], []]);
+        assertEquals((await write(first.digests)).unchanged, [...skippable]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
