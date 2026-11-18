@@ -181,6 +181,15 @@ fn words(text: &str) -> Vec<String> {
     text.split(' ').map(str::to_owned).collect()
 }
 
+/// A planned argument list whose last word, the comment, may hold spaces.
+fn command(text: &str, comment: &str) -> Vec<String> {
+    let mut args = words(text);
+    args.extend(["comment".to_owned(), comment.to_owned()]);
+    args
+}
+
+const NONE: Vec<Vec<String>> = Vec::new();
+
 #[test]
 fn any_writes_one_commented_line_per_protocol_and_family_above_broad_managed_lines() {
     let ufw = Double::standard();
@@ -188,7 +197,7 @@ fn any_writes_one_commented_line_per_protocol_and_family_above_broad_managed_lin
     assert_eq!(present(&ufw, &any).1, Ok(4));
     let before = ufw.rows();
     let (commands, result) = present(&ufw, &any);
-    assert!(commands.is_empty());
+    assert_eq!(commands, NONE);
     assert_eq!(result, Ok(0));
     assert_eq!(ufw.tuples(None), vec![
         tuple("443/tcp", "allow", "Anywhere"),
@@ -245,7 +254,7 @@ fn an_allow_range_with_protocol_any_converges_narrow_first_and_repeats_without_c
         assert_eq!(kept, narrow, "{source}");
         let applied = ufw.rows();
         let (commands, result) = present(&ufw, &range);
-        assert!(commands.is_empty(), "{source}");
+        assert_eq!(commands, NONE, "{source}");
         assert_eq!(result, Ok(0), "{source}");
         assert_eq!(ufw.rows(), applied, "{source}");
     }
@@ -325,7 +334,7 @@ fn a_retained_removal_leaves_the_managed_line() {
     let ufw = Double::standard();
     present(&ufw, &serde_json::json!({"action": "deny", "port": "25"}));
     let (commands, result) = converge(&ufw, &serde_json::json!({"action": "deny", "port": "25", "retain": true}), "absent");
-    assert!(commands.is_empty());
+    assert_eq!(commands, NONE);
     assert_eq!(result, Ok(0));
     assert!(ufw.tuples(None).contains(&tuple("25/tcp", "deny", "192.0.2.1")));
 }
@@ -363,7 +372,7 @@ fn a_line_from_one_ipv6_address_sits_above_the_ipv6_deny_and_is_found_again() {
     let deny = rows.iter().position(|[to, action, _]| action == "deny" && to.ends_with("(v6)"));
     assert!(allow < deny, "{rows:?}");
     let (commands, result) = present(&ufw, &serde_json::json!({"port": "80", "source": "fd42::10"}));
-    assert!(commands.is_empty());
+    assert_eq!(commands, NONE);
     assert_eq!(result, Ok(0));
 }
 
@@ -395,7 +404,7 @@ fn numbered_inserts_count_unrelated_limit_reject_and_outgoing_rows() {
     let after = format!(
         "Status: active\n{unrelated}[ 6] 443/tcp ALLOW IN 192.0.2.1 # orbit web\n[ 7] Anywhere on orbit ALLOW IN 10.44.0.0/24 # orbit:wireguard-members\n"
     );
-    assert!(plan(&wanted, inventory(&after).expect("rows")).is_empty());
+    assert_eq!(plan(&wanted, inventory(&after).expect("rows")), NONE);
     assert_eq!(check(&wanted, &inventory(&after).expect("rows")), Ok(()));
 }
 
@@ -431,7 +440,7 @@ fn an_interface_scoped_source_is_preserved_and_does_not_stand_in_for_an_unrestri
     assert_eq!(commands.first().and_then(|args| args.get(..2)), Some(&words("insert 2")[..]));
     assert_eq!(ufw.rows().first(), Some(&scoped));
     assert_eq!(ufw.rows().len(), 3);
-    assert!(present(&ufw, &serde_json::json!({})).0.is_empty());
+    assert_eq!(present(&ufw, &serde_json::json!({})).0, NONE);
 }
 
 #[test]
@@ -449,12 +458,12 @@ fn a_both_protocol_allow_keeps_the_existing_tcp_line_below_unrelated_managed_por
     let before = ufw.rows();
     let request = serde_json::json!({"port": "47443", "protocol": "any"});
     let (commands, result) = present(&ufw, &request);
-    assert_eq!(commands, vec![words("insert 5 allow in proto udp from 192.0.2.1 to any port 47443 comment orbit web")]);
+    assert_eq!(commands, vec![command("insert 5 allow in proto udp from 192.0.2.1 to any port 47443", "orbit web")]);
     assert_eq!(result, Ok(1));
     let kept: Vec<Row> = ufw.rows().into_iter().filter(|row| row.to != "47443/udp" || row.action != "allow").collect();
     assert_eq!(kept, before);
     assert_eq!(ufw.rows().into_iter().filter(|row| row.comment == existing.comment).collect::<Vec<_>>(), vec![existing]);
-    assert!(present(&ufw, &request).0.is_empty());
+    assert_eq!(present(&ufw, &request).0, NONE);
 }
 
 #[test]
@@ -469,12 +478,12 @@ fn an_equal_tcp_line_below_source_disjoint_managed_trust_keeps_its_comment_and_o
     let before = ufw.rows();
     let request = serde_json::json!({"port": "47443", "protocol": "any", "source": "10.232.2.11"});
     let (commands, result) = present(&ufw, &request);
-    assert_eq!(commands, vec![words("insert 1 allow in proto udp from 10.232.2.11 to any port 47443 comment orbit web")]);
+    assert_eq!(commands, vec![command("insert 1 allow in proto udp from 10.232.2.11 to any port 47443", "orbit web")]);
     assert_eq!(result, Ok(1));
     let kept: Vec<Row> = ufw.rows().into_iter().filter(|row| row.to != "47443/udp" || row.action != "allow").collect();
     assert_eq!(kept, before);
     assert_eq!(ufw.rows().into_iter().filter(|row| row.comment == existing.comment).collect::<Vec<_>>(), vec![existing]);
-    assert!(present(&ufw, &request).0.is_empty());
+    assert_eq!(present(&ufw, &request).0, NONE);
 }
 
 #[test]
@@ -484,7 +493,7 @@ fn a_partial_application_preserves_the_actual_tcp_row_below_scoped_trust_and_ins
     assert_eq!(before.get(2), Some(&row("10.45.0.2 on orbit", "allow", "Anywhere", "orbit:wireguard-members")));
     assert_eq!(before.get(5).map(|row| row.comment.as_str()), Some("proof:existing"));
     let commands = plan(&rule("present", &request), before.clone());
-    assert_eq!(commands, vec![words("insert 3 allow in proto udp from 10.232.2.11 to any port 47372 comment orbit")]);
+    assert_eq!(commands, vec![command("insert 3 allow in proto udp from 10.232.2.11 to any port 47372", "orbit")]);
     let ufw = Double::new(before.clone());
     for args in &commands {
         ufw.apply(args).expect("apply");
@@ -495,7 +504,7 @@ fn a_partial_application_preserves_the_actual_tcp_row_below_scoped_trust_and_ins
     assert_eq!(check(&rule("present", &request), &inventory(&ufw.text()).expect("rows")), Ok(()));
     let after = ufw.rows();
     let (commands, result) = present(&ufw, &request);
-    assert!(commands.is_empty());
+    assert_eq!(commands, NONE);
     assert_eq!(result, Ok(0));
     assert_eq!(ufw.rows(), after);
 }
@@ -511,7 +520,7 @@ fn managed_trust_agreeing_with_an_allow_does_not_hide_an_intervening_operator_de
     assert_eq!(commands.iter().map(|args| args.first().cloned().unwrap_or_default()).collect::<Vec<_>>(), ["--force", "insert"]);
     assert!(result.is_ok());
     assert_eq!(ufw.tuples(Some("47372")).get(..2), Some(&[tuple("47372/tcp", "allow", "10.232.2.11"), tuple("47372/tcp", "deny", "Anywhere")][..]));
-    assert!(present(&ufw, &request).0.is_empty());
+    assert_eq!(present(&ufw, &request).0, NONE);
 }
 
 #[test]
@@ -523,7 +532,7 @@ fn an_overlapping_managed_allow_leaves_the_unrestricted_existing_allow_intact() 
         }
         let ufw = Double::new(rows.clone());
         let (commands, result) = present(&ufw, &serde_json::json!({"port": "47372", "source": "10.232.2.11"}));
-        assert!(commands.is_empty(), "{to}");
+        assert_eq!(commands, NONE, "{to}");
         assert_eq!(result, Ok(0), "{to}");
         assert_eq!(ufw.rows(), rows, "{to}");
     }
@@ -543,7 +552,7 @@ fn an_overlapping_managed_deny_still_moves_the_unrestricted_existing_allow() {
         assert!(result.is_ok(), "{to}");
         assert_eq!(ufw.rows().first().map(|row| row.to.as_str()), Some("47372/tcp"), "{to}");
         assert_eq!(ufw.rows().get(1).map(|row| row.to.as_str()), Some(to), "{to}");
-        assert!(present(&ufw, &request).0.is_empty(), "{to}");
+        assert_eq!(present(&ufw, &request).0, NONE, "{to}");
     }
 }
 
@@ -563,7 +572,7 @@ fn a_failed_second_allow_keeps_tcp_and_a_retry_adds_only_udp_for_the_same_source
     assert_eq!(retry.first().and_then(|args| args.iter().skip_while(|word| *word != "proto").nth(1)).map(String::as_str), Some("udp"));
     assert_eq!(ufw.rows().first().cloned(), tcp);
     assert_eq!(result, Ok(1));
-    assert!(present(&ufw, &serde_json::json!({"protocol": "any"})).0.is_empty());
+    assert_eq!(present(&ufw, &serde_json::json!({"protocol": "any"})).0, NONE);
 }
 
 #[test]
@@ -580,7 +589,7 @@ fn a_partial_apply_is_not_rolled_back_and_a_repeat_repairs_only_the_missing_line
     ufw.fail.set(false);
     assert_eq!(present(&ufw, &any).0.len(), 3);
     assert_eq!(ufw.tuples(Some("443")).len(), 4);
-    assert!(present(&ufw, &any).0.is_empty());
+    assert_eq!(present(&ufw, &any).0, NONE);
 }
 
 #[test]
@@ -593,7 +602,7 @@ fn an_interrupted_move_can_leave_the_line_absent_and_a_repeat_restores_it() {
     ufw.apply(commands.first().expect("first command")).expect("apply");
     assert_eq!(check(&wanted, &inventory(&ufw.text()).expect("rows")), Err("firewall.verify_failed"));
     assert_eq!(present(&ufw, &serde_json::json!({"source": "10.44.0.9"})).0.len(), 1);
-    assert!(present(&ufw, &serde_json::json!({"source": "10.44.0.9"})).0.is_empty());
+    assert_eq!(present(&ufw, &serde_json::json!({"source": "10.44.0.9"})).0, NONE);
 }
 
 #[test]
