@@ -1405,14 +1405,20 @@ It proved no enforcement. The nested fleet had no Conn registration and one edge
 
 ### Gateway receipts
 
-Two runs on 2026-11-18 make up these receipts, both in task copy `task-5868` (Instance 3705) against its nested fleet. In each, the nested Gateway served the copy's checkout with no local changes and the switch on for the run only.
+Three runs on 2026-11-18 make up these receipts, both in task copy `task-5868` (Instance 3705) against its nested fleet. In each, the nested Gateway served the copy's checkout with no local changes and the switch on for the run only.
 
-| Run | Commit | Cases |
-| --- | --- | --- |
-| 17:09 UTC | `9839be03601b` | Revocation with two streams, rotation, and the ACK identity checks |
-| 16:54 UTC | `514a9d7c99dd` | Dropped notice, lost ACK and restart, silent loss |
+| Run | Commit | `main` merged at | Cases |
+| --- | --- | --- | --- |
+| 17:17 UTC | `8b5398fbea6b` | `6ff52d812` | Revocation with two streams |
+| 17:09 UTC | `9839be03601b` | `5e470c768` | Rotation and the ACK identity checks |
+| 16:54 UTC | `514a9d7c99dd` | `5e470c768` | Dropped notice, lost ACK and restart, silent loss |
 
-Both trees hold this task's changes on top of `main` as merged at `5e470c768`, including that merge's other changes under `apps/gateway`. A later merge from `main` is in neither run. Between the two commits only notice publication and enrolment changed: the per-target lock. The 17:09 run repeated every case that publishes and checks a notice against a rotation, or rotates. The 16:54 cases measure probes, ACKs and recovery, whose code did not change. Commits after `9839be03601b` in this task change only documentation.
+Each tree holds this task's changes on top of `main` as merged at the named commit, including that merge's other changes under `apps/gateway`. `8b5398fbea6b` is the final Gateway head; later commits in this task change only documentation.
+
+- Between `514a9d7c99dd` and `9839be03601b`, only notice publication and enrolment changed: the per-target lock. The 17:09 run repeated the cases that rotate.
+- The merge of `6ff52d812` put `main`'s profile event key change into the edge-removal transaction. The 17:17 run repeated the revocation case for it.
+- That merge left enrolment, probes, ACKs and recovery unchanged.
+- The 16:54 cases measure probes, ACKs and recovery, whose code changed in neither step.
 
 The target was a scripted Bun process on the nested `app-dev` Node, not Rust Conn. It drove the real routes with a 1 s probe and a 3 s lease, and served a small managed ingress with RPC and long streams of one frame every 200 ms. The preflight's fixture container was gone, so the script ran on the serving Node's host. All machines share one host clock, so the times compare directly. Target times have millisecond resolution; caller times have microseconds.
 
@@ -1420,23 +1426,23 @@ The serving Node was Node 3 (`app-dev`, 10.45.0.2), with a lab environment row t
 
 #### Commit and fence
 
-This is the 17:09 run, target 3. The Gateway brackets each commit: `committed_at` is sampled inside the transaction before its writes, and `commit_observed_at` in the after-commit callback. Each interval below is measured from both bounds, from `commit_observed_at` first.
+This is the 17:17 run, target 4. The Gateway brackets each commit: `committed_at` is sampled inside the transaction before its writes, and `commit_observed_at` in the after-commit callback. Each interval below is measured from both bounds, from `commit_observed_at` first.
 
-Revision 1 removed A's edge 17 while A and B held streams. The commit lies between 34.414810 and 34.416589. Then:
+Revision 1 removed A's edge 20 while A and B held streams. The commit lies between 20.304104 and 20.308452. Then:
 
 | Step | Time | After the commit |
 | --- | --- | --- |
-| Notice received, fence | 34.426 | 9.4 to 11.2 ms |
-| A's client reads end of stream, after its frame 14 at 34.305426 | 34.426807 | 10.2 to 12.0 ms |
-| Reverb publish returned, `notice_sent_at` | 34.427937 | 11.3 to 13.1 ms |
-| Verified handler close, from the verified `delta` | 34.466 | 49.4 to 51.2 ms |
-| ACK settled | 34.498881 | 82.3 to 84.1 ms |
+| Notice received, fence | 20.318 | 9.5 to 13.9 ms |
+| Reverb publish returned, `notice_sent_at` | 20.319534 | 11.1 to 15.4 ms |
+| A's client reads end of stream, after its frame 14 at 20.167519 | 20.320877 | 12.4 to 16.8 ms |
+| Verified handler close, from the verified `delta` | 20.382 | 73.5 to 77.9 ms |
+| ACK settled | 20.417035 | 108.6 to 112.9 ms |
 
-B's client received frame 15 at 34.432967, 7.0 ms after A's fence. It kept receiving frames up to frame 44 at 40.234936, 30 frames after the fence, until its client timeout. B's token still introspected. A's old token got `conn.managed_token_invalid`. A new token request got `conn.managed_direct_edge_required`, as did caller C.
+B's client received frame 15 at 20.329387, 11.4 ms after A's fence. It kept receiving frames up to frame 44 at 26.134705, 30 frames after the fence, until its client timeout. B's token still introspected. A's old token got `conn.managed_token_invalid`. A new token request got `conn.managed_direct_edge_required`, as did caller C.
 
 #### Rotation
 
-This is the 17:09 run. Revision 2 removed A's edge 19 while the target sent no ACK. Its notice was sent at 42.092360. Enrolment then rotated the target to generation 2 and recorded `superseded_at` at 45.393921; the row keeps its `notice_sent_at`. The old process's next probe, 173 ms after enrolment returned, got `conn.managed_target_identity`. It failed closed, and B's client read the end of its stream 1 ms later. Generation 2 started with `owed: []`. B's generation 1 token got `conn.managed_token_invalid`, and a new token was admitted.
+This is the 17:09 run, target 3. Revision 2 removed A's edge 19 while the target sent no ACK. Its notice was sent at 42.092360. Enrolment then rotated the target to generation 2 and recorded `superseded_at` at 45.393921; the row keeps its `notice_sent_at`. The old process's next probe, 173 ms after enrolment returned, got `conn.managed_target_identity`. It failed closed, and B's client read the end of its stream 1 ms later. Generation 2 started with `owed: []`. B's generation 1 token got `conn.managed_token_invalid`, and a new token was admitted.
 
 An ACK of revision 2, a generation 1 revision, after the rotation:
 
