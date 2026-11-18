@@ -124,10 +124,15 @@ final readonly class ConnLaunchInstances
     public function observeCompletion(Operation $launch): ?Operation
     {
         $recorded = ConnLaunchChild::Completion->operation($launch);
-        $completion = ConnLaunchChild::completions()->where('target_id', ConnLaunchChild::instanceId($launch))
-            ->where('node_id', $launch->node_id)->where('id', '>', $recorded->id ?? 0)->latest('id')->first();
+        $completion = $this->laterCompletion($launch, $recorded->id ?? 0);
 
         return $completion === null ? $recorded : $this->state->observeCompletion($launch->id, $completion);
+    }
+
+    private function laterCompletion(Operation $launch, int $after): ?Operation
+    {
+        return ConnLaunchChild::completions()->where('target_id', ConnLaunchChild::instanceId($launch))
+            ->where('node_id', $launch->node_id)->where('id', '>', $after)->latest('id')->first();
     }
 
     public function complete(Operation $launch, Instance $instance): Operation
@@ -147,6 +152,11 @@ final readonly class ConnLaunchInstances
                     ->lockForUpdate()->find(ConnLaunchChild::instanceId($parent));
                 if ($instance === null) {
                     StartInstanceCompleteAction::refuse('The launch target Instance is unavailable.');
+                }
+
+                $completion = $this->laterCompletion($parent, ConnLaunchChild::Completion->operationId($parent) ?? 0);
+                if ($completion !== null) {
+                    return ['operation' => $completion, 'owned' => false];
                 }
 
                 $operation = ($parent->input['target_kind'] ?? null) === 'new'

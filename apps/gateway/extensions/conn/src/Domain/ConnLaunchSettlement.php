@@ -85,9 +85,10 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         }
         if ($launch->status === OperationStatus::Succeeded) {
             $retryId = Arr::get($launch->state ?? [], 'launch_retry_requests.application.id');
-            $this->instances->observeCompletion($launch);
             if (is_string($retryId)) {
                 $this->instances->retryApplication($launch, $retryId);
+            } else {
+                $this->instances->observeCompletion($launch);
             }
 
             return;

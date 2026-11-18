@@ -754,6 +754,8 @@ Once `dispatch_committed` is recorded, Cancel answers `409 conn.launch_handoff_c
 
 `POST /launches/{operation_id}/retry` accepts `{ "target": "launch" }` for the same launch, or `{ "target": "application" }` to retry application completion alone. Launch retry resumes from the recorded child or receipt and respects the same dispatch fence and replay rules. Application retry uses the existing completion admission and can fail or succeed independently once the thread is ready. It never restarts T3 or sends a message. Report a known prerequisite, such as `project_process_definition`, before offering a retry that cannot work.
 
+If a newer completion for the same Instance and Node is admitted before the accepted application retry can admit its own completion, Orbit uses that completion and clears the retry. The launch keeps the earlier completion in its history and shows the newer completion’s progress or result.
+
 If the target Instance is gone when an accepted application retry runs, Orbit ends the retry and stops polling. Orbit also ends the retry if admission refuses completion on an existing Instance. In either case, `application_preview` shows a sanitized error. The launch stays `ready` and keeps the last admitted completion ID. A later admitted completion replaces the refusal in the snapshot.
 
 ### Launch snapshot

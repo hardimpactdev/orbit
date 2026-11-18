@@ -73,7 +73,9 @@ final readonly class ConnLaunchState
 
             $state = $launch->state ?? [];
             $applicationRetry = Arr::get($state, 'launch_retry_requests.application');
-            if ($applicationRetryId !== null && ($launch->status !== OperationStatus::Succeeded || ! is_array($applicationRetry) || ($applicationRetry['id'] ?? null) !== $applicationRetryId)) {
+            if (($observedCompletionId !== null && $applicationRetry !== null)
+                || ($applicationRetryId !== null && ($launch->status !== OperationStatus::Succeeded
+                    || ! is_array($applicationRetry) || ($applicationRetry['id'] ?? null) !== $applicationRetryId))) {
                 return null;
             }
             $recorded = Arr::get($state, 'launch_children.'.$role->value);

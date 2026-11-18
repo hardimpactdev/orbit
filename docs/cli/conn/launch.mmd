@@ -32,6 +32,7 @@ sequenceDiagram
     S-->>G: Verified acceptance
     Note over G: Publish the thread
     %%> Retry only publication after acceptance. Leave a deleted workspace absent.
+    %%> Recheck the exact application Retry under the launch lock. Under the Instance lock, use a newer completion admitted for the same Instance and Node and record it as unowned.
     %%> End the matching application Retry with a sanitized preview error if its target is gone or admission refuses completion on an existing Instance. Keep the ready thread and the last admitted completion.
     %%> Settlement can record the first completion for the admitted Instance and Node after the launch is ready. A later completion can replace a failed child.
   end
