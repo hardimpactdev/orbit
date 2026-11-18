@@ -1,0 +1,19 @@
+cases = [
+  "each phase of the shipped bundle resolves to its own bounded files, and shared files are in every phase",
+  "every bundle file that a reached file names is in that phase's set",
+  "a reference the resolver cannot name makes only its phase read the whole bundle",
+  "unresolved() refuses dynamic file names and accepts literal, playbook and run-folder names",
+  "names follow paths, file names and Python module names, not full-line comments",
+  "a change to one phase's file moves only that phase's code digest; a shared file or the Tool helper's code moves its phases",
+  "an ansible.cfg change moves every phase",
+  "a statically imported file with a task tagged in a list, and a play's handlers, reach the phase",
+  "a caller with no shipped code gets one no-code digest per phase, and a changed input still moves every phase",
+]
+file = "swamp/tests/phase_code_test.ts"
+cost = 4
+inputs = [
+  "swamp/ansible/**",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
+  "swamp/tests/phase_code_fixture.ts",
+]
