@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts,InstanceModelRoute}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes,28_000000_allow_a_proof_copy_clone_on_its_seed_node}.php
-  - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
+  - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
   - swamp/ansible/t3_copy_rpc.mjs
@@ -3277,6 +3277,40 @@ A restore of a running container stops it and boots it again, so the reset stops
 | The whole reset before these cuts: running restores one by one (9.6 s), polls every 5 s | 30.7 |
 
 On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change: 7 to 8 s for all three, Doctor healthy 33 s after. Each restore has 45 seconds.
+
+#### No stale network pid file
+
+An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, at `/var/lib/incus/networks/<network>/dnsmasq.pid`. At its next start, Incus reads the file to stop the old dnsmasq. A file that is not valid YAML stops the network: an empty file fails with `Could not read pid file`. On `nested-app-dev` that stops `orbitinst0`, and every `instance.create` there fails at its `container` step.
+
+Two copies can hold such a file. The first is the **copied seed**. A task copy starts from a copy of the running default Instance container, which holds the live disks of its nested containers. When the pid file's last write had not reached the disk, the copy holds it empty, and the guest's autostart boots with it.
+
+The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back.
+
+**The fleet start heals each nested Instance host.** After it starts the nested containers, the [fleet start](#the-fleet-step) runs `swamp/ansible/files/incus-network-pid-heal.py` in each nested Node marked as an Instance host, whether it ran already or just started. The run places the heal at `/usr/local/sbin/incus-network-pid-heal`, with the drop-in `incus.service.d/60-network-pid-heal.conf` that runs it as `ExecStartPre` before every later start of Incus.
+
+The run heals at once, and it restarts that Incus when it removed a file. So a guest of a copied seed or an older `base` that booted with an empty file and no heal gets its bridge back at the copy's start or resume. The Node converge never places it, so no real Node's release inputs change.
+
+The heal keeps a pid file only when every check holds:
+
+- The file is a regular file, not a link, and reads in full.
+- It parses as YAML into the record Incus writes: `name: dnsmasq`, an integer `pid`, an integer `start_time` and a `boot_id`.
+- Its `boot_id` is the current boot's.
+- The process lives, its `comm` is `dnsmasq`, and its start time equals `start_time`. Incus records field 22 of `/proc/<pid>/stat`, in clock ticks.
+- Its command line holds `--interface=<network>` as one whole argument.
+
+So a daemon restart keeps the live dnsmasq's file, and every other pid file goes. The heal follows no link: it leaves a linked network folder alone, and it unlinks a linked pid file itself.
+
+**The host clears stopped disks.** `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of stopped nested containers. It reads each container from the inner Incus and clears only the root disk in the pool of its `root` device. Three steps run it:
+
+- The refresh runs it before it takes `base`, so a new `base` holds no pid file.
+- The reset runs it between the restore of `base` and the start. A `base` taken before the heal existed holds neither the heal nor a clean disk, and this clears it before it boots.
+- The reset's rescue runs it, best effort, before it starts the containers again. The reset keeps its own error.
+
+A container that is not `Stopped` fails the step: a frozen container keeps its dnsmasq and its file. So does a container whose disk the helper cannot check without following a link, such as a missing root disk or a linked `networks` folder. Then no `base` is taken and the reset does not start the fleet.
+
+A `base` taken after the start placed the heal holds it, so every boot of that `base` heals itself too.
+
+`orbitinst0` serves DHCP only: its `raw.dnsmasq` is `port=0`, so its dnsmasq answers no names. An Instance there reaches names through its egress proxy at the bridge address.
 
 A reset that fails after its stop starts each nested container that ran before it again, one by one and best effort, then fails with the first reason. The proof's batch reports that reason. A failed restore can leave a container on its old disk or on `base`, so the fleet runs but its state is unknown. To recover, run `orbit proof` again: it resets first. When a container has lost its `base` snapshot, the reset cannot succeed; start a new task copy.
 
