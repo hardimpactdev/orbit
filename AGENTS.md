@@ -19,10 +19,10 @@ Build and prove every feature end to end in one Orbit container, a task copy wit
 - Read [Mission](docs/mission.md) and the reference page or ADR that owns the behaviour before you change it.
 - Fix the root cause from first principles. Add no fallback, compatibility path, or legacy branch.
 - Keep one rule in one place.
-- Guard against a race or crash window only when the [blocking rule](docs/reference/tasks.md#reviewer-outcomes) would block on it.
+- Guard against a race or crash window only when the [reviewer rule](docs/reference/tasks.md#the-reviewer-rule) and its impact bar would block on it.
 - Every behaviour change has a test that fails without it. The documentation changes with the code.
 
-A breach of this bar blocks a review under the [blocking rule](docs/reference/tasks.md#reviewer-outcomes).
+A breach of this bar blocks a review under the [reviewer rule](docs/reference/tasks.md#the-reviewer-rule).
 
 ## Feature contributions
 
