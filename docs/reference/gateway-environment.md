@@ -182,6 +182,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `APP_MAINTENANCE_DRIVER`, `APP_MAINTENANCE_STORE` | Where Laravel records maintenance mode. |
 | `ORBIT_HOME` | Directory for the Gateway's durable state. It defaults to `$HOME/.orbit`. [Preserve a complete state set](/reference/gateway-recovery#preserve-a-complete-state-set) lists what it holds. |
 | `ORBIT_GATEWAY_CHECKOUT` | Stable path of the Gateway checkout. The [release layout](/reference/gateway-recovery#release-layout) and the Gateway's Node agent units use it. It defaults to `/home/orbit/orbit/apps/gateway`. |
+| `ORBIT_GATEWAY_CONTAINER` | Not in the env file. The release container runtime sets it to `1`. See the [Operation-version fence](/reference/operations#operation-versions-across-a-gateway-release). |
 | `ORBIT_HIBERNATION_IDLE_SECONDS`, `ORBIT_HIBERNATION_SWEEP_SECONDS`, `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` | Development runtime hibernation timing. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation). |
 | `ORBIT_CONN_HELD_SESSION_PREMINT` | The pre-mint of held Conn sessions when a container Instance's T3 server is recorded. Off by default; a Node's first read makes its session. See [Held sessions](/reference/conn#how-the-gateway-makes-one). |
 | `ORBIT_CONN_MANAGED_TARGETS` | The routes of managed Conn grant revocation for lab targets. Off by default; edge removal records managed revisions either way. See [Managed grant revocation](/reference/conn#managed-grant-revocation). |

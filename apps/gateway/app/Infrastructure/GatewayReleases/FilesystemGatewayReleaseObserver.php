@@ -113,7 +113,27 @@ final readonly class FilesystemGatewayReleaseObserver implements GatewayReleaseO
             throw $this->failed();
         }
 
-        return new GatewayReleaseInventory($ids[0], 'adopted', $superseded, $commits, [], $ids, $hostRetired);
+        // Every stopped release a rollback can start: old, and the earlier one kept while live is unverified. An
+        // inventory written before the rename names that one pending.
+        $parked = array_values(array_slice($commits, 1));
+        foreach (['earlier', 'pending'] as $key) {
+            $stopped = $record[$key] ?? null;
+            if ($stopped === null) {
+                continue;
+            }
+            if (! is_string($stopped) || ! GatewayReleaseCommit::isSha($stopped) || in_array($stopped, $commits, true) || in_array($stopped, $parked, true)) {
+                throw $this->failed();
+            }
+            $parked[] = $stopped;
+        }
+        // Only an inventory from before verification was recorded, without the field, trusts the releases it holds.
+        $verified = array_key_exists('verified', $record) ? $record['verified'] : array_values($commits);
+        if (! is_array($verified) || ! array_is_list($verified)
+            || array_filter($verified, static fn (mixed $sha): bool => ! is_string($sha) || ! GatewayReleaseCommit::isSha($sha)) !== []) {
+            throw $this->failed();
+        }
+
+        return new GatewayReleaseInventory($ids[0], 'adopted', $superseded, $commits, [], $ids, $hostRetired, $parked, $verified);
     }
 
     /** The release the current path links to, or null for an in-place checkout or a link to anything else. */
