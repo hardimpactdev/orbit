@@ -126,8 +126,8 @@ A section is `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThread
 | `sidebarHiddenThreads` | Object of at most 64 KB, serialized, with the same keys and rules as `attachedThreads`. |
 | `sidebarHiddenThreads.schema` | Required integer, 1 to 1000. |
 | `sidebarHiddenThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. |
-| `sidebarHiddenThreads.threads[].environmentId` | Required: a Conn `environment_id`, 1 to 255 bytes, no whitespace of any kind, such as a space or a tab, and no colon. The Gateway checks only its form ([Sidebar hidden threads](#sidebar-hidden-threads)). |
-| `sidebarHiddenThreads.threads[].threadId` | Required: the T3 thread id, 1 to 255 bytes, no whitespace of any kind, such as a space or a tab. |
+| `sidebarHiddenThreads.threads[].environmentId` | Required: a Conn `environment_id`, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab, and no colon. The Gateway checks only its form ([Sidebar hidden threads](#sidebar-hidden-threads)). |
+| `sidebarHiddenThreads.threads[].threadId` | Required: the T3 thread id, 1 to 255 bytes, no ASCII whitespace, such as a space or a tab. |
 
 A device type is 2 to 24 lowercase letters, digits, and hyphens, and starts with a letter, such as `desktop` or `iphone`.
 
@@ -1207,7 +1207,7 @@ The devices on a profile should connect to the same servers, so the set lives in
 
 Hiding is a display choice, and attaching decides which servers a device connects to. Hiding or showing a thread never changes the connection state: a hidden mark cannot keep a container server connected after its last attachment goes, and a host server stays connected with no attached thread.
 
-With one list for both, hiding a thread would disconnect its server, and a device could not hide a thread without the Gateway's attachment check. So the hidden list is a section of its own, with its own version. A hide on one device never conflicts with an attach on another. It grants nothing, so the Gateway checks only its form.
+With one list for both, hiding a thread could disconnect a container server if that thread were its last attachment, and a device could not hide a thread without the Gateway's attachment check. So the hidden list is a section of its own, with its own version. A hide on one device never conflicts with an attach on another. It grants nothing, so the Gateway checks only its form.
 
 A `null` keeps the section as an empty list rather than removing it. A removed section would read like a section that was never written, and a client that showed its last hidden thread could not tell its write from an old profile.
 
