@@ -13,6 +13,8 @@ covers:
 
 `POST /api/v1/nodes/{node}/executor/proof` and MCP tool `node-executor-proof` return a terminal `Operation`. See the [operator diagnostic](/reference/executor#the-proof-operation) for authorization and verdicts.
 
+`operation:direct:executor-sign` appears under Node callbacks, not operator Operations. Only the Swamp worker for the bound run can request an order. The Gateway takes the action, Node, and target from the admitted Operation. The MCP catalogue excludes this callback.
+
 The generator marks every DELETE route destructive with `x-orbit-destructive`, and each POST route in `DESTRUCTIVE_POSTS` of `bin/docs-openapi`, today only `instance:unregister`. The MCP manifest copies the mark as `destructive`, and the tool's `destructiveHint` annotation reads it.
 
 `instance:sleep` and `instance:wake` are POST `/api/v1/instances/{instance}/sleep` and `/wake`. Each returns an Operation receipt; a wake of an Instance with an open wake returns that Operation. The sleep's result names `sleep` (`frozen` or `stopped`), `swap_subtree` (the inner cgroups the freeze opened) and `t3_turn` (`idle`, `not_checked` or `no_server`); the wake's names its path in `wake`. A wake of a nested-fleet clone that no sleep froze returns an `instance.start` Operation instead. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) pages define their prerequisites and failure behavior.
@@ -56,6 +58,8 @@ bin/docs-openapi
 `bin/docs-openapi` writes the Conn settings patch body by hand in `conn_settings_body()`, because its rules depend on the sections a request holds. It lists `workspaces`, `appearance`, `attachedThreads`, `sidebarHiddenThreads` and `devices.<type>`. `sidebarHiddenThreads` reuses the `attachedThreads` value schema with its own description. The replace body lists only `workspaces`, `appearance` and `devices`, the sections a `PUT` accepts. `ConnProfileSettingsContractTest` compares both generated bodies and the `conn-profile-settings-patch` tool with the request rules. Change the body with the rules, then regenerate OpenAPI and the MCP manifest. [Attached threads](/reference/conn#attached-threads) and [Sidebar hidden threads](/reference/conn#sidebar-hidden-threads) own those sections' rules.
 
 A JSON Schema pattern sees characters and Unicode whitespace, while the Gateway counts UTF-8 bytes and refuses only ASCII whitespace. So the thread id patterns list the ASCII whitespace characters, and each id description states the 255-byte limit, which a pattern cannot count. The contract test checks concrete ids against both.
+
+`GET /api/v1/conn/realtime` (`conn-realtime-show`) and `POST /api/v1/conn/broadcasting/auth` (`conn-realtime-auth`) get their responses by hand in `bin/docs-openapi`: the discovery's nullable `url` and `key`, and the auth's bare `{"auth"}` body without a `data` wrapper, with its 403 `broadcast.channel_forbidden` and 404 `realtime.not_configured`. The `realtime:auth` description says that the Gateway's own auth route refuses every `private-conn-profile.*` channel. `conn-me` and `conn-me-profile` describe `profile_channel`. [Profile events](/reference/conn#profile-events) owns these rules; regenerate OpenAPI and the MCP manifest when they change.
 
 `GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields described in [Instance servers](/reference/conn#instance-servers). Their nullable types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
 

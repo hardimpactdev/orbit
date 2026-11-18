@@ -64,8 +64,8 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node. I
 | [`instance:destroy`](/cli/instance/destroy) | Remove an Instance and its owned Processes, Schedules, and Route; refuse Git data needed by another worktree. |
 | [`instance:unregister`](/cli/instance/unregister) | Make Orbit forget a host checkout Instance; the folder stays. |
 | [`instance:restore`](/cli/instance/restore) | Return a host development Instance to active after its removal failed, and serve its Route again. |
-| [`instance:sleep`](/cli/instance/sleep) | Stop one development container Instance until a visit or `instance:wake` starts it. |
-| [`instance:wake`](/cli/instance/wake) | Start a sleeping development container Instance and serve its Route again. |
+| [`instance:sleep`](/cli/instance/sleep) | Put a development container Instance to sleep until a visit or `instance:wake` wakes it. |
+| [`instance:wake`](/cli/instance/wake) | Wake a sleeping development container Instance and serve its Route again. |
 | [`instance:logs`](/cli/instance/logs) | Return the application log tail, or follow new lines. |
 
 `instance:migrate` reports `moved` and `restored` in its Operation result. Human output also shows the mailer outcome or advisory mail warning. A mail warning does not block cutover or retirement. A failure after cutover can leave the container serving.
@@ -123,7 +123,7 @@ Conn can also [create a thread clone on a selected branch](/reference/conn#threa
 
 Repair development mail with [`instance:mail:update`](/cli/instance/mail-update).
 
-Put a development container to sleep with [`instance:sleep`](/cli/instance/sleep), and start it again with [`instance:wake`](/cli/instance/wake). A visit to its Route also wakes it.
+Put a development container to sleep with [`instance:sleep`](/cli/instance/sleep), and wake it with [`instance:wake`](/cli/instance/wake). A visit to its Route also wakes it.
 
 A checkout can record an explicit [Node service target](/cli/instance/node-service-attach) before migration. For a running container, [detach](/cli/instance/node-service-detach) withdraws its scoped loopback access before removing the record. The environment file and Node Process stay unchanged.
 

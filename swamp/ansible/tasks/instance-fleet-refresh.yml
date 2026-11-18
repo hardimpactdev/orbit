@@ -29,6 +29,7 @@
 - name: Read the list of converge inputs
   ansible.builtin.set_fact:
     fleet_converge_inputs: "{{ lookup('ansible.builtin.file', 'fleet-converge-inputs.json') | from_json }}"
+    fleet_host_roots: [swamp/ansible, apps/gateway/resources/machine-software]
 - name: Read the refresh record
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['cat', fleet_record] }}" }
   register: fleet_record_read
@@ -39,8 +40,17 @@
     argv: >-
       {{ ['timeout', '30'] + fleet_outer + ['git', '-c', 'safe.directory=*', '-C', intent.container.workspace, 'rev-parse',
           'HEAD:apps/gateway', 'HEAD:apps/agent/contract'] + (fleet_converge_inputs.inputs | map('regex_replace', '^', 'HEAD:') | list)
-         + ['HEAD:swamp/ansible', 'HEAD:apps/gateway/resources/machine-software', 'HEAD:swamp'] }}
+         + ['HEAD:swamp'] }}
   register: fleet_digests_read
+  changed_when: false
+  failed_when: false
+- name: Read the committed inputs of the Instance host
+  when: intent.fleet.host | default(false) | bool
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_outer + ['git', '-c', 'safe.directory=*', '-c', 'core.quotePath=true', '-C', intent.container.workspace,
+          'ls-tree', '-r', '-t', '--full-tree', 'HEAD', '--'] + fleet_host_roots }}
+  register: fleet_host_tree
   changed_when: false
   failed_when: false
 - name: Work out which parts are due
@@ -49,7 +59,7 @@
       {{ fleet_record_read.rc == 0 and fleet_record_read.stdout | trim is match('^\{"[a-z_]+": ?"[0-9a-f]+"(, ?"[a-z_]+": ?"[0-9a-f]+")*\}$') }}
     fleet_ids: >-
       {{ fleet_digests_read.stdout_lines if fleet_digests_read.rc == 0
-         and fleet_digests_read.stdout_lines | length == 5 + fleet_converge_inputs.inputs | length else [] }}
+         and fleet_digests_read.stdout_lines | length == 3 + fleet_converge_inputs.inputs | length else [] }}
   ansible.builtin.set_fact:
     fleet_record_state: >-
       {{ 'present' if fleet_record_valid else 'missing' if fleet_record_read.rc != 0 and 'No such file' in fleet_record_read.stderr
@@ -59,9 +69,7 @@
       {{ {} if fleet_ids | length == 0 else {'code': (fleet_ids[0] ~ fleet_ids[1]) | hash('sha256'),
          'rules': fleet_files | to_json(sort_keys=true) | hash('sha256')}
          | combine({'grants': (fleet_ids[0] ~ ' ' ~ fleet_ids[-1]) | hash('sha256')} if fleet_club.rc == 0 else {}) }}
-    fleet_swamp_ids: "{{ fleet_ids[2:-3] }}"
-    # The Instance host's tree inputs: `swamp/ansible` and the machine-software recipe.
-    fleet_host_ids: "{{ fleet_ids[-3:-1] }}"
+    fleet_swamp_ids: "{{ fleet_ids[2:-1] }}"
     fleet_converge_changed: 0
     fleet_converge_changed_roles: []
     fleet_started_at: "{{ now(utc=true).timestamp() }}"
@@ -253,20 +261,35 @@
   changed_when: false
   failed_when: false
 # The Instance host on nested-app-dev (docs/reference/development-containers.md#instance-host-in-the-fleet): its `app-dev` role converge
-# runs the container branch when what that branch reads changed. That is the `swamp/ansible` tree, the machine-software recipe, and
+# runs the container branch when what that branch reads changed. That is the `swamp/ansible` files apart from the listed Swamp-role and controller-only files,
+# the machine-software recipe, and
 # nested-app-dev's branch intent as the nested Gateway renders it (`host` of the read above: the image definition, the folders, Incus
 # and the rest, without the admission time). A test, a workflow or other Gateway code rebuilds nothing. Only a default whose ID map
 # leaves room for isolated Instances there (`intent.fleet.host`, 2,000,000 or more) builds it; below that nothing changes. A host intent
 # that cannot be read, such as before nested-app-dev has its bridge, makes the host due, and no `host` is recorded.
 - name: Name the due Instance host
   vars:
+    fleet_host_code: >-
+      {%- set roots = [] -%}
+      {%- set files = [] -%}
+      {%- if fleet_host_tree.rc | default(1) == 0 -%}
+        {%- for row in fleet_host_tree.stdout_lines -%}
+          {%- set path = row.split('\t', 1)[-1] -%}
+          {%- if row.startswith('040000 tree ') -%}
+            {%- if path in fleet_host_roots -%}{%- set _ = roots.append(path) -%}{%- endif -%}
+          {%- elif path not in fleet_converge_inputs.instance_host.outside_host -%}
+            {%- set _ = files.append(row) -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {{ files | to_json | hash('sha256') if roots | sort == fleet_host_roots | sort else '' }}
     fleet_host_read: >-
       {%- set read = (fleet_intents_read.stdout_lines | default([]) | last | default('')) -%}
       {%- set out = read | from_json if fleet_intents_read.rc == 0 and read is match('^\{.*\}$') else {} -%}
       {{ out.host if out is mapping and out.host | default('') is match('^[0-9a-f]{64}$') else '' }}
     fleet_host_now: >-
-      {{ {'host': ('host ' ~ fleet_host_ids[0] ~ ' ' ~ fleet_host_ids[1] ~ ' ' ~ fleet_host_read) | hash('sha256')}
-         if intent.fleet.host | default(false) | bool and fleet_host_ids | length == 2 and fleet_host_read | length > 0 else {} }}
+      {{ {'host': ('host ' ~ fleet_host_code ~ ' ' ~ fleet_host_read) | hash('sha256')}
+         if fleet_now.code is defined and fleet_host_code | length > 0 and fleet_host_read | length > 0 else {} }}
   ansible.builtin.set_fact:
     fleet_now: "{{ fleet_now | combine(fleet_host_now) }}"
     fleet_due: >-
@@ -578,6 +601,9 @@
       register: fleet_shrink_run
       changed_when: fleet_shrink_run.rc == 0
       failed_when: false
+    - name: Clear the network runtime files before base
+      ansible.builtin.include_tasks: instance-fleet-runtime.yml
+      vars: { fleet_runtime_names: "{{ fleet_base_targets }}" }
     - name: Take base
       ansible.builtin.command: { argv: "{{ ['timeout', '180'] + fleet_incus + ['snapshot', 'create', item, 'base'] }}" }
       loop: "{{ fleet_base_targets }}"

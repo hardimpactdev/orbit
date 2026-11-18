@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts,InstanceModelRoute}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes,28_000000_allow_a_proof_copy_clone_on_its_seed_node}.php
-  - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
+  - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_fleet_runtime.py,tasks/instance-fleet-runtime.yml,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
   - swamp/ansible/t3_copy_rpc.mjs
@@ -1672,7 +1672,7 @@ A sleep opens swap (`max`) for every cgroup of the container's subtree that hold
 
 One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
-> **Target design, not built.** In [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) a Rust executor on the Node replaces this helper and the fast wake's file flow. It acts on Gateway-signed orders over the observer's WebSocket, and Swamp and the SSH fallback reach it through one relay command. A visit waits a short bound for the wake, and then goes to the app in the same request. Every sleep and wake stays an Operation.
+> **Default-off signed engine.** [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) routes power through a Rust executor on the Node. With [signed power delivery](/reference/executor#signed-power-delivery) enabled, the Gateway signs orders, and the observer and SSH relay deliver them. The Python helper and fast wake files below remain the disabled-mode path.
 
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers that have no swap size: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
@@ -1726,7 +1726,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A production live sleeps and wakes; Caddy holds its visitor | Planned with production containers ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Production containers](/reference/production-containers#sleep-and-wake) |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
-The Gateway setting `ORBIT_EXECUTOR_WAKE_ENABLED`, off by default, selects the [executor wake inside the request](/reference/executor#the-wake-inside-the-request) for containers. A successful wake within `ORBIT_EXECUTOR_WAIT_MS` (500 ms by default) lets Caddy pass the original request straight to the app. Otherwise the visitor gets the existing waiting page. This path uses no SSH or Python, and leaves its completion to a queued job after the request bound. Keep the setting off until ADR 0266 slices 5 and 7 land.
+The Gateway setting `ORBIT_EXECUTOR_POWER_ENABLED`, off by default, selects signed sleep and wake. A successful wake within `ORBIT_EXECUTOR_WAIT_MS` (500 ms by default) lets Caddy pass the original request straight to the app. Otherwise the visitor gets the existing waiting page while the same Operation continues. The Gateway tries the SSH relay after 150 ms without acceptance. Swamp recovers an Operation without a terminal result after six seconds. A frozen Instance keeps the engine that froze it, even after a setting change.
 
 **The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development container to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. A clone, a default and a nested-fleet Instance follow the same rule; no list of names or ids exempts one. `ORBIT_HIBERNATION_CONTAINER_SLEEP` chooses which Instances it acts on:
 
@@ -1835,7 +1835,7 @@ A second check follows for the same reason. The converge keeps each container's 
 
 Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
-A destroy removes the marker, and the helper's `discard` removes the plan, the limits record and the fast wake's files after any helper call still at work has ended. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+A destroy removes the marker, and the helper's `discard` removes the plan, the limits record and the fast wake's files after any helper call still at work has ended. It also removes the executor's plan, limits record and receipt under `/var/lib/orbit/executor/power`. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
@@ -2589,7 +2589,17 @@ A real Node gets no parent, so its Squid configuration, its table and its intent
 
 Measured by hand on a task copy on 2026-11-17, with Squid 7.7 on `nested-app-dev`, its product configuration and its table: without a parent, a `GET` of `http://archive.ubuntu.com/ubuntu/dists/resolute/InRelease` and a `CONNECT` to `example.com:443` each got 503 at once. With the parent, both succeeded.
 
-**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has the part `host`. It digests what the container branch reads: the `swamp/ansible` tree, the machine-software recipe, and `nested-app-dev`'s branch intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, the folders, Incus, without the admission time). When it differs from the record, `nested-app-dev` joins the due converges, and its converge takes `{"roles":["app-dev"]}` instead of the base only. That is the nested Gateway's own `node.converge`, through its Swamp. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has a separate `host` digest. It covers the machine-software recipe under `apps/gateway/resources/machine-software`, `nested-app-dev`'s host intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, folders and Incus, without the admission time), and the `swamp/ansible` tree except the following files. The first three belong to the Swamp role. The last two run from the controller checkout during Conn launches or task turns.
+
+- `swamp/ansible/tasks/role-swamp.yml`
+- `swamp/ansible/tasks/swamp-housekeeping.yml`
+- `swamp/ansible/tasks/swamp-binary-retention.yml`
+- `swamp/ansible/conn-launch.yml`
+- `swamp/ansible/t3_copy_rpc.mjs`
+
+No other path is excluded. Shared, new and unclassified files in the tree still count. A missing host record, a changed digest or a failed read of a required host input makes the host due. A failed read leaves no host digest in the record. When the host is due, `nested-app-dev` joins the due converges with its `app-dev` role, not just the base scope. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+
+The app-dev role creates its wake marker directory in `/dev/shm`. Its systemd-tmpfiles rule recreates the directory at boot with owner `root:caddy` and mode `0755`, including after a base retake restarts the nested Node.
 
 When only the host part is due, the base digest of `nested-app-dev` did not change, and its converge reason is `host_due`.
 
@@ -2821,13 +2831,14 @@ The checkout moves under the running nested Gateway, with its old schema and pro
 
 #### What a refresh skips
 
-A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
+A refresh always checks fleet readiness. For work it can skip, it compares input digests with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
 
 | Part | Digest | When it runs |
 | --- | --- | --- |
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
 | Default converge of each nested Node | One digest per Node: the `swamp` files a default converge reads, the nested Gateway's digest of that Node's default intent, and the fleet intent | For that Node: its digest cannot be read, the record holds none, its digest differs, or its last converge is more than 7 days old |
+| Prepare the Instance host | The separate `host` digest | On an eligible `nested-app-dev`, when the host digest differs, is missing from the record, or cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
@@ -2880,6 +2891,8 @@ A digest cannot be read when the Node's intent cannot be built, when the read fa
 
 `unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
 
+A change only to the five files excluded from the host digest does not make `nested-app-dev` due. It still counts for any part that reads those files, such as the nested Gateway's grants digest when the Club key is present. If no other work changes a nested disk and no other snapshot rule applies, `base` stays as it was.
+
 A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself.
 
 The intent holds no token or signed URL. Two values are new at each capture. They belong to the Operation and are not inputs, so the hash leaves them out: the version of a role's certificate leaf, which names the leaf's folder, and the admission time of the Instance bridge. Like an admission, the read first gives an app-dev Node its Instance bridge when it has none yet, and then rolls it back. So a healthy Node always has a digest. The Operation id and the agent verifier live in the execution copies, which are not part of it.
@@ -2895,13 +2908,13 @@ The list also leaves out two imports of the behavior file, `write.ts`. A converg
 
 The cover test fails when the converge workflow calls such a method, or when an imported name is used outside its method. Before this cut, two refreshes on 14 November 2026 converged the three Nodes for nothing (Operations 21867 and 22223, 120 s and 108 s, no task changed): one for a change in `public_output.ts`, one for a line in the clone part of `write.ts`.
 
-The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). An unreadable digest makes that Node due and is not recorded, so the next refresh tries it again. A read failure that affects inputs common to all three makes all three due. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
 
 The due Nodes converge one at a time: the nested Gateway first, which holds the hub, then `nested-app-prod`, then `nested-app-dev`. A default converge has a network, so it holds the hub's reservation, and the nested Gateway refuses any second converge beside it ([node:converge](/cli/node/converge)). The seven Ansible plays still lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`).
 
 The refresh admits the next Node only when the one before it has ended. A failed or refused converge stops the converges: the Nodes after it do not converge, and the error names the Node that failed. The run then restores the old seed.
 
-A converge that changes nothing still reads every phase, so a due converge costs time even on an unchanged Node. Only a digest that changed, or a converge older than 7 days, makes a Node due.
+A due converge still prepares inputs and runs its final checks, even when all its skippable phases match the record.
 
 Below the 2,000,000 [ID map size](#instance-host-in-the-fleet), `nested-app-dev` cannot build its Instance image. There the refresh converges it with the base scope, as before, and its software and role state in `base` stay as they were. A proof needs a default at 2,000,000 when its converge or role-add cases run on `nested-app-dev`.
 
@@ -2916,6 +2929,8 @@ A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `
 | The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three, with the rules applied on the stopped fleet |
 
 The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that reloaded grants comes up on the new grants.
+
+The digest rules change only which work is due. They do not decide which containers get `base` or change how Orbit takes, distributes or restores the default's seed. When a role task changes `nested-app-dev`, the refresh still retakes `base` there and on the nested Gateway, so the role change survives a reset.
 
 A migration is not such a writer. The migrate that applies one changes the nested Gateway's database, but `base` keeps the schema of the refresh that last took it. A reset restores `base` and then migrates the nested Gateway forward to its checkout, and restarts its services when a migration applied. Laravel's migrations run forward only, and the code is the checkout's.
 
@@ -3262,6 +3277,40 @@ A restore of a running container stops it and boots it again, so the reset stops
 | The whole reset before these cuts: running restores one by one (9.6 s), polls every 5 s | 30.7 |
 
 On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change: 7 to 8 s for all three, Doctor healthy 33 s after. Each restore has 45 seconds.
+
+#### No stale network pid file
+
+An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, at `/var/lib/incus/networks/<network>/dnsmasq.pid`. At its next start, Incus reads the file to stop the old dnsmasq. A file that is not valid YAML stops the network: an empty file fails with `Could not read pid file`. On `nested-app-dev` that stops `orbitinst0`, and every `instance.create` there fails at its `container` step.
+
+Two copies can hold such a file. The first is the **copied seed**. A task copy starts from a copy of the running default Instance container, which holds the live disks of its nested containers. When the pid file's last write had not reached the disk, the copy holds it empty, and the guest's autostart boots with it.
+
+The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back.
+
+**The fleet start heals each nested Instance host.** After it starts the nested containers, the [fleet start](#the-fleet-step) runs `swamp/ansible/files/incus-network-pid-heal.py` in each nested Node marked as an Instance host, whether it ran already or just started. The run places the heal at `/usr/local/sbin/incus-network-pid-heal`, with the drop-in `incus.service.d/60-network-pid-heal.conf` that runs it as `ExecStartPre` before every later start of Incus.
+
+The run heals at once, and it restarts that Incus when it removed a file. So a guest of a copied seed or an older `base` that booted with an empty file and no heal gets its bridge back at the copy's start or resume. The Node converge never places it, so no real Node's release inputs change.
+
+The heal keeps a pid file only when every check holds:
+
+- The file is a regular file, not a link, and reads in full.
+- It parses as YAML into the record Incus writes: `name: dnsmasq`, an integer `pid`, an integer `start_time` and a `boot_id`.
+- Its `boot_id` is the current boot's.
+- The process lives, its `comm` is `dnsmasq`, and its start time equals `start_time`. Incus records field 22 of `/proc/<pid>/stat`, in clock ticks.
+- Its command line holds `--interface=<network>` as one whole argument.
+
+So a daemon restart keeps the live dnsmasq's file, and every other pid file goes. The heal follows no link: it leaves a linked network folder alone, and it unlinks a linked pid file itself.
+
+**The host clears stopped disks.** `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of stopped nested containers. It reads each container from the inner Incus and clears only the root disk in the pool of its `root` device. Three steps run it:
+
+- The refresh runs it before it takes `base`, so a new `base` holds no pid file.
+- The reset runs it between the restore of `base` and the start. A `base` taken before the heal existed holds neither the heal nor a clean disk, and this clears it before it boots.
+- The reset's rescue runs it, best effort, before it starts the containers again. The reset keeps its own error.
+
+A container that is not `Stopped` fails the step: a frozen container keeps its dnsmasq and its file. So does a container whose disk the helper cannot check without following a link, such as a missing root disk or a linked `networks` folder. Then no `base` is taken and the reset does not start the fleet.
+
+A `base` taken after the start placed the heal holds it, so every boot of that `base` heals itself too.
+
+`orbitinst0` serves DHCP only: its `raw.dnsmasq` is `port=0`, so its dnsmasq answers no names. An Instance there reaches names through its egress proxy at the bridge address.
 
 A reset that fails after its stop starts each nested container that ran before it again, one by one and best effort, then fails with the first reason. The proof's batch reports that reason. A failed restore can leave a container on its old disk or on `base`, so the fleet runs but its state is unknown. To recover, run `orbit proof` again: it resets first. When a container has lost its `base` snapshot, the reset cannot succeed; start a new task copy.
 

@@ -76,6 +76,7 @@ return [
     // libsodium secret key, readable only by `orbit` (docs/reference/executor.md#rollout). Never log or print it.
     'executor' => [
         'wake_enabled' => (bool) env('ORBIT_EXECUTOR_WAKE_ENABLED', false),
+        'power_enabled' => (bool) env('ORBIT_EXECUTOR_POWER_ENABLED', false),
         'public_keys' => array_values(array_filter(array_map(trim(...), explode(',', (string) env('ORBIT_EXECUTOR_PUBLIC_KEYS', ''))))),
         'signing_key' => env('ORBIT_EXECUTOR_SIGNING_KEY'),
         // The shared publish-and-wait budget of a container wake request (ADR 0266 slice 6). Valkey needs hz 100.
@@ -163,5 +164,10 @@ return [
         // The held sessions a new clone's server gets for the creating profile's Nodes before their first read
         // (docs/reference/conn.md#held-sessions): off until the operator turns it on. The session handle, renewal and revoke always run.
         'held_session_premint' => (bool) env('ORBIT_CONN_HELD_SESSION_PREMINT', false),
+        // The routes of managed grant revocation (docs/reference/conn.md#managed-grant-revocation): off by default. Edge removal
+        // records managed revisions for every enrolled target whether this is on or off.
+        'managed_targets' => (bool) env('ORBIT_CONN_MANAGED_TARGETS', false),
+        // How long notice publication and rotation of one managed target wait for each other before they fail safe.
+        'managed_target_lock_wait_seconds' => 10,
     ],
 ];

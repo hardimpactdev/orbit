@@ -76,6 +76,7 @@ additionalFiles:
   - ansible/files/gateway-release-guest.py
   - ansible/files/gateway-release-infrastructure.py
   - ansible/files/instance-container-power.py
+  - ansible/files/incus-network-pid-heal.py
   - ansible/files/instance-browser-trust.sh
   - ansible/files/fleet-reboot-ci-drain.sh
   - ansible/tasks/node-converge-replace.yml
@@ -126,6 +127,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet-refresh.yml
   - ansible/tasks/instance-fleet-mounts.yml
   - ansible/tasks/instance-fleet-room.yml
+  - ansible/tasks/instance-fleet-runtime.yml
   - ansible/tasks/instance-fleet-converge-node.yml
   - ansible/tasks/instance-fleet-files.yml
   - ansible/tasks/instance-fleet-reset.yml
@@ -206,6 +208,7 @@ additionalFiles:
   - ansible/tasks/instance-host.yml
   - ansible/tasks/instance-power-helper.yml
   - ansible/tasks/instance-power-call.yml
+  - ansible/tasks/executor-power-relay.yml
   - ansible/tasks/instance-network-check.yml
   - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-network-move.yml
@@ -226,6 +229,7 @@ additionalFiles:
   - ansible/instance_shape_tools.py
   - ansible/shape_tool_names.py
   - ansible/instance_fleet_shrink.py
+  - ansible/instance_fleet_runtime.py
   - ansible/instance_mail.py
   - ansible/instance_mail_line.py
   - ansible/instance/destroy-git.py

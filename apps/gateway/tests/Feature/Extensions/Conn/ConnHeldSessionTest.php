@@ -29,6 +29,7 @@ use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -689,6 +690,22 @@ describe('revoke and removal', function (): void {
         expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
             ->and(revokes()[0]->input['pairing_ids'])->toBe([$held->id]);
         readHeld($this->phone, $this->environment)->assertStatus(403)->assertJsonPath('error.code', 'node_access.required');
+    });
+
+    it('records the held-session revoke in the deletion transaction, so a re-added grant before the commit keeps it owed', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $held = ConnPairing::query()->where('held', true)->sole();
+
+        DB::transaction(function () use ($held): void {
+            app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+            // The obligation is recorded with the delete; only the native revoke waits for the commit.
+            expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
+                ->and(revokes())->toBe([]);
+            $this->phone->accessibleNodes()->attach($this->host->id);
+        });
+
+        expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(revokes()[0]->input['pairing_ids'])->toBe([$held->id]);
     });
 
     it('contributes the grant-removal hook', function (): void {

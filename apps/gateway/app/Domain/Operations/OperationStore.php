@@ -7,6 +7,7 @@ namespace App\Domain\Operations;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
@@ -182,6 +183,10 @@ final readonly class OperationStore
             $operation->setRawAttributes($current->getAttributes(), true);
             if ($onlyWhileOpen && $current->status->terminal()) {
                 return false;
+            }
+            $status = $changes['status'] ?? null;
+            if ($status instanceof OperationStatus && $status->terminal()) {
+                $changes = ExecutorFence::settle($current, $changes);
             }
             $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {

@@ -17,7 +17,7 @@ Swamp is the sole executor of task groups. The Gateway stores task state and run
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Swamp runs it: the Gateway admits the intent, starts one native workflow, and projects the workflow's result into the record ([How an operation runs](#how-an-operation-runs)). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
-A container wake with `ORBIT_EXECUTOR_WAKE_ENABLED=true` keeps its durable `instance.wake` Operation and target hold, but runs through a signed order to the [executor](/reference/executor#the-wake-inside-the-request). The wake stays queued with zero attempts until the publisher claims it. The activation request waits within its short budget. If it does not observe and commit success in time, a background completion reads the durable result. This path starts no fallback Swamp run until ADR 0266 slice 7.
+With [signed power routing](/reference/executor#signed-power-delivery) enabled, container sleep and wake keep their usual Operation kinds and target holds. Admission records the engine choice. The Gateway tries the Node's WebSocket and, if needed, the SSH relay. If the result remains unknown, Swamp takes over the same Operation with a fresh signature. The activation request waits only within its own [short budget](/reference/executor#the-wake-inside-the-request); a result that arrives later can still complete the Operation promptly.
 
 SQLite records the wake's notices and lifecycle handoff with the change. A background pass sends them to `operations-prompt` without holding the writer. [Wake handoff recovery](/reference/executor#wake-handoff-recovery) covers publication, job loss, retries and hook receipts. No queue failure changes an in-bound success.
 
@@ -265,7 +265,7 @@ The optional `steps` list uses typed `OperationStep` metadata. Start responses c
 
 `operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
-The stored column `executor_result` holds the [executor](/reference/executor#the-listener-and-the-hand-off)'s result line for the Operation's order. Only the agent view subscriber writes it, once. The record does not carry it.
+The stored column `executor_result` holds the first matching result from the [executor](/reference/executor#the-listener-and-the-hand-off) over WebSocket or the Gateway's SSH relay. The public record does not carry that raw result. For signed power, `executor_accepted_us` stores when the Gateway first saw WebSocket acceptance; it does not prove the action succeeded.
 
 Every operation has the same fields, whatever its kind.
 

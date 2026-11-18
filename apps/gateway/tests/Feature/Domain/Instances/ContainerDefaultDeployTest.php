@@ -377,6 +377,35 @@ it('records the seed commit and a running container after a deployment passes, a
         ->and($instance->deployments()->latest('id')->firstOrFail()->commit)->toBe($commit);
 });
 
+it('checks the executor receipt before accepting a successful deployment wrapper', function (bool $resume, ?array $verdict, ?string $wake, bool $succeeded): void {
+    $instance = deployDefault(container: true);
+    config(['orbit.executor.power_enabled' => true]);
+    $instance->runtime()->update(['power_state' => $resume ? 'stopped' : 'running']);
+    if ($resume) {
+        Operation::query()->create(['kind' => 'instance.sleep', 'target_type' => 'instance', 'target_id' => $instance->id,
+            'node_id' => $instance->node_id, 'status' => OperationStatus::Succeeded, 'input' => ['signed_power' => true], 'result' => ['sleep' => 'frozen']]);
+    }
+    $intent = app(InstanceDeploymentIntent::class)->snapshot($instance);
+    expect($intent['executor_lifecycle_phase'])->toBe($resume ? 'resume' : 'boot');
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => $intent], 'state' => ['swamp_run_id' => 'run-1']]);
+    $file = ['commit' => str_repeat('c', 40), 'wake' => $wake];
+    if ($verdict !== null) {
+        $file['executor'] = [...$verdict, 'operation' => (string) $operation->id, 'action' => 'wake', 'target' => (string) $instance->id];
+    }
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]]]]);
+
+    expect($operation->refresh()->status)->toBe($succeeded ? OperationStatus::Succeeded : OperationStatus::Failed)
+        ->and($instance->runtime()->firstOrFail()->power_state)->toBe($succeeded ? InstanceRuntimePowerState::Running : InstanceRuntimePowerState::Stopped);
+})->with([
+    'refusal' => [true, ['status' => 'refused', 'reason' => 'unknown_target'], null, false],
+    'missing resume receipt' => [true, null, null, false],
+    'stopped without boot' => [true, ['status' => 'failed', 'code' => 'instance.container_stopped'], null, false],
+    'stopped with verified boot' => [true, ['status' => 'failed', 'code' => 'instance.container_stopped'], 'started', true],
+    'no action needed' => [false, null, null, true],
+]);
+
 it('fails the deployment record with the Operation\'s code when the run ended without a readable result', function (string $kind): void {
     $instance = deployDefault(container: true);
     $commit = str_repeat('d', 40);
