@@ -11,6 +11,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentRestartController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnInstancesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnLaunchesController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnManagedTargetsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnOperationsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
@@ -20,6 +21,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnSessionsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnTasksController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnThreadsController;
+use Orbit\Extensions\Conn\Http\Middleware\AuthenticateConnManagedTarget;
 
 // Conn reuses node access (/reference/conn#access): a server is reached through its registering Node.
 // Registration needs none: it ties the server to the calling Node.
@@ -29,6 +31,18 @@ Route::middleware([
     RequireEnabledExtension::class.':conn',
 ])->prefix('api/v1/conn')->group(function (): void {
     Route::post('environments', [ConnEnvironmentsController::class, 'store'])->name('conn:environment:register');
+
+    // Managed grant revocation (/reference/conn#managed-grant-revocation), behind `orbit.conn.managed_targets`. The caller route
+    // needs a direct edge, never Gateway authority, so it skips RequireNodeAccess. Target routes record no activity: they carry
+    // tokens and run every second.
+    Route::post('environments/{environment}/managed-tokens', [ConnManagedTargetsController::class, 'issue'])->name('conn:managed:token:create');
+    Route::middleware(AuthenticateConnManagedTarget::class)->withoutMiddleware(RecordCommandActivity::class)->prefix('managed')->group(function (): void {
+        Route::post('realtime', [ConnManagedTargetsController::class, 'realtime'])->name('conn:managed:realtime');
+        Route::post('broadcasting/auth', [ConnManagedTargetsController::class, 'broadcastingAuth'])->name('conn:managed:broadcasting-auth');
+        Route::post('authority', [ConnManagedTargetsController::class, 'authority'])->name('conn:managed:authority');
+        Route::post('introspect', [ConnManagedTargetsController::class, 'introspect'])->name('conn:managed:introspect');
+        Route::post('ack', [ConnManagedTargetsController::class, 'ack'])->name('conn:managed:ack');
+    });
 
     Route::middleware(RequireNodeAccess::class)->group(function (): void {
         Route::get('me', [ConnNodesController::class, 'show'])->name('conn:me');

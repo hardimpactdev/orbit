@@ -1038,7 +1038,7 @@ This section is the contract for the first isolated proof: a lab Gateway removes
 
 A managed target is a registered Conn environment with one managed target record. The record holds the environment UUID, the registration generation, the serving Node and the digest of the target's service credential. The serving Node is the environment's registered Node.
 
-The switch `conn.managed_targets` (`ORBIT_CONN_MANAGED_TARGETS`) is off by default. While it is off, every route below refuses with `conn.managed_disabled` (404). The switch gates only the routes. Edge removal writes managed revisions for every enrolled target whether the switch is on or off. So a target cannot probe while the switch is off, its lease ends, and it fails closed. When the switch is on again, the target sees every removal it missed.
+The switch `orbit.conn.managed_targets` (`ORBIT_CONN_MANAGED_TARGETS`) is off by default. While it is off, every route below refuses with `conn.managed_disabled` (404). The switch gates only the routes. Edge removal writes managed revisions for every enrolled target whether the switch is on or off. So a target cannot probe while the switch is off, its lease ends, and it fails closed. When the switch is on again, the target sees every removal it missed.
 
 ### Credentials
 
@@ -1114,7 +1114,7 @@ A verified reply is the only way an edge ID enters the target's admitted set. No
 
 Each managed target has one committed revision, which starts at 0 and counts removals only. Adding an edge does not raise it: the new edge gets a new ID, which only a verified introspection can admit. `node_access` IDs are never reused, so re-adding an edge between the same pair never revives the old ID.
 
-Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consumerNode}` ([node:access-remove](/cli/node/access-remove)) runs one IMMEDIATE transaction:
+Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consumerNode}` ([node:access-remove](/cli/node/access-remove)) runs one IMMEDIATE transaction. Core calls Conn inside it through the `NodeAccessRemovalTransactionHook` plug-in point ([Extensions](/reference/extensions#plug-in-points)):
 
 1. Lock the edge row and capture its ID, then lock the managed targets of its serving Node in ascending ID order.
 2. Delete the edge.

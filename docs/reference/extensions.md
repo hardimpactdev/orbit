@@ -109,6 +109,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, completion, migrate, destroy and wake | `assertCreateAvailable()`, `projectCreate()`, `registered()`, `projectDestroy()` and `projectWake()` |
 | `App\Domain\Instances\Power\InstanceAgentActivity` | The idle sleep of a development container | `read()` |
 | `App\Domain\Instances\InstanceThreadContribution` | A task copy's turn and the admission of a container sleep | `recordThread()` and `beforeSleep()` |
+| `App\Domain\Nodes\NodeAccessRemovalTransactionHook` | [`node:access:remove`](/cli/node/access-remove), inside its IMMEDIATE transaction after the delete | `removing()` |
 | `App\Domain\Nodes\NodeAccessRemovalHook` | [`node:access:remove`](/cli/node/access-remove), after it deleted an edge | `removed()` |
 | `App\Domain\Nodes\NodeRemovalHook` | [`node:remove`](/cli/node/remove), in its last transaction before it deletes the Node row | `removing()` |
 
@@ -125,6 +126,8 @@ Destroy calls `projectDestroy()` after native success, inside the projection tra
 `InstanceAgentActivity::read()` runs in each runtime hibernator sweep, once per container clone that is otherwise idle. Conn contributes the read of the clone's T3 server. While Conn is off, its contribution returns nothing, and no clone sleeps: the idle sleep treats a clone it cannot read as active.
 
 A successful wake calls `projectWake()` after its projection commits. The executor calls it from a durable job. With `retryQueueFailure: true`, a contribution can report a recoverable queue failure so the job retries before recording delivery. The wake itself remains successful. Conn admits the renewal of a session that ends within seven days or has ended, renews the [held sessions](/reference/conn#held-sessions) that end within seven days, and does nothing while it is off. `projectCreate()` also admits the held sessions of the creating Node's profile after its transaction commits, while Conn is on.
+
+`NodeAccessRemovalTransactionHook::removing()` runs inside the IMMEDIATE transaction of `node:access:remove`, after it deleted the edge and before the commit, also while the extension is off; a removal of an absent edge calls nothing. A failure rolls the delete back. Work outside the database waits for `DB::afterCommit()`. Conn records the [managed revocation](/reference/conn#revision-order) of every managed target of the serving Node and publishes its notice after the commit.
 
 `NodeAccessRemovalHook::removed()` runs after `node:access:remove` deleted an edge, also while the extension is off; a removal of an absent edge calls nothing. Conn withdraws the consumer's held sessions on the servers that the consumer now cannot reach, and admits their revoke. A revoke that cannot start is logged, and the hourly renewal tick admits it again.
 
