@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\GatewayReleases;
 
+use App\Actions\Fleet\ContinueReleaseFleetAction;
+use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -18,13 +20,14 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 use Throwable;
 
 /**
- * One tick of automatic Gateway releases, run every minute by the Gateway scheduler
+ * One tick of automatic Gateway releases, run every five minutes by the Gateway scheduler
  * ([Automatic releases](/reference/gateway-recovery#automatic-releases)).
  *
  * The tick exits quietly when automatic releases are disabled or paused, when a requested release
@@ -47,9 +50,6 @@ use Throwable;
 final readonly class RunAutomaticGatewayReleaseAction
 {
     public const int StallAlertMinutes = 30;
-
-    /** A commit whose release failed for a transient reason is tried again after this long. */
-    public const int RetryMinutes = 10;
 
     public const int HeadCheckMinutes = 5;
 
@@ -111,6 +111,17 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('no_deployed_release', errorCode: 'gateway.release_current_incomplete', message: "The current release [{$current}] has no readable REVISION.");
         }
 
+        $cycle = app(ContinueReleaseFleetAction::class)->pending($deployed);
+        if ($cycle !== null) {
+            try {
+                GatewaySchedule::dispatch(new AdmitFleetRollout($cycle->id));
+            } catch (Throwable $exception) {
+                report($exception);
+
+                return $this->stalled($deployed, 'source_unavailable', $cycle->id, 'gateway.release_cycle_dispatch_failed', 'Could not queue the serving release continuation.');
+            }
+        }
+
         try {
             $repository = $this->source->repository();
             $green = $this->resolver->resolve(
@@ -126,6 +137,10 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->stalled($deployed, 'source_unavailable', null, $errorCode, $exception->getMessage());
         }
 
+        if ($cycle !== null) {
+            return $this->automation->recordTick('waiting_for_release_cycle', $green->sha ?? $deployed, $cycle->id);
+        }
+
         if (! $green instanceof GreenCommit) {
             try {
                 $this->lock->run(fn () => $this->recorder->supersedePublication());
@@ -138,7 +153,7 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('up_to_date', $deployed);
         }
 
-        $manual = $this->manualRelease($current);
+        $manual = GatewayReleaseSupersession::manualPin($current, $this->automation->resumedAfter());
 
         if ($manual instanceof GatewayRelease) {
             $this->automation->pauseFor('manual_deploy', $manual);
@@ -147,7 +162,7 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('paused', $green->sha, $manual->id, 'gateway.release_manual_deploy', "Release [{$current}] was deployed by hand and [{$green->sha}] is newer. Resume to release it.");
         }
 
-        if ($this->backingOff($green->sha)) {
+        if ($this->retry->automaticBackingOff($green->sha)) {
             return $this->automation->recordTick('backing_off', $green->sha);
         }
 
@@ -163,7 +178,7 @@ final readonly class RunAutomaticGatewayReleaseAction
     private function release(string $sha, string $deployed): array
     {
         try {
-            $record = $this->admit->execute($sha, trigger: 'auto');
+            $record = $this->admit->execute($sha, trigger: 'auto', expectedServingSha: $deployed);
         } catch (GatewayReleaseException $exception) {
             if ($exception->errorCode === 'gateway.release_in_progress') {
                 return $this->stalled($deployed, 'busy', null, $exception->errorCode, $exception->getMessage(), $sha);
@@ -173,13 +188,18 @@ final readonly class RunAutomaticGatewayReleaseAction
             }
             // A refusal before the run, such as an expired web build, is a failed attempt: the resolver leaves the
             // commit out, or tries it again under the retry limit.
-            $record = $this->lock->run(function () use ($sha, $exception): ?GatewayRelease {
-                $record = $this->recorder->begin('auto', $sha);
-                $this->recorder->fail($record, $exception, retryable: $this->retry->retryable($exception->errorCode, $sha, $record?->id),
-                    durationMs: 0, phase: $exception->step);
+            try {
+                $record = $this->lock->run(function () use ($sha, $deployed, $exception): ?GatewayRelease {
+                    $this->admit->assertAutomaticState($deployed, $sha);
+                    $record = $this->recorder->begin('auto', $sha);
+                    $this->recorder->fail($record, $exception, retryable: $this->retry->retryable($exception->errorCode, $sha, $record?->id),
+                        durationMs: 0, phase: $exception->step);
 
-                return $record?->refresh();
-            });
+                    return $record?->refresh();
+                });
+            } catch (GatewayReleaseException $changed) {
+                return $this->stalled($deployed, 'busy', null, $changed->errorCode, $changed->getMessage(), $sha);
+            }
             if ($record instanceof GatewayRelease && ! $record->retryable) {
                 $this->automation->clearStall();
 
@@ -260,18 +280,6 @@ final readonly class RunAutomaticGatewayReleaseAction
         $this->automation->branchHeadAlerted();
     }
 
-    /** A commit that just failed for a transient reason waits before the next attempt. */
-    private function backingOff(string $sha): bool
-    {
-        $last = $this->record($sha);
-
-        return $last instanceof GatewayRelease
-            && in_array($last->outcome, [...GatewayRelease::FailedOutcomes, GatewayRelease::Interrupted], true)
-            && $last->retryable
-            && $last->updated_at !== null
-            && $last->updated_at->gt(CarbonImmutable::now()->subMinutes(self::RetryMinutes));
-    }
-
     private function record(string $sha): ?GatewayRelease
     {
         return GatewayRelease::query()
@@ -307,24 +315,5 @@ final readonly class RunAutomaticGatewayReleaseAction
         $current = $inventory->current;
 
         return $current === null ? null : ($inventory->commits[$current] ?? null);
-    }
-
-    /**
-     * The verified manual deploy that put the current release live after the last resume while a
-     * newer green commit existed, a deliberate pin of an older commit. A manual deploy of the newest
-     * green commit, an automatic release, an adoption, or an earlier resume hands back to automation.
-     */
-    private function manualRelease(string $current): ?GatewayRelease
-    {
-        $live = GatewayRelease::query()
-            ->where('release_id', $current)
-            ->where('outcome', 'verified')
-            ->latest('id')
-            ->first();
-
-        return $live instanceof GatewayRelease
-            && $live->trigger === 'deploy'
-            && $live->id > $this->automation->resumedAfter()
-            && GatewayReleaseSupersession::superseded($live) ? $live : null;
     }
 }

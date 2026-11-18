@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\AdmitSwampGatewayReleaseAction;
 use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
+use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseException;
@@ -15,12 +16,14 @@ use App\Domain\GitHub\GreenCommit;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -92,7 +95,75 @@ it('records a refused automatic attempt, so the resolver leaves the commit out',
         ->and(GatewayRelease::query()->count())->toBe(1);
 });
 
-it('refuses an admission when another release went live during its checks', function (): void {
+it('does not spend an automatic attempt when the serving release pauses during a failed preflight', function (): void {
+    $this->mock(GreenCommitResolver::class)->shouldReceive('resolve')->once()
+        ->andReturn(new GreenCommit(ReleaseC, new GitHubCheckRun('Required checks', 'success', null)));
+    releaseAgent(static function (): never {
+        app(GatewayReleaseAutomation::class)->pauseFor('rollback');
+
+        throw new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'Bad provenance.', 422, sha: ReleaseC);
+    });
+
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray(['result' => 'busy', 'sha' => ReleaseC])
+        ->and(GatewayRelease::query()->count())->toBe(0);
+});
+
+it('does not consume an attempt based on retry state that changed during preflight', function (bool $retryable): void {
+    $this->mock(GreenCommitResolver::class)->shouldReceive('resolve')->once()
+        ->andReturn(new GreenCommit(ReleaseC, new GitHubCheckRun('Required checks', 'success', null)));
+    releaseAgent(static function () use ($retryable): never {
+        GatewayRelease::query()->create(['sha' => ReleaseC, 'trigger' => 'auto', 'outcome' => 'failed',
+            'retryable' => $retryable, 'phases' => [], 'duration_ms' => 0]);
+
+        throw new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'Bad provenance.', 422, sha: ReleaseC);
+    });
+
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray(['result' => 'busy', 'sha' => ReleaseC])
+        ->and(GatewayRelease::query()->count())->toBe(1);
+})->with(['in backoff' => true, 'permanently failed' => false]);
+
+it('requeues the serving cycle after a restart and waits before admitting the latest eligible commit', function (): void {
+    Queue::fake();
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/releases/'.substr(ReleaseA, 0, 12).'/apps/gateway'));
+    $release = GatewayRelease::query()->create(['sha' => ReleaseA, 'trigger' => 'auto', 'outcome' => 'verified',
+        'phases' => ['fleet' => ['status' => 'current'], 'default_refresh' => ['status' => 'current']], 'duration_ms' => 0]);
+    $this->mock(GreenCommitResolver::class)->shouldReceive('resolve')->twice()
+        ->andReturn(new GreenCommit(ReleaseC, new GitHubCheckRun('Required checks', 'success', null)));
+    releaseAgent(static fn (): never => throw new GatewayReleaseException('agent-delivery', 'gateway.release_agent_delivery_unavailable', 'Publishing.', 503, sha: ReleaseC));
+
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray([
+        'result' => 'waiting_for_release_cycle', 'sha' => ReleaseC, 'record' => $release->id,
+    ]);
+    Queue::assertPushed(AdmitFleetRollout::class, fn (AdmitFleetRollout $job): bool => $job->releaseId === $release->id);
+    expect(GatewayRelease::query()->count())->toBe(1);
+
+    $release->update(['phases' => [...$release->phases, 'seed_publication' => ['status' => 'current']]]);
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray([
+        'result' => 'waiting_for_agent_delivery', 'sha' => ReleaseC,
+    ])->and(GatewayRelease::query()->count())->toBe(1);
+});
+
+it('requeues refresh from a verified release with rollout disabled', function (): void {
+    Queue::fake();
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/releases/'.substr(ReleaseA, 0, 12).'/apps/gateway'));
+    $release = GatewayRelease::query()->create(['sha' => ReleaseA, 'trigger' => 'auto', 'outcome' => 'verified',
+        'phases' => ['fleet' => ['status' => 'disabled']], 'duration_ms' => 0]);
+    $this->mock(GreenCommitResolver::class)->shouldReceive('resolve')->once()->andReturnNull();
+
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray([
+        'result' => 'waiting_for_release_cycle', 'sha' => ReleaseA, 'record' => $release->id,
+    ]);
+    Queue::assertPushed(AdmitFleetRollout::class, fn (AdmitFleetRollout $job): bool => $job->releaseId === $release->id);
+});
+
+it('refuses to admit a duplicate automatic operation for the serving commit', function (): void {
+    releaseAgent(static fn (): never => throw new LogicException('An already serving revision needs no delivery.'));
+    expect(fn () => app(AdmitSwampGatewayReleaseAction::class)->execute(ReleaseA, trigger: 'auto'))
+        ->toThrow(fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_in_progress'))
+        ->and(GatewayRelease::query()->count())->toBe(0);
+});
+
+it('rechecks the serving release and rollback or fleet state before admission', function (string $race): void {
     $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
     openssl_pkey_export($key, $pem);
     app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'proof', 'proof', 'hardimpactdev', 'organization', 'https://github.com/apps/proof', $pem));
@@ -108,19 +179,31 @@ it('refuses an admission when another release went live during its checks', func
         str_contains($request->url(), '/actions/runs/777') => Http::response($run),
         default => Http::response('unexpected '.$request->url(), 500),
     });
-    // Release B goes live while admission reads the agent delivery of C.
-    releaseAgent(function (string $revision): array {
+    if ($race === 'changed before preflight') {
         unlink($this->base.'/orbit');
         symlink('releases/'.substr(ReleaseB, 0, 12), $this->base.'/orbit');
+    }
+    releaseAgent(function (string $revision) use ($race): array {
+        if ($race === 'changed during preflight') {
+            unlink($this->base.'/orbit');
+            symlink('releases/'.substr(ReleaseB, 0, 12), $this->base.'/orbit');
+        } elseif ($race === 'rollback pause') {
+            app(GatewayReleaseAutomation::class)->pauseFor('rollback');
+        } elseif ($race === 'cycle started') {
+            app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/releases/'.substr(ReleaseA, 0, 12).'/apps/gateway'));
+            GatewayRelease::query()->create(['sha' => ReleaseA, 'trigger' => 'deploy', 'outcome' => 'verified',
+                'phases' => ['fleet' => ['status' => 'pending']], 'duration_ms' => 0]);
+        }
 
         return ['sha' => $revision, 'manifest' => '{}'];
     });
 
-    expect(fn () => app(AdmitSwampGatewayReleaseAction::class)->execute(ReleaseC))
+    $expected = 'The serving release or its automatic release state changed during admission.';
+    expect(fn () => app(AdmitSwampGatewayReleaseAction::class)->execute(ReleaseC, trigger: 'auto', expectedServingSha: ReleaseA))
         ->toThrow(fn (GatewayReleaseException $exception) => expect([$exception->errorCode, $exception->getMessage()])
-            ->toBe(['gateway.release_in_progress', 'The current release changed during admission.']))
-        ->and(GatewayRelease::query()->count())->toBe(0);
-});
+            ->toBe(['gateway.release_in_progress', $expected]))
+        ->and(GatewayRelease::query()->where('trigger', 'auto')->count())->toBe(0);
+})->with(['changed before preflight', 'changed during preflight', 'rollback pause', 'cycle started']);
 
 it('rolls back to a retained release by releasing its commit, and refuses an unknown or current one', function (): void {
     $fetched = [];

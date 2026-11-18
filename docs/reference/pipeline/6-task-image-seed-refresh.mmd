@@ -12,11 +12,11 @@ sequenceDiagram
   participant SW as Swamp<br/>one run per Node
   participant N as app-dev Node<br/>switched on
   participant C as Default<br/>with inner fleet
-  Note over GW: Admit after a release<br/>best effort
+  Note over GW: Wait for fleet current<br/>record each Operation
   %%> Triggers:
-  %%> - every verified Gateway release, from its admission step after Horizon starts; the release does not wait
+  %%> - fleet current, when refresh is enabled; the five-minute release tick redrives a missed continuation
   %%> When:
-  %%> - a default with a clone copy in flight refuses with `instance.clone_in_flight`; the next release tries again
+  %%> - a default with a clone copy in flight refuses with `instance.clone_in_flight`; the same release retries
   %%> - a default with a deployment open refuses by its Instance lock; nothing queues behind it
   GW->>SW: Start one run per Node<br/>instance-deploy-direct
   %%> Why:
@@ -41,13 +41,14 @@ sequenceDiagram
     Note over GW: Record the seed commit<br/>clones copy it
     %%> Result:
     %%> - one slow Node does not hold the others; existing clones keep their fleet
+    %%> - proof Nodes publish the exact seed commit and timestamp through instance.seed_copy; the release retains those Operation IDs
     %%> - a new copy of a default with an inner volume copies both halves: the volume to its own `inner-<id>`, then the container; while the run is open such a copy refuses with `instance.default_seed_in_flight`
   else a step fails on a Node
     SW->>N: Restore the newest seed<br/>then start the default
     %%> What it does:
     %%> - a default with an inner volume needs both halves of the seed before it restores anything, then restores the container and the volume
     SW--xGW: Node not refreshed<br/>failed step
-    Note over GW: Keep the old seed<br/>next release retries
+    Note over GW: Keep the old seed<br/>record failure and retry
     %%> Result:
-    %%> - clones keep copying the old seed; the Operation names the failed step
+    %%> - the Operation names the failed step; a terminal failure remains visible and can be fixed forward
   end

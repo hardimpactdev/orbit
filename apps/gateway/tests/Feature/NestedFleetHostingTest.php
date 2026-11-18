@@ -773,6 +773,38 @@ describe('the seed of the proof default on each Node that offers proof places', 
         expect(Operation::query()->where('kind', 'instance.seed_copy')->count())->toBe(1);
     });
 
+    it('recovers a lost seed admission and records the exact published seed once', function (): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        $commit = str_repeat('a', 40);
+        $seeds = app(ProofSeeds::class);
+        $takenAt = $default->runtime()->sole()->seed_taken_at->toIso8601String();
+        $identity = ['instance_id' => $default->id, 'commit' => $commit, 'taken_at' => $takenAt];
+        $defaults = [$default->id => ['copies_to_ci' => true, 'taken_at' => $takenAt]];
+        $pending = $seeds->releasePublication($commit, $defaults);
+        $copy = Operation::query()->where('kind', ProofSeeds::Kind)->sole();
+
+        expect($pending)->toBe(['status' => 'pending', ...$identity, 'operation_ids' => [$copy->id], 'published_nodes' => [], 'pending_nodes' => [$node->id]])
+            ->and($seeds->releasePublication($commit, $defaults))->toBe($pending)
+            ->and($copy->target_id)->toBe($default->id);
+
+        $copy->forceFill(['status' => 'running', 'state' => [...($copy->state ?? []), 'swamp_run_id' => 'run-release-seed']])->save();
+        app(ProofSeedCopyProjection::class)->apply($copy, ['status' => 'succeeded', 'run_id' => 'run-release-seed', 'started_at' => now()->toIso8601String(),
+            'finished_at' => now()->toIso8601String(), 'result' => ['targets' => [['node_id' => $node->id, 'status' => 'succeeded']]]]);
+        expect($seeds->releasePublication($commit, $defaults))->toBe([
+            'status' => 'current', ...$identity, 'operation_ids' => [$copy->id], 'published_nodes' => [$node->id], 'pending_nodes' => [],
+        ])->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(1);
+
+        // A same-commit retake is a different seed, even though it keeps the snapshot name.
+        $default->runtime()->update(['seed_taken_at' => '2026-11-17 00:00:00']);
+        expect($seeds->releasePublication($commit, $defaults))->toMatchArray([
+            'status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$identity,
+        ])->and(Operation::query()->where('kind', ProofSeeds::Kind)->count())->toBe(1);
+    });
+
     it('admits the next copy at its end for every Node behind a seed that moved, and else only for Nodes that no copy has tried', function (): void {
         $default = proofSeedDefault();
         seedSwampNode();

@@ -2,6 +2,7 @@ order = 770
 cases = [
   "no release step admits a task VM image refresh: the VM refresh triggers are gone",
   "Swamp load requires the bounded DB busy guard, including forced releases",
+  "the Gateway check reads the root CA under the private certificate folder as root",
   "the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release",
 ]
 file = "swamp/tests/gateway_release_order_test.ts"
