@@ -351,6 +351,54 @@ class RegistrySelectionTest(unittest.TestCase):
             with self.subTest(edit=edit):
                 self.assertEqual(self.changes(self.initial.replace('cost = 40', edit))[0], ['swamp/process.ts'])
 
+    def test_an_input_list_that_names_no_new_file_is_a_machinery_change(self):
+        for name in ('fleet-start.yml', 'fleet-reset.yml', 'fleet-node.yml', 'other.yml'):
+            (self.root / 'swamp').mkdir(exist_ok=True)
+            (self.root / 'swamp' / name).write_text('---\n')
+        wide = self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/fleet-*.yml"]')
+        self.base = self.commit(wide)
+        fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
+        budget = {**BUDGET, 'machinery_canary': ['swamp/egress.py']}
+        # The list drops fleet-node.yml, or only reorders: the fixture has nothing new to test.
+        for inputs in ('["swamp/fleet-start.yml", "swamp/fleet-reset.yml"]', '["swamp/fleet-s*.yml"]', '[]'):
+            with self.subTest(inputs=inputs):
+                changed, shared = self.changes(wide.replace('["swamp/fleet-*.yml"]', inputs))
+                self.assertEqual((changed, shared), ([], True))
+                result = units.plan(['.github/ci/checks.toml'], budget, fixtures, [], registry_changed=changed, shared_registry=shared)
+                self.assertEqual(names(result), ['swamp/egress.py'])
+        # A list that names a file the old list did not match, or a file that does not exist, selects the fixture.
+        # So does a narrowed list with another changed key.
+        for edit in ('inputs = ["swamp/fleet-start.yml", "swamp/other.yml"]', 'inputs = ["swamp/*.yml"]',
+                     'inputs = ["swamp/fleet-start.yml", "swamp/absent.yml"]',
+                     'inputs = ["swamp/fleet-start.yml"]\nhost_programs = ["jq"]'):
+            with self.subTest(edit=edit):
+                self.assertEqual(self.changes(wide.replace('inputs = ["swamp/fleet-*.yml"]', edit)), (['swamp/process.ts'], False))
+
+    def test_a_narrowed_input_list_selects_the_fixture_when_the_change_touches_a_dropped_path(self):
+        (self.root / 'swamp').mkdir()
+        for name in ('fleet-start.yml', 'fleet-mounts.yml'):
+            (self.root / 'swamp' / name).write_text('---\n')
+        (self.root / 'swamp' / b'caf\xe9.yml'.decode('utf-8', 'surrogateescape')).write_text('---\n')
+        wide = self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/fleet-*.yml"]')
+        self.base = self.commit(wide)
+        narrow = wide.replace('["swamp/fleet-*.yml"]', '["swamp/fleet-start.yml"]')
+        # A tracked name that is not UTF-8 does not stop the plan.
+        self.assertEqual(self.changes(narrow), ([], True))
+        for edit in (lambda path: path.unlink(), lambda path: path.write_text('- changed\n')):
+            with self.subTest(edit=edit):
+                edit(self.root / 'swamp/fleet-mounts.yml')
+                self.assertEqual(self.changes(narrow), (['swamp/process.ts'], False))
+
+    def test_a_changed_name_with_a_carriage_return_reaches_the_plan_unchanged(self):
+        name = 'swamp/tasks/sample\r.yml'
+        (self.root / 'swamp/tasks').mkdir(parents=True)
+        (self.root / name).write_text('---\n')
+        self.base = self.commit(self.initial)
+        (self.root / name).write_text('- changed\n')
+        head = self.commit(self.initial)
+        with contextlib.chdir(self.root):
+            self.assertEqual(units.selection.changed_inputs(self.base, head), (self.base, [name]))
+
     def test_fixture_inputs_edit_selects_only_its_file_through_cli(self):
         head = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}

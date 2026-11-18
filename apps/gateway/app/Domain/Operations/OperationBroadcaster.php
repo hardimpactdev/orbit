@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Instances\Power\ExecutorWakeNotices;
 use App\Domain\Instances\Power\InstanceWake;
@@ -40,7 +41,8 @@ final readonly class OperationBroadcaster
 
     public static function usesWakeOutbox(Operation $operation): bool
     {
-        return $operation->kind === InstanceWake::Kind && (ExecutorWake::enabled() || ExecutorWake::owns($operation));
+        return $operation->kind === InstanceWake::Kind && (ExecutorWake::enabled() || ExecutorPowerIntent::enabled()
+            || ExecutorPowerIntent::managed($operation) || ExecutorWake::owns($operation));
     }
 
     private function broadcast(Operation $operation, RecordEventType $type, string $channel = 'orbit'): void

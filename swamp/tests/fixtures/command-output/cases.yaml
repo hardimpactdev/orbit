@@ -1,5 +1,11 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  executor-route-unready:
+    executor_receipt: {status: failed, code: instance.sleep_route_unready}
+  executor-unrecognized-failure:
+    executor_receipt: {status: failed, code: 'unexpected failure text'}
+  executor-refusal:
+    executor_receipt: {status: refused, reason: expired}
   fleet-command-current:
     fleet_gateway_commands:
       stdout: "list  List commands\ngateway:known-hosts:sync  Restore recorded pins\n"
@@ -1258,6 +1264,21 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: tasks/executor-power-relay.yml
+  task: Respect the executor's terminal outcome
+  field: ansible.builtin.fail.msg
+  context: executor-route-unready
+  expected: instance.sleep_route_unready
+- file: tasks/executor-power-relay.yml
+  task: Respect the executor's terminal outcome
+  field: ansible.builtin.fail.msg
+  context: executor-unrecognized-failure
+  expected: executor.power_failed
+- file: tasks/executor-power-relay.yml
+  task: Respect the executor's terminal outcome
+  field: ansible.builtin.fail.msg
+  context: executor-refusal
+  expected: executor.order_refused
 - file: tasks/role-swamp.yml
   task: Check Swamp units
   field: loop

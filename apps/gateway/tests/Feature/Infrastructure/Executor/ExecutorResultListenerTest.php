@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Broadcasting\PresenceChannelSigner;
 use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Problems\ProblemCollector;
@@ -17,6 +18,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Executor\ExecutorResultQueue;
 use App\Infrastructure\Executor\ExecutorResults;
+use App\Jobs\Operations\CompleteExecutorWake;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Operation;
@@ -25,6 +27,7 @@ use App\Models\ProblemFingerprint;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Psr\Log\AbstractLogger;
 
 /*
@@ -253,6 +256,20 @@ it('logs a failed push and keeps the loop going', function (): void {
 
     expect(array_column($this->log->lines, 1))->toContain('The agent view subscriber could not hand off an executor result.')
         ->and($this->operation->refresh()->executor_result)->toBe($line);
+});
+
+it('hands off a signed wake from its durable receipt even when the waiting list is down', function (): void {
+    Queue::fake();
+    $this->operation->update(['input' => [ExecutorPowerIntent::Managed => true]]);
+    $this->queue->fails = true;
+    $id = $this->operation->id;
+    $result = ['status' => 'done', 'operation' => (string) $id, 'action' => 'wake', 'target' => '7'];
+
+    executorStream($this, [executorEvent($this->node->id, $id, ['status' => 'accepted']), executorEvent($this->node->id, $id, $result)]);
+
+    expect($this->operation->refresh()->executor_result)->toBe([...$result, 'delivery' => 'websocket']);
+    $completion = Queue::pushed(CompleteExecutorWake::class)->sole();
+    expect($completion->operationId)->toBe($id)->and($completion->delay)->toBeNull();
 });
 
 it('keeps bare replay evidence ordered without letting it replace the first result', function (bool $replayFirst): void {

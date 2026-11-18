@@ -102,6 +102,8 @@ The Gateway redacts `properties` before it stores a record, for every command:
 
 These rules apply when an Activity is stored. They do not rewrite records that are already stored.
 
+The [executor signing request](/reference/swamp-command-steps#node-execution-through-official-ssh) records no Activity input. The signed order is not part of Activity.
+
 Doctor writes one ordinary Activity for each run and stores no findings in it.
 
 ### Text-redaction failures

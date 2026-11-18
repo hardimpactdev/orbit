@@ -13,7 +13,7 @@ use orbit_executor_core::action::{Action, Enabled};
 use orbit_executor_core::caller::Policy;
 use orbit_executor_core::executor::{Executor, Run};
 use orbit_executor_core::journal::Outcome;
-use orbit_executor_core::order::{PinnedKeys, VerifiedOrder};
+use orbit_executor_core::order::{PinnedKeys, PowerCheck, VerifiedOrder};
 use orbit_executor_core::server::{self, Settings, SOCKET_PATH};
 use orbit_executor_core::{ids::NodeId, relay};
 
@@ -53,10 +53,13 @@ impl Run for Families {
             Action::ProofNoop => Outcome::Done,
             Action::Sleep => {
                 let started = std::time::Instant::now();
-                match self
-                    .0
-                    .sleep(order.target().as_str(), order.operation().as_str())
-                {
+                let target = order.target().as_str();
+                let checked = if order.power_check() == PowerCheck::Route {
+                    self.0.require_sleep_route(target)
+                } else {
+                    Ok(())
+                };
+                match checked.and_then(|()| self.0.sleep(target, order.operation().as_str())) {
                     Ok(receipt) => {
                         // This includes receipt and marker fsync, which cannot time their own publication.
                         log(&format!(
@@ -65,13 +68,17 @@ impl Run for Families {
                             started.elapsed().as_micros(),
                             receipt.reclaim_us
                         ));
-                        Outcome::Done
+                        Outcome::Slept {
+                            receipt: serde_json::json!(receipt),
+                        }
                     }
                     Err(error) => {
                         log(&format!("power sleep failed: {error}"));
                         Outcome::Failed {
                             code: match error.to_string().as_str() {
                                 code @ ("instance.container_frozen_unmanaged"
+                                | orbit_executor_power::SLEEP_INCOMPLETE
+                                | orbit_executor_power::ROUTE_UNREADY
                                 | orbit_executor_power::READERS_BUSY) => code,
                                 _ => "instance.container_freeze_failed",
                             }
@@ -82,7 +89,12 @@ impl Run for Families {
             }
             Action::Wake => {
                 let started = std::time::Instant::now();
-                match self.0.wake(order.target().as_str()) {
+                let probe = match order.power_check() {
+                    PowerCheck::NoWeb => orbit_executor_power::WebProbe::NotConfigured,
+                    PowerCheck::Resume => orbit_executor_power::WebProbe::Lifecycle,
+                    _ => orbit_executor_power::WebProbe::Required,
+                };
+                match self.0.wake(order.target().as_str(), probe) {
                     Ok(receipt) => {
                         log(&format!(
                             "power wake {} {}: total_us={} restore_us={} pages_read={} pages_failed={}",
@@ -114,7 +126,7 @@ impl Run for Families {
                     }
                 }
             }
-            Action::Discard => match self.0.discard(order.target().as_str()) {
+            Action::Discard => match self.0.discard_stopped(order.target().as_str()) {
                 Ok(()) => Outcome::Done,
                 Err(error) => Outcome::Failed {
                     code: if error.to_string() == orbit_executor_power::READERS_BUSY {

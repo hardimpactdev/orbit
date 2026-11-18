@@ -260,6 +260,8 @@ Node 209 hosts Serve and all Swamp workers. Converted Node effects use official 
 
 The descriptor does not prove that a target currently authorizes the existing key. Lane 21 owns that coverage proof and worker retirement. Do not assume fleet-wide SSH `AcceptEnv` or sudo `env_keep`. Public Process control arguments can use official `exec.argv`; secret values must use a documented official delivery method and stay out of argv.
 
+For [signed power](/reference/executor#signed-power-delivery), the Ansible phase asks the Gateway for a fresh order using the bound run ID and admitted phase. The Gateway checks the Swamp peer and the active Operation before signing the action, Node and target from stored intent. The phase sends the order to the fixed SSH relay on stdin. It does not put the order in run inputs, arguments or output. Swamp holds no signing key.
+
 ### Native failure observation
 
 Workflows have no Gateway failure-report step. The shared terminal subscriber follows kinds that declare `terminal_result`. The reconciler owns the native failure check; Operation reads return stored state. A failed or interrupted run without selected public output records `operation.native_failed`. A converted family maps the native failure in its Gateway projection; retained result steps may still supply a fixed public error code. Schedule runs map a failed native command to `schedule.run_failed`. The Gateway returns `404` for `POST /api/v1/direct-operations/{operation}/failure`.

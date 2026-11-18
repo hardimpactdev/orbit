@@ -1341,7 +1341,7 @@ class NodeServiceTest(unittest.TestCase):
                 rescue = next(task for task in play['tasks'][0]['rescue'] if task['name'] == 'Write the failure')
                 sentinel = directory / 'quiesce-or-workspace'
                 fixture = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
-                            'vars': {**{name: play['vars'][name] for name in ('club_key_result_file', 'club_key_carried', 'fleet_refresh_carried')
+                            'vars': {**{name: play['vars'][name] for name in ('club_key_result_file', 'club_key_carried', 'fleet_refresh_carried', 'executor_carried')
                                         if name in play['vars']},
                                      'container': self.container, 'phase': 'container', 'container_phase_running': 'container',
                                      'ansible_python_interpreter': sys.executable,

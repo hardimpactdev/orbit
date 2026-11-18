@@ -184,6 +184,7 @@ additionalFiles:
   - ansible/tasks/instance-host.yml
   - ansible/tasks/instance-power-helper.yml
   - ansible/tasks/instance-power-call.yml
+  - ansible/tasks/executor-power-relay.yml
   - ansible/tasks/instance-network-check.yml
   - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-network-move.yml

@@ -7,7 +7,7 @@
 //! the journal while the executor runs (ADR 0266), with the same rule that start-up uses; the syncer writes
 //! and syncs the compacted file, and the writer renames it into place.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead as _, BufReader, Write as _};
 use std::path::{Path, PathBuf};
@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
 use crate::ids::{Nonce, OperationId, TargetId};
+use crate::order::PowerCheck;
 
 /// How often the background thread syncs the journal.
 pub const SYNC_INTERVAL: Duration = Duration::from_secs(1);
@@ -51,6 +52,11 @@ pub struct DoneKey {
 pub enum Outcome {
     /// The action finished.
     Done,
+    /// Sleep completed and measured the actual container state after reclaim.
+    Slept {
+        /// Public sleep measurements, retained for a repeated delivery.
+        receipt: serde_json::Value,
+    },
     /// The action finished, but part of its work was cut short: a wake whose container runs again without every recorded
     /// page restored.
     Partial {
@@ -78,6 +84,9 @@ pub enum Record {
         key: DoneKey,
         /// The order's expiry, in Unix milliseconds.
         expires_ms: u64,
+        /// The signed check associated with the power action.
+        #[serde(default)]
+        power_check: PowerCheck,
     },
     /// Written for a nonce whose order did not run, because its key already had a result.
     Seen {
@@ -126,7 +135,7 @@ impl Default for Compaction {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Live {
     nonces: HashMap<Nonce, (DoneKey, u64)>,
-    open: HashSet<Nonce>,
+    open: HashMap<Nonce, PowerCheck>,
     done: HashMap<DoneKey, (Nonce, Outcome, u64)>,
 }
 
@@ -147,9 +156,10 @@ impl Live {
                 nonce,
                 key,
                 expires_ms,
+                power_check,
             } => {
                 self.nonces.insert(*nonce, (key.clone(), *expires_ms));
-                self.open.insert(*nonce);
+                self.open.insert(*nonce, *power_check);
             }
             Record::Seen {
                 nonce,
@@ -176,27 +186,31 @@ impl Live {
     pub fn prune(&mut self, now_ms: u64) {
         let done = &self.done;
         let nonces = &self.nonces;
-        self.open.retain(|nonce| {
+        self.open.retain(|nonce, _| {
             nonces
                 .get(nonce)
                 .is_some_and(|(key, _)| !done.contains_key(key))
         });
         let open = &self.open;
         self.nonces
-            .retain(|nonce, (_, expires_ms)| *expires_ms > now_ms || open.contains(nonce));
+            .retain(|nonce, (_, expires_ms)| *expires_ms > now_ms || open.contains_key(nonce));
         self.done
             .retain(|_, (_, _, at_ms)| now_ms.saturating_sub(*at_ms) < DONE_RETENTION_MS);
     }
 
     /// The orders that were open without a result: crash recovery runs each one again.
-    pub fn unfinished(&self) -> Vec<(Nonce, DoneKey)> {
-        let mut unfinished: Vec<(Nonce, DoneKey)> = self
+    pub fn unfinished(&self) -> Vec<(Nonce, DoneKey, PowerCheck)> {
+        let mut unfinished: Vec<(Nonce, DoneKey, PowerCheck)> = self
             .open
             .iter()
-            .filter_map(|nonce| self.nonces.get(nonce).map(|(key, _)| (*nonce, key.clone())))
-            .filter(|(_, key)| !self.done.contains_key(key))
+            .filter_map(|(nonce, route)| {
+                self.nonces
+                    .get(nonce)
+                    .map(|(key, _)| (*nonce, key.clone(), *route))
+            })
+            .filter(|(_, key, _)| !self.done.contains_key(key))
             .collect();
-        unfinished.sort_by_key(|(nonce, _)| *nonce);
+        unfinished.sort_by_key(|(nonce, _, _)| *nonce);
         unfinished
     }
 
@@ -222,11 +236,12 @@ impl Live {
             .iter()
             .map(|(nonce, (key, expires_ms))| {
                 let (nonce, key, expires_ms) = (*nonce, key.clone(), *expires_ms);
-                if self.open.contains(&nonce) {
+                if let Some(power_check) = self.open.get(&nonce) {
                     Record::Open {
                         nonce,
                         key,
                         expires_ms,
+                        power_check: *power_check,
                     }
                 } else {
                     Record::Seen {
@@ -667,6 +682,7 @@ mod tests {
             nonce: nonce(1),
             key: key("op-1"),
             expires_ms: NOW + 5,
+            power_check: PowerCheck::Default,
         };
         let journal = start(&path, Compaction::default());
         journal.append(&open).expect("append");
@@ -705,6 +721,7 @@ mod tests {
             nonce: nonce(2),
             key: key("op-open"),
             expires_ms: NOW - 1,
+            power_check: PowerCheck::Route,
         };
         let live = Record::Seen {
             nonce: nonce(3),
@@ -790,6 +807,7 @@ mod tests {
                             nonce: nonce(last),
                             key: key(&format!("op-{last}")),
                             expires_ms: NOW + 5_000,
+                            power_check: PowerCheck::Default,
                         };
                         journal.append(&open).expect("append");
                         open
@@ -808,7 +826,7 @@ mod tests {
         let unfinished: Vec<Nonce> = live
             .unfinished()
             .into_iter()
-            .map(|(nonce, _)| nonce)
+            .map(|(nonce, _, _)| nonce)
             .collect();
         let mut expected: Vec<Nonce> = opened
             .iter()
@@ -828,11 +846,13 @@ mod tests {
                 nonce: nonce(1),
                 key: key("op"),
                 expires_ms: NOW,
+                power_check: PowerCheck::Default,
             },
             Record::Open {
                 nonce: nonce(2),
                 key: key("op-2"),
                 expires_ms: NOW,
+                power_check: PowerCheck::NoWeb,
             },
             Record::Done {
                 nonce: nonce(1),
@@ -842,6 +862,9 @@ mod tests {
             },
         ]);
         live.prune(NOW + 1);
-        assert_eq!(live.unfinished(), vec![(nonce(2), key("op-2"))]);
+        assert_eq!(
+            live.unfinished(),
+            vec![(nonce(2), key("op-2"), PowerCheck::NoWeb)]
+        );
     }
 }

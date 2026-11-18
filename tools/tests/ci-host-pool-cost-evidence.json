@@ -1,0 +1,85 @@
+{
+  "source": "ci-unit-times-self-hosted-* artifacts of pull request CI runs on the self-hosted pool, 17 and 18 November 2026, two units at once per shard",
+  "rule": "case cost = ceil(largest passed case seconds); the planner adds startup",
+  "files": {
+    "swamp/tests/ansible_instance_host_runtime_test.ts": {
+      "runs": [
+        "44101254219",
+        "44190930218",
+        "44200208149",
+        "44207423730",
+        "44272289889",
+        "44275699145",
+        "44276398351",
+        "44276627959"
+      ],
+      "case_seconds": {
+        "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin": 30.206,
+        "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused": 57.671,
+        "the runtime builds its Vite+ home and reuses it in another folder version": 86.911,
+        "a mapped Vite+ home stays until no process maps it and no folder version links it": 110.457,
+        "a Vite+ home with the wrong Node version is refused without replacing current": 67.693
+      }
+    },
+    "swamp/tests/ansible_instance_host_browser_test.ts": {
+      "runs": [
+        "44101254219",
+        "44190930218",
+        "44200208149",
+        "44207423730",
+        "44272289889",
+        "44275699145",
+        "44276398351",
+        "44276627959"
+      ],
+      "case_seconds": {
+        "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart": 46.177,
+        "two Debian packages that give the same library name fail the folder build: one would hide the other": 18.101,
+        "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike": 5.178,
+        "a changed T3 drop-in reaches running, stopped and frozen containers; only a running one reloads and restarts T3 once, a folder flip included; a second pass changes nothing": 108.775,
+        "a failed T3 converge retains frozen and stopped restarts, removes vanished and completed entries, and restarts each recovered container once": 83.51,
+        "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not": 0.249,
+        "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container": 52.13,
+        "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec": 3.713,
+        "the converge writes each named container's machine name files, running, stopped and frozen, keeping other hosts lines; nothing restarts": 5.648,
+        "a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias, an unreadable one is none": 3.413,
+        "a Node without a readable Orbit root CA fails the step by name and writes nothing": 0.227,
+        "only agent writes its NSS store, only in a running container: a new store holds only the entry, an existing one gets it appended once; a stopped or frozen one waits": 9.437,
+        "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs": 5.149,
+        "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest": 1.815,
+        "a container whose libp11-kit0 is not the trust module's version is listed with both versions, and agent takes an Orbit entry out of its store; the step passes": 4.041,
+        "a container whose dpkg status or user output is not UTF-8, or whose store step hangs, is listed and fails nothing": 3.677,
+        "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib": 0.172
+      }
+    },
+    "swamp/tests/ansible_instance_host_updates_test.ts": {
+      "runs": [
+        "44101254219",
+        "44190930218",
+        "44200208149",
+        "44207423730",
+        "44272289889"
+      ],
+      "case_seconds": {
+        "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old": 59.775,
+        "a Squid configuration that does not parse never replaces the live one, and the run fails": 19.697,
+        "a project that lists disk paths loses the list, so a container with the idmapped folders starts": 72.088,
+        "an old folder version that a process still maps stays; a restart that failed runs again on the next converge": 81.702
+      }
+    },
+    "swamp/tests/ansible_instance_t3_restart_test.ts": {
+      "runs": [
+        "44190930218",
+        "44200208149",
+        "44207423730",
+        "44272289889",
+        "44275699145",
+        "44276627959"
+      ],
+      "case_seconds": {
+        "a T3 with an open turn gets its drop-in and reload but no restart, stays on the Node's list as deferred, and restarts once when idle": 126.039,
+        "an idle root with a running subagent child (T3) or side chat (Conn Server) defers the restart, read from the server's own store; once they settle it restarts once": 47.859
+      }
+    }
+  }
+}

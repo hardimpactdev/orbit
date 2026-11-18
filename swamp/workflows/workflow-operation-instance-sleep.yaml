@@ -1,7 +1,7 @@
 id: 279e920a-da77-4487-8029-e9c989f9112d
 name: operation-instance-sleep
 autoContinue: false
-description: Write the asleep marker of a development container, then freeze it, record its prepared restore plan and move its memory to swap, in one phase.
+description: Deliver the admitted sleep through the fixed executor relay, or run the disabled-mode sleep phase.
 queueTimeout: 10
 labels: {role: swamp}
 inputs:

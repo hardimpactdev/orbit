@@ -1292,19 +1292,31 @@ Swamp can request a reviewer turn through `task:turn`. The Gateway records the t
 
 ### Reviewer outcomes
 
-The workflow that requested a reviewer owns review policy. The Gateway records its receipt as evidence. The operator or Swamp changes board status explicitly.
+The workflow that requested a reviewer owns review policy. The Gateway records its receipt as evidence. The operator or Swamp changes board status explicitly. What blocks is set by [the reviewer rule](#the-reviewer-rule).
 
 ### The reviewer rule
 
-Every reviewer turn in a task copy gets a fixed rule after the caller's prompt and the line that names the checked commit, whatever the reviewer's provider. The rule bounds the review by the task's scope, not by a number of findings:
+This is the one rule for what a reviewer judges and what blocks. Every reviewer turn in a task copy gets it after the caller's prompt and the line that names the checked commit, whatever the reviewer's provider. Reviewers outside task copies apply it too. Other pages and prompts link here and do not restate or widen it.
 
-The scope is the brief, its deliverables, the diff of the checked commit against the task's base, and what that diff directly affects. The reviewer judges only that scope and reports every finding inside it.
+The scope is the brief, its deliverables, the diff of the checked commit against the task's base, and what that diff directly affects. The reviewer judges only that scope. It reports its blocking findings and at most a short list of non-blocking ones.
 
-A blocking finding is a defect. It is wrong behaviour, a missed or unproven deliverable, a broken or missing test the brief asks for, or a security hole the diff adds. The reviewer gives its file, its line and the failing case.
+A finding blocks only if a normal run, or a likely failure, would cause real harm. A likely failure is a crash, a reboot or a network loss at one step. Real harm is one of these:
 
-A finding inside the scope that is not a defect is non-blocking. A misleading name in the new code is one. The reviewer marks it so.
+- It stops or deletes something live.
+- It breaks live requests or user-visible behaviour.
+- It loses or corrupts data.
+- It produces a wrong result that the brief asks for.
+- It adds a security hole.
 
-The reviewer reports nothing outside the scope. It offers no ideas, refactors or redesigns beyond the task. It asks for no change outside the files the task touches, unless a defect forces one. Then it names that defect.
+A missed or unproven deliverable, and a broken or missing test the brief asks for, also block. For each blocking finding, the reviewer gives its file, its line and the failing case.
+
+Rare interleavings, races that need several unlikely events, hardening and defence in depth do not block. They are follow-ups for the pull request body. The reviewer asks for no new recovery states, markers or retry paths to cover them. Removing a state beats hardening it.
+
+In code behind a flag that is off by default, a finding that matters only with the flag on goes on a "before the flag goes on" list. It does not block the merge.
+
+A re-review checks only the earlier blocking findings and regressions in their fixes.
+
+The reviewer reports nothing outside the scope. It offers no ideas, refactors or redesigns beyond the task. It asks for no change outside the files the task touches, unless a blocking finding forces one. Then it names that finding.
 
 With no blocking finding, the reviewer approves.
 
