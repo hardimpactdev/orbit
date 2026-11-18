@@ -27,7 +27,7 @@ const RECONNECT_AFTER: Duration = Duration::from_secs(1);
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
-    /// `nats://<gateway>:4222`, over WireGuard.
+    /// `nats://<gateway>:4222`, over `WireGuard`.
     url: String,
     /// The Node's `.creds`: a user JWT the Gateway signed, with only this Node's subjects, and its nkey seed.
     credentials: String,
