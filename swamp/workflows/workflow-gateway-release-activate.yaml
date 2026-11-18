@@ -103,6 +103,7 @@ jobs:
         - '${{ inputs.intent.sha }}'
         - '${{ inputs.intent.horizon_unit }}'
     # A failed check fails no run by itself: the switch-back after it does, so its marker reaches the Gateway.
+    # It reads the root CA from /etc/caddy/orbit-cert-current, which is root:caddy 0750 because it holds the key, so it runs with sudo.
   - name: Verify the Gateway
     labels: {role: swamp}
     allowFailure: true
@@ -117,6 +118,7 @@ jobs:
         hosts: name:target
         sudo: true
         timeoutSec: 180
+        sudo: true
         argv:
         - /usr/bin/timeout
         - '150'

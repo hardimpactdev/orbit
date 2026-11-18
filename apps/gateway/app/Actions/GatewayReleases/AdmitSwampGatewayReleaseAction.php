@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\GatewayReleases;
 
+use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\GatewayReleases\GatewayReleaseAgent;
+use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -16,6 +19,8 @@ use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
+use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -68,7 +73,7 @@ final readonly class AdmitSwampGatewayReleaseAction
         return $this->execute($sha, force: true, trigger: 'rollback');
     }
 
-    public function execute(string $commit, bool $force = false, string $trigger = 'deploy'): GatewayRelease
+    public function execute(string $commit, bool $force = false, string $trigger = 'deploy', ?string $expectedServingSha = null): GatewayRelease
     {
         if (! GatewayReleaseCommit::isSha($commit)) {
             throw new GatewayReleaseException('deploy', 'gateway.release_commit_invalid', 'A Swamp release needs the full commit SHA.', 422);
@@ -91,6 +96,9 @@ final readonly class AdmitSwampGatewayReleaseAction
         }
         if ($previous === null) {
             throw new GatewayReleaseException('deploy', 'gateway.release_not_adopted', 'The Gateway is not running from a release. Run gateway:release:adopt first.');
+        }
+        if ($trigger === 'auto' && GatewayReleaseCommit::id($commit) === $previous) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The automatic release candidate already serves.');
         }
         $gateway = GatewayCommandNode::find() ?? throw new GatewayReleaseException('deploy', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists.', 500);
         $reconcile = $trigger === 'reconcile';
@@ -122,11 +130,12 @@ final readonly class AdmitSwampGatewayReleaseAction
         $horizon = GatewayHorizon::releaseUnit($gateway, $this->layout->usesContainers());
 
         // The lock keeps the release unit and a second admission out until the run owns its record.
-        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $publication, $horizon, $gateway, $container): GatewayRelease {
+        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $publication, $horizon, $gateway, $container, $expectedServingSha): GatewayRelease {
             // An automatic record that waits for its commit's publication is superseded by begin().
-            if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
-                ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
-                throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
+            if ($trigger === 'auto') {
+                $this->assertAutomaticState($expectedServingSha, $commit);
+            } else {
+                $this->assertReleaseIdle();
             }
             // Admission must still have the same serving release after external publication checks.
             if ($this->layout->usesContainers() !== $container || $this->layout->currentReleaseId() !== $previous || ($trigger === 'reconcile'
@@ -142,6 +151,31 @@ final readonly class AdmitSwampGatewayReleaseAction
     private function forwardOnly(): GatewayReleaseException
     {
         return new GatewayReleaseException('deploy', 'gateway.release_downgrade', 'The containerized Gateway deploys newer commits only. Roll back to the stopped old release, deploy a corrective commit, or reconcile the serving revision.', 409);
+    }
+
+    /** Call under the release lock, before storing either an admission or its preflight refusal. */
+    public function assertAutomaticState(?string $expectedServingSha, string $candidate): void
+    {
+        $this->assertReleaseIdle();
+        $automation = app(GatewayReleaseAutomation::class);
+        $inventory = $this->layout->observe();
+        $serving = $inventory->current === null ? null : ($inventory->commits[$inventory->current] ?? null);
+        if ($expectedServingSha === null || $serving !== $expectedServingSha
+            || ! $automation->enabled() || $automation->pause() !== null
+            || GatewayReleaseSupersession::manualPin(GatewayReleaseCommit::id($expectedServingSha), $automation->resumedAfter()) !== null
+            || FleetReboot::open() !== null || AdmitFleetRolloutAction::open()
+            || app(ContinueReleaseFleetAction::class)->pending($expectedServingSha) !== null
+            || in_array($candidate, GatewayRelease::failedShas(), true) || app(GatewayReleaseRetry::class)->automaticBackingOff($candidate)) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The serving release or its automatic release state changed during admission.');
+        }
+    }
+
+    private function assertReleaseIdle(): void
+    {
+        if (GatewayRelease::query()->whereIn('outcome', [GatewayRelease::Running, GatewayRelease::Queued])->get()
+            ->contains(static fn (GatewayRelease $record): bool => ! $record->awaitingPublication())) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'Another Gateway release is queued or running.', 409);
+        }
     }
 
     /**

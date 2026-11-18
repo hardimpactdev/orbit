@@ -753,6 +753,8 @@ The fleet phase reconciles the checkout’s scoped Swamp grants before candidate
 
 A fresh Gateway cannot plan any role before its own app runs, and the app needs PHP, Composer and a database. So the operator prepares the machine once with the local `gateway-bootstrap` workflow (`swamp/workflows/workflow-gateway-bootstrap.yaml`), whose steps request no worker. `php artisan orbit:bootstrap-plan` on the operator's release checkout prints the prerequisites as JSON, from the machine software recipe alone: the apt packages of the roles a new Gateway holds (Gateway, VPN, WebSocket, Swamp), the pinned Caddy package and the pinned PHP packages.
 
+The Swamp role installs `jq`, which a release's Swamp load uses on the Swamp Node. The release's verify step also runs `jq` on the Gateway Node, and the Gateway role does not install it yet: a Gateway without the Swamp role needs `jq` installed by hand.
+
 The workflow writes that plan to the machine and runs `swamp/ansible/gateway-bootstrap.yml` there with Ansible's local connection. The playbook imports `tasks/role-prerequisites.yml`, the same tasks the role add runs, so a Gateway and a Node get their prerequisites the same way.
 
 ### The Gateway app

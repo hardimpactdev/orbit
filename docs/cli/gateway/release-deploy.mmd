@@ -94,6 +94,7 @@ sequenceDiagram
     AC->>GN: Switch the release<br/>commit · publish upstream
     par Public readiness
       AC->>GN: Verify the Gateway<br/>health and serving SHA
+      %%> - reads `/up` and the status version with sudo: the pinned root CA sits in the private certificate folder, `root:caddy 0750`
     and Container workers
       AC->>GN: Start Horizon<br/>on the selected release
     end
@@ -126,5 +127,5 @@ sequenceDiagram
       Note over GW: Pause automatic releases<br/>failed step · alert
     end
   SW->>GN: Release unused candidate<br/>after handover or failure
-  %%> Removes only an unpromoted clone owned by this Operation. The selected release and a pending drain remain protected.
+  %%> Returns a candidate of this Operation that never served to the preparation slot. The selected release, old and a pending drain remain protected.
   end

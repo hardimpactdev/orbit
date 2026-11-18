@@ -1229,6 +1229,84 @@ it('admits one refresh per nested-fleet default to the release commit, and nothi
         ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
 });
 
+it('resumes a pinned default refresh from the Operation and records the fresh seed without deploying twice', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $commit = str_repeat('a', 40);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')
+        ->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main', ['.env.example', 'composer.json', 'artisan'], $commit)
+        ->once()->andReturn(deploySourceRead($commit));
+
+    $first = app(NestedFleetRefresh::class)->advance($commit);
+    $operation = Operation::query()->where('kind', 'instance.deploy')->sole();
+    expect($first)->toBe(['status' => 'pending', 'defaults' => [$instance->id => ['status' => 'pending', 'operation_id' => $operation->id]]])
+        ->and(app(NestedFleetRefresh::class)->advance($commit))->toBe($first);
+
+    $operation->update(['status' => 'succeeded', 'lock_key' => null, 'finished_at' => now()]);
+    $instance->runtime()->update(['seed_commit' => $commit, 'seed_taken_at' => now()]);
+    $current = app(NestedFleetRefresh::class)->advance($commit);
+    expect($current['status'])->toBe('current')
+        ->and($current['defaults'][$instance->id])->toMatchArray(['status' => 'current', 'operation_id' => $operation->id, 'commit' => $commit])
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(1);
+});
+
+it('backs off after a failed refresh and ends after the third attempt', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $commit = str_repeat('a', 40);
+    $instance = nestedFleetDefault();
+    $this->mock(ProjectSourceReader::class)->shouldReceive('read')
+        ->with($instance->project->repository_url, ProjectSourceAccess::GitHubApp, 'main', ['.env.example', 'composer.json', 'artisan'], $commit)
+        ->times(3)->andReturn(deploySourceRead($commit));
+    $refresh = app(NestedFleetRefresh::class);
+
+    for ($attempt = 1; $attempt <= 3; $attempt++) {
+        $receipt = $refresh->advance($commit)['defaults'][$instance->id];
+        expect($receipt['status'])->toBe('pending');
+        $operation = Operation::query()->findOrFail($receipt['operation_id']);
+        $operation->update(['status' => 'failed', 'lock_key' => null, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_refresh_failed']);
+        expect($refresh->advance($commit)['defaults'][$instance->id])->toBe([
+            'status' => $attempt === 3 ? 'failed' : 'pending',
+            'error_code' => 'instance.container_fleet_refresh_failed', 'operation_id' => $operation->id,
+        ])->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe($attempt);
+        $this->travel(10)->minutes();
+    }
+});
+
+it('records a failed source read before admission and resumes it after backoff', function (): void {
+    Queue::fake();
+    config(['instances.nested_fleet_refresh' => true]);
+    $commit = str_repeat('a', 40);
+    $instance = nestedFleetDefault();
+    $source = $this->mock(ProjectSourceReader::class);
+    $source->shouldReceive('read')->once()->ordered()
+        ->andThrow(new ResourceOperationException('project.source_unavailable', 'Temporary source failure.', 502));
+    $source->shouldReceive('read')->twice()->ordered()->andReturn(deploySourceRead($commit));
+
+    $recorded = [];
+    $first = app(NestedFleetRefresh::class)->advance($commit, recordDefault: static function (int $id, array $row) use (&$recorded): void {
+        $recorded[$id] = $row;
+    });
+    expect($recorded)->toBe($first['defaults']);
+    expect($first['defaults'][$instance->id])->toMatchArray([
+        'status' => 'pending', 'error_code' => 'project.source_unavailable', 'admission_failures' => 1,
+    ])->and(app(NestedFleetRefresh::class)->advance($commit, $first))->toBe($first)
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(0);
+    $next = $first;
+    for ($attempt = 2; $attempt <= 3; $attempt++) {
+        $this->travel(10)->minutes();
+        $next = app(NestedFleetRefresh::class)->advance($commit, $next);
+        $row = $next['defaults'][$instance->id];
+        $operation = Operation::query()->findOrFail($row['operation_id']);
+        expect($row['status'])->toBe('pending')->and($row['admission_failures'])->toBe(1);
+        $operation->update(['status' => 'failed', 'lock_key' => null, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_refresh_failed']);
+        $next = app(NestedFleetRefresh::class)->advance($commit, $next);
+    }
+    expect($next['defaults'][$instance->id]['status'])->toBe('failed')
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(2);
+});
+
 it('reports a refused refresh and still ends the release step with success', function (): void {
     Queue::fake();
     config(['instances.nested_fleet_refresh' => true]);
