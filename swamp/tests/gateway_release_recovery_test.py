@@ -392,6 +392,19 @@ esac
         self.assertEqual((self.journal / "candidate").read_text().strip(), sha)
         self.assertTrue((self.journal / f"rollback-{sha}").exists())
 
+    def test_reconciliation_fences_offline_rollback_until_its_own_finalizer(self):
+        self.retained_releases()
+        self.assert_ok(self.run_script(self.phase, "reconcile-begin", self.sha, "51"))
+        original = self.inventory.read_bytes()
+        result = self.run_script(self.console, self.old[:12])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("workflows are being reconciled", result.stderr)
+        self.assertNotEqual(self.run_script(self.phase, "reconcile-end", self.sha, "52").returncode, 0)
+        self.assertEqual(self.inventory.read_bytes(), original)
+        self.assert_ok(self.run_script(self.phase, "reconcile-verify", self.sha, "51"))
+        self.assert_ok(self.run_script(self.phase, "reconcile-end", self.sha, "51"))
+        self.assert_ok(self.run_script(self.console, self.old[:12]))
+
     def test_incompatible_retained_helper_and_workflow_are_refused_before_rollback(self):
         self.retained_releases(CONTROLLER, WORKFLOW)
         for name in (CONTROLLER, WORKFLOW):

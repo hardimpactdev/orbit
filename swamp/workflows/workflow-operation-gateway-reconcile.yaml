@@ -32,6 +32,7 @@ jobs:
     labels: {role: swamp}
     steps:
       - name: Check the serving release
+        writes: true
         labels: {role: swamp}
         task:
           type: behavior
@@ -52,7 +53,7 @@ jobs:
           inputs:
             hosts: name:target
             timeoutSec: 810
-            argv: [/usr/bin/timeout, '795', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, reconcile-idle, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']
+            argv: [/usr/bin/timeout, '795', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, reconcile-begin, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']
       - name: Reload serving workflows
         labels: {role: swamp}
         writes: true
@@ -86,3 +87,20 @@ jobs:
             hosts: name:target
             timeoutSec: 180
             argv: [/usr/bin/timeout, '165', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, reconcile-verify, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']
+      - name: Release the serving generation
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: Check the serving release, condition: {type: succeeded}}
+          - {step: Reload serving workflows, condition: {type: always}}
+          - {step: Verify the serving release, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ "gateway-reconcile-end-" + string(inputs.node_id) }}'
+          methodName: exec
+          globalArgs: *gateway
+          inputs:
+            hosts: name:target
+            timeoutSec: 165
+            argv: [/usr/bin/timeout, '150', sudo, -n, /usr/local/libexec/orbit-gateway-release-phase, reconcile-end, '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']

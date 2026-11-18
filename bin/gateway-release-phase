@@ -40,7 +40,7 @@ check_recovery() {
 }
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  reconcile-idle|reconcile-verify|check-load|check-recovery|switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
+  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9</home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
@@ -48,6 +48,25 @@ case "$phase" in
     fi
     ;;
 esac
+# Node 209 publishes definitions across several SSH steps. Keep the serving
+# generation fixed between them, including when an operator rolls back offline.
+lease=$journal/reconcile
+if [[ $phase == reconcile-end ]]; then
+  if [[ -f $lease ]]; then
+    [[ $(cat "$lease") == "$operation $sha" ]] || { echo 'Another reconciliation owns the lease' >&2; exit 1; }
+    rm -- "$lease"
+    sync -f "$journal"
+  fi
+  exit
+fi
+if [[ -f $lease ]]; then
+  case "$phase" in
+    reconcile-idle|reconcile-begin|reconcile-verify)
+      [[ $(cat "$lease") == "$operation $sha" ]] || { echo 'Another reconciliation owns the lease' >&2; exit 1; } ;;
+    switch|switch-back|restore|restore-host|build|build-checked|check-load)
+      echo 'The serving workflows are being reconciled. See gateway-recovery for interrupted runs.' >&2; exit 1 ;;
+  esac
+fi
 # Check compatibility before starting new work. Recovery of a durable switch
 # uses its exact candidate and operation, including switches made before this check.
 case "$phase" in
@@ -55,7 +74,7 @@ case "$phase" in
     echo 'gateway.release_recovery_incompatible: container Horizon must drain inside the journaled switch' >&2
     exit 1
     ;;
-  reconcile-idle|reconcile-verify|build|build-checked|switch|restore-host|check-recovery|check-load)
+  reconcile-begin|reconcile-idle|reconcile-verify|build|build-checked|switch|restore-host|check-recovery|check-load)
     [[ ! -e $journal/operation ]] || { echo 'Recover the interrupted Gateway switch with --recover first' >&2; exit 1; }
     if [[ $phase != check-load || -f $inventory ]]; then check_recovery; fi
     ;;
@@ -72,12 +91,21 @@ esac
 if [[ $phase == check-recovery || $phase == check-load ]]; then exit 0; fi
 # Reconcile the exact serving container through its existing read-only checks.
 # Never resume, build or hand over a release when the caller asks to recover definitions.
-if [[ $phase == reconcile-idle || $phase == reconcile-verify ]]; then
+if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconcile-verify ]]; then
   [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]] || {
     echo 'gateway.release_reconcile_not_live: the requested commit no longer serves traffic' >&2; exit 1;
   }
-  if [[ $phase == reconcile-idle ]]; then
+  if [[ $phase == reconcile-idle || $phase == reconcile-begin ]]; then
     bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") wait-idle "$sha" "$operation" >&2
+  fi
+  if [[ $phase == reconcile-begin ]]; then
+    bash <(git -c safe.directory="$repo" -C "$repo" show "$sha:$script") public-ready "$sha" "$operation"
+    install -d -m 0700 "$journal"
+    tmp=$(mktemp "$journal/.reconcile.XXXXXXXX")
+    printf '%s %s\n' "$operation" "$sha" > "$tmp"
+    mv -fT "$tmp" "$lease"
+    sync -f "$journal"
+    exit
   fi
   phase=public-ready
 fi

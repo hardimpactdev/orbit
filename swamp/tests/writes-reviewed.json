@@ -296,7 +296,6 @@
    "Check resolution": "read-only"
   },
   "operation-gateway-reconcile": {
-   "Check the serving release": "read-only",
    "Verify the serving release": "read-only"
   },
   "production-release": {
