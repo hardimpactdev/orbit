@@ -26,6 +26,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -918,6 +919,71 @@ describe('launch control and progress', function (): void {
         'unowned destroy' => ['Delete the container', 'succeeded', false, 'stopped', false],
         'workspace read timeout' => ['Drop owned databases-0', 'succeeded', true, 'timeout', false],
     ]);
+
+    it('keeps verified Stop evidence only in its owned removal chain', function (string $case): void {
+        [$launch, $instance] = launchCleanupFixture(OperationStatus::Succeeded);
+        $reader = workspaceReader(launchWorkspaceAnswer());
+        Http::fake(['http://10.44.0.30:3773/*' => Http::response(['threads' => []])]);
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance($launch);
+        $first = ConnLaunchChild::Destroy->operation($launch->refresh());
+        $first->update(['status' => OperationStatus::Running, 'state' => [...$first->state, 'swamp_run_id' => 'database-drop-run']]);
+        app(DevelopmentInstanceDestroyProjection::class)->apply($first, [
+            'status' => 'failed', 'run_id' => 'database-drop-run', 'started_at' => now()->toISOString(), 'finished_at' => now()->toISOString(),
+            'result' => ['summary' => ['failed_steps' => ['Drop owned databases-0']], 'steps' => [
+                'Stop the container' => ['status' => 'succeeded'],
+                'Drop owned databases-0' => ['status' => 'failed'],
+            ]],
+        ]);
+        $reader->answer = json_encode(['state' => 'unknown', 'reason' => 'stopped'], JSON_THROW_ON_ERROR);
+        $settlement->advance($launch->refresh());
+        $retry = ConnLaunchChild::Destroy->operation($launch->refresh());
+        $removal = $first->input['removal_id'];
+        expect($retry?->idempotency_key)->toBe("conn-launch:{$launch->id}:destroy:{$first->id}")
+            ->and($retry?->input['removal_id'])->toBe($removal);
+
+        $refuse = static fn (Operation $operation) => app(StartSwampRun::class)->refuse(
+            $operation, new ResourceOperationException('swamp.start_job_failed', 'The native start did not run.', 503));
+        $refuse($retry);
+        expect($retry->refresh()->status)->toBe(OperationStatus::Failed)
+            ->and($retry->state['swamp_run_id'] ?? null)->toBeNull()
+            ->and($retry->state['container_stop_succeeded'] ?? null)->toBeNull();
+        if ($case === 'different removal') {
+            $first->update(['input' => [...$first->input, 'removal_id' => (string) Str::uuid()]]);
+        } elseif ($case === 'different live removal') {
+            $other = (string) Str::uuid();
+            $first->update(['input' => [...$first->input, 'removal_id' => $other]]);
+            $retry->update(['input' => [...$retry->input, 'removal_id' => $other]]);
+        } elseif ($case === 'different Instance') {
+            $first->update(['target_id' => $this->instance->id]);
+        } elseif ($case === 'different owner') {
+            $first->update(['state' => [...$first->state, 'conn_launch_owner' => $launch->id + 1]]);
+        } elseif ($case === 'dirty workspace') {
+            $reader->answer = launchWorkspaceAnswer(modified: 1);
+        } elseif ($case === 'unreadable workspace') {
+            $reader->answer = json_encode(['state' => 'unknown', 'reason' => 'timeout'], JSON_THROW_ON_ERROR);
+        }
+
+        $settlement->sweep();
+
+        $next = ConnLaunchChild::Destroy->operation($launch->refresh());
+        if ($case !== 'same removal') {
+            expect($next?->id)->toBe($retry->id)->and($launch->error_code)->toBe('instance.unsaved_work');
+
+            return;
+        }
+
+        expect($next?->idempotency_key)->toBe("conn-launch:{$launch->id}:destroy:{$retry->id}")
+            ->and($next?->input['removal_id'])->toBe($removal);
+        $refuse($next);
+        $settlement->advance($launch->refresh());
+        $last = ConnLaunchChild::Destroy->operation($launch->refresh());
+        expect($last?->idempotency_key)->toBe("conn-launch:{$launch->id}:destroy:{$next->id}")
+            ->and($last?->input['removal_id'])->toBe($removal)
+            ->and($last?->target_id)->toBe($instance->id);
+        $settlement->advance($launch->refresh());
+        expect(ConnLaunchChild::Destroy->operationId($launch->refresh()))->toBe($last->id);
+    })->with(['same removal', 'different removal', 'different live removal', 'different Instance', 'different owner', 'dirty workspace', 'unreadable workspace']);
 
     it('restores only a launch-owned wake with verified idle evidence', function (): void {
         $this->instance->update(['status' => InstanceState::Active]);

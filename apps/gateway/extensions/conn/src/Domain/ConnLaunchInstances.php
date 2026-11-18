@@ -19,12 +19,14 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceRemovalMember;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Closure;
 use DateTimeInterface;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use stdClass;
 
 /** The launch's keyed admissions through the existing Instance lifecycle. */
@@ -165,21 +167,20 @@ final readonly class ConnLaunchInstances
         $create = ConnLaunchChild::Create->operation($launch);
         $previous = $this->ownedDestroy($launch);
         $unstarted = $create !== null && self::unstartedReservation($instance, $create);
-        if (! $unstarted) {
-            $this->assertCleanupSafe($instance, $previous);
-        }
+        $stoppedRemoval = $unstarted ? null : $this->assertCleanupSafe($launch, $instance, $previous);
         $key = self::key($launch, 'destroy', predecessor: $previous?->id);
 
         return $this->keyed(InstanceDestroyKind::forInstance($instance), $key,
             fn (): Operation => $this->destroy->execute($instance, true, $launch->triggered_by, $launch->request_id,
                 within: fn (Closure $record): Operation => $this->state->admitChild($launch->id, ConnLaunchChild::Destroy, $key,
-                    function (Operation $parent) use ($instance, $create, $previous, $unstarted, $record): array {
+                    function (Operation $parent) use ($instance, $create, $previous, $unstarted, $stoppedRemoval, $record): array {
                         $target = Instance::query()->lockForUpdate()->findOrFail($instance->id);
                         $owned = ConnLaunchChild::Create->operation($parent);
                         if ($owned === null || $owned->id !== $create?->id || ($owned->state['conn_launch_owner'] ?? null) !== $parent->id
                             || $target->source_prepare_id === null || $target->source_prepare_id !== ($owned->input['prepare_id'] ?? null)
                             || ConnLaunchChild::Destroy->operationId($parent) !== $previous?->id
                             || ($target->status === InstanceState::Removing && $previous === null)
+                            || ($stoppedRemoval !== null && ! self::retainsRemoval($target, $stoppedRemoval))
                             || ($unstarted && ! self::unstartedReservation($target, $owned))) {
                             throw new ResourceOperationException('instance.unsaved_work', 'The launch cannot prove it still owns this clone.', 409);
                         }
@@ -220,18 +221,51 @@ final readonly class ConnLaunchInstances
             && ($previous->state['conn_launch_owner'] ?? null) === $launch->id ? $previous : null;
     }
 
-    private function assertCleanupSafe(Instance $instance, ?Operation $previous): void
+    /** Return the retained removal ID when the workspace was safe to skip because its owned native run stopped it. */
+    private function assertCleanupSafe(Operation $launch, Instance $instance, ?Operation $previous): ?string
     {
         $work = $this->work->read($instance);
-        $stoppedByRemoval = ($work['reason'] ?? null) === 'stopped' && $instance->status === InstanceState::Removing
-            && ($previous?->state['container_stop_succeeded'] ?? null) === true;
-        if ($stoppedByRemoval) {
-            return;
+        $removal = $previous?->input['removal_id'] ?? null;
+        if (($work['reason'] ?? null) === 'stopped' && $previous !== null && is_string($removal)
+            && self::retainsRemoval($instance, $removal) && $this->hasVerifiedStop($launch, $previous, $removal)) {
+            return $removal;
         }
         $activity = $work['state'] === 'clean' ? $this->activity->read($instance) : null;
         if ($activity === null || ! $activity->readable || $activity->turnRuns || $activity->lastActivityUnix !== null) {
             throw new ResourceOperationException('instance.unsaved_work', 'The Instance may hold work from another caller.', 409);
         }
+
+        return null;
+    }
+
+    private static function retainsRemoval(Instance $instance, string $removal): bool
+    {
+        return $instance->status === InstanceState::Removing && InstanceRemovalMember::query()->live()
+            ->where('instance_id', $instance->id)->where('instance_removal_id', $removal)->exists();
+    }
+
+    /** Walk only the recorded predecessor links, since a refused start has no Stop result of its own. */
+    private function hasVerifiedStop(Operation $launch, Operation $previous, string $removal): bool
+    {
+        $chain = Operation::query()->where('kind', $previous->kind)->where('target_type', $previous->target_type)
+            ->where('target_id', $previous->target_id)->where('node_id', $previous->node_id)->where('triggered_by', $launch->triggered_by)
+            ->where('state->conn_launch_owner', $launch->id)->where('input->removal_id', $removal);
+        $attempt = $previous;
+        while ($attempt !== null && $attempt->status->terminal()) {
+            $key = $attempt->idempotency_key ?? '';
+            $id = (int) Str::afterLast($key, ':');
+            $predecessor = $id > 0 ? $id : null;
+            if ($key !== self::key($launch, 'destroy', predecessor: $predecessor) || $id >= $attempt->id) {
+                return false;
+            }
+            if (($attempt->state['container_stop_succeeded'] ?? null) === true) {
+                return true;
+            }
+
+            $attempt = $predecessor === null ? null : (clone $chain)->find($predecessor);
+        }
+
+        return false;
     }
 
     /** @param Closure(): Operation $admit */

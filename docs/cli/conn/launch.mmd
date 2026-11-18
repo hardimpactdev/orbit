@@ -21,7 +21,7 @@ sequenceDiagram
     G->>S: Remove owned work
     %%> Check the clone for work and T3 activity even when its create failed.
     %%> Lock the Instance and check for other launches before admitting teardown.
-    %%> If the owned removal stopped the container before it failed, retry that removal using the recorded stop result.
+    %%> For a stopped container, use the verified Stop result from the same owned removal chain, including after a retry fails before its run starts.
     %%> After reading activity for a completed wake, lock the Instance and recheck the exact wake owner and current consumers before admitting sleep.
     %%> Verified cleanup ends the launch. A failed or unproven cleanup remains Cancelling.
     S-->>G: Cleanup proof
