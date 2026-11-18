@@ -8,6 +8,11 @@ description = "The Orbit executor: runs Gateway-signed orders on a Node; a mode 
 [lib]
 path = "src/lib.rs"
 
+# Until the pinned delivery carries an `orbit-agent` with the `execute` mode (ADR 0271 N7); the next pull request removes it.
+[[bin]]
+name = "orbit-executor"
+path = "src/main.rs"
+
 [dependencies]
 orbit-executor-core = { path = "../executor-core" }
 
