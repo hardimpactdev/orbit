@@ -31,14 +31,6 @@
     container: "{{ intent.container_destroy }}"
     phase: "{{ ansible_run_tags | first }}"
     incus: [incus, --project, "{{ container.project }}"]
-    # ADR 0266, R1 and R2: a signed removal's discard receipt goes to the Gateway in remove.json, the file that "Read container removal"
-    # prints. The stop phase that relays the order writes it into stop.json; the remove phase carries it from there.
-    executor_carried: >-
-      {{ {} if not container.signed_power | default(false) | bool
-         else {'executor': executor_receipt} if executor_receipt is defined
-         else {'executor': (lookup('ansible.builtin.file', run ~ '/stop.json') | from_json).executor}
-           if (run ~ '/stop.json') is file and (lookup('ansible.builtin.file', run ~ '/stop.json') | from_json).executor | default(none) is mapping
-         else {} }}
   tasks:
     - name: Run the phase
       block:
@@ -267,7 +259,7 @@
               changed_when: true
         - name: Write the phase result
           ansible.builtin.copy:
-            content: "{{ ({'container_present': present | length > 0, 'removed': phase == 'remove'} | combine(executor_carried)) | to_json }}"
+            content: "{{ {'container_present': present | length > 0, 'removed': phase == 'remove'} | to_json }}"
             dest: "{{ run }}/{{ phase }}.json"
             mode: "0600"
           changed_when: false
@@ -288,7 +280,7 @@
                    if ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$')
                    else ('instance.teardown_step_failed' if phase == 'teardown' else 'instance.removal_incomplete'),
                   'detail': (failure_head ~ ((': ' ~ failure_tail) if failure_tail != '' else ''))[:1800]}
-                 | combine(executor_carried) | to_json }}
+                 | to_json }}
             dest: "{{ run }}/remove.json"
             mode: "0600"
           delegate_to: localhost

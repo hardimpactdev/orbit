@@ -94,9 +94,7 @@ Orders for one target run one at a time under that target's lock; different targ
 
 ## The Gateway signer and the event
 
-`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON. A guarded power order adds a seventh, `power_check` (`route`, `no_web` or `resume`; see [signed power delivery](#signed-power-delivery)).
-
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds exactly the six fields above, in that order, as compact JSON. The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. It also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 
@@ -215,11 +213,9 @@ Swamp requests a fresh signature for the bound run and sends the order on the re
 
 Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting recovery result.
 
-A signed destroy discards the Instance's executor state in its stop phase. The removal file that Swamp prints carries the discard receipt to the Gateway, which records it as for any other phase. A removal whose discard was signed but has no receipt ends interrupted with `executor.result_unknown`, never removed. Its Instance stays `removing`, and a new destroy refuses with `executor.result_unknown` until the hold is cleared.
-
 The handoff to Swamp does not make a delivered action cancellable. Recovery allows the Node time to finish the action and read its journal. If the run ends without a terminal executor receipt, the Gateway reports an interruption and keeps the Instance fenced; verify the Node's outcome before clearing that hold. A signing failure before delivery does not need a hold.
 
-The signed `power_check` is `route` for a sleep with a published Route, `no_web` for a wake with no web unit, or `resume` for the resume of a deploy or start. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
+The signed `power_check` is `route` for a sleep with a published Route or `no_web` for a wake with no web unit. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 
 The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission. Before handback, stop admitting signed sleeps, let open signed Operations finish, and wake any frozen signed Instances with the signed engine. Verify that any failed sleep left either a running container or a recovered container before you retire the executor from the Node. Disabling the setting does not transfer a frozen plan between engines. Keep the executor installed and reachable until those plans are drained. Python remains installed until slice 8.
 
