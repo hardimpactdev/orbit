@@ -51,6 +51,8 @@ The calling Node becomes the server's Node. Once a Node registered an environmen
 
 Removing an edge ends the sessions the Gateway holds for the consumer on the servers that the consumer now cannot reach. The Gateway stops serving them at once and admits their revoke on each server ([Held sessions](#held-sessions)). It does not revoke sessions that the consumer's device paired itself. Revoke those with `POST /environments/{environment_id}/pairings/revoke` and the consumer's `node_id`.
 
+On a managed target, the same removal also revokes the edge's managed tokens and makes the target fence the grant: see [Managed grant revocation](#managed-grant-revocation).
+
 ## Profiles
 
 A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/conn/me`. Every Node that may use profiles ([Access](#access)) sees every profile.
@@ -1027,6 +1029,162 @@ Host servers are not covered: their devices pair with them as before. The same r
 - allow `conn.session_hold` for an environment with no Instance;
 - renew the held sessions of host servers in the hourly tick;
 - decide how a host that was down for longer than the margin comes back, because Orbit cannot wake a host.
+
+## Managed grant revocation
+
+This section is the contract for the first isolated proof: a lab Gateway removes one direct Node edge, and a disposable Rust Conn target fences that grant at once. It covers one manually enrolled lab target. It changes no live Node, edge, grant policy or legacy credential. The switch `conn.managed_targets` (`ORBIT_CONN_MANAGED_TARGETS`) is off by default. While it is off, every route below refuses with `conn.managed_disabled` (404), and edge removal writes no managed revision.
+
+A managed target is a registered Conn environment with one managed target record. The record holds the environment, the registration generation, the serving Node and the digest of the target's service credential. The serving Node is the environment's registered Node.
+
+### Credentials
+
+The proof uses two new secrets: one that proves the target and one that proves a caller.
+
+| Credential | Format | Holder | The Gateway stores |
+| --- | --- | --- | --- |
+| Service credential | `conn_svc_` and 43 base64url characters from 32 random bytes | The Rust target process only, in a file with mode `0600` that the target user owns | Its SHA-256 digest, the environment ID, the generation and the serving Node ID |
+| Managed token | `conn_mt_` and 43 base64url characters from 32 random bytes | One caller Node | Its SHA-256 digest, the target and generation, the caller Node ID, the `node_access` row ID, the fixed scopes, the expiry, and the revision that revoked it |
+
+No log, response or Activity row holds token or credential material, apart from the one response that returns a new managed token. The prefixes keep managed tokens apart from native Conn tokens. A target that sees `conn_mt_` validates only through the Gateway. A failed managed token never falls through to native pairing auth.
+
+### Enrol a lab target
+
+An operator on the Gateway runs `php artisan conn:managed-target:enrol {environment_id} --credential-file=<path>`. The environment must be registered and its Node active. The command starts generation 1 at revision 1, or replaces the generation of an existing record with the next one. It writes the new credential to the file with mode `0600` and never prints it. A new generation refuses the old credential and every token of the old generation at once.
+
+The operator gives the target its protected provisioning input: the Gateway URL, the path of the lab Orbit CA, the expected environment ID, the generation and the credential file path. The target treats the environment ID and the generation as fixed. A clone or a replacement at the same address is enrolled again before its service starts. An ordinary service restart keeps the generation and the credential. The public instance file never holds these values.
+
+### Target routes
+
+The target calls these routes over HTTPS. It verifies the Gateway name against the lab Orbit CA only. Every request carries `Authorization: Bearer conn_svc_…`, the `environment_id` and the `generation`. The Gateway accepts the request only when:
+
+- the WireGuard peer is the target's serving Node, by the rule of `RequireActiveWireGuardPeer`;
+- the credential digest matches the record of that environment;
+- the environment ID and generation are the current ones of that record.
+
+A managed token, a native Conn token, or a credential of another target on the same Node never passes. The ordinary `/api/v1/realtime` and `/api/v1/broadcasting/auth` stay out of this path.
+
+| Method and path under `/api/v1/conn/managed` | Request | Response `data` |
+| --- | --- | --- |
+| `POST /realtime` | — | `url`, `key` and `channel`, the target's own `private-conn-target.{target_id}` |
+| `POST /broadcasting/auth` | `socket_id`, `channel_name` | Pusher `auth` for the target's own channel only |
+| `POST /authority` | `nonce` (16 to 64 base64url characters), `after_revision`: an integer or `null` | The [authority state](#authority-state) |
+| `POST /introspect` | `token`, `peer_address`: the TCP peer of the Conn socket | The [token claims](#token-claims) |
+| `POST /ack` | `revision`, `notice_received_at`, `fenced_at`, `handlers_closed_at` | `revision`, `acknowledged_at` |
+
+### Caller route
+
+`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The body accepts no scopes: `reader` maps to `orchestration:read` and `terminal:read`. The token expires 15 minutes after issue and has no renewal; the caller asks for a new one. The response holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
+
+Issue runs in the same transaction kind as edge removal. It reads the edge row and the target's revision under the write lock, so no token is issued against an edge that is already removed.
+
+### Token claims
+
+The target calls `/introspect` at the first transport admission of each managed bearer: an HTTP request, an RPC WebSocket upgrade or a media ticket. The Gateway resolves `peer_address` with the active Node rule and compares that Node with the token's caller. It accepts the token only when the edge row still exists, the token is not revoked or expired, and its generation is current. The reply holds `token_id`, `caller_node_id`, `edge_id`, `scopes`, `expires_at`, `generation` and `revision`: the target's committed revision when the reply was read.
+
+The target admits the token only when all of these hold:
+
+- the environment ID and generation are its own;
+- `revision` is not greater than its applied revision; otherwise it reconciles first;
+- `edge_id` is not revoked in its applied state;
+- its authority lease is live;
+- `expires_at` is in the future.
+
+No cache extends the expiry. A forwarding header is never read. The target never substitutes the serving Node's address for a caller.
+
+### Revision order
+
+Each managed target has one committed revision, which starts at 1. Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consumerNode}` ([node:access-remove](/cli/node/access-remove)) runs one IMMEDIATE transaction:
+
+1. Lock the edge row, then the managed targets of its serving Node in ascending ID order.
+2. Delete the edge.
+3. Raise each target's revision by one, and record the removed edge ID at that revision.
+4. Mark the edge's managed tokens as revoked at that revision.
+5. Record a pending acknowledgement for each target, with its environment, generation, revision and `committed_at`.
+
+After the commit, the Gateway publishes `conn.authority.revoked` on each target's channel. Its data are `environment_id`, `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after this commit, in its own transaction.
+
+### Authority state
+
+`/authority` reads the current committed state and echoes `nonce`, `environment_id` and `generation`. It answers `head_revision`, `server_time` and one of two kinds:
+
+| `kind` | When | Content |
+| --- | --- | --- |
+| `snapshot` | `after_revision` is `null` | `edges`: every direct edge to the serving Node, as `edge_id` and `consumer_node_id` |
+| `delta` | `after_revision` is a past revision of this generation | `revisions`: each revision after `after_revision` up to the head, in order, with its `edge_ids` |
+
+A target starts with a snapshot after connect or restart. It runs one probe at a time for both its timer and Reverb notices. When a greater revision becomes known while a probe runs, it probes again at once.
+
+| The target sees | It does |
+| --- | --- |
+| A notice for its next revision | Fences those edges at once. Other edges keep their live lease while a probe confirms the change. |
+| A notice or reply that is stale or a duplicate | Ignores it. A notice only restricts access. |
+| A revision ahead of its next one, without a contiguous edge list | Blocks every managed admission, dispatch and output until a probe applies the head. |
+| A missing revision, a wrong generation, a wrong nonce, a failed check, a closed control connection, or an expired lease | Fails closed for all managed access until a fresh snapshot or delta is applied and the lease is live. |
+
+Only an applied HTTPS reply moves the confirmed revision forward or renews the lease. A Reverb message, presence or a WebSocket ping never renews authority.
+
+### Lease
+
+For the lab, the target probes every second. The lease ends 3 seconds after the monotonic send time of the last probe whose reply it applied. These two values are lab hypotheses. Their measurements set later production values. A reply that arrives after its lease ended cannot renew it or reopen a socket. An independent timer fences idle sockets. The target compares monotonic time at every admission and data boundary. There is no grace period.
+
+A revoked grant and unavailable authority are two states. A revoked edge stays refused after the authority returns. Unavailable authority refuses all managed access until it returns, then the unrelated edges recover.
+
+### Fence and acknowledgement
+
+On a revocation, the target blocks the edge and cancels every connection, subscription, queued frame, media viewer and unspent ticket of that edge in one synchronized step. It registers each managed socket before its upgrade completes, so an upgrade cannot pass the fence. It checks expiry, revision and edge at admission, before each RPC dispatch and before each application frame. Other edges keep their streams. Work that the server already accepted, such as an engine run, stays with the server.
+
+The target sends `/ack` only after every affected handler has ended and no queued frame can be sent. Bytes already passed to the operating system cannot be recalled. The Gateway records `acknowledged_at` and the three reported target times. An ACK settles the pending acknowledgements of that target and generation up to its revision. A repeated ACK answers the first result.
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `conn.managed_disabled` | 404 | The switch is off. |
+| `conn.managed_target_unknown` | 404 | The environment has no managed target record. |
+| `conn.managed_target_identity` | 403 | The peer is not the serving Node, or the service credential does not match. |
+| `conn.managed_generation_mismatch` | 409 | The generation is not the current one. |
+| `conn.managed_revision_future` | 409 | The ACK or `after_revision` names a revision above the head. |
+| `conn.managed_direct_edge_required` | 403 | The caller has no direct edge to the serving Node. |
+| `conn.managed_token_invalid` | 403 | The token is unknown, expired, revoked or of another generation. |
+| `conn.managed_peer_mismatch` | 403 | The socket peer does not resolve to the token's caller. |
+| `conn.managed_channel_forbidden` | 403 | The channel is not the target's own. |
+
+A pending acknowledgement without `acknowledged_at` means enforcement is unconfirmed: the target, its notice or its ACK did not arrive.
+
+### Reader profile
+
+The `reader` profile allows shell and thread snapshots and subscriptions, `terminal.observe`, `subscribeTerminalMetadata`, and a read-only viewer of a known test tab. RPC and media tickets are allowed only when they carry the exact managed principal and expiry. The target refuses on this ingress: pairing and credential administration, MCP, asset and upload URL minting, interactive preview, terminal writes, agent delegation and every other endpoint the proof has not covered. It also refuses native pairing exchange there and shows no startup pairing code. Fixture setup, such as seeding a terminal and a preview, runs on its separate restricted path.
+
+### Timestamps
+
+The Gateway and the target record these times separately, so the proof can measure each step.
+
+| Time | Clock | Recorded by |
+| --- | --- | --- |
+| `committed_at` | Gateway | The edge-removal transaction |
+| `notice_sent_at` | Gateway | After the Reverb publish returns |
+| `notice_received_at` | Target | On the notice, reported in the ACK |
+| `fenced_at` | Target | When the edge is blocked |
+| `handlers_closed_at` | Target | When the last affected handler ended |
+| `acknowledged_at` | Gateway | On the first valid ACK |
+
+The proof reports fault to detection, last confirmed probe send to fence, commit to fence, and fence to ACK, with maximum values for idle and busy runs. It records the clock offset bounds between Gateway and target, from `server_time` and the probe round trip.
+
+### Limits
+
+These limits come from the preflight and from paths this slice does not cover.
+
+#### Ingress
+
+An Instance's NAT-mode T3 proxy keeps each caller's WireGuard address as the TCP peer inside the container. A caller on the serving Node shows as the serving Node. A path through Caddy, the egress proxy or a relay hides the caller, so managed tokens refuse it.
+
+#### Target egress
+
+The Gateway sees a container on its bridge as its serving Node. Other containers on that Node share this address; only the service credential tells them apart.
+
+No product route lets an Instance container reach the Gateway or Reverb today. The container ACLs reject the traffic, and the egress proxy refuses private addresses. The lab admits port 443 of Gateway and Reverb for the target alone, by a lab-only ACL and forward rule. The product route belongs to the container network owners.
+
+#### Other paths
+
+Node removal, disable, registration reassignment and Gateway authority bypass this transaction. A later slice covers them. Stock T3, its device proxy and relay, and host servers cannot claim this guarantee. Legacy held, phone-paired and peer-linked credentials stay as they are on unmanaged paths.
 
 ## API
 
