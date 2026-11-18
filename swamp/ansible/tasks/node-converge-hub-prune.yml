@@ -12,4 +12,3 @@
   when: >-
     not (peer_id is match('^[1-9][0-9]*$')
     and (peer_id | int > hub_plan.prune.newest | int or peer_id | int in hub_plan.prune.keep | map('int')))
-# probe: network-only change
