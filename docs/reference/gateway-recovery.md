@@ -164,7 +164,7 @@ The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset
 
 The Gateway admits the run. It needs the full commit and no other queued or running release. It verifies the commit's [agent pin](#build-and-seal-a-release) and selects its [web build](#web-build) from an [accepted CI run](#accepted-ci-runs). It starts a running record and records the `gateway.release` Operation under `phases.run`. At the run's start it puts one GitHub token, with contents and Actions read on the release repository, in the execution vault.
 
-The long steps run script files from `swamp/scripts/`, which `bin/swamp-shape-gate` lints with shellcheck. Every script comes from the commit being released, so a release never runs the scripts of another. The build step pipes its script out of the fetched commit in `shared/orbit.git`. The web and snapshot steps run theirs from the sealed release, `/home/orbit/releases/<id>/swamp/scripts/`, and so does the activate child. A Swamp-run release or rollback of a commit from before these scripts fails at the build with `gateway.release_script_missing`: switch to such a release with `bin/gateway-rollback`.
+The long steps run script files from `swamp/scripts/`, which `bin/swamp-shape-gate` lints with shellcheck. Every script comes from the commit being released, so a release never runs the scripts of another. The build step pipes its script out of the fetched commit in `shared/orbit.git`. In the host PHP-FPM workflow, the web and snapshot steps run theirs from the sealed release, `/home/orbit/releases/<id>/swamp/scripts/`, and so does the activate child. A Swamp-run release or rollback of a commit from before these scripts fails at the build with `gateway.release_script_missing`: switch to such a release with `bin/gateway-rollback`.
 
 The `operation-gateway-release` workflow runs on the swamp role's workers on Node 209 and reaches the Gateway Node over SSH:
 
@@ -173,7 +173,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Fetch the commit | Fetches the commit into `shared/orbit.git` when it is missing. The read token reaches git only in its environment. |
 | Build the release | Refuses a downgrade with `gateway.release_downgrade`, or a disk below the [floor](#migrations-and-the-snapshot) with `gateway.release_disk_low`. Builds and seals the release, and prints its grants. |
 | Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
-| Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. Refuses with `gateway.release_disk_low` before the copy when the disk floor would break. The newest two stay, and the one a pause names. |
+| Snapshot the database (host PHP-FPM releases) | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. Refuses with `gateway.release_disk_low` before the copy when the disk floor would break. The newest two stay, and the one a pause names. |
 | Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting Operations covered by the [release idle guard](#release-idle-guard) remain. |
@@ -396,7 +396,7 @@ The run must be a run of `.github/workflows/ci.yml` in this repository: a `push`
 
 ### Migrations and the snapshot
 
-Before it migrates, the run writes a consistent SQLite copy with `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes a new file. Retention keeps the newest two snapshots, the current and the previous, and the one a pause names. Snapshots stay on the Gateway; keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
+Before it migrates, the host PHP-FPM workflow writes a consistent SQLite copy with `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes a new file. Retention keeps the newest two snapshots, the current and the previous, and the one a pause names. Snapshots stay on the Gateway; keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
 
 No rollback reads a snapshot: a rollback restores no data. The newest snapshot holds the database from before the live release's migrations, and the one before it the database from before the previous release's. An operator restores one only after a failed migration, and that run's pause names the snapshot it needs.
 
@@ -893,7 +893,7 @@ Automatic releases and the fleet rollout have these limits.
 
 A release needs an existing [release layout](#release-layout), the verified agent delivery, a valid CI web build and access to Swamp. There is no in-place update or layout-adoption command.
 
-Migrations must use expand and contract. A failed health check switches back; another failure from Migrate on pauses automation for an operator. Snapshots stay on the Gateway host. A new build needs room for 1 GiB and a database copy above the disk floor of 2 GiB and 10 % free, and the run keeps the newest two snapshots plus the snapshot a pause names.
+Migrations must use expand and contract. A failed health check switches back; another failure from Migrate on pauses automation for an operator. The host PHP-FPM workflow keeps its snapshots on the Gateway host. Its build needs room for 1 GiB and a database copy above the disk floor of 2 GiB and 10 % free, and the run keeps the newest two snapshots plus the snapshot a pause names.
 
 The parent workflow runs the definition loaded when it started. The activate child runs the target commit's definition after Load Swamp. Releases reload PHP-FPM and restart running application services. The [gateway role convergence](/cli/node/role-add) owns the static Gateway runtime files, and node converge the Gateway Node's agent.
 

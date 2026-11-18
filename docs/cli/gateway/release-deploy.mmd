@@ -54,18 +54,21 @@ sequenceDiagram
   %%> - checks out the exact commit and installs dependencies in the preparation container; its workers and scheduler stay disabled
   %%> - a retry after an incomplete build starts from a clean checkout and discards partial build output
   %%> On failure:
-  %%> - a new build refuses with `gateway.release_disk_low` before it writes, when the free space and the snapshots that may go cannot hold the build, a database copy and the floor
+  %%> - the host PHP-FPM build checks disk space for the build and database copy
   SW->>GN: Install the web build<br/>artifact · digest · rename
-  SW->>GN: Clone the prepared release<br/>seal · snapshot · copy
-  SW->>GN: Snapshot the database<br/>VACUUM INTO
-  %%> What it does:
-  %%> - keeps the floor of Doctor's `node.disk_low`: 2 GiB and 10 % of the disk stay free after the copy
-  %%> - removes older snapshots before the copy when the floor needs it; keeps the newest two after it, and always the one a pause names
-  %%> On failure:
-  %%> - refuses with `gateway.release_disk_low` before the copy; nothing migrated, the old release stays live
-  SW->>GN: Sleep preparation<br/>parallel with candidate checks
+  alt Container release
+    SW->>GN: Clone the prepared release<br/>seal · snapshot · copy
+    SW->>GN: Sleep preparation<br/>parallel with migration and checks
+  else Host PHP-FPM release
+    SW->>GN: Snapshot the database<br/>VACUUM INTO
+    %%> What it does:
+    %%> - keeps the newest two snapshots and any snapshot named by a pause
+    %%> On failure:
+    %%> - refuses before the copy when it would breach the disk floor
+  end
   SW->>GN: Migrate<br/>artisan migrate --isolated
   %%> What it does:
+  %%> - the container candidate applies pending migrations to the shared production database
   %%> - prints the end of the migration's output and its exit code; a failed exec would keep no output
   Note over SW: Check the migration<br/>assert the exit code
   %%> On failure:
@@ -140,7 +143,7 @@ sequenceDiagram
       Note over GW: Record switched back<br/>alert · next commit releases
     else another step from Migrate on fails
       SW--xGW: Run failed<br/>failed step
-      Note over GW: Pause automatic releases<br/>snapshot named · alert
+      Note over GW: Pause automatic releases<br/>migration or verification error · alert
     end
   end
   SW->>GN: Release unused candidate<br/>after handover or failure
