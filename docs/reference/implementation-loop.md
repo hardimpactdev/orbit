@@ -116,7 +116,7 @@ Main CI compares the landed Git tree with the merge-ref tree that the PR run che
 
 Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main verifies the repository, workflow identity, merged PR, final PR head, latest Required job, actual checkout logs, Git tree and current PR body hash. It verifies the downloaded ZIP against its recorded digest before publishing `web-dist-<main SHA>`. A changed PR body needs a successful Docs run with the new body. A failed-only rerun that copies Required without its corresponding receipt cannot authorize publication.
 
-A missing receipt, different tree or unreadable GitHub response fails delivery. Rerun delivery for a transient error. If the tree has no matching evidence, merge a green PR whose tested tree includes that revision. The same main SHA can be retried by rerunning its delivery job. Main runs no product tests, fixtures or proof.
+A missing receipt, different tree or unreadable GitHub response fails delivery. Rerun delivery for a transient error. If the tree has no matching evidence, update the next PR branch to include that revision and run CI. PR planning compares the tested tree with the latest verified main delivery on its base history. The plan selects checks for carried changes as well as the PR. The same main SHA can be retried by rerunning its delivery job. Main runs no product tests, fixtures or proof.
 
 Main retains `Main delivery checks`, `Required checks` and `Gateway release inputs` on the landed SHA. CLI dispatch and docs publication use that delivery result. The signed release, ancestry and provenance checks remain in force. See [Automatic releases](/reference/gateway-recovery#automatic-releases) for the Gateway poll.
 

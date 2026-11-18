@@ -111,7 +111,11 @@ final readonly class NestedFleetRefresh
             ->where('target_type', OperationKinds::InstanceTarget)->where('target_id', $instance->id)
             ->where('triggered_by', self::Trigger)->where('input->commit', $commit)->latest('id')->limit(self::Attempts)->get();
         $last = $attempts->first();
+        $failures = ValidatedData::integer($previous['admission_failures'] ?? 0);
         $receipt = $last === null ? [] : ['operation_id' => $last->id];
+        if ($failures > 0) {
+            $receipt['admission_failures'] = $failures;
+        }
         if ($last !== null && (! $last->status->terminal() || $last->lock_key !== null)) {
             return ['status' => 'pending', ...$receipt];
         }
@@ -124,7 +128,7 @@ final readonly class NestedFleetRefresh
             if ($last->status === OperationStatus::Succeeded) {
                 return ['status' => 'failed', 'error_code' => 'instance.release_seed_moved', ...$receipt];
             }
-            if ($attempts->count() >= self::Attempts) {
+            if ($attempts->count() + $failures >= self::Attempts) {
                 return ['status' => 'failed', 'error_code' => $last->error_code, ...$receipt];
             }
             if ($last->finished_at?->gt(now()->subMinutes(self::RetryMinutes))) {
@@ -135,22 +139,21 @@ final readonly class NestedFleetRefresh
             && (($previous['status'] ?? null) === 'failed' || now()->timestamp < ValidatedData::integer($previous['retry_at']))) {
             return $previous;
         }
-        $failures = ValidatedData::integer($previous['admission_failures'] ?? 0);
         try {
             $operation = $this->deploy->pinned($instance, self::Trigger, null, $commit);
 
-            return ['status' => 'pending', 'operation_id' => $operation->id];
+            return [...$receipt, 'status' => 'pending', 'operation_id' => $operation->id];
         } catch (ResourceOperationException $refused) {
             if ($refused->errorCode === 'project.source_unavailable') {
                 $failures++;
 
-                return ['status' => $failures >= self::Attempts ? 'failed' : 'pending',
+                return [...$receipt, 'status' => $attempts->count() + $failures >= self::Attempts ? 'failed' : 'pending',
                     'error_code' => $refused->errorCode, 'admission_failures' => $failures,
-                    'retry_at' => now()->addMinutes(self::RetryMinutes)->timestamp, ...$receipt];
+                    'retry_at' => now()->addMinutes(self::RetryMinutes)->timestamp];
             }
             $status = in_array($refused->errorCode, self::DeferredRefusals, true) ? 'pending' : 'failed';
 
-            return ['status' => $status, 'error_code' => $refused->errorCode, 'admission_failures' => $failures, ...$receipt];
+            return ['status' => $status, 'error_code' => $refused->errorCode, ...$receipt];
         }
     }
 

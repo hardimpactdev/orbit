@@ -1,5 +1,5 @@
 """A real checkout tree, trusted PR CI and immutable web bytes authorize reuse."""
-import copy
+from contextlib import chdir
 import io
 import json
 import os
@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 receipt = type('Receipt', (), runpy.run_path(str(ROOT / 'bin/ci-tree-receipt')))
 REPO = 'hardimpactdev/orbit'
 HEAD, TESTED, MAIN, TREE = (c * 40 for c in 'abcd')
+BASE = 'e' * 40
 BODY = 'Docs-unaffected: docs/reference/implementation-loop.md: No contract change.'
 START, UPLOAD, END, MERGE = ('2026-11-13T22:00:00Z', '2026-11-13T22:00:30Z', '2026-11-13T22:00:40Z', '2026-11-13T22:01:00Z')
 JOBS = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
@@ -48,11 +49,12 @@ class API:
                           conclusion='success', started_at=START, completed_at=END)
                      for i, name in enumerate(('Required checks', 'Select build inputs', 'Docs build', 'Web build'), 60)]
         self.logs = {j['id']: checkout(TESTED) for j in self.jobs}
+        self.logs[61] += f'2026-11-13T22:00:32Z PR delivery baseline: {BASE}\n'
         self.logs[62] += f'2026-11-13T22:00:35Z Docs body SHA256: {receipt.sha256(BODY.encode())}\n'
         self.web_bytes = archive({'index.html': '<h1>Checked</h1>', 'version.json': json.dumps({'buildId': TESTED}), 'assets/test.js': 'tested code'})
         self.web = self.artifact(100, 'web-pr-50-1', self.web_bytes)
         self.record = dict(repository=REPO, pr=7, head=HEAD, run=50, attempt=1, tested_commit=TESTED,
-                           tree=TREE, body_sha256=receipt.sha256(BODY.encode()), web_id=100,
+                           tree=TREE, body_sha256=receipt.sha256(BODY.encode()), delivery_base=BASE, web_id=100,
                            web_digest=self.web['digest'].split(':')[1], web_attempt=1)
         self.commit = dict(tree={'sha': TREE}, parents=[{'sha': 'e' * 40}, {'sha': HEAD}])
         self.refresh_record()
@@ -101,6 +103,48 @@ class ReceiptTest(unittest.TestCase):
                 self.assertEqual(call.call_args.args[0],
                     ['gh', 'api', '--allow-escape-sequences', f'repos/{REPO}/{path}'])
                 self.assertLessEqual(call.call_args.kwargs['timeout'], 10)
+
+    def test_delivery_baseline_walks_past_an_undelivered_main_parent(self):
+        class History(API):
+            def rows(self, path, key=None):
+                if path.startswith('actions/workflows/'):
+                    sha = path.rsplit('=', 1)[-1]
+                    return [self.run | {'id': 51 if sha == MAIN else 50, 'event': 'push',
+                                        'head_branch': 'main', 'head_sha': sha}]
+                return [self.jobs[0] | {'name': 'Main delivery checks',
+                                        'head_sha': MAIN if '/51/' in path else BASE,
+                                        'conclusion': 'failure' if '/51/' in path else 'success'}]
+
+        self.assertEqual(receipt.delivery_baseline(History(), [MAIN, BASE]), BASE)
+        with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
+            receipt.delivery_baseline(History(), [MAIN])
+
+    def test_carried_gateway_change_selects_gateway_checks_for_a_docs_pr(self):
+        import test_ci_build_plan
+
+        with tempfile.TemporaryDirectory() as scratch, chdir(scratch):
+            def git(*args):
+                return subprocess.check_output(['git', '-c', 'user.name=Fixture',
+                                                '-c', 'user.email=test@example.com', *args],
+                                               text=True).strip()
+
+            git('init', '-q')
+            git('commit', '-q', '--allow-empty', '-m', 'Newest verified main')
+            base = git('rev-parse', 'HEAD')
+            gateway = Path('apps/gateway/app/Actions/Refresh.php')
+            gateway.parent.mkdir(parents=True)
+            gateway.write_text('<?php')
+            git('add', '.')
+            git('commit', '-qm', 'Undelivered main change')
+            parent = git('rev-parse', 'HEAD')
+            docs = Path('docs/reference/release.md')
+            docs.parent.mkdir(parents=True)
+            docs.write_text('Test')
+            git('add', '.')
+            git('commit', '-qm', 'Docs PR')
+            plan = test_ci_build_plan.plan
+            self.assertFalse(plan.select(plan.changed_inputs(parent, 'HEAD')[1], pull_request=True)['jobs']['gateway-tests'])
+            self.assertTrue(plan.select(plan.changed_inputs(base, 'HEAD')[1], pull_request=True)['jobs']['gateway-tests'])
 
     def test_same_tested_tree_reuses_bytes_even_when_pr_head_tree_differs(self):
         api = API()
@@ -188,7 +232,7 @@ class ReceiptTest(unittest.TestCase):
             self.verify(api)
 
     def test_forged_or_unavailable_receipt_is_refused(self):
-        for key, value in (('pr', 8), ('head', 'f' * 40), ('run', 51), ('attempt', 2)):
+        for key, value in (('delivery_base', 'f' * 40), ('pr', 8), ('head', 'f' * 40), ('run', 51), ('attempt', 2)):
             api = API()
             api.record[key] = value
             api.refresh_record()
@@ -260,7 +304,7 @@ class ReceiptTest(unittest.TestCase):
             event.write_text(json.dumps({'number': 7, 'pull_request': {'head': {'sha': HEAD}}}))
             env = dict(GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
                        GITHUB_REPOSITORY=REPO, GITHUB_RUN_ID='50', GITHUB_RUN_ATTEMPT='2',
-                       DOCS_BODY_SHA256=receipt.sha256(BODY.encode()), WEB_ID='100',
+                       DOCS_BODY_SHA256=receipt.sha256(BODY.encode()), DELIVERY_BASE=BASE, WEB_ID='100',
                        WEB_DIGEST='e' * 64, WEB_ATTEMPT='1')
             path = Path(tmp, 'receipt.json')
             with patch.dict(os.environ, env), patch.dict(receipt.record.__globals__,
@@ -269,7 +313,7 @@ class ReceiptTest(unittest.TestCase):
                 data = json.loads(path.read_text())
                 self.assertEqual(data, dict(repository=REPO, pr=7, head=HEAD, run=50, attempt=2,
                     tested_commit=TESTED, tree=TREE, body_sha256=env['DOCS_BODY_SHA256'],
-                    web_id=100, web_digest='e' * 64, web_attempt=1))
+                    delivery_base=BASE, web_id=100, web_digest='e' * 64, web_attempt=1))
                 for key, value in (('WEB_ID', ''), ('WEB_DIGEST', ''), ('WEB_DIGEST', 'sha256:' + 'e' * 64),
                                    ('DOCS_BODY_SHA256', ''), ('WEB_ATTEMPT', '')):
                     with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}), self.assertRaises(ValueError):

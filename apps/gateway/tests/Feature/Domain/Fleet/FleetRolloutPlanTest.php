@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Actions\Fleet\AdmitFleetRolloutAction;
 use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
+use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutAlerts;
@@ -444,6 +446,17 @@ it('serializes fleet work and continues recorded refresh when rollout is disable
         ->and($release->phases['seed_publication']['status'])->toBe('not_required');
 });
 
+it('stops seed continuation when default refresh is turned off', function (): void {
+    Queue::fake();
+    config(['fleet.rollout' => false, 'instances.nested_fleet_refresh' => false]);
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'disabled', 'nodes' => []],
+        'seed_publication' => ['status' => 'pending', 'operation_ids' => [41]]]]);
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['seed_publication'])->toBe(['status' => 'disabled', 'operation_ids' => [41]]);
+});
+
 it('detects membership, agent pin drift and late CLI publication on the daily pass after fleet current', function (string $change): void {
     Queue::fake();
     $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
@@ -456,7 +469,7 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
     $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
     app()->instance(AgentDelivery::class, $delivery);
     $dev = Node::query()->findOrFail($this->nodes['dev']);
-    if (in_array($change, ['late CLI', 'missing CLI'], true)) {
+    if (in_array($change, ['late CLI', 'missing CLI', 'unverified CLI'], true)) {
         $dev->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
     }
     $inputs = app(ReleaseNodeInputs::class);
@@ -476,6 +489,18 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
     }
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => $rows]]]);
+
+    if ($change === 'unverified CLI') {
+        Cache::flush();
+        $this->mock(CliReleaseCatalog::class)->shouldReceive('find')->once()
+            ->andReturn(DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::ReleaseUnverified));
+        expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBeNull()
+            ->and($release->refresh()->phases['fleet']['status'])->toBe('failed')
+            ->and($release->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.cli_delivery_unavailable')
+            ->and(Operation::query()->count())->toBe(0);
+
+        return;
+    }
 
     if ($change === 'missing CLI') {
         $release->forceFill(['created_at' => now()])->save();
@@ -503,7 +528,7 @@ it('detects membership, agent pin drift and late CLI publication on the daily pa
     if ($change === 'late CLI') {
         expect($operation->input['nodes'][0]['release']['version'])->toBe($this->cli);
     }
-})->with(['membership', 'agent drift', 'late CLI', 'missing CLI']);
+})->with(['membership', 'agent drift', 'late CLI', 'missing CLI', 'unverified CLI']);
 
 it('fingerprints a state.py-only change on the CI runner and leaves another role stable', function (): void {
     $node = Node::query()->findOrFail($this->nodes['dev']);

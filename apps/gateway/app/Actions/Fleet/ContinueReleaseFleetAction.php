@@ -7,6 +7,7 @@ namespace App\Actions\Fleet;
 use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Domain\Fleet\CliConvergePlan;
+use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Fleet\FleetReleaseLag;
@@ -76,7 +77,8 @@ final readonly class ContinueReleaseFleetAction
                 $desired = app(DesiredFleetState::class);
                 $cli = config('fleet.rollout') && array_any($this->members(), CliConvergePlan::required(...))
                     ? $desired->current()->cli : null;
-                $exhausted = $cli !== null && ! $cli->isAvailable() && $desired->cliFallbackExhausted((string) $release->sha);
+                $exhausted = $cli !== null && ! $cli->isAvailable()
+                    && ($cli->reason === CliReleaseUnavailableReason::ReleaseUnverified || $desired->cliFallbackExhausted((string) $release->sha));
 
                 return $this->advance($release, $cli, $exhausted);
             });
@@ -199,6 +201,10 @@ final readonly class ContinueReleaseFleetAction
             $phases = [...$current->phases, 'default_refresh' => $refresh];
             if ($refresh['status'] === 'current' && data_get($phases, 'seed_publication.status') !== 'current') {
                 $phases['seed_publication'] = app(ProofSeeds::class)->releasePublication((string) $current->sha, $refresh['defaults']);
+            }
+            if ($refresh['status'] === 'disabled' && data_get($phases, 'seed_publication.status') === 'pending') {
+                $publication = ValidatedData::object($phases['seed_publication']);
+                $phases['seed_publication'] = [...$publication, 'status' => 'disabled'];
             }
             $current->forceFill(['phases' => $phases])->save();
 

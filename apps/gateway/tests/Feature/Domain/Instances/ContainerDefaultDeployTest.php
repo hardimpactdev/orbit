@@ -1277,16 +1277,25 @@ it('records a failed source read before admission and resumes it after backoff',
     $source = $this->mock(ProjectSourceReader::class);
     $source->shouldReceive('read')->once()->ordered()
         ->andThrow(new ResourceOperationException('project.source_unavailable', 'Temporary source failure.', 502));
-    $source->shouldReceive('read')->once()->ordered()->andReturn(deploySourceRead($commit));
+    $source->shouldReceive('read')->twice()->ordered()->andReturn(deploySourceRead($commit));
 
     $first = app(NestedFleetRefresh::class)->advance($commit);
     expect($first['defaults'][$instance->id])->toMatchArray([
         'status' => 'pending', 'error_code' => 'project.source_unavailable', 'admission_failures' => 1,
     ])->and(app(NestedFleetRefresh::class)->advance($commit, $first))->toBe($first)
         ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(0);
-    $this->travel(10)->minutes();
-    $next = app(NestedFleetRefresh::class)->advance($commit, $first);
-    expect($next['defaults'][$instance->id]['operation_id'])->toBe(Operation::query()->where('kind', 'instance.deploy')->sole()->id);
+    $next = $first;
+    for ($attempt = 2; $attempt <= 3; $attempt++) {
+        $this->travel(10)->minutes();
+        $next = app(NestedFleetRefresh::class)->advance($commit, $next);
+        $row = $next['defaults'][$instance->id];
+        $operation = Operation::query()->findOrFail($row['operation_id']);
+        expect($row['status'])->toBe('pending')->and($row['admission_failures'])->toBe(1);
+        $operation->update(['status' => 'failed', 'lock_key' => null, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_refresh_failed']);
+        $next = app(NestedFleetRefresh::class)->advance($commit, $next);
+    }
+    expect($next['defaults'][$instance->id]['status'])->toBe('failed')
+        ->and(Operation::query()->where('kind', 'instance.deploy')->count())->toBe(2);
 });
 
 it('reports a refused refresh and still ends the release step with success', function (): void {

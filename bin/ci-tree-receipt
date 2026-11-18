@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import runpy
 import stat
 import subprocess
 import time
@@ -35,14 +36,17 @@ class GitHub:
         # Leave runner time for checkout and artifact upload.
         self.deadline = time.monotonic() + 25
 
-    def raw(self, path):
+    def request(self, path, binary=False):
         left = self.deadline - time.monotonic()
         require(left > 0, 'Receipt API budget exceeded')
-        return subprocess.check_output(['gh', 'api', '--allow-escape-sequences', f'repos/{self.repository}/{path}'],
-                                       timeout=min(left, 10))
+        args = ['gh', 'api', '--allow-escape-sequences'] if binary else ['gh', 'api']
+        return subprocess.check_output([*args, f'repos/{self.repository}/{path}'], timeout=min(left, 10))
+
+    def raw(self, path):
+        return self.request(path, binary=True)
 
     def one(self, path):
-        return json.loads(self.raw(path))
+        return json.loads(self.request(path))
 
     def rows(self, path, key=None):
         result = []
@@ -53,6 +57,34 @@ class GitHub:
             if len(rows) < 100:
                 return result
         raise ValueError('Too many CI evidence records')
+
+
+def delivery_baseline(api, parents):
+    """The newest first-parent ancestor with exact successful main delivery."""
+    workflow = api.one('actions/workflows/ci.yml')
+    require(workflow['path'] == WORKFLOW, 'Wrong workflow identity')
+    trusted_run = runpy.run_path(str(Path(__file__).with_name('ci-delivery')))['trusted_run']
+    for sha in parents:
+        runs = api.rows(f'actions/workflows/ci.yml/runs?branch=main&head_sha={sha}', 'workflow_runs')
+        trusted = [run for run in runs if trusted_run(run, api.repository, sha, workflow['id'])]
+        if trusted:
+            run = max(trusted, key=lambda run: run['id'])
+            jobs = latest_jobs(api.rows(f"actions/runs/{run['id']}/jobs?filter=all", 'jobs'))
+            job = jobs.get('Main delivery checks', {})
+            if job.get('head_sha') == sha and job.get('status') == 'completed' and job.get('conclusion') == 'success':
+                return sha
+    raise ValueError('No verified main delivery found on the PR base history')
+
+
+def baseline():
+    parent = git('HEAD^1')
+    base = delivery_baseline(GitHub(os.environ['GITHUB_REPOSITORY']), subprocess.check_output(
+        ['git', 'rev-list', '--first-parent', '--max-count=20', parent], text=True, timeout=5).splitlines())
+    if base != parent:
+        head = git('HEAD^2')
+        require(subprocess.run(['git', 'merge-base', '--is-ancestor', parent, head], timeout=5, check=False).returncode == 0,
+                'Update the PR branch to include the undelivered main changes and rerun CI')
+    print(base)
 
 
 def checkout_sha(log):
@@ -144,6 +176,8 @@ def verify(api, merged_sha, merged_tree):
             for name in ('Select build inputs', 'Docs build', 'Web build', 'Required checks')}
     tested = checkout_sha(logs['Select build inputs'])
     require(all(checkout_sha(log) == tested for log in logs.values()), 'Jobs tested different checkouts')
+    selected = re.findall(r'Z PR delivery baseline: ([0-9a-f]{40})\r?$', logs['Select build inputs'], re.M)
+    require(selected == [receipt.get('delivery_base')], 'No matching verified PR delivery baseline')
     commit = api.one(f'git/commits/{tested}')
     require(len(commit['parents']) == 2 and commit['parents'][1]['sha'] == head, 'Not the final PR merge checkout')
     require(commit['tree']['sha'] == merged_tree and receipt['tree'] == merged_tree
@@ -167,11 +201,13 @@ def record(path):
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
     body_hash = os.environ['DOCS_BODY_SHA256']
     digest = os.environ['WEB_DIGEST']
+    delivery_base = os.environ['DELIVERY_BASE']
+    require(re.fullmatch('[0-9a-f]{40}', delivery_base), 'Missing delivery baseline')
     require(re.fullmatch('[0-9a-f]{64}', body_hash) and re.fullmatch('[0-9a-f]{64}', digest), 'Missing job evidence')
     receipt = dict(repository=os.environ['GITHUB_REPOSITORY'], pr=event['number'],
                    head=event['pull_request']['head']['sha'], run=int(os.environ['GITHUB_RUN_ID']),
                    attempt=int(os.environ['GITHUB_RUN_ATTEMPT']), tested_commit=git('HEAD'), tree=git('HEAD^{tree}'),
-                   body_sha256=body_hash, web_id=int(os.environ['WEB_ID']), web_digest=digest,
+                   body_sha256=body_hash, delivery_base=delivery_base, web_id=int(os.environ['WEB_ID']), web_digest=digest,
                    web_attempt=int(os.environ['WEB_ATTEMPT']))
     path.write_text(json.dumps(receipt, sort_keys=True) + '\n')
 
@@ -204,10 +240,14 @@ def attempt(destination):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['record', 'attempt'])
-    parser.add_argument('path', type=Path)
+    parser.add_argument('command', choices=['baseline', 'record', 'attempt'])
+    parser.add_argument('path', nargs='?', type=Path)
     args = parser.parse_args()
-    if args.command == 'record':
+    if args.command == 'baseline':
+        baseline()
+    elif args.path is None:
+        parser.error('record and attempt require an output path')
+    elif args.command == 'record':
         record(args.path)
     else:
         attempt(args.path)

@@ -151,8 +151,8 @@ def latest_jobs(jobs):
 def trusted_run(run, repository, sha, workflow_id):
     return (run.get('head_sha') == sha and run.get('head_branch') == 'main'
             and run.get('event') in ('push', 'workflow_dispatch')
-            and run.get('repository', {}).get('full_name') == repository
-            and run.get('head_repository', {}).get('full_name') == repository
+            and (run.get('repository') or {}).get('full_name') == repository
+            and (run.get('head_repository') or {}).get('full_name') == repository
             and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
 
 

@@ -51,9 +51,6 @@ final readonly class RunAutomaticGatewayReleaseAction
 {
     public const int StallAlertMinutes = 30;
 
-    /** A commit whose release failed for a transient reason is tried again after this long. */
-    public const int RetryMinutes = 10;
-
     public const int HeadCheckMinutes = 5;
 
     public const int BehindAlertHours = 6;
@@ -165,7 +162,7 @@ final readonly class RunAutomaticGatewayReleaseAction
             return $this->automation->recordTick('paused', $green->sha, $manual->id, 'gateway.release_manual_deploy', "Release [{$current}] was deployed by hand and [{$green->sha}] is newer. Resume to release it.");
         }
 
-        if ($this->backingOff($green->sha)) {
+        if ($this->retry->automaticBackingOff($green->sha)) {
             return $this->automation->recordTick('backing_off', $green->sha);
         }
 
@@ -193,7 +190,7 @@ final readonly class RunAutomaticGatewayReleaseAction
             // commit out, or tries it again under the retry limit.
             try {
                 $record = $this->lock->run(function () use ($sha, $deployed, $exception): ?GatewayRelease {
-                    $this->admit->assertAutomaticState($deployed);
+                    $this->admit->assertAutomaticState($deployed, $sha);
                     $record = $this->recorder->begin('auto', $sha);
                     $this->recorder->fail($record, $exception, retryable: $this->retry->retryable($exception->errorCode, $sha, $record?->id),
                         durationMs: 0, phase: $exception->step);
@@ -281,18 +278,6 @@ final readonly class RunAutomaticGatewayReleaseAction
             $this->source->checkName,
         ), 'head:'.$state['head'], 'branch_head_unreleased');
         $this->automation->branchHeadAlerted();
-    }
-
-    /** A commit that just failed for a transient reason waits before the next attempt. */
-    private function backingOff(string $sha): bool
-    {
-        $last = $this->record($sha);
-
-        return $last instanceof GatewayRelease
-            && in_array($last->outcome, [...GatewayRelease::FailedOutcomes, GatewayRelease::Interrupted], true)
-            && $last->retryable
-            && $last->updated_at !== null
-            && $last->updated_at->gt(CarbonImmutable::now()->subMinutes(self::RetryMinutes));
     }
 
     private function record(string $sha): ?GatewayRelease

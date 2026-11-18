@@ -108,6 +108,20 @@ it('does not spend an automatic attempt when the serving release pauses during a
         ->and(GatewayRelease::query()->count())->toBe(0);
 });
 
+it('does not consume an attempt based on retry state that changed during preflight', function (bool $retryable): void {
+    $this->mock(GreenCommitResolver::class)->shouldReceive('resolve')->once()
+        ->andReturn(new GreenCommit(ReleaseC, new GitHubCheckRun('Required checks', 'success', null)));
+    releaseAgent(static function () use ($retryable): never {
+        GatewayRelease::query()->create(['sha' => ReleaseC, 'trigger' => 'auto', 'outcome' => 'failed',
+            'retryable' => $retryable, 'phases' => [], 'duration_ms' => 0]);
+
+        throw new GatewayReleaseException('agent-delivery', 'gateway.release_provenance_invalid', 'Bad provenance.', 422, sha: ReleaseC);
+    });
+
+    expect(app(RunAutomaticGatewayReleaseAction::class)->execute())->toMatchArray(['result' => 'busy', 'sha' => ReleaseC])
+        ->and(GatewayRelease::query()->count())->toBe(1);
+})->with(['in backoff' => true, 'permanently failed' => false]);
+
 it('requeues the serving cycle after a restart and waits before admitting the latest eligible commit', function (): void {
     Queue::fake();
     app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/releases/'.substr(ReleaseA, 0, 12).'/apps/gateway'));

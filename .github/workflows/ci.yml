@@ -43,7 +43,7 @@ jobs:
         run: git ls-files -z '*composer.json' | xargs -0 -I '{}' composer validate --strict --no-check-publish '{}'
       - name: Check changed PHP syntax
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          BASE: ${{ needs.changes.outputs.delivery_base || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: |
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           git diff --name-only --diff-filter=ACMR -z "$BASE" HEAD -- '*.php' | xargs -0 -r -n 1 -P 4 php -l
@@ -659,6 +659,7 @@ jobs:
     timeout-minutes: 2
     outputs:
       reuse: ${{ steps.reuse.outputs.reuse }}
+      delivery_base: ${{ steps.plan.outputs.delivery_base }}
       fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}
       fixture_capacity: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_capacity }}
       self_hosted_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.self_hosted_shards }}
@@ -702,6 +703,9 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ "$MAIN" = true ]; then
             python3 - <<'PYTHON'
@@ -715,14 +719,24 @@ jobs:
           fi
           if [[ "$BASE" =~ ^0+$ ]]; then BASE=HEAD^; fi
           args=()
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then args+=(--pull-request); fi
-          python3 bin/ci-build-plan --base "$BASE" --head "${{ github.event.pull_request.head.sha || github.sha }}" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            args+=(--pull-request)
+            if [ "$PR_BASE_REF" = main ]; then
+              BASE="$(python3 bin/ci-tree-receipt baseline)"
+              HEAD="$GITHUB_SHA"
+            else
+              BASE="$(git rev-parse "$BASE")"
+            fi
+            echo "PR delivery baseline: $BASE"
+            echo "delivery_base=$BASE" >> "$GITHUB_OUTPUT"
+          fi
+          python3 bin/ci-build-plan --base "$BASE" --head "$HEAD" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
       - name: Select fixture units
         if: github.ref != 'refs/heads/main'
         id: units
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
-          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE: ${{ steps.plan.outputs.delivery_base || github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+          HEAD: ${{ github.event.pull_request.base.ref == 'main' && github.sha || github.event.pull_request.head.sha || github.sha }}
         run: bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT" --plan-json ci-fixture-plan.json
       - name: Publish fixture plan
         if: github.ref != 'refs/heads/main'
@@ -1018,6 +1032,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           DOCS_BODY_SHA256: ${{ needs.docs.outputs.body_sha256 }}
+          DELIVERY_BASE: ${{ needs.changes.outputs.delivery_base }}
           WEB_ID: ${{ needs.web.outputs.artifact_id }}
           WEB_DIGEST: ${{ needs.web.outputs.artifact_digest }}
           WEB_ATTEMPT: ${{ needs.web.outputs.artifact_attempt }}

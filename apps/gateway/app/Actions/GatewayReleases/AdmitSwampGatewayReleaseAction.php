@@ -19,6 +19,7 @@ use App\Infrastructure\Gateway\GatewayCommandNode;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -88,7 +89,7 @@ final readonly class AdmitSwampGatewayReleaseAction
         // The lock keeps the release unit and a second admission out until the run owns its record.
         return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $delivery, $web, $horizon, $gateway, $expectedServingSha): GatewayRelease {
             if ($trigger === 'auto') {
-                $this->assertAutomaticState($expectedServingSha);
+                $this->assertAutomaticState($expectedServingSha, $commit);
             } else {
                 $this->assertReleaseIdle();
             }
@@ -102,7 +103,7 @@ final readonly class AdmitSwampGatewayReleaseAction
     }
 
     /** Call under the release lock, before storing either an admission or its preflight refusal. */
-    public function assertAutomaticState(?string $expectedServingSha): void
+    public function assertAutomaticState(?string $expectedServingSha, string $candidate): void
     {
         $this->assertReleaseIdle();
         $automation = app(GatewayReleaseAutomation::class);
@@ -112,7 +113,8 @@ final readonly class AdmitSwampGatewayReleaseAction
             || ! $automation->enabled() || $automation->pause() !== null
             || GatewayReleaseSupersession::manualPin(GatewayReleaseCommit::id($expectedServingSha), $automation->resumedAfter()) !== null
             || FleetReboot::open() !== null || AdmitFleetRolloutAction::open()
-            || app(ContinueReleaseFleetAction::class)->pending($expectedServingSha) !== null) {
+            || app(ContinueReleaseFleetAction::class)->pending($expectedServingSha) !== null
+            || in_array($candidate, GatewayRelease::failedShas(), true) || app(GatewayReleaseRetry::class)->automaticBackingOff($candidate)) {
             throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The serving release or its automatic release state changed during admission.');
         }
     }
