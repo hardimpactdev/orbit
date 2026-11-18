@@ -2,6 +2,7 @@
 import json
 import math
 import runpy
+import shutil
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -81,6 +82,50 @@ class FixtureCostEvidenceTest(unittest.TestCase):
             self.assertIn(unit, names(planned))
             actual.extend(cases)
         self.assertCountEqual(actual, fixture['cases'])
+
+    def test_host_acl_cases_fit_shared_inputs_without_capacity_debt(self):
+        file = 'swamp/tests/ansible_instance_host_acl_test.ts'
+        evidence = json.loads((ROOT / 'tools/tests/ci-host-acl-cost-evidence.json').read_text())
+        budget, fixtures, defaults = units.configuration()
+        fixture = fixtures[file]
+        self.assertNotIn(file, budget['capacity_gap'])
+        self.assertCountEqual(fixture['cases'], evidence['case_seconds'])
+        for name, seconds in evidence['case_seconds'].items():
+            self.assertEqual(fixture['case_costs'][name], math.ceil(seconds * evidence['estimate_factor']) + 1)
+        self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
+        expected = units.units_for(fixture, budget)
+        self.assertTrue(all(cost <= budget['shard_seconds'] for _, cost in expected))
+        self.assertCountEqual(fixture['cases'], [case for unit, _ in expected for case in units.case_names(unit, fixtures)])
+        for path in (file, 'swamp/ansible/tasks/instance-host.yml', 'swamp/ansible/tasks/instance-network-check.yml',
+                     'swamp/ansible/tasks/instance-container-files.yml', 'swamp/ansible/tasks/task-container-host-prepare.yml'):
+            with self.subTest(path=path):
+                planned = units.plan([path], budget, fixtures, defaults)
+                self.assertFalse(planned.get('capacity'))
+                actual = [unit for unit in units.planned_units(planned) if unit.partition('#')[0] == file]
+                self.assertCountEqual(actual, [unit for unit, _ in expected])
+
+    def test_host_cold_build_stays_named_debt_while_the_complete_repeat_is_admitted(self):
+        file = 'swamp/tests/ansible_instance_host_test.ts'
+        evidence = json.loads((ROOT / 'tools/tests/ci-host-cost-evidence.json').read_text())
+        budget, fixtures, defaults = units.configuration()
+        fixture = fixtures[file]
+        for name, seconds in evidence['case_seconds'].items():
+            self.assertEqual(fixture['case_costs'][name], math.ceil(seconds * evidence['estimate_factor']) + 1)
+        self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
+        planned = units.plan([file], budget, fixtures, defaults)
+        self.assertFalse(planned.get('capacity'))
+        debt = [unit for row in planned.get('not_run', []) for unit in row['units'] if unit.partition('#')[0] == file]
+        self.assertEqual([case for unit in debt for case in units.case_names(unit, fixtures)],
+                         ['a build-list Node gets the Instance project, bridge, folders and image'])
+        admitted = [unit for unit in units.planned_units(planned) if unit.partition('#')[0] == file]
+        self.assertCountEqual([case for unit in admitted + debt for case in units.case_names(unit, fixtures)], fixture['cases'])
+
+    @unittest.skipUnless(shutil.which('deno'), 'Live Deno registration is also checked by the fixture gate')
+    def test_host_cost_populations_match_live_registration(self):
+        _, fixtures, _ = units.configuration()
+        for file in ('swamp/tests/ansible_instance_host_acl_test.ts', 'swamp/tests/ansible_instance_host_test.ts'):
+            with self.subTest(file=file):
+                self.assertEqual(fixtures[file]['cases'], units.collect(file)['cases'])
 
     def test_renewal_costs_keep_all_cases_in_bounded_self_hosted_units(self):
         file = 'swamp/tests/swamp_worker_renewal_test.ts'
