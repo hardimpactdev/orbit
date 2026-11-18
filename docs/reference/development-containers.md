@@ -2039,6 +2039,107 @@ Discover the active project for `/srv/workspace` from `orchestration.subscribeSh
 
 Separate the read-only preparation evidence from permission to dispatch. Only native work admitted under the committed launch fence may send. Mark sending as a native write; recovery checks the pinned server and exact thread projection before any possible replay. Stock T3 writes separate command receipts for thread creation and the initial message, and can schedule the run before returning the launch response. A thread with no matching first message is not an acceptance receipt. Keep projection reads bounded and compare the exact message in the container; return only safe facts for the Gateway to project.
 
+### Task-copy RPC (target)
+
+This is the target transport for a copy turn. It is not built. It waits for the task-scoped credential of Conn integration item 4 (task 5868), and nothing ships to a live fleet until that lands. It reuses Conn's orchestration WebSocket protocol 2 and the task-copy bookkeeping that is already in place. It adds no engine and no admin scope. The [Conn launch transport](#conn-launch-transport) keeps its own callers of `t3_copy_rpc.mjs` and does not depend on this contract.
+
+The first pilot runs on Rust Conn. A local proof against Rust Conn and T3 0.1.10 at Conn `ffa3803db91` passed every step below. Pinned stock T3 joins only if it enforces [ownership](#ownership) and the [credential](#credential) without changes. Compatibility with the deployed stock 0.1.7 is gated separately. MCP is not a path: `t3_pending_request` cannot cancel one exact stale request.
+
+#### Protocol calls
+
+| Purpose | Protocol 2 call |
+| --- | --- |
+| Create the role's thread | `orchestration.dispatchCommand` with `thread.create` |
+| Send the turn | `orchestration.dispatchCommand` with `message.dispatch` |
+| Read the thread, its runs and requests | `orchestration.getThreadProjection` and the existing subscriptions |
+| Cancel a stale question | `orchestration.dispatchCommand` with `runtime-request.respond`, decision `cancel` |
+| Stop a run | `orchestration.dispatchCommand` with `run.interrupt` |
+
+Reads need `orchestration:read`. Writes need `orchestration:operate`. Neither scope is enough without the credential's allowlist.
+
+#### Admission
+
+`TaskCopyTurn::capture` admits each turn under the group's lock, as it does today. It names the copy, the role's `AgentThread` and the thread's `external_id`:
+
+- **New thread.** Capture sets a UUID as `external_id` before dispatch. `thread.create` uses that exact ID. The target must not choose another.
+- **Established thread.** The turn uses the row's verified `external_id`. The worker does not look a thread up by its title.
+- **Binding.** Before dispatch, the worker confirms the target's environment ID and its one admitted workspace project for `/srv/workspace`. A thread that belongs to another environment or project is refused.
+
+Earlier rows need one check. Today the helper picks its own thread ID, and `TaskCopyTurnProjection::record` writes it over the set UUID. So no existing row has an `external_id` that was set before dispatch, and each such row starts unverified. Its next turn reads `getThreadProjection` for that ID once. It marks the row verified only when the thread exists in the admitted environment and project with the row's Orbit title. Otherwise the turn launches nothing and fails with `tasks.copy_thread_missing`. The caller then starts a new thread with `--thread=new`.
+
+#### Stable IDs
+
+Each step of an admitted turn has its own stable command ID. Capture fixes them, along with the message ID, in the intent. The create body and the message body are immutable once admitted. A retry sends the same IDs and the same bodies.
+
+After `message.dispatch`, the worker records the run ID. It then confirms the exact message and run in `getThreadProjection` before it counts the turn as launched.
+
+If the reply is lost or the socket drops, the worker reads the projection first. It looks for the admitted thread ID and message ID. If both are there, the step happened, and the worker resumes with that run. If neither is there and the target proves that it is the same server state, the worker repeats the step with the same IDs. If the outcome stays unclear, the turn fails and repeats nothing. The worker never relies on Rust Conn's window of 4,096 command receipts.
+
+#### Ownership
+
+The worker never marks queued work as started. It never adopts a run that its own admitted message did not start. It never stops a run that a person started. The group lock and the unsettled-turn check stay as [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) describes.
+
+A user may still write to the same thread from Conn. So before the worker sends to an established thread, the target must check, atomically, that no other active run or queued message owns the thread. Where the target cannot make that check, the worker refuses to send to the same thread. Pinned stock T3 joins the pilot only when it can make that check unmodified.
+
+#### Questions
+
+The flow of [A question ends the turn](#a-question-ends-the-turn) stays, on the new calls:
+
+1. A run waits. Every pending request must be a complete user-input question, and each request's node must belong to that run.
+2. The worker stores the questions, bounded, in the turn's result.
+3. It reads the projection again. The same request IDs must still be pending, with the same owner nodes.
+4. It interrupts that run and waits for proof that the run ended. Only then is the turn `asking_for_input` and over.
+
+An approval, a request without a question, or a request of another run is never a reason to interrupt. The turn then fails as it does today, and the group holds.
+
+On the answer turn, the worker reconciles the stored request IDs with the projection. It cancels, with `runtime-request.respond`, each request that is still a pending user-input request of that thread. It reads them back. A request that stays pending fails the turn with `tasks.copy_question_unresolved`, and the questions stay. Once all are resolved, the answer goes out as a new admitted message with its own stable IDs, so a new run.
+
+Approvals and refusals are not questions. The worker never answers an approval and never cancels one.
+
+#### Credential
+
+The worker uses its own task credential. It reuses item 4's caller-to-target binding and its revocation fence; the [Conn layer](/reference/conn) page holds that contract once it lands. There is no second mechanism.
+
+- The Gateway issues an opaque bearer and stores only its digest.
+- The Rust target checks it by an authenticated `POST` to the Gateway.
+- It is bound to the target's environment UUID and its registration generation, and names the task, the copy and the admitted turn.
+- Its scopes are fixed. A caller cannot set them.
+- A cache does not extend its expiry.
+- It carries an allowlist of methods and commands, and of the thread, runs and requests that the turn admitted.
+
+The target refuses a thread, run, request or command outside that allowlist, even when the scopes match. A credential of an ended turn cannot drive a later one. The worker's authority to operate is separate from a user's authority, through Orbit, to watch the thread or answer a question. Item 4's lab reader cannot run task work. No generic bearer and no admin scope is used.
+
+Until task 5870 lands, the target does not check the allowlist or the turn binding. Until then, only a local proof runs, with no live writes.
+
+#### Turn evidence
+
+A turn's result names:
+
+- the admitted turn and its step IDs;
+- the environment, thread, run and message IDs, as the target spells them;
+- whether it launched and whether it ended;
+- the earlier turns it settled;
+- the waiting request IDs and their questions;
+- one fixed outcome code;
+- the reviewer's checkout and restore, as [Calls](#calls) describes;
+- the bounded, redacted transcript.
+
+It never holds a bearer, a WebSocket ticket, a raw projection, a prompt or a private argument.
+
+#### Proof and removal
+
+Task 5873 proves this on one isolated copy:
+
+| Area | Cases |
+| --- | --- |
+| Other writers | A user who watches the same thread while the worker runs. An unrelated user who writes to the thread |
+| Workers | Two workers at once on one turn. A wrong task credential |
+| Requests | A live question and a stale one. An approval and a refusal |
+| Ends | A timeout, a cancel and the cleanup |
+| Recovery | A dropped dispatch reply. A worker restart and, separately, a server restart |
+
+Once that proof passes, the task driver drops `t3 thread send --wait`, `thread list` and `thread show`, the title lookup, and the CLI session that each helper call issues. The durable launch keeps its caller.
+
 ### Reach and authentication
 
 Stock T3 0.1.7 serves its thread tools at `/mcp`, but accepts there only an MCP client session. A session that `t3 auth session issue` makes, as the create's `Orbit Swamp` session, is refused. A session issued with the MCP client subject is held to `approval-required`, because the CLI cannot give it a higher mode. Only T3 itself issues a full-access MCP session, through its OAuth approval or in its own process. So Swamp uses T3's own CLI:
