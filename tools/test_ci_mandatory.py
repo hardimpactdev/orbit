@@ -58,6 +58,13 @@ class MandatoryAdmissionTest(unittest.TestCase):
                 self.assertEqual(result['mandatory'][0]['cases'], ['prepare'])
                 self.assertIn('swamp/image.ts#0/3', names(result))
 
+    def test_a_machinery_change_reserves_no_case_of_a_file_outside_the_canary(self):
+        # The image file is selected by another of its inputs, and it is not a canary file.
+        self.budget['machinery_canary'] = [self.ordinary['file']]
+        result = self.plan(['swamp/other.yml'], shared_registry=True)
+        self.assertNotIn('mandatory', result)
+        self.assertEqual(names(result), ['swamp/ordinary.py'])
+
     def test_overlapping_rules_reserve_the_whole_containing_unit_once(self):
         self.image.update(slices=2, cases=['prepare', 'normal', 'nested', 'finish'])
         self.image['mandatory_cases'] = {'swamp/host.yml': ['prepare', 'nested'],

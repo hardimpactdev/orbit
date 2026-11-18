@@ -1,6 +1,8 @@
 """Fixture matrices share twenty planned shards without admitting fork code or losing units."""
 from pathlib import Path
 import heapq
+import json
+import re
 import sys
 import tempfile
 import tomllib
@@ -9,7 +11,7 @@ import unittest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-from test_ci_units import BUDGET, fixture, planned, units
+from test_ci_units import BUDGET, ROOT, fixture, planned, units
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -163,7 +165,10 @@ class FixturePoolTest(unittest.TestCase):
         self.assertNotIn(fleet, {name.split('#')[0] for name in units.planned_units(plan) + units.unplaced_units(plan)})
         self.assertNotIn('capacity', plan)
         # Each task file that a phase of the fixture copies still selects every unit of it.
-        for part in ('', '-start', '-refresh', '-reset', '-rules-read', '-converge-node'):
+        source = (ROOT / fleet).read_text()
+        phases = json.loads(re.search(r'^const phases = (\[.*\]);$', source, re.M).group(1))
+        self.assertEqual(18, len(phases))
+        for part in ('-' + phase if phase else '' for phase in phases):
             with self.subTest(part=part):
                 plan = units.plan([f'swamp/ansible/tasks/instance-fleet{part}.yml'], budget, fixtures, defaults)
                 self.assertEqual(82, sum(name.split('#')[0] == fleet for name in units.planned_units(plan)))

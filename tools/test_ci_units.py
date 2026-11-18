@@ -374,6 +374,21 @@ class RegistrySelectionTest(unittest.TestCase):
             with self.subTest(edit=edit):
                 self.assertEqual(self.changes(wide.replace('inputs = ["swamp/fleet-*.yml"]', edit)), (['swamp/process.ts'], False))
 
+    def test_a_narrowed_input_list_selects_the_fixture_when_the_change_touches_a_dropped_path(self):
+        (self.root / 'swamp').mkdir()
+        for name in ('fleet-start.yml', 'fleet-mounts.yml'):
+            (self.root / 'swamp' / name).write_text('---\n')
+        (self.root / 'swamp' / b'caf\xe9.yml'.decode('utf-8', 'surrogateescape')).write_text('---\n')
+        wide = self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/fleet-*.yml"]')
+        self.base = self.commit(wide)
+        narrow = wide.replace('["swamp/fleet-*.yml"]', '["swamp/fleet-start.yml"]')
+        # A tracked name that is not UTF-8 does not stop the plan.
+        self.assertEqual(self.changes(narrow), ([], True))
+        for edit in (lambda path: path.unlink(), lambda path: path.write_text('- changed\n')):
+            with self.subTest(edit=edit):
+                edit(self.root / 'swamp/fleet-mounts.yml')
+                self.assertEqual(self.changes(narrow), (['swamp/process.ts'], False))
+
     def test_fixture_inputs_edit_selects_only_its_file_through_cli(self):
         head = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
