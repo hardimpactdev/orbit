@@ -1,0 +1,13 @@
+{
+  "note": "Completed final-source local orb measurements with both fixture workers leased: the bridge and CI cases through bin/swamp-shape-gate, the cold build and repeat separately through bin/ci-units run with the unchanged 180-second unit ceiling. All four passed. The unchanged host helper does not enable pipelining. Estimates use ceil(body seconds * 2.1) + 1; the planner adds its unchanged six-second startup allowance. These are not hosted pool measurements. The former combined build/repeat declaration was a censored lower bound, not a completed timing: it cannot be divided between the two new cases to justify admission. The conservative cold-build estimate remains oversized, so the host capacity exemption remains. No execution budget changes.",
+  "base_revision": "e6e2e38e5bd5049d7279b1998756640b66a59f65",
+  "source_sha256": "bf0d56787ea48c5929edc32b0db2ea98f76440c00e2f35f5c73dc71a7cac1914",
+  "host_support_sha256": "c76a5af6dd9e97210fa1ca0bf4d3546807d73e1c4e5638de2ca920f70b1b8a54",
+  "estimate_factor": 2.1,
+  "case_seconds": {
+    "a build-list Node gets the Instance project, bridge, folders and image": 80.687687384,
+    "a prepared build-list Node changes nothing and rebuilds no image on a complete host rerun": 45.462197331999995,
+    "a build-list Node prepared before the bridge DNS and container ACL rules gets both on its next converge": 28.026080974,
+    "a CI Node's intent without Caddy parts gets the Instance side without the dev-port table, the own-site rules and the wake": 61.397191819
+  }
+}

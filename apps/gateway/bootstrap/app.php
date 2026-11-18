@@ -6,6 +6,9 @@ use App\Actions\Doctor\RunDoctorAction;
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Instances\InstanceRemovalReaper;
+use App\Domain\Instances\NestedFleetRefresh;
+use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\ExecutorWakeNotices;
 use App\Domain\Tasks\TaskSchedule;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
@@ -27,6 +30,7 @@ use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
 use App\Jobs\Instances\CheckDevelopmentDeployments;
 use App\Jobs\Operations\PollSwampScheduledResults;
+use App\Jobs\Operations\ReconcileExecutorWakes;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\WebSocket\CloseWebSocketOperations;
 use Illuminate\Console\Scheduling\Schedule;
@@ -80,6 +84,8 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // forwards cancels and frees the target of a run that nothing proves ended.
         GatewaySchedule::job($schedule, new ReconcileSwampOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
+        GatewaySchedule::job($schedule, new ReconcileExecutorWakes)->everyFiveSeconds()
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && (app(ExecutorWakeNotices::class)->pending() || app(ExecutorWake::class)->hasHandoffs()));
         // Reverb reports close WebSocket registry tasks; this fails the ones whose processes stopped reporting.
         GatewaySchedule::job($schedule, new CloseWebSocketOperations)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured());
@@ -92,7 +98,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Stage 8: a verified release admits the fleet rollout (release projection). Nodes outside the daytime set wait for the
         // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
-            ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.rollout'));
+            ->when(static fn (): bool => GatewayQueueRedis::configured() && (config()->boolean('fleet.rollout') || NestedFleetRefresh::enabled()));
         // ADR 0253: the nightly drained reboot pass, admitted after the rollout in the same window; it waits while the rollout runs.
         GatewaySchedule::job($schedule, new AdmitFleetReboot)->dailyAt('03:06')->timezone('Europe/Amsterdam')
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.reboot'));

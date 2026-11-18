@@ -189,15 +189,19 @@ describe('the Node executor diagnostic', function (): void {
             ->and($response->json('meta.request_id'))->toBe($operation->request_id)
             ->and($operation->node_id)->toBe($this->node->id)
             ->and($operation->status->value)->toBe($status)
-            ->and($operation->executor_result)->toMatchArray(['status' => 'done', 'operation' => (string) $operation->id])
             ->and($operation->result)->toBe($status === 'succeeded' ? $operation->executor_result : null);
+        if ($sequence === 'wrong target') {
+            expect($operation->executor_result)->toBeNull();
+        } else {
+            expect($operation->executor_result)->toMatchArray(['status' => 'done', 'operation' => (string) $operation->id]);
+        }
     })->with([
         'accepted and done already queued' => ['accepted first', 'succeeded', null],
         'done only' => ['done only', 'failed', 'executor.proof_not_accepted'],
         'owning Node cancels before replies arrive' => ['cancelled first', 'cancelled', null],
         'accepted after done' => ['done first', 'failed', 'executor.proof_not_accepted'],
         'foreign accepted then owning Node done' => ['wrong Node', 'failed', 'executor.proof_not_accepted'],
-        'done names another target' => ['wrong target', 'failed', 'executor.proof_result_mismatch'],
+        'done names another target' => ['wrong target', 'failed', 'executor.proof_timeout'],
     ]);
 
     it('returns the failed Operation when signing, publishing or waiting throws', function (string $stage): void {
@@ -363,6 +367,22 @@ it('recovers a lost hand-off by a repeat: the record keeps the first result and 
         ->status->toBe(OperationStatus::Succeeded);
 });
 
+it('keeps a proof first failure even if only a conflicting replay reaches its waiter', function (): void {
+    $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
+    $first = ['status' => 'refused', 'reason' => 'expired'];
+    $success = proofDone($operation, repeat: false, clock: 1);
+    $this->listener->receive($this->node->id, proofReply($operation, $first));
+    $this->queue->lists = [];
+    $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'accepted']));
+    $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'refused', 'reason' => 'replayed_nonce', 'first' => $success]));
+
+    $result = $this->proof->wait($operation, 0.5);
+    $this->proof->finish($operation, $result);
+
+    expect($result->line)->toBe($first)->and($result->reason())->toBe('expired')
+        ->and($operation->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.proof_refused');
+});
+
 it('fails the Operation with its result status and sends no order for a closed one or another kind', function (): void {
     $operation = $this->proof->run($this->node, fn (Closure $start): Operation => $start());
     $this->listener->receive($this->node->id, proofReply($operation, ['status' => 'refused', 'reason' => 'expired', 'node_clock_ms' => 3]));
@@ -398,6 +418,7 @@ it('keeps generic start and direct Operation paths closed for both executor proo
         'app/Domain/Executor/ExecutorProofOperation.php',
         'app/Domain/Operations/OperationKinds.php',
         'app/Http/Controllers/Api/NodeExecutorProofController.php',
+        'app/Infrastructure/Executor/ExecutorResults.php',
     ]);
 });
 

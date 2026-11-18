@@ -79,6 +79,7 @@ sequenceDiagram
     opt Node reachable
       SW->>N: Remove the role<br/>Ansible phase: remove
       %%> What it does:
+      %%> - on app-dev, withdraws its managed tmpfiles rule so later boots do not recreate the wake marker directory
       %%> - stops the role's services and removes its files, configuration, containers, firewall rules and certificates
       %%> - for a stale `router`: the Router LAN rules and the Router certificate folders of the Cluster's Routes; Caddy is rebuilt and reloaded, never stopped
       %%> Retained:

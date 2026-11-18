@@ -58,4 +58,23 @@ final readonly class GatewayReleaseSupersession
 
         return is_array($phase) && in_array($phase['outcome'] ?? null, ['superseded', 'unknown'], true);
     }
+
+    /**
+     * The verified manual deploy that put the current release live after the last resume while a
+     * newer green commit existed, a deliberate pin of an older commit. A manual deploy of the newest
+     * green commit, an automatic release, an adoption, or an earlier resume hands back to automation.
+     */
+    public static function manualPin(string $current, int $resumedAfter): ?GatewayRelease
+    {
+        $live = GatewayRelease::query()
+            ->where('release_id', $current)
+            ->where('outcome', 'verified')
+            ->latest('id')
+            ->first();
+
+        return $live instanceof GatewayRelease
+            && $live->trigger === 'deploy'
+            && $live->id > $resumedAfter
+            && self::superseded($live) ? $live : null;
+    }
 }

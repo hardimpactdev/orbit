@@ -27,7 +27,7 @@ The Gateway sends events to Laravel Reverb at `wss://reverb.orbit`. Reverb runs 
 
 A client connects to Reverb directly, not to the Gateway. The Gateway only publishes, as a Pusher-protocol client.
 
-The Gateway broadcasts from the process that changed the record. An API request sends its events after it has sent its response, in the order the changes committed, so the caller never waits for Reverb. A queued job, such as an [operation](/reference/operations), or a console command sends each event at once. So does the shutdown code that ends the Activity of a request killed by a fatal error, because the application never finishes that request. The Gateway never queues the broadcast itself. A change inside a database transaction broadcasts after the transaction commits, never while it holds SQLite's write lock, and a rolled-back change broadcasts nothing. A broadcast waits at most 2 seconds to connect and 5 seconds in total. A failed broadcast never fails the request: the Gateway logs the warning `Failed to broadcast a record event.` and continues. So an API response proves that the change happened, not that its event was sent.
+The Gateway broadcasts from the process that changed the record. An API request sends its events after it sends its response, in commit order, so the caller never waits for Reverb. A queued job, a console command or the shutdown code that ends an Activity after a fatal error sends each event at once. Executor wake Operation notices are the exception: SQLite records them with the change, and a background job hands them to `operations-prompt`. A retry may relay the same sequence again. No queue push or notice delivery runs on the activation worker. A rolled-back change broadcasts nothing. A broadcast waits at most 2 seconds to connect and 5 seconds in total. The Gateway logs failed broadcasts and continues. An API response proves that the change happened, not that its event was sent.
 
 The Gateway looks up the connection at most once per request, and only when the request broadcasts or asks for the realtime connection. It connects to the `websocket` Node's WireGuard address and verifies the name `reverb.orbit` against the Orbit root CA.
 
@@ -42,7 +42,7 @@ Every Gateway record event goes out on one private channel, `orbit`. The progres
 | `peer.identity_unknown` | 403 | The caller's address does not belong to an active Node. |
 | `node_access.required` | 403 | The caller has no access grant to the Gateway. |
 | `realtime.not_configured` | 404 | No `websocket` role is active. |
-| `broadcast.channel_forbidden` | 403 | The channel is a `presence-*` channel other than `presence-node.{id}`, a malformed `presence-node.*` name, or a `private-log-stream.*` channel. |
+| `broadcast.channel_forbidden` | 403 | The channel is a `presence-*` channel other than `presence-node.{id}`, a malformed `presence-node.*` name, a `private-log-stream.*` channel, or a `private-conn-profile.*` channel. |
 
 The same endpoint signs `private-operation.{id}` for an operation that exists, and a viewer membership on `presence-node.{id}`, as [Node agent channels](#node-agent-channels) describes. It refuses `private-operation.{id}` for a missing operation with `broadcast.channel_forbidden`.
 
@@ -61,7 +61,7 @@ A client asks the Gateway where Reverb is. `GET /api/v1/realtime` needs Gateway 
 
 ## Envelope
 
-Every event has the same shape. The broadcast name equals `type`.
+Every event has the same shape, except [`conn.profile.updated`](#conn-profile), which carries only its payload. The broadcast name equals `type`.
 
 | Field | Contract |
 | --- | --- |
@@ -193,6 +193,14 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 [Conn launches](/reference/conn#durable-launches-v1) do not use the ordinary Operation channels. If Conn sends a launch invalidation, only active peers with the matching profile binding and target Node access may receive it. It does not carry launch data; the client reads the launch snapshot over HTTP.
 
+### Conn profile
+
+| Event | Channel | When | `data` |
+| --- | --- | --- | --- |
+| `conn.profile.updated` | `private-conn-profile.{key}` | A Conn profile write committed. | Payload `{ profile_id, version }`, no envelope |
+
+Its payload is exactly `{"profile_id": 1, "version": 7}`, without the [envelope](#envelope). This event never goes out on `orbit`. Each key is one generation of one Node's profile binding, and only Conn's own `POST /api/v1/conn/broadcasting/auth` signs it, for that Node. [Profile events](/reference/conn#profile-events) owns the key, the audience and the loss rules.
+
 ### Deploy step output
 
 No component publishes `client-output` events now: the agent command that did was removed. A deploy step's output stays on the Node.
@@ -305,7 +313,7 @@ A WebSocket server holds long-lived connections. The Gateway process serves ever
 
 ### Broadcast where the change happens
 
-The Gateway broadcasts from the request or the job that made the change, not from a queued broadcast job. A queued event could arrive after a second change to the same record and look newer than it is. An operation's events carry its `sequence`, so a client can tell an old event from a new one even when they arrive out of order.
+The Gateway normally broadcasts from the request or the job that made the change. Executor wake Operation notices use a queued broadcast job to keep Reverb calls outside the activation worker's bound. They carry the notice recorded for each change, rather than rereading the latest state. An operation's events carry its `sequence`, so a client can tell an old event from a new one even when they arrive out of order.
 
 ### A channel for each operation
 

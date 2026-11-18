@@ -5,15 +5,21 @@ declare(strict_types=1);
 use App\Actions\Nodes\RemoveNodeAccessAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\NodeAccessRemovalHook;
 use App\Domain\Nodes\NodeRemovalHook;
 use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\ProjectExecutorWake;
+use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -22,6 +28,8 @@ use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -343,6 +351,91 @@ describe('installed clients', function (): void {
 });
 
 describe('renewal', function (): void {
+    it('recovers the same unstarted renewal and stages its vault copy only at native start', function (): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $original = holdOperation($this->phone, $this->environment);
+        endHold($original);
+        $pairing = ConnPairing::query()->findOrFail($original->target_id);
+        $admit = app(AdmitConnSessionHoldAction::class);
+
+        $renewal = $admit->renew($pairing);
+        Queue::fake([StartAdmittedSwampRun::class]);
+        $retried = $admit->renew($pairing);
+
+        expect($retried->id)->toBe($renewal->id)
+            ->and(ConnPairing::query()->count())->toBe(2)
+            ->and(collect($this->vault->sent)->where('type', 'vault.put'))->toHaveCount(0);
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $renewal->id);
+        app(DirectOperation::class)->workflowInputs($retried);
+        expect(collect($this->vault->sent)->where('type', 'vault.put'))->toHaveCount(1);
+    });
+
+    it('keeps the existing renewal when a duplicate enqueue fails', function (bool $claimed): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $original = holdOperation($this->phone, $this->environment);
+        endHold($original);
+        $pairing = ConnPairing::query()->findOrFail($original->target_id);
+        $admit = app(AdmitConnSessionHoldAction::class);
+        $renewal = $admit->renew($pairing);
+
+        Bus::shouldReceive('dispatch')->once()->with(Mockery::type(StartAdmittedSwampRun::class))
+            ->andReturnUsing(static function () use ($claimed, $renewal): never {
+                if ($claimed) {
+                    $renewal->update(['status' => OperationStatus::Running, 'attempts' => 1, 'state' => ['swamp_run_id' => 'fixture-live-renewal']]);
+                }
+
+                throw new RuntimeException('private duplicate queue error');
+            });
+
+        $retryFailure = null;
+        try {
+            $admit->renew($pairing);
+        } catch (ResourceOperationException $error) {
+            $retryFailure = $error;
+        }
+
+        expect($renewal->refresh())->status->toBe($claimed ? OperationStatus::Running : OperationStatus::Queued)->error_code->toBeNull()
+            ->and($renewal->state['swamp_run_id'] ?? null)->toBe($claimed ? 'fixture-live-renewal' : null)
+            ->and($retryFailure?->errorCode)->toBe('swamp.start_enqueue_failed');
+    })->with(['still queued' => [false], 'claimed and bound' => [true]]);
+
+    it('leaves the wake hook undelivered until a lost renewal job can be queued again', function (): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $original = holdOperation($this->phone, $this->environment);
+        endHold($original);
+        $held = ConnPairing::query()->findOrFail($original->target_id);
+        $this->travel(29)->days();
+        $this->environment->update(['admin_session_expires_at' => now()->addDays(20)]);
+        $renewal = app(AdmitConnSessionHoldAction::class)->renew($held);
+        $wake = Operation::query()->create([
+            'kind' => InstanceWake::Kind, 'target_type' => 'instance', 'target_id' => $this->environment->instance_id,
+            'node_id' => $this->environment->node_id, 'input' => [], 'status' => OperationStatus::Succeeded,
+            'state' => [ExecutorWake::State => true, ExecutorWake::FollowUpState => 'queued'],
+        ]);
+
+        Queue::fake([StartAdmittedSwampRun::class]);
+        $bus = Bus::getFacadeRoot();
+        Bus::partialMock()->shouldReceive('dispatch')->once()->with(Mockery::type(StartAdmittedSwampRun::class))
+            ->andThrow(new RuntimeException('private queue error'));
+        try {
+            expect(fn () => app()->call([new ProjectExecutorWake($wake->id), 'handle']))
+                ->toThrow(ResourceOperationException::class, 'The native workflow start retry could not be queued.');
+        } finally {
+            Bus::swap($bus);
+        }
+
+        expect($wake->refresh()->state)->toMatchArray([ExecutorWake::FollowUpState => 'queued'])
+            ->and($wake->state)->not->toHaveKey('wake_executor_projected')
+            ->and($renewal->refresh())->status->toBe(OperationStatus::Queued)->error_code->toBeNull();
+
+        app()->call([new ProjectExecutorWake($wake->id), 'handle']);
+
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $renewal->id);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+        expect($wake->refresh()->state)->toMatchArray([ExecutorWake::FollowUpState => 'delivered', 'wake_executor_projected' => true])
+            ->and(ConnPairing::query()->count())->toBe(2);
+    });
+
     it('renews a held session within seven days of its end with no device online, then revokes the old one', function (): void {
         endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
         $old = ConnPairing::query()->where('held', true)->sole();
@@ -597,6 +690,22 @@ describe('revoke and removal', function (): void {
         expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
             ->and(revokes()[0]->input['pairing_ids'])->toBe([$held->id]);
         readHeld($this->phone, $this->environment)->assertStatus(403)->assertJsonPath('error.code', 'node_access.required');
+    });
+
+    it('records the held-session revoke in the deletion transaction, so a re-added grant before the commit keeps it owed', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $held = ConnPairing::query()->where('held', true)->sole();
+
+        DB::transaction(function () use ($held): void {
+            app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+            // The obligation is recorded with the delete; only the native revoke waits for the commit.
+            expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
+                ->and(revokes())->toBe([]);
+            $this->phone->accessibleNodes()->attach($this->host->id);
+        });
+
+        expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(revokes()[0]->input['pairing_ids'])->toBe([$held->id]);
     });
 
     it('contributes the grant-removal hook', function (): void {

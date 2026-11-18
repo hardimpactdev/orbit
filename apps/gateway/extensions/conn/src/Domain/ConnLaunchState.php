@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
+use App\Actions\Operations\CancelOperationAction;
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -35,6 +37,19 @@ final readonly class ConnLaunchState
         }
 
         return Operation::query()->where('kind', OperationKinds::ConnLaunch)->where('target_type', ConnLaunchAccess::Target)->lockForUpdate()->findOrFail($id);
+    }
+
+    public function cancelQueuedWake(Operation $launch, bool $executorOnly = false): void
+    {
+        DB::transaction(static function () use ($launch, $executorOnly): void {
+            $wake = ConnLaunchChild::Wake->operation($launch, lock: true);
+            if ($wake !== null && (! $executorOnly || ExecutorWake::owns($wake))
+                && $wake->status === OperationStatus::Queued && $wake->attempts === 0 && $wake->cancel_requested_at === null
+                && ! isset($wake->state['swamp_run_id']) && ($wake->state['conn_launch_owner'] ?? null) === $launch->id
+                && ($wake->state['wake_shared'] ?? false) !== true) {
+                app(CancelOperationAction::class)->execute($wake);
+            }
+        });
     }
 
     /**

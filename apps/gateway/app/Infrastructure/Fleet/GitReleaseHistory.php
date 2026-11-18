@@ -53,37 +53,41 @@ final readonly class GitReleaseHistory implements ReleaseHistory
         return preg_match('/\A[1-9][0-9]{0,9}\z/D', $value) === 1 ? (int) $value : null;
     }
 
-    public function ancestors(string $commit, int $limit): array
+    public function ancestors(string $commit, int $limit): ?array
     {
         if (preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1 || $limit < 1) {
-            return [];
+            return null;
         }
 
         // Releases exist only for main's own commits, so the walk skips the commits of merged branches.
         $result = $this->git(['rev-list', '--first-parent', '--max-count='.($limit + 1), $commit]);
 
-        if (! $result instanceof CommandResult || ! $result->succeeded()) {
-            return [];
+        if (! $result instanceof CommandResult || ! $result->succeeded() || $result->truncated) {
+            return null;
         }
 
-        $commits = array_values(array_filter(
-            explode("\n", trim($result->stdout)),
-            static fn (string $line): bool => preg_match('/\A[0-9a-f]{40}\z/D', $line) === 1 && $line !== $commit,
-        ));
+        $commits = explode("\n", trim($result->stdout));
+        if ($commits[0] !== $commit || array_any($commits, static fn (string $sha): bool => preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1)) {
+            return null;
+        }
 
-        return array_slice($commits, 0, $limit);
+        return array_slice($commits, 1, $limit);
     }
 
-    public function unchanged(string $from, string $to, array $paths): bool
+    public function unchanged(string $from, string $to, array $paths): ?bool
     {
         if (preg_match('/\A[0-9a-f]{40}\z/D', $from) !== 1 || preg_match('/\A[0-9a-f]{40}\z/D', $to) !== 1 || $paths === []) {
-            return false;
+            return null;
         }
 
         $result = $this->git(['diff', '--quiet', $from, $to, '--', ...$paths]);
 
-        // Exit status 1 means a difference; anything but 0 is not proof that the paths match.
-        return $result instanceof CommandResult && $result->succeeded();
+        // Exit status 1 means a difference. Any other failure leaves the comparison unknown.
+        return match ($result?->exitCode) {
+            0 => true,
+            1 => false,
+            default => null,
+        };
     }
 
     /** @param  list<string>  $arguments */

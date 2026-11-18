@@ -103,6 +103,8 @@ function collection_access_policies(): array
             'conn:profile:list' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnProfilesController.php:50; shared profile settings follow docs/reference/conn.md:33,52.
             'conn:profile:settings:show' => ServingNode::Collection,
+            // extensions/conn/src/Http/Controllers/ConnRealtimeController.php:28 returns the public Reverb URL and key only (docs/reference/conn.md#profile-events).
+            'conn:realtime:show' => ServingNode::Collection,
             // app/Actions/DatabaseConnections/ListDatabaseConnectionsAction.php:15; database configuration requires Gateway authority.
             'database:list' => ServingNode::Gateway,
             // app/Actions/DatabaseConnections/ListDatabaseUsersAction.php:16; database user administration requires Gateway authority.

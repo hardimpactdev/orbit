@@ -163,9 +163,9 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   const state = () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
   return {
     state,
-    /** Select shipped refresh callers, preserving their order, vars, conditions and loops. */
-    scopeRefresh(selection: string[] | { through: string }, resultFields: string[] = []) {
-      const path = `${folder}/tasks/instance-fleet-refresh.yml`;
+    /** Select shipped phase callers, preserving their order, vars, conditions and loops. */
+    scopePhase(phase: "start" | "refresh", selection: string[] | { through: string; then?: string[] }, resultFields: string[] = []) {
+      const path = `${folder}/tasks/instance-fleet-${phase}.yml`;
       // deno-lint-ignore no-explicit-any
       const tasks = parse(Deno.readTextFileSync(path)) as Record<string, any>[];
       let selected;
@@ -175,6 +175,9 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
       } else {
         assertEquals(tasks.filter((task) => task.name === selection.through).length, 1);
         selected = tasks.slice(0, tasks.findIndex((task) => task.name === selection.through) + 1);
+        const remaining = tasks.slice(selected.length).filter((task) => selection.then?.includes(task.name));
+        assertEquals(remaining.map((task) => task.name), selection.then ?? []);
+        selected.push(...remaining);
       }
       if (resultFields.length) {
         const reports = selected.filter((task) => task.name === "Name what the refresh did");
@@ -299,7 +302,8 @@ const record = "/var/lib/orbit/fleet-refresh.json";
 /** What a base converge reads from `swamp/` (fleet-converge-inputs.json): their Git object IDs join the `converge` digest. */
 const convergeInputs: string[] = JSON.parse(Deno.readTextFileSync(new URL("fleet-converge-inputs.json", root))).inputs;
 const recordReads = [`cat ${record}`,
-  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp/ansible HEAD:apps/gateway/resources/machine-software HEAD:swamp`];
+  `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp`];
+const hostTreeRead = "git -c safe.directory=* -c core.quotePath=true -C /srv/workspace ls-tree -r -t --full-tree HEAD -- swamp/ansible apps/gateway/resources/machine-software";
 /** After the migrate, the nested Gateway prints the digest of each Node's base converge intent; it admits and writes nothing. */
 const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --host app-dev gateway app-dev app-prod";
 /** With the Club key every refresh reads the nested Gateway's Swamp tokens: names and dates, no secret. */
@@ -405,6 +409,8 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled());
+    f.change((state) => { for (const name of names) state.containers[name].status = "Running"; });
+    f.scopePhase("start", ["Name the fleet commands", "Restore the nested Gateway SSH trust"]);
     try {
       const first = f.run("start"); assert(first.ok, first.output);
       assertEquals(f.state().containers["nested-gateway"].files["/home/orbit/.orbit/ssh/known_hosts"], "recorded-node-pins");
@@ -424,6 +430,9 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled());
+    f.change((state) => { for (const name of names) state.containers[name].status = "Running"; });
+    f.scopePhase("start", ["Name the fleet commands", "Restore the nested Gateway SSH trust"]);
+    f.scopePhase("refresh", { through: "Restore SSH trust on the refreshed checkout" });
     try {
       f.change((state) => state.oldGatewayCommands = true);
       const old = f.run("start"); assert(old.ok, old.output);
@@ -456,7 +465,12 @@ Deno.test({
     const groupFile = "orbit:x:1000:\nwork:x:2760:orbit\noperators:x:3000:orbit,other\nincus-admin:x:999:existing\n";
     const readyGroups = groupFile.replace("incus-admin:x:999:existing\n", "incus-admin:x:999:existing,orbit\n");
     const hosts = ["nested-app-dev", "nested-app-prod"];
+    f.scopePhase("start", [
+      "Name the fleet commands", "Read which nested Nodes are Instance hosts", "Read the managed user's groups on nested Instance hosts",
+      "Give nested Instance hosts' managed users Incus socket access",
+    ]);
     f.change((state) => {
+      for (const name of names) state.containers[name].status = "Running";
       for (const name of names) state.containers[name].files["/etc/group"] = groupFile;
       for (const name of hosts) state.containers[name].files["/etc/orbit/instance-fleet-node"] = "Instance host\n";
     });
@@ -729,7 +743,7 @@ Deno.test({
   fn() {
     const f = refreshedOnce();
     try {
-      f.scopeRefresh(["Name the fleet commands", "Look for the Club key", "Wait for the state mounts"]);
+      f.scopePhase("refresh", ["Name the fleet commands", "Look for the Club key", "Wait for the state mounts"]);
       f.calls();
       f.change((state) => state.activating = 1);
       const refreshed = f.run("refresh");
@@ -739,7 +753,7 @@ Deno.test({
 
       const g = refreshedOnce();
       try {
-        g.scopeRefresh(["Name the fleet commands", "Look for the Club key", "Wait for the state mounts"]);
+        g.scopePhase("refresh", ["Name the fleet commands", "Look for the Club key", "Wait for the state mounts"]);
         g.change((state) => state.activating = 1000);
         const failed = g.run("refresh", ["-e", "fleet_boot_seconds=2", "-e", "fleet_ready_delay=1"]);
         assert(!failed.ok);
@@ -891,6 +905,10 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled(), { base: true });
+    f.scopePhase("start", [
+      "Name the fleet commands", "Read the state of the nested containers", "Start the nested containers",
+      "Start the nested containers together", "Check that the nested containers started",
+    ]);
     try {
       assert(f.run("start").ok);
       f.calls();
@@ -938,6 +956,10 @@ Deno.test({
   fn() {
     for (const clone of [null, undefined]) {
       const f = fixture(ruled(), { base: true });
+      f.scopePhase("start", [
+        "Name the fleet commands", "Read the state of the nested containers", "Start the nested containers",
+        "Start the nested containers together", "Check that the nested containers started",
+      ]);
       try {
         assert(f.run("start").ok);
         f.calls();
@@ -1231,7 +1253,7 @@ Deno.test({
         delete state.outer.files[record];
         delete state.outer.files[clubKey];
       });
-      f.scopeRefresh({ through: "Converge the due nested Nodes one at a time" });
+      f.scopePhase("refresh", { through: "Converge the due nested Nodes one at a time" });
       return f;
     };
     const f = due();
@@ -1418,6 +1440,7 @@ Deno.test({
       assertEquals(calls, [
         `test -s ${clubKey}`,
         ...recordReads,
+        hostTreeRead,
         recordRemove,
         ...mountReads,
         ...swampReads,
@@ -1485,6 +1508,10 @@ for (const [input, change, due, base, recorded] of inputCases) {
     ignore: !hasAnsible,
     fn() {
       const f = refreshedOnce();
+      f.scopePhase("start", [
+        "Name the fleet commands", "Read the state of the nested containers", "Start the nested containers",
+        "Start the nested containers together", "Check that the nested containers started",
+      ]);
       try {
         f.change((state) => {
           change(state);
@@ -1595,6 +1622,10 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("start", [
+      "Name the fleet commands", "Read the state of the nested containers", "Start the nested containers",
+      "Start the nested containers together", "Check that the nested containers started",
+    ]);
     try {
       const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
       assert(f.run("start").ok);
@@ -1618,6 +1649,10 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("start", [
+      "Name the fleet commands", "Read the state of the nested containers", "Start the nested containers",
+      "Start the nested containers together", "Check that the nested containers started",
+    ]);
     try {
       const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
       assert(f.run("start").ok);
@@ -1741,6 +1776,10 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("start", [
+      "Name the fleet commands", "Read the state of the nested containers", "Start the nested containers",
+      "Start the nested containers together", "Check that the nested containers started",
+    ]);
     try {
       // The failed-refresh case proves this boundary: no record survives a failed converge.
       f.change((state) => Object.assign(state, failedRefreshBoundary()));
@@ -1801,6 +1840,8 @@ function pythonJson(value: unknown): string {
   return JSON.stringify(value);
 }
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+const fixtureHostDigest = (intent = "4".repeat(64)) => sha256(`host ${sha256(pythonJson([`100644 blob ${"5".repeat(40)}\tapps/gateway/resources/machine-software/recipe.json`,
+  `100644 blob ${"3".repeat(40)}\tswamp/ansible/shared.yml`]))} ${intent}`);
 /** A time as the record keeps the oldest token's creation: `YYYYMMDDHHMMSS`, UTC. */
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
@@ -1820,8 +1861,7 @@ function seededRecord(converged: number | number[], fleet = fixtureFleet, tokens
     ...Object.fromEntries(convergedKeys.map((key, index) => [key, String(times[index])])),
     grants: sha256("a1 c3"),
     rules: sha256(pythonJson(fleetFiles)),
-    // The Instance host: the `swamp/ansible` tree and the machine-software recipe.
-    host: sha256("host c3 e5 " + "4".repeat(64)),
+    host: fixtureHostDigest(),
     tokens,
   };
 }
@@ -1834,8 +1874,7 @@ let fixtureFleet: unknown;
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 /** A started fleet with the record of a passed refresh, so a short case needs only its own refresh. */
 function seeded(converged: number | number[]) {
-  const f = fixture(ruled(), { club: true, base: true });
-  assert(f.run("start").ok);
+  const f = refreshedOnce();
   f.change((state) => {
     state.outer.files[record] = JSON.stringify(seededRecord(converged));
     state.doctorCalls = 0;
@@ -1888,6 +1927,9 @@ Deno.test({
   fn() {
     const before = nowSeconds();
     const f = seeded([before - 60, before - 60, before - 8 * 86400]);
+    f.scopePhase("refresh", {
+      through: "Time the converge", then: ["Name what the refresh did", "Write the refresh record"],
+    }, ["converge", "converge_reasons", "converge_nodes"]);
     try {
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
@@ -1909,6 +1951,9 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = seeded(nowSeconds() - 60);
+    f.scopePhase("refresh", {
+      through: "Time the converge", then: ["Name what the refresh did", "Write the refresh record"],
+    }, ["converge", "record", "converge_reasons"]);
     try {
       f.change((state) => state.intentDigestFail = true);
       const refreshed = f.run("refresh");
@@ -1933,6 +1978,9 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = seeded(nowSeconds() - 60);
+    f.scopePhase("refresh", {
+      through: "Time the converge", then: ["Name what the refresh did", "Write the refresh record"],
+    }, ["converge_reasons"]);
     try {
       f.change((state) => state.intentDigestErrors = { "app-dev": "RuntimeException: The Node has no Instance bridge yet." });
       const refreshed = f.run("refresh");
@@ -1983,6 +2031,9 @@ Deno.test({
       // The record now holds the remint's time, so the next refresh reads no list.
       const remintedAt = JSON.parse(f.state().outer.files[record]).tokens;
       assert(remintedAt >= refreshStarted && remintedAt <= refreshEnded, JSON.stringify({ remintedAt, refreshStarted, refreshEnded }));
+      f.scopePhase("refresh", {
+        through: "Renew the inner Swamp tokens", then: ["Name what the refresh did"],
+      }, ["tokens_reason"]);
       assert(f.run("refresh").ok);
       assertEquals([f.calls().includes(tokenRead), f.refreshed()?.tokens_reason], [false, "recorded"]);
     } finally {
@@ -1996,6 +2047,9 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("refresh", {
+      through: "Time the converge", then: ["Name what the refresh did", "Write the refresh record"],
+    }, ["host", "converge_nodes", "converge_reasons"]);
     try {
       const kept = f.run("refresh");
       assert(kept.ok, kept.output);
@@ -2023,6 +2077,9 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("refresh", {
+      through: "Time the converge", then: ["Name what the refresh did", "Write the refresh record"],
+    }, ["host"]);
     try {
       // The window's deployment: the fleet intent changed, so every Node's converge digest differs, and the record holds no `host`.
       f.change((state) => {
@@ -2041,10 +2098,82 @@ Deno.test({
 });
 
 Deno.test({
+  name: "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    const checkout = Deno.makeTempDirSync();
+    const git = (...args: string[]) => {
+      const result = new Deno.Command("git", { args: ["-C", checkout, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args] }).outputSync();
+      assert(result.success, new TextDecoder().decode(result.stderr));
+    };
+    const commit = (path: string, text: string) => {
+      Deno.mkdirSync(`${checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
+      Deno.writeTextFileSync(`${checkout}/${path}`, text);
+      git("add", "--", path);
+      git("commit", "-qm", "Change a fixture input");
+    };
+    const refresh = (due: boolean, gatewayChanged = false) => {
+      const result = f.run("refresh");
+      assert(result.ok, result.output);
+      const calls = f.calls();
+      assertEquals(calls.filter((call) => call.includes("/converge ")), due ? [convergeAdmit(2, true)] : []);
+      assertEquals(f.refreshed()!.host, due ? "converged" : "kept");
+      if (gatewayChanged) {
+        assert(ran(calls, parts.migrate));
+        assert(ran(calls, parts.restart));
+        assert(ran(calls, "/doctor"));
+      }
+      return JSON.parse(f.state().outer.files[record]);
+    };
+    try {
+      git("init", "-q");
+      const housekeeping = "swamp/ansible/tasks/swamp-housekeeping.yml";
+      commit(housekeeping, "stock housekeeping");
+      commit("swamp/ansible/tasks/instance-fleet-node.yml", "stock roles");
+      commit("apps/gateway/resources/machine-software/recipe.json", "stock recipe");
+      f.change((state) => {
+        state.hostCheckout = checkout;
+        const previous = JSON.parse(state.outer.files[record]);
+        delete previous.host;
+        state.outer.files[record] = JSON.stringify(previous);
+      });
+      const calibrated = refresh(true);
+      const bases = Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots]));
+      commit("swamp/ansible/conn-launch.yml", "Conn launch controller");
+      commit("swamp/ansible/t3_copy_rpc.mjs", "Task-turn RPC stdin");
+      commit(housekeeping, "updated housekeeping");
+      commit("swamp/ansible/tasks/role-swamp.yml", "updated Swamp role");
+      commit("swamp/ansible/tasks/swamp-binary-retention.yml", "updated Swamp retention");
+      f.change((state) => {
+        state.digests = { "apps/gateway": "a9" };
+        state.pendingMigration = true;
+      });
+      assertEquals(refresh(false, true).host, calibrated.host);
+      assertEquals(Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots])), bases);
+      commit(`swamp/ansible/unknown/${housekeeping}`, "a new path with the excluded suffix");
+      const changed = refresh(true);
+      assert(changed.host && changed.host !== calibrated.host);
+      f.change((state) => state.hostCheckout = `${checkout}/missing`);
+      const unreadable = refresh(true);
+      assertEquals(unreadable.host, undefined);
+      assertEquals(unreadable.converge_gateway, calibrated.converge_gateway);
+      assertEquals(unreadable.converge_app_prod, calibrated.converge_app_prod);
+    } finally {
+      f.cleanup();
+      Deno.removeSync(checkout, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
   name: "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("refresh", {
+      through: "Time the converge", then: ["Name what the refresh did", "Write the refresh record"],
+    }, ["host"]);
     try {
       // Run a short pending sequence and assert the rendered retry budget below. Replaying 200 polling subprocesses
       // only to cross the base converge's 180 retries spends CPU without testing another state transition.
@@ -2058,7 +2187,7 @@ Deno.test({
       assertStringIncludes(refreshed.output, "FAILED - RETRYING: [localhost]: Wait for the converge of each due nested Node (360 retries left)");
       assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
       assertEquals([f.refreshed()!.host, f.state().roleConverges, f.state().convergeRunning], ["converged", [2], { 2: 0 }]);
-      assertEquals(JSON.parse(f.state().outer.files[record]).host, sha256("host c3 e5 " + "5".repeat(64)));
+      assertEquals(JSON.parse(f.state().outer.files[record]).host, fixtureHostDigest("5".repeat(64)));
     } finally {
       f.cleanup();
     }
@@ -2070,6 +2199,9 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled(), { club: true, base: true, host: false });
+    f.scopePhase("refresh", {
+      through: "Time the converge", then: ["Name what the refresh did", "Write the refresh record"],
+    }, ["host"]);
     f.change((state) => {
       for (const key of Object.keys(state)) delete state[key];
       Object.assign(state, structuredClone(refreshedBoundary.state));
@@ -2165,6 +2297,10 @@ Deno.test({
       assertEquals([result.swamp, result.swamp_reason, result.swamp_version], ["installed", "changed", "20261114.210101.0-sha.537e03d1"]);
       // The install wrote the nested Gateway's disk: its base is retaken.
       assert((result.base_containers as string[]).includes("nested-gateway"), JSON.stringify(result));
+      f.scopePhase("refresh", [
+        "Name the fleet commands", "Look for the Club key", "Read the recipe's Swamp release", "Read the binary that serve runs",
+        "Work out whether the recipe's Swamp is due", "Install the recipe's Swamp on the nested Gateway", "Name what the refresh did",
+      ], ["swamp", "swamp_reason", "swamp_version"]);
       const again = f.run("refresh");
       assert(again.ok, again.output);
       // The calls and the result are this run's: two reads, no install.
@@ -2211,7 +2347,7 @@ Deno.test({
   fn() {
     const f = refreshedOnce();
     try {
-      f.scopeRefresh([
+      f.scopePhase("refresh", [
         "Name the fleet commands", "Look for the Club key", "Read the recipe's Swamp release", "Read the binary that serve runs",
         "Work out whether the recipe's Swamp is due", "Install the recipe's Swamp on the nested Gateway", "Name what the refresh did",
       ], ["swamp", "swamp_reason", "swamp_version"]);
@@ -2238,6 +2374,10 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("refresh", [
+      "Name the fleet commands", "Look for the Club key", "Read the recipe's Swamp release", "Read the binary that serve runs",
+      "Work out whether the recipe's Swamp is due", "Install the recipe's Swamp on the nested Gateway", "Name what the refresh did",
+    ], ["swamp", "swamp_reason", "swamp_version"]);
     try {
       f.change((state) => {
         delete state.outer.files[clubKey];
@@ -2286,6 +2426,12 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("refresh", {
+      through: "Name the due converge", then: [
+        "Keep the pinned shape tools in the container", "Read what the tools step did", "Report a failed tools step",
+        "Name what the refresh did", "Write the refresh record",
+      ],
+    }, ["tools", "tools_reason"]);
     try {
       for (const [edit, reason] of [
         [(state: Record<string, unknown>) => Object.assign(state, { tools: "missing", toolsFail: "venv" }), "venv"],
@@ -2433,6 +2579,7 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
+    f.scopePhase("refresh", ["Name the fleet commands", "Look for the Club key", "Read the services", "Check the services"]);
     try {
       // `systemctl is-active` exits 0 when one unit is active: the refresh checks each line, so one stopped worker fails it.
       f.change((state) => state.inactive = ["orbit-swamp-worker@b.service"]);
@@ -2495,6 +2642,7 @@ Deno.test({
   ignore: !hasAnsible,
   fn() {
     const f = fixture(withStatus("Running"), { club: true });
+    f.scopePhase("start", ["Name the fleet commands", "Keep the inner fleet off the egress proxy in a started copy"]);
     f.change((state) => state.tunnel = structuredClone(tunnelUp));
     const proxyCalls = (calls: string[]) => calls.filter((call) => call.startsWith("python3 -c <instance_node_services.py> proxy") || call.includes("try-restart"));
     const restart = ["-e", "fleet_proxy_restart_t3=true"];
@@ -2525,6 +2673,7 @@ Deno.test({
   fn() {
     const restart = ["-e", "fleet_proxy_restart_t3=true"];
     const f = fixture(withStatus("Running"), { club: true });
+    f.scopePhase("start", ["Name the fleet commands", "Keep the inner fleet off the egress proxy in a started copy"]);
     // The container last started at 22:58:00Z, before the Operation's admission at 22:59:00Z: somebody may work in it.
     f.change((state) => {
       state.tunnel = structuredClone(tunnelUp);

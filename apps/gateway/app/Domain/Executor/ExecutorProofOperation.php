@@ -14,6 +14,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use Closure;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Throwable;
@@ -127,7 +128,19 @@ final readonly class ExecutorProofOperation
     /** Waits for the Operation's result as a waiting request does, within `$boundSeconds` or `ORBIT_EXECUTOR_WAIT_MS`. */
     public function wait(Operation $operation, ?float $boundSeconds = null): ExecutorWaitResult
     {
-        return $this->wait->wait($operation->id, $boundSeconds);
+        $reply = $this->wait->wait($operation->id, $boundSeconds);
+        if ($reply->line === null) {
+            return $reply;
+        }
+        $first = $operation->fresh()?->executor_result;
+        $status = $first['status'] ?? null;
+        if ($first === null || ! is_string($status) || ($recorded = ExecutorWaitStatus::tryFrom($status)) === null) {
+            return $reply;
+        }
+        $transport = ['repeat', 'node_clock_ms'];
+
+        return Arr::except($first, $transport) == Arr::except($reply->line, $transport) ? $reply
+            : new ExecutorWaitResult($recorded, $reply->acceptedMs, $reply->elapsedMs, $first);
     }
 
     public function finish(Operation $operation, ExecutorWaitResult $result): void

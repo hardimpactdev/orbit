@@ -69,6 +69,19 @@ final class SwampDispatch
         DB::afterCommit(fn () => $this->dispatch());
     }
 
+    /** A recovery push may duplicate an existing start. Its failure cannot end that Operation. */
+    public function retry(Operation $operation): void
+    {
+        DB::afterCommit(static function () use ($operation): void {
+            try {
+                Bus::dispatch(new StartAdmittedSwampRun($operation->id));
+            } catch (Throwable $exception) {
+                Log::warning('Swamp start retry could not be queued', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                throw new ResourceOperationException('swamp.start_enqueue_failed', 'The native workflow start retry could not be queued.', 503);
+            }
+        });
+    }
+
     /**
      * A connected socket to `$endpoint` and whether it is the dispatch's shared one, which the caller must not close.
      * Outside a sharing scope it connects `$own`.

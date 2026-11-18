@@ -35,7 +35,7 @@ Laravel Horizon runs seven queues on the connection with five supervisors. The `
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
 | `operations` | 1 | The jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
 | `operation-starts` | 4 | Native run starts ([Direct Swamp starts](/reference/operations#direct-swamp-starts)), side by side. Job timeout 150 seconds, memory cap 256 MB |
-| `operations-prompt` | 1 | The projection of one Operation whose root run just ended ([How an operation runs](/reference/operations#how-an-operation-runs)). Job timeout 150 seconds, memory cap 256 MB |
+| `operations-prompt` | 1 | [Ended run projection](/reference/operations#how-an-operation-runs) and [executor wake work](/reference/executor#the-wake-inside-the-request): deferred publication, completion, notices and lifecycle follow-up. Job timeout 150 seconds, memory cap 256 MB |
 
 A pass on `operations` neither drops nor holds back a job on `operations-prompt`.
 
@@ -98,6 +98,8 @@ Logs, Activity, assistance signals, and the Horizon-only collection have no sche
 While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of image reconciliation or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue; the end of a root run also queues `ProjectEndedNativeRun` for that Operation on `operations-prompt` ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
+
+The scheduler checks for committed executor wake work every five seconds. When work is due, it queues the unique `ReconcileExecutorWakes` job on `operations-prompt`. That job relays notices and leases completion and hook handoffs, including lost or exhausted jobs. It runs apart from native reconciliation and never enqueues while it holds SQLite's writer. See [Wake handoff recovery](/reference/executor#wake-handoff-recovery).
 
 ## Horizon
 
