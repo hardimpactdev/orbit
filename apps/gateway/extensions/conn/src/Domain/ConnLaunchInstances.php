@@ -88,7 +88,7 @@ final readonly class ConnLaunchInstances
         $recorded = ConnLaunchChild::Completion->operation($launch);
         $completion = Operation::query()->where('kind', StartInstanceCompleteAction::Kind)
             ->where('target_type', 'instance')->where('target_id', $instance->id)->where('node_id', $launch->node_id)
-            ->where('id', '>', $recorded?->id ?? 0)->latest('id')->first();
+            ->where('id', '>', $recorded->id ?? 0)->latest('id')->first();
         if ($completion === null) {
             return $recorded;
         }
