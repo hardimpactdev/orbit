@@ -29,6 +29,7 @@ sequenceDiagram
     S-->>G: Verified acceptance
     Note over G: Publish the thread
     %%> Retry only publication after acceptance. Leave a deleted workspace absent.
+    %%> After a failed application completion, settlement records a later completion for this Instance and Node on the same ready launch.
   end
   C->>G: Follow or control
   G-->>C: Recorded snapshot

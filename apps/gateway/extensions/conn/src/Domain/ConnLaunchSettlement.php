@@ -46,10 +46,15 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         if (! $this->extensions->enabled('conn')) {
             return;
         }
+        $laterCompletion = ConnLaunchChild::completions()->from('operations as later_completions')->select('id')
+            ->whereColumn('node_id', 'operations.node_id')
+            ->whereColumn('target_id', 'operations.state->launch_instance_id')
+            ->whereColumn('id', '>', 'operations.state->launch_children->'.ConnLaunchChild::Completion->value.'->id');
         $launches = Operation::query()->where('kind', OperationKinds::ConnLaunch)
             ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())
                 ->orWhere(static fn ($query) => $query->where('status', OperationStatus::Succeeded)
-                    ->whereNotNull('state->launch_retry_requests->application')));
+                    ->where(static fn ($query) => $query->whereNotNull('state->launch_retry_requests->application')
+                        ->orWhereExists($laterCompletion))));
         foreach ($launches->lazyById() as $launch) {
             try {
                 $this->advance($launch);
@@ -77,7 +82,11 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             return;
         }
         if ($launch->status === OperationStatus::Succeeded) {
-            $this->application($launch, $this->instance($launch));
+            if (Arr::has($launch->state ?? [], 'launch_retry_requests.application')) {
+                $this->application($launch, $this->instance($launch));
+            } else {
+                $this->instances->observeCompletion($launch);
+            }
 
             return;
         }
@@ -164,7 +173,7 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
 
     private function application(Operation $launch, Instance $instance): void
     {
-        $complete = $this->instances->observeCompletion($launch, $instance);
+        $complete = $this->instances->observeCompletion($launch);
         $retry = Arr::has($launch->refresh()->state ?? [], 'launch_retry_requests.application');
         if ($complete !== null && (! $retry || ! $this->nativeCancellation->settled($complete))) {
             return;

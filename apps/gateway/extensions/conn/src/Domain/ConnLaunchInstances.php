@@ -84,18 +84,13 @@ final readonly class ConnLaunchInstances
             fn (): Operation => $this->sleep->start($instance, $launch->triggered_by, $launch->request_id));
     }
 
-    public function observeCompletion(Operation $launch, Instance $instance): ?Operation
+    public function observeCompletion(Operation $launch): ?Operation
     {
         $recorded = ConnLaunchChild::Completion->operation($launch);
-        $completion = Operation::query()->where('kind', StartInstanceCompleteAction::Kind)
-            ->where('target_type', 'instance')->where('target_id', $instance->id)->where('node_id', $launch->node_id)
-            ->where('id', '>', $recorded->id ?? 0)->latest('id')->first();
-        if ($completion === null) {
-            return $recorded;
-        }
+        $completion = ConnLaunchChild::completions()->where('target_id', ConnLaunchChild::instanceId($launch))
+            ->where('node_id', $launch->node_id)->where('id', '>', $recorded->id ?? 0)->latest('id')->first();
 
-        return $this->state->admitChild($launch->id, ConnLaunchChild::Completion, 'observe-completion:'.$completion->id,
-            static fn (): array => ['operation' => $completion, 'owned' => false]);
+        return $completion === null ? $recorded : $this->state->observeCompletion($launch->id, $completion);
     }
 
     public function complete(Operation $launch, Instance $instance): Operation

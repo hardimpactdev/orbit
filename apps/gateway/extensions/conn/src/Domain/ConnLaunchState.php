@@ -42,11 +42,24 @@ final readonly class ConnLaunchState
      */
     public function admitChild(int $id, ConnLaunchChild $role, string $key, Closure $admit): ?Operation
     {
-        return DB::transaction(function () use ($id, $role, $key, $admit): ?Operation {
+        return $this->setChild($id, $role, $key, $admit);
+    }
+
+    public function observeCompletion(int $id, Operation $completion): ?Operation
+    {
+        return $this->setChild($id, ConnLaunchChild::Completion, 'observe-completion:'.$completion->id,
+            static fn (): array => ['operation' => $completion, 'owned' => false], $completion->id);
+    }
+
+    /** @param Closure(Operation): array{operation: Operation, owned: bool} $admit */
+    private function setChild(int $id, ConnLaunchChild $role, string $key, Closure $admit, ?int $observedCompletionId = null): ?Operation
+    {
+        return DB::transaction(function () use ($id, $role, $key, $admit, $observedCompletionId): ?Operation {
             $launch = $this->locked($id);
+            $observingReadyLaunch = $observedCompletionId !== null && $launch->status === OperationStatus::Succeeded;
             if (($launch->cancel_requested_at !== null) !== ($role === ConnLaunchChild::Destroy)
                 || ($launch->status->terminal() && ($launch->status !== OperationStatus::Succeeded || $role !== ConnLaunchChild::Completion
-                    || ($role->operationId($launch) !== null && ! Arr::has($launch->state ?? [], 'launch_retry_requests.application'))))) {
+                    || ($role->operationId($launch) !== null && ! $observingReadyLaunch && ! Arr::has($launch->state ?? [], 'launch_retry_requests.application'))))) {
                 return null;
             }
 
@@ -55,12 +68,13 @@ final readonly class ConnLaunchState
             if (is_array($recorded)) {
                 $previous = $role->operation($launch) ?? throw new LogicException('The launch child is missing.');
                 $canReplaceSucceededWake = $role === ConnLaunchChild::Wake && ! isset($state['dispatch_committed_at']);
-                if (($recorded['key'] ?? null) === $key || ! app(NativeRunCancellation::class)->settled($previous)
+                if (($recorded['key'] ?? null) === $key || ($observedCompletionId !== null && $observedCompletionId <= $previous->id)
+                    || ! app(NativeRunCancellation::class)->settled($previous)
                     || ($previous->status === OperationStatus::Succeeded && ! $canReplaceSucceededWake)) {
                     return $previous;
                 }
                 $retryTarget = $role === ConnLaunchChild::Completion ? 'application' : 'launch';
-                if ($role !== ConnLaunchChild::Destroy && ! Arr::has($state, 'launch_retry_requests.'.$retryTarget)) {
+                if ($role !== ConnLaunchChild::Destroy && ! $observingReadyLaunch && ! Arr::has($state, 'launch_retry_requests.'.$retryTarget)) {
                     return $previous;
                 }
             }

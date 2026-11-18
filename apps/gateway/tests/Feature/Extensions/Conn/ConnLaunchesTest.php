@@ -1264,6 +1264,62 @@ describe('launch control and progress', function (): void {
             ->and(Operation::query()->where('kind', 'instance.complete')->count())->toBe(2);
     });
 
+    it('settles an external completion on the same ready launch without a Conn retry', function (): void {
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $path = "conn/launches/{$id}";
+        $this->instance->update(['status' => InstanceState::SourceResolved]);
+        $dispatch = launchFixtureDispatch($id);
+        $state = app(ConnLaunchState::class);
+        $state->accepted($id, $dispatch->id, now());
+        $state->published($id);
+        $launch = Operation::query()->findOrFail($id);
+        $actor = 'node:'.$this->desktop->id;
+        $failed = launchNativeReceipt($launch, 'instance.complete', actor: $actor);
+        $failed->update(['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_process_inactive',
+            'result' => ['ready' => false]]);
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance($launch);
+        $before = callLaunchApi($this->desktop, 'GET', $path)->assertOk()
+            ->assertJsonPath('data.phase', 'ready')->assertJsonPath('data.children.completion_operation_id', $failed->id)
+            ->assertJsonPath('data.readiness.application_preview', false)->json('data');
+
+        $started = now()->subSeconds(3);
+        $completed = launchNativeReceipt($launch, 'instance.complete', actor: $actor);
+        $success = ['status' => OperationStatus::Succeeded, 'started_at' => $started, 'finished_at' => now(),
+            'result' => ['ready' => true, 'instance_id' => $this->instance->id]];
+        $completed->update($success);
+        $this->instance->update(['status' => InstanceState::Active]);
+        foreach ([
+            ['kind' => 'instance.create'],
+            ['target_type' => 'project'],
+            ['target_id' => $this->instance->id + 1],
+            ['node_id' => $this->otherHost->id],
+        ] as $otherTarget) {
+            launchNativeReceipt($launch, 'instance.complete', actor: $actor)->update([...$success, ...$otherTarget]);
+        }
+
+        $settlement->sweep();
+        $after = callLaunchApi($this->desktop, 'GET', $path)->assertOk()
+            ->assertJsonPath('data.id', $id)->assertJsonPath('data.instance_id', $this->instance->id)
+            ->assertJsonPath('data.phase', 'ready')->assertJsonPath('data.status', 'succeeded')
+            ->assertJsonPath('data.children.completion_operation_id', $completed->id)
+            ->assertJsonPath('data.stages.application_preview.status', 'succeeded')
+            ->assertJsonPath('data.stages.application_preview.started_at', $started->toAtomString())
+            ->assertJsonPath('data.stages.application_preview.finished_at', $completed->finished_at->toAtomString())
+            ->assertJsonPath('data.stages.application_preview.error', null)->assertJsonPath('data.readiness.application_preview', true)
+            ->assertJsonPath('data.actions.retry_application.available', false)->assertJsonPath('data.poll_after_seconds', null)
+            ->assertJsonPath('data.thread', $before['thread'])->assertJsonPath('data.finished_at', $before['finished_at'])
+            ->json('data');
+        $settlement->sweep();
+        expect(callLaunchApi($this->phone, 'GET', $path)->assertOk()->json('data'))->toBe($after)
+            ->and(callLaunchApi($this->desktop, 'GET', 'conn/launches')->assertOk()->json('data'))->toBe([$after])
+            ->and($launch->refresh()->state['launch_children']['completion_operation_id']['owned'])->toBeFalse()
+            ->and(array_column($launch->state['launch_child_history']['completion_operation_id'], 'id'))->toBe([$failed->id])
+            ->and($launch->state)->not->toHaveKey('launch_last_retry')
+            ->and($completed->refresh()->state)->not->toHaveKey('conn_launch_owner')
+            ->and(Operation::query()->where('kind', ConnLaunchDispatchSource::Kind)->count())->toBe(1);
+    });
+
     it('keeps application progress and retries independent of a published thread', function (): void {
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
         $this->instance->update(['status' => InstanceState::SourceResolved]);

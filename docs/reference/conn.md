@@ -770,7 +770,7 @@ The `stages`, `actions`, and `children` fields are keyed JSON objects even in th
 
 Successful workspace preparation keeps its recorded times even if later launch preparation needs a retry or cancellation removes the server. A launch retry after a later preparation failure uses the same Instance. If an existing Instance slept again after its wake succeeded, Retry records a fresh wake or joins an open one before running a new T3 probe.
 
-Keep following `poll_after_seconds` after the launch reaches `ready` if application completion or an application retry is pending. Read `application_preview` separately from thread readiness. If preparation confirms there is no application to complete, the stage is `skipped` and reports no readiness value. When a Project process definition is required for retry, Orbit compares the expected unit with the one the failed completion used. Applying the repaired definition to the Instance first does not prevent a retry.
+Keep following `poll_after_seconds` after the launch reaches `ready` if application completion or an application retry is pending. Read `application_preview` separately from thread readiness. If you run [`instance:complete`](/cli/instance/complete) after a failed completion, the next settlement pass tracks that Operation on the same launch. The accepted thread and its first message stay the same. If preparation confirms there is no application to complete, the stage is `skipped` and reports no readiness value. When a Project process definition is required for retry, Orbit compares the expected unit with the one the failed completion used. Applying the repaired definition to the Instance first does not prevent a retry.
 
 ## Remove an Instance
 
