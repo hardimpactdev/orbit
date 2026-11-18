@@ -82,6 +82,23 @@
   when: "'incus-admin' not in item.stdout.split()"
   register: fleet_instance_host_membership
   changed_when: fleet_instance_host_membership.rc == 0
+# A nested Instance host heals its network pid files before each start of its Incus (files/incus-network-pid-heal.py,
+# docs/reference/development-containers.md#no-stale-network-pid-file). A guest of a copied seed or a `base` made before the heal booted
+# without it, maybe with an empty pid file and its bridge down. So each start, for a guest that ran already as for one it just
+# started, places the heal and its drop-in, heals, and restarts that guest's Incus when it removed a file. It never fails the start.
+- name: Heal the network pid files of nested Instance hosts
+  vars:
+    fleet_heal: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/incus-network-pid-heal.py') }}"
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '120'] + fleet_incus + ['exec', item, '--', 'python3', '-I', '-c', fleet_heal, 'ensure'] }}"
+    stdin: "{{ fleet_heal }}"
+    stdin_add_newline: false
+  loop: "{{ fleet_instance_hosts.results | selectattr('rc', 'eq', 0) | map(attribute='item') | list }}"
+  register: fleet_heal_run
+  changed_when: >-
+    fleet_heal_run.rc == 0 and fleet_heal_run.stdout_lines | length > 0
+    and ((fleet_heal_run.stdout_lines | last | from_json).placed or (fleet_heal_run.stdout_lines | last | from_json).removed | length > 0)
+  failed_when: false
 
 - { name: Restore the nested Gateway SSH trust, ansible.builtin.import_tasks: instance-fleet-known-hosts.yml }
 

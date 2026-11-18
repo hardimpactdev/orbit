@@ -601,6 +601,9 @@
       register: fleet_shrink_run
       changed_when: fleet_shrink_run.rc == 0
       failed_when: false
+    - name: Clear the network runtime files before base
+      ansible.builtin.include_tasks: instance-fleet-runtime.yml
+      vars: { fleet_runtime_names: "{{ fleet_base_targets }}" }
     - name: Take base
       ansible.builtin.command: { argv: "{{ ['timeout', '180'] + fleet_incus + ['snapshot', 'create', item, 'base'] }}" }
       loop: "{{ fleet_base_targets }}"
