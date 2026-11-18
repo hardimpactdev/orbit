@@ -364,7 +364,7 @@ pub(crate) fn ensure_route(value: &serde_json::Value) -> Outcome {
     }
 }
 
-/// Waits until a URL answers with any HTTP status, up to `seconds`.
+/// Waits until a URL answers with a 2xx status, up to `seconds`: a server that is still starting may answer 503 first.
 pub(crate) fn http_wait(value: &serde_json::Value) -> Outcome {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -384,7 +384,7 @@ pub(crate) fn http_wait(value: &serde_json::Value) -> Outcome {
         let answered = Command::new("curl")
             .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "2", "--noproxy", "*", &wait.url])
             .output()
-            .is_ok_and(|out| out.stdout.first().is_some_and(|b| (b'1'..=b'5').contains(b)));
+            .is_ok_and(|out| out.stdout.first() == Some(&b'2'));
         if answered {
             return applied(0);
         }

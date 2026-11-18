@@ -180,7 +180,8 @@ final class InstanceCreateFlow
             'sess' => ['instance' => $c['name'], 't3' => $clone['t3']['t3'], 'label' => $key === '0' ? 'Orbit Gateway' : 'Orbit Swamp'],
             'project' => ['instance' => $c['name'], 't3' => $clone['t3']['t3'], 'workspace' => $c['workspace'], 'title' => $clone['t3']['title'],
                 'mark' => $clone['t3']['project_mark']],
-            't3wait' => ['url' => $clone['t3']['url'], 'seconds' => (int) $clone['t3']['ready_seconds']],
+            // T3 is ready when its environment answers, as the guest script's curl --fail waits for.
+            't3wait' => ['url' => $clone['t3']['url'].'/.well-known/t3/environment', 'seconds' => (int) $clone['t3']['ready_seconds']],
         };
     }
 

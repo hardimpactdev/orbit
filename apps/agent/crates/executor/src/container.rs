@@ -420,7 +420,11 @@ pub(crate) fn t3_session_issue(value: &serde_json::Value) -> Outcome {
     }
     match exec(&i.instance, AGENT, "/home/agent", &[&i.t3, "auth", "session", "issue", "--label", &i.label, "--token-only"], None) {
         Ok(token) if !token.trim().is_empty() => text(token.trim().to_owned()),
-        _ => failed("t3.session_issue_failed"),
+        Ok(_) => failed("t3.session_issue_empty"),
+        Err(error) => {
+            eprintln!("t3.session_issue: {error}");
+            failed("t3.session_issue_failed")
+        }
     }
 }
 
@@ -447,6 +451,10 @@ pub(crate) fn t3_project_add(value: &serde_json::Value) -> Outcome {
     }
     match exec(&a.instance, AGENT, "/home/agent", &[&a.t3, "project", "add", &a.workspace, "--title", &a.title], None) {
         Ok(out) if push(&a.instance, &a.mark, format!("{}\n", out.trim()).as_bytes(), AGENT, AGENT, "0600") => applied(1),
-        _ => failed("t3.project_add_failed"),
+        Ok(_) => failed("t3.project_mark_failed"),
+        Err(error) => {
+            eprintln!("t3.project_add: {error}");
+            failed("t3.project_add_failed")
+        }
     }
 }
