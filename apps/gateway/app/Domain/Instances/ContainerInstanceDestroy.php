@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\InstanceMigration\InstanceMigration;
-use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\InstancePower;
 use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
@@ -62,7 +61,6 @@ final readonly class ContainerInstanceDestroy
             'mirror' => InstanceContainer::mirror($instance), 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
             // A sleeping Instance leaves its marker behind on the Node; no later Instance or domain may find it.
             'asleep_marker' => InstancePower::markerPath($instance),
-            ...(ExecutorPowerIntent::forInstance($instance, $runtime) ? [ExecutorPowerIntent::Managed => true] : []),
             // The removal deletes an inner volume with its snapshots, after the container.
             ...($runtime->inner_volume === null ? [] : ['inner_volume' => $runtime->inner_volume]),
             // A proof copy's removal releases its CI place: the last hold on the Node starts the runners that the holds stopped

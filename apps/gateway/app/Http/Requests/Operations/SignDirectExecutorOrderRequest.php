@@ -11,7 +11,7 @@ final class SignDirectExecutorOrderRequest extends OperationPeerRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return ['run_id' => ['required', 'uuid'], 'phase' => ['required', 'in:power,resume,boot,removal']];
+        return ['run_id' => ['required', 'uuid'], 'phase' => ['required', 'in:power,resume,boot']];
     }
 
     /** @return list<\Closure(Validator): void> */

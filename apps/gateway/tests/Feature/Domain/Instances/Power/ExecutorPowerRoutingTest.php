@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Executor\ExecutorOrderBroadcast;
-use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
@@ -301,7 +300,6 @@ it('signs only the lifecycle action admitted for the bound run', function (strin
     $intent = ['signed_power' => true, 'executor_lifecycle_phase' => $phase];
     $input = match ($kind) {
         'instance.deploy' => ['deployment' => $intent],
-        'instance.destroy', 'instance.unregister' => ['container_destroy' => app(ContainerInstanceDestroy::class)->capture($instance)],
         default => $intent,
     };
     $operation = app(StartOperationAction::class)->execute($kind, 'instance', $instance->id, $instance->node_id, $input,
@@ -321,9 +319,22 @@ it('signs only the lifecycle action admitted for the bound run', function (strin
     'resume deploy' => ['instance.deploy', 'resume', 'boot'],
     'boot deploy' => ['instance.deploy', 'boot', 'resume'],
     'boot start' => [InstanceStart::Kind, 'boot', 'resume'],
-    'destroy' => ['instance.destroy', 'removal', 'boot'],
-    'unregister' => ['instance.unregister', 'removal', 'boot'],
 ]);
+
+it('signs no order for a destroy, which only removes both engines\' files', function (): void {
+    $instance = managedPowerFixture();
+    $swamp = containerDefaultNode('swamp-worker', '10.44.0.8', listed: false);
+    $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    $operation = app(StartOperationAction::class)->execute('instance.destroy', 'instance', $instance->id, $instance->node_id,
+        ['container_destroy' => ['name' => 'instance-'.$instance->id]], 'cli', null, start: false);
+    $run = (string) Str::uuid();
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
+
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.8'])
+        ->postJson('/api/v1/direct-operations/'.$operation->id.'/executor/sign', ['run_id' => $run, 'phase' => 'removal'])
+        ->assertUnprocessable();
+    expect(ExecutorPowerIntent::action($operation->refresh(), 'boot'))->toBeNull();
+});
 
 it('projects the SSH refusal even if notifying the waiter fails', function (): void {
     $instance = managedPowerFixture();

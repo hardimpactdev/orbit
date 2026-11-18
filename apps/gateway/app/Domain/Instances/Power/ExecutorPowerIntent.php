@@ -60,7 +60,6 @@ final class ExecutorPowerIntent
             return null;
         }
         $deployment = $operation->input['deployment'] ?? null;
-        $removal = $operation->input['container_destroy'] ?? null;
         $lifecycle = match ($operation->kind) {
             InstanceStart::Kind => $operation->input,
             'instance.deploy' => is_array($deployment) ? $deployment : [],
@@ -76,8 +75,6 @@ final class ExecutorPowerIntent
                 'boot' => 'discard',
                 default => null,
             },
-            $phase === 'removal' && in_array($operation->kind, ['instance.destroy', 'instance.unregister'], true)
-                && is_array($removal) && ($removal[self::Managed] ?? false) === true => 'discard',
             default => null,
         };
     }

@@ -89,8 +89,14 @@ Deno.test({
             Deno.writeTextFileSync(
                 `${folder}/instance-container-destroy.yml`,
                 Deno.readTextFileSync(new URL("instance-container-destroy.yml", root))
-                    .replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`),
+                    .replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`)
+                    .replaceAll("/var/lib/orbit/executor/power", `${folder}/executor-power`),
             );
+            // The Rust executor's freeze state of each Instance: instance-7's goes with it, and instance-8's stays.
+            for (const id of [7, 8]) {
+                Deno.mkdirSync(`${folder}/executor-power/${id}`, { recursive: true });
+                for (const name of ["plan.json", "limits.json", "receipt.json"]) Deno.writeTextFileSync(`${folder}/executor-power/${id}/${name}`, "{}");
+            }
             // The stopped instance-7 sleeps: its asleep marker goes with it, and instance-8's stays.
             Deno.mkdirSync(`${folder}/hibernation`);
             for (const id of [7, 8]) Deno.writeTextFileSync(`${folder}/hibernation/app-instance-${id}.asleep`, "");
@@ -237,6 +243,8 @@ Deno.test({
             assertEquals([...Deno.readDirSync(`${folder}/hibernation`)].map((entry) => entry.name), ["app-instance-8.asleep"]);
             // The helper's files of instance-7 go through its lock; instance-8's stay.
             assertEquals([helperCalls(folder), state.discarded], [[["discard", "--instance", "7"]], [7]]);
+            assertEquals([...Deno.readDirSync(`${folder}/executor-power`)].map((entry) => entry.name), ["8"]);
+            assertEquals([...Deno.readDirSync(`${folder}/executor-power/8`)].map((entry) => entry.name).sort(), ["limits.json", "plan.json", "receipt.json"]);
             assert(!Deno.statSync(`${folder}/mail-state`).isFile);
             assertEquals([...Deno.readDirSync(`${folder}/mail-state`)].map((entry) => entry.name), ["instance-8"]);
             assertEquals(Deno.readTextFileSync(`${folder}/mail-state/instance-8/activation.json`), "[]");
