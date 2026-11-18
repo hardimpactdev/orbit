@@ -19,6 +19,8 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Models\Node;
 use App\Support\ValidatedData;
+use RuntimeException;
+use Symfony\Component\Yaml\Yaml;
 
 /** Fingerprints of the declared inputs to release-time Node work. Agent and CLI delivery have their own pins. */
 final readonly class ReleaseNodeInputs
@@ -32,10 +34,14 @@ final readonly class ReleaseNodeInputs
         'apps/gateway/app/Domain/Nodes/NodeNetworkConvergeInput.php',
         'swamp/ansible/tasks/node-kernel-policy.yml',
         'swamp/ansible/tasks/node-update-policy.yml',
-        'swamp/ansible/tasks/node-converge-network.yml',
-        'swamp/ansible/tasks/node-converge-hub.yml',
         'apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php',
         'swamp/ansible/tasks/gateway-runtime.yml',
+    ];
+
+    /** The network phase reconciles the target and can import the hub separately before a peer. */
+    private const array HostNetworkTasks = [
+        'swamp/ansible/tasks/node-converge-network.yml',
+        'swamp/ansible/tasks/node-converge-hub.yml',
     ];
 
     /** The plays and materializer shared by every role converge. */
@@ -104,8 +110,53 @@ final readonly class ReleaseNodeInputs
         $hostTools = array_diff($recipe->profile('base'), $roleTools);
         array_push($hostTools, ...ValidatedData::stringList($raw['common']));
 
+        $network = [];
+        foreach (self::HostNetworkTasks as $file) {
+            $this->readNetworkTask($root, $file, $network);
+        }
+        ksort($network);
+
         return self::digest([$raw['ubuntu'], $raw['architectures'], $raw['artifact_mirror'], $raw['git'],
-            $this->pins($recipe, $hostTools), $this->files($root, self::HostFiles)]);
+            $this->pins($recipe, $hostTools), $this->files($root, self::HostFiles), $network]);
+    }
+
+    /** @param array<string, string> $files */
+    private function readNetworkTask(string $root, string $file, array &$files): void
+    {
+        if (isset($files[$file])) {
+            return;
+        }
+        $path = $root.'/'.$file;
+        if (! is_file($path) || ($contents = file_get_contents($path)) === false) {
+            throw new RuntimeException('Cannot read a host network task.');
+        }
+        $files[$file] = hash('sha256', $contents);
+        foreach ($this->networkIncludes(Yaml::parse($contents)) as $include) {
+            $this->readNetworkTask($root, dirname($file).'/'.$include, $files);
+        }
+    }
+
+    /** @return iterable<string> */
+    private function networkIncludes(mixed $tasks): iterable
+    {
+        if (! is_array($tasks) || ! array_is_list($tasks)) {
+            throw new RuntimeException('Expected a host network task list.');
+        }
+        foreach ($tasks as $entry) {
+            $task = ValidatedData::object($entry);
+            foreach ($task as $name => $value) {
+                if (in_array($name, ['block', 'rescue', 'always'], true)) {
+                    yield from $this->networkIncludes($value);
+                }
+                if (in_array($name, ['ansible.builtin.include_tasks', 'ansible.builtin.import_tasks', 'include_tasks', 'import_tasks'], true)) {
+                    $file = is_array($value) ? ($value['file'] ?? null) : $value;
+                    if (! is_string($file) || preg_match('~\A(?:[a-zA-Z0-9_-]+/)*[a-zA-Z0-9_-]+\.ya?ml\z~D', $file) !== 1) {
+                        throw new RuntimeException('Host network tasks must include a literal relative task file.');
+                    }
+                    yield $file;
+                }
+            }
+        }
     }
 
     /**
@@ -250,7 +301,7 @@ final readonly class ReleaseNodeInputs
         $result = [];
         foreach ($patterns as $pattern) {
             foreach (glob($root.'/'.$pattern) ?: [] as $file) {
-                $result[substr($file, strlen($root) + 1)] = hash_file('sha256', $file) ?: throw new \RuntimeException('Cannot hash a release input.');
+                $result[substr($file, strlen($root) + 1)] = hash_file('sha256', $file) ?: throw new RuntimeException('Cannot hash a release input.');
             }
         }
 

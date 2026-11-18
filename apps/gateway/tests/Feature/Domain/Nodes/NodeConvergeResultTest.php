@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
@@ -384,6 +385,25 @@ it('keeps the seed listener record when the roles phase of a ci-runner converge 
 
     expect($this->node->refresh()->seed_sender_id)->toBe($default->id);
 });
+
+it('renews the recorded host approval only when the converge that captured it succeeds', function (bool $full, ?string $failure): void {
+    $prior = str_repeat('a', 64);
+    $desired = app(ReleaseNodeInputs::class)->host();
+    $this->node->forceFill(['release_inputs' => ['host' => $prior]])->saveQuietly();
+    $snapshot = $this->operation->input['_converge'] + ['release_inputs' => ['roles' => [], 'host' => $full ? $desired : null]];
+    $this->operation->update(['input' => ['_converge' => $snapshot]]);
+    $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
+
+    $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native,
+        'status' => $failure === null ? 'succeeded' : 'failed', 'result' => converge_receipt($failure, $observations)]);
+
+    expect($operation->status)->toBe($failure === null ? OperationStatus::Succeeded : OperationStatus::Failed)
+        ->and($this->node->refresh()->release_inputs['host'])->toBe($full && $failure === null ? $desired : $prior);
+})->with([
+    'successful host converge' => [true, null],
+    'failed host converge' => [true, 'network'],
+    'successful role converge' => [false, null],
+]);
 
 it('retains the deferred T3 receipt without crediting its role, then credits an idle retry', function (): void {
     $role = $this->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);

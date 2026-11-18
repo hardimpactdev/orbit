@@ -42,6 +42,8 @@ use App\Models\ProblemFingerprint;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
@@ -320,11 +322,79 @@ it('refuses host-wide input changes before starting a delivery or a role converg
         ->and(Operation::query()->count())->toBe(0);
 });
 
+function copyRolloutHostTree(string $path): void
+{
+    $root = dirname(base_path(), 2);
+    $recipe = '/apps/gateway/resources/machine-software/recipe.json';
+    File::ensureDirectoryExists(dirname($path.$recipe));
+    File::copy($root.$recipe, $path.$recipe);
+    foreach (['/apps/gateway/app/Domain/Nodes', '/swamp/ansible/tasks'] as $folder) {
+        File::copyDirectory($root.$folder, $path.$folder);
+    }
+}
+
+it('requires host approval for a network child task change before fleet work or default refresh', function (?string $child): void {
+    Queue::fake();
+    Log::spy();
+    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
+    config(['instances.nested_fleet_refresh' => true]);
+    $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
+    copyRolloutHostTree($previous);
+    $inputs = app(ReleaseNodeInputs::class);
+    expect($inputs->host($previous))->toBe($inputs->host());
+
+    file_put_contents($this->base.'/agent.json', json_encode(['commit' => RolloutCommit, 'version' => '1.2.3',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']]], JSON_THROW_ON_ERROR));
+    $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
+    app()->instance(AgentDelivery::class, $delivery);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    $rolesBefore = $inputs->roles($dev, root: $previous);
+    if ($child !== null) {
+        file_put_contents($previous.'/swamp/ansible/tasks/'.$child.'.yml', "\n# Change just this included network task.\n", FILE_APPEND);
+    }
+    expect($inputs->roles($dev, root: $previous))->toBe($rolesBefore);
+
+    foreach (Node::query()->whereKey(array_values($this->nodes))->get() as $node) {
+        $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
+            'agent' => $delivery->pin($node),
+            'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($node)),
+        ]])->saveQuietly();
+    }
+    $release = GatewayRelease::query()->sole();
+    $release->update(['previous_release_id' => substr(OtherCommit, 0, 12), 'phases' => [
+        ...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []],
+    ]]);
+
+    app()->call([new AdmitFleetRollout($release->id), 'handle']);
+
+    $fleet = $release->refresh()->phases['fleet'];
+    expect(Operation::query()->count())->toBe(0);
+    if ($child === null) {
+        expect($fleet['status'])->toBe('current');
+        Log::shouldHaveReceived('info')->with('Nested-fleet refresh admissions.', ['commit' => RolloutCommit, 'defaults' => []])->once();
+    } else {
+        expect($fleet['status'])->toBe('failed')
+            ->and($fleet['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed')
+            ->and($dev->refresh()->release_inputs['host'])->toBe($inputs->host($previous));
+        Log::shouldNotHaveReceived('info', ['Nested-fleet refresh admissions.', Mockery::any()]);
+    }
+})->with([
+    'unchanged control' => [null],
+    'hub move' => ['node-converge-hub-move'],
+    'address repair' => ['node-converge-address'],
+    'hub switch' => ['node-converge-hub-switch'],
+    'hub LAN proof' => ['node-hub-lan-proof'],
+    'hub peer check' => ['node-converge-hub-peers'],
+    'peer handshake' => ['node-converge-handshake'],
+    'hub prune through the hub task' => ['node-converge-hub-prune'],
+    'absent peer filter through the hub task' => ['node-converge-hub-filter-absent'],
+    'hub source through the hub task' => ['node-hub-source'],
+]);
+
 it('preserves every prior host approval before an early halt and across a superseding release', function (): void {
     $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
-    $resource = '/apps/gateway/resources/machine-software/recipe.json';
-    mkdir(dirname($previous.$resource), 0700, true);
-    copy(dirname(base_path(), 2).$resource, $previous.$resource);
+    copyRolloutHostTree($previous);
+    file_put_contents($previous.'/swamp/ansible/tasks/node-kernel-policy.yml', "\n# Earlier unapproved host change.\n", FILE_APPEND);
 
     $release = GatewayRelease::query()->sole();
     $release->update(['previous_release_id' => substr(OtherCommit, 0, 12), 'phases' => [
@@ -567,9 +637,8 @@ it('fingerprints the Swamp helper tool pins from the selected software plan', fu
     $swamp = $node->roles()->where('role', RoleName::Swamp)->sole();
     $database = $node->roles()->where('role', RoleName::Database)->sole();
     $root = $this->base.'/recipe-tree';
+    copyRolloutHostTree($root);
     $file = $root.'/apps/gateway/resources/machine-software/recipe.json';
-    mkdir(dirname($file), 0700, true);
-    copy(resource_path('machine-software/recipe.json'), $file);
     $inputs = app(ReleaseNodeInputs::class);
     $before = $inputs->roles($node, root: $root);
     $host = $inputs->host($root);
