@@ -351,6 +351,29 @@ class RegistrySelectionTest(unittest.TestCase):
             with self.subTest(edit=edit):
                 self.assertEqual(self.changes(self.initial.replace('cost = 40', edit))[0], ['swamp/process.ts'])
 
+    def test_an_input_list_that_names_no_new_file_is_a_machinery_change(self):
+        for name in ('fleet-start.yml', 'fleet-reset.yml', 'fleet-node.yml', 'other.yml'):
+            (self.root / 'swamp').mkdir(exist_ok=True)
+            (self.root / 'swamp' / name).write_text('---\n')
+        wide = self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/fleet-*.yml"]')
+        self.base = self.commit(wide)
+        fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}
+        budget = {**BUDGET, 'machinery_canary': ['swamp/egress.py']}
+        # The list drops fleet-node.yml, or only reorders: the fixture has nothing new to test.
+        for inputs in ('["swamp/fleet-start.yml", "swamp/fleet-reset.yml"]', '["swamp/fleet-s*.yml"]', '[]'):
+            with self.subTest(inputs=inputs):
+                changed, shared = self.changes(wide.replace('["swamp/fleet-*.yml"]', inputs))
+                self.assertEqual((changed, shared), ([], True))
+                result = units.plan(['.github/ci/checks.toml'], budget, fixtures, [], registry_changed=changed, shared_registry=shared)
+                self.assertEqual(names(result), ['swamp/egress.py'])
+        # A list that names a file the old list did not match, or a file that does not exist, selects the fixture.
+        # So does a narrowed list with another changed key.
+        for edit in ('inputs = ["swamp/fleet-start.yml", "swamp/other.yml"]', 'inputs = ["swamp/*.yml"]',
+                     'inputs = ["swamp/fleet-start.yml", "swamp/absent.yml"]',
+                     'inputs = ["swamp/fleet-start.yml"]\nhost_programs = ["jq"]'):
+            with self.subTest(edit=edit):
+                self.assertEqual(self.changes(wide.replace('inputs = ["swamp/fleet-*.yml"]', edit)), (['swamp/process.ts'], False))
+
     def test_fixture_inputs_edit_selects_only_its_file_through_cli(self):
         head = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}

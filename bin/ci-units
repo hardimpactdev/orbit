@@ -295,10 +295,32 @@ def registry_changes(base, head):
     reordered = [file for file in old if file in new] != [file for file in new if file in old]
     shared = reordered or any(before.get(key) != after.get(key) for key in ('budget', 'fixtures', 'runner-pool'))
     # Scheduling metadata decides where and when a fixture runs, not what it tests. A change to it alone is a
-    # machinery change: it selects the machinery canary. A change to cases, inputs or any other key selects the fixture.
+    # machinery change: it selects the machinery canary. A change to cases, to inputs that name a new file or to any other
+    # key selects the fixture.
     test = lambda entry: {key: value for key, value in entry.items() if key not in SCHEDULING}
+    tracked = []
+
+    def narrowed(before, after):
+        """The entries differ only by an input list that names no new file. Each pattern the list gained matches tracked
+        files, and the old list matched every one of them. The fixture then has nothing new to test, and a changed path
+        that the new list still names selects it by that path. Such an edit is a machinery change, like scheduling metadata."""
+        if test({**before, 'inputs': []}) != test({**after, 'inputs': []}):
+            return False
+        if not tracked:
+            tracked.extend(subprocess.check_output(['git', 'ls-tree', '-rz', '--full-tree', '--name-only', head],
+                                                   text=True, timeout=60).split('\0'))
+        earlier = [selection_regex(pattern) for pattern in before.get('inputs', [])]
+        for pattern in after.get('inputs', []):
+            if pattern in before.get('inputs', []):
+                continue
+            matched = [path for path in tracked if selection_regex(pattern).fullmatch(path)]
+            if not matched or any(not any(regex.fullmatch(path) for regex in earlier) for path in matched):
+                return False
+        return True
+
     changed = sorted(file for file in old.keys() | new.keys()
-                     if file not in old or file not in new or test(old[file]) != test(new[file]))
+                     if file not in old or file not in new or
+                     test(old[file]) != test(new[file]) and not narrowed(old[file], new[file]))
     shared = shared or any(file in old and file not in changed and old[file] != new[file] for file in new)
     return changed, shared
 
