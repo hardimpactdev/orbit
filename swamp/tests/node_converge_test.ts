@@ -123,6 +123,53 @@ Deno.test("private input is mode-protected, literal and limited to target plus r
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+Deno.test("converge keeps the staged phase files after worker cache removal and keeps repeat digests stable", async () => {
+    const cache = await Deno.makeTempDir();
+    const folders = Array.from({ length: 2 }, () => `/tmp/orbit-ansible-${crypto.randomUUID()}`);
+    const files = [
+        "ansible/build_vars.py",
+        "ansible/operation-node-converge.yml",
+        "ansible/tasks/node-converge-tool.yml",
+        "extensions/behaviors/operations/ansible-input/converge_tool.ts",
+        "extensions/behaviors/operations/tools/native.ts",
+    ];
+    const ctx = { extensionFile: (path: string) => `${cache}/${path}`, writeResource: () => Promise.resolve() };
+    async function prepare(folder: string, operationId: number, recorded: Record<string, string>) {
+        const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
+        await Deno.mkdir(folder, { mode: 0o700 });
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], recorded_digests: recorded }));
+        await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+        return await extension.methods.convergeInput.execute({ folder, operation_id: operationId }, ctx);
+    }
+    try {
+        for (const file of files) {
+            await Deno.mkdir(`${cache}/${file.slice(0, file.lastIndexOf("/"))}`, { recursive: true });
+            await Deno.writeTextFile(`${cache}/${file}`, file);
+        }
+        const [first, second] = folders;
+        const prepared = await prepare(first, 41, {});
+        const { digests } = JSON.parse(await Deno.readTextFile(`${first}/digests.json`));
+        assertEquals((await prepare(second, 42, digests)).unchanged, [...skippable]);
+        await Deno.remove(cache, { recursive: true });
+        assertEquals(prepared.assets, `${first}/assets/ansible`);
+        const { converge_tool_helper } = parse(await Deno.readTextFile(`${first}/vars.yml`)) as { converge_tool_helper: string };
+        assertEquals(converge_tool_helper, `${first}/assets/operations/ansible-input/converge_tool.ts`);
+        for (const file of files) {
+            assertEquals(await Deno.readTextFile(`${first}/assets/${file.replace("extensions/behaviors/", "")}`), file);
+        }
+
+        const result = await extension.methods.convergeResult.execute({ folder: first }, ctx);
+        assertEquals(JSON.parse(result.stdout).cleanup_complete, true);
+        await assertRejects(() => Deno.stat(first), Deno.errors.NotFound);
+    } finally {
+        for (const folder of [cache, ...folders]) {
+            await Deno.remove(folder, { recursive: true }).catch((error) => {
+                if (!(error instanceof Deno.errors.NotFound)) throw error;
+            });
+        }
+    }
+});
+
 for (const failure of [undefined, "roles"] as const) {
     Deno.test(`terminal result removes private input after ${failure ?? "success"} without publishing callback content`, async () => {
         const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
@@ -246,15 +293,16 @@ Deno.test("a failed Tool postcondition is not installed", () => {
 
 Deno.test("the workflow has ordered phase invocations and an always-dependent private cleanup", () => {
     const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-node-converge-direct.yaml", import.meta.url))) as {
-        jobs: { name: string; dependsOn?: { job: string; condition: { type: string } }[]; steps: { name: string; task: { inputs: { run?: string } } }[] }[];
+        jobs: { name: string; dependsOn?: { job: string; condition: { type: string } }[]; steps: { name: string; task: { inputs: { run?: string; env?: { ORBIT_ANSIBLE: string } } } }[] }[];
     };
     const jobs = workflow.jobs.filter((job) => phases.includes(job.name as typeof phases[number]));
     assertEquals(jobs.map((job) => job.name), [...phases]);
     for (let i = 0; i < jobs.length; i++) {
-        const run = jobs[i].steps[0].task.inputs.run!;
-        assertEquals(run.match(/ansible-playbook/g)?.length, 1);
-        assertEquals(run.includes(`--tags ${phases[i]} `), true);
-        assertEquals(run.includes(`${phases[i]}-meta.json`), true);
+        const { run, env } = jobs[i].steps[0].task.inputs;
+        assertEquals(env?.ORBIT_ANSIBLE, '${{ steps["Prepare private input"].outputs.assets }}');
+        assertEquals(run?.match(/ansible-playbook/g)?.length, 1);
+        assertEquals(run?.includes(`--tags ${phases[i]} `), true);
+        assertEquals(run?.includes(`${phases[i]}-meta.json`), true);
         if (i) assertEquals(jobs[i].dependsOn, [{ job: phases[i - 1], condition: { type: "succeeded" } }]);
     }
     assertEquals(jobs.find((job) => job.name === "check")?.steps[0].name, "Check the Node");

@@ -1,4 +1,5 @@
 import { z } from "npm:zod@4.4.3";
+import { copy } from "jsr:@std/fs@1.0.19/copy";
 import { InventoryProfile, InventoryReceiptInput, inventoryReceipt } from "../node-base-inventory/receipt.ts";
 import * as ci from "../node/ci_host_spec.ts";
 import { clickhouseFiles } from "../analytics/clickhouse_files.ts";
@@ -37,7 +38,7 @@ const InventorySourceArgs = z.object({
     reference: z.string(),
 }).strict();
 const InventorySource = z.object({ source: z.string(), target: InventoryTarget, profile: InventoryProfile });
-const Phases = z.object({ ready: z.literal(true), unchanged: z.array(z.enum(["agent", "software", "roles", "tools", "network"])) });
+const Phases = z.object({ ready: z.literal(true), assets: z.string().startsWith("/"), unchanged: z.array(z.enum(["agent", "software", "roles", "tools", "network"])) });
 // A role Operation's phases: `stdout` carries the digests to the Gateway, which reads only a step's stdout.
 const RolePhases = z.object({ ready: z.literal(true), unchanged: z.array(z.enum(roleSkippable)), stdout: z.string() });
 const ConvergeInputArgs = ReportInput.extend({ operation_id: z.number().int().positive() }).strict();
@@ -49,7 +50,7 @@ type Context = {
 /** Swamp expressions cannot encode an object as JSON; large intents exceed env limits. */
 export const behavior = {
     type: "@nckrtl/ansible-input",
-    version: "2026.11.17.1",
+    version: "2026.11.18.1",
     resources: {
         inventorySource: { schema: InventorySource, lifetime: "1d", garbageCollection: 5 },
         input: { schema: Output, lifetime: "1d", garbageCollection: 10 },
@@ -135,8 +136,19 @@ export const behavior = {
                 const { folder, operation_id } = ConvergeInputArgs.parse(raw);
                 const builder = ctx.extensionFile('ansible/build_vars.py');
                 const helper = ctx.extensionFile('extensions/behaviors/operations/ansible-input/converge_tool.ts');
-                const phases = await convergeInput(folder, operation_id, builder, helper, phaseCode(builder, helper));
-                const value = Phases.parse({ ready: true, unchanged: phases.unchanged });
+                const code = phaseCode(builder, helper);
+                const [ansible, , tools] = code;
+                const assets = `${folder}/assets`;
+                const operations = `${assets}/operations`;
+                const stagedHelper = `${operations}/ansible-input/converge_tool.ts`;
+                const phases = await convergeInput(folder, operation_id, builder, stagedHelper, code);
+                // Each dispatch has its own worker cache. Later shell steps use the run's
+                // files on the Swamp Node even if this worker drains and clears its cache.
+                await Deno.mkdir(`${operations}/ansible-input`, { recursive: true, mode: 0o700 });
+                await copy(ansible, `${assets}/ansible`);
+                await copy(helper, stagedHelper);
+                await copy(tools, `${operations}/tools`);
+                const value = Phases.parse({ ready: true, assets: `${assets}/ansible`, unchanged: phases.unchanged });
                 await ctx.writeResource("phases", "phases", value);
                 return value;
             },
