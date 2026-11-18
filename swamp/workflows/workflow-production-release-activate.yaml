@@ -1,4 +1,4 @@
-# orbit-gateway-recovery-protocol: 2
+# orbit-gateway-recovery-protocol: 3
 id: 653c7a78-56d3-49af-89fe-27c72b11c662
 name: production-release-activate
 autoContinue: false
@@ -255,4 +255,4 @@ jobs:
       type: assert
       severity: high
       expr: 'steps["Verify the serving release"].status == "succeeded" && steps["Retire the previous live"].status == "succeeded"'
-      message: Check the selected Gateway release and its drain journal. Repair the serving release forward.
+      message: Check the selected Gateway release and its drain journal. Roll back to the stopped old release or repair the serving release forward.

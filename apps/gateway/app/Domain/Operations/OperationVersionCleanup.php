@@ -33,9 +33,19 @@ final readonly class OperationVersionCleanup
                 }
             }
         }
-        foreach (OperationVersions::policies() as $kind => $policy) {
+        $policies = OperationVersions::policies();
+        foreach ($policies as $kind => $policy) {
             foreach ($policy['deprecated'] as $version) {
                 DB::table('deprecated_operation_versions')->insertOrIgnore(['kind' => $kind, 'version' => $version]);
+            }
+        }
+        // The release that is about to serve owns the fence. After a rollback, it admits versions that the
+        // rolled-back-from release closed, so it reopens every version that it can still start itself.
+        foreach (DB::table('deprecated_operation_versions')->get(['kind', 'version']) as $row) {
+            $policy = $policies[$row->kind] ?? ['current' => 1, 'retained' => [], 'deprecated' => []];
+            $version = (int) $row->version;
+            if (($version === $policy['current'] || array_key_exists($version, $policy['retained'])) && ! in_array($version, $policy['deprecated'], true)) {
+                DB::table('deprecated_operation_versions')->where('kind', $row->kind)->where('version', $version)->delete();
             }
         }
     }

@@ -16,7 +16,23 @@ HORIZON = "orbit-gateway-horizon.service"
 MANAGED_HORIZON = "orbit-process-71-horizon.service"
 WORKFLOW = "swamp/workflows/workflow-production-release-activate.yaml"
 CONTROLLER = "swamp/scripts/gateway-release-container.sh"
-PROTOCOL = "# orbit-gateway-recovery-protocol: 2\n"
+EARLIER = "e" * 40
+# Only the release-container operations that change power state matter to the handover.
+CTL = """import os, sys
+from pathlib import Path
+state = Path(os.environ["FIXTURE_ROOT"]) / "state"
+action, revision = sys.argv[1], sys.argv[3] if len(sys.argv) > 3 else ""
+key = {os.environ["FIXTURE_SHA"][:12]: "candidate", os.environ["FIXTURE_OLD"][:12]: "former", "e" * 12: "earlier"}.get(revision)
+if action == "address":
+    print("10.1.0.2" if key == "candidate" else "10.1.0.3")
+elif action in ("retire", "resume") and (state / key).exists():
+    (state / key).write_text("Stopped" if action == "retire" else "Running")
+    with (state / "events").open("a") as out:
+        print(("stop " if action == "retire" else "start ") + key, file=out)
+    if os.environ.get("FIXTURE_INTERRUPT") == "after " + key + " stop":
+        os.killpg(os.getpgrp(), 9)
+"""
+PROTOCOL = "# orbit-gateway-recovery-protocol: 3\n"
 
 
 def stub(name, args):
@@ -154,14 +170,23 @@ def stub(name, args):
             if args[3] == "user.orbit.release.commit":
                 print(sha if machine == candidate else old)
             elif args[3] == "user.orbit.release.operation":
-                print(OPERATION)
+                owner = state / f"{machine}-operation"
+                print(owner.read_text() if owner.exists() else OPERATION)
         elif action == "config" and args[1] == "set":
-            (state / f"{args[2]}-boot").write_text(args[3].split("=")[1])
+            for setting in args[3:]:
+                key, value = setting.split("=", 1)
+                if key == "boot.autostart":
+                    (state / f"{args[2]}-boot").write_text(value)
+                else:
+                    if key == "user.orbit.release.operation":
+                        (state / f"{args[2]}-operation").write_text(value)
+                    event(f"config {args[2]} {setting}")
         elif action == "snapshot" and args[1] == "list":
             print("[]")
         elif action == "list":
             rows = []
-            for key, target, commit in (("candidate", candidate, sha), ("former", "gateway-" + old[:12], old)):
+            for key, target, commit in (("candidate", candidate, sha), ("former", "gateway-" + old[:12], old),
+                                        ("earlier", "gateway-" + EARLIER[:12], EARLIER)):
                 if (state / key).exists():
                     boot = state / f"{target}-boot"
                     rows.append({"name": target, "status": (state / key).read_text().strip() or "Running", "config": {
@@ -174,7 +199,7 @@ def stub(name, args):
             print(json.dumps(rows))
         elif action in ("delete", "stop"):
             target = args[1]
-            key = "candidate" if target == candidate else "former"
+            key = {candidate: "candidate", "gateway-" + old[:12]: "former"}.get(target, "earlier")
             if action == "delete":
                 (state / key).unlink()
                 event("delete " + key)
@@ -212,7 +237,8 @@ class GatewayReleaseFixture(unittest.TestCase):
                      "swamp/scripts/gateway-release-horizons.py", "swamp/scripts/gateway-release-host-check.py"):
             self.copy(name, self.mirror / name)
         ctl = self.mirror / "swamp/scripts/release-container.py"
-        ctl.write_text('import os, sys\nif sys.argv[1] == "address": print("10.1.0.2" if sys.argv[3] == os.environ["FIXTURE_SHA"][:12] else "10.1.0.3")\n')
+        ctl.parent.mkdir(parents=True, exist_ok=True)
+        ctl.write_text(CTL)
         self.old = self.commit("retained release")
         (self.mirror / "application-version").write_text("serving release")
         self.sha = self.commit("serving release")
@@ -258,7 +284,7 @@ class GatewayReleaseFixture(unittest.TestCase):
         # Stub preparation work only after the installed phase has checked the
         # selected recovery protocol against the real Git objects.
         prepare = """case "$phase" in
-  build) echo '{}'; exit ;;
+  build) if [[ ${3:-} != true ]]; then echo '{}'; exit; fi ;;
   web) cat >/dev/null; exit ;;
   clone)
     touch "$FIXTURE_ROOT/state/candidate"
@@ -352,6 +378,19 @@ esac
     def direct(self, action, *args):
         return self.run_script(self.mirror / CONTROLLER, action, self.sha, OPERATION, *args)
 
+    def assert_parked(self, key, sha):
+        self.assertEqual((self.state / key).read_text(), "Stopped")
+        self.assertEqual((self.state / f"gateway-{sha[:12]}-boot").read_text(), "false")
+        self.assertFalse((self.state / f"gateway-{sha[:12]}-{HORIZON}").exists())
+
+    def released(self):
+        """Serve the new release with the former live stopped as old, as a completed release leaves it."""
+        self.serving_former()
+        self.assert_ok(self.switch())
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
+        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": self.sha, "old": self.old, "host_retired": True})
+
     def assert_pending(self, sha):
         self.assertTrue((self.journal / "operation").exists(), "the switch has no recovery marker")
         self.assertEqual((self.journal / "operation").read_text().strip(), OPERATION)
@@ -392,17 +431,45 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assert_interrupted(self.run_script(self.phase, "retire", self.sha, OPERATION, interrupt=f"before {self.retained} drain"))
         self.assertTrue((self.state / "former").exists())
         self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assertFalse((self.state / "former").exists())
+        self.assert_parked("former", self.old)
         self.assert_container_serves()
 
-    def test_crash_after_former_deletion_finishes_without_recreating_it(self):
+    def test_crash_after_parking_the_former_finishes_with_it_as_old(self):
         self.serving_former()
         self.assert_ok(self.switch())
-        self.assert_interrupted(self.run_script(self.phase, "retire", self.sha, OPERATION, interrupt="after former deletion"))
-        self.assertFalse((self.state / "former").exists())
+        self.assert_interrupted(self.run_script(self.phase, "retire", self.sha, OPERATION, interrupt="after former stop"))
+        self.assert_parked("former", self.old)
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
-        self.assertEqual((self.state / "events").read_text().count("delete former"), 1)
+        self.assert_parked("former", self.old)
+        self.assertNotIn("delete former", (self.state / "events").read_text())
+        self.assertEqual(json.loads(self.inventory.read_text())["old"], self.old)
+
+    def test_retire_keeps_the_former_stopped_and_replaces_the_earlier_old_only_then(self):
+        self.serving_former()
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": EARLIER, "host_retired": True}))
+        (self.state / "earlier").write_text("Stopped")
+        (self.state / f"gateway-{EARLIER[:12]}-boot").write_text("false")
+        self.assert_ok(self.switch())
+        # The candidate serves; the former live is old while it drains, and the earlier old still exists.
+        self.assertEqual(json.loads(self.inventory.read_text())["old"], self.old)
+        self.assertTrue((self.state / "earlier").exists())
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
+        events = (self.state / "events").read_text()
+        self.assertLess(events.index("stop former"), events.index("delete earlier"))
+        self.assertFalse((self.state / "earlier").exists())
+        self.assert_parked("former", self.old)
+        self.assertIn(f"systemctl disable {HORIZON}", events)
+        self.assert_container_serves()
+        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": self.sha, "old": self.old, "host_retired": True})
+
+    def test_a_running_old_refuses_the_next_build(self):
+        self.released()
+        (self.state / "former").write_text("Running")
+        self.assertIn("retained Gateway release is running", self.direct("build", "false", "{}", "false").stderr)
+        (self.state / "former").write_text("Stopped")
+        self.assertIn("already serves", self.direct("build", "false", "{}", "false").stderr)
 
     def test_configuration_refresh_and_background_desired_state_survive_the_switch(self):
         self.serving_former()
@@ -413,7 +480,7 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
         self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
         self.assertFalse((self.state / f"{self.retained}-{HORIZON}").exists())
-        self.assertFalse((self.state / "former").exists())
+        self.assert_parked("former", self.old)
 
     def test_recovery_keeps_former_consumers_when_the_new_horizon_fails(self):
         self.serving_former()
@@ -441,7 +508,7 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         heartbeat.unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_container_serves()
-        self.assertFalse((self.state / "former").exists())
+        self.assert_parked("former", self.old)
 
     def test_admission_fence_failure_preserves_the_current_route_and_a_recoverable_target(self):
         self.serving_former()

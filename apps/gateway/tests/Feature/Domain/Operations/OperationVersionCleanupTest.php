@@ -109,6 +109,33 @@ it('defers removal for pending children and unproven native terminals until the 
     expect($cleanup->check()['versions'][0])->toBe(['kind' => 'proof.verify', 'version' => 1, 'eligible' => true, 'outstanding' => 0]);
 });
 
+it('reopens the versions that a rolled-back release admits when it fences before serving again', function (): void {
+    $store = app(OperationStore::class);
+    $insertV1 = fn (string $kind) => DB::table('operations')->insert(['kind' => $kind, 'target_type' => 'node', 'target_id' => 7,
+        'status' => 'queued', 'node_id' => $this->node->id, 'input' => '{}', 'state' => '{}']);
+    // Release N moves both kinds to v2 and closes v1. Its cleanup check proves that no v1 work remains.
+    operationVersionsForTest(['proof.verify' => ['current' => 2, 'deprecated' => [1]], 'proof.command' => ['current' => 2, 'deprecated' => [1]]]);
+    $this->artisan('operations:check-cleanup', ['--json' => true])->assertSuccessful();
+    expect(fn () => $insertV1('proof.verify'))->toThrow(QueryException::class, 'operation.version_deprecated')
+        ->and(fn () => $insertV1('proof.command'))->toThrow(QueryException::class, 'operation.version_deprecated');
+    $retired = $store->create('proof.verify', 'node', 8, $this->node->id, [], 'operator', null);
+    $retired->forceFill(['status' => 'succeeded'])->save();
+    // The rollback target knows only v1 of proof.verify and declares nothing for proof.command.
+    operationVersionsForTest(['proof.verify' => ['current' => 1], 'proof.run' => ['deprecated' => [1]]]);
+    $this->artisan('operations:check-cleanup', ['--fence-only' => true, '--json' => true])->expectsOutput('{"fenced":true}')->assertSuccessful();
+    $insertV1('proof.verify');
+    $insertV1('proof.command');
+    expect(DB::table('deprecated_operation_versions')->get(['kind', 'version'])->map(fn ($row): string => $row->kind.'@'.$row->version)->all())
+        ->toBe(['proof.run@1'])
+        ->and(fn () => $insertV1('proof.run'))->toThrow(QueryException::class, 'operation.version_deprecated');
+    $old = $store->create('proof.verify', 'node', 9, $this->node->id, [], 'operator', null);
+    expect($old->operation_version)->toBe(1);
+    // A forward release closes v1 again.
+    operationVersionsForTest(['proof.verify' => ['current' => 2, 'deprecated' => [1]]]);
+    $this->artisan('operations:check-cleanup', ['--fence-only' => true])->assertSuccessful();
+    expect(fn () => $insertV1('proof.verify'))->toThrow(QueryException::class, 'operation.version_deprecated');
+});
+
 it('rejects version declarations that reuse a native workflow identity', function (): void {
     $old = app(DirectOperation::class)->definition('proof.verify');
     expect(fn () => operationVersionsForTest(['proof.verify' => ['current' => 2, 'retained' => [1 => $old]]]))->toThrow(LogicException::class, 'distinct native workflow identities');

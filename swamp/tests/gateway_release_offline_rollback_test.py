@@ -1,4 +1,4 @@
-"""Exercise the offline and retained-container rollback using the real release commands."""
+"""Exercise the offline recovery entry points and the retired container phases using the real release commands."""
 import fcntl
 import json
 import sys
@@ -29,7 +29,7 @@ class GatewayOfflineRollback(GatewayReleaseFixture):
         for name in (CONTROLLER, WORKFLOW):
             path = self.mirror / name
             original = path.read_text()
-            path.write_text(original.replace("recovery-protocol: 2", "recovery-protocol: 1"))
+            path.write_text(original.replace("recovery-protocol: 3", "recovery-protocol: 2"))
             bad = self.commit("incompatible target")
             result = self.run_script(self.phase, "build-checked", bad, OPERATION, "false", "{}", "false")
             self.assertIn("gateway.release_recovery_incompatible", result.stderr)
@@ -55,13 +55,12 @@ class GatewayOfflineRollback(GatewayReleaseFixture):
         self.assertTrue((self.state / "orphan").exists())
         self.assertEqual(self.inventory.read_bytes(), original)
 
-    def test_rollback_and_old_switch_back_phases_are_refused(self):
+    def test_retired_restore_and_switch_back_phases_are_refused(self):
         self.serving_former()
         original = self.inventory.read_bytes()
         for phase in ("restore", "switch-back", "restore-host", "drain"):
             result = self.run_script(self.phase, phase, self.old, OPERATION)
-            self.assertIn("gateway.release_fix_forward", result.stderr)
-        self.assertIn("rollback is unavailable", self.direct("build", "false", "{}", "true").stderr)
+            self.assertIn("gateway.release_phase_retired", result.stderr)
         self.assertEqual(self.inventory.read_bytes(), original)
 
     def test_wrong_operation_cannot_finish_or_delete_the_committed_candidate(self):

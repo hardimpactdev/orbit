@@ -17,9 +17,9 @@ class GatewayHostRollback(GatewayReleaseFixture):
     def test_host_fallback_refuses_after_the_first_move_even_if_php_fpm_is_healthy(self):
         self.assert_ok(self.run_move())
         before = self.inventory.read_bytes()
-        for option in ("--host", self.old[:12], ""):
+        for option, refusal in (("--host", "stopped old container"), (self.old[:12], "no stopped old release"), ("", "no stopped old release")):
             result = self.run_script(self.console, option)
-            self.assertIn("fix forward", result.stderr)
+            self.assertIn(refusal, result.stderr)
             self.assertEqual(self.inventory.read_bytes(), before)
         self.assert_container_serves()
 

@@ -15,10 +15,11 @@ def implementation(inventory, journal, host, action):
         if action != "--recover":
             raise ValueError("finish the interrupted Gateway handover with --recover first")
         return host
-    if inventory.is_file():
-        raise ValueError("Gateway containers fix forward; deploy a corrective commit")
-    if action in ("--recover", "--host"):
+    if action == "--recover":
         raise ValueError("there is no interrupted Gateway container handover")
+    if action == "--host":
+        raise ValueError("the Gateway returns to its stopped old container, not to the host")
+    # The host program rolls a container Gateway back to its stopped old release, or switches a legacy worktree.
     return host
 
 

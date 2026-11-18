@@ -138,10 +138,14 @@ class BootstrapTest(unittest.TestCase):
             host = journal / "installed-host-rollback"
             select = lambda action: recovery.implementation(inventory, journal, host, action)
             self.assertEqual(select("abc"), host)
-            inventory.write_text(json.dumps({"version": 1, "live": "a"*40, "old": "b"*40}))
-            for action in ("--host", "b"*12, ""):
-                with self.assertRaisesRegex(ValueError, "fix forward"):
-                    select(action)
+            inventory.write_text(json.dumps({"version": 2, "live": "a"*40, "old": "b"*40}))
+            # The host program rolls a container Gateway back to its stopped old release.
+            for action in ("b"*12, ""):
+                self.assertEqual(select(action), host)
+            with self.assertRaisesRegex(ValueError, "stopped old container"):
+                select("--host")
+            with self.assertRaisesRegex(ValueError, "no interrupted"):
+                select("--recover")
             (journal / "operation").write_text("42")
             self.assertEqual(select("--recover"), host)
             with self.assertRaisesRegex(ValueError, "--recover"):

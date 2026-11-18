@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# orbit-gateway-recovery-protocol: 2
+# orbit-gateway-recovery-protocol: 3
 # Run one release phase on the Gateway Node. The Swamp run orders the phases.
 set -euo pipefail
 umask 077
@@ -28,6 +28,7 @@ php() { local machine=$1; shift; user "$machine" "$runtime/php/8.5/bin/php" "$@"
 artisan() { local machine=$1; shift; php "$machine" "$app/artisan" "$@"; }
 field() { jq -er "$1" "$inventory"; }
 retained() { [[ -f $inventory ]] && jq -e --arg sha "$sha" '.live == $sha' "$inventory" >/dev/null; }
+rollback_target() { [[ -f $inventory ]] && jq -e --arg sha "$sha" '.old == $sha' "$inventory" >/dev/null; }
 owned_sha() { "${incus_cli[@]}" config get "$1" user.orbit.release.commit; }
 grants() {
   # The child interpreter expands this program.
@@ -94,14 +95,29 @@ clear_switch() {
   sync -f "$journal"
 }
 set_inventory() {
-  local live=$1 tmp retired=false
+  local live=$1 old=${2:-} tmp retired=false
   if [[ -f $journal/host-retired ]] || { [[ -f $inventory ]] && jq -e '.host_retired == true' "$inventory" >/dev/null; }; then retired=true; fi
   tmp=$(mktemp "$home/.gateway-containers.XXXXXXXX")
-  jq -n --arg live "$live" --argjson retired "$retired" '{version:2,live:$live,old:null,host_retired:$retired}' > "$tmp"
+  jq -n --arg live "$live" --arg old "$old" --argjson retired "$retired" \
+    '{version:2,live:$live,old:(if $old == "" then null else $old end),host_retired:$retired}' > "$tmp"
   chown orbit:orbit "$tmp"
   chmod 0600 "$tmp"
   mv -fT "$tmp" "$inventory"
   sync -f "$home"
+}
+record_of() {
+  "${incus_cli[@]}" list "$1" --format json | jq -c --arg name "$1" 'map(select(.name==$name))|first // {}'
+}
+# A retained release is a stopped clone that cannot start with the Node.
+parked() {
+  jq -e --arg sha "$2" '.status == "Stopped" and (.config | .["user.orbit.release.target"]=="gateway" and
+    .["user.orbit.release.role"]=="candidate" and .["user.orbit.release.commit"]==$sha and .["boot.autostart"]=="false")' \
+    <<< "$1" >/dev/null
+}
+# The journaled previous live, or nothing when the host served before the switch.
+former_sha() {
+  [[ $(cat "$journal/machine") != host ]] || return 0
+  jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$journal/inventory"
 }
 discard_legacy() {
   local discarded=$1 live=$2 name stale
@@ -130,17 +146,25 @@ gateway_slot() {
       rm -- "$journal/pending-prune"
       sync -f "$journal"
     fi
-    if [[ -n $old ]]; then
+    # Protocol 1 kept a frozen release that cannot serve a rollback of this protocol.
+    if [[ -n $old && $(field '.version') == 1 ]]; then
       discard_legacy "$old" "$live"
       set_inventory "$live"
+      old=''
+    fi
+    if [[ -n $old ]]; then
+      [[ $old =~ ^[a-f0-9]{40}$ ]] && [[ $old != "$live" ]] || fail 'invalid Gateway rollback release'
+      # A retry of a refused rollback can find old started. Only a rollback may keep it running.
+      parked "$(record_of "gateway-${old:0:12}")" "$old" || [[ ${1:-} == rollback ]] ||
+        fail 'the retained Gateway release is running; finish its rollback or release it first'
     fi
   fi
-  # Never create a fourth container or evict a clone belonging to another operation.
-  # A failed legacy prune may have left another unrecorded clone, even without .old.
+  # Three slots: preparation with its transient candidate, live and the stopped old.
+  # Never create another container or evict a clone belonging to another operation.
   records=$("${incus_cli[@]}" list --format json)
-  jq -e --arg live "gateway-${live:0:12}" --arg new "$candidate" --arg sha "$sha" --arg op "$operation" '
+  jq -e --arg live "gateway-${live:0:12}" --arg old "${old:+gateway-${old:0:12}}" --arg new "$candidate" --arg sha "$sha" --arg op "$operation" '
     [.[] | select(.name=="prepare-gateway" or (.name | test("^gateway-[a-f0-9]{12}$")) or .config["user.orbit.release.target"]=="gateway")] as $owned |
-    ($owned|length) <= 3 and all($owned[]; .name=="prepare-gateway" or .name==$live or
+    ($owned|length) <= 4 and all($owned[]; .name=="prepare-gateway" or .name==$live or .name==$old or
       (.name==$new and .config["user.orbit.release.role"]=="candidate" and
        .config["user.orbit.release.commit"]==$sha and .config["user.orbit.release.operation"]==$op))' <<< "$records" >/dev/null ||
     fail 'another Gateway clone occupies the preparation slot; finish its operation or release its unused clone'
@@ -264,10 +288,11 @@ publish_forward() {
   set_upstream "$addr"
   sync -f /etc/caddy
   /usr/local/libexec/orbit-gateway-site container >&2
-  set_inventory "$sha"
+  # The former live becomes old as soon as the candidate serves; retire stops it after its drain.
+  set_inventory "$sha" "$(former_sha)"
 }
 finish_forward() {
-  local prev previous_sha exists='{}' unit service_failed=false running=false http_pid drain_failed=0
+  local prev previous_sha='' exists='{}' unit service_failed=false running=false http_pid drain_failed=0 earlier stale
   [[ $(field '.live') == "$sha" ]] || fail 'candidate no longer serves'
   if [[ ! -f $journal/operation ]]; then return; fi
   [[ $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] || fail 'handover identity changed'
@@ -275,9 +300,9 @@ finish_forward() {
   start_horizons "$candidate" "$(cat "$journal/horizon")"
   prev=$(cat "$journal/machine")
   if [[ $prev != host ]]; then
-    previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$journal/inventory")
+    previous_sha=$(former_sha)
     [[ $prev == "gateway-${previous_sha:0:12}" && $previous_sha != "$sha" ]] || fail 'previous Gateway identity changed'
-    exists=$("${incus_cli[@]}" list "$prev" --format json | jq -c --arg name "$prev" 'map(select(.name==$name))|first // {}')
+    exists=$(record_of "$prev")
     if [[ $exists != '{}' ]]; then
       jq -e --arg sha "$previous_sha" '.config | .["user.orbit.release.role"]=="candidate" and
         .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha' <<< "$exists" >/dev/null ||
@@ -316,14 +341,31 @@ finish_forward() {
       (drain_active_horizons "$prev") || drain_failed=1
       wait "$http_pid" || drain_failed=1
       [[ $drain_failed == 0 ]] || fail 'former Gateway is still draining'
-      "${incus_cli[@]}" stop "$prev" --timeout 120
+      # A rollback starts old with its units as they are. Only the selected live consumes jobs.
+      while IFS= read -r unit; do
+        [[ -z $unit ]] || enter "$prev" systemctl disable -- "$unit" </dev/null >&2
+      done < "$journal/horizons"
     fi
-    if [[ $exists != '{}' ]]; then "${incus_cli[@]}" delete "$prev"; fi
-    ctl forget gateway "${previous_sha:0:12}" >&2
+    if [[ $exists != '{}' ]]; then
+      # Stop, never freeze: old holds no memory or swap until a rollback starts it.
+      ctl retire gateway "${previous_sha:0:12}" "$operation" >&2
+    fi
+    # Old replaces the earlier rollback release only now: the new live serves and the former live is parked.
+    earlier=$(jq -r '.old // ""' "$journal/inventory")
+    if [[ -n $earlier && $earlier != "$sha" && $earlier != "$previous_sha" ]]; then
+      [[ $earlier =~ ^[a-f0-9]{40}$ ]] || fail 'invalid earlier rollback identity'
+      stale=$(record_of "gateway-${earlier:0:12}")
+      if [[ $stale != '{}' ]]; then
+        parked "$stale" "$earlier" || fail 'earlier rollback release is not parked'
+        "${incus_cli[@]}" delete "gateway-${earlier:0:12}"
+      fi
+      ctl forget gateway "${earlier:0:12}" >&2
+    fi
+    if [[ $exists == '{}' ]]; then previous_sha=''; fi
   fi
   cp "$journal/operation" "$journal/last-operation"
   touch "$journal/host-retired"
-  set_inventory "$sha"
+  set_inventory "$sha" "$previous_sha"
   sync -f "$journal"
   clear_switch
   [[ $service_failed == false ]] || fail 'Gateway selected; a background service needs a corrective deployment'
@@ -332,7 +374,16 @@ finish_forward() {
 case "$action" in
   build)
     force=$1 manifest=$2 rollback=${3:-false}
-    [[ $rollback != true ]] || fail 'Gateway rollback is unavailable; deploy a corrective commit'
+    if [[ $rollback == true ]]; then
+      # Rollback selects the stopped old with its sealed build and web assets. It builds nothing.
+      rollback_target || fail 'the selected release is not the retained Gateway release'
+      gateway_slot rollback
+      ctl resume gateway "$id" "$operation" >&2
+      # The switch admits only a candidate of this operation.
+      "${incus_cli[@]}" config set "$candidate" user.orbit.release.operation="$operation"
+      grants "$candidate"
+      exit
+    fi
     [[ $force != true ]] || fail "Gateway releases require a descendant of live"
     gateway_slot
     if retained; then
@@ -381,7 +432,7 @@ case "$action" in
     ;;
   web)
     # The archive header/token stays on stdin. Retained releases already hold their verified web build.
-    if retained; then exit 0; fi
+    if retained || rollback_target; then exit 0; fi
     [[ $1 =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail 'invalid release repository'
     printf 'https://github.com/%s\n' "$1" | user "$prep" tee "$checkout/GATEWAY_ORIGIN" >/dev/null
     enter "$prep" install -d -m 0750 -o orbit -g orbit /home/orbit/web </dev/null
@@ -396,7 +447,7 @@ case "$action" in
     ;;
   clone)
     digest=$1
-    if retained; then fail "cannot clone over the serving Gateway"; fi
+    if retained || rollback_target; then fail "cannot clone over a retained Gateway release"; fi
     gateway_slot
     # A retry can find this exact build already parked. Never execute guest code in a frozen preparer.
     if [[ $("${incus_cli[@]}" config get "$prep" user.orbit.release.operation) != "$operation" ]]; then fail 'preparer operation changed'; fi
@@ -416,7 +467,8 @@ case "$action" in
     exit 0
     ;;
   migrate)
-    if retained; then echo migrate-exit=0; exit; fi
+    # A rollback runs old's code on the current schema. Migrations are expand-only, so it never migrates.
+    if retained || rollback_target; then echo migrate-exit=0; exit; fi
     set +e
     output=$(artisan "$candidate" migrate --force --isolated=1 --no-interaction 2>&1)
     result=$?

@@ -80,8 +80,7 @@ final readonly class FilesystemGatewayReleaseObserver implements GatewayReleaseO
 
         $contents = file_get_contents($path, length: 4097);
         $record = is_string($contents) ? json_decode($contents, true) : null;
-        if (! is_array($record) || ! in_array($record['version'] ?? null, [1, 2], true) || ! array_key_exists('old', $record)
-            || ($record['version'] === 2 && $record['old'] !== null)) {
+        if (! is_array($record) || ! in_array($record['version'] ?? null, [1, 2], true) || ! array_key_exists('old', $record)) {
             throw $this->failed();
         }
 

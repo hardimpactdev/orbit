@@ -89,7 +89,7 @@ The Gateway uses the same release operations for its own target. Each production
 
 <a id="3-one-shared-database-migrations-run-in-hot-before-the-switch"></a>
 
-Every release uses the Instance’s shared production database. Its `migrate` step runs once in the preparation container before activation while live still serves. Every migration is expand-only: a release adds what its code needs, and a later release contracts what no live or old release still reads. So the stopped old keeps running on the current database, and a rollback never restores data. Reviewers reject a destructive migration.
+Every release uses the Instance’s shared production database. Its `migrate` step runs once in the preparation container before activation while live still serves. Every migration is expand-only: a release adds what its code needs. A following release contracts the old shape once neither live nor old reads it. So the stopped old keeps running on the current database, and a rollback never restores data. Reviewers reject a destructive migration.
 
 - The code of live must work on the schema after the migration. A change that live cannot read is split over two deploys: the first expands, and the second contracts once no live or old release uses the old shape.
 - A migration changes only the schema, or changes data with raw queries. It never loads application models or domain code, because those belong to the new code and the data still belongs to the old. A migration is tested against the schema of the last released commit.
@@ -260,7 +260,7 @@ mealou moves after hauzer's first container deploy passed. Neither waits for a w
 - One busy release container can use all of the Node's memory unless its Instance sets a limit. The owner accepts this.
 - A deploy never stops traffic: live serves until the switch, and the switch is one Caddy reload. The PHP-FPM restart of today goes.
 - A failed build, migration or readiness check never touches live. Hot is removed.
-- Every migration must be expand-only, with the contract in a later release, and every queued job payload must stay readable by the release before it. This is a rule for each Project, not something Orbit can check.
+- Every migration must be expand-only, with the contract in a following release, and every queued job payload must stay readable by the release before it. This is a rule for each Project, not something Orbit can check.
 - A rollback goes back one release in seconds, as long as old exists. A deeper rollback is a deploy of an earlier commit.
 - Between deploys each Instance retains preparation, live and previous live once one exists. Preparation and previous live sleep; a deploy briefly adds the candidate as a fourth root disk.
 - The operation removes the transient build snapshot after the independent clone exists. Incus retains underlying storage blocks while any release still references them.

@@ -95,7 +95,10 @@ Deno.test("host recovery removal requires a committed handover in the recorded i
         assertEquals(check("a".repeat(40), true), false);
         assertEquals(check("b".repeat(40), true), true);
         assertEquals(check(null, true, 2), true);
-        assertEquals(check("b".repeat(40), true, 2), false);
+        // A version 2 inventory keeps the stopped old release for rollback, never live itself.
+        assertEquals(check("b".repeat(40), true, 2), true);
+        assertEquals(check("a".repeat(40), true, 2), false);
+        assertEquals(check(null, false, 2), false);
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }

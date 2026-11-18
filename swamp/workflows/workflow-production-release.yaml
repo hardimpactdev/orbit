@@ -46,15 +46,17 @@ jobs:
       message: The target or private input belongs to a different Operation.
       expr: >-
         inputs.kind == "gateway.release"
-          ? inputs.intent.target == "gateway" && !has(inputs.intent.instance_id) && !(has(inputs.intent.retained) && inputs.intent.retained)
-              && has(inputs.execution_secrets.github_token) && inputs.execution_secrets.github_token.key == "gateway-release-" + string(inputs.operation_id)
+          ? inputs.intent.target == "gateway" && !has(inputs.intent.instance_id)
+              && ((has(inputs.intent.retained) && inputs.intent.retained) ? !has(inputs.execution_secrets.github_token)
+                : has(inputs.execution_secrets.github_token) && inputs.execution_secrets.github_token.key == "gateway-release-" + string(inputs.operation_id))
           : has(inputs.intent.instance_id) && inputs.intent.target == "instance-" + string(inputs.intent.instance_id) && has(inputs.execution_secrets.release)
               && inputs.execution_secrets.release.key == "production-release-operation-" + string(inputs.operation_id)
   - name: Fetch the commit
     dependsOn: [{step: Check release ownership, condition: {type: succeeded}}]
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.kind != "gateway.release" }}'
+    # A Gateway rollback starts the stopped old release, whose commit is already in the mirror.
+    guard: '${{ inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -101,7 +103,7 @@ jobs:
         sudo: true
         timeoutSec: 2430
         argv: >-
-          ${{ ["/usr/bin/timeout", "2400", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "build-checked", inputs.intent.sha, string(inputs.operation_id)] + [string((has(inputs.intent.force) ? inputs.intent.force : false)), has(inputs.intent.manifest) ? inputs.intent.manifest : "", "false"] }}
+          ${{ ["/usr/bin/timeout", "2400", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "build-checked", inputs.intent.sha, string(inputs.operation_id)] + [string((has(inputs.intent.force) ? inputs.intent.force : false)), has(inputs.intent.manifest) ? inputs.intent.manifest : "", string(has(inputs.intent.retained) && inputs.intent.retained)] }}
   - name: Build the Instance release
     labels: {role: swamp}
     writes: true
@@ -130,7 +132,7 @@ jobs:
   - name: Install the web build
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     dependsOn:
     - {step: Build the release, condition: {type: succeeded}}
     task:
@@ -149,7 +151,7 @@ jobs:
   - name: Clone the prepared release
     labels: {role: swamp}
     writes: true
-    guard: '${{ inputs.kind == "instance.rollback" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    guard: '${{ inputs.kind == "instance.rollback" || (has(inputs.intent.retained) && inputs.intent.retained) || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
     dependsOn:
     - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -190,10 +192,11 @@ jobs:
         - park-preparation
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
+  # Migrations are expand-only, so old's code runs on the current schema. A rollback never migrates or restores data.
   - name: Migrate
     labels: {role: swamp}
     writes: true
-    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" }}'
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     dependsOn:
     - {step: Build the release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
@@ -220,7 +223,7 @@ jobs:
         - '${{ string(inputs.operation_id) }}'
   - name: Check the migration
     labels: {role: swamp}
-    guard: '${{ inputs.kind != "gateway.release" }}'
+    guard: '${{ inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     dependsOn:
     - {step: Migrate, condition: {type: succeeded}}
     task: {type: assert, expr: 'steps["Migrate"].outputs.stdout.trim().endsWith("migrate-exit=0")', severity: high, message: The Gateway database migration failed.}
@@ -260,7 +263,7 @@ jobs:
     - {step: Build the Instance release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Install the web build, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     - {step: Clone the prepared release, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
-    - {step: Check the migration, condition: {type: succeeded}}
+    - {step: Check the migration, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -294,7 +297,7 @@ jobs:
         intent:
           sha: '${{ inputs.intent.sha }}'
           force: '${{ (has(inputs.intent.force) ? inputs.intent.force : false) }}'
-          retained: false
+          retained: '${{ has(inputs.intent.retained) && inputs.intent.retained }}'
           grants:
             grants/orbit-gateway.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[0] }}'
             grants/orbit-serve.yaml: '${{ steps["Build the release"].outputs.stdout.split("---\n")[1] }}'

@@ -194,7 +194,9 @@ After changing an attachment's route, deploy the Instance to install and verify 
 
 Every release container uses the Instance's one shared database. Migrations run during the preparation build before the switch, so live's code must work on the migrated schema:
 
-- Each migration is expand-only. A release adds what its code needs; a later release contracts what no live or old release still reads. A change that live or old cannot read is split over two deploys. Reviewers reject a destructive migration, such as a dropped or renamed column or table.
+- Each migration is expand-only. A release adds what its code needs.
+- A following release contracts what no live or old release still reads. A change that live or old cannot read is split over two deploys.
+- Reviewers reject a destructive migration, such as a dropped or renamed column or table.
 - A migration changes the schema, or changes data with raw queries. It never loads application models or domain code. It is tested against the schema of the last released commit.
 - Queued job payloads follow the same rule across one release. A worker of the previous release can read a new job, and so can old after a rollback.
 

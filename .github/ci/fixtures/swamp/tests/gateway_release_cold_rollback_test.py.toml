@@ -1,0 +1,30 @@
+file = "swamp/tests/gateway_release_cold_rollback_test.py"
+cost = 100
+inputs = [
+  "bin/gateway-container-move",
+  "bin/gateway-container-rollback",
+  "bin/gateway-container-site",
+  "bin/gateway-release-check",
+  "bin/gateway-release-phase",
+  "bin/gateway-rollback",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-release-drain.sh",
+  "swamp/scripts/gateway-release-host-check.py",
+  "swamp/scripts/gateway-release-horizons.py",
+  "swamp/scripts/gateway-release-switch.sh",
+  "swamp/workflows/workflow-production-release-activate.yaml",
+  "swamp/tests/gateway_release_recovery_test.py",
+]
+cases = [
+  "test_console_rolls_back_to_the_stopped_old_and_forward_again_without_swamp",
+  "test_interrupted_rollback_resumes_with_recover",
+  "test_native_rollback_phases_switch_through_the_same_journal",
+  "test_failed_rollback_before_the_switch_parks_old_again",
+  "test_rollback_needs_a_stopped_old_release",
+]
+[case_costs]
+"test_console_rolls_back_to_the_stopped_old_and_forward_again_without_swamp" = 28
+"test_interrupted_rollback_resumes_with_recover" = 24
+"test_native_rollback_phases_switch_through_the_same_journal" = 20
+"test_failed_rollback_before_the_switch_parks_old_again" = 16
+"test_rollback_needs_a_stopped_old_release" = 12

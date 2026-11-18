@@ -20,7 +20,7 @@ cases = [
   "test_incompatible_target_is_refused_before_any_mutation",
   "test_legacy_parked_release_is_deleted_before_another_clone_is_allowed",
   "test_orphan_clone_refuses_a_fourth_gateway_container",
-  "test_rollback_and_old_switch_back_phases_are_refused",
+  "test_retired_restore_and_switch_back_phases_are_refused",
   "test_wrong_operation_cannot_finish_or_delete_the_committed_candidate",
   "test_interrupted_console_recovery_still_uses_the_shared_lock",
 ]
@@ -29,6 +29,6 @@ cases = [
 "test_incompatible_target_is_refused_before_any_mutation" = 10
 "test_legacy_parked_release_is_deleted_before_another_clone_is_allowed" = 10
 "test_orphan_clone_refuses_a_fourth_gateway_container" = 20
-"test_rollback_and_old_switch_back_phases_are_refused" = 14
+"test_retired_restore_and_switch_back_phases_are_refused" = 14
 "test_wrong_operation_cannot_finish_or_delete_the_committed_candidate" = 20
 "test_interrupted_console_recovery_still_uses_the_shared_lock" = 16

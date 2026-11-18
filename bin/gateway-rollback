@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Complete an interrupted container handover, or switch a legacy FPM deployment.
+# Roll the Gateway back to its stopped old release container, complete an interrupted handover with --recover,
+# or switch a legacy FPM deployment. Run it on the Gateway Node with sudo. It needs Incus and Caddy, not Swamp
+# and not a serving Gateway. docs/reference/gateway-recovery.md#roll-back-without-swamp
 set -euo pipefail
 
 base=${ORBIT_RELEASE_BASE:-/home/orbit}
@@ -16,12 +18,38 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     fi
     export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
     flock -n 9 || fail "another Gateway release holds the lock"
-    [[ $id == --recover ]] || fail "Gateway containers fix forward; deploy a corrective commit"
-    test -f "$journal/operation" || fail "there is no interrupted handover"
-    operation=$(cat "$journal/operation")
-    candidate=$(cat "$journal/candidate")
-    exec "$phase" recover "$candidate" "$operation"
-
+    if [[ $id == --recover ]]; then
+        test -f "$journal/operation" || fail "there is no interrupted handover"
+        operation=$(cat "$journal/operation")
+        candidate=$(cat "$journal/candidate")
+        exec "$phase" recover "$candidate" "$operation"
+    fi
+    [[ ! -e $journal/operation ]] || fail "finish the interrupted handover with --recover first"
+    inventory=$base/.orbit/gateway-containers.json
+    live=$(jq -er '.live' "$inventory")
+    old=$(jq -r '.old // ""' "$inventory")
+    [[ $live =~ ^[a-f0-9]{40}$ ]] || fail "container inventory is unreadable"
+    [[ $old =~ ^[a-f0-9]{40}$ ]] || fail "there is no stopped old release to roll back to"
+    [[ -z $id || $id == "${old:0:12}" ]] || fail "the retained rollback release is ${old:0:12}"
+    # The last release Operation identifies this recovery. It creates no Operation and loads no Swamp workflows:
+    # when the Gateway answers again, reconcile the serving commit to load them.
+    operation=$(cat "$journal/last-operation")
+    horizon=$(cat "$journal/horizon" 2>/dev/null || :)
+    candidate() { "$phase" "$1" "$old" "$operation" "${@:2}"; }
+    # Before the journaled switch, a failure leaves live serving and parks old again.
+    trap 'rc=$?; if (( rc )) && [[ ! -e $journal/operation ]]; then candidate release-unused || :; fi' EXIT
+    candidate build-checked false '{}' true >/dev/null
+    candidate ready
+    candidate switch "${live:0:12}" "$horizon" >/dev/null
+    trap - EXIT
+    public_rc=0
+    horizon_rc=0
+    candidate start-horizon "$horizon" || horizon_rc=$?
+    candidate public-ready || public_rc=$?
+    candidate retire
+    (( public_rc == 0 && horizon_rc == 0 )) || fail "serving ${old:0:12}, but its public check or Horizon failed; roll back again or deploy a fix"
+    echo "gateway-rollback: serving ${old:0:12}; ${live:0:12} is stopped as old"
+    exit
 fi
 
 [[ ! -e $journal/operation ]] || fail "an interrupted switch must first be restored with --recover"

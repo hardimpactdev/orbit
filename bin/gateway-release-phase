@@ -33,8 +33,8 @@ fi
 check_recovery() {
   local path
   for path in "$script" "$workflow"; do
-    if ! git -c safe.directory="$repo" -C "$repo" grep -q '^# orbit-gateway-recovery-protocol: 2$' "$sha" -- "$path"; then
-      echo "gateway.release_recovery_incompatible: $sha lacks container fix-forward protocol 2 in $path" >&2
+    if ! git -c safe.directory="$repo" -C "$repo" grep -q '^# orbit-gateway-recovery-protocol: 3$' "$sha" -- "$path"; then
+      echo "gateway.release_recovery_incompatible: $sha lacks container rollback protocol 3 in $path" >&2
       return 1
     fi
   done
@@ -72,7 +72,7 @@ fi
 # uses its exact candidate and operation, including switches made before this check.
 case "$phase" in
   drain|restore|switch-back|restore-host)
-    echo 'gateway.release_fix_forward: recover forward or deploy a corrective commit' >&2
+    echo 'gateway.release_phase_retired: roll back to the stopped old release through the journaled switch, or finish it with --recover' >&2
     exit 1
     ;;
   reconcile-begin|reconcile-idle|reconcile-verify|build|build-checked|check-recovery|check-load)
@@ -147,7 +147,11 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
     "${incus_cli[@]}" snapshot delete prepare-gateway "$snapshot"
   fi
   if [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]]; then exit 0; fi
-  if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then exit 0; fi
+  if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then
+    # A refused or failed rollback may have started old. Park it again; it stays the rollback release.
+    ctl retire gateway "${sha:0:12}" "$operation"
+    exit
+  fi
   existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')
   if [[ $existing != '{}' || ! -f $journal/operation ]]; then
     if [[ $(jq -r '.config["user.orbit.release.operation"] // ""' <<< "$existing") != "$operation" ]]; then

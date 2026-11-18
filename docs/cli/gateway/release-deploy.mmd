@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: docs/reference/feature-flow.md section 6, one Swamp workflow per Gateway release, manual or automatic.
-  %% Container releases repair forward; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
+  %% Container releases keep the former live stopped as old for rollback; migrations are expand-only. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
   %% status: migrated
   %% command: gateway:release:deploy
   %% kind: gateway.release
@@ -99,7 +99,7 @@ sequenceDiagram
     end
     opt Container Gateway
       AC->>GN: Retire the previous live<br/>drain HTTP and Horizon
-      AC->>GN: Remove drained container
+      AC->>GN: Stop it as old<br/>delete the earlier old
       AC->>GN: Check deprecated<br/>operation versions
     end
     opt Failed host PHP-FPM check
@@ -120,7 +120,7 @@ sequenceDiagram
       Note over GW: Record switched back<br/>alert · next commit releases
     else a container check fails
       SW--xGW: Report failed phase
-      Note over GW: Repair forward
+      Note over GW: Roll back to old<br/>or deploy a fix
     else a host migration or later step fails
       SW--xGW: Run failed<br/>failed step
       Note over GW: Pause automatic releases<br/>failed step · alert

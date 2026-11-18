@@ -207,20 +207,47 @@ it('admits only the exact serving container for reconciliation and uses no GitHu
     Http::assertNothingSent();
 });
 
-it('refuses container rollback, release of an old retained SHA and force before fetching any publication', function (): void {
+it('admits a container rollback only to the stopped old release and refuses older deploys and force', function (): void {
+    Queue::fake();
+    Node::findOrFail(209)->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
     $layout = GatewayReleaseLayout::fromConfig();
     mkdir(dirname($layout->containerInventoryPath()), 0700, true);
-    file_put_contents($layout->containerInventoryPath(), json_encode(['version' => 1, 'live' => ReleaseA, 'old' => ReleaseB]));
+    file_put_contents($layout->containerInventoryPath(), json_encode(['version' => 2, 'live' => ReleaseA, 'old' => ReleaseB, 'host_retired' => true]));
     $admit = app(AdmitSwampGatewayReleaseAction::class);
-    $refused = fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe('gateway.release_downgrade');
-    expect(fn () => $admit->rollback(substr(ReleaseB, 0, 12)))->toThrow($refused)
-        ->and(fn () => $admit->execute(ReleaseB))->toThrow($refused)
-        ->and(fn () => $admit->execute(ReleaseC, force: true))->toThrow($refused)
+    $code = fn (string $expected) => fn (GatewayReleaseException $e) => expect($e->errorCode)->toBe($expected);
+    expect(fn () => $admit->execute(ReleaseB))->toThrow($code('gateway.release_downgrade'))
+        ->and(fn () => $admit->execute(ReleaseC, force: true))->toThrow($code('gateway.release_downgrade'))
+        ->and(fn () => $admit->rollback(substr(ReleaseC, 0, 12)))->toThrow($code('gateway.release_not_prepared'))
+        ->and(fn () => $admit->rollback(substr(ReleaseA, 0, 12)))->toThrow($code('gateway.release_already_current'))
+        ->and(fn () => $admit->execute(ReleaseC, force: true, trigger: 'rollback'))->toThrow($code('gateway.release_not_prepared'))
         ->and(GatewayRelease::query()->count())->toBe(0);
+
+    $record = $admit->rollback(substr(ReleaseB, 0, 12));
+    $operation = Operation::findOrFail($record->phases['run']['operation_id']);
+    $input = app(GatewayReleaseRunProjection::class)->workflowInput($operation);
+
+    expect($record->trigger)->toBe('rollback')
+        ->and(app(DirectOperation::class)->workflowFor($operation))->toBe('production-release')
+        ->and($input['intent'])->toMatchArray(['target' => 'gateway', 'sha' => ReleaseB, 'force' => true, 'retained' => true, 'previous' => substr(ReleaseA, 0, 12)])
+        ->and($input['intent'])->not->toHaveKeys(['manifest', 'web', 'repository'])
+        ->and(json_encode($input['execution_secrets']))->toBe('{}');
     Http::assertNothingSent();
 });
 
-it('observes a forward-only Gateway after the former release and host recovery have been retired', function (): void {
+it('observes the stopped old release that a container Gateway keeps for rollback', function (): void {
+    $layout = GatewayReleaseLayout::fromConfig();
+    mkdir(dirname($layout->containerInventoryPath()), 0700, true);
+    $state = ['version' => 2, 'live' => ReleaseA, 'old' => ReleaseB, 'host_retired' => true];
+    file_put_contents($layout->containerInventoryPath(), json_encode($state));
+    $inventory = $layout->observe();
+    expect($inventory->current)->toBe(substr(ReleaseA, 0, 12))
+        ->and($inventory->commits)->toBe([substr(ReleaseA, 0, 12) => ReleaseA, substr(ReleaseB, 0, 12) => ReleaseB])
+        ->and($inventory->hostRetired)->toBeTrue();
+    file_put_contents($layout->containerInventoryPath(), json_encode([...$state, 'old' => ReleaseA]));
+    expect(fn () => $layout->observe())->toThrow(GatewayReleaseException::class);
+});
+
+it('observes a container Gateway that has no old release yet after the host was retired', function (): void {
     $layout = GatewayReleaseLayout::fromConfig();
     mkdir(dirname($layout->containerInventoryPath()), 0700, true);
     $state = ['version' => 2, 'live' => ReleaseA, 'old' => null, 'host_retired' => true];
@@ -229,8 +256,6 @@ it('observes a forward-only Gateway after the former release and host recovery h
     expect($inventory->current)->toBe(substr(ReleaseA, 0, 12))
         ->and($inventory->retained)->toBe([substr(ReleaseA, 0, 12)])
         ->and($inventory->hostRetired)->toBeTrue();
-    file_put_contents($layout->containerInventoryPath(), json_encode([...$state, 'old' => ReleaseB]));
-    expect(fn () => $layout->observe())->toThrow(GatewayReleaseException::class);
 });
 
 it('schedules a corrective green descendant from the actual live SHA after a container migration failed', function (): void {

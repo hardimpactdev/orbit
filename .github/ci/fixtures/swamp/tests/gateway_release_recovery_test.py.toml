@@ -1,6 +1,6 @@
 order = 776
 file = "swamp/tests/gateway_release_recovery_test.py"
-cost = 104
+cost = 136
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-horizon-ready",
@@ -21,7 +21,9 @@ cases = [
   "test_interruption_after_caddy_publication_republishes_only_the_candidate",
   "test_precommit_candidate_configuration_failure_keeps_the_previous_live",
   "test_interrupted_drain_finishes_forward_with_a_failing_public_check",
-  "test_crash_after_former_deletion_finishes_without_recreating_it",
+  "test_crash_after_parking_the_former_finishes_with_it_as_old",
+  "test_retire_keeps_the_former_stopped_and_replaces_the_earlier_old_only_then",
+  "test_a_running_old_refuses_the_next_build",
   "test_configuration_refresh_and_background_desired_state_survive_the_switch",
   "test_admission_fence_failure_preserves_the_current_route_and_a_recoverable_target",
   "test_recovery_keeps_former_consumers_when_the_new_horizon_fails",
@@ -32,7 +34,9 @@ cases = [
 "test_interruption_after_caddy_publication_republishes_only_the_candidate" = 12
 "test_precommit_candidate_configuration_failure_keeps_the_previous_live" = 10
 "test_interrupted_drain_finishes_forward_with_a_failing_public_check" = 12
-"test_crash_after_former_deletion_finishes_without_recreating_it" = 10
+"test_crash_after_parking_the_former_finishes_with_it_as_old" = 10
+"test_retire_keeps_the_former_stopped_and_replaces_the_earlier_old_only_then" = 14
+"test_a_running_old_refuses_the_next_build" = 18
 "test_configuration_refresh_and_background_desired_state_survive_the_switch" = 10
 "test_cleanup_reports_deferred_and_propagates_other_failures" = 10
 "test_admission_fence_failure_preserves_the_current_route_and_a_recoverable_target" = 10
