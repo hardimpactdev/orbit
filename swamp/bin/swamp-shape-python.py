@@ -4,10 +4,7 @@ import json
 import re
 import sys
 
-from swamp_shape_host_tools import (
-    bridge_writer_transaction,
-    php_runtime_transaction,
-)
+from swamp_shape_host_tools import bridge_writer_transaction, php_runtime_transaction
 from swamp_shape_polling import (
     external_origin,
     python_controls,

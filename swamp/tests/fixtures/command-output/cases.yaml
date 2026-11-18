@@ -2617,6 +2617,10 @@ cases:
   expected: false
 
 non_command_output:
+- file: tasks/production-release-host.yml
+  task: Verify the selected production runtime root and digest
+  field: ansible.builtin.assert.that[1]
+  reason: Validates the runtime digest in the Node's desired configuration.
 - file: tasks/production-container-process.yml
   task: Check the serving production Instance Process
   field: ansible.builtin.assert.that[2]
