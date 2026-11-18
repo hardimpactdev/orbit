@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Executor;
 
+use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Shared\LifecycleStatus;
@@ -12,6 +13,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use Throwable;
 
@@ -21,14 +23,23 @@ use Throwable;
  * artifact `executor-linux-x86_64`. Each Node reports, over its pinned SSH account with one fixed read-only argv, the SHA-256 of its
  * installed binary, the SHA-256 of the service's running executable and the service state. The running executable needs root, so
  * it is read with `sudo -n`; a binary replaced without a restart shows as `executor.running_build_differs`.
+ *
+ * The same read lists the Node's containers that Incus reports FROZEN. One whose Instance has no recorded freeze, such as a failed
+ * Python sleep that left it frozen while the Gateway records it running, has no owner that R3 could route its wake to: the Node
+ * fails with `instance.frozen_unrecorded` until a wake with the flags off resumes it (docs/reference/executor.md#switching-engines).
  */
 final readonly class ExecutorParity
 {
-    /** Prints the installed binary's SHA-256, the running executable's SHA-256 (empty when none runs), then the service state. */
+    /**
+     * Prints the installed binary's SHA-256, the running executable's SHA-256 (empty when none runs), the service state, then
+     * `frozen:` and one line per FROZEN container. The `frozen:` line comes only when Incus answered, so a failed read is no pass.
+     */
     private const string Read = 'sha256sum '.NodeExecutorInput::Binary.' 2>/dev/null | cut -d " " -f 1; '
         .'pid=$(systemctl show -p MainPID --value orbit-executor.service 2>/dev/null); '
         .'if [ "${pid:-0}" != 0 ]; then sudo -n sha256sum "/proc/$pid/exe" 2>/dev/null | cut -d " " -f 1; else echo; fi; '
-        .'systemctl is-active orbit-executor.service 2>/dev/null; true';
+        .'systemctl is-active orbit-executor.service 2>/dev/null; '
+        .'if containers=$(sudo -n incus list --all-projects --format csv --columns ns 2>/dev/null); then echo frozen:; '
+        .'printf "%s\n" "$containers" | grep ",FROZEN$" | cut -d , -f 1; fi; true';
 
     public function __construct(
         private ManagedNodeEligibility $eligibility,
@@ -38,9 +49,10 @@ final readonly class ExecutorParity
     ) {}
 
     /**
-     * One row per executor Node, by Node id. `problem` is null when the Node runs the pinned build.
+     * One row per executor Node, by Node id. `problem` is null when the Node runs the pinned build and holds no unrecorded freeze;
+     * `frozen_unrecorded` lists the ids of those Instances.
      *
-     * @return list<array{node_id: int, node: string, expected: ?string, reported: ?string, running: ?string, state: ?string, problem: ?string}>
+     * @return list<array{node_id: int, node: string, expected: ?string, reported: ?string, running: ?string, state: ?string, frozen_unrecorded: list<int>, problem: ?string}>
      */
     public function check(): array
     {
@@ -52,7 +64,8 @@ final readonly class ExecutorParity
                 continue;
             }
             $expected = is_string($intent['sha256']) ? $intent['sha256'] : null;
-            [$reported, $running, $state, $readProblem] = $this->eligibility->allows($node) ? $this->read($node) : [null, null, null, 'executor.node_unmanaged'];
+            [$reported, $running, $state, $frozen, $readProblem] = $this->eligibility->allows($node) ? $this->read($node) : [null, null, null, [], 'executor.node_unmanaged'];
+            $unrecorded = $this->unrecorded($node, $frozen);
             $problem = match (true) {
                 is_string($intent['skip']) => $intent['skip'],
                 is_string($intent['plan_error']) => $intent['plan_error'],
@@ -61,36 +74,58 @@ final readonly class ExecutorParity
                 $reported !== $expected => 'executor.build_differs',
                 $state !== 'active' => 'executor.inactive',
                 $running !== $expected => 'executor.running_build_differs',
+                $unrecorded !== [] => 'instance.frozen_unrecorded',
                 default => null,
             };
-            $rows[] = ['node_id' => $node->id, 'node' => $node->name, 'expected' => $expected, 'reported' => $reported, 'running' => $running, 'state' => $state, 'problem' => $problem];
+            $rows[] = ['node_id' => $node->id, 'node' => $node->name, 'expected' => $expected, 'reported' => $reported, 'running' => $running,
+                'state' => $state, 'frozen_unrecorded' => $unrecorded, 'problem' => $problem];
         }
 
         return $rows;
     }
 
-    /** @return array{0: ?string, 1: ?string, 2: ?string, 3: ?string} */
+    /**
+     * The Instances on the Node whose containers Incus reports FROZEN while the Gateway records no freeze that owns them.
+     *
+     * @param  list<string>  $containers
+     * @return list<int>
+     */
+    private function unrecorded(Node $node, array $containers): array
+    {
+        if ($containers === []) {
+            return [];
+        }
+        $runtimes = InstanceRuntime::query()->with('instance')->whereIn('container_name', $containers)
+            ->whereHas('instance', static fn ($query) => $query->where('node_id', $node->id))->orderBy('instance_id')->get();
+
+        return array_values($runtimes->filter(static fn (InstanceRuntime $runtime): bool => ExecutorPowerIntent::frozenSleep($runtime->instance, $runtime) === null)
+            ->map(static fn (InstanceRuntime $runtime): int => $runtime->instance_id)->all());
+    }
+
+    /** @return array{0: ?string, 1: ?string, 2: ?string, 3: list<string>, 4: ?string} */
     private function read(Node $node): array
     {
+        $unreachable = [null, null, null, [], 'executor.node_unreachable'];
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            return [null, null, null, 'executor.node_unreachable'];
+            return $unreachable;
         }
         try {
             $result = $this->ssh->execute(new SshConnection($node->wireguard_ip, $node->user, 22, $this->keys->privateKeyPath(), $this->knownHosts->path()),
-                new RemoteCommand(['sh', '-c', self::Read], maxOutputBytes: 1024, timeout: 15.0));
+                new RemoteCommand(['sh', '-c', self::Read], maxOutputBytes: 65536, timeout: 15.0));
         } catch (Throwable) {
-            return [null, null, null, 'executor.node_unreachable'];
+            return $unreachable;
         }
         if (! $result->succeeded() || $result->truncated) {
-            return [null, null, null, 'executor.node_unreachable'];
+            return $unreachable;
         }
         $lines = explode("\n", rtrim($result->stdout));
-        if (count($lines) !== 3) {
-            return [null, null, null, 'executor.node_unreachable'];
+        if (count($lines) < 4 || $lines[3] !== 'frozen:') {
+            return $unreachable;
         }
         $sha = static fn (string $line): ?string => preg_match('/\A[0-9a-f]{64}\z/', $line) === 1 ? $line : null;
         $state = trim($lines[2]);
+        $frozen = array_values(array_filter(array_map(trim(...), array_slice($lines, 4)), static fn (string $name): bool => $name !== ''));
 
-        return [$sha($lines[0]), $sha($lines[1]), $state === '' ? null : $state, null];
+        return [$sha($lines[0]), $sha($lines[1]), $state === '' ? null : $state, $frozen, null];
     }
 }

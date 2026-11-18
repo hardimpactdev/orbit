@@ -75,9 +75,11 @@ Every executor Node must run the build that the Gateway pins before `ORBIT_EXECU
 php artisan orbit:executor-parity [--json]
 ```
 
-For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`.
+For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`).
 
-It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
+A frozen container is fine when the Gateway records its Instance asleep, with a sleep that owns the freeze. A frozen container without such a record fails the Node with `instance.frozen_unrecorded`, and the check names each such Instance. A failed Python sleep can leave one: Incus holds the container frozen while the Gateway still records it running. No engine owns that freeze, so the settings alone would pick the engine for its wake ([Switching engines](#switching-engines)).
+
+It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active and no unrecorded freeze. A Node whose Incus list fails counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
 
 | Problem | Meaning | Fix |
 | --- | --- | --- |
@@ -87,6 +89,7 @@ It exits 0 when it checked at least one such Node, and every one runs the pinned
 | `executor.running_build_differs` | The file is the pinned build, but the service still runs another one: the binary changed without a restart | `systemctl restart orbit-executor` on the Node |
 | `executor.node_unreachable` | The SSH read failed | Repair the Node's access |
 | `executor.node_unmanaged` | The Node has no verified SSH management | Finish its enrollment |
+| `instance.frozen_unrecorded` | A container is frozen, but the Gateway does not record its Instance asleep | With the settings still off, `orbit instance:wake <id>` for each listed Instance, then check again |
 | `executor.release_missing`, `executor.keys_missing`, `executor.release_invalid`, `executor.keys_invalid` | The converge would skip or refuse the install ([Rollout](#rollout)) | Fix the pin or the keys |
 
 The flag switch runs this check first and changes no flag while it fails. A plain converge whose input did not change skips the executor phase, so it does not repair a binary changed by hand; `--full` does.
@@ -253,7 +256,13 @@ The Gateway removes neither the container nor its marker on failure. It records 
 
 ### Switching engines
 
-A frozen Instance belongs to the engine whose sleep froze it ([ADR 0266, R3](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#four-rules-for-every-signed-outcome)). The freezing sleep's `signed_power` input records it, and `ExecutorPowerIntent::forInstance()` and `lifecycle()` read it before the settings. Every wake goes through them: `instance:wake` and its API, the visitor's activation, Conn, and a start or deploy that resumes the freeze. So a switch in either direction needs no drain.
+A frozen Instance belongs to the engine whose sleep froze it ([ADR 0266, R3](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#four-rules-for-every-signed-outcome)). The freezing sleep's `signed_power` input records it, and `ExecutorPowerIntent::forInstance()` and `lifecycle()` read it before the settings. Every wake goes through them: `instance:wake` and its API, the visitor's activation, Conn, and a start or deploy that resumes the freeze. So a recorded freeze needs no drain in either direction.
+
+A freeze with no record has no owner. A failed Python sleep can leave the container frozen while the Gateway records it running. So the switch goes in this order:
+
+1. Run [`orbit:executor-parity`](#build-parity) with the settings off.
+2. Wake each Instance it lists as `instance.frozen_unrecorded`. With the settings off, the wake goes through Python and resumes it.
+3. Run the check again. Change the settings only when it passes.
 
 When the settings go on, Instances that Python froze still wake through Python as they are used. Every sleep after the switch is signed, including the idle sweep's.
 
@@ -272,6 +281,8 @@ Subtask 5911 proved both directions on the nested fleet, with container default 
 | Sleep 210; wake 211, by `instance:wake` | On for the sleep, off for the wake | Both `done` | Executor |
 | Sleep 212; wake 213, by a visit | On for the sleep, off for the wake | The visit got the app's own 200 in 353 ms | Executor |
 | Sleep 214, wake 215 | Off | Froze, resumed | Python |
+
+Then the same Instance was frozen in Incus while the Gateway recorded it running, the state a failed Python sleep (Operation 216) had left. `orbit:executor-parity` failed with `instance.frozen_unrecorded (Instance 2)`. Wake 222, with the settings off, resumed it through Python. The app answered 200 and the check passed. After the recorded Python sleep 223 the check passed with the container frozen, and wake 224 resumed it.
 
 The Valkey host prerequisite is `hz 100`, applied by the orchestrator, as [the hand-off](#the-listener-and-the-hand-off) explains. Even then the server tick can make a timeout run a little late; a late successful reply must not authorize the original request.
 
