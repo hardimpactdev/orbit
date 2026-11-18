@@ -34,7 +34,7 @@ enum ConnLaunchChild: string
 
     public static function instanceId(Operation $launch): ?int
     {
-        $id = $launch->state['launch_instance_id'] ?? $launch->input['instance_id'] ?? null;
+        $id = $launch->input['instance_id'] ?? $launch->state['launch_instance_id'] ?? null;
 
         return is_int($id) ? $id : null;
     }

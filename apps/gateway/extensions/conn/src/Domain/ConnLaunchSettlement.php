@@ -44,10 +44,14 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         if (! $this->extensions->enabled('conn')) {
             return;
         }
+        $admittedInstance = 'operations.input->instance_id';
+        $completionChild = 'operations.state->launch_children->'.ConnLaunchChild::Completion->value.'->id';
         $laterCompletion = ConnLaunchChild::completions()->from('operations as later_completions')->select('id')
             ->whereColumn('node_id', 'operations.node_id')
-            ->whereColumn('target_id', 'operations.state->launch_instance_id')
-            ->whereColumn('id', '>', 'operations.state->launch_children->'.ConnLaunchChild::Completion->value.'->id');
+            ->where(static fn ($query) => $query->whereColumn('target_id', $admittedInstance)
+                ->orWhere(static fn ($query) => $query->whereNull($admittedInstance)
+                    ->whereColumn('target_id', 'operations.state->launch_instance_id')))
+            ->where(static fn ($query) => $query->whereNull($completionChild)->orWhereColumn('id', '>', $completionChild));
         $launches = Operation::query()->where('kind', OperationKinds::ConnLaunch)
             ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())
                 ->orWhere(static fn ($query) => $query->where('status', OperationStatus::Succeeded)
