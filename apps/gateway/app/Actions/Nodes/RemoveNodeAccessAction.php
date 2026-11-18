@@ -16,6 +16,8 @@ use App\Models\NodeAccess;
 use Illuminate\Container\Attributes\Tag;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 final readonly class RemoveNodeAccessAction
 {
@@ -35,33 +37,43 @@ final readonly class RemoveNodeAccessAction
         $this->requireActive($consumer);
         $this->requireActive($serving);
 
-        // The transaction begins IMMEDIATE, so the edge read, its delete and every transaction hook's writes hold one write lock.
-        $wasDeleted = DB::transaction(function () use ($consumer, $serving): bool {
-            $edge = NodeAccess::query()
-                ->where('consumer_node_id', $consumer->id)
-                ->where('serving_node_id', $serving->id)
-                ->first();
-            if (! $edge instanceof NodeAccess) {
-                return false;
-            }
-            $edge->delete();
-            foreach ($this->transactionHooks as $hook) {
-                $hook->edgeDeleted($edge);
-            }
-
-            return true;
-        });
-
-        if ($this->access->isGatewayNode($serving)) {
-            $this->metricsAccess->revoke();
-        }
-        if ($wasDeleted) {
-            // After the outermost commit: an enclosing transaction must commit the delete before an extension acts on it.
-            DB::afterCommit(function () use ($consumer, $serving): void {
+        // The deletion and its hooks commit together before any fallible side effect, so no committed deletion misses a hook.
+        // A failure there or in a hook's after-commit work still tries the Metrics revoke, so an open Grafana session is checked
+        // again, but the original failure is what the caller gets: a revoke error must not report a rolled-back removal as done.
+        try {
+            // The transaction begins IMMEDIATE, so the edge read, its delete and every hook's writes hold one write lock.
+            $wasDeleted = DB::transaction(function () use ($consumer, $serving): bool {
+                $edge = NodeAccess::query()
+                    ->where('consumer_node_id', $consumer->id)
+                    ->where('serving_node_id', $serving->id)
+                    ->first();
+                if (! $edge instanceof NodeAccess) {
+                    return false;
+                }
+                $edge->delete();
+                foreach ($this->transactionHooks as $hook) {
+                    $hook->edgeDeleted($edge);
+                }
                 foreach ($this->hooks as $hook) {
                     $hook->removed($consumer, $serving);
                 }
+
+                return true;
             });
+        } catch (Throwable $failure) {
+            if ($this->access->isGatewayNode($serving)) {
+                try {
+                    $this->metricsAccess->revoke();
+                } catch (Throwable $revoke) {
+                    Log::warning('node_access.metrics_revoke_failed', ['consumer_node_id' => $consumer->id, 'exception' => $revoke->getMessage()]);
+                }
+            }
+
+            throw $failure;
+        }
+
+        if ($this->access->isGatewayNode($serving)) {
+            $this->metricsAccess->revoke();
         }
 
         $selfLockout = $wasDeleted && $caller->is($consumer) && $this->access->isGatewayNode($serving);

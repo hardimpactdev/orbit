@@ -551,7 +551,7 @@ describe('edge removal', function (): void {
             ->assertOk()->assertJsonPath('data.owed.0.revision', 1);
     });
 
-    it('runs the legacy removal hooks only after the outermost commit', function (): void {
+    it('runs the removal hooks in the deletion transaction, after the managed revocation is recorded', function (): void {
         $calls = new ArrayObject;
         app()->instance('managed.legacy-spy', new class($calls) implements NodeAccessRemovalHook
         {
@@ -559,18 +559,15 @@ describe('edge removal', function (): void {
 
             public function removed(Node $consumer, Node $serving): void
             {
-                $this->calls->append(DB::transactionLevel());
+                $this->calls->append([DB::transactionLevel(), ConnManagedRevision::query()->count()]);
             }
         });
         app()->tag(['managed.legacy-spy'], NodeAccessRemovalHook::class);
         $base = DB::transactionLevel();
 
-        DB::transaction(function () use ($calls): void {
-            app(RemoveNodeAccessAction::class)->execute($this->callerA, $this->serving, $this->operator);
-            expect($calls->count())->toBe(0)->and(ConnManagedRevision::query()->count())->toBe(1);
-        });
+        app(RemoveNodeAccessAction::class)->execute($this->callerA, $this->serving, $this->operator);
 
-        expect($calls->getArrayCopy())->toBe([$base]);
+        expect($calls->getArrayCopy())->toBe([[$base + 1, 1]]);
     });
 
     it('wires the managed revocation as a transaction hook', function (): void {

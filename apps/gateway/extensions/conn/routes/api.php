@@ -18,6 +18,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectBranchesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnRealtimeController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnSessionsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnTasksController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnThreadsController;
@@ -43,6 +44,11 @@ Route::middleware([
             Route::get('launches/{operation_id}', [ConnLaunchesController::class, 'show'])->whereNumber('operation_id')->name('conn:launch:show');
             Route::post('launches/{operation_id}/cancel', [ConnLaunchesController::class, 'cancel'])->whereNumber('operation_id')->name('conn:launch:cancel');
             Route::post('launches/{operation_id}/retry', [ConnLaunchesController::class, 'retry'])->whereNumber('operation_id')->name('conn:launch:retry');
+        });
+        // Profile events (/reference/conn#profile-events): discovery and the auth of the caller's own profile channel only.
+        Route::withoutMiddleware(RecordCommandActivity::class)->group(function (): void {
+            Route::get('realtime', [ConnRealtimeController::class, 'show'])->name('conn:realtime:show');
+            Route::post('broadcasting/auth', [ConnRealtimeController::class, 'authenticate'])->name('conn:realtime:auth');
         });
         Route::put('me/profile', [ConnNodesController::class, 'bindProfile'])->name('conn:me:profile');
         Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');

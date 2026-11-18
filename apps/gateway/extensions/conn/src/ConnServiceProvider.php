@@ -19,6 +19,8 @@ use App\Domain\Operations\OperationRecordCoordinator;
 use App\Domain\Operations\OperationSecretSource;
 use App\Providers\ExtensionServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
+use Illuminate\Http\Request;
 use Orbit\Extensions\Conn\Console\EnrolConnManagedTargetCommand;
 use Orbit\Extensions\Conn\Console\ReadConnThreadsCommand;
 use Orbit\Extensions\Conn\Console\RenewConnEnvironmentsCommand;
@@ -73,6 +75,8 @@ final class ConnServiceProvider extends ExtensionServiceProvider
     public function boot(): void
     {
         $this->loadRoutesFrom(__DIR__.'/../routes/api.php');
+        // The profile channel auth compares the exact name it was sent (/reference/conn#profile-events), so it is not trimmed.
+        TrimStrings::skipWhen(static fn (Request $request): bool => $request->is('api/v1/conn/broadcasting/auth'));
         $this->commands([RenewConnEnvironmentsCommand::class, ReadConnThreadsCommand::class, EnrolConnManagedTargetCommand::class]);
         // Hourly, so a container started after its session ended soon gets a new one; each tick admits only the due ones.
         $this->callAfterResolving(Schedule::class, static function (Schedule $schedule): void {

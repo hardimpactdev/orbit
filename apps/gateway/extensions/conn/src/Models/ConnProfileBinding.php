@@ -15,6 +15,8 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $node_id
  * @property int $conn_profile_id
+ * @property string|null $event_key The binding's profile event key ([Profile events](/reference/conn#profile-events)).
+ * @property Carbon|null $event_key_issued_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Node $node
@@ -25,6 +27,10 @@ final class ConnProfileBinding extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = ['node_id', 'conn_profile_id'];
+
+    /** @var list<string> */
+    #[\Override]
+    protected $hidden = ['event_key'];
 
     /** @return BelongsTo<Node, $this> */
     public function node(): BelongsTo
@@ -44,6 +50,7 @@ final class ConnProfileBinding extends Model
         return [
             'node_id' => 'integer',
             'conn_profile_id' => 'integer',
+            'event_key_issued_at' => 'datetime',
         ];
     }
 }

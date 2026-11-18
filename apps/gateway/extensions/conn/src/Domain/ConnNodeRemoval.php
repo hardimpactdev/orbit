@@ -9,14 +9,16 @@ use App\Models\Node;
 
 /**
  * A deleted Node's held sessions must not outlive it: they are withdrawn, and the revokes they owe pass to the Gateway Node, which
- * made them ([Held sessions](/reference/conn#held-sessions)).
+ * made them ([Held sessions](/reference/conn#held-sessions)). Every Node with an edge to it gets a new profile event key before the
+ * cascade deletes those edges ([Profile events](/reference/conn#profile-events)).
  */
 final readonly class ConnNodeRemoval implements NodeRemovalHook
 {
-    public function __construct(private ConnHeldSessions $held) {}
+    public function __construct(private ConnHeldSessions $held, private ConnProfileEvents $events) {}
 
     public function removing(Node $node): void
     {
+        $this->events->replaceForConsumersOf($node);
         $this->held->handOver($node);
     }
 }

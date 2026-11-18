@@ -29,6 +29,7 @@ use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -689,6 +690,18 @@ describe('revoke and removal', function (): void {
         expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
             ->and(revokes()[0]->input['pairing_ids'])->toBe([$held->id]);
         readHeld($this->phone, $this->environment)->assertStatus(403)->assertJsonPath('error.code', 'node_access.required');
+    });
+
+    it('withdraws the held sessions of a removed grant only after the outermost commit', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $held = ConnPairing::query()->where('held', true)->sole();
+
+        DB::transaction(function () use ($held): void {
+            app(RemoveNodeAccessAction::class)->execute($this->phone, $this->host, $this->phone);
+            expect($held->fresh())->withdrawn_at->toBeNull()->session->not->toBeNull();
+        });
+
+        expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull();
     });
 
     it('contributes the grant-removal hook', function (): void {
