@@ -20,6 +20,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
 use Illuminate\Cache\CacheManager;
+use Illuminate\Redis\Connectors\PredisConnector;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 use Psr\Log\LoggerInterface;
@@ -78,9 +79,20 @@ final class AgentViewServiceProvider extends ServiceProvider
         $this->app->bind(ValkeyExecutorResultQueue::class, static fn ($app): ValkeyExecutorResultQueue => new ValkeyExecutorResultQueue(
             static fn () => $app->make('redis')->connection('gateway'),
         ));
-        $this->app->bind(ExecutorResultWait::class, static fn ($app): ExecutorResultWait => new ExecutorResultWait(
-            queue: $app->make(ValkeyExecutorResultQueue::class),
-            clock: static fn (): float => microtime(true),
-        ));
+        $this->app->bind(ExecutorResultWait::class, static function ($app): ExecutorResultWait {
+            $wakeConnection = null;
+
+            return new ExecutorResultWait(
+                queue: $app->make(ValkeyExecutorResultQueue::class),
+                clock: static fn (): float => hrtime(true) / 1e9,
+                wakeQueue: new ValkeyExecutorResultQueue(static function () use ($app, &$wakeConnection) {
+                    $app->make('redis');
+
+                    return $wakeConnection ??= (new PredisConnector)->connect([
+                        ...Config::array('database.redis.gateway'), 'timeout' => 0.025, 'read_write_timeout' => 0.05,
+                    ], []);
+                }),
+            );
+        });
     }
 }
