@@ -41,10 +41,43 @@ cache_config() {
   user "$machine" env ORBIT_AGENT_DELIVERY="$checkout/apps/agent/delivery/manifest.json" "$runtime/php/8.5/bin/php" "$app/artisan" config:cache --no-interaction --quiet
   after=$(user "$machine" sha256sum "$root/shared/gateway.env")
   [[ $before == "$after" ]] || fail 'Gateway environment changed while caching'
-  printf '%s\n' "$after" | user "$machine" tee "$root/.gateway-env-digest" >/dev/null
+  printf '%s\n' "$after"
 }
+release_runtime() (
+  # Read every installer input from the same admitted commit, before the candidate has a checkout.
+  local stage
+  stage=$(mktemp -d /run/orbit-gateway-runtime.XXXXXXXX)
+  trap 'rm -rf -- "$stage"' EXIT
+  git -c safe.directory="$mirror" -C "$mirror" archive "$sha" -- \
+    bin/gateway-container-prepare apps/gateway/resources/machine-software/recipe.json \
+    swamp/ansible/{ansible.cfg,gateway-container-runtime.yml,transport-exit-codes.json,tasks/artifact-fetch.yml,library/orbit_artifact.py} \
+    | tar -x -C "$stage"
+  python3 "$stage/bin/gateway-container-prepare" --release-runtime
+)
 check_release() { src bin/gateway-release-check | bash -se -- "$@"; }
 private_ready() { check_release "$sha" "$(ctl address gateway "$id")"; }
+verify_candidate() {
+  local bind_changed=$1 desired cached fresh
+  /usr/local/libexec/orbit-gateway-environment refresh
+  desired=$(user "$candidate" sha256sum "$root/shared/gateway.env")
+  cached=$(user "$candidate" cat "$root/.gateway-env-digest" 2>/dev/null || :)
+  if [[ $desired != "$cached" || $bind_changed == true ]] || ! enter "$candidate" systemctl is-active --quiet orbit-gateway-web.service; then
+    user "$candidate" rm -f -- "$root/.gateway-env-digest"
+    fresh=$(set -e; cache_config "$candidate")
+    enter "$candidate" systemctl restart orbit-gateway-web.service
+    printf '%s\n' "$fresh" | user "$candidate" tee "$root/.gateway-env-digest" >/dev/null
+  fi
+  private_ready
+  # The child interpreter expands this program.
+  # shellcheck disable=SC2016
+  php "$candidate" -r '
+    require $argv[1]."/vendor/autoload.php"; $app=require $argv[1]."/bootstrap/app.php";
+    $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+    if (App\Infrastructure\Gateway\GatewayQueueRedis::configured()) {
+        App\Infrastructure\Gateway\GatewayQueueRedis::configure();
+        Illuminate\Support\Facades\Redis::connection("gateway")->ping();
+    }' "$app"
+}
 host_ready() { src swamp/scripts/gateway-release-host-check.py | runuser -u caddy -- python3 - "$checkout" "$sha"; }
 
 journal=/var/lib/orbit/gateway-release-switch
@@ -271,7 +304,20 @@ case "$action" in
     if [[ $force != true ]]; then
       git -c safe.directory="$mirror" -C "$mirror" merge-base --is-ancestor "$current" "$sha" || fail "$sha does not descend from live"
     fi
+    # The cache gives the actual SQLite path for both the first move and an established target.
+    # shellcheck disable=SC2016
+    read_database='echo (require $argv[1])["database"]["connections"]["sqlite"]["database"];'
+    if [[ -f $inventory ]]; then
+      ctl capacity gateway --live="${current:0:12}" >&2
+      database=$(php "gateway-${current:0:12}" -r "$read_database" "$app/bootstrap/cache/config.php")
+    else
+      ctl capacity gateway --host-gateway >&2
+      database=$(runuser -u orbit -- php8.5 -r "$read_database" "$app/bootstrap/cache/config.php")
+    fi
+    ORBIT_GATEWAY_DISK_CHECK="$home" bash <(src swamp/scripts/gateway-release-snapshot.sh) --check "$database" 0
+    pinned_runtime=$(release_runtime)
     ctl wake gateway "$operation" >&2
+    python3 <(src swamp/ansible/files/gateway-release-guest.py) --runtime "$operation" "$pinned_runtime" >&2
     # The candidate owns its sealed checkout as root. Trust only that path for fleet history reads as orbit.
     enter "$prep" git config --system --fixed-value --replace-all safe.directory "$checkout" "$checkout"
     # Build in a fresh checkout. Composer's download cache stays outside it.
@@ -305,7 +351,8 @@ case "$action" in
     enter "$prep" install -o root -g root -m 0644 "$checkout/swamp/ansible/files/gateway-web/Caddyfile" /etc/orbit/gateway-web/Caddyfile
     enter "$prep" install -o root -g root -m 0644 "$checkout/swamp/ansible/files/gateway-web/orbit-gateway-web.service" /etc/systemd/system/orbit-gateway-web.service
     enter "$prep" systemctl daemon-reload
-    cache_config "$prep" >&2
+    user "$prep" rm -f -- "$root/.gateway-env-digest"
+    cache_config "$prep" >/dev/null
     /usr/local/libexec/orbit-gateway-unit apply-preparation "$operation" >&2
     grants "$prep"
     ;;
@@ -358,25 +405,9 @@ case "$action" in
     previous_bind=$(enter "$candidate" cat /etc/orbit/gateway-web/runtime.env 2>/dev/null || :)
     printf 'GATEWAY_BIND_ADDRESS=%s\nGATEWAY_TRUSTED_PROXY=%s\n' "$address" "$proxy" |
       enter "$candidate" tee /etc/orbit/gateway-web/runtime.env >/dev/null
-    # A changed environment needs a fresh cache and worker. Otherwise retain the
-    # running worker after a warm rollback. The digest is private to the release.
-    /usr/local/libexec/orbit-gateway-environment refresh
-    config_digest=$(user "$candidate" sha256sum "$root/shared/gateway.env")
-    cached=$(user "$candidate" cat "$root/.gateway-env-digest" 2>/dev/null || true)
-    if [[ $config_digest != "$cached" || $previous_bind != "$(enter "$candidate" cat /etc/orbit/gateway-web/runtime.env)" ]] || ! enter "$candidate" systemctl is-active --quiet orbit-gateway-web.service; then
-      cache_config "$candidate" >&2
-      enter "$candidate" systemctl restart orbit-gateway-web.service
-    fi
-    private_ready
-    # The child interpreter expands this program.
-    # shellcheck disable=SC2016
-    php "$candidate" -r '
-      require $argv[1]."/vendor/autoload.php"; $app=require $argv[1]."/bootstrap/app.php";
-      $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-      if (App\Infrastructure\Gateway\GatewayQueueRedis::configured()) {
-          App\Infrastructure\Gateway\GatewayQueueRedis::configure();
-          Illuminate\Support\Facades\Redis::connection("gateway")->ping();
-      }' "$app"
+    bind_changed=false
+    if [[ $previous_bind != "$(enter "$candidate" cat /etc/orbit/gateway-web/runtime.env)" ]]; then bind_changed=true; fi
+    verify_candidate "$bind_changed"
     ;;
   switch)
     expected=$1
@@ -386,11 +417,15 @@ case "$action" in
       previous=$(field '.live | select(test("^[0-9a-f]{40}$"))')
     fi
     [[ ${previous:0:12} == "$expected" ]] || fail 'live changed after admission'
-    generations=$(artisan "$candidate" gateway:release:cleanup --no-interaction | jq -ce .generations)
     if [[ $previous != "$sha" ]]; then
       prev=gateway-${previous:0:12}
       /usr/local/libexec/orbit-gateway-unit apply-candidate "$operation" "$sha" >&2
-      private_ready
+      # A serving release may have been reconfigured since private readiness.
+      # Verify the worker under the same lock as configure before draining live.
+      verify_candidate false
+    fi
+    generations=$(artisan "$candidate" gateway:release:cleanup --no-interaction | jq -ce .generations)
+    if [[ $previous != "$sha" ]]; then
       install -d -m 0700 "$journal"
       [[ ! -e $journal/operation ]] || fail 'an interrupted switch needs recovery'
       prune_previous
@@ -470,7 +505,7 @@ case "$action" in
     /usr/local/libexec/orbit-gateway-site host >&2
     check_release "$sha"
     stop_background "$candidate" "$host_fallback/background"
-    start_horizons host "$1"
+    start_horizons host "$1" "$host_fallback/horizons"
     start_background host
     "${incus_cli[@]}" config set "$candidate" boot.autostart=false
     # Once the host has passed verification and taken over, recovery completes
