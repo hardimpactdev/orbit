@@ -11,3 +11,12 @@ it('names the hibernation folders a served development site needs, owned for Cad
         ['path' => '/data/caddy/orbit/hibernation', 'owner' => 'root', 'group' => 'caddy', 'mode' => '2775'],
     ])->and(array_column(AppDevRuntimeFootprint::files(), 'content', 'path'))->toBe([TmpfilesFootprintArtifact::Path => TmpfilesFootprintArtifact::Rule]);
 });
+
+it('recreates the volatile role folder with its required metadata at boot', function (): void {
+    $rules = explode("\n", TmpfilesFootprintArtifact::Rule);
+    foreach (AppDevRuntimeFootprint::directories() as $directory) {
+        if (str_starts_with($directory['path'], '/dev/shm/')) {
+            expect($rules)->toContain(sprintf('d %s %s %s %s -', $directory['path'], $directory['mode'], $directory['owner'], $directory['group']));
+        }
+    }
+});

@@ -141,6 +141,8 @@ The busy guard runs immediately before Swamp load, while the old release and Hor
 
 The Gateway queues the fleet pass when it records verification. Fleet `current` permits the Gateway to advance [the default refresh and seed publication](/reference/development-containers#refresh-after-a-release), when refresh is enabled. Each has its own status and Operation receipts in the release record. With rollout disabled, verification permits the same attempt. The release can stay verified while the fleet is pending, deferred or failed. The refresh has its own admission and result.
 
+The refresh can keep a current nested app-dev host when a release changes only the play that launches Conn or the helper that starts a task turn. The refresh result records why each Node converged or skipped and which base snapshots it retook.
+
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
 The activate child drains Horizon before the switch. The Horizon unit carries the stop policy ([Horizon](/reference/gateway-queue#horizon)), so `systemctl stop` waits until the unit's whole control group is empty, as long as the drain allows. The step refuses a unit without the policy: update the Horizon Process first. A process that a job leaves behind holds the stop; for this reason a command that runs inside Horizon opens its own [SSH connection](/reference/node-provisioning#ssh-connections), and no shared connection master stays in the group.
