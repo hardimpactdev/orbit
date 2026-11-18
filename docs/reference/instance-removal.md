@@ -37,6 +37,9 @@ Missing or unreadable candidate paths, Git errors/timeouts and unreadable or mal
 
 Only a confirmed dependency or a target read failure refuses. The target’s directory, pointer or Git failure names its path and the unreadable or timed_out cause. Candidate Git reads share one three-second allowance; later candidates use pointer reads once it is spent. No read is retried. Admission warnings survive in the Operation result. As in transfer, human output names the warning code, path, Instance IDs and read cause; JSON keeps the typed warning. The Gateway inventory excludes containers and empty or relative paths; malformed candidate rows are bounded warnings, never a whole-call failure.
 
+
+An AppProd Instance whose first container deployment has started keeps its registration. Its serving clone, rollback and persistent volume belong to the release controller. The existing removal commands refuse at admission, including with `--force`, before stopping Schedules or withdrawing Routes. See [production container ownership](/reference/production-containers).
+
 ## Replication slots
 
 A replication slot keeps PostgreSQL from dropping its database. Without a check, the drop would fail after the fence closed the database to new clients, and the removal would stop half way. So admission reads the slots first.
