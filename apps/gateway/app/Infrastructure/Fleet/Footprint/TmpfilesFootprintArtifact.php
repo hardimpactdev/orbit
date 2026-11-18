@@ -14,7 +14,7 @@ use App\Models\NodeRole;
  * The systemd-tmpfiles rule on an `app-dev` Node that empties Orbit's scratch directories in `/tmp` and
  * `/dev/shm` a day after their contents last changed. Task agents, task checks, and Orbit's test suites run
  * there and name their scratch `orbit-*`; a run that is killed leaves it behind. Orbit's own `/dev/shm/orbit`
- * does not match. The rule touches no other path.
+ * does not match. A separate boot rule recreates the app-dev wake marker directory on tmpfs.
  */
 final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
 {
@@ -22,6 +22,7 @@ final readonly class TmpfilesFootprintArtifact implements NodeFootprintArtifact
 
     public const string Rule = <<<'CONF'
         # Managed by Orbit. Empties Orbit's scratch directories one day after their contents last changed.
+        d /dev/shm/orbit/hibernation 0755 root caddy -
         e /tmp/orbit-* - - - 1d
         e /dev/shm/orbit-* - - - 1d
 
