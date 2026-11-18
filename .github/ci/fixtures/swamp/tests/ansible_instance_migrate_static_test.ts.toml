@@ -14,6 +14,7 @@ cost = 13
 slices = 4
 inputs = [
   "swamp/tests/_support/instance_migrate.ts",
+  "swamp/tests/fixtures/instance-migrate-retention.py",
   "swamp/ansible/tasks/instance-migrate-phase.yml",
   "swamp/ansible/tasks/instance-migrate-env-check.yml",
   "bin/swamp-shape-gate",
