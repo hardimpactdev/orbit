@@ -3210,7 +3210,7 @@ Deno.test({
     : "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
   ignore: !hasAnsible,
   async fn() {
-    const f = await hostFixture({pool: "dir"});
+    const f = await hostFixture({pool: "btrfs"});
     try {
       const state = f.state();
       state.instances = [

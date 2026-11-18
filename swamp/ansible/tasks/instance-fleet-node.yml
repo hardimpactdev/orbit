@@ -2,7 +2,7 @@
 # The first part of the container branch on an Instance fleet Node: `nested-app-dev` of a nested fleet, a third level below the host
 # (docs/reference/development-containers.md#instance-host-in-the-fleet). The Gateway sends `instances.fleet_node` only for it, so a real
 # app-dev or CI Node keeps the branch as it was. The Node has no Incus and no pool: this part installs Incus first, runs it without
-# AppArmor, which cannot load a profile there, and creates the directory pool. The rest of the branch then finds both.
+# AppArmor, which cannot load a profile there, and creates the btrfs pool. The rest of the branch then finds both.
 - name: Make the folder of the Incus drop-in
   ansible.builtin.file: { path: /etc/systemd/system/incus.service.d, state: directory, owner: root, group: root, mode: "0755" }
 - name: Run the fleet Node's Incus without AppArmor
@@ -26,14 +26,65 @@
   when: fleet_node_apparmor.changed
   ansible.builtin.systemd_service: { name: incus.service, daemon_reload: true, state: restarted }
 
+# The pool is btrfs on the Node's own btrfs root, so a copy is a subvolume snapshot, never a file copy. The Incus btrfs driver needs
+# `btrfs-progs`.
+- name: Install the btrfs tools on the fleet Node
+  ansible.builtin.apt: { name: btrfs-progs, state: present, install_recommends: false, update_cache: true, cache_valid_time: 3600 }
+
 - name: Read the Incus pools
-  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools"] }
+  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools?recursion=1"] }
   register: fleet_node_pools
   changed_when: false
 
-- name: Create the directory pool
-  when: ("/1.0/storage-pools/" ~ instances.pool) not in (fleet_node_pools.stdout | from_json)
-  ansible.builtin.command: { argv: [incus, storage, create, "{{ instances.pool }}", dir] }
+# A Node made before the btrfs pool has a directory pool. It holds no Instance and no volume, only the root device of profiles, which
+# the profile step below writes again. Anything else refuses, and the pool stays as it is.
+- name: Replace a pool of another driver
+  when: fleet_node_pool | length > 0 and (fleet_node_pool | first).driver != 'btrfs'
+  vars:
+    fleet_node_pool: "{{ fleet_node_pools.stdout | from_json | selectattr('name', 'equalto', instances.pool) | list }}"
+  block:
+    - name: Refuse a pool that holds more than profile devices
+      ansible.builtin.assert:
+        that: fleet_node_held | length == 0
+        fail_msg: >-
+          instance.host_unavailable: the Incus pool {{ instances.pool }} uses the {{ (fleet_node_pool | first).driver }} driver and
+          holds {{ fleet_node_held | join(', ') }}; the converge replaces it with a btrfs pool only when it holds no Instance or volume
+        quiet: true
+      vars:
+        fleet_node_held: "{{ (fleet_node_pool | first).used_by | reject('match', '^/1.0/profiles/') | list }}"
+    - name: Read the profiles that use the pool
+      ansible.builtin.command: { argv: [incus, query, "--", "{{ item }}"] }
+      loop: "{{ (fleet_node_pool | first).used_by | select('match', '^/1.0/profiles/') | list }}"
+      register: fleet_node_profiles
+      changed_when: false
+    - name: Remove the profiles' devices on the pool
+      ansible.builtin.command:
+        argv: [incus, profile, device, remove, "{{ item.profile }}", "{{ item.device }}", --project, "{{ item.project }}"]
+      loop: "{{ fleet_node_profile_devices }}"
+      loop_control: { label: "{{ item.project }}/{{ item.profile }} {{ item.device }}" }
+      vars:
+        # A used_by entry names its project in `?project=`; without one it is the default project.
+        fleet_node_profile_devices: >-
+          {%- set ns = namespace(out=[]) -%}
+          {%- for read in fleet_node_profiles.results -%}
+            {%- set profile = read.stdout | from_json -%}
+            {%- set project = read.item.split('project=')[1] if 'project=' in read.item else 'default' -%}
+            {%- for device in profile.devices | dict2items if device.value.pool | default('') == instances.pool -%}
+              {%- set ns.out = ns.out + [{'profile': profile.name, 'device': device.key, 'project': project}] -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ ns.out }}
+      changed_when: true
+    - name: Delete the pool of another driver
+      ansible.builtin.command: { argv: [incus, storage, delete, "{{ instances.pool }}"] }
+      changed_when: true
+
+- name: Create the btrfs pool on the Node's root
+  when: fleet_node_pool | length == 0 or (fleet_node_pool | first).driver != 'btrfs'
+  vars:
+    fleet_node_pool: "{{ fleet_node_pools.stdout | from_json | selectattr('name', 'equalto', instances.pool) | list }}"
+  ansible.builtin.command:
+    argv: [incus, storage, create, "{{ instances.pool }}", btrfs, "source=/var/lib/incus/storage-pools/{{ instances.pool }}"]
   changed_when: true
 
 # The power helper reads this marker and keeps the fast wake off for every Instance here, as for nested-fleet Instances (ADR 0261).

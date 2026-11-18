@@ -195,7 +195,7 @@ class IdmapTest(unittest.TestCase):
         exec(compile(module, str(SCRIPT), "exec"), namespace)
         return namespace["unshift_clone_rootfs"]
 
-    def run_helper(self, root, source=None, own=None, status="Stopped", driver="dir"):
+    def run_helper(self, root, source=None, own=None, status="Stopped", driver="btrfs"):
         container = {"name": "instance-7", "project": "orbit-instances", "root_disk_pool": "orbit-instances",
                      "clone": {"source": "instance-1"}}
         calls = []
@@ -482,7 +482,7 @@ class CloneTest(unittest.TestCase):
                     return subprocess.CompletedProcess(argv, 0 if acl else 1, json.dumps(acl) if acl else "", "" if acl else "Error: Network ACL not found")
                 if argv[:2] == ["incus", "query"]:
                     if argv[2].startswith("/1.0/storage-pools/"):
-                        output = json.dumps({"driver": container.get("fixture_pool_driver", "dir"), "config": {"source": folder}})
+                        output = json.dumps({"driver": container.get("fixture_pool_driver", "btrfs"), "config": {"source": folder}})
                     elif argv[2] == "/1.0/instances/instance-1?project=orbit-instances":
                         output = json.dumps({"config": {"volatile.last_state.idmap": json.dumps(container.get("fixture_source_idmap", []))}})
                     elif "snapshots?" in argv[2]:
@@ -640,9 +640,11 @@ class CloneTest(unittest.TestCase):
                     self.assertEqual(len(chowns), 2)
 
     def test_a_stripped_idmap_on_another_pool_driver_refuses_before_start(self):
-        calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": "zfs"})
-        self.assertEqual(error, "instance.clone_idmap_unshift_unsupported\n")
-        self.assertFalse(any(call[3:4] == ["start"] for call in calls))
+        for driver in ("zfs", "dir"):
+            with self.subTest(driver=driver):
+                calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": driver})
+                self.assertEqual(error, "instance.clone_idmap_unshift_unsupported\n")
+                self.assertFalse(any(call[3:4] == ["start"] for call in calls))
 
     def test_a_clone_with_no_missing_idmap_never_opens_its_pool(self):
         for source, own in (([], []), ([], IdmapTest.MAP), (IdmapTest.MAP, IdmapTest.MAP)):

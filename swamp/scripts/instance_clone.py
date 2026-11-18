@@ -185,7 +185,7 @@ def unshift_clone_rootfs(container, read, run):
         pool = json.loads(run(["incus", "query", "/1.0/storage-pools/" + urllib.parse.quote(container["root_disk_pool"], safe="")]).stdout)
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise RuntimeError("instance.clone_idmap_unshift_failed") from error
-    if pool.get("driver") != "dir":
+    if pool.get("driver") != "btrfs":
         raise RuntimeError("instance.clone_idmap_unshift_unsupported")
 
     try:

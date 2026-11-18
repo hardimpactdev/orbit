@@ -12,7 +12,7 @@ for (const status of ["Running", "Stopped"]) {
         name: `bridge remains reject after a late unsafe ${status.toLowerCase()} attachment, and profile NICs use only the proxy ACL`,
         ignore: !hasAnsible,
         async fn() {
-            const f = await fixture({ pool: "dir" });
+            const f = await fixture({ pool: "btrfs" });
             try {
                 let result = await f.run();
                 assert(result.ok, result.output);
@@ -46,9 +46,9 @@ for (const status of ["Running", "Stopped"]) {
         name: `a ${status.toLowerCase()} attachment without its own NIC device passes the audit through the profile gate`,
         ignore: !hasAnsible,
         async fn() {
-            const f = await fixture({ pool: "dir" });
+            const f = await fixture({ pool: "btrfs" });
             try {
-                restore(f, boundaries["dir-finish"]);
+                restore(f, boundaries["btrfs-finish"]);
                 // Removing the whole local device restores the profile gate; individual missing properties do not inherit.
                 const fixed = f.state();
                 fixed.instances.push({name, project: "orbit-instances", status, devices: {}});
@@ -64,7 +64,7 @@ const endpoint = (host: string, port: string) => ({action: "allow", source: "10.
 const legacy = (acls: string) => ({name: "legacy-stopped", project: "orbit-instances", status: "Stopped", devices: {eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "security.acls": acls, "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"}}});
 
 async function converged() {
-    const f = await fixture({pool: "dir"});
+    const f = await fixture({pool: "btrfs"});
     f.instances.bridge_endpoints = [{host: "10.44.0.7", port: 3306, docker: false}, {host: "10.44.0.3", port: 5434, docker: false}];
     f.write(f.instances);
     const result = await f.run();

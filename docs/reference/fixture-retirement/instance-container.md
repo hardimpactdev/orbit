@@ -191,7 +191,7 @@ None of the new cases can run today: the nested `app-dev` Node of a proof copy h
 
 The nested `app-dev` Node needs the container branch of its role ([Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host)):
 
-- Incus with the `orbit-instances` directory pool and the bridge `orbitinst0`.
+- Incus with the `orbit-instances` btrfs pool and the bridge `orbitinst0`.
 - The prepared container image.
 - The power helper.
 
