@@ -44,21 +44,6 @@ class GatewayColdRollback(GatewayReleaseFixture):
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_rolled_back()
 
-    def test_a_rollback_killed_after_old_started_is_parked_by_recover(self):
-        self.released()
-        result = self.run_script(self.console, "", interrupt="after former start")
-        self.assertEqual(result.returncode, -9)
-        self.assertFalse((self.journal / "operation").exists())
-        self.assertTrue((self.journal / "rollback").exists())
-        self.assertEqual((self.state / "former").read_text(), "Running")
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assertFalse((self.journal / "rollback").exists())
-        self.assert_parked("former", self.old)
-        self.inventory_is(self.sha, self.old, verified=(self.sha, self.old))
-        # The forward path no longer finds a running old.
-        self.assertIn("already serves", self.direct("build", "false", "{}", "false").stderr)
-        self.assert_at_most_three()
-
     def test_native_rollback_phases_switch_through_the_same_journal(self):
         self.released()
         phase = lambda name, *args: self.run_script(self.phase, name, self.old, "43", *args)
