@@ -42,7 +42,7 @@ Every Gateway record event goes out on one private channel, `orbit`. The progres
 | `peer.identity_unknown` | 403 | The caller's address does not belong to an active Node. |
 | `node_access.required` | 403 | The caller has no access grant to the Gateway. |
 | `realtime.not_configured` | 404 | No `websocket` role is active. |
-| `broadcast.channel_forbidden` | 403 | The channel is a `presence-*` channel other than `presence-node.{id}`, a malformed `presence-node.*` name, or a `private-log-stream.*` channel. |
+| `broadcast.channel_forbidden` | 403 | The channel is a `presence-*` channel other than `presence-node.{id}`, a malformed `presence-node.*` name, a `private-log-stream.*` channel, or a `private-conn-profile.*` channel. |
 
 The same endpoint signs `private-operation.{id}` for an operation that exists, and a viewer membership on `presence-node.{id}`, as [Node agent channels](#node-agent-channels) describes. It refuses `private-operation.{id}` for a missing operation with `broadcast.channel_forbidden`.
 
@@ -61,7 +61,7 @@ A client asks the Gateway where Reverb is. `GET /api/v1/realtime` needs Gateway 
 
 ## Envelope
 
-Every event has the same shape. The broadcast name equals `type`.
+Every event has the same shape, except [`conn.profile.updated`](#conn-profile), which carries only its payload. The broadcast name equals `type`.
 
 | Field | Contract |
 | --- | --- |
@@ -192,6 +192,14 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 `id` is the operation ID. A change that is neither a status change nor a cancel request goes only to the operation's own channel. These events are notices: they never carry input, steps, output, or the result. On its own channel, an operation sends at most one output change per second, and every status and step change at once. A client drops an event whose `sequence` is not greater than the one it has read, and reads the operation with `after_sequence` for the rest. [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes the order.
 
 [Conn launches](/reference/conn#durable-launches-v1) do not use the ordinary Operation channels. If Conn sends a launch invalidation, only active peers with the matching profile binding and target Node access may receive it. It does not carry launch data; the client reads the launch snapshot over HTTP.
+
+### Conn profile
+
+| Event | Channel | When | `data` |
+| --- | --- | --- | --- |
+| `conn.profile.updated` | `private-conn-profile.{key}` | A Conn profile write committed. | Payload `{ profile_id, version }`, no envelope |
+
+Its payload is exactly `{"profile_id": 1, "version": 7}`, without the [envelope](#envelope). This event never goes out on `orbit`. Each key is one generation of one Node's profile binding, and only Conn's own `POST /api/v1/conn/broadcasting/auth` signs it, for that Node. [Profile events](/reference/conn#profile-events) owns the key, the audience and the loss rules.
 
 ### Deploy step output
 
