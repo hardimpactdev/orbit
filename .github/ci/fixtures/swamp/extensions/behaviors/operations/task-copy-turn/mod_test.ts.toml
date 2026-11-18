@@ -16,7 +16,7 @@ cases = [
   "a continued turn whose thread list failed or printed no JSON is tasks.copy_turn_failed, not a missing thread",
   "a reviewer turn fails when its checkout could not be put on the candidate or was not restored after a run T3 ended",
   "a detached reviewer checkout without a restore holds the group whatever the run did",
-  "a message without a run id keeps the transcript",
+  "a message without a run id keeps the transcript; a user message keeps only its ID, author and time",
   "transcript text is redacted and bounded to the newest entries",
   "the method reads each evidence file on its own, so an oversized read keeps the start's end",
   "the method reads the stop of a cut run and the runs the settle stopped",

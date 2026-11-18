@@ -113,7 +113,7 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
         $spent = array_map(ValidatedData::string(...), is_array($result['spent'] ?? null) ? array_values($result['spent']) : []);
         if ($spent !== []) {
             AgentThread::query()->where('task_group_id', $operation->target_id)->whereNotNull('questions')->get()
-                ->filter(static fn (AgentThread $asked): bool => array_diff(array_column($asked->questions ?? [], 'request_id'), $spent) === [])
+                ->filter(static fn (AgentThread $asked): bool => array_diff(array_map(static fn (array $question): string => ValidatedData::string($question['request_id']), $asked->questions ?? []), $spent) === [])
                 ->each(static fn (AgentThread $asked): bool => $asked->update(['questions' => null]));
         }
         // Only a turn whose run T3 confirmed replaces what the thread asked: one that launched nothing, or was only possibly sent, leaves
