@@ -1,6 +1,6 @@
 ---
 title: "MCP server"
-description: "The Gateway's Model Context Protocol server: every API operation as a tool, identified by WireGuard address, with a search variant for small contexts."
+description: "The Gateway's Model Context Protocol server: operator API actions as tools, with WireGuard identity and a search variant for small contexts."
 covers:
   - apps/gateway/app/Http/Mcp/**
   - apps/gateway/routes/ai.php
@@ -14,7 +14,7 @@ The `instance-logs`, `process-logs` and `schedule-logs` tools return bounded sna
 
 `task-swamp-runs` reads one task group's latest five Swamp runs, step states, bounded output, and log tails. It returns a snapshot, not a stream. Poll every five seconds and inspect `availability` and `observed_at` before treating output as current. [Swamp run output](/reference/tasks#swamp-run-output) defines the read and credential boundary.
 
-The Gateway serves a Model Context Protocol (MCP) server, so an agent can operate Orbit without the CLI. Every Gateway API operation is one tool. A tool call runs the same API request that the matching CLI command sends. Identity, access grants, validation, redaction, and [Activity](/cli/activity) therefore apply to it in the same way.
+The Gateway serves a Model Context Protocol (MCP) server, so an agent can operate Orbit without the CLI. A tool call runs the same API request that the matching CLI command sends. Identity, access grants, validation, redaction, and [Activity](/cli/activity) therefore apply to it in the same way. The [Swamp executor signer](/reference/swamp-command-steps#node-execution-through-official-ssh) is not a tool.
 
 The Project's [development deploy steps](/reference/deployments#development-deploy-steps) are available as `project-dev-deploy-step-list`, `project-dev-deploy-step-create`, `project-dev-deploy-step-update`, and `project-dev-deploy-step-destroy`. Supply the numeric `project`; updates and removal also take the step name as `step`. Create and update accept `required` as a JSON boolean, so `false` stays false through MCP dispatch. They accept `inputs` as a list of paths; on update, `null` or `[]` clears it.
 
@@ -32,7 +32,7 @@ Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Thei
 
 | Endpoint | Tools it lists | Use it when |
 | --- | --- | --- |
-| `https://gateway.orbit/mcp` | One tool for every API operation, on one page. | The client loads tool definitions on demand, or its context has room for the full catalogue. |
+| `https://gateway.orbit/mcp` | The full operator tool catalogue, on one page. | The client loads tool definitions on demand, or its context has room for the full catalogue. |
 | `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools`. | The client loads every listed tool into its context. |
 
 Both endpoints use the Gateway's [browser access rules](/reference/browser-access), which allow the Gateway's own HTTPS node hostname as a browser origin.

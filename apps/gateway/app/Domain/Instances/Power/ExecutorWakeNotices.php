@@ -32,10 +32,14 @@ final readonly class ExecutorWakeNotices
         return DB::table(self::Table)->exists();
     }
 
-    public function relay(): void
+    public function relay(?int $operationId = null): void
     {
-        $this->lock->run('notices', 0, static function (): void {
-            foreach (DB::table(self::Table)->orderBy('id')->limit(50)->get() as $row) {
+        $this->lock->run('notices', 0, static function () use ($operationId): void {
+            $notices = DB::table(self::Table);
+            if ($operationId !== null) {
+                $notices->where('operation_id', $operationId);
+            }
+            foreach ($notices->orderBy('id')->limit(50)->get() as $row) {
                 if ($row->reconcile_conn) {
                     ReconcileSwampOperations::dispatch();
                 }

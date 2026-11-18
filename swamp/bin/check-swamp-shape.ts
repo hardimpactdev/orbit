@@ -94,6 +94,7 @@ const lines = (s: string) => s.trim() ? s.trim().split(/\r?\n/).length : 0;
 export const GATEWAY_PRIMITIVES = [
     "/api/v1/direct-operations/{operation_id}/github-token",
     "/api/v1/direct-operations/{operation_id}/certificates/sign",
+    "/api/v1/direct-operations/{operation_id}/executor/sign",
 ] as const;
 export function isGatewayPrimitive(
     method: string | undefined,

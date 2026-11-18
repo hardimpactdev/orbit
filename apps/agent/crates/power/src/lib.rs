@@ -8,19 +8,24 @@ mod pool;
 mod wake;
 
 pub use pool::{MAX_THREADS, MIN_THREADS};
-pub use wake::WakeReceipt;
+pub use wake::{WakeReceipt, WebProbe};
 
 use incus::{Api, Incus, Instance};
 use plan::{cgroup_identity, Plan};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
+use std::net::{SocketAddr, TcpStream};
 use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const RESIDUAL_ANON: u64 = 32 << 20;
 const UNMANAGED: &str = "instance.container_frozen_unmanaged";
+/// The published route must already recognize the asleep marker.
+pub const ROUTE_UNREADY: &str = "instance.sleep_route_unready";
+/// Sleep failed after making the container unavailable; keep the state for this engine to wake.
+pub const SLEEP_INCOMPLETE: &str = "instance.container_sleep_incomplete";
 /// A sleep or discard waits this long for a stalled restore reader of its target, then refuses.
 const READER_BOUND: Duration = Duration::from_secs(10);
 /// The refusal when a stalled restore reader of the target outlives [`READER_BOUND`].
@@ -133,6 +138,9 @@ pub struct Receipt {
     pub total_us: u64,
     /// Time spent reclaiming and waiting for counters to settle.
     pub reclaim_us: u64,
+    /// Number of inner cgroup limits opened, excluding the container root.
+    #[serde(default)]
+    pub swap_subtree: usize,
 }
 fn micros(start: Instant) -> u64 {
     u64::try_from(start.elapsed().as_micros()).unwrap_or(u64::MAX)
@@ -196,6 +204,44 @@ impl Power {
         self.sleep_with(&self.incus, id, operation)
     }
 
+    /// Check the loaded route before changing swap or freezing a published Instance.
+    ///
+    /// # Errors
+    /// Returns [`ROUTE_UNREADY`] when Caddy does not recognize the marker.
+    pub fn require_sleep_route(&self, id: &str) -> io::Result<()> {
+        if caddy_checks(&self.marker(id)) {
+            Ok(())
+        } else {
+            Err(invalid(ROUTE_UNREADY))
+        }
+    }
+
+    fn sleep_with(&self, api: &dyn Api, id: &str, operation: &str) -> io::Result<Receipt> {
+        let marker = self.marker(id);
+        let had_marker = marker.exists();
+        let result = self.capture_sleep(api, id, operation);
+        if result.is_err() && !had_marker {
+            self.clear_failed_sleep_marker(api, id, &marker);
+        }
+        if result.is_err() && marker.exists() && self.state.join(id).join("limits.json").exists() {
+            return Err(invalid(SLEEP_INCOMPLETE));
+        }
+        result
+    }
+
+    fn clear_failed_sleep_marker(&self, api: &dyn Api, id: &str, marker: &Path) {
+        if let Ok(Some(instance)) = api.instance(id) {
+            if instance.status == "running"
+                && self.identity(&instance).is_ok_and(|identity| {
+                    Self::kernel_frozen(&self.cgroups.join(identity.cgroup))
+                        .is_ok_and(|frozen| !frozen)
+                })
+            {
+                let _ = remove(marker);
+            }
+        }
+    }
+
     /// Drop the plan and limits record after stop, destruction or a fresh boot. Safe to repeat.
     ///
     /// # Errors
@@ -220,6 +266,25 @@ impl Power {
             remove(&base.join(name))?;
         }
         File::open(base)?.sync_all()
+    }
+
+    /// Discard on a signed order only after Incus proves the target is stopped or absent.
+    ///
+    /// # Errors
+    /// Returns a power state or local I/O error. On refusal the saved limits and plan stay intact.
+    pub fn discard_stopped(&self, id: &str) -> io::Result<()> {
+        self.discard_stopped_with(&self.incus, id)
+    }
+
+    fn discard_stopped_with(&self, api: &dyn Api, id: &str) -> io::Result<()> {
+        if !valid_id(id)
+            || api
+                .instance(id)?
+                .is_some_and(|instance| instance.status != "stopped")
+        {
+            return Err(invalid("instance.power_discard_failed"));
+        }
+        self.discard(id)
     }
 
     fn readers(&self, id: &str) -> std::sync::Arc<pool::Readers> {
@@ -350,7 +415,7 @@ impl Power {
                 .any(|l| l == "frozen 1"))
     }
 
-    fn sleep_with(&self, api: &dyn Api, id: &str, operation: &str) -> io::Result<Receipt> {
+    fn capture_sleep(&self, api: &dyn Api, id: &str, operation: &str) -> io::Result<Receipt> {
         if !valid_id(id) {
             return Err(invalid("unknown_target"));
         }
@@ -362,7 +427,8 @@ impl Power {
         if instance.status == "stopped" {
             self.discard(id)?;
             let receipt = stopped_receipt(started);
-            self.finish(id, &base, &receipt)?;
+            self.mark_asleep(id)?;
+            publish(&base.join("receipt.json"), &receipt)?;
             return Ok(receipt);
         }
         let identity = self.identity(&instance)?;
@@ -385,20 +451,7 @@ impl Power {
             }
             return Err(error);
         }
-        if instance.status != "frozen" && api.change(&instance, "freeze").is_err() {
-            // Incus may have completed the freeze before its response was lost.
-            if api
-                .instance(id)?
-                .is_some_and(|live| live.status == "running")
-                && !Self::kernel_frozen(&root)?
-            {
-                self.close_limits(&base, &identity)?;
-            }
-            return Err(invalid("instance.container_freeze_failed"));
-        }
-        if !Self::kernel_frozen(&root)? {
-            return Err(invalid("instance.container_freeze_failed"));
-        }
+        self.freeze(api, id, &instance, &base, &identity)?;
         let mut reason = None;
         let plan_path = base.join("plan.json");
         let plan =
@@ -409,6 +462,12 @@ impl Power {
         let (anon, file) = counters(&root)?;
         let ram_bytes = number(&root.join("memory.current"))?;
         let swap_bytes = number(&root.join("memory.swap.current"))?;
+        let limits: Limits = load(&base.join("limits.json"))?;
+        let swap_subtree = limits
+            .opened
+            .iter()
+            .filter(|limit| !limit.relative.as_os_str().is_empty())
+            .count();
         let mut sleep = "frozen";
         if anon > RESIDUAL_ANON {
             self.swap_full(api, id, &instance, &base, &identity)?;
@@ -441,19 +500,52 @@ impl Power {
             residual_file_bytes: file,
             total_us: micros(started),
             reclaim_us,
+            swap_subtree,
         };
-        self.finish(id, &base, &receipt)?;
+        publish(&base.join("receipt.json"), &receipt)?;
         Ok(receipt)
     }
 
-    fn finish(&self, id: &str, base: &Path, receipt: &Receipt) -> io::Result<()> {
-        publish(&base.join("receipt.json"), receipt)?;
+    fn freeze(
+        &self,
+        api: &dyn Api,
+        id: &str,
+        instance: &Instance,
+        base: &Path,
+        identity: &Identity,
+    ) -> io::Result<()> {
+        let root = self.cgroups.join(&identity.cgroup);
+        if let Err(error) = self.mark_asleep(id) {
+            if instance.status == "running" {
+                self.close_limits(base, identity)?;
+            }
+            return Err(error);
+        }
+        if instance.status == "running"
+            && api.change(instance, "freeze").is_err()
+            && !api
+                .instance(id)?
+                .is_some_and(|live| live.status == "frozen")
+        {
+            if !Self::kernel_frozen(&root)? {
+                self.close_limits(base, identity)?;
+            }
+            return Err(invalid("instance.container_freeze_failed"));
+        }
+        if Self::kernel_frozen(&root)? {
+            Ok(())
+        } else {
+            Err(invalid("instance.container_freeze_failed"))
+        }
+    }
+
+    fn marker(&self, id: &str) -> PathBuf {
+        self.markers.join(format!("app-instance-{id}.asleep"))
+    }
+
+    fn mark_asleep(&self, id: &str) -> io::Result<()> {
         fs::create_dir_all(&self.markers)?;
-        atomic(
-            &self.markers.join(format!("app-instance-{id}.asleep")),
-            b"",
-            0o644,
-        )
+        atomic(&self.marker(id), b"", 0o644)
     }
 
     fn existing_or_capture(
@@ -575,6 +667,115 @@ fn stopped_receipt(started: Instant) -> Receipt {
         residual_file_bytes: 0,
         total_us: micros(started),
         reclaim_us: 0,
+        swap_subtree: 0,
+    }
+}
+
+fn caddy_checks(marker: &Path) -> bool {
+    let result = caddy_config(([127, 0, 0, 1], 2019).into());
+    result.is_ok_and(|bytes| route_checks(&bytes, marker))
+}
+
+fn caddy_config(address: SocketAddr) -> io::Result<Vec<u8>> {
+    let bound = Duration::from_millis(250);
+    let mut stream = TcpStream::connect_timeout(&address, bound)?;
+    stream.set_read_timeout(Some(bound))?;
+    stream.set_write_timeout(Some(bound))?;
+    write!(stream, "GET /config/ HTTP/1.0\r\nHost: {address}\r\n\r\n")?;
+    let mut bytes = Vec::new();
+    stream.take(8 * 1024 * 1024).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn route_checks(response: &[u8], marker: &Path) -> bool {
+    if !response.starts_with(b"HTTP/1.0 200 ") && !response.starts_with(b"HTTP/1.1 200 ") {
+        return false;
+    }
+    let Some((root, filename)) = marker
+        .parent()
+        .and_then(Path::to_str)
+        .zip(marker.file_name().and_then(|name| name.to_str()))
+    else {
+        return false;
+    };
+    let Some(headers) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n") else {
+        return false;
+    };
+    // The rule must send the matching visit to the Gateway's activation endpoint (Caddy's forward_auth is a reverse_proxy that
+    // rewrites to it); a matcher whose route only answers or skips its log cannot wake the app.
+    let Some(activation) = filename
+        .strip_suffix(".asleep")
+        .and_then(|key| key.strip_prefix("app-instance-"))
+        .map(|id| format!("/api/v1/runtime-activations/app-instance/{id}"))
+    else {
+        return false;
+    };
+    serde_json::from_slice(&response[headers + 4..])
+        .is_ok_and(|config| matches_marker(&config, root, &format!("/{filename}"), &activation))
+}
+
+fn matches_marker(config: &serde_json::Value, root: &str, file: &str, activation: &str) -> bool {
+    // The first handler that a marked visit reaches must be the activation proxy. Only `vars` (Caddy's `log_skip`) passes the
+    // visit on before it; any other first handler (a 503, an ordinary proxy) answers the visitor instead.
+    let mut handlers = Vec::new();
+    marker_handlers(config, root, file, &mut handlers);
+    handlers
+        .into_iter()
+        .find(|handler| handler.get("handler").and_then(serde_json::Value::as_str) != Some("vars"))
+        .is_some_and(|handler| {
+            handler.get("handler").and_then(serde_json::Value::as_str) == Some("reverse_proxy")
+                && handler
+                    .get("rewrite")
+                    .and_then(|rewrite| rewrite.get("uri"))
+                    .and_then(serde_json::Value::as_str)
+                    == Some(activation)
+        })
+}
+
+/// The handlers of every route with the exact marker matcher, in the order Caddy runs them.
+fn marker_handlers<'a>(
+    config: &'a serde_json::Value,
+    root: &str,
+    file: &str,
+    handlers: &mut Vec<&'a serde_json::Value>,
+) {
+    match config {
+        serde_json::Value::Object(object) => {
+            let exact = object
+                .get("match")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|matchers| {
+                    matchers.iter().any(|matcher| {
+                        let files = matcher.get("file");
+                        files
+                            .and_then(|f| f.get("root"))
+                            .and_then(serde_json::Value::as_str)
+                            == Some(root)
+                            && files
+                                .and_then(|f| f.get("try_files"))
+                                .and_then(serde_json::Value::as_array)
+                                .is_some_and(|candidates| {
+                                    candidates
+                                        .iter()
+                                        .any(|candidate| candidate.as_str() == Some(file))
+                                })
+                    })
+                });
+            if exact {
+                if let Some(handle) = object.get("handle").and_then(serde_json::Value::as_array) {
+                    handlers.extend(handle);
+                }
+            }
+            for value in object.values() {
+                marker_handlers(value, root, file, handlers);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                marker_handlers(value, root, file, handlers);
+            }
+        }
+        _ => {}
     }
 }
 

@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed>|null $result
  * @property array<string, mixed>|null $executor_result The executor's result line for this Operation's order (ADR 0266), written once by the agent view subscriber.
  * @property int|null $executor_result_received_us Gateway receipt time in Unix microseconds, written with the first result.
+ * @property int|null $executor_accepted_us Gateway receipt time in Unix microseconds, written with the first acceptance.
  * @property OperationStatus $status
  * @property int $sequence
  * @property string|null $current_step
@@ -131,6 +132,7 @@ final class Operation extends Model
             'result' => 'array',
             'executor_result' => 'array',
             'executor_result_received_us' => 'integer',
+            'executor_accepted_us' => 'integer',
             'status' => OperationStatus::class,
             'sequence' => 'integer',
             'attempts' => 'integer',
