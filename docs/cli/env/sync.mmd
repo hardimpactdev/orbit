@@ -20,7 +20,7 @@ sequenceDiagram
     GW->>SW: Start environment sync<br/>private Operation input
     Note over SW: Check the environment<br/>owner
     SW->>N: Apply the live environment
-    N-->>SW: Verified input digest
+    N-->>SW: Release and changes<br/>Restarted Processes
     SW-->>GW: Record the result
   else Host or development Instance
   CLI->>GW: env:sync --instance=42
