@@ -376,7 +376,9 @@ class Release:
         artifact = self.guest_action(self.prep, "digest")
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", artifact):
             raise Refusal("deployment.step_failed: invalid completed build digest")
-        size = int(self.user(self.prep, "du", "-sxb", "--", WORK + "/").stdout.split()[0])
+        # The read-only Git alternate is part of every sealed root disk as well as the worktree.
+        usage = self.user(self.prep, "du", "-scxb", "--", WORK + "/", "/var/lib/orbit-release-git/").stdout
+        size = int(usage.splitlines()[-1].split()[0])
         self.persist(artifact=artifact, build_bytes=size)
         self.reserve(plan, measured=True)
         if self.state.get("dependency_receipt") and all(row["exit_code"] == 0 for row in self.state["step_outcomes"]):
