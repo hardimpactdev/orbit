@@ -50,8 +50,11 @@ if mode == 'partial' and operation == 'update':
     sys.exit(100 if 'APT::Update::Error-Mode=any' in args else 0)
 if mode == 'fail' or (mode == 'install-fail' and operation == 'install'):
     sys.exit(100)
+if mode == 'restart-hooks' and operation == 'install' and os.environ.get('NEEDRESTART_SUSPEND') != '1':
+    # The disposable runner must not spend its bounded install restarting unrelated services.
+    sys.exit(100)
 if operation == 'install' and mode != 'no-tools':
-    for name in ['nft']:
+    for name in (['valkey-server', 'valkey-cli'] if args[-1] == 'valkey-server' else ['nft']):
         path = pathlib.Path(os.environ['FIXTURE_BIN']) / name
         path.write_text('#!/bin/bash\\necho fixture-version\\n')
         path.chmod(0o755)
@@ -81,7 +84,7 @@ if operation == 'install' and mode != 'no-tools':
         print(f'nftables present: {self.elapsed:.3f}s')
 
     def test_missing_tools_are_installed_and_verified(self):
-        for package, names in (('nftables', ('nft',)),):
+        for package, names in (('nftables', ('nft',)), ('valkey-server', ('valkey-server', 'valkey-cli'))):
             with self.subTest(package=package):
                 self.log.unlink(missing_ok=True)
                 result = self.run_helper(package)
@@ -107,6 +110,19 @@ if operation == 'install' and mode != 'no-tools':
         result = self.run_helper()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Verified nftables', result.stdout)
+
+    def test_disposable_runner_install_suspends_unrelated_service_restart_hooks(self):
+        result = self.run_helper('valkey-server', primary='restart-hooks', fallback='restart-hooks')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([(c['mirror'], c['operation']) for c in self.apt],
+                         [('primary', 'update'), ('primary', 'install')])
+
+    def test_valkey_has_more_time_for_primary_package_configuration(self):
+        result = self.run_helper('valkey-server', primary='install-fail')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        deadlines = [c['sudo'][:5] for c in self.calls if c.get('sudo', [None, None])[1] == 'python3']
+        self.assertEqual(deadlines, [['-n', 'python3', '-', '25', 'valkey-server'],
+                                     ['-n', 'python3', '-', '20', 'valkey-server']])
 
     def test_update_and_install_failures_try_the_known_fallback(self):
         for mode in ('fail', 'partial', 'install-fail'):
@@ -152,10 +168,20 @@ if operation == 'install' and mode != 'no-tools':
             self.assertIn(f"vendor/bin/pest --group privileged {path} --filter 'on a real kernel'", gateway)
         self.assertEqual(gateway.count("ORBIT_REAL_KERNEL_TESTS: '1'"), 2)
 
+    def test_valkey_requires_both_server_and_client(self):
+        self.command('valkey-server', "print('fixture-version')\n")
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.apt, 'A server alone must not bypass installing the missing client')
+        self.log.unlink()
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls, [])
+
     def test_an_unknown_prerequisite_is_refused_without_running_commands(self):
         result = self.run_helper('unknown')
         self.assertEqual(result.returncode, 2)
-        self.assertIn('Usage: ci-runner-prerequisites {nftables}', result.stderr)
+        self.assertIn('Usage: ci-runner-prerequisites {nftables|valkey-server}', result.stderr)
         self.assertEqual(self.calls, [])
 
 
@@ -165,7 +191,7 @@ class MirrorDeadlineTest(unittest.TestCase):
     guard = HELPER.read_text().split("<<'PYTHON'\n", 1)[1].split('\nPYTHON', 1)[0]
 
     def test_update_and_install_share_each_mirrors_deadline(self):
-        for budget in (10, 20):
+        for budget in (10, 20, 25):
             with self.subTest(budget=budget):
                 child = Mock(pid=123)
                 child.wait.return_value = 0
@@ -187,9 +213,11 @@ class MirrorDeadlineTest(unittest.TestCase):
                 with patch.object(sys, 'argv', ['-', '10', 'nftables']), \
                         patch('time.monotonic', side_effect=[100, 100, 104]), \
                         patch('subprocess.Popen', return_value=child), patch('os.killpg') as kill, \
+                        patch('sys.stderr') as stderr, \
                         self.assertRaises(SystemExit) as stopped:
                     exec(self.guard, {})
                 self.assertEqual(stopped.exception.code, 124)
+                stderr.write.assert_any_call(f'apt-get {operation} exceeded the shared 10s deadline for nftables')
                 kill.assert_called_once_with(123, signal.SIGKILL)
                 self.assertEqual(child.wait.call_args_list[-1], call())
 

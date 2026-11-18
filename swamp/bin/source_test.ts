@@ -126,6 +126,8 @@ Deno.test("no workflow names a behavior by a literal and constant names are pres
     // These fixed identities must never become computed names.
     const expected = new Map(Object.entries({
         "operation-instance-migrate/input": "ansible-input",
+        "operation-node-base-inventory/Load the fixed collector": "ansible-input",
+        "operation-node-base-inventory/Publish the inventory": "node-base-inventory",
         "route-dns-grace/wait-private-dns-ttl": "route-dns-grace",
         "route-ingress-apply/result": "route-ingress-result",
         "route-lan-apply/changes": "route-lan-changes",

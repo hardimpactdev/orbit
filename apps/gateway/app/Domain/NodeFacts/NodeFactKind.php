@@ -67,6 +67,8 @@ enum NodeFactKind: string
                 'filesystems.*.mount' => ['required', 'string', 'starts_with:/', 'max:4096'],
                 'filesystems.*.size' => ['required', 'integer', 'min:0'],
                 'filesystems.*.free' => ['required', 'integer', 'min:0'],
+                'filesystems.*.observed_at' => ['sometimes', 'date_format:Y-m-d\\TH:i:s.v\\Z,Y-m-d\\TH:i:s\\Z'],
+                'filesystems.*.stale' => ['sometimes', 'boolean:strict'],
             ],
             self::Metrics => [
                 'cores' => ['required', 'array', 'list', 'min:1', 'max:4096'],
@@ -253,9 +255,17 @@ enum NodeFactKind: string
             return $data;
         }
         $data['filesystems'] = array_map(
-            static fn (mixed $filesystem): mixed => is_array($filesystem) && is_int($filesystem['free'] ?? null)
-                ? array_replace($filesystem, ['free' => intdiv($filesystem['free'], self::FreeStepBytes) * self::FreeStepBytes])
-                : $filesystem,
+            static function (mixed $filesystem): mixed {
+                if (! is_array($filesystem)) {
+                    return $filesystem;
+                }
+                unset($filesystem['observed_at'], $filesystem['stale']);
+                if (is_int($filesystem['free'] ?? null)) {
+                    $filesystem['free'] = intdiv($filesystem['free'], self::FreeStepBytes) * self::FreeStepBytes;
+                }
+
+                return $filesystem;
+            },
             $data['filesystems'],
         );
 

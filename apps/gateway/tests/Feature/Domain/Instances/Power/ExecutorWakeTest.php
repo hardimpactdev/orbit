@@ -12,7 +12,9 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectType;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
@@ -28,6 +30,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Jobs\Operations\CompleteExecutorWake;
+use App\Jobs\Operations\DispatchExecutorWake;
 use App\Jobs\Operations\ProjectExecutorWake;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -46,6 +49,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Testing\Fakes\EventFake;
 use Illuminate\Testing\TestResponse;
+use Orbit\Extensions\Conn\Domain\ConnLaunchAccess;
+use Orbit\Extensions\Conn\Domain\ConnLaunchChild;
+use Orbit\Extensions\Conn\Domain\ConnLaunchInstances;
+use Orbit\Extensions\Conn\Domain\ConnLaunchSettlement;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use Psr\Log\NullLogger;
@@ -215,6 +222,51 @@ it('joins two visits to one Operation and publishes only once', function (): voi
     Queue::assertPushed(CompleteExecutorWake::class, 1);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
+
+it('commits a Conn launch wake before dispatch and shares it with a visitor through cancellation', function (bool $visitorFirst): void {
+    $instance = executorWakeInstance();
+    $events = new EventFake($this->publisher, [RecordBroadcast::class]);
+    Event::swap($events);
+    $launch = app(OperationStore::class)->create(OperationKinds::ConnLaunch, ConnLaunchAccess::Target, $instance->id, $instance->node_id,
+        ['instance_id' => $instance->id, 'project_id' => $instance->project_id], 'node:'.$instance->node_id, null);
+    $wake = DB::transaction(function () use ($instance, $launch): Operation {
+        $wake = app(ConnLaunchInstances::class)->wake($launch, $instance);
+        Queue::assertNotPushed(DispatchExecutorWake::class);
+        $this->publisher->assertNotDispatched(ExecutorOrderBroadcast::class);
+
+        return $wake;
+    });
+    expect(ConnLaunchChild::Wake->operationId($launch->refresh()))->toBe($wake->id)
+        ->and($wake->state['conn_launch_owner'])->toBe($launch->id);
+    $job = Queue::pushed(DispatchExecutorWake::class)->sole();
+    expect($job->operationId)->toBe($wake->id)->and($job->queue)->toBe('operations-prompt');
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use ($wake, $launch): void {
+        expect((int) $event->order->operation)->toBe($wake->id)
+            ->and($wake->refresh()->state['conn_launch_owner'])->toBe($launch->id);
+        if (($wake->state['wake_shared'] ?? false) === true) {
+            executorWakeReply($wake, ['status' => 'done']);
+        }
+    };
+    if (! $visitorFirst) {
+        $job->handle(app(ExecutorWake::class));
+        $this->resultQueue->arriving = fn () => executorWakeReply($wake, ['status' => 'done']);
+    }
+
+    executorWakeVisit($instance)->assertOk();
+    $job->handle(app(ExecutorWake::class));
+    app(OperationStore::class)->change($launch, ['cancel_requested_at' => now()]);
+    app(ConnLaunchSettlement::class)->advance($launch->refresh());
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Succeeded)->cancel_requested_at->toBeNull();
+    expect($wake->state['wake_shared'])->toBeTrue()
+        ->and($launch->refresh()->status)->toBe(OperationStatus::Cancelled)
+        ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1)
+        ->and(Operation::query()->where('kind', 'instance.sleep')->exists())->toBeFalse();
+    $events->assertNotDispatched(RecordBroadcast::class);
+    $this->publisher->assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
+    Queue::assertPushed(CompleteExecutorWake::class, 1);
+    Queue::assertNotPushed(StartAdmittedSwampRun::class);
+})->with(['visitor publishes first' => [true], 'worker publishes first' => [false]]);
 
 it('lets a joining visit use the durable result after another waiter consumed its hand-off', function (): void {
     $instance = executorWakeInstance();

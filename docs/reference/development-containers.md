@@ -9,6 +9,7 @@ covers:
   - swamp/{ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml},scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
+  - swamp/ansible/t3_copy_rpc.mjs
 ---
 
 # Instance containers
@@ -579,7 +580,7 @@ T3 never restarts in the middle of a turn. Right before each T3 restart, whether
 Then:
 
 - An open turn defers the restart. The drop-in is written and systemd reloads, but T3 keeps running.
-- A deferred container stays on the Node's list. The converge reports it under `deferred`, with its reason.
+- A deferred container stays on the Node's list. The Node converge Operation lists its identity in `t3_restart_deferred`. A [release rollout](/reference/gateway-recovery#fleet-rollout) keeps that Node pending and retries.
 - When `t3.service` is active but the read fails or times out, the container counts as busy too. T3 never restarts blind.
 - A missing store, or one whose tables changed, fails the read.
 - When `t3.service` is not active, nothing is asked. `try-restart` does nothing there, and the entry leaves the list.
@@ -2028,7 +2029,17 @@ A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a
 
 ## Swamp drives T3
 
-Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver. The [`pi` driver](/reference/tasks#drivers) and task VMs are removed.
+Swamp drives a container's stock T3 through its own CLI and WebSocket RPC, run in the container. The [Conn launch transport](#conn-launch-transport) shares that RPC helper; the rest of this section describes the `t3` task driver. The [`pi` driver](/reference/tasks#drivers) and task VMs are removed.
+
+### Conn launch transport
+
+The placed phase reads or hands off only inside the admitted Instance. Run-folder staging allows the full frozen request to reach T3 on stdin. A cancelled preparation waits for any bounded native call and its local service session to settle before teardown.
+
+The [durable Conn launch](/reference/conn#durable-launches-v1) uses stock T3 `0.1.7` through the shared `t3_copy_rpc.mjs` transport. Swamp uses the admitted Node and exact container runtime; it enters the container with `incus exec`, then runs as `agent` with `runuser` in `/srv/workspace`. The worker reads the local runtime origin, issues a one-minute T3 session with `orchestration:read` and `orchestration:operate`, exchanges it for a WebSocket ticket, and uses `/ws?orchestrationProtocol=2`. Close the socket and revoke the session; if the process dies first, the session expires. Never return sessions, tickets, raw RPC frames or projections as evidence. The prompt is private input, not a shell argument or a Swamp artifact.
+
+Discover the active project for `/srv/workspace` from `orchestration.subscribeShell` and read provider settings with `server.getConfig` in the same scopes. The live `/.well-known/t3/environment` descriptor exposes the ID that stock T3 persists as `userdata/environment-id`. Check the live identity against the local state. Bind it to the device and inode of the persisted T3 database file before dispatch. This uses filesystem metadata. Recheck the binding on every attempt, including a read after a lost response. An ordinary restart with the same state keeps that binding. If state was copied, restored or otherwise lost continuity, a matching descriptor alone does not prove the replay window survived.
+
+Separate the read-only preparation evidence from permission to dispatch. Only native work admitted under the committed launch fence may send. Mark sending as a native write; recovery checks the pinned server and exact thread projection before any possible replay. Stock T3 writes separate command receipts for thread creation and the initial message, and can schedule the run before returning the launch response. A thread with no matching first message is not an acceptance receipt. Keep projection reads bounded and compare the exact message in the container; return only safe facts for the Gateway to project.
 
 ### Reach and authentication
 
@@ -2104,7 +2115,7 @@ Stock T3's CLI takes no effort, but T3's settings can hold several provider inst
 | `claude` | `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh`, `claudeMax`, driver `claudeAgent` | `CLAUDE_CODE_EFFORT_LEVEL` in the instance's environment |
 | `codex` | `codexLow`, `codexMedium`, `codexHigh`, `codexXhigh`, `codexMax`, `codexUltra`, driver `codex` | The thread's `reasoningEffort` model option |
 
-A new thread is created on the instance of its provider and effort, through T3's own RPC, with its model and model options; its first turn is then a `t3 thread send`, as a continued turn is. Before that, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). A turn's result names the provider instance, the model and the effort the thread started with.
+A new thread is created on the instance of its provider and effort, through T3's own RPC, with its model and model options. Its first turn uses `t3 thread send`, as a continued turn does. Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`) and checks the model against T3's cached model catalog. When that catalog does not confirm a Codex model, Orbit asks the copy's Codex provider to verify the exact slug before starting the thread. A turn's result names the provider instance, the model and the effort the thread started with. See [copy turn agents](/reference/tasks#copy-turn-agents).
 
 Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7. A Claude thread carries no model options.
 
@@ -2774,15 +2785,15 @@ Each Ansible step costs about 2.5 s to start its play (Python, the address play 
 
 Each phase writes the result file as it ends, as its own play did, with the phases that passed so far as `phases_passed`. So a step killed in a later phase, by its timeout or a lost Node, keeps what the passed phases wrote, such as the Club key's word. A failed phase stops the step. The result file names it as `failed_phase`, and the code is the phase's own refusal or `instance.container_<phase>_failed`. The container counts as started once `start` is among the passed phases; otherwise its power state stays as it was.
 
-The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fleets --commit <release>` from the new release. It admits one deployment per nested-fleet default. With none, it prints one line and admits nothing. A default whose admission fails with an error that is no refusal gets the line `operation.admission_failed`; the other defaults are still admitted.
+When nested-fleet refresh is enabled, the Gateway tries to admit one deployment per nested-fleet default when the verified release first becomes [fleet current](/reference/gateway-recovery#fleet-rollout). If fleet rollout is disabled, it tries at verification. A pending, deferred or failed rollout postpones admission until the fleet becomes current. The deployment has its own admission rules and can still be refused. The Gateway logs each admission result. A failure for one default leaves the other defaults eligible.
 
-The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) turns the step on. It is off by default; while it is off, the step prints one line and admits nothing. The live fleet has it on since 13 November 2026. An operator turns it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
+The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) enables refresh. It is off by default. Enable it only after the Club key lives off the default's disk and a safety snapshot of the default exists.
 
 The run deploys the release commit itself. A commit missing from the Project's repository refuses the admission with `project.source_unavailable`. A commit off the Project's branch fails the fetch with `deployment.commit_not_on_branch`, and the old seed stays. When the Project's repository is Orbit's own, the release commit is on its `main` already, and no step pushes it. A Project whose repository is a hand-kept copy of `main`, such as a trial repository, needs the release commit pushed there before the release.
 
 | Rule | What happens |
 | --- | --- |
-| Best effort | The release step allows failure, and nothing in the release waits for the run. A refusal or a failed run leaves the release live |
+| Best effort | The release stays live if admission is refused or a deployment fails. The fleet result tracks the Nodes. Each deployment reports its own result |
 | No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
@@ -2800,7 +2811,7 @@ The nested Nodes' `/` lies in the inner pool: a directory pool on the outer cont
 
 A refresh writes up to 2 GiB more before its readiness wait: on Instance 2454 a seed after a refresh that retook `base` held 1.66 GiB of its own blocks, and each refresh added 0.1 to 0.3 GiB of data. The check refuses when the free space minus 2 GiB is under the floor, before anything changes. On a quota that counts snapshots, the seeds that copies still pin count too.
 
-The release step that admits the refresh ends before the refresh does. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
+The fleet admission job ends after it queues the refresh. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
 
 The checkout moves under the running nested Gateway, with its old schema and processes. So the run's one fleet check, before the checkout, starts what is stopped and checks only that the containers run and the tunnel reaches the hub. Nothing in the run stops the fleet before the refresh, so no second start follows. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
 

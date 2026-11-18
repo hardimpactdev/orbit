@@ -15,10 +15,14 @@ inputs:
       type: string
       enum:
       - fleet.cli_converge
+    intent: {type: object}
+    execution_secrets: {type: object, additionalProperties: false}
   required:
   - operation_id
   - node_id
   - kind
+  - intent
+  - execution_secrets
   additionalProperties: false
 jobs:
 - name: prepare
@@ -36,6 +40,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
+        intent: ${{ inputs.intent }}
 - name: nodes
   dependsOn:
   - job: prepare
@@ -56,6 +61,7 @@ jobs:
         node_id: ${{ inputs.node_id }}
         kind: ${{ inputs.kind }}
         run_id: ${{ run.id }}
+        intent: ${{ steps.prepare.outputs }}
         target_node_id: ${{ self.node.node_id }}
         previous: ${{ steps }}
     concurrency: 1
@@ -83,3 +89,11 @@ jobs:
         run_id: ${{ run.id }}
         admission: ${{ steps.prepare.outputs }}
         node_results: ${{ steps }}
+  - name: Check fleet outcome
+    labels: {role: swamp}
+    dependsOn: [{step: finish, condition: {type: succeeded}}]
+    task:
+      type: assert
+      expr: steps.finish.outputs.error_code == null
+      message: A fleet Node failed; later Nodes remain pending
+      severity: high

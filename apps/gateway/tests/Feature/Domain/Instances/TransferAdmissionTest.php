@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceTransferAction;
+use App\Actions\Nodes\StartNodeConvergeAction;
 use App\Data\Instances\TransferInstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\GitHub\GitReadEnvironment;
@@ -144,6 +145,28 @@ it('admits a clean host transfer through the full admission pipeline', function 
     expect($operation->kind)->toBe('instance.transfer')->and($operation->input['checkout_warnings'])->toBe([])
         ->and($this->reader->calls)->toBe(1)->and(InstanceTransfer::query()->count())->toBe(1);
 });
+
+it('fences a real transfer and automatic converge in both orders on each participant', function (string $participant, bool $transferFirst): void {
+    Node::query()->where('name', 'control')->sole()->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $node = $this->{$participant};
+    $node->forceFill(['ssh_host_fingerprint' => 'SHA256:fixture', 'agent_secret_hash' => str_repeat('c', 64)])->saveQuietly();
+    $transfer = fn (): Operation => app(StartInstanceTransferAction::class)->execute(
+        $this->instance, new TransferInstanceData($this->destination->id, null, null));
+    $converge = fn (): Operation => app(StartNodeConvergeAction::class)->execute($node, roles: ['app-dev'], release: true);
+    $refused = fn (ResourceOperationException $failure) => expect($failure->errorCode)->toBe('operation.target_busy');
+
+    if ($transferFirst) {
+        $operation = $transfer();
+        expect($operation->input['participant_node_ids'])->toContain($this->source->id, $this->destination->id);
+        expect($converge)->toThrow($refused);
+    } else {
+        $converge();
+        $before = transferAdmissionRecords();
+        expect($transfer)->toThrow($refused);
+        expect(transferAdmissionRecords())->toBe($before);
+    }
+    expect(Operation::query()->count())->toBe(1);
+})->with(['source', 'destination'])->with([true, false]);
 
 it('refuses a moved dependent before any serving or reservation write', function (): void {
     new Filesystem()->deleteDirectory($this->root.'/moved');

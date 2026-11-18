@@ -95,7 +95,7 @@ final readonly class NodeRoleRuntimeInput
     }
 
     /** @return array<string,mixed>|null */
-    public function capture(Node $node, NodeRole $assignment): ?array
+    public function capture(Node $node, NodeRole $assignment, bool $publicOnly = false): ?array
     {
         $this->assignment($node, $assignment);
         if ($assignment->role === RoleName::Swamp) {
@@ -139,7 +139,7 @@ final readonly class NodeRoleRuntimeInput
             throw new ResourceOperationException('analytics.process_not_node', 'ClickHouse requires its exact Node owner.', 422);
         }
 
-        return [...$input, 'installation' => $this->installation($node, $process),
+        return [...$input, 'installation' => $publicOnly ? ['process_id' => $process->id] : $this->installation($node, $process),
             'health_url' => 'http://'.$node->wireguard_ip.':'.PlausibleProcess::PORT.'/api/health',
             'clickhouse' => ['node_id' => $storageNode->id, 'agent_sha256' => $this->agents->pin($storageNode), 'process_id' => $clickhouse->id]];
     }

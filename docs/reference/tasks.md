@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence}.php"
 ---
 
 # Tasks
@@ -778,6 +778,8 @@ Each row remembers the last 288 windows it counted, in arrival order. A late sig
 
 Readiness counts these occurrences and their times. It does not count log lines. Many log lines in one block are one occurrence. The sample keeps the newest 20.
 
+The database migration converts remaining pre-window evidence once; collectors and filing use only window evidence. It discards old log and Activity occurrence history because those timestamps came from the collector rather than the signal, and clears their first and last seen times. Other sources retain valid timestamps grouped into 5-minute windows. Linked groups, mutes, and unrelated evidence stay unchanged. Rollback keeps the converted evidence; only the pre-release database snapshot can restore discarded history.
+
 ### When a fingerprint is ready
 
 The tests below use only the current episode. That episode is the occurrence history stored on the row: the time and the signal count of each 5-minute window.
@@ -1148,11 +1150,13 @@ A new thread's values are checked against what the copy's T3 offers, in two plac
 | Value | Where | Against | Refusal |
 | --- | --- | --- | --- |
 | Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`; `codex` at `low`, `medium`, `high`, `xhigh`, `max` or `ultra` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
-| Model | First in the turn, before any checkout or start | The slugs and aliases that T3's cached `model-manifest.json` lists for the instance's driver | The turn fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched |
+| Model | First in the turn, before any checkout or start | The slugs and aliases in T3's cached `model-manifest.json` for the driver, or a successful probe of an unlisted Codex model | `tasks.copy_turn_model_unoffered` if the provider rejects the model or the catalog rules it out. `tasks.copy_turn_model_unverified` if Orbit cannot resolve the driver or the Codex probe is inconclusive. Nothing is launched |
 
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
 
-Without the cache file, T3 uses the catalog it ships, which no file holds; the check is then skipped, and a model Claude Code does not know fails in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
+When the catalog omits a Codex model or cannot be read, the copy sends one bounded, tool-free request through the Codex configuration it uses for turns. The provider must return a usable response for the exact requested model. The probe leaves the cached catalog alone.
+
+For other drivers, without a readable catalog the model check is skipped. The provider can still reject the model in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
 
 ### Archive finished threads
 

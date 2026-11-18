@@ -6,9 +6,8 @@ declare(strict_types=1);
  * The fleet rollout of ADR 0202 ([Fleet rollout](/reference/gateway-recovery#fleet-rollout)).
  */
 return [
-    // Whether orbit-fleet-converge.service rolls out and catches up. Off until an operator turns it on, so a
-    // Gateway release that adds the units does not reach the fleet before its Nodes are ready.
-    'rollout' => filter_var(env('ORBIT_FLEET_ROLLOUT', false), FILTER_VALIDATE_BOOL),
+    // The verified release queues fleet rollout and the daily window schedule catches up.
+    'rollout' => filter_var(env('ORBIT_FLEET_ROLLOUT', true), FILTER_VALIDATE_BOOL),
 
     // The nightly drained reboot of the managed Linux Nodes (ADR 0253, /reference/gateway-recovery#fleet-reboot). On by default:
     // a Node that runs agent containers must boot into its kernel fixes without manual work.

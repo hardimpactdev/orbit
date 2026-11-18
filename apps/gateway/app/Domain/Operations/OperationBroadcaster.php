@@ -45,6 +45,9 @@ final readonly class OperationBroadcaster
     /** Creation precedes the executor state stamp; an admitted executor wake also stays queued if the setting changes. */
     private function broadcast(Operation $operation, RecordEventType $type, string $channel = 'orbit'): void
     {
+        if (in_array($operation->kind, OperationKinds::PrivateConnKinds, true)) {
+            return;
+        }
         $notice = self::notice($operation);
         if ($operation->kind === InstanceWake::Kind && (ExecutorWake::enabled() || ExecutorWake::owns($operation))) {
             $id = $operation->id;

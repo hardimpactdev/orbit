@@ -191,6 +191,8 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 `id` is the operation ID. A change that is neither a status change nor a cancel request goes only to the operation's own channel. These events are notices: they never carry input, steps, output, or the result. On its own channel, an operation sends at most one output change per second, and every status and step change at once. A client drops an event whose `sequence` is not greater than the one it has read, and reads the operation with `after_sequence` for the rest. [Follow an operation over Reverb](/reference/operations#follow-an-operation-over-reverb) describes the order.
 
+[Conn launches](/reference/conn#durable-launches-v1) do not use the ordinary Operation channels. If Conn sends a launch invalidation, only active peers with the matching profile binding and target Node access may receive it. It does not carry launch data; the client reads the launch snapshot over HTTP.
+
 ### Deploy step output
 
 No component publishes `client-output` events now: the agent command that did was removed. A deploy step's output stays on the Node.

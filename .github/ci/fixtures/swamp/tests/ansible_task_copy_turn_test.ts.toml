@@ -14,6 +14,8 @@ cases = [
   "an intent outside the admitted shape runs nothing in the copy",
   "a thread list that is not JSON reads as no thread, and the start's end is still written",
   "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start",
+  "an uncatalogued Codex model needs provider confirmation before launch or reviewer checkout",
+  "the Codex model probe requires a usable response for the exact requested model",
   "a new thread reads T3's catalog first and runs a model it offers, by slug or alias",
   "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout",
   "without T3's cached catalog the check is skipped and the turn runs",
@@ -31,7 +33,7 @@ cases = [
   "a failed or unreadable answered resolution launches nothing and names the resolution failure",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 1065
+cost = 1085
 # Hosted runs 43621397546 (Sabre) and 43633174432 (PR): largest completed case time + 25%, rounded up + 1s.
 # Reviewer-detach has only censored hosted receipts: its 138s body cost (120s before task 5402 added one phase run) is an ESTIMATE until a complete hosted run.
 # The Conn Server case (ADR 0258) has no hosted receipt: its 17s is an ESTIMATE over a 7.4s local run (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
@@ -39,12 +41,13 @@ cost = 1065
 # alone, 57.3s and 40.7s two units at a time (tools/tests/ci-task-copy-turn-costs.json), until a hosted run.
 # The Codex create case (task 5645) has no hosted receipt: its 40s is an ESTIMATE over a 19s local run of its three phases, until a hosted run.
 # One case per slice prevents several slow Ansible paths sharing one unit.
-slices = 29
+slices = 31
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/t3_copy_rpc.mjs",
+  "swamp/ansible/task_copy_codex_model.py",
   "swamp/ansible/task-copy-turn.yml",
   "swamp/ansible/tasks/address-node.yml",
   "swamp/extensions/behaviors/_lib/public_output.ts",
@@ -68,6 +71,8 @@ inputs = [
   "an intent outside the admitted shape runs nothing in the copy" = 32
   "a thread list that is not JSON reads as no thread, and the start's end is still written" = 19
   "a Codex thread is created with its effort as the reasoningEffort option; a create T3 refuses runs nothing and fails the start" = 40
+  "an uncatalogued Codex model needs provider confirmation before launch or reviewer checkout" = 18
+  "the Codex model probe requires a usable response for the exact requested model" = 2
   "a new thread reads T3's catalog first and runs a model it offers, by slug or alias" = 33
   "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout" = 15
   "without T3's cached catalog the check is skipped and the turn runs" = 17

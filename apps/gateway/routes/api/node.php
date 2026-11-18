@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\NodeAccessController;
+use App\Http\Controllers\Api\NodeBaseInventoryController;
+use App\Http\Controllers\Api\NodeExecutorProofController;
 use App\Http\Controllers\Api\NodeFootprintsController;
 use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
@@ -20,6 +22,9 @@ Route::middleware([
         ->name('node:list');
     Route::get('nodes/{node}', [NodesController::class, 'show'])
         ->name('node:show');
+    Route::post('nodes/{node}/executor/proof', [NodeExecutorProofController::class, 'store'])
+        ->whereNumber('node')
+        ->name('node:executor:proof');
     Route::post('nodes/{node}/ssh-host-key', [NodeSshHostKeysController::class, 'store'])
         ->whereNumber('node')
         ->name('node:ssh-host-key:record');
@@ -41,6 +46,9 @@ Route::middleware([
     Route::delete('nodes/{node}/roles/{role}', [NodeRolesController::class, 'destroy'])
         ->whereNumber('node')
         ->name('node:role:remove');
+    Route::post('nodes/{node}/base-inventory', [NodeBaseInventoryController::class, 'store'])
+        ->whereNumber('node')
+        ->name('node:base-inventory');
     Route::get('nodes/{node}/metrics', [NodeMetricsController::class, 'show'])
         ->name('node:metrics');
     Route::post('nodes', [NodesController::class, 'store'])

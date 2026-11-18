@@ -29,7 +29,7 @@ sequenceDiagram
   %%> Callers:
   %%> - the command
   %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
-  %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
+  %%> - a durable Conn launch that opens the T3 server; planned: the task flow before a turn on an attached Instance
   %%> - planned: a due native cron Schedule of a production Instance whose live sleeps; the fire waits for the wake, and this wake does not count as activity
   %%> - not needed by a copy: a clone or task copy of an asleep default copies its seed snapshot
   %%> - a deployment of a sleeping Instance resumes or starts it in its own run, and removes the marker there
@@ -40,24 +40,27 @@ sequenceDiagram
   %%> When:
   %%> - an active development container, a default and a nested-fleet Instance included
   %%> - planned: a production Instance's live release container; the wake is admitted beside an open deploy or rollback, which changes live only after its switch; the switch and the wake take the Instance's power lock
-  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) and a nested-fleet default refuses: only its deployment starts it
+  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) only with executor wakes off, and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
-  %%> - an open wake of the Instance is joined: a second caller gets the same Operation; Caddy waits within the bound when executor wakes are enabled
+  %%> - an open wake of the Instance is joined: a second caller gets the same Operation; Caddy waits within the bound for a signed wake and otherwise gets the progress page
+  %%> - a join to a Conn launch's wake records shared use while locking the wake Operation. If launch cleanup already cancelled the queued wake, a new request admits a new wake
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
-  %%> - no container, a non-development Instance, a nested-fleet default whose last sleep did not freeze it, or other lifecycle work starts no run
+  %%> - no container, a non-development Instance, a nested-fleet Instance that cannot take the wake or its start, or other lifecycle work admits no wake
   alt executor wake enabled
     %% path: executor
     GW->>N: Sign and publish wake<br/>executor-order · WebSocket
     %%> What it does:
     %%> - record or join instance.wake under the Instance lock before signing; requests and recovery share one publication receipt for the same Operation
     %%> - record a pending handoff with admission; publish outside the database transaction under a non-blocking per-Operation cache lock, then commit a publication receipt and enqueue completion
+    %%> - when Conn admits a new wake without waiting, queue its publication after the launch and wake commit; the visitor, job and sweep share the same handoff
     %%> - the minute reconciler retries up to 50 pending handoffs, oldest first, after 6 s; publish a missing order for the same Operation before enqueueing completion, and skip a recorded publication
     %%> - hand Operation notices to operations-prompt after commit; no Reverb delivery remains in the request's termination callbacks
     %%> - the observer passes the order unread to the executor; no SSH, Python or marker/times command runs on this path
     GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
     %%> Result:
     %%> - a joined visit also reads the durable result, because another waiter may have consumed its Valkey copy
+    %%> - the waiter reads the observer's replies in arrival order; a reply released after the bound cannot authorize the original request
     alt done or partial within the bound
       GW-->>CL: 200, continue request<br/>original method, URI and body
       %%> Result:

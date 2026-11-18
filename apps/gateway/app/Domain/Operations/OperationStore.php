@@ -11,6 +11,7 @@ use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
@@ -45,6 +46,7 @@ final readonly class OperationStore
         app(DirectOperationPrivateBindings::class)->assertAdmission($input, $fields, $nodeId);
         try {
             $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $definition, $lockKey): Operation {
+                app(NodeWorkAdmission::class)->check($kind, $nodeId, $input);
                 $operation = Operation::query()->create([
                     'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
                     'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId, 'lock_key' => $lockKey,
@@ -113,13 +115,16 @@ final readonly class OperationStore
     }
 
     /** @param array<string,mixed> $changes */
-    public function change(Operation $operation, array $changes = []): void
+    public function change(Operation $operation, array $changes = [], bool $onlyWhileOpen = false): void
     {
         $before = $operation->status;
         $cancelRequested = array_key_exists('cancel_requested_at', $changes) && $operation->cancel_requested_at === null;
-        DB::transaction(function () use ($operation, $changes): void {
+        $written = DB::transaction(function () use ($operation, $changes, $onlyWhileOpen): bool {
             $current = Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail();
             $operation->setRawAttributes($current->getAttributes(), true);
+            if ($onlyWhileOpen && $current->status->terminal()) {
+                return false;
+            }
             $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(InstanceMigrateProjection::class)->terminal($operation, $current);
@@ -128,6 +133,12 @@ final readonly class OperationStore
             // expired budget. A task's copy moves its group on when it is active or failed; an Instance that no task owns changes nothing.
             if (in_array($operation->kind, ['instance.create', 'instance.complete'], true) && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(TaskCopyLifecycle::class)->createEnded($operation);
+            }
+            if (is_int($operation->state['conn_launch_owner'] ?? null)) {
+                $settlement = app(NativeRunCancellation::class);
+                if ($settlement->settled($operation) && ! $settlement->settled($current)) {
+                    ReconcileSwampOperations::dispatch()->afterCommit();
+                }
             }
             // Every end of a deploy reaches here too: a run's report, a refused start, a cancel before the run, an unreadable result, and
             // the settlement of a timed-out run. Its copies then leave the vault; a default is never destroyed, so nothing else removes them.
@@ -145,7 +156,12 @@ final readonly class OperationStore
             if (ProofSeeds::claimFreed($current, $operation)) {
                 DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('seed'));
             }
+
+            return true;
         });
+        if (! $written) {
+            return;
+        }
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
         // The terminal state frees the Nodes of a Route write; a timed-out one keeps them until Swamp confirms that its run stopped.
         if ($operation->status->terminal() && RoutePublicationHolds::tracks($operation->kind) && ! RoutePublicationHolds::keepsNodes($operation)) {

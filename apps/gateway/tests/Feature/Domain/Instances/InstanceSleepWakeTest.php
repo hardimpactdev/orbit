@@ -598,6 +598,8 @@ it('reads the outcome at once and then every 25 ms, never waiting first', functi
 it('gives up on a silent worker after 6 s, well before the safety net, and continues the same Operation in its run', function (): void {
     $clone = frozenClone();
     $state = wakeNode($clone, ['silent' => true]);
+    // Measure the simulated poll window from a fixed clock, including before its first sleep.
+    $this->freezeTime();
     $started = ContainerResume::now();
 
     $operation = app(InstanceWake::class)->start($clone, null, null);

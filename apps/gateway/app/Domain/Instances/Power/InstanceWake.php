@@ -78,19 +78,32 @@ final readonly class InstanceWake extends InstancePower
      */
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
+        $operation = $this->admitWake($instance, $caller, $requestId);
         if (ExecutorWake::enabled()) {
-            $operation = parent::start($instance, $caller, $requestId);
             app(ExecutorWake::class)->request($operation);
 
             return $operation->refresh();
         }
 
-        return $this->resume($this->begin($instance, $caller, $requestId));
+        return $this->resume($operation);
     }
 
-    /** The admission of start(): a wake, joined when one is open, or the start of a nested-fleet clone. */
-    private function begin(Instance $instance, ?string $caller, ?string $requestId): Operation
+    /** Record or join the same wake for a durable caller that does not wait for Node work. */
+    public function admitDeferred(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
+        $operation = $this->admitWake($instance, $caller, $requestId);
+        if ($operation->wasRecentlyCreated && ExecutorWake::owns($operation)) {
+            app(ExecutorWake::class)->dispatchDeferred($operation->id);
+        }
+
+        return $operation;
+    }
+
+    private function admitWake(Instance $instance, ?string $caller, ?string $requestId): Operation
+    {
+        if (ExecutorWake::enabled()) {
+            return parent::start($instance, $caller, $requestId);
+        }
         $runtime = $instance->runtime()->first();
         if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
             return parent::start($instance, $caller, $requestId);
@@ -277,10 +290,22 @@ final readonly class InstanceWake extends InstancePower
         });
     }
 
-    protected function open(Instance $instance): ?Operation
+    protected function open(Instance $instance, bool $join): ?Operation
     {
-        return Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first();
+        return self::openWake($instance, self::Kind, $join);
+    }
+
+    /** Find the open wake or nested start. A join runs in the Instance admission transaction and locks the Operation against cancellation. */
+    public static function openWake(Instance $instance, string $kind, bool $join): ?Operation
+    {
+        $query = Operation::query()->where('kind', $kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id');
+        $operation = $join ? $query->lockForUpdate()->first() : $query->first();
+        if ($join && $operation !== null && isset($operation->state['conn_launch_owner']) && ! isset($operation->state['wake_shared'])) {
+            app(OperationStore::class)->change($operation, ['state' => [...$operation->state, 'wake_shared' => true]]);
+        }
+
+        return $operation;
     }
 
     /**
@@ -298,14 +323,11 @@ final readonly class InstanceWake extends InstancePower
             }
         }
         try {
+            $operation = $this->admitWake($instance, $caller, null);
             if (ExecutorWake::enabled()) {
-                $operation = parent::start($instance, $caller, null);
-
                 return app(ExecutorWake::class)->request($operation) ? true : null;
             }
 
-            // A Route visit takes the same admission as the command: a nested-fleet clone that no sleep froze takes its start.
-            $operation = $this->begin($instance, $caller, null);
             if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
                 // A 401 page is no success, so the callback must run always. A worker that dies here leaves the safety net's run.
                 defer(function () use ($operation): void {

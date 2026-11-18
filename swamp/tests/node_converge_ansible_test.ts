@@ -458,11 +458,11 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
 });
 
 /** The roles-tagged tasks of the converge, each role standing in for a container step that kept `list` (none: no Instance host). */
-async function rolesPhase(folder: string, list?: unknown[]) {
+async function rolesPhase(folder: string, list?: unknown[], deferred: string[] = []) {
     const tasks = structuredClone((await targetPlay()).tasks.filter((task) => (task.tags as string[]).includes("roles")));
     await Deno.writeTextFile(`${folder}/role.json`, JSON.stringify([list === undefined
         ? { name: "Apply a role without an Instance host", "ansible.builtin.debug": { msg: "no instance host" } }
-        : { name: "Keep the containers without the browser trust store", "ansible.builtin.set_fact": { instance_browser_trust: list } }]));
+        : { name: "Keep the containers without the browser trust store", "ansible.builtin.set_fact": { instance_browser_trust: list, instance_t3_restart_deferred: deferred } }]));
     for (const task of tasks) {
         const include = task["ansible.builtin.include_tasks"] as { file: string } | undefined;
         if (include) include.file = `${folder}/role.json`;
@@ -483,13 +483,14 @@ Deno.test("the roles phase records each container without Chromium's trust store
     const folder = await Deno.makeTempDir();
     try {
         const listed = [{ container: "orbit-instances/instance-7", reason: "not running" }];
-        let phase = await rolesPhase(folder, listed);
+        const deferred = ["orbit-instances/instance-7"];
+        let phase = await rolesPhase(folder, listed, deferred);
         assertEquals(phase.code, 0, phase.output);
-        assertEquals(phase.recorded, { browser_trust: listed });
+        assertEquals(phase.recorded, { browser_trust: listed, t3_restart_deferred: deferred });
         await Deno.remove(`${folder}/roles-result.json`);
         phase = await rolesPhase(folder);
         assertEquals(phase.code, 0, phase.output);
-        assertEquals(phase.recorded, { browser_trust: [] });
+        assertEquals(phase.recorded, { browser_trust: [], t3_restart_deferred: [] });
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
@@ -539,7 +540,7 @@ Deno.test("the base converge installs the executor only from its intent, after t
         ["intent.executor.skip != None", "executor install skipped: {{ intent.executor.skip }}"]);
     assertEquals(steps[1].when, "intent.executor.skip == None");
     const tasks = steps[1].block as Array<Record<string, unknown>>;
-    assertEquals(tasks[0]["ansible.builtin.assert"], { that: ["intent.executor.plan_error == None"], fail_msg: "{{ intent.executor.plan_error }}", quiet: true });
+    assertEquals(tasks[0]["ansible.builtin.assert"], { that: ["intent.executor.plan_error == None"], fail_msg: "{{ intent.executor.plan_error | string }}", quiet: true });
     const replace = tasks.find((task) => task.name === "Reconcile the pinned executor binary")!;
     assertEquals((replace.vars as Record<string, Record<string, string>>).converge_replacement.sha256, "{{ intent.executor.sha256 }}");
     const sudoers = tasks.find((task) => task.name === "Allow the Node user the one relay command")!["ansible.builtin.copy"] as Record<string, string>;
@@ -557,3 +558,18 @@ Deno.test("a converge before the executor's rollout records why it skips the ins
     await localPlay({ intent: { executor: { skip: "executor.release_missing", plan_error: null } } }, [steps[0], install], true, (text) => output = text);
     assertMatch(output, /executor install skipped: executor\.release_missing/);
 });
+
+for (const planError of [null, "executor.keys_invalid"]) {
+    Deno.test(`the executor plan check ${planError === null ? "accepts a valid plan" : "rejects an invalid plan with its error code"} without writes`, async () => {
+        const steps = parse(await Deno.readTextFile(taskPath("node-executor"))) as Array<Record<string, unknown>>;
+        // The real block with only its plan check: the later install tasks need a Node.
+        const check = { ...steps[1], block: (steps[1].block as Array<Record<string, unknown>>).slice(0, 1) };
+        await localPlay({ intent: { executor: { skip: null, plan_error: planError } } }, [
+            { name: "Record no plan rejection yet", "ansible.builtin.set_fact": { rejected: null } },
+            { name: "Run the real plan check", block: [check],
+                rescue: [{ name: "Record the plan rejection", "ansible.builtin.set_fact": { rejected: "{{ ansible_failed_result.msg }}" } }] },
+            { name: "Require the correct plan outcome", "ansible.builtin.assert": {
+                that: planError === null ? ["rejected == None"] : [`rejected == '${planError}'`], quiet: true } },
+        ]);
+    });
+}

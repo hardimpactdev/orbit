@@ -125,6 +125,40 @@ inputs = [
 cost = 92
 ceiling = 240
 
+[check.gateway-real-clients]
+inputs = [
+  "apps/gateway/app/Domain/DatabaseServers/**",
+  "apps/gateway/app/Domain/DatabaseConnections/**",
+  "apps/gateway/app/Domain/Operations/**",
+  "apps/gateway/app/Domain/Shared/**",
+  "apps/gateway/app/Infrastructure/Executor/**",
+  "apps/gateway/app/Infrastructure/Activity/CommandActivityInputSanitizer.php",
+  "apps/gateway/app/Models/**",
+  "apps/gateway/app/Support/**",
+  "apps/gateway/app/Providers/**",
+  "apps/gateway/.env.example",
+  "apps/gateway/bootstrap/**",
+  "apps/gateway/config/**",
+  "apps/gateway/database/**",
+  "apps/gateway/composer.json",
+  "apps/gateway/composer.lock",
+  "packages/php-sdk/composer.json",
+  "packages/php-sdk/composer.lock",
+  "apps/gateway/phpunit.xml",
+  "apps/gateway/tests/bootstrap.php",
+  "apps/gateway/tests/Pest.php",
+  "apps/gateway/tests/TestCase.php",
+  "apps/gateway/tests/Support/**",
+  "apps/gateway/tests/Unit/Domain/DatabaseServers/**",
+  "apps/gateway/tests/Feature/Domain/DatabaseServers/**",
+  "apps/gateway/tests/Feature/Infrastructure/Executor/**",
+  "bin/ci-runner-prerequisites",
+]
+# Hosted run 44180546260: 113s including setup, cold image pulls and cleanup; 8 cases, 59 assertions.
+# Retain setup and download headroom within the four-minute ceiling.
+cost = 180
+ceiling = 240
+
 [check.cli]
 inputs = [
   "apps/cli/**",
@@ -264,8 +298,8 @@ inputs = [
   "!apps/cli/tests/**",
   "!packages/php-sdk/tests/**",
 ]
-cost = 150
-ceiling = 180
+cost = 140
+ceiling = 240
 
 [check.agent]
 inputs = [

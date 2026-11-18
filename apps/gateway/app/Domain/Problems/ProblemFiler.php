@@ -52,10 +52,6 @@ final readonly class ProblemFiler
             $failures[] = $failure;
         }
 
-        foreach ($this->settleLegacyEpisodes() as $exception) {
-            $failures[] = $exception;
-        }
-
         $project = Project::query()->where('slug', 'orbit')->first();
 
         if (! $project instanceof Project) {
@@ -141,66 +137,6 @@ final readonly class ProblemFiler
         return $failures;
     }
 
-    /** @return list<Throwable> */
-    private function settleLegacyEpisodes(): array
-    {
-        $failures = [];
-
-        ProblemFingerprint::query()
-            ->where(function (Builder $query): void {
-                $query->where('occurrences', '>', 0)
-                    ->orWhereNotNull('evidence->observation_times');
-            })
-            ->whereNull('evidence->observation_counts')
-            ->whereNull('evidence->counted_blocks')
-            ->chunkById(100, function ($rows) use (&$failures): void {
-                foreach ($rows as $row) {
-                    try {
-                        $this->settleOne($row->id);
-                    } catch (Throwable $exception) {
-                        $failures[] = $exception;
-                    }
-                }
-            });
-
-        return $failures;
-    }
-
-    /**
-     * Rewrites a pre-window episode in place. The linked task and the mute stay as they are.
-     */
-    private function settleOne(int $id): void
-    {
-        DB::transaction(function () use ($id): void {
-            $row = ProblemFingerprint::query()->lockForUpdate()->find($id);
-
-            if (! $row instanceof ProblemFingerprint) {
-                return;
-            }
-
-            $this->rewriteLegacy($row);
-        });
-    }
-
-    private function rewriteLegacy(ProblemFingerprint $row): void
-    {
-        $settled = $this->evidence->legacyEpisode($row->evidence, $row->source);
-
-        if ($settled === null) {
-            return;
-        }
-
-        $row->occurrences = $settled['occurrences'];
-        $row->evidence = $settled['evidence'];
-
-        if ($settled['reset_seen']) {
-            $row->first_seen = null;
-            $row->last_seen = null;
-        }
-
-        $row->save();
-    }
-
     /**
      * The deadline and the episode clear are one write. A crash stores neither.
      */
@@ -283,8 +219,6 @@ final readonly class ProblemFiler
                     return;
                 }
 
-                $this->rewriteLegacy($locked);
-
                 if (! $this->canFile($locked)) {
                     return;
                 }
@@ -335,12 +269,6 @@ final readonly class ProblemFiler
         $evidence = $row->evidence;
         if ($row->source === ProblemSource::Release && (! isset($evidence['incident_resource'], $evidence['incident_attempt'], $evidence['incident_fault'], $evidence['release_kind']))) {
             return false;
-        }
-        $settled = $this->evidence->legacyEpisode($evidence, $row->source);
-
-        if ($settled !== null) {
-            $occurrences = $settled['occurrences'];
-            $evidence = $settled['evidence'];
         }
 
         $stamps = $this->stamps($this->strings($evidence['observation_times'] ?? null));

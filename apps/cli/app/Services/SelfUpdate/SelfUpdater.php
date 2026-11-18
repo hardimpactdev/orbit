@@ -22,15 +22,6 @@ final readonly class SelfUpdater
 
     private const string VersionedBinary = '/\Aorbit-0\.[1-9][0-9]{0,9}\.0\z/D';
 
-    /**
-     * A pre-release build of Orbit, which printed its full 40-character commit instead of `0.N.0`. Every
-     * release is newer, so it updates without `--allow-downgrade`, and its file is kept as {@see self::LegacyBackup}.
-     * Any other version that is not a release still needs the downgrade consent.
-     */
-    private const string LegacyVersion = '/\A[0-9a-f]{40}\z/D';
-
-    public const string LegacyBackup = 'orbit.orbit-previous';
-
     public function __construct(
         private SelfUpdateHost $host,
         private BinaryInstaller $installer,
@@ -81,6 +72,8 @@ final readonly class SelfUpdater
         $before = new InstalledVersion($currentVersion, $installed);
         $after = new InstalledVersion($version, $asset->sha256);
 
+        $replacedRunningBinary = false;
+
         try {
             $url = $this->expectedAsset($asset, $this->location->cliAssetName($version, $platform), $this->location->cliAssetUrl($version, $platform));
 
@@ -103,27 +96,37 @@ final readonly class SelfUpdater
                     owner: $this->host->isRoot() ? $this->owner($running) : null,
                     verify: fn (string $candidate) => $this->verifyCandidate($candidate, $version),
                 );
+                $replacedRunningBinary = $target === $running;
             }
 
             $previous = basename($running);
 
-            // The first self-update turns a plain binary into the link; it keeps that binary for a rollback. A
-            // pre-release build has no release version to name it by, so it is kept under a fixed name.
+            // The first self-update turns a plain binary into the link; it keeps that release for a rollback.
             if ($link === $running && preg_match(self::ReleaseVersion, $currentVersion) === 1 && 'orbit-'.$currentVersion !== basename($target)) {
                 $previous = 'orbit-'.$currentVersion;
                 $this->installer->keep($running, dirname($link).'/'.$previous);
-            } elseif ($link === $running && preg_match(self::LegacyVersion, $currentVersion) === 1) {
-                $previous = self::LegacyBackup;
-                $this->installer->keep($running, dirname($link).'/'.$previous);
             }
 
-            $this->installer->link($link, basename($target), 'self_update');
+            if (realpath($link) !== $target) {
+                $this->installer->link($link, basename($target), 'self_update');
+                $replacedRunningBinary = $replacedRunningBinary || $link === $running;
+            }
+
             $this->prune(dirname($link), [basename($target), $previous]);
         } catch (SelfUpdateFailure $failure) {
-            return new SelfUpdateStep('cli', SelfUpdateOutcome::Failed, $link, $before, $before, failure: $failure);
+            clearstatcache(true);
+            $digest = $this->sha256($link);
+            $selectedVersion = match ($digest) {
+                null => null,
+                $before->sha256 => $before->version,
+                $after->sha256 => $after->version,
+                default => null,
+            };
+
+            return new SelfUpdateStep('cli', SelfUpdateOutcome::Failed, $link, $before, new InstalledVersion($selectedVersion, $digest), failure: $failure, replacedRunningBinary: $replacedRunningBinary);
         }
 
-        return new SelfUpdateStep('cli', SelfUpdateOutcome::Updated, $link, $before, $after);
+        return new SelfUpdateStep('cli', SelfUpdateOutcome::Updated, $link, $before, $after, replacedRunningBinary: $replacedRunningBinary);
     }
 
     /**
@@ -141,8 +144,7 @@ final readonly class SelfUpdater
     }
 
     /**
-     * Release versions order by their commit count. A build that is not a release has no place in that order,
-     * so replacing it needs the same consent as a downgrade.
+     * Release versions order by their commit count. A build that is not a release must be reinstalled.
      *
      * @throws SelfUpdateFailure
      */
@@ -152,12 +154,12 @@ final readonly class SelfUpdater
             throw new SelfUpdateFailure('self_update.release_mismatch', "The Gateway names CLI version {$target}, which is not a release.");
         }
 
-        if ($allowDowngrade || preg_match(self::LegacyVersion, $current) === 1) {
-            return;
+        if (preg_match(self::ReleaseVersion, $current, $currentMatch) !== 1) {
+            throw new SelfUpdateFailure('self_update.version_unknown', "This orbit reports version {$current}, which is not a release. Reinstall a published CLI release: https://orbit.nckrtl.com/docs/reference/cli-binaries#install-a-release");
         }
 
-        if (preg_match(self::ReleaseVersion, $current, $currentMatch) !== 1) {
-            throw new SelfUpdateFailure('self_update.version_unknown', "This orbit reports version {$current}, which is not a release. Pass --allow-downgrade to replace it with {$target}.");
+        if ($allowDowngrade) {
+            return;
         }
 
         if ((int) $targetMatch[1] < (int) $currentMatch[1]) {
@@ -256,7 +258,7 @@ final readonly class SelfUpdater
             return null;
         }
 
-        $digest = hash_file('sha256', $path);
+        $digest = @hash_file('sha256', $path);
 
         return is_string($digest) ? $digest : null;
     }

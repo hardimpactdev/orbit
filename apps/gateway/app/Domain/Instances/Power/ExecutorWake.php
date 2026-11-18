@@ -13,6 +13,7 @@ use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
 use App\Jobs\Operations\CompleteExecutorWake;
+use App\Jobs\Operations\DispatchExecutorWake;
 use App\Jobs\Operations\ProjectExecutorWake;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -69,6 +70,18 @@ final readonly class ExecutorWake
         }
 
         return $operation;
+    }
+
+    public function dispatchDeferred(int $operationId): void
+    {
+        DB::afterCommit(static function () use ($operationId): void {
+            try {
+                Bus::dispatch(new DispatchExecutorWake($operationId));
+            } catch (Throwable $exception) {
+                Log::warning('The deferred executor wake could not be queued; the minute sweep retries.',
+                    ['operation_id' => $operationId, 'exception_type' => $exception::class]);
+            }
+        });
     }
 
     /** True only when this request sees a successful wake within its publish-and-wait budget. */
@@ -225,8 +238,7 @@ final readonly class ExecutorWake
         $recovered = [];
         foreach ($pending as $operation) {
             try {
-                if ($this->publishOnce($operation->id, hrtime(true) / 1e9 + min(0.5, ExecutorResultWait::boundSeconds()))
-                    && $this->enqueueCompletion($operation->id)) {
+                if ($this->continueHandoff($operation->id)) {
                     $recovered[] = $operation->id;
                 }
             } catch (Throwable $exception) {
@@ -240,6 +252,12 @@ final readonly class ExecutorWake
         }
 
         return count($recovered);
+    }
+
+    public function continueHandoff(int $operationId): bool
+    {
+        return $this->publishOnce($operationId, hrtime(true) / 1e9 + min(0.5, ExecutorResultWait::boundSeconds()))
+            && $this->enqueueCompletion($operationId);
     }
 
     private function enqueueCompletion(int $operationId): bool

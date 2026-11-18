@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs\Fleet;
 
 use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Shared\ResourceOperationException;
@@ -21,20 +22,41 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    /** A minute apart: CI publishes the CLI release minutes after the release goes live, and an ancestor's stands in after 30. */
-    public int $tries = 40;
+    /** While Operations run, the job releases itself for another short observation. */
+    public int $tries = 360;
 
     public int $timeout = 120;
 
-    public int $uniqueFor = 2400;
+    public int $uniqueFor = 3600;
 
-    public function __construct()
+    public ?int $releaseId = null;
+
+    public function __construct(?int $releaseId = null)
     {
+        $this->releaseId = $releaseId;
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
+    }
+
+    public function uniqueId(): string
+    {
+        return $this->releaseId === null ? 'fleet-window' : (string) $this->releaseId;
     }
 
     public function handle(FleetRolloutPlanAction $plan, AdmitFleetRolloutAction $admit): void
     {
+        $fleet = app(ContinueReleaseFleetAction::class);
+        if (($release = $fleet->current()) !== null && ($this->releaseId === null || $release->id === $this->releaseId)) {
+            $delay = $fleet->execute($release);
+            if ($delay !== null) {
+                $this->release($delay);
+            }
+
+            return;
+        }
+        // A newer verified release owns its own admission. This job must not apply the old intent.
+        if ($this->releaseId !== null) {
+            return;
+        }
         $selection = $plan->execute();
         if ($selection['status'] === 'waiting') {
             $this->release(60);

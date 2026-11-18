@@ -7,7 +7,7 @@ namespace App\Infrastructure\Executor;
 final readonly class ExecutorWaitResult
 {
     /**
-     * @param  float|null  $acceptedMs  When the wait saw the `accepted` line or the result, from its start; null when neither arrived.
+     * @param  float|null  $acceptedMs  Milliseconds from the start of the wait to an observed `accepted` line before the result, or null.
      * @param  array<string, mixed>|null  $line  The executor's result line; null on a timeout.
      */
     public function __construct(

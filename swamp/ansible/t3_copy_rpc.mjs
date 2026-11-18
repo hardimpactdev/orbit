@@ -9,10 +9,12 @@
 // or an earlier turn's. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
 // a question nor stop a run; its server can, for a session that
 // `t3 auth session issue` grants. The session lives only in this process: it is never written, printed or passed as an argument, and it
-// is revoked before the exit. One JSON object goes to stdout; the phase writes it to the run folder and the result step bounds it.
+// is revoked before the exit. Conn uses the same transport for `inspect-launch ENVIRONMENT [PROVIDER]`, `launch` and `reconcile-launch`.
+// For dispatch and recovery, run the script with `node --input-type=module -e SCRIPT -- orbit-rpc T3 COMMAND` and pass the frozen
+// private JSON on stdin. Only bounded public evidence goes to stdout. Recovery reads the original server and never sends a message.
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 
 // The shortest session that outlives one read, or one interrupt or stop and its wait for the run to end.
 const SessionTtl = "1m";
@@ -31,18 +33,22 @@ const ReadBytes = 150000;
 const Over = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 
 const [T3, command, ...rest] = process.argv.slice(2);
-const [threadId, runId, stored] = command === "create" ? [] : rest;
+const launchCommand = ["inspect-launch", "launch", "reconcile-launch"].includes(command);
+const [threadId, runId, stored] = command === "create" || launchCommand ? [] : rest;
 const answeredRequests = command === "answered" ? rest.slice(1) : [];
 const [title, instance, model, options] = command === "create" ? rest : [];
-if (!T3 || !["read", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)
+if (!T3 || (!launchCommand && (!["read", "interrupt", "answered", "stop", "create"].includes(command) || (command !== "create" && !threadId)))
+    || (command === "inspect-launch" && (rest.length < 1 || rest.length > 2)) || (["launch", "reconcile-launch"].includes(command) && rest.length !== 0)
     || (command === "interrupt" && (!runId || !stored)) || (command === "answered" && (answeredRequests.length === 0 || answeredRequests.some((id) => !id)))
     || (command === "create" && (!title || !instance || !model || options === undefined))) {
-    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD REQUEST... | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS\n");
+    process.stderr.write("usage: T3 read THREAD | T3 interrupt THREAD RUN REQUESTS | T3 answered THREAD REQUEST... | T3 stop THREAD | T3 create TITLE INSTANCE MODEL OPTIONS | T3 inspect-launch ENVIRONMENT [PROVIDER] | T3 launch | T3 reconcile-launch\n");
     process.exit(64);
 }
 
-const origin = JSON.parse(readFileSync(`${process.env.HOME}/.t3/userdata/server-runtime.json`, "utf8")).origin;
-const scopes = command === "read" ? ["orchestration:read"] : ["orchestration:read", "orchestration:operate"];
+const userdata = `${process.env.HOME}/.t3/userdata`;
+let origin;
+const readOnly = ["read", "inspect-launch", "reconcile-launch"].includes(command);
+const scopes = readOnly ? ["orchestration:read"] : ["orchestration:read", "orchestration:operate"];
 
 /** One RPC socket on a fresh ticket; T3's RPC frames are newline-separated JSON. */
 async function connect() {
@@ -63,6 +69,9 @@ async function connect() {
                 socket.send(JSON.stringify({ _tag: "Interrupt", requestId: String(frame.requestId) }));
             }
         }
+    };
+    socket.onclose = () => {
+        for (const finish of pending.values()) finish({ _tag: "Failure", message: "T3 closed the RPC socket." });
     };
     const timed = (promise, what) => {
         let timer;
@@ -149,8 +158,7 @@ async function interrupt(rpc, run, reason) {
  * `t3 thread start` makes one. No message: its first turn is the phase's `t3 thread send`.
  */
 async function create(rpc) {
-    const shell = await rpc.call("orchestration.subscribeShell", {});
-    const project = (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
+    const project = await workspaceProject(rpc);
     if (project === undefined) return { thread_id: null, error: "T3 holds no project at /srv/workspace." };
     const created = `orbit:${randomUUID()}`;
     try {
@@ -163,11 +171,181 @@ async function create(rpc) {
     return { thread_id: created, error: null };
 }
 
+async function workspaceProject(rpc) {
+    const shell = await rpc.call("orchestration.subscribeShell", {});
+    return (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
+}
+
+async function launchIdentity(environmentId, witness) {
+    if (typeof witness !== "string" || !/^[A-Za-z0-9:_-]{1,128}$/.test(witness)) return null;
+    const response = await fetch(`${origin}/.well-known/t3/environment`, { redirect: "error", signal: AbortSignal.timeout(left()) });
+    if (!response.ok) return null;
+    const descriptor = await response.json();
+    const localEnvironmentId = readFileSync(`${userdata}/environment-id`, "utf8").trim();
+    if (!environmentId || descriptor.environmentId !== environmentId || localEnvironmentId !== environmentId || descriptor.serverVersion !== "0.1.7") return null;
+    const path = `${userdata}/statev2.sqlite`;
+    const { dev, ino } = statSync(path, { bigint: true });
+
+    // The stock auth API writes and revokes the probe session in this database. Its row survives revocation and restart,
+    // while an older database restored into the same inode lacks it. Read only presence, never a credential or thread data.
+    const { DatabaseSync } = await import("node:sqlite");
+    const database = new DatabaseSync(path, { readOnly: true, timeout: 1000 });
+    try {
+        if (database.prepare("SELECT 1 FROM auth_sessions WHERE session_id = ?").get(witness) === undefined) return null;
+        const current = statSync(path, { bigint: true });
+        if (current.dev !== dev || current.ino !== ino) return null;
+    } finally {
+        database.close();
+    }
+    const fingerprint = createHash("sha256").update(`${environmentId}\0${dev}\0${ino}\0${witness}`).digest("hex");
+    return `${witness}.${fingerprint}`;
+}
+
+// These are the pinned T3 driver defaults used by Conn when a selectable provider has an empty catalog.
+const StockDefaultModels = new Map(Object.entries({
+    codex: "gpt-6-astra", claudeAgent: "claude-opus-5-5", cursor: "auto", grok: "grok-build",
+    fx: "default", kiro: "default", muse: "default", acpRegistry: "default", pi: "default",
+    opencode: "openai/gpt-5", antigravity: "antigravity-default",
+}));
+
+function launchModel(config, projectId, requestedProvider) {
+    const { settings, providers } = config;
+    const override = settings.projectSettingsOverrides?.[projectId]?.providerInstances;
+    const providerSettings = settings.providerInstances;
+    const enabled = (provider) => {
+        const id = provider.instanceId;
+        const configured = providerSettings?.[id];
+        if (override?.[id]?.enabled !== undefined) return override[id].enabled;
+        if (configured?.enabled === false || configured?.config?.enabled === false) return false;
+        return configured?.enabled ?? configured?.config?.enabled ?? provider.enabled;
+    };
+    if (providers.some((provider) => provider.instanceId === requestedProvider && enabled(provider))) {
+        return { requested_provider_available: true, model_selection: null };
+    }
+
+    let selection = settings.defaultModelSelection;
+    if (selection == null) {
+        const groups = new Map();
+        for (const provider of providers) {
+            if (!groups.has(provider.driver)) groups.set(provider.driver, []);
+            if (provider.instanceId === provider.driver) groups.get(provider.driver).unshift(provider);
+            else groups.get(provider.driver).push(provider);
+        }
+        const selectable = (group) => {
+            const available = group.filter((provider) => enabled(provider) && provider.availability !== "unavailable");
+            return available.find((provider) => provider.status === "ready") ?? available.find((provider) => provider.status !== "error");
+        };
+        const provider = selectable(groups.values().next().value ?? []) ?? selectable([...groups.values()].flat());
+        if (provider !== undefined) {
+            const model = provider.models.find((item) => item.isDefault && !item.isCustom)?.slug
+                ?? provider.models.find((item) => !item.isCustom)?.slug
+                ?? provider.models[0]?.slug ?? StockDefaultModels.get(provider.driver);
+            selection = { instanceId: provider.instanceId, model };
+        }
+    }
+    if (typeof selection?.model !== "string" || typeof selection.instanceId !== "string") return null;
+    const model = { instanceId: selection.instanceId, model: selection.model,
+        ...(selection.options == null ? {} : { options: selection.options }) };
+    if (Buffer.byteLength(JSON.stringify(model)) > 16384) return null;
+    return { requested_provider_available: false, model_selection: model };
+}
+
+async function inspectLaunch(rpc, environmentId, requestedProvider) {
+    const incarnation = await launchIdentity(environmentId, issued.sessionId);
+    if (incarnation === null) return { error_code: "conn.launch_server_changed" };
+    const project = await workspaceProject(rpc);
+    if (typeof project?.id !== "string") return { error_code: "conn.launch_workspace_failed" };
+    const model = launchModel(await rpc.call("server.getConfig", {}), project.id, requestedProvider);
+    if (await launchIdentity(environmentId, issued.sessionId) !== incarnation) return { error_code: "conn.launch_server_changed" };
+    if (model === null) return { error_code: "conn.launch_workspace_failed" };
+    return { environment_id: environmentId, incarnation, project_id: project.id, ...model, error_code: null };
+}
+
+const exactThread = (projection, request) => projection?.thread?.id === request.threadId
+    && projection.thread.projectId === request.projectId && projection.thread.deletedAt == null;
+
+// Undefined means the message is outside this window. Null means evidence is missing or contradictory.
+function initialAcceptance(projection, request) {
+    if (!exactThread(projection, request) || !Array.isArray(projection.messages)) return null;
+    const expected = request.initialMessage;
+    const matches = projection.messages.filter((message) => message.id === expected.messageId);
+    if (matches.length === 0) return undefined;
+    if (matches.length !== 1 || matches[0].threadId !== request.threadId || matches[0].role !== "user"
+        || matches[0].text !== expected.text) return null;
+    return acceptanceTime(matches[0].createdAt);
+}
+
+function acceptanceTime(value) {
+    const at = typeof value === "string" ? Date.parse(value) : NaN;
+    return Number.isFinite(at) ? new Date(at).toISOString() : null;
+}
+
+async function readLaunchHistory(request) {
+    const path = "/api/orchestration/threads/" + encodeURIComponent(request.threadId);
+    const read = async (url) => {
+        const response = await fetch(origin + url, {
+            headers: { authorization: "Bearer " + issued.token, "x-t3-orchestration-protocol": "2" },
+            redirect: "error", signal: AbortSignal.timeout(left()),
+        });
+        return response.ok ? response.json() : null;
+    };
+    const bounded = await read(path + "/bounded");
+    const recent = initialAcceptance(bounded?.projection, request);
+    if (recent !== undefined) return recent;
+
+    const seen = new Set();
+    let cursor = bounded.hasMoreHistory ? bounded.historyCursor : null;
+    while (typeof cursor === "string" && cursor.length > 0 && !seen.has(cursor) && left() > 0) {
+        seen.add(cursor);
+        const page = await read(path + "/history?view=conversation&cursor=" + encodeURIComponent(cursor));
+        if (!Array.isArray(page?.items)) return null;
+        const matches = page.items.filter((row) => row.item?.messageId === request.initialMessage.messageId);
+        if (matches.length !== 0) {
+            const row = matches[0];
+            const item = row.item;
+            return matches.length === 1 && row.visibility === "local" && row.sourceThreadId === request.threadId
+                && item.threadId === request.threadId && item.type === "user_message" && item.createdBy === "user"
+                && item.text === request.initialMessage.text ? acceptanceTime(item.startedAt) : null;
+        }
+        cursor = page.hasMoreHistory ? page.nextCursor : null;
+    }
+    return null;
+}
+
+async function launchMessage(rpc, send) {
+    const frozen = JSON.parse(readFileSync(0, "utf8"));
+    const request = frozen?.request;
+    if (typeof frozen?.incarnation !== "string" || typeof request?.commandId !== "string" || typeof request.threadId !== "string"
+        || typeof request.projectId !== "string" || typeof request.initialMessage?.messageId !== "string"
+        || typeof request.initialMessage.text !== "string" || !Array.isArray(request.initialMessage.attachments)
+        || request.initialMessage.attachments.length !== 0 || request.reuseExistingThread !== undefined) {
+        return { error_code: "conn.launch_invalid_dispatch" };
+    }
+    const witness = frozen.incarnation.split(".", 1)[0];
+    if (await launchIdentity(frozen.environment_id, witness) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
+    const projection = send
+        ? (await rpc.call("orchestration.launchThread", request))?.projection
+        : await rpc.call("orchestration.getThreadProjection", { threadId: request.threadId });
+    let acceptedAt = initialAcceptance(projection, request);
+    if (!send && acceptedAt === undefined) acceptedAt = await readLaunchHistory(request);
+    if (await launchIdentity(frozen.environment_id, witness) !== frozen.incarnation) return { error_code: "conn.launch_server_changed" };
+    return acceptedAt == null
+        ? { error_code: "conn.launch_first_message_unconfirmed" }
+        : { accepted_at: acceptedAt, error_code: null };
+}
+
 let raw = "";
 let issued = null;
 let rpc = null;
 let out;
 try {
+    origin = JSON.parse(readFileSync(userdata + "/server-runtime.json", "utf8")).origin;
+    if (launchCommand) {
+        const local = new URL(origin);
+        if (local.origin !== origin || local.protocol !== "http:" || !["127.0.0.1", "[::1]"].includes(local.hostname)) {
+            throw new Error("Launch requires a local T3 server.");
+        }
+    }
     raw = execFileSync(T3, ["auth", "session", "issue", ...scopes.flatMap((scope) => ["--scope", scope]), "--ttl", SessionTtl,
         "--label", "orbit copy turn", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: IssueMs });
     try {
@@ -177,7 +355,11 @@ try {
         throw new Error("t3 auth session issue printed no JSON.");
     }
     rpc = await connect();
-    if (command === "create") {
+    if (command === "inspect-launch") {
+        out = await inspectLaunch(rpc, rest[0], rest[1]);
+    } else if (launchCommand) {
+        out = await launchMessage(rpc, command === "launch");
+    } else if (command === "create") {
         out = await create(rpc);
     } else if (command === "answered") {
         out = await answered(rpc);
@@ -206,6 +388,10 @@ try {
             out = { stopped: error === null && after.runs.length === 0, run: active.id, state: after.all.find((run) => run.id === active.id)?.status ?? active.status };
         }
     }
+} catch (cause) {
+    if (!launchCommand) throw cause;
+    // A failed launch response can contain submitted text. Keep diagnostics to the bounded receipt.
+    out = { error_code: command === "inspect-launch" ? "conn.launch_workspace_failed" : "conn.launch_first_message_unconfirmed" };
 } finally {
     rpc?.close();
     const session = issued?.sessionId ?? /"sessionId"\s*:\s*"([^"]+)"/.exec(raw)?.[1];

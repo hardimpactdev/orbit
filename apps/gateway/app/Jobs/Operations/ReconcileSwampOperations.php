@@ -5,20 +5,19 @@ declare(strict_types=1);
 namespace App\Jobs\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
-use App\Actions\Operations\FailNativeOperationAction;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationReconcileHealth;
+use App\Domain\Operations\OperationRecordCoordinator;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Proof\ProofWarmPool;
-use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalOutputUnavailable;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
@@ -30,7 +29,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -127,6 +125,14 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         app(RoutePublicationHolds::class)->sweep();
 
+        foreach (app()->tagged(OperationRecordCoordinator::class) as $coordinator) {
+            try {
+                $coordinator->sweep();
+            } catch (Throwable $exception) {
+                Log::warning('A record coordinator could not advance its Operations.', ['exception_type' => $exception::class]);
+            }
+        }
+
         return $operations;
     }
 
@@ -219,21 +225,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     {
         $direct = app(DirectOperation::class);
         $selector = $direct->definition($operation->kind)['terminal_result'] ?? null;
-        if ($selector === null) {
-            // Fleet's two undeclared terminal results keep their existing generic failure, now owned by this job.
-            $operation = $expire->execute($operation);
-            $run = $operation->state['swamp_run_id'] ?? null;
-            if (! $operation->status->terminal() && $operation->node_id !== null && is_string($run) && Str::isUuid($run)) {
-                $workflow = $direct->workflowFor($operation) ?? throw new \LogicException('The reconciler requires a registered kind.');
-                $receipt = app(ReadNativeRunFailure::class)->read($operation, $workflow, $run, $onTerminal);
-                if ($receipt !== null) {
-                    return app(FailNativeOperationAction::class)->execute($operation, $run, $receipt['status'], $receipt['failure'], $receipt['finished_at']);
-                }
-            }
-
-            return $operation;
-        }
-        if (! $direct->usesNativeTerminal($operation)) {
+        if ($selector === null || ! $direct->usesNativeTerminal($operation)) {
             return $expire->execute($operation);
         }
         if (! isset($operation->state['swamp_run_id'])) {

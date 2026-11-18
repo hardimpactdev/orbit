@@ -11,6 +11,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use Closure;
 use Illuminate\Support\Str;
 
 /**
@@ -26,6 +27,12 @@ final readonly class InstanceSleep extends InstancePower
     /** The closed reason codes of a `skipped` or `unsupported` plan (docs/reference/prepared-restore.md#wake). */
     public const array PreparedReasons = ['no_plan', 'plan_invalid', 'plan_stale', 'unsupported', 'placement_unproven', 'bound_processes',
         'bound_ranges', 'bound_metadata', 'bound_residency', 'prepare_timeout', 'capture_failed', 'stopped'];
+
+    /** @param  Closure(Instance): bool  $guard */
+    public function startIf(Instance $instance, ?string $caller, ?string $requestId, Closure $guard): ?Operation
+    {
+        return $this->startWhen($instance, $caller, $requestId, $guard);
+    }
 
     protected function kind(): string
     {

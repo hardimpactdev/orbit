@@ -10,7 +10,8 @@ use JsonException;
 /** Strict JSON transport: preserve object/list types and reject duplicate keys at every depth. */
 final class StrictJson
 {
-    public static function decode(string $bytes, int $limit, int $depth = 24): mixed
+    /** @param (callable(string): void)|null $checkNumber */
+    public static function decode(string $bytes, int $limit, int $depth = 24, ?callable $checkNumber = null): mixed
     {
         if ($depth < 1 || $depth > PHP_INT_MAX - 2) {
             throw new InvalidArgumentException('Invalid JSON depth limit.');
@@ -55,6 +56,11 @@ final class StrictJson
                     $stack[$level][$key] = true;
                     $expectsKey[$level] = false;
                 }
+            } elseif ($checkNumber !== null && str_contains('0123456789-', $c)) {
+                // The JSON decoder already checked syntax. Read the token before numeric precision can be lost.
+                $numberLength = strspn($bytes, '0123456789.eE+-', $i);
+                $checkNumber(substr($bytes, $i, $numberLength));
+                $i += $numberLength - 1;
             }
         }
 

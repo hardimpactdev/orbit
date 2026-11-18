@@ -1,0 +1,15 @@
+sequenceDiagram
+  %% status: draft
+  %% command: internal · Conn first-message handoff
+  %% kind: conn.launch_dispatch
+  autonumber
+  participant G as Gateway
+  participant S as Swamp
+  participant N as Instance Node
+  G->>S: Start the handoff
+  %%> Hydrate the frozen request from the declared execution copy.
+  S->>N: Run the scoped T3 call
+  %%> A recovery attempt reads the exact thread on the pinned state.
+  %%> Incomplete, failed or mismatched reads stay unconfirmed.
+  N-->>S: Bounded acceptance receipt
+  S-->>G: Record and retire<br/>receipt · private copy

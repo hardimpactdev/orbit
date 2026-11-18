@@ -113,7 +113,7 @@ class RequiredGateTest(unittest.TestCase):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
         job = workflow['jobs']['web']
-        self.assertEqual(('ubuntu-26.04', 3), (job['runs-on'], job['timeout-minutes']))
+        self.assertEqual(('ubuntu-26.04', 4), (job['runs-on'], job['timeout-minutes']))
         steps = job['steps']
         commands = [step.get('run', '') for step in steps]
         required = [
@@ -130,6 +130,25 @@ class RequiredGateTest(unittest.TestCase):
         for index in indexes:
             self.assertNotIn('if', steps[index])
             self.assertFalse(steps[index].get('continue-on-error', False))
+
+    def test_web_caches_downloads_without_skipping_fresh_system_library_installation(self):
+        import yaml
+        steps = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']['web']['steps']
+        cache = next(step for step in steps if step.get('name') == 'Cache browser downloads')
+        self.assertEqual({'~/.cache/ms-playwright', '/var/cache/orbit-playwright-apt/*.deb'},
+                         set(cache['with']['path'].splitlines()))
+        key = cache['with']['key']
+        for identity in ('runner.os', 'runner.arch', 'ubuntu-26.04',
+                         'steps.browser-downloads.outputs.playwright', 'steps.browser-downloads.outputs.image'):
+            self.assertIn(identity, key)
+        self.assertTrue(key.startswith(cache['with']['restore-keys']))
+        setup = next(step for step in steps if step.get('id') == 'browser-downloads')
+        self.assertIn('Dir::Cache::archives', setup['run'])
+        self.assertIn('APT::Keep-Downloaded-Packages', setup['run'])
+        installer = next(step for step in steps if step.get('name') == 'Install test browsers and system libraries')
+        self.assertLess(steps.index(cache), steps.index(installer))
+        self.assertNotIn('if', installer)
+        self.assertFalse(installer.get('continue-on-error', False))
 
     def test_slow_jobs_are_absent_from_required_ci(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
