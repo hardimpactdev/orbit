@@ -1,0 +1,16 @@
+order = 775
+cases = [
+  "test_new_managed_process_suppresses_the_admitted_fallback",
+  "test_removal_returns_to_fallback_unless_a_replacement_exists",
+  "test_inactive_host_fallback_stays_inactive_at_first_move",
+]
+file = "swamp/tests/gateway_release_horizons_test.py"
+cost = 3
+inputs = [
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-release-horizons.py",
+]
+[case_costs]
+"test_new_managed_process_suppresses_the_admitted_fallback" = 1
+"test_removal_returns_to_fallback_unless_a_replacement_exists" = 1
+"test_inactive_host_fallback_stays_inactive_at_first_move" = 1
