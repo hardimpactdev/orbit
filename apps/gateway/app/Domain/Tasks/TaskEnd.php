@@ -19,10 +19,10 @@ use Closure;
 /**
  * The cancel of a task group that owns a copy (docs/cli/task/cancel.mmd). It reads what the copy holds that origin does not, records
  * the cancel with that read and admits the normal `instance.destroy` of the copy with force. It does not wait for
- * the work: the group is cancelled when the destroy succeeds (TaskCopyLifecycle::destroyed), and a failed destroy leaves the group
+ * the work: the group is cancelled when the destroy succeeds (TaskLifecycle::destroyed), and a failed destroy leaves the group
  * running and bound, so the next `task:cancel` admits a new destroy.
  */
-final readonly class TaskCopyEnd
+final readonly class TaskEnd
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private ContainerWorkspaceRead $read) {}
 
@@ -30,7 +30,7 @@ final readonly class TaskCopyEnd
      * What the copy's workspace holds beyond the seed: commits that origin lacks, uncommitted and untracked files. A copy never fetches,
      * so the commits that the group's publishes pushed are named to the read: they and their history are on origin. The checked-out
      * branch's own commits are published too when the copy's latest content read found their content on the default branch
-     * (TaskCopyWork); a commit only another branch holds still counts. `commits` keeps what the read counted and `work` the verdict,
+     * (TaskWork); a commit only another branch holds still counts. `commits` keeps what the read counted and `work` the verdict,
      * null when the branch holds none of them. A stopped or unreachable copy reads `unknown` with its reason. One bounded SSH read; call it
      * outside any transaction.
      *
@@ -44,7 +44,7 @@ final readonly class TaskCopyEnd
         // the default branch, the checked-out branch's own commits are published, as after a squash merge or a hand-carry. The content
         // read is of that branch alone, so a commit that only another branch holds always counts.
         $own = $read['commits']['head'] ?? 0;
-        $work = $own > 0 ? TaskCopyWork::committed($group, $read['head_commit']) : null;
+        $work = $own > 0 ? TaskWork::committed($group, $read['head_commit']) : null;
         $unpushed = $read['unpushed'] === null ? null : $read['unpushed'] - ($own > 0 && $work === null ? $own : 0);
         $state = $read['state'] === 'dirty' && $unpushed + $read['uncommitted'] + ($count($read['stashes']) ?? 0) === 0 ? 'clean' : $read['state'];
 

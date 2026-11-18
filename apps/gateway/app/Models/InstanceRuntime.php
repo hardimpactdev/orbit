@@ -39,7 +39,7 @@ use LogicException;
  * @property Carbon|null $idle_watch_started_at
  * @property string|null $inner_volume
  * @property int|null $idmap_size
- * @property string|null $agent_key_hash the SHA-256 hash of a task copy's key for Orbit (TaskCopyKey); null for every other container
+ * @property string|null $agent_key_hash the SHA-256 hash of a task copy's key for Orbit (TaskKey); null for every other container
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance

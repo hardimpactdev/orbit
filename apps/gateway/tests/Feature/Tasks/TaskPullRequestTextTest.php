@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\SwampNodeFixture;
-use Tests\Support\TaskCopyDoneFixture;
+use Tests\Support\TaskDoneFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -39,7 +39,7 @@ beforeEach(function (): void {
 });
 
 /** The copy key that the copy's model environment carries, as its create writes it. */
-function copyKeyOf(TaskCopyDoneFixture $world): string
+function copyKeyOf(TaskDoneFixture $world): string
 {
     $environment = app(InstanceContainer::class)->modelEnvironment(InstanceRuntime::query()->where('instance_id', $world->instance->id)->sole(), 'placeholder');
     preg_match('/^ORBIT_COPY_KEY=([0-9a-f]{64})$/m', $environment, $match);
@@ -48,11 +48,11 @@ function copyKeyOf(TaskCopyDoneFixture $world): string
 }
 
 /** The reviewer's turn on the done check, still running: the one moment the copy may send its text. */
-function copyReviewerTurnRuns(TaskCopyDoneFixture $world): Operation
+function copyReviewerTurnRuns(TaskDoneFixture $world): Operation
 {
     return Operation::query()->create(['kind' => OperationKinds::TasksCopyTurn, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $world->group->id,
         'node_id' => null, 'input' => ['subtask' => $world->subtask->id, 'role' => 'reviewer', 'thread_id' => $world->reviewer->id, 'check' => $world->check->id,
-            'candidate' => TaskCopyDoneFixture::Commit], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
+            'candidate' => TaskDoneFixture::Commit], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
 }
 
 /** @param array<string, string> $text */
@@ -62,7 +62,7 @@ function copySends(string $key, array $text, string $from = '10.44.0.71'): TestR
 }
 
 it('writes a new copy key into a task copy\'s model environment each time, and keeps only the newest key\'s hash', function (): void {
-    $world = TaskCopyDoneFixture::make(text: false);
+    $world = TaskDoneFixture::make(text: false);
     $runtime = InstanceRuntime::query()->where('instance_id', $world->instance->id)->sole();
 
     $environment = app(InstanceContainer::class)->modelEnvironment($runtime, 'placeholder');
@@ -78,7 +78,7 @@ it('writes a new copy key into a task copy\'s model environment each time, and k
 });
 
 it('answers the copy\'s own key from the copy\'s own Node, and nothing else', function (): void {
-    $world = TaskCopyDoneFixture::make(text: false);
+    $world = TaskDoneFixture::make(text: false);
     $key = copyKeyOf($world);
     $other = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'shark', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => '10.44.0.8', 'wireguard_ip' => '10.44.0.8', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture',
@@ -97,7 +97,7 @@ it('answers the copy\'s own key from the copy\'s own Node, and nothing else', fu
 });
 
 it('records the reviewer\'s text on the check of its running turn, and the publish of the done group opens the pull request with it', function (): void {
-    $world = TaskCopyDoneFixture::make(text: false);
+    $world = TaskDoneFixture::make(text: false);
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone, 'issue_number' => 9]);
     $key = copyKeyOf($world);
     $turn = copyReviewerTurnRuns($world);
@@ -117,7 +117,7 @@ it('records the reviewer\'s text on the check of its running turn, and the publi
 });
 
 it('records the reviewer\'s text after the pull request opened, and the republish of the done check updates the pull request with it', function (bool $named): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr, text: false);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr, text: false);
     $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7', 'issue_number' => 9]);
     $key = copyKeyOf($world);
     // A CI-fix round: a new reviewer turn on the done check, after the first publish opened the pull request.
@@ -136,26 +136,26 @@ it('records the reviewer\'s text after the pull request opened, and the republis
 })->with(['a bare publish' => [false], 'a publish that names the done check' => [true]]);
 
 it('refuses the text outside a running reviewer turn on the checked commit, for a held Project, an ended group and a bad title', function (Closure $arrange, array $text, int $status, string $code): void {
-    $world = TaskCopyDoneFixture::make(text: false);
+    $world = TaskDoneFixture::make(text: false);
     $key = copyKeyOf($world);
     $arrange($world);
 
     copySends($key, $text)->assertStatus($status)->assertJsonPath('error.code', $code);
     expect($world->check->refresh()->pr_title)->toBeNull();
 })->with([
-    'no turn runs' => [fn (TaskCopyDoneFixture $w) => null, ['title' => 'T', 'body' => 'B'], 409, 'tasks.pr_text_not_reviewer_turn'],
-    'an implementer turn runs' => [fn (TaskCopyDoneFixture $w) => Operation::query()->create(['kind' => OperationKinds::TasksCopyTurn, 'target_type' => OperationKinds::TaskGroupTarget,
+    'no turn runs' => [fn (TaskDoneFixture $w) => null, ['title' => 'T', 'body' => 'B'], 409, 'tasks.pr_text_not_reviewer_turn'],
+    'an implementer turn runs' => [fn (TaskDoneFixture $w) => Operation::query()->create(['kind' => OperationKinds::TasksCopyTurn, 'target_type' => OperationKinds::TaskGroupTarget,
         'target_id' => $w->group->id, 'node_id' => null, 'input' => ['subtask' => $w->subtask->id, 'role' => 'implementer', 'thread_id' => $w->reviewer->id + 100, 'candidate' => null],
         'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]), ['title' => 'T', 'body' => 'B'], 409, 'tasks.pr_text_not_reviewer_turn'],
-    'the check no longer passed' => [function (TaskCopyDoneFixture $w): void {
+    'the check no longer passed' => [function (TaskDoneFixture $w): void {
         copyReviewerTurnRuns($w);
         $w->check->update(['status' => TaskCheckStatus::Failed]);
     }, ['title' => 'T', 'body' => 'B'], 422, 'tasks.commit_not_checked'],
-    'a held Project' => [function (TaskCopyDoneFixture $w): void {
+    'a held Project' => [function (TaskDoneFixture $w): void {
         copyReviewerTurnRuns($w);
         config(['orbit.tasks.copy_publish_projects' => []]);
     }, ['title' => 'T', 'body' => 'B'], 409, 'tasks.copy_publish_held'],
-    'an ended group' => [function (TaskCopyDoneFixture $w): void {
+    'an ended group' => [function (TaskDoneFixture $w): void {
         copyReviewerTurnRuns($w);
         $w->group->update(['status' => TaskGroupStatus::Cancelled]);
     }, ['title' => 'T', 'body' => 'B'], 409, 'tasks.group_closed'],

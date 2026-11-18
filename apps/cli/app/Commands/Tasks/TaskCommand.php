@@ -20,11 +20,11 @@ use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Responses\Projects\ProjectsResponse;
+use Orbit\Sdk\Responses\Tasks\ResolvedTaskAgentResponse;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
-use Orbit\Sdk\Responses\Tasks\TaskCopyAgentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
@@ -844,7 +844,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     }
 
     /** A role's resolved copy turn agent with where its values come from: `claude / claude-opus-5-5 / high (project)`, or one source per value when they differ. */
-    private static function copyAgent(?TaskCopyAgentResponse $agent): ?string
+    private static function copyAgent(?ResolvedTaskAgentResponse $agent): ?string
     {
         if ($agent === null) {
             return null;

@@ -19,7 +19,7 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\SourceControl\GitBranchName;
-use App\Domain\Tasks\TaskCopyAgent;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tools\ToolOperationException;
 use App\Http\Requests\Nodes\RemoveNodeRoleInputParser;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -816,7 +816,7 @@ final readonly class RecordCommandActivity
         try {
             $input = $this->jsonInspector->inspect(
                 $request->getContent(),
-                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'default_auto_deploy', 'merge_check', ...TaskCopyAgent::fields('task_')],
+                ['name', 'slug', 'repository_url', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'default_auto_deploy', 'merge_check', ...TaskAgent::fields('task_')],
             );
         } catch (UnexpectedValueException) {
             return [];

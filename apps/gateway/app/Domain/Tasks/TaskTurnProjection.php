@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  * provider instance, the model and the effort the thread started with, the agent thread's id and the agent's last reply; the transcript
  * stays out of it. T3's CLI reports no token use, so the metrics stay null.
  */
-final readonly class TaskCopyTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
+final readonly class TaskTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** The most characters of the agent's reply that a turn's result holds. */
     public const int ReplyLimit = 16384;
@@ -40,7 +40,7 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             $result = is_string($captured) ? json_decode($captured, true, flags: JSON_THROW_ON_ERROR) : $captured;
             $result = is_array($result) ? ValidatedData::object($result) : [];
             if ($result !== []) {
-                // The agent the thread started with, as the admission resolved and recorded it (TaskCopyAgent).
+                // The agent the thread started with, as the admission resolved and recorded it (TaskAgent).
                 $thread = AgentThread::query()->findOrFail(ValidatedData::integer($operation->input['thread_id']));
                 $result['provider_instance'] = $thread->provider_instance;
                 $result['model'] = $thread->model;

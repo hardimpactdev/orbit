@@ -21,7 +21,7 @@ use Illuminate\Support\Str;
  * The admission of one agent turn in a task copy (docs/cli/task/copy-turn.mmd). Swamp runs T3's own `t3 thread` command in the copy as
  * `agent`; T3 issues and revokes its session inside the container, so the intent names no credential and no vault key.
  */
-final readonly class TaskCopyTurn
+final readonly class TaskTurn
 {
     /**
      * The driver of a copy turn's thread. Orbit stops a copy's run only inside a turn's phase, through the stock T3 server in the copy:
@@ -107,7 +107,7 @@ final readonly class TaskCopyTurn
         $provider = null;
         $options = [];
         if ($thread === null) {
-            $agent = TaskCopyAgent::forNewThread($group, $role);
+            $agent = TaskAgent::forNewThread($group, $role);
             $provider = $agent['instance'];
             $options = $agent['options'];
             $thread = AgentThread::query()->create([

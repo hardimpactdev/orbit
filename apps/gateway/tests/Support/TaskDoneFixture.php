@@ -27,7 +27,7 @@ use App\Models\TaskCheck;
  * exactly its passed handoff check, which recorded the given mode, and that turn sent the pull request text
  * (docs/reference/tasks.md#the-reviewers-pull-request-text). Tests then break one clause at a time.
  */
-final class TaskCopyDoneFixture
+final class TaskDoneFixture
 {
     public const string Commit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 

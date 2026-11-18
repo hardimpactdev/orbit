@@ -17,7 +17,7 @@ use App\Models\Task;
  * What the end of a task copy's create or destroy does to the group that owns the copy (docs/cli/task/start.mmd). An Instance that no
  * group owns, or that has no container, is no task copy: both calls then change nothing. Each runs inside its projection's transaction.
  */
-final readonly class TaskCopyLifecycle
+final readonly class TaskLifecycle
 {
     /** Opens the reason of the assistance request that a failed completion records on its group; a succeeded completion clears only that request. */
     public const string CompletionFailedReason = 'The completion of the task copy failed: ';
@@ -191,7 +191,7 @@ final readonly class TaskCopyLifecycle
     }
 
     /**
-     * Whether a `task:cancel` of the group admitted a destroy of this copy (TaskCopyEnd::cancel). That cancel succeeds at its admission
+     * Whether a `task:cancel` of the group admitted a destroy of this copy (TaskEnd::cancel). That cancel succeeds at its admission
      * and leaves the group to the destroy, so any one that names the copy counts.
      */
     private static function cancelling(Task $group, int $instanceId): bool

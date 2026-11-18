@@ -8,7 +8,7 @@ namespace Orbit\Sdk\Responses\Tasks;
  * The copy turn agent a role of a task group resolves to: each value and its source, `group`, `project` or `gateway`. A new copy
  * thread of the role starts with it; a thread keeps the values it started with.
  */
-final readonly class TaskCopyAgentResponse
+final readonly class ResolvedTaskAgentResponse
 {
     public const array Values = ['provider', 'model', 'effort'];
 

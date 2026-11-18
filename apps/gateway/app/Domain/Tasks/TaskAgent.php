@@ -20,7 +20,7 @@ use Illuminate\Validation\Rules\In;
  * (InstanceContainer::CopyProviders).
  * T3 offers its models in a catalog it fetches itself, so the turn's first step checks the model in the copy.
  */
-final readonly class TaskCopyAgent
+final readonly class TaskAgent
 {
     public const array Values = ['provider', 'model', 'effort'];
 
