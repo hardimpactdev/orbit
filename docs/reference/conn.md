@@ -768,7 +768,7 @@ Project the safe fields of `OperationData::summary`: `id`, `kind`, `status`, `cr
 
 The `stages`, `actions`, and `children` fields are keyed JSON objects even in the initial snapshot. Record stage times and errors from Gateway transitions and native results, never from a client's socket. Use the message's recorded time for `thread.accepted_at`, not the time a reply arrives. Keep core Operation status nonterminal while launch retry or cleanup remains pending. Do not reopen a terminal Operation to represent later application progress.
 
-Successful workspace preparation keeps its recorded times even if later launch preparation needs a retry or cancellation removes the server. A launch retry after a later preparation failure uses the same Instance.
+Successful workspace preparation keeps its recorded times even if later launch preparation needs a retry or cancellation removes the server. A launch retry after a later preparation failure uses the same Instance. If an existing Instance slept again after its wake succeeded, Retry records a fresh wake or joins an open one before running a new T3 probe.
 
 Keep following `poll_after_seconds` after the launch reaches `ready` if application completion or an application retry is pending. Read `application_preview` separately from thread readiness. If preparation confirms there is no application to complete, the stage is `skipped` and reports no readiness value. When a Project process definition is required for retry, Orbit compares the expected unit with the one the failed completion used. Applying the repaired definition to the Instance first does not prevent a retry.
 

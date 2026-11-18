@@ -54,7 +54,9 @@ final readonly class ConnLaunchState
             $recorded = Arr::get($state, 'launch_children.'.$role->value);
             if (is_array($recorded)) {
                 $previous = $role->operation($launch) ?? throw new LogicException('The launch child is missing.');
-                if (($recorded['key'] ?? null) === $key || ! app(NativeRunCancellation::class)->settled($previous) || $previous->status === OperationStatus::Succeeded) {
+                $canReplaceSucceededWake = $role === ConnLaunchChild::Wake && ! isset($state['dispatch_committed_at']);
+                if (($recorded['key'] ?? null) === $key || ! app(NativeRunCancellation::class)->settled($previous)
+                    || ($previous->status === OperationStatus::Succeeded && ! $canReplaceSucceededWake)) {
                     return $previous;
                 }
                 $retryTarget = $role === ConnLaunchChild::Completion ? 'application' : 'launch';

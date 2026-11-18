@@ -959,6 +959,90 @@ describe('launch control and progress', function (): void {
             ->assertJsonPath('error.code', 'conn.launch_handoff_committed');
     })->with(['create' => [ConnLaunchChild::Create], 'wake' => [ConnLaunchChild::Wake]]);
 
+    it('wakes an existing Instance again on launch Retry after a failed probe and later sleep', function (string $outcome): void {
+        $default = Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id,
+            'name' => 'default', 'checkout_path' => '/workspace/default', 'root' => '.', 'status' => InstanceState::Active]);
+        $container = app(InstanceContainer::class);
+        $container->reserve($default, $this->host)->update(['seed_commit' => str_repeat('a', 40)]);
+        $this->instance->update(['status' => InstanceState::Active]);
+        $runtime = $container->reserve($this->instance, $this->host, $default);
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $launch = Operation::query()->findOrFail($id);
+        $settlement = app(ConnLaunchSettlement::class);
+
+        $settlement->advance($launch);
+        $wake = ConnLaunchChild::Wake->operation($launch->refresh());
+        $wake->update(['lock_key' => null, 'status' => OperationStatus::Succeeded, 'started_at' => now(), 'finished_at' => now()]);
+        $runtime->update(['power_state' => InstanceRuntimePowerState::Running]);
+        $settlement->advance($launch->refresh());
+        $probe = Operation::query()->where('kind', OperationKinds::ConnLaunchInspect)->sole();
+        $probe->update(['lock_key' => null, 'status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'conn.launch_workspace_failed']);
+        $settlement->advance($launch->refresh());
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()
+            ->assertJsonPath('data.phase', 'needs_retry')->assertJsonPath('data.thread', null);
+
+        $runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+        foreach ([$this->desktop, $this->phone] as $caller) {
+            callLaunchApi($caller, 'POST', "conn/launches/{$id}/retry", ['target' => 'launch'])->assertAccepted()
+                ->assertJsonPath('data.id', $id)->assertJsonPath('data.phase', 'preparing');
+        }
+        $settlement->advance($launch->refresh());
+        $freshWake = ConnLaunchChild::Wake->operation($launch->refresh());
+        expect($freshWake->id)->not->toBe($wake->id);
+        expect($freshWake->status)->toBe(OperationStatus::Queued)
+            ->and($freshWake->triggered_by)->toBe($wake->triggered_by)
+            ->and($wake->refresh()->status)->toBe(OperationStatus::Succeeded);
+
+        $joinKey = (string) Str::uuid();
+        $join = fn () => callLaunchApi($this->desktop, 'POST', "instances/{$this->instance->id}/wake", key: $joinKey)
+            ->assertAccepted()->assertJsonPath('data.id', $freshWake->id);
+        $join();
+        $settlement->advance($launch->refresh());
+        $join();
+        expect($freshWake->refresh()->state['wake_shared'])->toBeTrue()
+            ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(2)
+            ->and(Operation::query()->where('kind', OperationKinds::ConnLaunchInspect)->sole()->id)->toBe($probe->id)
+            ->and(Operation::query()->where('kind', OperationKinds::ConnLaunchDispatch)->exists())->toBeFalse();
+
+        if ($outcome === 'cancel') {
+            $probe->update(['finished_at' => now()->subMinutes(3)]);
+            callLaunchApi($this->phone, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+            $settlement->advance($launch->refresh());
+            expect($freshWake->refresh()->status)->toBe(OperationStatus::Queued)
+                ->and($freshWake->cancel_requested_at)->toBeNull();
+        }
+
+        $freshWake->update(['lock_key' => null, 'status' => OperationStatus::Succeeded, 'started_at' => now(), 'finished_at' => now()]);
+        $runtime->update(['power_state' => $outcome === 'sleep'
+            ? InstanceRuntimePowerState::Stopped : InstanceRuntimePowerState::Running]);
+        $settlement->advance($launch->refresh());
+        if ($outcome !== 'dispatch') {
+            callLaunchApi($this->phone, 'GET', "conn/launches/{$id}")->assertOk()
+                ->assertJsonPath('data.phase', $outcome === 'cancel' ? 'cancelled' : 'needs_retry')
+                ->assertJsonPath('data.thread', null);
+            expect(Operation::query()->where('kind', OperationKinds::ConnLaunchInspect)->count())->toBe(1)
+                ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(2)
+                ->and(Operation::query()->whereIn('kind', ['instance.sleep', OperationKinds::ConnLaunchDispatch])->exists())->toBeFalse();
+
+            return;
+        }
+
+        $freshProbe = Operation::query()->where('kind', OperationKinds::ConnLaunchInspect)->whereKeyNot($probe->id)->sole();
+        $freshProbe->update(['lock_key' => null, 'status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => [
+            'environment_id' => $this->environment->environment_id, 'incarnation' => 'fixture-incarnation',
+            'project_id' => 'fixture-t3-project', 'model_selection' => ['instanceId' => 'fixture-provider', 'model' => 'fixture-model'],
+        ]]);
+        $settlement->advance($launch->refresh());
+        $settlement->advance($launch->refresh());
+        expect(Operation::query()->where('kind', OperationKinds::ConnLaunchDispatch)->sole()->triggered_by)->toBe($wake->triggered_by);
+        expect(Operation::query()->where('kind', OperationKinds::ConnLaunchInspect)->count())->toBe(2);
+        callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()
+            ->assertJsonPath('data.id', $id)->assertJsonPath('data.children.wake_operation_id', $freshWake->id)
+            ->assertJsonPath('data.phase', 'dispatching');
+        callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/cancel")->assertConflict()
+            ->assertJsonPath('error.code', 'conn.launch_handoff_committed');
+    })->with(['dispatch', 'cancel', 'sleep']);
+
     it('rolls back the dispatch fence and frozen request if child admission fails', function (): void {
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
         $state = app(ConnLaunchState::class);

@@ -12,6 +12,7 @@ sequenceDiagram
   G-->>C: 202 · launch snapshot
   G->>S: Prepare the Instance
   %%> Use the exact owned create or admitted wake. Record application completion separately.
+  %%> On explicit Retry, admit a fresh wake if the existing Instance slept again. Wait for it before probing T3 again.
   %%> Read the registered stock T3 project and model defaults.
   alt Cancel wins the Operation lock
     %% path: cancel

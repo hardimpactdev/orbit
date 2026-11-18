@@ -146,14 +146,14 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         if ($wake !== null && ! $this->nativeCancellation->settled($wake)) {
             return null;
         }
-        if ($wake !== null && $wake->status !== OperationStatus::Succeeded && ! $retry) {
+        $existing = ($launch->input['target_kind'] ?? null) === 'existing';
+        $asleep = $existing && $instance->runtime()->firstOrFail()->power_state !== InstanceRuntimePowerState::Running;
+        if ($wake !== null && ! $retry && ($wake->status !== OperationStatus::Succeeded || $asleep)) {
             $this->blocked($launch, ConnLaunchStage::Workspace, $wake->error_code);
 
             return null;
         }
-        if (($launch->input['target_kind'] ?? null) === 'existing'
-            && ($instance->runtime()->firstOrFail()->power_state !== InstanceRuntimePowerState::Running
-                || ($wake !== null && $wake->status !== OperationStatus::Succeeded && $retry))) {
+        if ($existing && ($asleep || ($wake !== null && $wake->status !== OperationStatus::Succeeded))) {
             $this->instances->wake($launch, $instance);
 
             return null;
