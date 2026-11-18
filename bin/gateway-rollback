@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Switches the Gateway to a retained release: the release run switches forward with it, and an operator rolls back
-# with it when Swamp or the Gateway cannot run `gateway:release:rollback`. Run it on the Gateway Node with sudo.
-# It switches the application link, and the web link when the release keeps its web build, reloads PHP-FPM so every
-# request runs the release, and restarts each running service that runs from the application, such as the scheduler.
-# A restart of Horizon waits for its running jobs, up to the drain, because the unit carries the stop policy.
-# It changes no schema and restores no snapshot. docs/reference/gateway-recovery.md#roll-back-without-swamp
+# Complete an interrupted container handover, or switch a legacy FPM deployment.
 set -euo pipefail
 
 base=${ORBIT_RELEASE_BASE:-/home/orbit}
@@ -14,7 +9,6 @@ fail() { echo "gateway-rollback: $*" >&2; exit 1; }
 journal=/var/lib/orbit/gateway-release-switch
 if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal/operation ]]; then
     [[ $EUID == 0 ]] || fail "run container recovery as root on the Gateway Node"
-    inventory=$base/.orbit/gateway-containers.json
     phase=/usr/local/libexec/orbit-gateway-release-phase
     lock=$base/.orbit/gateway-release.lock
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 || ! /proc/self/fd/9 -ef $lock ]]; then
@@ -22,53 +16,12 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     fi
     export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
     flock -n 9 || fail "another Gateway release holds the lock"
-    if [[ $id == --recover ]]; then
-        test -f "$journal/operation" || fail "there is no interrupted traffic switch"
-        operation=$(cat "$journal/operation")
-        candidate=$(cat "$journal/candidate")
-        if [[ -f $journal/host-fallback/inventory ]]; then
-            "$phase" restore "$candidate" "$operation"
-        else
-            "$phase" restore "$candidate" "$operation"
-            ORBIT_GATEWAY_INITIAL_MOVE=1 "$phase" release-unused "$candidate" "$operation"
-        fi
-        exit
-    fi
-    live=$(jq -er '.live' "$inventory")
-    [[ $live =~ ^[a-f0-9]{40}$ ]] || fail "container inventory is unreadable"
-    [[ ! -e $journal/operation ]] || fail "an interrupted switch must first be restored with --recover"
-    old=$(jq -r '.old // ""' "$inventory")
-    horizon=$(cat "$journal/horizon" 2>/dev/null || :)
-    if [[ $id == --host ]]; then
-        [[ -z $old && $(cat "$base/orbit/REVISION") == "$live" ]] || fail "host rollback is available only just after the move"
-        operation=$(cat "$journal/last-operation")
-        if ! "$phase" restore-host "$live" "$operation" "$horizon"; then
-            if [[ -f $journal/operation && ! -f $journal/host-fallback/verified ]]; then
-                "$phase" restore "$live" "$operation"
-            fi
-            fail "host rollback failed"
-        fi
-        exit
-    fi
-    [[ $old =~ ^[a-f0-9]{40}$ && ( -z $id || $id == "${old:0:12}" ) ]] || fail "choose the retained rollback container"
-    # Recovery works when neither Swamp nor the Gateway answers. The saved local
-    # release Operation identifies this recovery. It does not create an Operation.
-    operation=$(cat "$journal/last-operation")
-    candidate() { "$phase" "$1" "$old" "$operation" "${@:2}"; }
-    candidate check-recovery
-    trap 'rc=$?; if (( rc )); then candidate release-unused || :; fi' EXIT
-    candidate build true '{}' true >/dev/null
-    candidate ready
-    candidate switch "${live:0:12}" "$horizon" >/dev/null || fail "traffic switch failed"
-    if ! candidate public-ready; then
-        candidate restore
-        fail "rollback verification failed; restored previous traffic"
-    fi
-    candidate start-horizon "$horizon"
-    candidate retire
-    candidate prune
-    echo "gateway-rollback: serving ${old:0:12}"
-    exit
+    [[ $id == --recover ]] || fail "Gateway containers fix forward; deploy a corrective commit"
+    test -f "$journal/operation" || fail "there is no interrupted handover"
+    operation=$(cat "$journal/operation")
+    candidate=$(cat "$journal/candidate")
+    exec "$phase" recover "$candidate" "$operation"
+
 fi
 
 [[ ! -e $journal/operation ]] || fail "an interrupted switch must first be restored with --recover"

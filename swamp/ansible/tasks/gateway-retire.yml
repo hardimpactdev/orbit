@@ -19,8 +19,8 @@
       - -ec
       - >-
         test -f "$2" &&
-        jq -e '.version == 1 and .host_retired == true and (.live | test("^[0-9a-f]{40}$"))
-        and (.old | test("^[0-9a-f]{40}$")) and .old != .live' "$1" >/dev/null
+        jq -e '(.version == 1 or .version == 2) and .host_retired == true and (.live | test("^[0-9a-f]{40}$"))
+        and (if .version == 2 then .old == null else ((.old | test("^[0-9a-f]{40}$")) and .old != .live) end)' "$1" >/dev/null
       - gateway-retirement
       - "{{ rt.gateway.inventory | default('/home/orbit/.orbit/gateway-containers.json') }}"
       - /var/lib/orbit/gateway-release-switch/host-retired

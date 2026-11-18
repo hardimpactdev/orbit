@@ -6,7 +6,7 @@ shift 3
 [[ $sha =~ ^[a-f0-9]{40}$ && $operation =~ ^[1-9][0-9]*$ ]] || exit 64
 repo=/home/orbit/shared/orbit.git
 script=swamp/scripts/gateway-release-container.sh
-workflow=swamp/workflows/workflow-gateway-release-activate.yaml
+workflow=swamp/workflows/workflow-production-release-activate.yaml
 inventory=/home/orbit/.orbit/gateway-containers.json
 journal=/var/lib/orbit/gateway-release-switch
 # These entry points belong to the installed Node role. Fetch runs before the
@@ -22,25 +22,21 @@ if [[ $phase == fetch ]]; then
   ' bash "$repo" "$sha"
 fi
 if [[ $phase == activation-workflow ]]; then
-  if git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:swamp/workflows/workflow-production-release-activate.yaml" 2>/dev/null; then
-    echo production-release-activate
-  else
-    echo gateway-release-activate
-  fi
+  echo production-release-activate
   exit
 fi
 check_recovery() {
   local path
   for path in "$script" "$workflow"; do
-    if ! git -c safe.directory="$repo" -C "$repo" grep -q '^# orbit-gateway-recovery-protocol: 1$' "$sha" -- "$path"; then
-      echo "gateway.release_recovery_incompatible: $sha lacks container recovery protocol 1 in $path" >&2
+    if ! git -c safe.directory="$repo" -C "$repo" grep -q '^# orbit-gateway-recovery-protocol: 2$' "$sha" -- "$path"; then
+      echo "gateway.release_recovery_incompatible: $sha lacks container fix-forward protocol 2 in $path" >&2
       return 1
     fi
   done
 }
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
+  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|build|build-checked|web|clone|park-preparation|switch|recover|start-horizon|retire|cleanup-versions|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9</home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
@@ -63,27 +59,32 @@ if [[ -f $lease ]]; then
   case "$phase" in
     reconcile-idle|reconcile-begin|reconcile-verify)
       [[ $(cat "$lease") == "$operation $sha" ]] || { echo 'Another reconciliation owns the lease' >&2; exit 1; } ;;
-    switch|switch-back|restore|restore-host|build|build-checked|check-load)
+    switch|recover|build|build-checked|check-load)
       echo 'The serving workflows are being reconciled. See gateway-recovery for interrupted runs.' >&2; exit 1 ;;
   esac
 fi
 # Check compatibility before starting new work. Recovery of a durable switch
 # uses its exact candidate and operation, including switches made before this check.
 case "$phase" in
-  drain)
-    echo 'gateway.release_recovery_incompatible: container Horizon must drain inside the journaled switch' >&2
+  drain|restore|switch-back|restore-host)
+    echo 'gateway.release_fix_forward: recover forward or deploy a corrective commit' >&2
     exit 1
     ;;
-  reconcile-begin|reconcile-idle|reconcile-verify|build|build-checked|switch|restore-host|check-recovery|check-load)
-    [[ ! -e $journal/operation ]] || { echo 'Recover the interrupted Gateway switch with --recover first' >&2; exit 1; }
+  reconcile-begin|reconcile-idle|reconcile-verify|build|build-checked|check-recovery|check-load)
+    [[ ! -e $journal/operation ]] || { echo 'Finish the interrupted Gateway handover with --recover first' >&2; exit 1; }
     if [[ $phase != check-load || -f $inventory ]]; then check_recovery; fi
     ;;
-  restore|switch-back|start-horizon|retire)
-    if [[ -e $journal/operation || $phase == restore || $phase == switch-back ]]; then
+  switch|recover|start-horizon|retire)
+    check_recovery
+    if [[ -e $journal/operation || $phase == recover ]]; then
       [[ -f $journal/operation && -f $journal/candidate &&
         $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
-        { echo 'There is no matching Gateway switch' >&2; exit 1; }
+        { echo 'There is no matching Gateway handover' >&2; exit 1; }
     fi
+    ;;
+  web|clone)
+    check_recovery
+    [[ ! -e $journal/operation ]] || { echo 'An interrupted Gateway handover needs recovery' >&2; exit 1; }
     ;;
 esac
 # The native workflow uses the checked entry points so an older installed
@@ -110,15 +111,6 @@ if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconci
   phase=public-ready
 fi
 if [[ $phase == build-checked ]]; then phase=build; fi
-# A failed deletion must complete before a new build can reuse the previous SHA.
-if [[ $phase == build && -f $journal/pending-prune ]]; then
-  "$0" prune-pending "$sha" "$operation"
-fi
-if [[ $phase == retire ]]; then
-  # Avoid handing the scheduler over at the first or last two seconds of a minute.
-  second=$((10#$(date -u +%S)))
-  if (( second < 2 )); then sleep "$((2-second))"; elif (( second >= 58 )); then sleep "$((62-second))"; fi
-fi
 # Cleanup belongs to the current host controller, including a rollback to an older
 # sealed release whose script predates this phase. A failed fetch can have no object.
 if [[ $phase == park-preparation || $phase == release-unused ]]; then
@@ -129,18 +121,11 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
     if [[ $("${incus_cli[@]}" config get prepare-gateway user.orbit.release.operation) == "$operation" ]]; then ctl sleep gateway "$operation"; fi
     exit
   fi
-  # A failed run may have woken the rollback container or left its new clone private.
-  # The operation that created the clone and the serving inventory fence deletion.
-  if [[ ! -f $inventory && ${ORBIT_GATEWAY_INITIAL_MOVE:-0} != 1 ]]; then exit 0; fi
   if [[ -e $journal/operation ]]; then
-    [[ ! -e $inventory && -f $journal/host-fallback/verified &&
-      $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
-      { echo 'Unfinished traffic switch needs recovery' >&2; exit 1; }
+    echo 'An unfinished Gateway handover needs forward recovery; leave both containers intact' >&2
+    exit 1
   fi
-  # A refused rollback never woke the retained release. Leave it alone.
-  old=
-  if [[ -f $inventory ]]; then old=$(jq -r '.old // ""' "$inventory"); fi
-  if [[ $old == "$sha" ]] && ! check_recovery 2>/dev/null; then exit 0; fi
+  if [[ ! -f $inventory && ${ORBIT_GATEWAY_INITIAL_MOVE:-0} != 1 ]]; then exit 0; fi
   # A failed Incus copy can leave only the preparer snapshot. Check the seal that
   # created it rather than trusting the name of a snapshot or the current preparer.
   snapshot="built-$operation"
@@ -155,10 +140,7 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
     "${incus_cli[@]}" snapshot delete prepare-gateway "$snapshot"
   fi
   if [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]]; then exit 0; fi
-  if [[ $old == "$sha" ]]; then
-    ctl retire gateway "${sha:0:12}" "$operation"
-    exit
-  fi
+  if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then exit 0; fi
   existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')
   if [[ $existing != '{}' || ! -f $journal/operation ]]; then
     if [[ $(jq -r '.config["user.orbit.release.operation"] // ""' <<< "$existing") != "$operation" ]]; then

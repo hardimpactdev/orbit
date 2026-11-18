@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# orbit-gateway-recovery-protocol: 1
+# orbit-gateway-recovery-protocol: 2
 # Run one release phase on the Gateway Node. The Swamp run orders the phases.
 set -euo pipefail
 umask 077
@@ -27,7 +27,7 @@ user() { local machine=$1; shift; enter "$machine" runuser -u orbit -- env HOME=
 php() { local machine=$1; shift; user "$machine" "$runtime/php/8.5/bin/php" "$@"; }
 artisan() { local machine=$1; shift; php "$machine" "$app/artisan" "$@"; }
 field() { jq -er "$1" "$inventory"; }
-retained() { [[ -f $inventory ]] && jq -e --arg sha "$sha" '.live == $sha or .old == $sha' "$inventory" >/dev/null; }
+retained() { [[ -f $inventory ]] && jq -e --arg sha "$sha" '.live == $sha' "$inventory" >/dev/null; }
 owned_sha() { "${incus_cli[@]}" config get "$1" user.orbit.release.commit; }
 grants() {
   # The child interpreter expands this program.
@@ -81,7 +81,6 @@ verify_candidate() {
 host_ready() { src swamp/scripts/gateway-release-host-check.py | runuser -u caddy -- python3 - "$checkout" "$sha"; }
 
 journal=/var/lib/orbit/gateway-release-switch
-host_fallback=$journal/host-fallback
 record_switch() {
   printf '%s\n' "$sha" > "$journal/candidate"
   printf '%s\n' "$operation" > "$journal/operation.next"
@@ -94,39 +93,47 @@ clear_switch() {
   rm -f -- "$journal/operation"
   sync -f "$journal"
 }
-# A delete may fail after promotion. Keep its exact SHA across journal rotation.
-prune_previous() {
-  local discarded other matches live old
-  [[ -f $journal/pending-prune ]] || return 0
-  [[ ! -f $journal/operation ]] || fail 'recover or finish the interrupted switch before pruning'
-  discarded=$(cat "$journal/pending-prune")
-  [[ $discarded =~ ^[a-f0-9]{40}$ ]] || fail 'invalid pending rollback identity'
-  live=$(field '.live')
-  old=$(jq -er '.old // ""' "$inventory")
-  [[ $live =~ ^[a-f0-9]{40}$ && ( -z $old || $old =~ ^[a-f0-9]{40}$ ) ]] || fail 'invalid live container inventory'
-  if [[ $discarded != "$live" ]] && [[ $discarded != "$old" ]]; then
-    other=gateway-${discarded:0:12}
-    matches=$("${incus_cli[@]}" list "$other" --format json | jq -er --arg name "$other" '[.[] | select(.name==$name)] | length')
-    if [[ $matches != 0 ]]; then
-      [[ $matches == 1 && $(owned_sha "$other") == "$discarded" ]] || fail 'previous rollback identity changed'
-      [[ $("${incus_cli[@]}" config get "$other" user.orbit.release.target) == gateway ]] || fail 'not a Gateway release'
-      [[ $("${incus_cli[@]}" config get "$other" user.orbit.release.role) == candidate ]] || fail 'not a release clone'
-      "${incus_cli[@]}" delete "$other" --force
-    fi
-    ctl forget gateway "${discarded:0:12}"
-    rm -f -- "$journal/rollback-$discarded"
-  fi
-  rm -- "$journal/pending-prune"
-}
 set_inventory() {
-  local live=$1 old=$2 tmp retired=false
-  if [[ -f $journal/host-retired ]]; then retired=true; fi
+  local live=$1 tmp retired=false
+  if [[ -f $journal/host-retired ]] || { [[ -f $inventory ]] && jq -e '.host_retired == true' "$inventory" >/dev/null; }; then retired=true; fi
   tmp=$(mktemp "$home/.gateway-containers.XXXXXXXX")
-  jq -n --arg live "$live" --arg old "$old" --argjson retired "$retired" \
-    '{version:1,live:$live,old:(if $old=="" then null else $old end),host_retired:$retired}' > "$tmp"
+  jq -n --arg live "$live" --argjson retired "$retired" '{version:2,live:$live,old:null,host_retired:$retired}' > "$tmp"
   chown orbit:orbit "$tmp"
   chmod 0600 "$tmp"
   mv -fT "$tmp" "$inventory"
+  sync -f "$home"
+}
+gateway_slot() {
+  local live='' old='' records stale name
+  [[ ! -e $journal/operation ]] || fail 'finish the interrupted Gateway handover first'
+  records=$("${incus_cli[@]}" list --format json)
+  if [[ -f $inventory ]]; then
+    live=$(field '.live | select(test("^[0-9a-f]{40}$"))')
+    old=$(field '.old // ""')
+    if [[ -n $old ]]; then
+      [[ $old =~ ^[a-f0-9]{40}$ && $old != "$live" && $old != "$sha" ]] || fail 'Gateway rollback is unavailable; deploy a corrective commit'
+      name=gateway-${old:0:12}
+      stale=$(jq -c --arg name "$name" 'map(select(.name==$name))|first // {}' <<< "$records")
+      if [[ $stale != '{}' ]]; then
+        jq -e --arg old "$old" '(.status == "Frozen" or .status == "Stopped") and (.config |
+          .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.role"]=="candidate" and
+          .["user.orbit.release.commit"]==$old and .["boot.autostart"]=="false")' <<< "$stale" >/dev/null ||
+          fail 'legacy rollback is not safely parked'
+        "${incus_cli[@]}" delete "$name" --force
+      fi
+      ctl forget gateway "${old:0:12}" >&2
+      set_inventory "$live"
+    fi
+  fi
+  # Never create a fourth container or evict a clone belonging to another operation.
+  # A failed legacy prune may have left another unrecorded clone, even without .old.
+  records=$("${incus_cli[@]}" list --format json)
+  jq -e --arg live "gateway-${live:0:12}" --arg new "$candidate" --arg sha "$sha" --arg op "$operation" '
+    [.[] | select(.name=="prepare-gateway" or (.name | test("^gateway-[a-f0-9]{12}$")) or .config["user.orbit.release.target"]=="gateway")] as $owned |
+    ($owned|length) <= 3 and all($owned[]; .name=="prepare-gateway" or .name==$live or
+      (.name==$new and .config["user.orbit.release.role"]=="candidate" and
+       .config["user.orbit.release.commit"]==$sha and .config["user.orbit.release.operation"]==$op))' <<< "$records" >/dev/null ||
+    fail 'another Gateway clone occupies the preparation slot; finish its operation or release its unused clone'
 }
 set_upstream() {
   local addr=$1 tmp
@@ -181,18 +188,18 @@ wanted_horizons() {
 }
 start_horizons() {
   local machine=$1 selected=$2 unit selected_units
-  selected_units=$(wanted_horizons "$selected" "${@:3}")
+  selected_units=$(wanted_horizons "$selected" "${@:3}") || return 1
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
     unit_wanted "$unit" || continue
     if [[ $unit == orbit-gateway-horizon.service ]] && [[ $machine != host ]]; then
       # Laravel resolves the authoritative Gateway queue in this release.
       # shellcheck disable=SC2016
-      configured=$(php "$machine" -r 'require $argv[1]."/vendor/autoload.php"; $app=require $argv[1]."/bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo App\Infrastructure\Gateway\GatewayQueueRedis::configured() ? "yes" : "no";' "$app")
+      configured=$(php "$machine" -r 'require $argv[1]."/vendor/autoload.php"; $app=require $argv[1]."/bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo App\Infrastructure\Gateway\GatewayQueueRedis::configured() ? "yes" : "no";' "$app") || return 1
       [[ $configured == yes ]] || continue
     fi
-    run_on "$machine" systemctl enable --now -- "$unit" </dev/null >&2
-    run_on "$machine" systemctl is-active --quiet -- "$unit" </dev/null
+    run_on "$machine" systemctl enable --now -- "$unit" </dev/null >&2 || return 1
+    run_on "$machine" systemctl is-active --quiet -- "$unit" </dev/null || return 1
   done <<< "$selected_units"
 }
 start_background() {
@@ -200,8 +207,8 @@ start_background() {
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
     unit_wanted "$unit" || continue
-    run_on "$machine" systemctl enable --now "$unit" </dev/null >&2
-    run_on "$machine" systemctl is-active --quiet "$unit" </dev/null
+    run_on "$machine" systemctl enable --now "$unit" </dev/null >&2 || return 1
+    run_on "$machine" systemctl is-active --quiet "$unit" </dev/null || return 1
   done < "${2:-$journal/background}"
 }
 stop_background() {
@@ -211,85 +218,71 @@ stop_background() {
     run_on "$machine" systemctl disable --now "$unit" </dev/null >&2
   done < "${2:-$journal/background}"
 }
-restore_container() {
-  local saved_inventory=$1 previous=$2 previous_sha address
-  previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$saved_inventory")
-  [[ $previous == "gateway-${previous_sha:0:12}" && $(owned_sha "$previous") == "$previous_sha" ]] || fail 'saved previous release identity changed'
-  ctl resume gateway "${previous#gateway-}" "$operation" >&2
-  /usr/local/libexec/orbit-gateway-release-phase ready "$previous_sha" "$operation" >&2
-  address=$(ctl address gateway "${previous#gateway-}")
-  check_release "$previous_sha" "$address"
-  rm -f -- "$journal/recovery-source-upstream"
-  if [[ -f $upstream ]]; then cp -- "$upstream" "$journal/recovery-source-upstream"; fi
-  set_upstream "$address"
-  if ! /usr/local/libexec/orbit-gateway-site container >&2; then
-    if [[ -f $journal/recovery-source-upstream ]]; then
-      install -m 0644 "$journal/recovery-source-upstream" "$upstream.restore"
-      mv -fT "$upstream.restore" "$upstream"
-    else
-      rm -f -- "$upstream"
+publish_forward() {
+  local addr
+  [[ $(cat "$journal/candidate") == "$sha" && $(cat "$journal/operation") == "$operation" ]] || fail 'handover identity changed'
+  # This marker is durable before either Caddy input changes. A crash or uncertain reload
+  # can only republish this same candidate; an earlier backend can never be selected again.
+  addr=$(ctl address gateway "$id")
+  set_upstream "$addr"
+  sync -f /etc/caddy
+  /usr/local/libexec/orbit-gateway-site container >&2
+  set_inventory "$sha"
+}
+finish_forward() {
+  local prev previous_sha exists unit service_failed=false
+  [[ $(field '.live') == "$sha" ]] || fail 'candidate no longer serves'
+  if [[ ! -f $journal/operation ]]; then return; fi
+  [[ $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] || fail 'handover identity changed'
+  prev=$(cat "$journal/machine")
+  if [[ $prev != host ]]; then
+    previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$journal/inventory")
+    [[ $prev == "gateway-${previous_sha:0:12}" && $previous_sha != "$sha" ]] || fail 'previous Gateway identity changed'
+    exists=$("${incus_cli[@]}" list "$prev" --format json | jq -c --arg name "$prev" 'map(select(.name==$name))|first // {}')
+    if [[ $exists != '{}' ]]; then
+      jq -e --arg sha "$previous_sha" '.config | .["user.orbit.release.role"]=="candidate" and
+        .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha' <<< "$exists" >/dev/null ||
+        fail 'previous Gateway container changed'
+      "${incus_cli[@]}" config set "$prev" boot.autostart=false
+      if [[ $(jq -r .status <<< "$exists") != Stopped ]]; then
+        stop_background "$prev"
+        drain_active_horizons "$prev"
+        # A previous release may predate the no-SIGKILL drop-in. Always wait for the web
+        # master and children to leave before stopping or deleting the former container.
+        enter "$prev" install -d /run/systemd/system/orbit-gateway-web.service.d
+        printf '[Service]\nKillMode=mixed\nSendSIGKILL=no\nTimeoutStopSec=infinity\n' |
+          enter "$prev" tee /run/systemd/system/orbit-gateway-web.service.d/drain.conf >/dev/null
+        enter "$prev" systemctl daemon-reload
+        enter "$prev" systemctl stop orbit-gateway-web.service
+        [[ $(enter "$prev" systemctl show -p ActiveState --value orbit-gateway-web.service) == inactive ]] || fail 'former Gateway HTTP still draining'
+        "${incus_cli[@]}" stop "$prev" --timeout 120
+      fi
+      "${incus_cli[@]}" delete "$prev"
     fi
-    fail 'Caddy could not restore the verified previous release'
-  fi
-  check_release "$previous_sha" || fail "public Gateway did not verify restored release $previous_sha"
-  install -o orbit -g orbit -m 0600 "$saved_inventory" "$inventory.restore"
-  mv -fT "$inventory.restore" "$inventory"
-}
-restore_switch() {
-  [[ -f $journal/operation && $(cat "$journal/operation") == "$operation" ]] || fail 'there is no matching switch to reverse'
-  local previous horizon
-  previous=$(cat "$journal/machine")
-  if [[ -f $journal/inventory ]]; then
-    restore_container "$journal/inventory" "$previous"
+    ctl forget gateway "${previous_sha:0:12}" >&2
   else
-    host_ready
-    /usr/local/libexec/orbit-gateway-site host >&2
-    check_release "$sha"
-    rm -f -- "$inventory" "$upstream"
+    stop_background host
+    drain_active_horizons host
+    while IFS= read -r unit; do
+      [[ -z $unit ]] || systemctl disable -- "$unit" </dev/null
+    done < "$journal/horizons"
   fi
-  stop_background "$candidate"
-  drain_active_horizons "$candidate"
-  horizon=$(cat "$journal/horizon" 2>/dev/null || :)
-  start_horizons "$previous" "$horizon"
-  start_background "$previous"
-  if [[ $previous != host ]]; then
-    "${incus_cli[@]}" config set "$previous" boot.autostart=true
-  fi
-  "${incus_cli[@]}" config set "$candidate" boot.autostart=false
-  sync -f "$home" /etc/caddy
-}
-finish_host_fallback() {
-  rm -f -- "$inventory" "$upstream"
-  sync -f "$home" /etc/caddy
-  ORBIT_GATEWAY_INITIAL_MOVE=1 /usr/local/libexec/orbit-gateway-release-phase release-unused "$sha" "$operation"
+  # If new application services cannot start, leave the new target selected and allow
+  # the operator to deploy a corrected commit. The next handover inherits desired units.
+  start_background "$candidate" || service_failed=true
+  cp "$journal/operation" "$journal/last-operation"
+  touch "$journal/host-retired"
+  set_inventory "$sha"
+  sync -f "$journal"
   clear_switch
-  rm -f -- "$journal/rollback-$sha" "$host_fallback"/{inventory,horizons,background,verified,verified.next}
-}
-reverse_host_fallback() {
-  local horizon units
-  restore_container "$host_fallback/inventory" "$candidate"
-  stop_background host
-  units=$(active_horizons host)
-  drain_active_horizons host
-  while IFS= read -r unit; do
-    [[ -n $unit ]] || continue
-    systemctl disable -- "$unit" </dev/null
-  done <<< "$units"
-  horizon=$(cat "$journal/horizon")
-  start_horizons "$candidate" "$horizon" "$host_fallback/horizons"
-  start_background "$candidate" "$host_fallback/background"
-  "${incus_cli[@]}" config set "$candidate" boot.autostart=true
-  sync -f "$home" /etc/caddy
-  clear_switch
-  rm -f -- "$host_fallback"/{inventory,horizons,background,verified,verified.next}
+  [[ $service_failed == false ]] || fail 'Gateway selected; a background service needs a corrective deployment'
 }
 
 case "$action" in
   build)
     force=$1 manifest=$2 rollback=${3:-false}
-    if [[ $rollback == true ]]; then
-      [[ $(field '.old') == "$sha" ]] || fail 'retained rollback changed after admission'
-    fi
+    [[ $rollback != true ]] || fail 'Gateway rollback is unavailable; deploy a corrective commit'
+    gateway_slot
     if retained; then
       ctl resume gateway "$id" "$operation" >&2
       grants "$candidate"
@@ -301,7 +294,8 @@ case "$action" in
     else
       current=$(field '.live')
     fi
-    if [[ $force != true ]]; then
+    if [[ $force == true ]]; then fail "Gateway releases require a descendant of live"; fi
+    if [[ -n $current ]]; then
       git -c safe.directory="$mirror" -C "$mirror" merge-base --is-ancestor "$current" "$sha" || fail "$sha does not descend from live"
     fi
     if [[ -f $inventory ]]; then
@@ -356,10 +350,17 @@ case "$action" in
   clone)
     digest=$1
     if retained; then exit 0; fi
+    gateway_slot
+    # A retry can find this exact build already parked. Never execute guest code in a frozen preparer.
+    if [[ $( "${incus_cli[@]}" config get "$prep" user.orbit.release.operation) != "$operation" ]]; then fail 'preparer operation changed'; fi
+    if [[ $( "${incus_cli[@]}" config get "$prep" user.orbit.release.parked-seal) != "$operation/$sha/$digest" ]]; then
     # Publish REVISION only after code, configuration and the checked web build all exist.
     user "$prep" test -s /home/orbit/web/current/index.html
     printf '%s\n' "$sha" | user "$prep" tee "$checkout/REVISION.next" >/dev/null
     user "$prep" mv -T "$checkout/REVISION.next" "$checkout/REVISION"
+    "${incus_cli[@]}" config set "$prep" user.orbit.release.commit="$sha" user.orbit.release.artifact="$digest" user.orbit.release.parked-seal="$operation/$sha/$digest"
+    fi
+    ctl sleep gateway "$operation" >&2
     ctl candidate gateway "$operation" "$sha" "$digest"
     src swamp/scripts/gateway-release-seal.sh | enter "$candidate" /bin/sh -se
     ;;
@@ -393,36 +394,26 @@ case "$action" in
     ;;
   switch)
     expected=$1
-    if [[ ${ORBIT_GATEWAY_INITIAL_MOVE:-0} == 1 && ! -f $inventory ]]; then
-      previous=''
-    else
-      previous=$(field '.live | select(test("^[0-9a-f]{40}$"))')
+    if [[ -f $journal/operation ]]; then
+      publish_forward
+      cat "$journal/generations"
+      exit
     fi
+    previous=''
+    if [[ -f $inventory ]]; then previous=$(field '.live | select(test("^[0-9a-f]{40}$"))'); fi
     [[ ${previous:0:12} == "$expected" ]] || fail 'live changed after admission'
-    if [[ $previous != "$sha" ]]; then
-      prev=gateway-${previous:0:12}
-      /usr/local/libexec/orbit-gateway-unit apply-candidate "$operation" "$sha" >&2
-      # A serving release may have been reconfigured since private readiness.
-      # Verify the worker under the same lock as configure before draining live.
-      verify_candidate false
-    fi
     generations=$(artisan "$candidate" gateway:release:cleanup --no-interaction | jq -ce .generations)
     if [[ $previous != "$sha" ]]; then
+      /usr/local/libexec/orbit-gateway-unit apply-candidate "$operation" "$sha" >&2
+      verify_candidate false
       install -d -m 0700 "$journal"
-      [[ ! -e $journal/operation ]] || fail 'an interrupted switch needs recovery'
-      prune_previous
-      # Discard an uncommitted host fallback stage before reusing the journal.
-      rm -f -- "$host_fallback"/{inventory,horizons,background,verified,verified.next}
-      # Stage recovery before publishing the switch. The host adapter can recover even if power fails mid-switch.
-      rollback_file=$(mktemp "$journal/.rollback.XXXXXXXX")
-      if ! src bin/gateway-rollback > "$rollback_file"; then rm -f "$rollback_file"; fail 'missing recovery program'; fi
-      mv -fT "$rollback_file" "$journal/rollback-$sha"
+      prev=host
       if [[ $previous ]]; then
+        prev=gateway-${previous:0:12}
         cp -- "$inventory" "$journal/inventory"
-        cp -- "$upstream" "$journal/upstream"
       else
-        prev=host
-        rm -f -- "$journal/inventory" "$journal/upstream"
+        [[ ${ORBIT_GATEWAY_INITIAL_MOVE:-0} == 1 ]] || fail 'missing live container inventory'
+        rm -f -- "$journal/inventory"
       fi
       printf '%s\n' "$prev" > "$journal/machine"
       {
@@ -433,138 +424,45 @@ case "$action" in
           if unit_wanted "${unit%.json}"; then echo "${unit%.json}"; fi
         done
       } | sort -u > "$journal/background"
-      # Process controls use this same host lock. Record the source workers
-      # before draining them, including the first move from PHP-FPM.
       printf '%s\n' "${2:-}" > "$journal/horizon"
       active_horizons "$prev" > "$journal/horizons"
-      record_switch
-      drain_active_horizons "$prev"
-      if grep -qxF orbit-agent-view.service "$journal/background"; then
-        enter "$candidate" systemctl start orbit-agent-view.service
-      fi
-      addr=$(ctl address gateway "$id")
+      printf '%s\n' "$generations" > "$journal/generations"
+      if grep -qxF orbit-agent-view.service "$journal/background"; then enter "$candidate" systemctl start orbit-agent-view.service; fi
       enter "$candidate" systemctl enable orbit-gateway-web.service
+      # Set autostart after committing to forward recovery; a failed private build must stay disposable.
+      record_switch
       "${incus_cli[@]}" config set "$candidate" boot.autostart=true
-      set_upstream "$addr"
-      set_inventory "$sha" "$previous"
-      if ! /usr/local/libexec/orbit-gateway-site container >&2; then restore_switch; clear_switch; fail 'Caddy reload failed; restored previous live'; fi
+      publish_forward
     fi
     printf '%s\n' "$generations"
     ;;
   public-ready)
     check_release "$sha"
     ;;
-  restore|switch-back)
-    if [[ -f $host_fallback/inventory ]]; then
-      [[ $action == restore && $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
-        fail 'there is no matching host rollback to recover'
-      if [[ -f $host_fallback/verified ]]; then
-        check_release "$sha" || fail "public Gateway did not verify restored release $sha"
-        finish_host_fallback
-      else
-        reverse_host_fallback
-      fi
-      exit
-    fi
-    restore_switch
-    enter "$candidate" systemctl stop orbit-gateway-web.service
-    clear_switch
-    if [[ $action == restore ]]; then exit 0; fi
-    echo "gateway.release_switched_back: verification failed, previous Gateway is serving again" >&2
-    exit 1
-    ;;
-  restore-host)
-    [[ ! -f $journal/host-retired && $(field '.live') == "$sha" && $(jq -r '.old // ""' "$inventory") == "" ]] || fail 'there is a newer container release'
-    [[ ! -e $journal/operation ]] || fail 'an interrupted switch needs recovery'
-    host_ready
-    install -d -m 0700 "$host_fallback"
-    rm -f -- "$host_fallback"/{verified,verified.next}
-    cp -- "$inventory" "$host_fallback/inventory"
-    active_horizons "$candidate" > "$host_fallback/horizons"
-    remember_background "$candidate" > "$host_fallback/background"
-    record_switch
-    drain_active_horizons "$candidate"
-    /usr/local/libexec/orbit-gateway-site host >&2
-    check_release "$sha"
-    stop_background "$candidate" "$host_fallback/background"
-    start_horizons host "$1" "$host_fallback/horizons"
-    start_background host
-    "${incus_cli[@]}" config set "$candidate" boot.autostart=false
-    # Once the host has passed verification and taken over, recovery completes
-    # cleanup instead of returning to the container.
-    touch "$host_fallback/verified.next"
-    sync -f "$journal" /etc/caddy
-    mv -fT "$host_fallback/verified.next" "$host_fallback/verified"
-    sync -f "$journal"
-    finish_host_fallback
+  recover)
+    "${incus_cli[@]}" config set "$candidate" boot.autostart=true
+    ctl resume gateway "$id" "$operation" >&2
+    publish_forward
+    failed=false
+    start_horizons "$candidate" "$(cat "$journal/horizon")" || failed=true
+    finish_forward
+    [[ $failed == false ]] || fail 'Gateway selected; queue workers need a corrective deployment'
     ;;
   start-horizon)
-    live=$(field '.live')
-    start_horizons "gateway-${live:0:12}" "$1"
-    install -d -m 0700 "$journal"
-    printf '%s\n' "$1" > "$journal/horizon"
+    [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'
+    start_horizons "$candidate" "$1"
     ;;
   cleanup)
-    live=$(field '.live')
-    artisan "gateway-${live:0:12}" gateway:release:cleanup --no-interaction "$1"
-    ;;
-  retire)
     [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'
-    if [[ ! -f $journal/operation ]]; then
-      # A host restart can fall between committing the handover and publishing its marker to the Gateway.
-      if [[ -f $journal/host-retired ]] && ! jq -e '.host_retired == true' "$inventory" >/dev/null; then
-        set_inventory "$sha" "$(field '.old')"
-      fi
-      exit 0
-    fi
-    [[ $(cat "$journal/operation") == "$operation" ]] || fail 'switch identity changed'
-    prev=$(cat "$journal/machine")
-    stop_background "$prev"
-    start_background "$candidate"
-    enter "$candidate" systemctl enable orbit-gateway-web.service
-    "${incus_cli[@]}" config set "$candidate" boot.autostart=true
-    if [[ $prev != host ]]; then
-      drain_active_horizons "$prev"
-      while IFS= read -r unit; do
-        [[ -n $unit ]] || continue
-        if run_on "$prev" systemctl cat -- "$unit" </dev/null >/dev/null 2>&1; then
-          run_on "$prev" systemctl disable -- "$unit" </dev/null
-        fi
-      done < <(wanted_horizons "$(cat "$journal/horizon" 2>/dev/null || :)")
-      "${incus_cli[@]}" config set "$prev" boot.autostart=false
-      # A graceful unit stop waits for the FrankenPHP workers and their in-flight requests.
-      enter "$prev" systemctl restart orbit-gateway-web.service
-      previous_sha=$(owned_sha "$prev")
-      check_release "$previous_sha" "$(ctl address gateway "${prev#gateway-}")"
-      ctl retire gateway "${prev#gateway-}" "$operation"
-    fi
-    if [[ -f $journal/inventory ]]; then
-      discarded=$(jq -er '.old // ""' "$journal/inventory")
-      if [[ -n $discarded ]] && [[ $discarded != "$sha" ]] && [[ gateway-${discarded:0:12} != "$prev" ]]; then
-        [[ $discarded =~ ^[a-f0-9]{40}$ ]] || fail 'invalid former rollback identity'
-        printf '%s\n' "$discarded" > "$journal/pending-prune.next"
-        mv -T "$journal/pending-prune.next" "$journal/pending-prune"
-      fi
-    fi
-    cp "$journal/operation" "$journal/last-operation"
-    if [[ $prev == host ]]; then
-      sync -f "$home" /etc/caddy
-      clear_switch
-    else
-      # This rename closes recovery of the switch and records that a verified container rollback exists.
-      mv -fT "$journal/operation" "$journal/host-retired"
-      if ! jq -e '.host_retired == true' "$inventory" >/dev/null; then set_inventory "$sha" "$(field '.old')"; fi
-    fi
+    artisan "$candidate" gateway:release:cleanup --no-interaction "$1"
     ;;
-  prune-pending)
-    prune_previous
+  cleanup-versions)
+    [[ ! -f $journal/operation && $(field '.live') == "$sha" ]] || fail 'finish the Gateway handover before checking cleanup'
+    rc=0
+    artisan "$candidate" operations:check-cleanup --json || rc=$?
+    [[ $rc == 0 || $rc == 75 ]] || exit "$rc"
     ;;
-  prune)
-    [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'
-    [[ -f $journal/last-operation && $(cat "$journal/last-operation") == "$operation" ]] || exit 0
-    prune_previous
-    ;;
-  *)
-    fail "unknown phase $action"
-    ;;
+  retire) finish_forward ;;
+  prune|prune-pending) : ;;
+  *) fail "unknown phase $action" ;;
 esac

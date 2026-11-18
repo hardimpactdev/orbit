@@ -74,11 +74,11 @@ Deno.test("host recovery removal requires the committed handover and two retaine
     try {
         const inventory = folder + "/inventory";
         const marker = folder + "/host-retired";
-        const check = (old: string | null, host_retired: boolean) => {
+        const check = (old: string | null, host_retired: boolean, version = 1) => {
             Deno.writeTextFileSync(
                 inventory,
                 JSON.stringify({
-                    version: 1,
+                    version,
                     live: "a".repeat(40),
                     old,
                     host_retired,
@@ -94,6 +94,8 @@ Deno.test("host recovery removal requires the committed handover and two retaine
         assertEquals(check("b".repeat(40), false), false);
         assertEquals(check("a".repeat(40), true), false);
         assertEquals(check("b".repeat(40), true), true);
+        assertEquals(check(null, true, 2), true);
+        assertEquals(check("b".repeat(40), true, 2), false);
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }

@@ -57,7 +57,10 @@ restore() {
   rc=$?
   trap - EXIT
   if [[ $rc != 0 ]]; then
-    if [[ -f $journal/operation ]]; then run_phase restore || :; fi
+    if [[ -f $journal/operation ]]; then
+      echo "Gateway handover committed; complete it with --recover" >&2
+      exit "$rc"
+    fi
     run_phase park-preparation || :
     run_phase release-unused || :
   fi
@@ -68,16 +71,17 @@ run_phase build false "$(jq -er '.manifest' <<< "$receipt")" >/dev/null
 run_phase web "$repo" "$(jq -er '.web.artifact_id' <<< "$receipt")" "$(jq -er '.web.size' <<< "$receipt")" "$digest" < "$archive"
 run_phase clone "$digest"
 run_phase park-preparation
-run_phase wait-idle
 run_phase ready
 generations=$(run_phase switch '' "$horizon")
-run_phase public-ready
-run_phase start-horizon "$horizon"
-if [[ -n $horizon ]]; then systemctl disable "$horizon"; fi
+public_rc=0
+horizon_rc=0
+run_phase start-horizon "$horizon" || horizon_rc=$?
+run_phase public-ready || public_rc=$?
 run_phase retire
+(( public_rc == 0 && horizon_rc == 0 )) || { echo "Gateway selected; deploy a corrective commit" >&2; exit 1; }
 if ! run_phase cleanup "--before=$generations"; then
   echo 'Gateway is serving; document cleanup remains paused.' >&2
 fi
-run_phase prune
+run_phase cleanup-versions
 trap - EXIT
 printf 'Gateway %s is serving in its release container. Automatic releases remain disabled.\n' "$sha"

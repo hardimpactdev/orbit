@@ -136,26 +136,16 @@ class BootstrapTest(unittest.TestCase):
             journal = Path(temp)
             inventory = journal / "inventory"
             host = journal / "installed-host-rollback"
-            first, second = "a" * 40, "b" * 40
             select = lambda action: recovery.implementation(inventory, journal, host, action)
-            self.assertEqual(select(first[:12]), host)
-            with self.assertRaisesRegex(ValueError, "already"):
-                select("--host")
-            inventory.write_text(json.dumps({"live": first, "old": None}))
-            self.assertEqual(select("--host"), journal / ("rollback-" + first))
-            (journal / "candidate").write_text(second)
+            self.assertEqual(select("abc"), host)
+            inventory.write_text(json.dumps({"version": 1, "live": "a"*40, "old": "b"*40}))
+            for action in ("--host", "b"*12, ""):
+                with self.assertRaisesRegex(ValueError, "fix forward"):
+                    select(action)
             (journal / "operation").write_text("42")
-            self.assertEqual(select("--recover"), journal / ("rollback-" + second))
+            self.assertEqual(select("--recover"), host)
             with self.assertRaisesRegex(ValueError, "--recover"):
-                select(first[:12])
-            (journal / "operation").unlink()
-            inventory.write_text(json.dumps({"live": second, "old": first}))
-            self.assertEqual(select(first[:12]), journal / ("rollback-" + second))
-            with self.assertRaisesRegex(ValueError, "interrupted"):
-                select("--recover")
-            inventory.write_text('{"live":"../../anything"}')
-            with self.assertRaisesRegex(ValueError, "invalid"):
-                select(first[:12])
+                select("abc")
 
     def test_release_checkout_keeps_only_admitted_history_for_cold_fleet_cli_resolution(self):
         with tempfile.TemporaryDirectory() as temp:

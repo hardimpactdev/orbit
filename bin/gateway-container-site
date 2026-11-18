@@ -93,6 +93,10 @@ def apply(mode):
         if mode == "prepare":
             write(PREPARED, b"1\n")
     except BaseException:
+        # A failed reload can have accepted the new route. The committed handover
+        # republishes this candidate on recovery; never re-expose the host here.
+        if mode == "container":
+            raise
         changed_selection = (SELECTION.readlink() if SELECTION.is_symlink() else None) != previous
         if changed_config:
             write(CONFIG, original, permissions, owner)

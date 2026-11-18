@@ -60,7 +60,7 @@ class GatewaySiteTest(unittest.TestCase):
         self.assertIn("php_fastcgi", site.SELECTION.read_text())
         self.assertEqual(site.CONFIG.stat().st_mode & 0o777, 0o640)
 
-    def test_failed_reload_restores_last_serving_mode(self):
+    def test_failed_reload_preserves_the_forward_selection(self):
         with patch.object(site, "reload_config"):
             site.apply("prepare")
         with (
@@ -68,8 +68,8 @@ class GatewaySiteTest(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "reload failed"),
         ):
             site.apply("container")
-        self.assertEqual(reload.call_count, 2)
-        self.assertEqual(site.SELECTION.readlink(), site.MODES / "host.caddy")
+        self.assertEqual(reload.call_count, 1)
+        self.assertEqual(site.SELECTION.readlink(), site.MODES / "container.caddy")
 
     def test_failed_initial_prepare_restores_original_site_and_mode(self):
         with (

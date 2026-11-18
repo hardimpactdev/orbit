@@ -198,9 +198,14 @@ def candidate(target, operation, commit, artifact):
     sealed = next((entry for entry in snapshots if entry["name"] == snapshot), None)
     if existing is None:
         if not sealed:
-            if prep["status"] != "Running" or prep["config"].get(PREFIX + "operation") != operation:
-                raise ValueError("release.preparation_changed")
-            incus("config", "set", source, *(PREFIX + key + "=" + value for key, value in seal.items()))
+            if target == "gateway":
+                owned(prep, {**seal, "role": "prepare", "parked-seal": f"{operation}/{commit}/{artifact}"})
+                if prep["status"] != "Frozen":
+                    raise ValueError("release.preparation_not_frozen")
+            else:
+                if prep["status"] != "Running" or prep["config"].get(PREFIX + "operation") != operation:
+                    raise ValueError("release.preparation_changed")
+                incus("config", "set", source, *(PREFIX + key + "=" + value for key, value in seal.items()))
             incus("snapshot", "create", source, snapshot)
             snapshots = json.loads(incus("snapshot", "list", source, "--format", "json"))
             sealed = next((entry for entry in snapshots if entry["name"] == snapshot), None)
