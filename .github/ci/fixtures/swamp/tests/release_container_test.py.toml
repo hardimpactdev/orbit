@@ -24,6 +24,8 @@ cases = [
   "test_gateway_preparer_itself_becomes_the_candidate_without_a_copy",
   "test_a_candidate_that_never_served_returns_to_the_preparation_slot",
   "test_seed_recreates_a_stopped_preparer_from_live_without_its_address_or_work",
+  "test_seed_refuses_a_preparer_whose_units_stay_enabled",
+  "test_wanted_links_reads_the_stopped_copy",
   "test_gateway_capacity_reserves_no_swap_for_a_preparer_that_is_never_frozen",
   "test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build",
   "test_power_target_must_match_the_fixed_project_and_complete_container_name",

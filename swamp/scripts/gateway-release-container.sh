@@ -366,6 +366,8 @@ finish_forward() {
     previous_sha=$(former_sha)
     [[ $prev == "gateway-${previous_sha:0:12}" ]] && [[ $previous_sha != "$sha" ]] || fail 'previous Gateway identity changed'
     exists=$(record_of "$prev")
+    # A retry after the former live was deleted still forgets its power records.
+    if [[ $exists == '{}' ]]; then ctl forget gateway "${previous_sha:0:12}" >&2; fi
     if [[ $exists != '{}' ]]; then
       jq -e --arg sha "$previous_sha" '.config | .["user.orbit.release.role"]=="candidate" and
         .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha' <<< "$exists" >/dev/null ||
@@ -393,7 +395,8 @@ finish_forward() {
       if [[ " $known " == *" $each "* ]]; then keep[0]=$each; break; fi
     done
     if [[ ${#keep[@]} == 0 ]]; then
-      if [[ $exists != '{}' ]]; then keep[0]=$previous_sha; elif [[ ${#earlier[@]} -gt 0 ]]; then keep[0]=${earlier[0]}; fi
+      # Nothing is verified: keep the earlier old rather than replace it with an unverified former live.
+      if [[ ${#earlier[@]} -gt 0 ]]; then keep[0]=${earlier[0]}; elif [[ $exists != '{}' ]]; then keep[0]=$previous_sha; fi
     fi
   else
     if [[ $exists != '{}' ]] && { [[ " $known " == *" $previous_sha "* ]] || [[ ${#earlier[@]} == 0 ]]; }; then keep[0]=$previous_sha; fi
@@ -467,7 +470,7 @@ finish_forward() {
   sync -f "$journal"
   clear_switch
   [[ $service_failed == false ]] || fail 'Gateway selected; a background service needs a corrective deployment'
-  [[ $verified == true ]] || fail 'Gateway selected but its public check failed; it keeps the earlier releases. Roll back to old or deploy a fix'
+  [[ $verified == true ]] || fail 'Gateway selected but its public check failed; it keeps the earlier releases. Roll back to old, or fix the cause and run --recover'
 }
 
 case "$action" in

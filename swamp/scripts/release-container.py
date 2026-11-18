@@ -8,6 +8,7 @@ import math
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -257,9 +258,17 @@ def demote(target, operation, commit):
         incus("delete", name, "--force")
         power(name, "discard")
         return name
+    if record["status"] == "Running":
+        # Units the switch enabled before it failed must not start in preparation.
+        incus("exec", name, "--", "find", "/etc/systemd/system", "-mindepth", "2", "-maxdepth", "2",
+              "-path", "*.wants/*", "-name", "orbit-*", "-delete")
     halt(record, operation)
-    if record["config"].get(PREFIX + "role") == "candidate":
+    # Each change is checked against the current record, so a retry after a crash completes it.
+    if "raw.lxc" in record["config"]:
         incus("config", "unset", name, "raw.lxc")
+    if record["devices"].get("eth0", {}).get("ipv4.address"):
+        incus("config", "device", "unset", name, "eth0", "ipv4.address")
+    if record["config"].get(PREFIX + "role") != "prepare":
         incus("config", "set", name, PREFIX + "role=prepare")
     incus("rename", name, "prepare-" + target)
     power(name, "discard")
@@ -291,14 +300,22 @@ def seed(target, revision, operation):
         if prep["devices"].get("eth0", {}).get("ipv4.address"):
             incus("config", "device", "unset", name, "eth0", "ipv4.address")
         # Live's enabled Processes, timers and web server must not start when the next release wakes the preparer.
-        wanted = incus("exec", live["name"], "--", "find", "/etc/systemd/system", "-mindepth", "2", "-maxdepth", "2",
-                       "-path", "*.wants/*", "-name", "orbit-*")
-        for path in wanted.split():
-            subprocess.run(["incus", "--force-local", "--project", PROJECT, "file", "delete", name + path],
-                           stdin=subprocess.DEVNULL, capture_output=True, timeout=60, check=False)
+        # Read the copy itself, so a retry sees what is left, and fail on any link that cannot go.
+        for path in wanted_links(name):
+            incus("file", "delete", name + path, timeout=60)
+        if wanted_links(name):
+            raise ValueError("release.preparation_units_enabled")
     if any(entry["name"] == snapshot for entry in json.loads(incus("snapshot", "list", live["name"], "--format", "json"))):
         incus("snapshot", "delete", live["name"], snapshot)
     return name
+
+
+def wanted_links(name):
+    """The enablement links of Orbit units in a stopped container's systemd directory."""
+    with tempfile.TemporaryDirectory() as directory:
+        incus("file", "pull", "--recursive", name + "/etc/systemd/system", directory, timeout=120)
+        root = Path(directory) / "system"
+        return sorted("/etc/systemd/system/" + str(path.relative_to(root)) for path in root.glob("*.wants/orbit-*"))
 
 
 def rest(target, operation):

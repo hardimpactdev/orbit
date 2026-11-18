@@ -272,10 +272,20 @@ class ReleaseTest(unittest.TestCase):
         name = "gateway-" + SHA[:12]
         candidate = self.gateway(name, "candidate", status="Running", operation="13", commit=SHA)
         candidate["config"]["boot.autostart"] = "false"
+        candidate["config"]["raw.lxc"] = release.GATEWAY_MOUNTS
         with patch.object(release, "instance", side_effect=[candidate, None]), patch.object(release, "incus") as incus, \
                 patch.object(release, "power"):
             self.assertEqual(release.main(["demote", "gateway", "13", SHA]), "prepare-gateway")
-        self.assertEqual([c.args[:2] for c in incus.call_args_list][-1], ("rename", name))
+        actions = [c.args[:2] for c in incus.call_args_list]
+        self.assertEqual(actions[0], ("exec", name))
+        self.assertIn(("config", "unset"), actions)
+        self.assertEqual(actions[-1], ("rename", name))
+        # A retry after the unset and the role change only renames.
+        done = {**candidate, "status": "Stopped", "config": {**{k: v for k, v in candidate["config"].items() if k != "raw.lxc"},
+                                                              release.PREFIX + "role": "prepare"}}
+        with patch.object(release, "instance", side_effect=[done, None]), patch.object(release, "incus") as incus, patch.object(release, "power"):
+            release.demote("gateway", "13", SHA)
+        self.assertEqual([c.args[0] for c in incus.call_args_list], ["rename"])
         serving = {**candidate, "config": {**candidate["config"], "boot.autostart": "true"}}
         with patch.object(release, "instance", return_value=serving), self.assertRaisesRegex(ValueError, "still_active"):
             release.demote("gateway", "13", SHA)
@@ -285,8 +295,8 @@ class ReleaseTest(unittest.TestCase):
         seeded = self.gateway("prepare-gateway", "prepare", **{"seeded-from": SHA, "commit": SHA})
         seeded["config"]["raw.lxc"] = "x"
         seeded["devices"] = {"eth0": {"ipv4.address": "10.2.3.4"}}
-        outputs = {("snapshot", "list"): ["[]", json.dumps([{"name": "seed-14"}])],
-                   ("exec",): ["/etc/systemd/system/multi-user.target.wants/orbit-gateway-horizon.service\n"]}
+        outputs = {("snapshot", "list"): ["[]", json.dumps([{"name": "seed-14"}])]}
+        link = "/etc/systemd/system/multi-user.target.wants/orbit-gateway-horizon.service"
 
         def run(*args, **kwargs):
             for key, values in outputs.items():
@@ -294,7 +304,7 @@ class ReleaseTest(unittest.TestCase):
                     return values.pop(0)
             return ""
         with patch.object(release, "instance", side_effect=[live, None, seeded]), patch.object(release, "incus", side_effect=run) as incus, \
-                patch.object(release.subprocess, "run") as delete:
+                patch.object(release, "wanted_links", side_effect=[[link], []]):
             self.assertEqual(release.main(["seed", "gateway", SHA[:12], "14"]), "prepare-gateway")
         copy = next(c.args for c in incus.call_args_list if c.args[0] == "copy")
         self.assertIn("eth0,ipv4.address=", copy)
@@ -302,8 +312,26 @@ class ReleaseTest(unittest.TestCase):
         unset = [c.args for c in incus.call_args_list if c.args[:2] == ("config", "unset")]
         self.assertIn(("config", "unset", "prepare-gateway", "raw.lxc"), unset)
         self.assertIn(("config", "device", "unset", "prepare-gateway", "eth0", "ipv4.address"), [c.args for c in incus.call_args_list])
-        self.assertIn("prepare-gateway/etc/systemd/system/multi-user.target.wants/orbit-gateway-horizon.service", delete.call_args.args[0])
+        self.assertIn(call("file", "delete", "prepare-gateway" + link, timeout=60), incus.call_args_list)
         self.assertEqual(incus.call_args_list[-1].args, ("snapshot", "delete", live["name"], "seed-14"))
+
+    def test_seed_refuses_a_preparer_whose_units_stay_enabled(self):
+        live = self.gateway("gateway-" + SHA[:12], "candidate", status="Running", commit=SHA)
+        seeded = self.gateway("prepare-gateway", "prepare", **{"seeded-from": SHA})
+        link = "/etc/systemd/system/timers.target.wants/orbit-runtime-hibernator.timer"
+        with patch.object(release, "instance", side_effect=[live, seeded]), patch.object(release, "incus", return_value="[]"), \
+                patch.object(release, "wanted_links", side_effect=[[link], [link]]), self.assertRaisesRegex(ValueError, "units_enabled"):
+            release.seed("gateway", SHA[:12], "14")
+
+    def test_wanted_links_reads_the_stopped_copy(self):
+        def pull(*args, **kwargs):
+            wants = Path(args[-1]) / "system" / "multi-user.target.wants"
+            wants.mkdir(parents=True)
+            (wants / "orbit-process-4-horizon.service").touch()
+            (wants / "ssh.service").touch()
+        with patch.object(release, "incus", side_effect=pull):
+            self.assertEqual(release.wanted_links("prepare-gateway"),
+                             ["/etc/systemd/system/multi-user.target.wants/orbit-process-4-horizon.service"])
 
     def test_gateway_capacity_reserves_no_swap_for_a_preparer_that_is_never_frozen(self):
         gib = 1024**3
