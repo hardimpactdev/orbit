@@ -63,15 +63,15 @@ class ReleaseTest(unittest.TestCase):
         stopped = {**waiting, "status": "Stopped", "state": None}
         ready = addressed_candidate(docker0=["172.17.0.1"], eth0=["10.2.3.4"])
         name = stopped["name"]
-        with patch.object(release, "instance", side_effect=[stopped, waiting, waiting, ready]) as lookup, \
-                patch.object(release, "wake", return_value=name), patch("time.sleep") as sleep, \
-                patch.object(release, "incus") as incus:
+        with patch.object(release, "instance", side_effect=[stopped, waiting, ready]) as lookup, \
+                patch.object(release, "wake", return_value=name), \
+                patch("time.monotonic", return_value=0), patch.object(release, "incus") as incus:
             self.assertEqual(release.main(["resume", "instance-8", SHA[:12], "14"]), name)
-        self.assertEqual(lookup.call_count, 4)
-        self.assertEqual(sleep.call_args_list, [call(1), call(1)])
-        incus.assert_not_called()
+        self.assertEqual(lookup.call_args_list, [call(name), call(name, timeout=15), call(name, timeout=15)])
+        incus.assert_called_once_with("exec", name, "--", "/usr/lib/systemd/systemd-networkd-wait-online",
+                                     "--interface=eth0:routable", "--ipv4", "--timeout=15", timeout=15)
 
-    def test_missing_eth0_address_uses_one_deadline_for_reads_and_sleeps(self):
+    def test_missing_eth0_address_uses_one_deadline_for_wait_and_reads(self):
         waiting = addressed_candidate(docker0=["172.17.0.1"])
         elapsed = 0
 
@@ -83,19 +83,22 @@ class ReleaseTest(unittest.TestCase):
             advance(0.5)
             return waiting
 
+        def wait_online(*args, **kwargs):
+            advance(1)
+
         with patch.object(release, "ADDRESS_TIMEOUT", 2.75), \
                 patch.object(release, "instance", side_effect=read_instance) as lookup, \
-                patch("time.monotonic", side_effect=lambda: elapsed), patch("time.sleep", side_effect=advance) as sleep, \
-                patch.object(release, "incus") as incus, \
-                self.assertRaisesRegex(ValueError, "^release\\.container_address_unavailable$"):
+                patch("time.monotonic", side_effect=lambda: elapsed), \
+                patch.object(release, "incus", side_effect=wait_online) as incus, \
+                self.assertRaisesRegex(ValueError, r"^release\.container_address_unavailable$"):
             release.wait_address(waiting, refresh=True)
         self.assertEqual(lookup.call_args_list, [
             call(waiting["name"], timeout=2.75),
             call(waiting["name"], timeout=1.25),
         ])
-        self.assertEqual(sleep.call_args_list, [call(1), call(0.75)])
-        self.assertEqual(elapsed, 2.75)
-        incus.assert_not_called()
+        incus.assert_called_once_with("exec", waiting["name"], "--", "/usr/lib/systemd/systemd-networkd-wait-online",
+                                     "--interface=eth0:routable", "--ipv4", "--timeout=3", timeout=2.25)
+        self.assertEqual(elapsed, 2.0)
 
     def test_incus_read_timeout_reports_address_unavailable(self):
         waiting = addressed_candidate()
@@ -129,7 +132,7 @@ class ReleaseTest(unittest.TestCase):
             incus.assert_not_called()
             lookup.assert_not_called()
 
-    def test_ready_eth0_returns_the_reserved_address_without_polling(self):
+    def test_ready_eth0_returns_the_reserved_address_without_waiting(self):
         ready = addressed_candidate(docker0=["172.17.0.1"], eth0=["10.2.3.4"])
         with patch.object(release, "instance") as lookup, patch.object(release, "incus") as incus:
             self.assertEqual(release.wait_address(ready), "10.2.3.4")

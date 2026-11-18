@@ -4,6 +4,7 @@
 import argparse
 import ipaddress
 import json
+import math
 import re
 import subprocess
 import sys
@@ -172,26 +173,38 @@ def wait_address(record, *, refresh=False):
     identity = {key: record["config"][PREFIX + key] for key in ("target", "role", "commit")}
     reservation = record["expanded_devices"].get("eth0", {}).get("ipv4.address")
 
-    while (remaining := deadline - time.monotonic()) > 0:
-        if refresh:
-            try:
-                record = instance(name, timeout=remaining)
-            except subprocess.TimeoutExpired:
-                break
-            if time.monotonic() >= deadline:
-                break
-        owned(record, identity)
-        if record["status"] != "Running":
+    def remaining():
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise ValueError("release.container_address_unavailable")
+        return seconds
+
+    def observed(candidate):
+        owned(candidate, identity)
+        if candidate["status"] != "Running":
             raise ValueError("release.candidate_not_running")
-        if reservation and record["expanded_devices"].get("eth0", {}).get("ipv4.address") != reservation:
+        if reservation and candidate["expanded_devices"].get("eth0", {}).get("ipv4.address") != reservation:
             raise ValueError("release.container_address_changed")
-        if ip := address(record):
+        return address(candidate)
+
+    try:
+        if refresh:
+            record = instance(name, timeout=remaining())
+        remaining()
+        if ip := observed(record):
             return ip
-        # Another interface can get an address before the managed eth0 lease arrives.
-        remaining = deadline - time.monotonic()
-        if remaining > 0:
-            time.sleep(min(1, remaining))
-        refresh = True
+
+        # networkd waits for IPv4 on eth0 even when another interface is already online.
+        # Its own deadline also stops the guest command if its Incus client times out.
+        timeout = remaining()
+        incus("exec", name, "--", "/usr/lib/systemd/systemd-networkd-wait-online",
+              "--interface=eth0:routable", "--ipv4", f"--timeout={math.ceil(timeout)}", timeout=timeout)
+        record = instance(name, timeout=remaining())
+        remaining()
+        if ip := observed(record):
+            return ip
+    except subprocess.TimeoutExpired:
+        pass
     raise ValueError("release.container_address_unavailable")
 
 

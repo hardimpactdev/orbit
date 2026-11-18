@@ -4,6 +4,7 @@ import json
 import socket
 import struct
 import sys
+from functools import partial
 from pathlib import Path
 
 HEADER = struct.Struct("!BBHHBB")
@@ -41,29 +42,33 @@ def request(public, uri):
         connection.connect(SOCKET)
         connection.sendall(record(1, b"\x00\x01" + bytes(6)) + record(4, encoded) + record(4) + record(5))
 
-        def read(size):
-            data = bytearray()
-            while len(data) < size:
-                chunk = connection.recv(size - len(data))
-                if not chunk:
+        with connection.makefile("rb") as stream:
+            def read(size):
+                data = stream.read(size)
+                if len(data) != size:
                     raise ValueError("incomplete FastCGI response")
-                data.extend(chunk)
-            return data
+                return data
 
-        while True:
-            version, kind, request_id, size, padding, _ = HEADER.unpack(read(HEADER.size))
-            if (version, request_id) != (1, 1):
-                raise ValueError("unexpected FastCGI response")
-            body = read(size)
-            read(padding)
-            if kind == 3:
-                if len(body) != 8 or any(body[:5]):
-                    raise ValueError("unsuccessful FastCGI request")
-                break
-            if kind == 6:
-                output.extend(body)
-                if len(output) > 1024 * 1024:
+            remaining = 1024 * 1024
+            for header in iter(partial(stream.read, HEADER.size), b""):
+                if len(header) != HEADER.size:
+                    raise ValueError("incomplete FastCGI response")
+                version, kind, request_id, size, padding, _ = HEADER.unpack(header)
+                if (version, request_id) != (1, 1):
+                    raise ValueError("unexpected FastCGI response")
+                remaining -= HEADER.size + size + padding
+                if remaining < 0:
                     raise ValueError("oversized FastCGI response")
+                body = read(size)
+                read(padding)
+                if kind == 3:
+                    if len(body) != 8 or any(body[:5]):
+                        raise ValueError("unsuccessful FastCGI request")
+                    break
+                if kind == 6:
+                    output.extend(body)
+            else:
+                raise ValueError("incomplete FastCGI response")
 
     headers, delimiter, body = output.partition(b"\r\n\r\n")
     if not delimiter or any(

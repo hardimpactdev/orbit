@@ -144,7 +144,8 @@ class FastCGI(socketserver.StreamRequestHandler):
             headers += b"Status: 404 Not Found\r\n"
         content = headers + b"\r\n" + body
         self.wfile.write(HEADER.pack(1, 6, 1, len(content), 0, 0) + content)
-        self.wfile.write(HEADER.pack(1, 3, 1, 8, 0, 0) + bytes(8))
+        if self.server.complete:
+            self.wfile.write(HEADER.pack(1, 3, 1, 8, 0, 0) + bytes(8))
 
 
 class GatewayReleaseRecovery(unittest.TestCase):
@@ -239,9 +240,10 @@ esac"""))
             [script, *args], check=False, env=env, start_new_session=True, capture_output=True, text=True, timeout=45,
         )
 
-    def listener(self, version=SHA):
+    def listener(self, version=SHA, *, complete=True):
         server = socketserver.UnixStreamServer(str(self.sock), FastCGI)
         server.version = version
+        server.complete = complete
         server.index = os.fsencode(self.checkout / "apps/gateway/public/index.php")
         thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
         thread.start()
@@ -310,6 +312,14 @@ esac"""))
             result = self.run_script(self.console, "--host")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Gateway host is not ready", result.stderr)
+        self.assertEqual((self.state / "events").read_text(), events)
+        self.assert_container_serves()
+
+        self.sock.unlink()
+        self.listener(complete=False)
+        result = self.run_script(self.console, "--host")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("incomplete FastCGI response", result.stderr)
         self.assertEqual((self.state / "events").read_text(), events)
         self.assert_container_serves()
 

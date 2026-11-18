@@ -91,7 +91,7 @@ The Gateway keeps its one release record and its one Swamp run per release. The 
 
 **Rollback.** `gateway:release:rollback` without an id returns to old, as `instance:rollback` does in ADR 0263:
 
-1. Wake old, or start it from disk after a host reboot. After a cold start, wait up to 15 seconds for the reserved private IPv4 address on the managed `eth0` interface. If it stays absent, recovery refuses with `release.container_address_unavailable`. A single different private IPv4 address on `eth0` fails with `release.container_address_changed`. Once the address is ready, cache the configuration from the current env file, start FrankenPHP and check old as ready.
+1. Wake old, or start it from disk after a host reboot. After a cold start, systemd-networkd waits for IPv4 on the managed `eth0` interface. The wait and Incus reads share a 15-second deadline, and the last read checks the reserved private address. If it stays absent, recovery refuses with `release.container_address_unavailable`. A single different private IPv4 address on `eth0` fails with `release.container_address_changed`. Once the address is ready, cache the configuration from the current env file, start FrankenPHP and check old as ready.
 2. Load old's commit into Swamp with `force`, as today's rollback does. Workflow inputs stay compatible only forward, so old's code needs its own workflows.
 3. Switch, verify and hand over. The rolled-away live becomes old, so a second rollback goes forward again.
 4. Pause automatic releases with reason `rollback`, as today.
