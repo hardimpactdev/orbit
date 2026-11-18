@@ -127,9 +127,8 @@ final readonly class OperationStore
                 return false;
             }
             $status = $changes['status'] ?? null;
-            if ($status instanceof OperationStatus && $status->terminal() && ExecutorFence::holds($current)) {
-                $changes = [...$changes, 'status' => OperationStatus::Interrupted, 'lock_key' => $current->lock_key,
-                    'error_code' => 'executor.result_unknown'];
+            if ($status instanceof OperationStatus && $status->terminal()) {
+                $changes = ExecutorFence::settle($current, $changes);
             }
             $operation->forceFill([...$changes, 'sequence' => $current->sequence + 1])->save();
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {

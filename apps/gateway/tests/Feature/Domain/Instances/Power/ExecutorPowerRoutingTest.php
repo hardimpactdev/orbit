@@ -3,9 +3,15 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Executor\ExecutorOrderBroadcast;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceDeployProjection;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\NestedFleetIntent;
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Instances\Power\InstanceSleep;
@@ -23,6 +29,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\Operations\BroadcastOperationNotice;
 use App\Jobs\Operations\CompleteExecutorWake;
 use App\Jobs\Operations\DispatchExecutorWake;
@@ -576,4 +583,127 @@ it('R4: shows an interrupted wake as failed to a visit and to a retry under its 
         expect(app(InstanceWake::class)->activate($instance, $retry, 'node'))->toContain('executor.result_unknown');
     }
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
+});
+
+it('R1: keeps a durable freeze when Swamp returns no command output', function (): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => 'running']);
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    $run = inRecoveryRun($sleep);
+    executorWakeReply($sleep, ['status' => 'done', 'action' => 'sleep', 'receipt' => ['sleep' => 'frozen']]);
+    app(InstanceSleep::class)->apply($sleep, runEnded($run, ['error_code' => 'operation.native_failed']));
+    expect([$sleep->refresh()->executor_result['status'], $sleep->status->value, $instance->runtime()->firstOrFail()->power_state->value])->toBe(['done', 'succeeded', 'stopped']);
+});
+
+it('R1: keeps a recorded freeze when the recovery start is refused', function (): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => 'running']);
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    $sleep->update(['state' => [...$sleep->state, ExecutorWake::PublishedAt => now()->subSeconds(7)->getTimestampMs(), ExecutorWake::Recovery => true]]);
+    executorWakeReply($sleep, ['status' => 'done', 'action' => 'sleep', 'receipt' => ['sleep' => 'frozen']]);
+    app(StartSwampRun::class)->refuse($sleep, new ResourceOperationException('swamp.start_unavailable', 'Start unavailable.', 503));
+    expect([$sleep->refresh()->executor_result['status'], $sleep->status->value, $instance->runtime()->firstOrFail()->power_state->value])->toBe(['done', 'succeeded', 'stopped']);
+});
+
+it('R1/R2: settles a held wake and frees its lock when the missing receipt arrives late', function (): void {
+    $instance = managedPowerFixture();
+    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $run = inRecoveryRun($wake);
+    app(InstanceWake::class)->apply($wake, runEnded($run, ['error_code' => 'executor.relay_transport']));
+    expect($wake->refresh()->status)->toBe(OperationStatus::Interrupted);
+    executorWakeReply($wake, ['status' => 'done']);
+    app(ExecutorWake::class)->completeHandoff($wake->refresh());
+    executorWakeSweep();
+    expect([$wake->refresh()->executor_result['status'], $wake->status->value, $wake->lock_key, $instance->runtime()->firstOrFail()->power_state->value])->toBe(['done', 'succeeded', null, 'running']);
+});
+
+it('R3: ends Rust freeze ownership with its discard receipt even when the ordinary boot fails', function (): void {
+    $instance = managedPowerFixture();
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    $run = inRecoveryRun($sleep);
+    executorWakeReply($sleep, ['status' => 'done', 'action' => 'sleep', 'receipt' => ['sleep' => 'frozen']]);
+    app(InstanceSleep::class)->apply($sleep, runEnded($run, [], 'succeeded'));
+    config(['orbit.executor.power_enabled' => false]);
+    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $run = inRecoveryRun($wake);
+    executorWakeReply($wake, ['status' => 'failed', 'code' => 'instance.container_stopped']);
+    app(InstanceWake::class)->apply($wake, runEnded($run, ['wake' => 'started', 'error_code' => 'instance.container_start_failed']));
+    expect($wake->refresh()->error_code)->toBe('instance.container_start_failed');
+    expect(ExecutorPowerIntent::managed(app(InstanceWake::class)->admitDeferred($instance, 'cli', null)))->toBeFalse();
+});
+
+it('R1: takes a failed lifecycle receipt code when the start wrapper failed too', function (): void {
+    $instance = managedPowerFixture();
+    [$start, $run] = signedLifecycleStart($instance, 'resume');
+    $receipt = ['action' => 'wake', 'operation' => (string) $start->id, 'target' => (string) $instance->id, 'status' => 'failed', 'code' => 'instance.container_frozen_unmanaged'];
+    app(InstanceStart::class)->apply($start, runEnded($run, ['executor' => $receipt, 'error_code' => 'operation.native_failed']));
+    expect([$start->refresh()->executor_result['code'], $start->error_code])->toBe(['instance.container_frozen_unmanaged', 'instance.container_frozen_unmanaged']);
+});
+
+it('R4: shows a held nested clone start as a failed wake on the visit and its retry', function (): void {
+    $default = managedPowerFixture();
+    $node = $default->node;
+    $node->update(['settings' => [...($node->settings ?? []), 'nested_fleet' => true]]);
+    $default->project->forceFill(['nested_fleet' => true])->save();
+    $default->runtime()->delete();
+    app(InstanceContainer::class)->reserve($default, $node->refresh())->update(['power_state' => 'running', 'seed_commit' => str_repeat('a', 40)]);
+    $instance = Instance::query()->forceCreate(['node_id' => $node->id, 'project_id' => $default->project_id, 'name' => 'copy', 'checkout_path' => '/workspace/copy', 'root' => 'public', 'status' => 'active', 'first_setup_pending' => false]);
+    app(InstanceContainer::class)->reserve($instance, $node, $default)->update(['power_state' => 'stopped']);
+    expect(NestedFleetIntent::cloneKeepsFleet($instance, $instance->runtime()->first()))->toBeTrue();
+    [$start, $run] = signedLifecycleStart($instance, 'boot');
+    app(InstanceStart::class)->apply($start, runEnded($run, ['error_code' => 'executor.relay_transport']));
+    expect($start->refresh()->error_code)->toBe('executor.result_unknown');
+    $visit = app(InstanceWake::class)->activate($instance, false, 'node');
+    $retry = app(InstanceWake::class)->activate($instance, true, 'node');
+    expect([$visit, $retry])->toBe(['The wake failed (executor.result_unknown). Try again.', 'The wake failed (executor.result_unknown). Try again.']);
+});
+
+it('R4: shows a wake that failed before its visit returned on that response', function (): void {
+    $instance = managedPowerFixture();
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event): void {
+        $operation = Operation::query()->findOrFail((int) $event->order->operation);
+        executorWakeReply($operation, ['status' => 'failed', 'code' => 'instance.web_unready']);
+        app(ExecutorWake::class)->completeHandoff($operation);
+    };
+    $visit = app(InstanceWake::class)->activate($instance, false, 'node');
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->error_code)->toBe('instance.web_unready');
+    expect($visit)->toBeString()->toContain('instance.web_unready');
+});
+
+it('R1: keeps a durable freeze when its bound recovery times out', function (): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => 'running']);
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    inRecoveryRun($sleep);
+    $sleep->update(['started_at' => now()->subDay()]);
+    executorWakeReply($sleep, ['status' => 'done', 'action' => 'sleep', 'receipt' => ['sleep' => 'frozen']]);
+    app(ExpireOperationAction::class)->execute($sleep->refresh());
+    expect([$sleep->refresh()->executor_result['status'], $sleep->status->value, $sleep->error_code, $instance->runtime()->firstOrFail()->power_state->value])->toBe(['done', 'succeeded', null, 'stopped']);
+});
+
+it('R2: forwards a cancel once the stopped-container receipt ended the fence', function (): void {
+    $instance = managedPowerFixture();
+    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    inRecoveryRun($wake);
+    executorWakeReply($wake, ['status' => 'failed', 'code' => 'instance.container_stopped']);
+    expect(ExecutorFence::holds($wake->refresh()))->toBeFalse();
+    try {
+        app(CancelOperationAction::class)->execute($wake);
+        $code = null;
+    } catch (ResourceOperationException $error) {
+        $code = $error->errorCode;
+    }
+    expect($code)->toBeNull();
+});
+
+it('R1: takes a failed resume receipt code when the deploy wrapper failed too', function (): void {
+    $instance = managedPowerFixture();
+    Operation::query()->create(['kind' => InstanceSleep::Kind, 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id, 'status' => OperationStatus::Succeeded, 'input' => ['signed_power' => true], 'result' => ['sleep' => 'frozen']]);
+    $intent = app(InstanceDeploymentIntent::class)->snapshot($instance);
+    expect($intent['executor_lifecycle_phase'])->toBe('resume');
+    $run = (string) Str::uuid();
+    $deploy = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id, 'status' => OperationStatus::Running, 'input' => ['deployment' => $intent], 'state' => ['swamp_run_id' => $run, 'executor_order_issued' => true]]);
+    $file = ['executor' => ['status' => 'failed', 'code' => 'instance.container_frozen_unmanaged', 'action' => 'wake', 'target' => (string) $instance->id, 'operation' => (string) $deploy->id]];
+    app(InstanceDeployProjection::class)->apply($deploy, runEnded($run, ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]]]));
+    expect([$deploy->refresh()->executor_result['code'], $deploy->error_code])->toBe(['instance.container_frozen_unmanaged', 'instance.container_frozen_unmanaged']);
 });

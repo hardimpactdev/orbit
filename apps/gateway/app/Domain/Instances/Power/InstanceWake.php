@@ -323,13 +323,10 @@ final readonly class InstanceWake extends InstancePower
     public function activate(Instance $instance, bool $retry, string $caller): string|true|null
     {
         $budget = new ExecutorWakeBudget;
-        // ADR 0266, R4: a wake that ended and cannot advance shows its failure. A retry under an unknown order's fence (R2) shows it
-        // again, because no second wake can be admitted beside that order.
-        $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
+        $last = Operation::query()->whereIn('kind', [self::Kind, InstanceStart::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
             ->where('target_id', $instance->id)->orderByDesc('id')->first();
-        if ($last?->kind === self::Kind && in_array($last->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
-            && (! $retry || ($last->status === OperationStatus::Interrupted && $last->lock_key !== null))) {
-            return 'The wake failed ('.($last->error_code ?? 'instance.wake_failed').'). Try again.';
+        if (($failed = self::failure($last, $retry)) !== null) {
+            return $failed;
         }
         $runtime = $instance->runtime()->first();
         try {
@@ -345,7 +342,7 @@ final readonly class InstanceWake extends InstancePower
                     defer(static fn () => app(ExecutorWake::class)->dispatchDeferred($operation->id), always: true);
                 }
 
-                return app(ExecutorWake::class)->request($operation, $budget) ? true : null;
+                return app(ExecutorWake::class)->request($operation, $budget) ? true : self::failure($operation->refresh(), false);
             }
 
             if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
@@ -356,6 +353,8 @@ final readonly class InstanceWake extends InstancePower
                     }
                 }, always: true);
             }
+
+            return self::failure($operation->refresh(), false);
         } catch (ResourceOperationException $exception) {
             // Other lifecycle work holds the Instance: the page polls again, and a later request starts the wake.
             if (! in_array($exception->errorCode, ['operation.target_busy', 'instance.lifecycle_busy'], true)) {
@@ -364,5 +363,21 @@ final readonly class InstanceWake extends InstancePower
         }
 
         return null;
+    }
+
+    /**
+     * ADR 0266, R4: the one rule for what a visit shows of a wake that ended, or of a nested clone's start that stands in for it. A
+     * failed or interrupted one shows its failure with a retry. A retry admits a new wake, except under an unknown order's fence (R2),
+     * because no second wake can be admitted beside that order.
+     */
+    private static function failure(?Operation $operation, bool $retry): ?string
+    {
+        if ($operation === null || ! in_array($operation->kind, [self::Kind, InstanceStart::Kind], true)
+            || ! in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
+            || ($retry && ! ($operation->status === OperationStatus::Interrupted && $operation->lock_key !== null))) {
+            return null;
+        }
+
+        return 'The wake failed ('.($operation->error_code ?? 'instance.wake_failed').'). Try again.';
     }
 }

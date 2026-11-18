@@ -36,7 +36,7 @@ final readonly class CancelOperationAction
             if ($operation->status->terminal()) {
                 return;
             }
-            if (ExecutorFence::issued($operation)) {
+            if (ExecutorFence::holds($operation)) {
                 throw new ResourceOperationException('executor.already_started', 'The signed power action has started and cannot be cancelled.', 409);
             }
             if (in_array($operation->status, [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting], true)

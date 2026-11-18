@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Executor;
 
+use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorPowerIntent;
 use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Instances\Power\InstanceWake;
@@ -124,6 +125,9 @@ final readonly class ExecutorResults
         $managed = ExecutorPowerIntent::managed($operation);
         $line = $managed ? [...$line, 'delivery' => $route] : $line;
         $recorded = $owner->whereNull('executor_result')->update(['executor_result' => json_encode($line, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu')]);
+        if ($recorded === 1 && $managed) {
+            ExecutorFence::resolve($operation);
+        }
 
         return $recorded === 1 && $managed && $route === 'websocket' && $operation->kind === InstanceWake::Kind
             && $operation->status === OperationStatus::Running;

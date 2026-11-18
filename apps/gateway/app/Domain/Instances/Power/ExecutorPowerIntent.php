@@ -108,17 +108,18 @@ final class ExecutorPowerIntent
     }
 
     /**
-     * The failure of a lifecycle run that reported success, from its receipt alone. A resume always needs one. A boot whose run issued
-     * no order needs none, such as an already-running container; an issued order without one is never a success (R2).
+     * R1 for a lifecycle run (a start or a deploy), whatever the run reported: a failed receipt fails it with the receipt's code, a
+     * successful one leaves the wrapper's own outcome, and a run that reported success needs a receipt for an issued order or a resume
+     * (R2). A boot whose run issued no order needs none, such as an already-running container. Returns the error, null for success.
      *
      * @param  array<string, mixed>|null  $receipt
      */
-    public static function lifecycleError(Operation $operation, ?array $receipt, bool $verifiedBoot): ?string
+    public static function lifecycleError(Operation $operation, ?array $receipt, bool $ran, ?string $runError, bool $verifiedBoot): ?string
     {
         if ($receipt === null) {
-            return ExecutorFence::issued($operation) || self::action($operation, 'resume') !== null ? 'executor.result_unproven' : null;
+            return $ran && (ExecutorFence::issued($operation) || self::action($operation, 'resume') !== null) ? 'executor.result_unproven' : $runError;
         }
 
-        return ExecutorFence::verdict($receipt, true, null, $verifiedBoot)['error_code'];
+        return ExecutorFence::verdict($receipt, $ran, $runError, $verifiedBoot, workAfter: true)['error_code'];
     }
 }

@@ -213,10 +213,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
                 $receipt = $endedBefore ? ExecutorResults::matchingReceipt($operation, $action, $operation->executor_result)
                     : ExecutorFence::record($operation, $action, $phase['executor'] ?? null);
                 $runError = $phase['error_code'] ?? $data['error_code'] ?? null;
-                $verdict = ExecutorFence::verdict($receipt, $succeeded, is_string($runError) ? $runError : null, ($phase['wake'] ?? null) === 'started');
-                if ($verdict['succeeded'] && ! $this->provesSignedSuccess($receipt)) {
-                    $verdict = ['succeeded' => false, 'error_code' => 'executor.result_unproven'];
-                }
+                $verdict = $this->signedVerdict($receipt, $succeeded, is_string($runError) ? $runError : null, ($phase['wake'] ?? null) === 'started');
                 $succeeded = $verdict['succeeded'];
                 $data['status'] = $succeeded ? OperationStatus::Succeeded->value
                     : (($data['status'] ?? null) === OperationStatus::Succeeded->value ? OperationStatus::Failed->value : ($data['status'] ?? OperationStatus::Failed->value));
@@ -250,6 +247,51 @@ abstract readonly class InstancePower implements DirectOperationProjection
         }
 
         return $operation;
+    }
+
+    /**
+     * R1 with the kind's proof of a signed success: the one verdict of every end of a signed power Operation, in apply() and settle().
+     *
+     * @param  array<string, mixed>|null  $receipt
+     * @return array{succeeded: bool, error_code: ?string}
+     */
+    private function signedVerdict(?array $receipt, bool $ran, ?string $runError, bool $booted): array
+    {
+        $verdict = ExecutorFence::verdict($receipt, $ran, $runError, $booted);
+
+        return $verdict['succeeded'] && ! $this->provesSignedSuccess($receipt) ? ['succeeded' => false, 'error_code' => 'executor.result_unproven'] : $verdict;
+    }
+
+    /**
+     * R1 for an end that apply() did not write (ExecutorFence::settle()): a refused or expired run, or a late receipt. The write keeps
+     * its outcome when it already is the receipt's verdict; otherwise it takes that verdict, its result, its power state and its lock.
+     *
+     * @param  array<string, mixed>  $changes
+     * @return array<string, mixed>
+     */
+    public function settle(Operation $current, array $changes): array
+    {
+        $receipt = ExecutorPowerIntent::action($current) === null ? null : $current->executor_result;
+        if ($receipt === null) {
+            return $changes;
+        }
+        $result = is_array($changes['result'] ?? null) ? $changes['result'] : ($current->result ?? []);
+        $written = ($changes['status'] ?? null) === OperationStatus::Succeeded;
+        $code = is_string($changes['error_code'] ?? null) ? $changes['error_code'] : null;
+        $verdict = $this->signedVerdict($receipt, $written, $code, ($result['wake'] ?? null) === 'started');
+        if ($verdict['succeeded'] === $written && ($written || $verdict['error_code'] === $code)) {
+            return $changes;
+        }
+        if (! $verdict['succeeded']) {
+            return [...$changes, 'status' => $written ? OperationStatus::Failed : $changes['status'], 'error_code' => $verdict['error_code'],
+                'lock_key' => null, 'result' => [...$result, 'error_code' => $verdict['error_code'], 'executor' => $receipt]];
+        }
+        InstanceRuntime::query()->where('instance_id', $current->target_id)->update(['power_state' => $this->powerState()]);
+        $id = $current->id;
+        DB::afterCommit(fn () => $this->ended(Operation::query()->findOrFail($id)));
+
+        return [...$changes, 'status' => OperationStatus::Succeeded, 'error_code' => null, 'lock_key' => null,
+            'result' => $this->signedResult($current, $receipt)];
     }
 
     /** @param array<string, mixed>|null $receipt */

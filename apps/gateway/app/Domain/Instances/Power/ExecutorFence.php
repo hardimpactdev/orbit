@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Power;
 
+use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Models\Operation;
 
@@ -40,6 +43,34 @@ final class ExecutorFence
     }
 
     /**
+     * R1 and R2 at the one end of every Operation (OperationStore::change). An issued order without a receipt ends interrupted and keeps
+     * the lock. An Operation with a durable receipt ends with the receipt's verdict, whoever wrote the end: the run's report, a refused
+     * start, an expired budget or a late receipt (resolve()).
+     *
+     * @param  array<string, mixed>  $changes  A terminal write.
+     * @return array<string, mixed>
+     */
+    public static function settle(Operation $current, array $changes): array
+    {
+        if (self::holds($current)) {
+            return [...$changes, 'status' => OperationStatus::Interrupted, 'lock_key' => $current->lock_key, 'error_code' => 'executor.result_unknown'];
+        }
+        $projection = $current->executor_result !== null && DirectOperation::owns($current) ? app(DirectOperation::class)->projection($current) : null;
+
+        return $projection instanceof InstancePower ? $projection->settle($current, $changes) : $changes;
+    }
+
+    /** R1/R2: a receipt stored after its Operation ended under the fence ends it again through settle(), which releases the lock. */
+    public static function resolve(Operation $operation): void
+    {
+        $operation->refresh();
+        if ($operation->status->terminal() && $operation->lock_key !== null && $operation->executor_result !== null) {
+            app(OperationStore::class)->change($operation, ['status' => $operation->status, 'error_code' => $operation->error_code,
+                'finished_at' => now(), 'lock_key' => null]);
+        }
+    }
+
+    /**
      * R1: records the first matching receipt on the Operation and returns the durable one. A receipt recorded earlier always wins over a
      * later copy, so a repeated delivery or a failed transport cannot change it.
      *
@@ -71,14 +102,25 @@ final class ExecutorFence
     }
 
     /**
-     * R1: the Operation's outcome from its receipt and its run. A successful receipt succeeds even when its transport failed; the run's
-     * own later failure stands only when it is not a transport failure. A boot handoff takes the boot's result. No receipt for an issued
-     * order is never a success.
+     * R3: a receipt that proves the Node no longer holds a freeze: a wake that found the container stopped discards it before it
+     * answers, and a done discard removes it.
+     *
+     * @param  array<string, mixed>|null  $receipt
+     */
+    public static function discarded(?array $receipt): bool
+    {
+        return self::handsToBoot($receipt) || (($receipt['action'] ?? null) === 'discard' && ($receipt['status'] ?? null) === 'done');
+    }
+
+    /**
+     * R1: the Operation's outcome from its receipt and its run. A successful receipt succeeds whatever its run reports, unless the run
+     * does work after the executor (`$workAfter`, a lifecycle wrapper) and that work failed. A boot handoff takes the boot's result. No
+     * receipt for an issued order is never a success.
      *
      * @param  array<string, mixed>|null  $receipt
      * @return array{succeeded: bool, error_code: ?string}
      */
-    public static function verdict(?array $receipt, bool $ran, ?string $runError, bool $booted): array
+    public static function verdict(?array $receipt, bool $ran, ?string $runError, bool $booted, bool $workAfter = false): array
     {
         if ($receipt === null) {
             return ['succeeded' => false, 'error_code' => $ran ? 'executor.result_unproven' : $runError];
@@ -89,7 +131,7 @@ final class ExecutorFence
         if (! ExecutorResults::succeeded($receipt)) {
             return ['succeeded' => false, 'error_code' => ExecutorResults::failureCode($receipt)];
         }
-        if ($ran || $runError === null || str_starts_with($runError, 'executor.')) {
+        if (! $workAfter || $ran || $runError === null || str_starts_with($runError, 'executor.')) {
             return ['succeeded' => true, 'error_code' => null];
         }
 

@@ -125,10 +125,14 @@ final readonly class ContainerResume
         if ($sleep === null || ($sleep->error_code !== InstanceSleep::IncompleteFreeze && ($sleep->result['sleep'] ?? null) !== 'frozen')) {
             return null;
         }
-        $found = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->where('id', '>', $sleep->id)->where('error_code', InstanceWake::NestedStopped)->exists();
+        // The freeze ends with proof that the container no longer holds it: Rust's discard receipt (its wake found the container
+        // stopped and discarded its freeze, or it discarded it for a boot or stop), or the native wake that found the container stopped.
+        $ended = Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)->where('id', '>', $sleep->id)
+            ->where(fn ($query) => $query->whereNotNull('executor_result')->orWhere('error_code', InstanceWake::NestedStopped))->get()
+            ->contains(fn (Operation $later): bool => $later->error_code === InstanceWake::NestedStopped
+                || ExecutorFence::discarded($later->executor_result));
 
-        return $found ? null : $sleep;
+        return $ended ? null : $sleep;
     }
 
     /**
