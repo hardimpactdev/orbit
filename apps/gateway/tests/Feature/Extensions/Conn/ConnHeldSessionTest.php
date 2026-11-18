@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Actions\Nodes\RemoveNodeAccessAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\NodeAccessRemovalHook;
 use App\Domain\Nodes\NodeRemovalHook;
 use App\Domain\Nodes\NodeRemovalRecords;
@@ -16,6 +18,7 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\ProjectExecutorWake;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -394,6 +397,43 @@ describe('renewal', function (): void {
             ->and($renewal->state['swamp_run_id'] ?? null)->toBe($claimed ? 'fixture-live-renewal' : null)
             ->and($retryFailure?->errorCode)->toBe('swamp.start_enqueue_failed');
     })->with(['still queued' => [false], 'claimed and bound' => [true]]);
+
+    it('leaves the wake hook undelivered until a lost renewal job can be queued again', function (): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $original = holdOperation($this->phone, $this->environment);
+        endHold($original);
+        $held = ConnPairing::query()->findOrFail($original->target_id);
+        $this->travel(29)->days();
+        $this->environment->update(['admin_session_expires_at' => now()->addDays(20)]);
+        $renewal = app(AdmitConnSessionHoldAction::class)->renew($held);
+        $wake = Operation::query()->create([
+            'kind' => InstanceWake::Kind, 'target_type' => 'instance', 'target_id' => $this->environment->instance_id,
+            'node_id' => $this->environment->node_id, 'input' => [], 'status' => OperationStatus::Succeeded,
+            'state' => [ExecutorWake::State => true, ExecutorWake::FollowUpState => 'queued'],
+        ]);
+
+        Queue::fake([StartAdmittedSwampRun::class]);
+        $bus = Bus::getFacadeRoot();
+        Bus::partialMock()->shouldReceive('dispatch')->once()->with(Mockery::type(StartAdmittedSwampRun::class))
+            ->andThrow(new RuntimeException('private queue error'));
+        try {
+            expect(fn () => app()->call([new ProjectExecutorWake($wake->id), 'handle']))
+                ->toThrow(ResourceOperationException::class, 'The native workflow start retry could not be queued.');
+        } finally {
+            Bus::swap($bus);
+        }
+
+        expect($wake->refresh()->state)->toMatchArray([ExecutorWake::FollowUpState => 'queued'])
+            ->and($wake->state)->not->toHaveKey('wake_executor_projected')
+            ->and($renewal->refresh())->status->toBe(OperationStatus::Queued)->error_code->toBeNull();
+
+        app()->call([new ProjectExecutorWake($wake->id), 'handle']);
+
+        Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $renewal->id);
+        Queue::assertPushed(StartAdmittedSwampRun::class, 1);
+        expect($wake->refresh()->state)->toMatchArray([ExecutorWake::FollowUpState => 'delivered', 'wake_executor_projected' => true])
+            ->and(ConnPairing::query()->count())->toBe(2);
+    });
 
     it('renews a held session within seven days of its end with no device online, then revokes the old one', function (): void {
         endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));

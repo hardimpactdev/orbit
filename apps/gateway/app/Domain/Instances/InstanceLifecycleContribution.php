@@ -32,7 +32,7 @@ interface InstanceLifecycleContribution
 
     /**
      * Follow-up work after a wake succeeded, once its transaction committed: the app and T3 answer. It must not block or fail the
-     * wake, and it does nothing while its extension is off.
+     * wake, and it does nothing while its extension is off. A background caller can ask to handle a queue failure as a retry.
      */
-    public function projectWake(Instance $instance): void;
+    public function projectWake(Instance $instance, bool $retryQueueFailure = false): void;
 }

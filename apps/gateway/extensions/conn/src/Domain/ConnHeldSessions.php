@@ -124,23 +124,26 @@ final readonly class ConnHeldSessions
     }
 
     /** Renews each held session on the server that ends within the margin; a wake and a renewed Gateway session call it. */
-    public function renewDue(ConnEnvironment $environment, ?CarbonImmutable $now = null): void
+    public function renewDue(ConnEnvironment $environment, ?CarbonImmutable $now = null, bool $retryQueueFailure = false): void
     {
         $now ??= CarbonImmutable::now();
         $due = self::due($now)->where('conn_environment_id', $environment->id)->with(['node', 'environment.node'])->get();
         foreach ($due as $pairing) {
             // A Node that lost its access gets no new session; the sweep withdraws its old one.
             if ($this->access->allows($pairing->node, $pairing->environment)) {
-                $this->renew($pairing);
+                $this->renew($pairing, $retryQueueFailure);
             }
         }
     }
 
-    public function renew(ConnPairing $pairing): ?Operation
+    public function renew(ConnPairing $pairing, bool $retryQueueFailure = false): ?Operation
     {
         try {
             return app(AdmitConnSessionHoldAction::class)->renew($pairing);
         } catch (ResourceOperationException $error) {
+            if ($retryQueueFailure && $error->errorCode === 'swamp.start_enqueue_failed') {
+                throw $error;
+            }
             Log::info('conn.held_renewal_deferred', ['pairing_id' => $pairing->id, 'error_code' => $error->errorCode]);
 
             return null;

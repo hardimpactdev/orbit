@@ -40,7 +40,7 @@ final class ProjectExecutorWake implements ShouldQueue
                 return;
             }
             if (($instance = Instance::query()->find($operation->target_id)) !== null) {
-                $contributions->projectWake($instance);
+                $contributions->projectWake($instance, retryQueueFailure: true);
             }
             DB::transaction(static function () use ($operation): void {
                 $operation->refresh();
