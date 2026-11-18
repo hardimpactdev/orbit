@@ -63,16 +63,20 @@ class GatewaySiteTest(unittest.TestCase):
     def test_failed_reload_restores_last_serving_mode(self):
         with patch.object(site, "reload_config"):
             site.apply("prepare")
-        with patch.object(site, "reload_config", side_effect=[RuntimeError("reload failed"), None]) as reload:
-            with self.assertRaisesRegex(RuntimeError, "reload failed"):
-                site.apply("container")
+        with (
+            patch.object(site, "reload_config", side_effect=[RuntimeError("reload failed"), None]) as reload,
+            self.assertRaisesRegex(RuntimeError, "reload failed"),
+        ):
+            site.apply("container")
         self.assertEqual(reload.call_count, 2)
         self.assertEqual(site.SELECTION.readlink(), site.MODES / "host.caddy")
 
     def test_failed_initial_prepare_restores_original_site_and_mode(self):
-        with patch.object(site, "reload_config", side_effect=[RuntimeError("validate failed"), None]):
-            with self.assertRaisesRegex(RuntimeError, "validate failed"):
-                site.apply("prepare")
+        with (
+            patch.object(site, "reload_config", side_effect=[RuntimeError("validate failed"), None]),
+            self.assertRaisesRegex(RuntimeError, "validate failed"),
+        ):
+            site.apply("prepare")
         self.assertEqual(site.CONFIG.read_text(), CONFIG)
         self.assertEqual(site.CONFIG.stat().st_mode & 0o777, 0o640)
         self.assertFalse(site.SELECTION.is_symlink())

@@ -155,7 +155,7 @@ class BootstrapTest(unittest.TestCase):
             self.assertEqual(git(release, "remote"), "")
             self.assertEqual(git(release, "for-each-ref"), "")
             for obj in [other, excluded_blob]:
-                self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", obj]).returncode, 0)
+                self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", obj], check=False).returncode, 0)
 
     def test_env_projection_tracks_atomic_edits_without_exposing_the_bare_repo(self):
         with tempfile.TemporaryDirectory() as root:
