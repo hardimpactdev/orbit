@@ -35,6 +35,9 @@ final readonly class ProblemFiler
 
     private const int BriefLimit = 8000;
 
+    /** A fingerprint whose last occurrence is older than this is not filed until it occurs again. */
+    private const int RecentDays = 7;
+
     public function __construct(
         private CreateTaskGroupAction $groups,
         private ProblemEvidence $evidence,
@@ -58,13 +61,17 @@ final readonly class ProblemFiler
             return $failures;
         }
 
-        foreach ($this->readyRows() as $row) {
+        // One cutoff per run, rounded up to the whole second last_seen is stored with, so the query and the check
+        // under the lock agree on every row.
+        $cutoff = now()->subDays(self::RecentDays)->ceilSecond();
+
+        foreach ($this->readyRows($cutoff) as $row) {
             if ($this->filedToday() >= self::DailyCap) {
                 break;
             }
 
             try {
-                $this->fileOne($row, $project);
+                $this->fileOne($row, $project, $cutoff);
             } catch (Throwable $exception) {
                 $failures[] = $exception;
             }
@@ -167,7 +174,7 @@ final readonly class ProblemFiler
     }
 
     /** @return list<ProblemFingerprint> */
-    private function readyRows(): array
+    private function readyRows(CarbonInterface $cutoff): array
     {
         $ready = [];
 
@@ -187,6 +194,9 @@ final readonly class ProblemFiler
             ->where(function (Builder $query): void {
                 $query->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release, ProblemSource::Swamp])
                     ->orWhere('occurrences', '>=', 3);
+            })
+            ->where(function (Builder $query) use ($cutoff): void {
+                $query->where('source', ProblemSource::Release)->orWhere('last_seen', '>=', $cutoff);
             })
             ->orderByRaw('case when source = ? then 0 else 1 end', [ProblemSource::Release->value])
             ->orderByDesc('occurrences')
@@ -209,17 +219,17 @@ final readonly class ProblemFiler
         return $ready;
     }
 
-    private function fileOne(ProblemFingerprint $row, Project $project): void
+    private function fileOne(ProblemFingerprint $row, Project $project, CarbonInterface $cutoff): void
     {
         try {
-            DB::transaction(function () use ($row, $project): void {
+            DB::transaction(function () use ($row, $project, $cutoff): void {
                 $locked = ProblemFingerprint::query()->lockForUpdate()->find($row->id);
 
                 if (! $locked instanceof ProblemFingerprint) {
                     return;
                 }
 
-                if (! $this->canFile($locked)) {
+                if (! $this->canFile($locked, $cutoff)) {
                     return;
                 }
 
@@ -244,9 +254,9 @@ final readonly class ProblemFiler
         }
     }
 
-    private function canFile(ProblemFingerprint $row): bool
+    private function canFile(ProblemFingerprint $row, CarbonInterface $cutoff): bool
     {
-        if (isset($row->evidence['resolved_at']) || $this->suppression->blocksFiling($row) || ! $this->isReady($row)) {
+        if (isset($row->evidence['resolved_at']) || $this->suppression->blocksFiling($row) || ! $this->isRecent($row, $cutoff) || ! $this->isReady($row)) {
             return false;
         }
 
@@ -261,6 +271,19 @@ final readonly class ProblemFiler
         $task = Task::query()->withoutGlobalScope('subtask')->find($row->task_group_id);
 
         return $task instanceof Task && ! $this->isOpen($task);
+    }
+
+    /**
+     * A release alert is pushed once per incident and stays open until ProblemRecovery resolves it, so its last
+     * occurrence does not age. Every other source records each new occurrence, which sets last_seen again.
+     */
+    private function isRecent(ProblemFingerprint $row, CarbonInterface $cutoff): bool
+    {
+        if ($row->source === ProblemSource::Release) {
+            return true;
+        }
+
+        return $row->last_seen instanceof CarbonInterface && $row->last_seen->gte($cutoff);
     }
 
     private function isReady(ProblemFingerprint $row): bool

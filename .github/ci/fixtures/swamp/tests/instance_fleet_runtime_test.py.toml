@@ -1,0 +1,42 @@
+order = 1482
+cases = [
+  "test_an_empty_or_stale_pid_file_goes_and_the_network_state_stays",
+  "test_only_the_named_containers_are_cleared",
+  "test_a_frozen_or_running_container_keeps_its_file_and_is_named",
+  "test_only_the_root_pool_of_the_container_is_cleared",
+  "test_a_link_on_the_way_makes_the_disk_unsafe_and_nothing_outside_is_touched",
+  "test_a_later_unsafe_entry_keeps_the_report_of_what_went",
+  "test_a_missing_or_linked_root_disk_is_unsafe",
+  "test_the_record_of_the_live_dnsmasq_of_its_network_stays",
+  "test_a_record_that_fails_one_check_goes",
+  "test_a_process_that_fails_one_check_loses_the_record",
+  "test_a_file_it_cannot_read_goes",
+  "test_no_link_is_followed",
+  "test_a_linked_networks_folder_is_left_alone",
+  "test_no_networks_folder_changes_nothing",
+  "test_the_fleet_start_sends_the_heal_to_each_nested_instance_host",
+]
+file = "swamp/tests/instance_fleet_runtime_test.py"
+cost = 15
+# The files it reads: the host clear, the fleet Node's heal and the start that sends it, run as shipped.
+inputs = [
+  "swamp/ansible/instance_fleet_runtime.py",
+  "swamp/ansible/files/incus-network-pid-heal.py",
+  "swamp/ansible/tasks/instance-fleet-start.yml",
+]
+[case_costs]
+"test_an_empty_or_stale_pid_file_goes_and_the_network_state_stays" = 1
+"test_only_the_named_containers_are_cleared" = 1
+"test_a_frozen_or_running_container_keeps_its_file_and_is_named" = 1
+"test_only_the_root_pool_of_the_container_is_cleared" = 1
+"test_a_link_on_the_way_makes_the_disk_unsafe_and_nothing_outside_is_touched" = 1
+"test_a_later_unsafe_entry_keeps_the_report_of_what_went" = 1
+"test_a_missing_or_linked_root_disk_is_unsafe" = 1
+"test_the_record_of_the_live_dnsmasq_of_its_network_stays" = 1
+"test_a_record_that_fails_one_check_goes" = 1
+"test_a_process_that_fails_one_check_loses_the_record" = 1
+"test_a_file_it_cannot_read_goes" = 1
+"test_no_link_is_followed" = 1
+"test_a_linked_networks_folder_is_left_alone" = 1
+"test_no_networks_folder_changes_nothing" = 1
+"test_the_fleet_start_sends_the_heal_to_each_nested_instance_host" = 1
