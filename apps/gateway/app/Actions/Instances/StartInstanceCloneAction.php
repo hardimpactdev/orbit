@@ -13,6 +13,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\NativeInstanceProvisioningIntent;
@@ -54,7 +55,7 @@ final readonly class StartInstanceCloneAction
             InstancePlacement::productionClone($candidate);
             $node = Node::query()->findOrFail($data->nodeId);
             $provisioning = app(NativeInstanceProvisioningIntent::class);
-            $container = $provisioning->cloneCandidateContainer($candidate, $data->sqliteSourcePath);
+            $runtime = $provisioning->cloneCandidateRuntime($candidate, $data->sqliteSourcePath);
             if ($candidate->status !== InstanceState::Active || $candidate->provisioning_step !== 'active'
                 || $candidate->node->status !== LifecycleStatus::Active || $candidate->node->platform !== 'linux') {
                 throw $this->conflict('instance.clone_candidate_inactive', 'The candidate must be active.');
@@ -94,6 +95,9 @@ final readonly class StartInstanceCloneAction
                     ->where('status', 'succeeded')->orderByDesc('id')->first()
                     ?? throw $this->conflict('instance.clone_retry_conflict', 'The completed clone has no successful admission receipt.');
             }
+            if ($runtime !== null && $runtime->power_state !== InstanceRuntimePowerState::Running) {
+                throw $this->conflict('instance.clone_candidate_inactive', 'Wake the container default before cloning.');
+            }
             if ($target === null && Instance::query()->where('project_id', $candidate->project_id)->where('node_id', $node->id)
                 ->where('production_home', $home)->exists()) {
                 throw $this->conflict('instance.production_placement_conflict', 'The Project already has a production Instance on the selected Node.');
@@ -116,9 +120,11 @@ final readonly class StartInstanceCloneAction
             $input = ['instance_id' => $target->id, 'project_id' => $candidate->project_id, 'candidate_id' => $candidate->id,
                 'repository' => $candidate->project->repository_url, 'repository_identity' => $candidate->project->repository_identity,
                 'branch' => $branch, 'checkout' => $path, 'candidate' => ['node_id' => $candidate->node_id,
-                    'checkout' => $container === null ? $candidate->checkout_path : InstanceHostIntent::Workspace,
                     'branch' => $candidate->branch, 'repository_identity' => $candidate->project->repository_identity,
-                    ...($container === null ? [] : ['container' => $container])],
+                    ...($runtime === null ? ['checkout' => $candidate->checkout_path] : ['container' => [
+                        'project' => $runtime->incus_project, 'name' => $runtime->container_name,
+                        'workspace' => InstanceHostIntent::Workspace, 'seed_commit' => $runtime->seed_commit,
+                    ]])],
                 'initial_completed' => $target->clone_completed_at !== null, 'sqlite' => $sqlite,
                 // Key-only hints for copied development references; values never enter the input.
                 'warnings' => app(CloneEnvironmentWarnings::class)->detect(app(InstanceEnvironmentStore::class)->values($target), $candidate->node, $home, $node)];

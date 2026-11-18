@@ -139,7 +139,7 @@ Every new development Instance is a container. There is no `instances.container_
 
 New [`instance:register`](/cli/instance/register) admissions refuse with `instance.container_required` (409) before reading checkout facts or creating records. Retries of existing registered checkouts remain available. Existing checkout Instances keep their operations and [`instance:migrate`](/cli/instance/migrate); create retries do not convert them. Their PHP-FPM pools stay until a live inventory permits retirement.
 
-[`instance:clone`](/cli/instance/clone) into production is the sole new-checkout exception until [production containers](/reference/production-containers) ship. It accepts an existing checkout or the Project’s active, seeded container default as the candidate, and requires an app-prod destination. The exception belongs to production clone admission, not a general host-runtime switch.
+[`instance:clone`](/cli/instance/clone) into production is the sole new-checkout exception until [production containers](/reference/production-containers) ship. It accepts an existing checkout or the Project’s active, running container default with a recorded seed as the candidate, and requires an app-prod destination. The exception belongs to production clone admission, not a general host-runtime switch.
 
 The Node must meet the host requirements of ADR 0250: current kernel, SCTP off and no secrets. A Node that still has checkout Instances keeps them until [migration](#migrate-a-checkout-instance) moves them into containers. The `app-prod` role follows the same model in step 10 ([Production Instances](#production-instances)).
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCloneProjection;
+use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
@@ -75,6 +76,9 @@ it('admits the first production clone of a new Project from its sole container d
     $input = ['node_id' => $production->id, 'name' => 'primary', 'preview_name' => 'preview'];
     $this->postJson($url, [...$input, 'sqlite_source_path' => '/srv/workspace/database.sqlite'])
         ->assertStatus(503)->assertJsonPath('error.code', 'operation.kind_unavailable');
+    $candidate->runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+    $this->postJson($url, $input)->assertConflict()->assertJsonPath('error.code', 'instance.clone_candidate_inactive');
+    $candidate->runtime->update(['power_state' => InstanceRuntimePowerState::Running]);
     expect($instances->count())->toBe(1)
         ->and(Operation::query()->where('kind', 'instance.clone')->exists())->toBeFalse();
 
@@ -86,9 +90,11 @@ it('admits the first production clone of a new Project from its sole container d
     $first = Operation::query()->findOrFail($firstId);
     $target = Instance::query()->findOrFail($first->target_id);
     expect($first->input['direct_provisioning']['candidate'])->toMatchArray([
-        'node_id' => $development->id, 'checkout' => '/srv/workspace', 'branch' => 'main',
-        'container' => ['project' => $candidate->runtime->incus_project, 'name' => $candidate->runtime->container_name, 'seed_commit' => $commit],
-    ])->and($target->status)->toBe(InstanceState::Reserved)
+        'node_id' => $development->id, 'branch' => 'main',
+        'container' => ['project' => $candidate->runtime->incus_project, 'name' => $candidate->runtime->container_name,
+            'workspace' => '/srv/workspace', 'seed_commit' => $commit],
+    ])->and($first->input['direct_provisioning']['candidate'])->not->toHaveKey('checkout')
+        ->and($target->status)->toBe(InstanceState::Reserved)
         ->and($target->checkout_path)->toBe("/home/orbit-app-{$project}/releases/initial")
         ->and($target->runtime()->exists())->toBeFalse()
         ->and($target->routes()->count())->toBe($web ? 1 : 0);
@@ -121,6 +127,7 @@ it('admits the first production clone of a new Project from its sole container d
         'result' => ['instance_id' => $target->id, 'ready' => true, 'branch' => 'main', 'commit' => $commit,
             'php_version' => $web ? '8.5' : null, 'laravel' => $web, 'candidate_commit' => $commit, 'environment_keys' => ['APP_ENV', 'APP_DEBUG']],
     ]);
+    $candidate->runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
     $this->postJson($url, $input)->assertAccepted()->assertJsonPath('data.id', $retryId);
     expect($target->refresh()->status)->toBe(InstanceState::Active)
         ->and($target->starting_commit)->toBe($commit)

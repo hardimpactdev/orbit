@@ -14,13 +14,13 @@ use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Support\ValidatedData;
 
 /** Immutable parent admission. No child Operations and no Node effects. */
 final readonly class NativeInstanceProvisioningIntent
 {
-    /** @return array{project: string, name: string, seed_commit: string}|null */
-    public function cloneCandidateContainer(Instance $candidate, ?string $sqliteSource): ?array
+    public function cloneCandidateRuntime(Instance $candidate, ?string $sqliteSource): ?InstanceRuntime
     {
         if ($candidate->databaseConnectionTargets()->exists()) {
             $this->unavailable();
@@ -34,7 +34,7 @@ final readonly class NativeInstanceProvisioningIntent
             $this->unavailable();
         }
 
-        return ['project' => $runtime->incus_project, 'name' => $runtime->container_name, 'seed_commit' => $runtime->seed_commit];
+        return $runtime;
     }
 
     /** @param array<string,mixed> $input

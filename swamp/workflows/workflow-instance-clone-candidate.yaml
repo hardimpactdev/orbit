@@ -105,11 +105,12 @@ jobs:
       inputs:
         hosts: name:target
         sudo: ${{ has(inputs.intent.candidate.container) }}
+        timeoutSec: 60
         argv: >-
           ${{ (has(inputs.intent.candidate.container) ?
           ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
           "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
-          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "branch", "--show-current"] }}
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", (has(inputs.intent.candidate.container) ? inputs.intent.candidate.container.workspace : inputs.intent.candidate.checkout), "branch", "--show-current"] }}
   - name: candidate-commit
     labels:
       role: swamp
@@ -137,11 +138,12 @@ jobs:
       inputs:
         hosts: name:target
         sudo: ${{ has(inputs.intent.candidate.container) }}
+        timeoutSec: 60
         argv: >-
           ${{ (has(inputs.intent.candidate.container) ?
           ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
           "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
-          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "rev-parse", "--verify", "HEAD^{commit}"] }}
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", (has(inputs.intent.candidate.container) ? inputs.intent.candidate.container.workspace : inputs.intent.candidate.checkout), "rev-parse", "--verify", "HEAD^{commit}"] }}
   - name: candidate-status
     labels:
       role: swamp
@@ -169,11 +171,12 @@ jobs:
       inputs:
         hosts: name:target
         sudo: ${{ has(inputs.intent.candidate.container) }}
+        timeoutSec: 60
         argv: >-
           ${{ (has(inputs.intent.candidate.container) ?
           ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
           "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
-          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "status", "--porcelain", "--untracked-files=all"] }}
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", (has(inputs.intent.candidate.container) ? inputs.intent.candidate.container.workspace : inputs.intent.candidate.checkout), "status", "--porcelain", "--untracked-files=all"] }}
   - name: candidate-submodules
     labels:
       role: swamp
@@ -201,11 +204,12 @@ jobs:
       inputs:
         hosts: name:target
         sudo: ${{ has(inputs.intent.candidate.container) }}
+        timeoutSec: 60
         argv: >-
           ${{ (has(inputs.intent.candidate.container) ?
           ["/usr/bin/incus", "exec", "--project", inputs.intent.candidate.container.project, inputs.intent.candidate.container.name,
           "--", "/usr/sbin/runuser", "-u", "agent", "--", "/usr/bin/git", "--no-optional-locks"] : ["/usr/bin/git"])
-          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", inputs.intent.candidate.checkout, "submodule", "status", "--recursive"] }}
+          + ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", (has(inputs.intent.candidate.container) ? inputs.intent.candidate.container.workspace : inputs.intent.candidate.checkout), "submodule", "status", "--recursive"] }}
   - name: candidate-origin
     labels:
       role: swamp

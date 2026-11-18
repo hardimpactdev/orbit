@@ -4,7 +4,7 @@ sidebarTitle: "instance:clone"
 description: "Clone a candidate Instance into a prepared production Instance."
 ---
 
-Production clone is the sole exception to [container-only new Instance admission](/reference/development-containers#container-only-admission) until production containers ship. A new Project can use its active container default as the candidate. An existing checkout can also be the candidate.
+Production clone is the sole exception to [container-only new Instance admission](/reference/development-containers#container-only-admission) until production containers ship. A new Project can use its active, running container default as the candidate. An existing checkout can also be the candidate.
 
 ```bash
 orbit instance:clone <candidate> <node> <name> --preview-name=NAME [--branch=BRANCH] [--sqlite-source-path=PATH] [--json]
@@ -58,7 +58,7 @@ This flow is planned by [ADR 0263](/decisions/0263-run-production-releases-in-ho
 | `input.cancelled` | You cancelled a list. |
 | `instance.name_invalid` | The name is not a lowercase DNS label. Fails today: the request validation answers first, with `validation.failed`. |
 | `validation.failed` | The name, preview name, branch or SQLite path is not valid. |
-| `instance.clone_candidate_inactive` | The candidate, or its Node, is not active. |
+| `instance.clone_candidate_inactive` | The candidate or its Node is inactive, or the container default is asleep. Wake the default with `instance:wake` before cloning. |
 | `instance.source_profile_missing` | The candidate has no recorded source profile. |
 | `instance.clone_candidate_source_invalid` | The candidate is dirty, has submodules, has another branch checked out, or its origin is not the Project's. |
 | `instance.clone_candidate_changed` | The candidate's commit moved after admission. |
