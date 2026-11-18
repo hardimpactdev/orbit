@@ -158,9 +158,13 @@ class Release:
 
     def guest_action(self, machine, action, plan=None):
         script = (LIB / "orbit-instance-release-guest").read_text()
-        result = self.user(machine, "/usr/bin/python3", "-c", script, action, cwd="/srv/workspace",
-                           data=json.dumps(plan) if plan is not None else None, timeout=1500, check=False)
-        if result.returncode == 78 and action == "checkout":
+        arguments = ["/usr/bin/python3", "-I", "-c", script, action]
+        options = {"data": json.dumps(plan) if plan is not None else None, "timeout": 1500, "check": False}
+        if action == "fetch":
+            result = self.guest(machine, "runuser", "-u", "orbit-fetch", "--", *arguments, **options)
+        else:
+            result = self.user(machine, *arguments, cwd="/srv/workspace", **options)
+        if result.returncode == 78 and action == "fetch":
             raise Refusal("deployment.commit_not_on_branch: commit is outside the admitted branch's first-parent history")
         if result.returncode:
             raise Refusal(f"deployment.step_failed: guest {action} failed")
@@ -287,6 +291,28 @@ class Release:
     def sql_input(self):
         return self.private / ("sql-" + str(self.operation) + ".json")
 
+    def converge_checkout(self, plan):
+        source = {key: plan[key] for key in ("sha", "repository", "branch")}
+        source["credential"] = plan.get("credential", "")
+        self.guest_action(self.prep, "fetch", source)
+        prep = self.ctl["instance"](self.prep)
+        packages = self.guest(self.prep, "sha256sum", "/var/lib/dpkg/status").stdout.split()[0]
+        context = {key: plan.get(key) for key in ("repository", "branch", "php_version", "environment", "testing_environment",
+                                                  "application_suffix", "shared_paths", "needs_vp", "steps")}
+        context.update(image=prep["config"]["volatile.base_image"], runtime=prep["expanded_devices"]["runtime"],
+                       vite=prep["expanded_devices"].get("vite-plus"), packages=packages)
+        scope = hashlib.sha256(json.dumps(context, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        receipt = self.private / "prepared-checkout.json"
+        previous = read(receipt, {})
+        # Consume before the first mutation. Crashes or failed builds cannot authorize partial installs.
+        save(receipt, {})
+        checkout = {key: plan.get(key) for key in ("sha", "environment", "testing_environment", "application_suffix",
+                                                   "routes", "shared_paths")}
+        inputs = self.guest_action(self.prep, "checkout", {**checkout, "scope": scope, "prepared": previous})
+        if not re.fullmatch(r"[0-9a-f]{64}", inputs):
+            raise Refusal("deployment.step_failed: invalid dependency input fingerprint")
+        return {"scope": scope, "inputs": inputs}
+
     def build(self, plan):
         self.parse_plan(plan)
         if legacy := plan.get("legacy"):
@@ -340,12 +366,12 @@ class Release:
             self.sql(self.prep, sql)
             self.reserve(plan, measured=True)
             self.route_files("prepare")
-            self.guest_action(self.prep, "checkout", plan)
+            dependency_receipt = self.converge_checkout(plan)
             vp = self.prepare_vp(plan)
             self.write_service(plan)
             units = self.install_units(self.prep, plan)
             save(self.private / "after.json", [step for step in plan["steps"] if step["phase"] == "after_activation"])
-            self.persist(checkout_ready=True, units=units, vp=vp)
+            self.persist(checkout_ready=True, units=units, vp=vp, dependency_receipt=dependency_receipt)
         self.steps(self.prep, [step for step in plan["steps"] if step["phase"] == "before_activation"], "before")
         artifact = self.guest_action(self.prep, "digest")
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", artifact):
@@ -353,6 +379,8 @@ class Release:
         size = int(self.user(self.prep, "du", "-sxb", "--", WORK + "/").stdout.split()[0])
         self.persist(artifact=artifact, build_bytes=size)
         self.reserve(plan, measured=True)
+        if self.state.get("dependency_receipt") and all(row["exit_code"] == 0 for row in self.state["step_outcomes"]):
+            save(self.private / "prepared-checkout.json", {**self.state["dependency_receipt"], "artifact": artifact})
         self.persist(built=True)
 
     def write_service(self, plan):

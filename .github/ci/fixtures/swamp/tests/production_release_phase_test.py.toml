@@ -25,6 +25,7 @@ cases = [
   "test_best_effort_steps_record_bounded_exit_status_on_both_sides_of_activation",
   "test_frankenphp_serves_public_assets_and_denies_private_files_at_both_web_roots",
   "test_detached_checkout_accepts_only_the_admitted_branch_first_parent_chain",
+  "test_preparation_fetches_incrementally_and_converges_one_worktree",
   "test_first_move_accepts_writes_on_one_backing_across_an_interrupted_commit",
   "test_changed_physical_legacy_head_refuses_before_source_copy_and_before_commit",
   "test_unverified_previous_route_keeps_its_recovery_journal",

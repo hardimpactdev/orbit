@@ -161,6 +161,10 @@ def prepare(instance, php):
     if prep["config"].get("user.orbit.release.prepared") != "true":
         guest(machine, "sh", "-ec", GUEST, timeout=1200)
         inc("config", "set", machine, "user.orbit.release.prepared=true")
+    # A credentialed incremental fetch never reads application-owned Git objects or configuration.
+    guest(machine, "sh", "-ec", 'id orbit-fetch >/dev/null 2>&1 || useradd --system --user-group '
+          '--home-dir /var/lib/orbit-release-git --shell /usr/sbin/nologin orbit-fetch; '
+          'install -d -m 0755 -o orbit-fetch -g orbit-fetch /var/lib/orbit-release-git')
     # Apply the distro's pending updates only in the off-traffic preparer. Retained releases keep their packages.
     guest(machine, "env", "DEBIAN_FRONTEND=noninteractive", "sh", "-ec",
           'apt-get -qq -o Acquire::Retries=2 update && apt-get -qq -y -o Dpkg::Options::=--force-confold upgrade', timeout=1200)

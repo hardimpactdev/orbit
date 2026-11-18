@@ -272,12 +272,96 @@ class ProductionReleaseTest(unittest.TestCase):
         commands = ["git", "-C", checkout]
         for sha in (ancestor, tip):
             guest.select_commit(commands, str(source), "main", sha, os.environ)
-            self.assertEqual(subprocess.check_output([*commands, "rev-parse", "HEAD"], text=True).strip(), sha)
-            self.assertEqual(subprocess.run([*commands, "symbolic-ref", "-q", "HEAD"], check=False).returncode, 1)
+            self.assertEqual(subprocess.check_output([*commands, "rev-parse", "refs/orbit/admitted"], text=True).strip(), tip)
         with self.assertRaises(guest.CommitOutsideBranch):
             guest.select_commit(commands, str(source), "main", side, os.environ)
         with self.assertRaises(subprocess.CalledProcessError):
             guest.select_commit(commands, str(source), "invalid:ref", tip, os.environ)
+
+    def test_preparation_fetches_incrementally_and_converges_one_worktree(self):
+        source = self.r.root / "upstream"
+        cache = self.r.root / "private-git"
+        store = self.r.root / "shared-files"
+        source.mkdir()
+        cache.mkdir()
+        store.mkdir()
+        git = ["git", "-C", source, "-c", "user.name=fixture", "-c", "user.email=fixture@example.test"]
+        subprocess.run([*git, "init", "-qb", "main"], check=True)
+        (source / "unchanged").write_text("keep this inode")
+        (source / "removed").write_text("removed in next commit")
+        (source / "composer.lock").write_text("lock v1")
+        (source / "composer.json").write_text("{}")
+        (source / "uploads").mkdir()
+        (source / "uploads/seed").write_text("seed")
+        (source / ".gitignore").write_text("vendor/\n.env\npublic/build/\n")
+        def commit():
+            subprocess.run([*git, "add", "-A"], check=True)
+            subprocess.run([*git, "commit", "-qm", "revision"], check=True)
+            return subprocess.check_output([*git, "rev-parse", "HEAD"], text=True).strip()
+        plan = {"repository": "https://github.com/example/app", "branch": "main", "sha": commit(),
+                "environment": "APP_ENV=test\n", "application_suffix": "", "routes": [], "shared_paths": ["uploads"],
+                "scope": "admitted build context"}
+        tree = self.r.root / "current"
+        env = {**guest.git_environment(), "GIT_ALLOW_PROTOCOL": "file"}
+        with patch.object(guest, "WORK", self.r.root), patch.object(guest, "SHARED", store), \
+                patch.object(guest, "SOURCE", cache), patch.object(guest, "repository", return_value=str(source)), \
+                patch.object(guest, "git_environment", return_value=env):
+            guest.fetch(plan)
+            inputs = guest.checkout(plan)
+            (tree / "vendor").mkdir()
+            installed = tree / "vendor/installed"
+            installed.write_text("installed dependencies")
+            (tree / "public/build").mkdir(parents=True)
+            (tree / "public/build/stale.js").write_text("generated output")
+            plan["prepared"] = {"scope": plan["scope"], "artifact": guest.content_digest(), "inputs": inputs}
+            inodes = [p.stat().st_ino for p in (tree, tree / "unchanged", installed)]
+            old_objects = {p:p.stat().st_ino for p in (cache / "repository/objects").glob("[0-9a-f][0-9a-f]/*")}
+            self.assertTrue(old_objects)
+            (store / "uploads/seed").write_text("new live upload")
+            # Earlier application-owned Git config must not participate in the next credentialed fetch or checkout.
+            poison = self.r.root / "credential-or-hook-was-used"
+            subprocess.run(["git", "-C", tree, "config", "core.fsmonitor", f"touch {poison}"], check=True)
+            (source / "removed").unlink()
+            (source / "new").write_text("next revision")
+            plan["sha"] = commit()
+            guest.fetch(plan)
+            self.assertEqual(guest.checkout(plan), inputs)
+            self.assertEqual([p.stat().st_ino for p in (tree, tree / "unchanged", installed)], inodes)
+            self.assertTrue(all(p.stat().st_ino == inode for p, inode in old_objects.items()))
+            self.assertEqual((tree / "uploads/seed").read_text(), "new live upload")
+            self.assertFalse((tree / "removed").exists())
+            self.assertFalse((tree / "public/build/stale.js").exists())
+            self.assertFalse(poison.exists())
+            self.assertEqual(subprocess.check_output(["git", "-C", tree, "rev-parse", "HEAD"], text=True).strip(), plan["sha"])
+            self.assertEqual(subprocess.run(["git", "-C", tree, "symbolic-ref", "-q", "HEAD"], check=False).returncode, 1)
+            plan["prepared"]["artifact"] = guest.content_digest()
+            (source / "composer.lock").write_text("lock v2")
+            plan["sha"] = commit()
+            guest.fetch(plan)
+            next_inputs = guest.checkout(plan)
+            self.assertNotEqual(inputs, next_inputs)
+            self.assertFalse(installed.exists())
+            (tree / "vendor").mkdir()
+            installed.write_text("partial interrupted install")
+            plan["prepared"] = {}
+            guest.checkout(plan)
+            self.assertFalse(installed.exists())
+
+            # Change branch, then rewrite its history. Neither path may ship a former commit's objects.
+            previous = plan["sha"]
+            subprocess.run([*git, "switch", "--orphan", "other"], check=True, capture_output=True)
+            (source / "other").write_text("other history")
+            plan.update(branch="other", sha=commit())
+            guest.fetch(plan)
+            bare = ["git", "--git-dir", str(cache / "repository")]
+            self.assertNotEqual(subprocess.run([*bare, "cat-file", "-e", previous], check=False).returncode, 0)
+            previous = plan["sha"]
+            subprocess.run([*git, "switch", "--orphan", "rewrite"], check=True, capture_output=True)
+            (source / "replacement").write_text("rewritten history")
+            plan["sha"] = commit()
+            subprocess.run([*git, "branch", "-f", "other", plan["sha"]], check=True)
+            guest.fetch(plan)
+            self.assertNotEqual(subprocess.run([*bare, "cat-file", "-e", previous], check=False).returncode, 0)
 
     def test_first_move_accepts_writes_on_one_backing_across_an_interrupted_commit(self):
         self.r.state.update(legacy={"project_id":7, "commit": NEXT}, previous=None, previous_old=None, previous_work=[],

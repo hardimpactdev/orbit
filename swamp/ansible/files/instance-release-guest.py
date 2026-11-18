@@ -13,6 +13,7 @@ from pathlib import Path
 
 WORK = Path("/srv/workspace")
 SHARED = Path("/srv/shared")
+SOURCE = Path("/var/lib/orbit-release-git")
 SHA = re.compile(r"[0-9a-f]{40}")
 
 
@@ -71,47 +72,128 @@ def select_commit(git, url, branch, sha, env):
     subprocess.run([*git, "check-ref-format", branch_ref], check=True, stdout=subprocess.DEVNULL, **options)
     subprocess.run([*git, "fetch", "--no-tags", "--no-recurse-submodules", "--quiet", "--", url,
                     "+" + branch_ref + ":" + remote], check=True, stdout=subprocess.DEVNULL, **options)
-    # Count first-parent commits newer than the requested commit, then name that exact
-    # ancestor. A commit reachable only through a merge's other parent fails this check.
+    # Reachability through a merge's second parent is insufficient.
     distance = subprocess.run([*git, "rev-list", "--first-parent", "--count", sha + ".." + remote],
-                              check=False, capture_output=False, stdout=subprocess.PIPE, text=True, **options)
+                              check=False, stdout=subprocess.PIPE, text=True, **options)
     if distance.returncode or not distance.stdout.strip().isdecimal():
         raise CommitOutsideBranch()
     selected = subprocess.run([*git, "rev-parse", "--verify", "--quiet", remote + "~" + distance.stdout.strip() + "^{commit}"],
                               check=False, stdout=subprocess.PIPE, text=True, **options)
     if selected.returncode or selected.stdout.strip() != sha:
         raise CommitOutsideBranch()
-    subprocess.run([*git, "-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", sha],
-                   check=True, stdout=subprocess.DEVNULL, **options)
+
+
+def git_environment():
+    # Git needs the Node's egress proxy. No earlier application Git environment participates.
+    env = {key: value for key, value in os.environ.items()
+           if key.lower() in ("http_proxy", "https_proxy", "no_proxy", "all_proxy")}
+    return {**env, "PATH": "/usr/bin:/bin", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_TERMINAL_PROMPT": "0", "GIT_ALLOW_PROTOCOL": "https", "GIT_NO_REPLACE_OBJECTS": "1"}
+
+
+def fetch(plan):
+    sha = plan["sha"]
+    if not SHA.fullmatch(sha):
+        raise ValueError("invalid admitted commit")
+    url = repository(plan["repository"])
+    cache = SOURCE / "repository"
+    owner = SOURCE / "origin"
+    identity = json.dumps([url, plan["branch"]])
+    pending = SOURCE / "fetching"
+    # Only the dedicated fetch account can change this directory. Drop the entire object
+    # store on a repository change so another project's history never enters a clone.
+    if pending.exists() or not owner.is_file() or owner.read_text() != identity:
+        remove(cache)
+        file_bytes(owner, identity)
+    pending.touch()
+    env = git_environment()
+    with tempfile.TemporaryDirectory(prefix="orbit-release-credential-") as private:
+        credential = Path(private) / "store"
+        file_bytes(credential, plan.get("credential", ""))
+        git = ["git", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=",
+               "-c", "credential.helper=store --file=" + str(credential), "-c", "http.followRedirects=false",
+               "--git-dir", str(cache)]
+        subprocess.run([*git, "init", "--bare", "-q", "--template="], env=env, check=True, timeout=60)
+        previous = subprocess.run([*git, "rev-parse", "--verify", "--quiet", "refs/orbit/admitted"],
+                                  env=env, check=False, stdout=subprocess.PIPE, text=True).stdout.strip()
+        select_commit(git, url, plan["branch"], sha, env)
+        if previous and subprocess.run([*git, "merge-base", "--is-ancestor", previous, "refs/orbit/admitted"],
+                                       env=env, check=False).returncode:
+            # A force-push must not leave the previous branch's unreachable objects in the sealed filesystem.
+            remove(cache)
+            subprocess.run([*git, "init", "--bare", "-q", "--template="], env=env, check=True, timeout=60)
+            select_commit(git, url, plan["branch"], sha, env)
+
+    pending.unlink()
+
+
+DEPENDENCIES = {
+    "composer.lock": "vendor",
+    "package-lock.json": "node_modules",
+    "npm-shrinkwrap.json": "node_modules",
+    "pnpm-lock.yaml": "node_modules",
+    "yarn.lock": "node_modules",
+    "bun.lock": "node_modules",
+    "bun.lockb": "node_modules",
+}
+PACKAGE_INPUTS = set(DEPENDENCIES) | {"composer.json", "package.json", "pnpm-workspace.yaml", ".npmrc",
+                                      ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", "bunfig.toml"}
+
+
+def dependency_trees(git, sha, env):
+    entries = subprocess.check_output([*git, "ls-tree", "-rz", sha], env=env).split(b"\0")
+    inputs = []
+    trees = set()
+    for entry in filter(None, entries):
+        descriptor, raw_path = entry.split(b"\t", 1)
+        path = Path(os.fsdecode(raw_path))
+        if path.name in PACKAGE_INPUTS or any(part in ("patches", ".yarn") for part in path.parts):
+            inputs.append(entry)
+        if path.name in DEPENDENCIES and descriptor.split()[0] in (b"100644", b"100755"):
+            tree = path.parent / DEPENDENCIES[path.name]
+            # These paths become Git clean exclusion patterns. Only literal, known paths qualify.
+            try:
+                trees.add(relative(str(tree)).as_posix())
+            except ValueError:
+                continue
+    return hashlib.sha256(b"\0".join(inputs)).hexdigest(), trees
 
 
 def checkout(plan):
     sha = plan["sha"]
     if not SHA.fullmatch(sha):
         raise ValueError("invalid admitted commit")
-    url = repository(plan["repository"])
-    # The filesystem is private to preparation. Never execute hooks, credential helpers or
-    # filters supplied by an earlier checkout, or carry its .git/config into a release.
-    staging = WORK / ".building"
-    remove(staging)
-    staging.mkdir(mode=0o755)
-    clean_env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
-                 "GIT_TERMINAL_PROMPT": "0", "GIT_ALLOW_PROTOCOL": "https", "GIT_NO_REPLACE_OBJECTS": "1"}
-    with tempfile.TemporaryDirectory(dir="/tmp", prefix="orbit-release-credential-") as private:
-        credential = Path(private) / "store"
-        file_bytes(credential, plan.get("credential", ""))
-        git = ["git", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=",
-               "-c", "credential.helper=store --file=" + str(credential), "-c", "http.followRedirects=false", "-C", staging]
-        subprocess.run([*git, "init", "-q", "--template="], env=clean_env, check=True, timeout=60,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        select_commit(git, url, plan["branch"], sha, clean_env)
-        head = subprocess.check_output([*git, "rev-parse", "HEAD"], text=True, env=clean_env).strip()
-        if head != sha:
-            raise ValueError("checkout returned a different commit")
-    # Only preparation is off traffic. Its previous tree stays out of the sealed clone.
     current = WORK / "current"
-    remove(current)
-    os.replace(staging, current)
+    if current.is_symlink():
+        raise ValueError("preparation checkout is a symlink")
+    current.mkdir(mode=0o755, exist_ok=True)
+    remove(WORK / ".building")  # discarded by the older checkout implementation
+    previous = plan.get("prepared") or {}
+    reuse = previous.get("scope") == plan["scope"] and previous.get("artifact") == content_digest()
+    # Drop every application-controlled Git setting, index, hook and ref. Borrow objects
+    # read-only from the dedicated fetch account, with fresh metadata in this same worktree.
+    remove(current / ".git")
+    git = ["git", "-c", "core.hooksPath=/dev/null", "-C", str(current)]
+    env = git_environment()
+    subprocess.run([*git, "init", "-q", "--template="], env=env, check=True, timeout=60)
+    (current / ".git/objects/info/alternates").write_text(str(SOURCE / "repository/objects") + "\n")
+    fingerprint, dependencies = dependency_trees(git, sha, env)
+    keep = []
+    if reuse and previous.get("inputs") == fingerprint:
+        shared = [relative(value) for value in plan["shared_paths"]]
+        for value in sorted(dependencies):
+            path = Path(value)
+            if any(path == item or path in item.parents or item in path.parents for item in shared):
+                continue
+            if not any((current / parent).is_symlink() for parent in (path, *path.parents)) and (current / path).is_dir():
+                keep.extend(["-e", "/" + value + "/"])
+    # The new commit's index identifies every removed file as untracked. Refresh stats
+    # before reset so unchanged tracked files keep their inode as well as their contents.
+    subprocess.run([*git, "read-tree", sha], env=env, check=True)
+    subprocess.run([*git, "update-index", "--refresh"], env=env, check=False, stdout=subprocess.DEVNULL)
+    subprocess.run([*git, "clean", "-qffdx", *keep], env=env, check=True)
+    subprocess.run([*git, "update-ref", "--no-deref", "HEAD", sha], env=env, check=True)
+    subprocess.run([*git, "reset", "--quiet", "--hard", sha], env=env, check=True)
     for value in plan["shared_paths"]:
         relative_path = relative(value)
         if relative_path.parts[0].startswith(".") or relative_path.parts[0] in ("current", "releases", "env", "database.sqlite"):
@@ -126,6 +208,7 @@ def checkout(plan):
         local.parent.mkdir(parents=True, exist_ok=True)
         local.symlink_to(persistent, target_is_directory=True)
     environment(plan)
+    return fingerprint
 
 
 def environment(plan):
@@ -179,8 +262,10 @@ def main(action):
         print(content_digest())
         return
     plan = json.load(sys.stdin)
-    if action == "checkout":
-        checkout(plan)
+    if action == "fetch":
+        fetch(plan)
+    elif action == "checkout":
+        print(checkout(plan))
     elif action == "environment":
         environment(plan)
     else:

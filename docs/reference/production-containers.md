@@ -67,6 +67,8 @@ Orbit holds the deploy for this Instance. Other production Instances on the Node
 6. **Clone.** Start hot from the sealed snapshot with a unique address and autostart disabled. Only the owning Operation can reuse this candidate.
 7. **Sleep.** Freeze preparation and reclaim its memory to swap. The candidate starts its own FrankenPHP processes and passes private readiness.
 
+An app-prod preparer fetches new Git objects under a separate account and updates its existing application checkout in place. A change of repository or branch starts a fresh object store. Each release clone retains its own Git objects. The preparer removes stale build output and old environment files. It can retain installed `vendor` and `node_modules` trees from its last completed build when the build context, package inputs and sealed contents still match. Interrupted installs and changed inputs start with empty dependency trees. The admitted build steps run on every deploy.
+
 The preparation container is the build source for every release. Its snapshot excludes the Node's external mounts. The container and its snapshot can hold the rendered configuration and must stay within the Instance's secret boundary on the Node.
 
 ### Go live
