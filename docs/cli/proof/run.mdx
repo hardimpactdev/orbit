@@ -46,7 +46,7 @@ orbit proof:run 0123456789abcdef0123456789abcdef01234567
 
 In a terminal, an omitted commit is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.commit_invalid`, and so is a value that is not a full lowercase SHA. A refused call sends no request.
 
-Orbit selects the cases from the commit and optional ancestor base. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
+Orbit selects the cases from the commit and optional ancestor base. The calling Node needs an access grant to the Gateway Node. When [proof CI](/reference/feature-flow#the-proof-ci) runs for a pull request that carries undelivered main changes, it supplies the last verified delivery as the base and requires passing cases for that range.
 
 Built so far: the trust check, the case selection, the run in copies and the verdict of each case. The CI job `proof-run` is part of Required checks: when it runs, its result always gates the merge, and no switch makes it report-only. Main runs no proof after the merge. Today CI starts no proof: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\GatewayReleases;
 
 use App\Models\GatewayRelease;
+use Carbon\CarbonImmutable;
 use Throwable;
 
 /**
@@ -16,6 +17,8 @@ final readonly class GatewayReleaseRetry
 {
     /** Attempts per commit before a retryable failure becomes final. */
     public const int Attempts = 3;
+
+    private const int RetryMinutes = 10;
 
     /** @var list<string> */
     private const array Final = [
@@ -82,5 +85,18 @@ final readonly class GatewayReleaseRetry
         }
 
         return $earlier + 1 < $this->attempts;
+    }
+
+    /** A commit that just failed for a transient reason waits before the next attempt. */
+    public function automaticBackingOff(string $sha): bool
+    {
+        $last = GatewayRelease::query()->where('trigger', 'auto')
+            ->where(static fn ($query) => $query->where('sha', $sha)->orWhere('requested', $sha))->latest('id')->first();
+
+        return $last instanceof GatewayRelease
+            && in_array($last->outcome, [...GatewayRelease::FailedOutcomes, GatewayRelease::Interrupted], true)
+            && $last->retryable
+            && $last->updated_at !== null
+            && $last->updated_at->gt(CarbonImmutable::now()->subMinutes(self::RetryMinutes));
     }
 }

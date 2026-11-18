@@ -10,6 +10,8 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\SourceControl\GitProjectSourceReader;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 it('reads source files from the requested revision after the branch advances', function (bool $pinned): void {
     $directory = storage_path('framework/source-reader-test-'.Str::uuid());
@@ -44,9 +46,13 @@ it('reads source files from the requested revision after the branch advances', f
     }
 })->with(['pinned older commit' => true, 'current branch head' => false]);
 
-it('refuses an unavailable commit instead of reading the branch head', function (): void {
-    $this->mock(ProcessRunner::class)->shouldReceive('run')->andReturnUsing(static function (ProcessInvocation $invocation) {
+it('refuses an unavailable commit instead of reading the branch head', function (bool $timeout): void {
+    $this->mock(ProcessRunner::class)->shouldReceive('run')->andReturnUsing(static function (ProcessInvocation $invocation) use ($timeout) {
         $fetch = in_array('fetch', $invocation->arguments, true);
+
+        if ($fetch && $timeout) {
+            throw new ProcessTimedOutException(new Process(['git']), ProcessTimedOutException::TYPE_GENERAL);
+        }
 
         return new CommandResult($fetch ? 128 : 0, '', '', 0, false);
     });
@@ -59,4 +65,4 @@ it('refuses an unavailable commit instead of reading the branch head', function 
     }
 
     expect($refusal)->not->toBeNull()->errorCode->toBe('project.source_unavailable')->status->toBe(502);
-});
+})->with(['failed fetch' => false, 'fetch timeout' => true]);
