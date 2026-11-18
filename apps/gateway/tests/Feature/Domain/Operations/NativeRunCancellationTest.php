@@ -25,6 +25,7 @@ use App\Models\Task;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Defer\DeferredCallbackCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
@@ -35,8 +36,8 @@ uses(LazilyRefreshDatabase::class);
 
 const RUN = 'ea55ab37-bcbe-4459-81dc-cbb397e7d870';
 
-/** A tasks.sync of a group that started 20 minutes ago with a 360-second budget. */
-function runningScript(?string $run = RUN, int $minutes = 20): Operation
+/** @param array<string, int> $children */
+function runningScript(?string $run = RUN, int $minutes = 20, array $children = []): Operation
 {
     $group = Task::query()->create(['title' => 'Proof', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
     $address = '10.44.0.'.(100 + $group->id);
@@ -45,7 +46,7 @@ function runningScript(?string $run = RUN, int $minutes = 20): Operation
 
     return Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id,
         'input' => [], 'status' => OperationStatus::Running,
-        'state' => $run === null ? [] : ['swamp_run_id' => $run], 'sequence' => 1, 'attempts' => 1, 'started_at' => now()->subMinutes($minutes)]);
+        'child_versions' => $children, 'state' => $run === null ? [] : ['swamp_run_id' => $run], 'sequence' => 1, 'attempts' => 1, 'started_at' => now()->subMinutes($minutes)]);
 }
 
 it('asks Swamp to cancel the bound run when the Gateway times the Operation out', function (): void {
@@ -385,6 +386,21 @@ it('records the exact native terminal after the target hold has been released', 
 
     expect($operation->refresh()->lock_key)->toBeNull()
         ->and($operation->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
+});
+
+it('polls a released parent when only a child version has closed', function (): void {
+    Queue::fake();
+    $operation = runningScript(children: ['proof.verify' => 1]);
+    app(ExpireOperationAction::class)->execute($operation);
+    $operation->refresh()->update(['lock_key' => OperationStore::lockKey('task_group', $operation->target_id)]);
+    $this->travel(61)->minutes();
+    app(ExpireOperationAction::class)->releaseStaleHolds();
+    DB::table('deprecated_operation_versions')->insert(['kind' => 'proof.verify', 'version' => 1]);
+    reconcileSocket($operation, 'cancelled');
+
+    reconcile();
+
+    expect($operation->refresh()->state['native_timeout']['native_terminal_status'])->toBe('cancelled');
 });
 
 it('expires an unbound Operation at its admission deadline', function (): void {

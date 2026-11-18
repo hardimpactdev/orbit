@@ -184,7 +184,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     /**
      * Unfinished Operations, those the Gateway timed out while Swamp has not proven their run ended, and timed-out ones with a
-     * cancel request Swamp has not confirmed.
+     * cancel request Swamp has not confirmed. While a version drains, read released native timeouts as well:
+     * a parent can still own work on a closed child version after its own target hold expires.
      *
      * @param  list<string>|null  $kinds
      * @return Builder<Operation>
@@ -195,9 +196,8 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key'))
             ->orWhere(fn ($query) => $query->when(! $includeReleasedTimeouts, fn ($query) => $query->where(fn ($query) => $query
-                ->where('kind', 'instance.migrate')->orWhereExists(fn ($closed) => $closed->selectRaw('1')->from('deprecated_operation_versions')
-                ->whereColumn('deprecated_operation_versions.kind', 'operations.kind')
-                ->whereColumn('deprecated_operation_versions.version', 'operations.operation_version'))))
+                ->where('kind', 'instance.migrate')->orWhereExists(fn ($closed) => $closed->selectRaw('1')
+                ->from('deprecated_operation_versions')->whereNull('eligible_at'))))
                 ->whereNotNull('state->native_timeout')->where('status', OperationStatus::Failed)
                 ->where('error_code', 'operation.timed_out')->whereNull('state->native_timeout->no_run_verified_at')
                 ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')

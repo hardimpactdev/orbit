@@ -2,6 +2,9 @@
 title: "Operations"
 description: "How the Gateway runs a long operation as a queued record with named steps, how a client follows it, and how the Gateway recovers one that a lost worker interrupted."
 covers:
+  - apps/gateway/app/Console/Commands/CheckOperationCleanupCommand.php
+  - apps/gateway/config/operation_versions.php
+  - apps/gateway/database/migrations/*pin_operation_versions.php
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**}
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php,Jobs/Operations/**}
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
@@ -308,7 +311,7 @@ Orbit pins an Operation version when it admits the request. Existing records use
 
 Swamp records a numeric `version` on a workflow. A child step selects its workflow by name or UUID at execution. A resume looks up the registered definition again. Publish incompatible definitions under separate names and UUIDs, including child workflows they call. Keep their grants, behaviors and Gateway handlers available while either version has work. [Swamp workflow schema](https://github.com/swamp-club/swamp/blob/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/workflows/workflow.ts#L98-L126) · [Child lookup](https://github.com/swamp-club/swamp/blob/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/workflows/execution_service.ts#L7998-L8005)
 
-First deploy version-aware workers with version 1 active. Publish replacement definitions before selecting them for new requests. Put the previous declaration under `retained` while admitted work can still use it. List its version under `deprecated` to close it to new admissions. After cutover and drain, the release runs `php artisan operations:check-cleanup --json` on the serving Gateway. The hook records an admission fence in SQLite and reports the outstanding count for each closed version. Exit 75 means work remains. Run the hook again before removing a definition and its handlers in a cleanup release. Exit 0 with `eligible: true` for that kind and version confirms its tracked work has settled.
+First deploy version-aware workers with version 1 active. Publish replacement definitions before selecting them for new requests. Put the previous declaration under `retained` while admitted work can still use it. List its version under `deprecated` to close it to new admissions. Before publishing traffic, the switch uses `--fence-only` to close admissions durably. After cutover and drain, the release runs `php artisan operations:check-cleanup --json` on the serving Gateway. The hook checks the SQLite ledger and reports the outstanding count for each closed version. Exit 75 means work remains. Run the hook again before removing a definition and its handlers in a cleanup release. Exit 0 with `eligible: true` for that kind and version confirms its tracked work has settled.
 
 ### Swamp child Operations
 
