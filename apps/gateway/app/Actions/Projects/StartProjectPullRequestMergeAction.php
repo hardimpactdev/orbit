@@ -10,8 +10,8 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyPullRequest;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequest;
 use App\Domain\Tasks\TaskPullRequestEvidence;
 use App\Models\Operation;
 use App\Models\Project;
@@ -36,7 +36,7 @@ final readonly class StartProjectPullRequestMergeAction
             throw new ResourceOperationException('project.review_and_merge_disabled', 'This Project does not take part in review and merge.', 409);
         }
         // Also after its group ended: a task copy's pull request is never Orbit's to merge.
-        TaskCopyPullRequest::refusePublished($project, $number);
+        TaskPullRequest::refusePublished($project, $number);
         $watched = Task::topLevel()->where('project_id', $project->id)->where('watched_pr_number', $number)->whereNull('watched_pr_completion')
             ->whereNotIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))->exists();
         if ($watched) {
@@ -44,9 +44,9 @@ final readonly class StartProjectPullRequestMergeAction
         }
         $target = $this->evidence->outside($project, $number, $head);
         // A copy publish that ended before it recorded the number still pushed `task-<id>`.
-        TaskCopyPullRequest::refuseBranch($project, $target->pull->headRef);
+        TaskPullRequest::refuseBranch($project, $target->pull->headRef);
         // Two Projects can name one repository: a pull request of another Project's task group is not this Project's to merge.
-        TaskCopyPullRequest::refuseOtherProject($project, $number, $target->pull->headRef);
+        TaskPullRequest::refuseOtherProject($project, $number, $target->pull->headRef);
         // Only the vault key name is admitted. The step mints its token when it runs ({@see TaskGitHubTokens}).
         $secrets = ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.Str::uuid()]];
 

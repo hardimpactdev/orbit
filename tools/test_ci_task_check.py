@@ -45,13 +45,13 @@ GATEWAY_PIN_NAMES = ('GatewayRuntimeFilesTest, NestedFleetHostingTest, ConnThrea
 
 class PestSelectionTest(unittest.TestCase):
     def test_a_selected_job_runs_its_changed_tests_and_pin_tests_and_leaves_its_suite_to_ci(self):
-        plan = pest_plan({'gateway-tests': True}, [GATEWAY_TEST, 'apps/gateway/app/Domain/Tasks/TaskCopyTurn.php'])
+        plan = pest_plan({'gateway-tests': True}, [GATEWAY_TEST, 'apps/gateway/app/Domain/Tasks/TaskTurn.php'])
         self.assertEqual(plan['pest apps/gateway'], (sorted([GATEWAY_TEST, *GATEWAY_PINS]), 'run',
                                                      f'1 changed or contract-mapped, 6 pin test files: {GATEWAY_PIN_NAMES}'))
         self.assertEqual(plan['pest apps/gateway suite'], ([], 'skipped', 'CI runs the full suite'))
 
     def test_a_change_to_app_code_alone_runs_the_pin_tests_of_its_selected_job(self):
-        plan = pest_plan({'gateway-tests': True}, ['apps/gateway/app/Domain/Tasks/TaskCopyTurn.php'])
+        plan = pest_plan({'gateway-tests': True}, ['apps/gateway/app/Domain/Tasks/TaskTurn.php'])
         self.assertEqual(plan['pest apps/gateway'], (GATEWAY_PINS, 'run',
                                                      f'0 changed or contract-mapped, 6 pin test files: {GATEWAY_PIN_NAMES}'))
         self.assertEqual(plan['pest apps/cli'], ([], 'not selected', 'CI does not select the cli-tests job'))
@@ -79,7 +79,7 @@ class PestSelectionTest(unittest.TestCase):
         self.assertEqual(plan['pest apps/docs suite'], ([], 'skipped', 'CI runs the full suite'))
 
     def test_a_job_ci_does_not_select_is_not_selected_and_adds_no_pin_test(self):
-        plan = pest_plan({}, [GATEWAY_TEST, 'apps/gateway/app/Domain/Tasks/TaskCopyTurn.php'])
+        plan = pest_plan({}, [GATEWAY_TEST, 'apps/gateway/app/Domain/Tasks/TaskTurn.php'])
         self.assertEqual(plan['pest apps/gateway'], ([], 'not selected', 'CI does not select the gateway-tests job'))
         self.assertEqual(plan['pest apps/cli'], ([], 'not selected', 'CI does not select the cli-tests job'))
         self.assertNotIn('pest apps/gateway suite', plan)
@@ -106,10 +106,10 @@ class PestSelectionTest(unittest.TestCase):
 
 class PhpstanSelectionTest(unittest.TestCase):
     def test_only_changed_files_inside_the_analysed_paths_are_analysed(self):
-        paths = ['apps/gateway/app/Domain/Tasks/TaskCopyTurn.php', GATEWAY_TEST, 'tools/phpstan/NoInlineVarOverrideRule.php',
+        paths = ['apps/gateway/app/Domain/Tasks/TaskTurn.php', GATEWAY_TEST, 'tools/phpstan/NoInlineVarOverrideRule.php',
                  'packages/php-sdk/src/Requests/Tasks/CancelTaskRequest.php']
         self.assertEqual(check['phpstan_files'](paths, 'apps/gateway'),
-                         ['apps/gateway/app/Domain/Tasks/TaskCopyTurn.php', 'tools/phpstan/NoInlineVarOverrideRule.php'])
+                         ['apps/gateway/app/Domain/Tasks/TaskTurn.php', 'tools/phpstan/NoInlineVarOverrideRule.php'])
 
     def test_the_docs_app_has_no_static_job(self):
         self.assertNotIn('apps/docs', check['STATIC_JOBS'].values())

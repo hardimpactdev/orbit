@@ -55,7 +55,7 @@ final readonly class TaskPublishIntent
             ?? throw new ResourceOperationException('tasks.no_workspace', 'The group requires its task copy.', 409);
         $instance = $copy->instance;
         self::refuseHeld($group->project);
-        TaskCopyTurn::refuseUnended($group);
+        TaskTurn::refuseUnended($group);
         $workspace = $copy->publication();
         $check = TaskCheck::query()->whereKey($input->check)->whereHas('task', fn ($tasks) => $tasks->where('parent_id', $group->id))->first();
         if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {

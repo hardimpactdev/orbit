@@ -28,7 +28,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\SwampNodeFixture;
-use Tests\Support\TaskCopyDoneFixture;
+use Tests\Support\TaskDoneFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -51,13 +51,13 @@ function rightDeliverables(): array
 /**
  * A task copy whose one subtask started and whose newest handoff check failed: the state a wrong deliverable leaves behind.
  *
- * @return array{TaskCopyDoneFixture, TaskCheck}
+ * @return array{TaskDoneFixture, TaskCheck}
  */
 function failedCopyCheck(): array
 {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->subtask->update(['status' => TaskStatus::Running, 'deliverables' => wrongDeliverables()]);
-    $failed = TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), status: TaskCheckStatus::Failed);
+    $failed = TaskDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), status: TaskCheckStatus::Failed);
 
     return [$world, $failed];
 }
@@ -109,7 +109,7 @@ describe('a correction after a failed check in a task copy', function (): void {
         expect($refused->errorCode)->toBe('tasks.deliverables_locked')
             ->and($world->subtask->refresh()->deliverables)->toBe(rightDeliverables());
 
-        $next = TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('d', 40), status: TaskCheckStatus::Failed);
+        $next = TaskDoneFixture::check($world->group, $world->subtask, str_repeat('d', 40), status: TaskCheckStatus::Failed);
         expect(correctDeliverables($world->group, $world->subtask, deliverables: wrongDeliverables())->copy_correction_check_id)->toBe($next->id);
     });
 
@@ -131,12 +131,12 @@ describe('a correction after a failed check in a task copy', function (): void {
             ->and($world->subtask->refresh()->deliverables)->toBe(wrongDeliverables())
             ->and(Activity::query()->where('description', 'deliverables corrected')->exists())->toBeFalse();
     })->with([
-        'before any check' => [fn (TaskCopyDoneFixture $world) => TaskCheck::query()->where('task_id', $world->subtask->id)->delete()],
-        'after a passed newest check' => [fn (TaskCopyDoneFixture $world) => TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('e', 40))],
-        'while the newest check runs' => [fn (TaskCopyDoneFixture $world) => TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('e', 40), status: TaskCheckStatus::Running)],
-        'on a subtask that is not current' => [fn (TaskCopyDoneFixture $world) => Task::query()->create(['parent_id' => $world->group->id, 'position' => 0, 'title' => 'Earlier', 'brief' => 'Earlier.',
+        'before any check' => [fn (TaskDoneFixture $world) => TaskCheck::query()->where('task_id', $world->subtask->id)->delete()],
+        'after a passed newest check' => [fn (TaskDoneFixture $world) => TaskDoneFixture::check($world->group, $world->subtask, str_repeat('e', 40))],
+        'while the newest check runs' => [fn (TaskDoneFixture $world) => TaskDoneFixture::check($world->group, $world->subtask, str_repeat('e', 40), status: TaskCheckStatus::Running)],
+        'on a subtask that is not current' => [fn (TaskDoneFixture $world) => Task::query()->create(['parent_id' => $world->group->id, 'position' => 0, 'title' => 'Earlier', 'brief' => 'Earlier.',
             'status' => TaskStatus::Todo, 'deliverables' => rightDeliverables()])],
-        'in a group without a task copy' => [fn (TaskCopyDoneFixture $world) => $world->instance->update(['task_workspace_owner_id' => null])],
+        'in a group without a task copy' => [fn (TaskDoneFixture $world) => $world->instance->update(['task_workspace_owner_id' => null])],
     ]);
 
     it('refuses a reason on any other update and changes nothing', function (): void {
@@ -215,7 +215,7 @@ it('carries the reason through the MCP task-update tool', function (): void {
 });
 
 /** The older correction's state: the subtask asks for assistance after its handoff check failed at `invalid_deliverable`. */
-function invalidDeliverableCheck(TaskCopyDoneFixture $world, TaskCheck $failed): void
+function invalidDeliverableCheck(TaskDoneFixture $world, TaskCheck $failed): void
 {
     $receipt = TaskComment::query()->create(['task_group_id' => $world->group->id, 'task_id' => $world->subtask->id, 'completion_attempt' => 1,
         'type' => TaskCommentType::ReadyForReview, 'body' => 'Ready.', 'author' => 'implementer', 'posted_at' => now()]);

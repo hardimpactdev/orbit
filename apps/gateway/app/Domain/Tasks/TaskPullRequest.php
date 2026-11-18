@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Builder;
  * repository does not move its old pull requests. A pull request that a group of another Project on the same repository published, or
  * whose head is such a group's task branch, is that Project's: `project:pr-merge` refuses it with {@see self::OtherProjectCode}.
  */
-final class TaskCopyPullRequest
+final class TaskPullRequest
 {
     public const string Code = 'tasks.copy_pr_no_merge';
 

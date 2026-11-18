@@ -56,6 +56,7 @@ use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCancelIntent;
@@ -63,18 +64,17 @@ use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
-use App\Domain\Tasks\TaskCopyAgent;
-use App\Domain\Tasks\TaskCopyLifecycle;
-use App\Domain\Tasks\TaskCopyStart;
-use App\Domain\Tasks\TaskCopyTurn;
-use App\Domain\Tasks\TaskCopyTurnProjection;
 use App\Domain\Tasks\TaskGroupDone;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskLifecycle;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
+use App\Domain\Tasks\TaskStart;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurn;
+use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskTurnPrompt;
 use App\Domain\Tasks\TaskVmRemoved;
 use App\Infrastructure\Processes\CommandResult;
@@ -611,7 +611,7 @@ describe('a task start on the copy path', function (): void {
         $plain = copySource('app', nested: false);
 
         expect(startCopy(copyGroup($plain->project))->kind)->toBe('instance.create')
-            ->and(TaskCopyStart::live($nested->node_id))->toBe(1);
+            ->and(TaskStart::live($nested->node_id))->toBe(1);
         config(['orbit.tasks.copies_max' => 0]);
         expect(startCopy(copyGroup($plain->project))->kind)->toBe('instance.create')
             ->and(copyRefusal(fn () => startCopy(copyGroup($nested->project))))->toBe('tasks.copy_capacity_full 409');
@@ -845,7 +845,7 @@ describe('a failed create of the copy retries once', function (): void {
             ->and($group->taskable_id)->toBe($retry->target_id)
             ->and($group->copy_create_failure)->toBeNull()
             ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
-            ->and($group->assistance_reason)->toBe(TaskCopyLifecycle::CreateFailedReason
+            ->and($group->assistance_reason)->toBe(TaskLifecycle::CreateFailedReason
                 ."Operation {$first->id} ended at step clone-register with instance.workspace_baseline_unavailable, and its retry, Operation {$retry->id}, "
                 ."ended at step register with instance.create_register_failed. Orbit removes the copy; start the task again with `orbit task:start {$group->id}` once it is gone.");
         Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $retry->target_id);
@@ -941,7 +941,7 @@ describe('the end of the copy\'s create', function (): void {
         expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved);
 
         $copy->update(['status' => InstanceState::Active]);
-        expect(TaskCopyLifecycle::ready($operation->refresh(), $copy->refresh()))->toBeTrue();
+        expect(TaskLifecycle::ready($operation->refresh(), $copy->refresh()))->toBeTrue();
         $operation->forceFill(['status' => 'running', 'finished_at' => null])->save();
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Succeeded, 'finished_at' => now()]);
 
@@ -970,7 +970,7 @@ describe('the end of the copy\'s create', function (): void {
             ->and($group->taskable_id)->toBe($copy->id)
             ->and($group->assistance_requested)->toBeTrue()
             ->and($group->assistance_kind)->toBe(AssistanceKind::Failure)
-            ->and($group->assistance_reason)->toBe(TaskCopyLifecycle::CompletionFailedReason
+            ->and($group->assistance_reason)->toBe(TaskLifecycle::CompletionFailedReason
                 ."Operation {$completion->id} ended at step {$step} with {$named}. Retry: orbit instance:complete {$copy->id}.")
             ->and($copy->refresh()->status)->toBe(InstanceState::SourceResolved);
         Queue::assertNotPushed(DestroyTaskCopy::class);
@@ -1004,7 +1004,7 @@ describe('the end of the copy\'s create', function (): void {
 
         expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)->and($group->taskable_id)->toBe($copy->id)
             ->and($group->assistance_requested)->toBeFalse()
-            ->and(TaskCopyLifecycle::completionFailure($copy->refresh()))->toBeNull();
+            ->and(TaskLifecycle::completionFailure($copy->refresh()))->toBeNull();
         Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 
@@ -1054,7 +1054,7 @@ describe('the end of the copy\'s create', function (): void {
         app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift']);
 
         expect($group->refresh()->assistance_kind)->toBe(AssistanceKind::Failure)
-            ->and($group->assistance_reason)->toStartWith(TaskCopyLifecycle::CompletionFailedReason."Operation {$completion->id} ");
+            ->and($group->assistance_reason)->toStartWith(TaskLifecycle::CompletionFailedReason."Operation {$completion->id} ");
     });
 
     it('names the real code of an interrupted completion and a Process definition the retry needs first', function (): void {
@@ -1064,28 +1064,28 @@ describe('the end of the copy\'s create', function (): void {
         app(OperationStore::class)->change($completion, ['status' => OperationStatus::Interrupted, 'finished_at' => now(), 'error_code' => 'operation.worker_lost',
             'result' => ['recovery' => InstanceCompleteProjection::recovery($copy, true)]]);
 
-        expect(TaskCopyLifecycle::completionFailure($copy->refresh()))->toBe(['operation_id' => $completion->id, 'failed_step' => 'complete',
+        expect(TaskLifecycle::completionFailure($copy->refresh()))->toBe(['operation_id' => $completion->id, 'failed_step' => 'complete',
             'error_code' => 'operation.worker_lost', 'retry' => 'orbit instance:complete '.$copy->id, 'requires' => 'project_process_definition'])
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
-            ->and($group->assistance_reason)->toBe(TaskCopyLifecycle::CompletionFailedReason."Operation {$completion->id} ended at step complete with operation.worker_lost. "
+            ->and($group->assistance_reason)->toBe(TaskLifecycle::CompletionFailedReason."Operation {$completion->id} ended at step complete with operation.worker_lost. "
                 ."Fix the Project's Process definition first: the retry installs the definitions as they are. Retry: orbit instance:complete {$copy->id}.");
         Queue::assertNotPushed(DestroyTaskCopy::class);
 
         // An interrupted end without a code names its status, not a cancel.
         $completion->forceFill(['error_code' => null, 'result' => []])->save();
-        expect(TaskCopyLifecycle::completionFailure($copy)['error_code'] ?? null)->toBe('operation.interrupted');
+        expect(TaskLifecycle::completionFailure($copy)['error_code'] ?? null)->toBe('operation.interrupted');
     });
 
     it('finds no completion failure on a copy that is not source_resolved: one a removal owns, or an active one', function (bool $removal): void {
         $group = copyGroup(copySource()->project);
         [$copy, $completion] = copyCompleting($group);
         app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift', 'lock_key' => null]);
-        expect(TaskCopyLifecycle::completionFailure($copy->refresh()))->not->toBeNull();
+        expect(TaskLifecycle::completionFailure($copy->refresh()))->not->toBeNull();
 
         $removal ? app(StartInstanceDestroyAction::class)->execute($copy, true, 'test') : $copy->update(['status' => InstanceState::Active]);
 
         expect($copy->refresh()->status)->toBe($removal ? InstanceState::Removing : InstanceState::Active)
-            ->and(TaskCopyLifecycle::completionFailure($copy))->toBeNull();
+            ->and(TaskLifecycle::completionFailure($copy))->toBeNull();
     })->with(['a removal' => true, 'an active copy' => false]);
 
     it('changes no group when the completion of a clone that no task owns fails', function (): void {
@@ -1626,7 +1626,7 @@ function copyTurnEnded(Operation $turn, string $status, array $shaped): Operatio
 {
     $turn = runningOperation($turn);
 
-    return app(TaskCopyTurnProjection::class)->apply($turn, ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+    return app(TaskTurnProjection::class)->apply($turn, ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'result' => ['turn' => $shaped]]);
 }
 
@@ -1880,7 +1880,7 @@ describe('a turn of a group that owns a copy', function (): void {
         copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
         $reviewer = copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]);
 
-        expect(TaskCopyAgent::resolve($group->refresh(), TaskThreadRole::Implementer))->toBe([
+        expect(TaskAgent::resolve($group->refresh(), TaskThreadRole::Implementer))->toBe([
             'provider' => ['value' => 'claude', 'source' => 'gateway'],
             'model' => ['value' => 'claude-sonnet-5-5', 'source' => 'project'],
             'effort' => ['value' => 'max', 'source' => 'group'],
@@ -1958,7 +1958,7 @@ describe('a turn of a group that owns a copy', function (): void {
                 // The CLI driver reported its own thread ID over the admitted one: its provenance is not proven.
                 't3_thread_id' => 'mcp:66105c2c', 'admission' => 'overwritten', 'answered' => [], 'answered_run' => null, 'seconds' => 3600, 'title' => $first->input['turn']['title']])
             ->and($next->input['turn']['message_id'])->not->toBe($first->input['turn']['message_id'])
-            ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.\n\n".TaskCopyTurn::AskRule)
+            ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.\n\n".TaskTurn::AskRule)
             ->and($named->input['thread_id'])->toBe($first->input['thread_id'])->and($named->input['turn']['thread'])->toBe('continue')
             ->and(AgentThread::query()->where('task_group_id', $group->id)->sole()->only(['model', 'effort', 'provider_instance']))
             ->toBe(['model' => 'claude-opus-5-5', 'effort' => 'medium', 'provider_instance' => 'claudeMedium'])
@@ -1992,7 +1992,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'codexHigh', 'model' => 'gpt-6.1-sol',
             'options' => [['id' => 'reasoningEffort', 'value' => 'high']]])
-            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::ReviewRule."\n\n".TaskCopyTurn::PrTextRule)
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::ReviewRule."\n\n".TaskTurn::PrTextRule)
             ->and(AgentThread::query()->findOrFail($review->input['thread_id'])->only(['model', 'effort', 'provider_instance']))
             ->toBe(['model' => 'gpt-6.1-sol', 'effort' => 'high', 'provider_instance' => 'codexHigh']);
     });
@@ -2037,12 +2037,12 @@ describe('a turn of a group that owns a copy', function (): void {
                 .'Prompt of this turn:\nReview the checked commit\.\n\nThe checked commit under review: '.$check->commit_sha.'\./')
             // The reviewer rule bounds the review by the task's scope (docs/reference/tasks.md#the-reviewer-rule); a reviewer that approves
             // then sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
-            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::ReviewRule."\n\n".TaskCopyTurn::PrTextRule)
-            ->and(substr_count($review->input['turn']['prompt'], TaskCopyTurn::ReviewRule))->toBe(1)
+            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::ReviewRule."\n\n".TaskTurn::PrTextRule)
+            ->and(substr_count($review->input['turn']['prompt'], TaskTurn::ReviewRule))->toBe(1)
             // The scope and the impact bar bound the findings (docs/reference/tasks.md#the-reviewer-rule).
-            ->and(TaskCopyTurn::ReviewRule)->toContain('A finding blocks only if a normal run, or a likely failure')->not->toContain('Report every finding')
-            ->and($implementer->input['turn']['prompt'])->not->toContain(TaskCopyTurn::ReviewRule)
-            ->and($implementer->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::AskRule)
+            ->and(TaskTurn::ReviewRule)->toContain('A finding blocks only if a normal run, or a likely failure')->not->toContain('Report every finding')
+            ->and($implementer->input['turn']['prompt'])->not->toContain(TaskTurn::ReviewRule)
+            ->and($implementer->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::AskRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
             ->and($group->refresh()->reviewer_agent_thread_id)->toBe($thread->id)
             ->and($again->input['thread_id'])->toBe($thread->id)->and($again->input['turn']['thread'])->toBe('continue');
@@ -2280,13 +2280,13 @@ describe('a turn of a group that owns a copy', function (): void {
         finishedCopy($group, startCopy($group));
         $turn = copyTurn($group);
         $agent = $turn->input['thread_id'];
-        $long = str_repeat('é', TaskCopyTurnProjection::ReplyLimit).'tail';
-        $exact = str_repeat('é', TaskCopyTurnProjection::ReplyLimit);
+        $long = str_repeat('é', TaskTurnProjection::ReplyLimit).'tail';
+        $exact = str_repeat('é', TaskTurnProjection::ReplyLimit);
 
         $cut = copyTurnEnded($turn, 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'assistant', 'text' => $long, 'at' => '']]]);
         $whole = copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => [['id' => 'run:2:0', 'kind' => 'message', 'label' => 'assistant', 'text' => $exact, 'at' => '']]]);
 
-        expect(TaskCopyTurnProjection::ReplyLimit)->toBe(16384)
+        expect(TaskTurnProjection::ReplyLimit)->toBe(16384)
             ->and($cut->result['reply'])->toBe($exact." [cut: 4 more characters; read task:agent:show {$group->id} {$agent}]")
             ->and($whole->result['reply'])->toBe($exact);
     });
@@ -2346,7 +2346,7 @@ describe('a turn of a group that owns a copy', function (): void {
         expect($timedOut->error_code)->toBe('tasks.turn_timeout')
             ->and(AgentThread::query()->findOrFail($timedOut->input['thread_id'])->only(['state', 'error']))
             // Its run did not stop: the error says the group holds.
-            ->toBe(['state' => AgentThreadState::Failed, 'error' => 'The turn ran longer than its bound.'.TaskCopyTurnProjection::Held]);
+            ->toBe(['state' => AgentThreadState::Failed, 'error' => 'The turn ran longer than its bound.'.TaskTurnProjection::Held]);
     });
 
     it('is stopped by the group\'s cancel before the copy\'s destroy is admitted', function (): void {
@@ -2484,7 +2484,7 @@ describe('a turn of a group that owns a copy', function (): void {
             // The answer cancels only requests of the run that owns them.
             ->and($answer->input['turn']['answered_run'])->toBe('run:1')
             ->and($answer->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nYou asked in your last turn:\n[Color] Which color?\n- Red: Choose red\n"
-                ."- Blue: Choose blue\n\nAnswer:\nBlue.\n\n".TaskCopyTurn::AskRule);
+                ."- Blue: Choose blue\n\nAnswer:\nBlue.\n\n".TaskTurn::AskRule);
         copyTurnEnded($answer, 'succeeded', copyTurnDone('mcp:1'));
         expect(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull()
             // A thread that asked nothing last time quotes nothing.
@@ -2574,7 +2574,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         // As StartSwampRun::refuse leaves it: the Operation failed before any run.
         $turn->forceFill(['status' => 'failed', 'error_code' => 'operation.start_refused', 'finished_at' => now()])->save();
-        app(TaskCopyTurnProjection::class)->refused($turn);
+        app(TaskTurnProjection::class)->refused($turn);
 
         expect(AgentThread::query()->findOrFail($turn->input['thread_id'])->only(['state', 'error']))
             ->toBe(['state' => AgentThreadState::Failed, 'error' => 'Swamp refused to start the turn.'])
@@ -2974,7 +2974,7 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
         copyTurnEnded($first, 'failed', ['state' => 'failed', 'error' => 'No end.', 'error_code' => 'tasks.copy_turn_failed', 'ended' => true,
             't3_thread_id' => null, 'run_id' => null, 'launched' => false, 'transcript' => []]);
 
-        expect(TaskCopyTurn::admission($thread->refresh()))->toBe('provisional');
+        expect(TaskTurn::admission($thread->refresh()))->toBe('provisional');
 
         $thread->update(['external_id_admission' => null]);
         $reported = copyTurn($group);
@@ -2984,7 +2984,7 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
         $thread->refresh();
         expect($thread->external_id_admission)->toBe('overwritten');
         $thread->update(['external_id_admission' => null]);
-        expect(TaskCopyTurn::admission($thread->refresh()))->toBe('overwritten');
+        expect(TaskTurn::admission($thread->refresh()))->toBe('overwritten');
     });
 
     it('stores each question with the run that owns it', function (): void {
@@ -3101,7 +3101,7 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
 
         $thread = AgentThread::query()->findOrFail($turn->input['thread_id']);
         expect($ended->error_code)->toBe('tasks.turn_failed')
-            ->and($ended->result['error'])->toBe(TaskCopyTurnProjection::Errors['tasks.turn_failed'])
+            ->and($ended->result['error'])->toBe(TaskTurnProjection::Errors['tasks.turn_failed'])
             ->and($ended->result)->not->toHaveKey('diagnostic')
             ->and($thread->error)->toBe($ended->result['error'])
             ->and(json_encode([$ended->result, $thread->error], JSON_THROW_ON_ERROR))->not->toContain('Juniper');
@@ -3116,7 +3116,7 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
         $queued = copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'T3 started no run', 'error_code' => 'tasks.turn_failed', 'ended' => false,
             't3_thread_id' => 'mcp:1', 'run_id' => null, 'sent' => true, 'launched' => false, 'transcript' => []]);
 
-        expect($queued->result['error'])->toBe(TaskCopyTurnProjection::Errors['tasks.turn_failed'].TaskCopyTurnProjection::Held)
+        expect($queued->result['error'])->toBe(TaskTurnProjection::Errors['tasks.turn_failed'].TaskTurnProjection::Held)
             ->and($queued->result['error'])->not->toContain('ended other');
     });
 
@@ -3175,7 +3175,7 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
             't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'launched' => true, 'transcript' => []]);
 
         expect($ended->error_code)->toBe('tasks.copy_turn_failed')->and($ended->result['error_code'])->toBe('tasks.copy_turn_failed')
-            ->and($ended->result['error'])->toBe(TaskCopyTurnProjection::Errors['tasks.copy_turn_failed'])
+            ->and($ended->result['error'])->toBe(TaskTurnProjection::Errors['tasks.copy_turn_failed'])
             ->and(json_encode($ended->result, JSON_THROW_ON_ERROR))->not->toContain('juniper')->not->toContain('Juniper');
     });
 

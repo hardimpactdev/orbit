@@ -27,7 +27,7 @@ use Throwable;
  *
  * @phpstan-type Result array{group: int, result: string, code: string|null}
  */
-final readonly class TaskCopySettle
+final readonly class TaskSettle
 {
     /** Copy reads that a person must fix: the copy is stopped or asleep, or holds no repository. A timeout or a lost Node retries. */
     private const array StuckReads = ['stopped', 'asleep', 'not_a_repository'];

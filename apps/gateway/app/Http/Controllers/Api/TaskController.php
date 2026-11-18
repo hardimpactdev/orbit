@@ -6,7 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Tasks\RecordTaskPullRequestTextAction;
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireTaskCopyKey;
+use App\Http\Middleware\RequireTaskKey;
 use App\Http\Requests\Tasks\StoreTaskPullRequestTextRequest;
 use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +16,7 @@ use Illuminate\Http\Request;
  * The two calls a task copy makes to Orbit, through its Node's forwarder and with its own key (docs/reference/ai-router.md#orbit-routes-for-task-copies).
  * The key names the copy; neither call names a group, a check or a commit.
  */
-final class TaskCopyController extends Controller
+final class TaskController extends Controller
 {
     public function whoami(Request $request): JsonResponse
     {
@@ -40,7 +40,7 @@ final class TaskCopyController extends Controller
 
     private static function copy(Request $request): Instance
     {
-        $copy = $request->attributes->get(RequireTaskCopyKey::Attribute);
+        $copy = $request->attributes->get(RequireTaskKey::Attribute);
 
         return $copy instanceof Instance ? $copy : throw new \LogicException('The task copy route runs without its key middleware.');
     }

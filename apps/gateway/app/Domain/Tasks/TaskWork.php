@@ -12,10 +12,10 @@ use App\Models\Task;
 /**
  * The Gateway's reader of a task copy's content read (docs/reference/tasks.md#published-work-of-a-copy). The rule itself runs in the
  * copy, at the end of its `base` phase; this class only reads the verdict that the newest succeeded `tasks.sync` recorded, and holds
- * it against the copy's current head, so a commit made after the read is never taken as published. Cancel (TaskCopyEnd) and complete
+ * it against the copy's current head, so a commit made after the read is never taken as published. Cancel (TaskEnd) and complete
  * read it here.
  */
-final readonly class TaskCopyWork
+final readonly class TaskWork
 {
     public function __construct(private ContainerWorkspaceRead $read) {}
 

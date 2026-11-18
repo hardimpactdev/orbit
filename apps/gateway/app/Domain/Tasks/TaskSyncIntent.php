@@ -52,7 +52,7 @@ final readonly class TaskSyncIntent
             'workspace' => ['repository' => $base['repository'], 'default_branch' => $base['default_branch'], 'branch' => 'task-'.$group->id],
             'copy' => [...$copy->intent(), 'start' => $base['start'], 'mirror' => $base['mirror'], 'source_mirror' => $base['source_mirror'],
                 // The base's content read counts what these hold as published (docs/reference/tasks.md#published-work-of-a-copy).
-                'published' => TaskCopyEnd::published($group), 'approved' => TaskFinalReview::approvedCommit($group) ?? ''],
+                'published' => TaskEnd::published($group), 'approved' => TaskFinalReview::approvedCommit($group) ?? ''],
             'git_authorization' => $base['git_authorization'],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
         ];

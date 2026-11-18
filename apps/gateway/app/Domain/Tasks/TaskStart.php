@@ -37,7 +37,7 @@ use LogicException;
  * named and branched `task-<id>`, that the group owns. The clone is an `instance.create` as every clone is; the group, its binding and
  * the create's Operation commit together, and Swamp starts the run only after that commit.
  */
-final readonly class TaskCopyStart
+final readonly class TaskStart
 {
     public function __construct(private OperationIdempotency $idempotency, private ContainerWorkspaceRead $read, private NodeIdMapRead $ids) {}
 

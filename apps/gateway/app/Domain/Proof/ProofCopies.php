@@ -15,9 +15,9 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInstanceWorkspace;
+use App\Domain\Tasks\TaskLifecycle;
 use App\Infrastructure\Metrics\PrometheusCiRunnerStates;
 use App\Infrastructure\Metrics\PrometheusMemAvailable;
 use App\Models\Instance;
@@ -30,7 +30,7 @@ use App\Support\ValidatedData;
 /**
  * The runs of `proof:run` in copies of the proof Project's default Instance (docs/cli/proof/run.mdx#the-run): the free CI places a proof
  * may take on each Node, whether a run's copy is ready for its start, and the run's workflow input when it starts. The copy itself is a
- * task copy (TaskCopyStart) that the run's group owns; its end is the group's cancel (ProofGroup).
+ * task copy (TaskStart) that the run's group owns; its end is the group's cancel (ProofGroup).
  *
  * @phpstan-import-type CiNodeRunnerStates from PrometheusCiRunnerStates
  *
@@ -169,7 +169,7 @@ final readonly class ProofCopies
      * Whether a held run of a copy may start: `ready` when its copy is active, `pending` while the copy's create or completion runs,
      * `failed` when the copy's create ended without success, its completion failed or the copy is gone (a removal ends with the copy
      * gone), and for a run that is not in a copy: one admitted before the task VM proof path was removed, which nothing can start any
-     * more. A create whose budget expired leaves its group reserved (TaskCopyLifecycle::createEnded), but no create follows it for a
+     * more. A create whose budget expired leaves its group reserved (TaskLifecycle::createEnded), but no create follows it for a
      * proof's copy: once the expiry is settled (Swamp proved the run's end, or releaseStaleHolds marked it unproven) the run fails, and
      * its group's cancel destroys the copy and releases its CI place. Until then the run stays pending: Swamp reopens an expiry whose
      * run met its real budget (ExpireOperationAction::reopen).
@@ -191,7 +191,7 @@ final readonly class ProofCopies
             return 'failed';
         }
         $copy = TaskInstanceWorkspace::forGroup($group);
-        if ($copy === null || TaskCopyLifecycle::completionFailure($copy->instance) !== null) {
+        if ($copy === null || TaskLifecycle::completionFailure($copy->instance) !== null) {
             return 'failed';
         }
         $create = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')->where('target_id', $copy->instance->id)

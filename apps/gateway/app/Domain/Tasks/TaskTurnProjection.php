@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  * provider instance, the model and the effort the thread started with, the agent thread's id and the agent's last reply; the transcript
  * stays out of it. T3's CLI reports no token use, so the metrics stay null.
  */
-final readonly class TaskCopyTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
+final readonly class TaskTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** The most characters of the agent's reply that a turn's result holds. */
     public const int ReplyLimit = 16384;
@@ -63,7 +63,7 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             $result = is_string($captured) ? json_decode($captured, true, flags: JSON_THROW_ON_ERROR) : $captured;
             $result = is_array($result) ? ValidatedData::object($result) : [];
             if ($result !== []) {
-                // The agent the thread started with, as the admission resolved and recorded it (TaskCopyAgent).
+                // The agent the thread started with, as the admission resolved and recorded it (TaskAgent).
                 $thread = AgentThread::query()->findOrFail(ValidatedData::integer($operation->input['thread_id']));
                 $result['provider_instance'] = $thread->provider_instance;
                 $result['model'] = $thread->model;
@@ -133,7 +133,7 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             // mark, leaves an ID of no proven provenance (docs/reference/development-containers.md#admission).
             $record = AgentThread::query()->where('task_group_id', $operation->target_id)->findOrFail($thread);
             $record->update(['external_id' => $result['t3_thread_id'], 'external_id_admission' => $record->external_id === $result['t3_thread_id']
-                && in_array($record->external_id_admission, [TaskCopyTurn::Admitted, TaskCopyTurn::Confirmed], true) ? TaskCopyTurn::Confirmed : TaskCopyTurn::Overwritten]);
+                && in_array($record->external_id_admission, [TaskTurn::Admitted, TaskTurn::Confirmed], true) ? TaskTurn::Confirmed : TaskTurn::Overwritten]);
             // The extensions record the copy's new thread under the title the turn gave it (docs/reference/extensions.md#plug-in-points).
             $instance = Instance::query()->find(ValidatedData::integer($operation->input['instance_id']));
             $title = ValidatedData::object($operation->input['turn'])['title'];

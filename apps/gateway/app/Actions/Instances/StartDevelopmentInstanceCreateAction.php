@@ -64,13 +64,13 @@ final readonly class StartDevelopmentInstanceCreateAction
     ) {}
 
     /**
-     * `$taskOwner` is the task group whose copy this new clone is (TaskCopyStart): the group becomes the clone's owner when its row is
+     * `$taskOwner` is the task group whose copy this new clone is (TaskStart): the group becomes the clone's owner when its row is
      * written, as the database allows an owner only then. Every other create passes none.
      */
     /**
-     * `$agentFiles`: the Project's agent instructions that a caller in its own transaction read before it (TaskCopyStart::read); null
+     * `$agentFiles`: the Project's agent instructions that a caller in its own transaction read before it (TaskStart::read); null
      * reads them here, before the admission transaction. `$proofPlace`: the copy takes a CI place on its Node for a proof run
-     * (TaskCopyStart, ProofRunIntent), so its create holds that place first.
+     * (TaskStart, ProofRunIntent), so its create holds that place first.
      *
      * A Conn launch wraps only the admission in its fence, after source and branch preflight.
      *
@@ -381,7 +381,7 @@ final readonly class StartDevelopmentInstanceCreateAction
         $default = $name === 'default' ? null : Instance::query()->where('project_id', $project->id)->where('name', 'default')->first();
         if ($default instanceof Instance && $default->runtime()->exists()) {
             // A clone is made on its default's Node. A proof copy may go to another Node that holds the default's current seed
-            // (TaskCopyStart::seed); the database keeps the same rule.
+            // (TaskStart::seed); the database keeps the same rule.
             $seeds = app(ProofSeeds::class);
             if ($default->node_id !== $node->id && ! ($taskCopy && $seeds->source()?->instance_id === $default->id && $seeds->holder($node) !== null)) {
                 throw new ResourceOperationException('instance.default_missing',

@@ -90,7 +90,7 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * A task copy goes through its normal `instance.destroy` with force, the destroy that `task:cancel` admits (docs/cli/task/complete.mmd).
      * Origin has the approved work, so what else the copy holds goes with it. An open destroy of the copy is reused. When the destroy
-     * succeeds, the group lets go of the copy (TaskCopyLifecycle::destroyed); when it fails, the group keeps it and a later complete retries.
+     * succeeds, the group lets go of the copy (TaskLifecycle::destroyed); when it fails, the group keeps it and a later complete retries.
      */
     private function removeCopy(Instance $instance): never
     {

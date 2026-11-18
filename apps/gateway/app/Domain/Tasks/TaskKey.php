@@ -11,7 +11,7 @@ use App\Models\InstanceRuntime;
  * container, so it cannot name a copy; this key does. The Gateway keeps only its SHA-256 hash on the copy's runtime, and a new key
  * replaces the hash. The copy's destroy deletes the runtime, and the key with it.
  */
-final readonly class TaskCopyKey
+final readonly class TaskKey
 {
     /** The path in the container under the forwarder's origin; the forwarder sends each of its two routes to `/api/v1/copy/...`. */
     public const string Path = '/orbit/v1/copy';
