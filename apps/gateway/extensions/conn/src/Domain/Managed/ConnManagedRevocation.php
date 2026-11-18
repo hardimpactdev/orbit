@@ -48,29 +48,31 @@ final readonly class ConnManagedRevocation implements NodeAccessRemovalTransacti
     }
 
     /**
-     * Sends the notice on the captured generation's channel, or records its suppression when a new generation replaced it.
-     * `$observedAt` is sampled in the after-commit callback, so it bounds the commit from above as `committed_at` bounds it
-     * from below.
+     * Sends the notice on the captured generation's channel, or records why it did not. `$observedAt` is sampled in the
+     * after-commit callback, so it bounds the commit from above as `committed_at` bounds it from below.
      *
-     * The target's lock, which rotation also takes, is held across the check, the send and its record, so no rotation lands
-     * between them. Each database step is its own short transaction: the send holds no writer lock. When the lock stays
-     * taken past its wait, the notice is skipped and suppressed, never sent to a generation that may have rotated.
+     * The environment's lock, which enrolment also takes, is held across the generation check, the send and its record.
+     * Each database step is its own short transaction: the send holds no writer lock. Right before the send the holder
+     * checks that it still owns the lock with lease left for the whole bounded publish; otherwise it skips the send. A
+     * replaced generation records `notice_suppressed_at`. A busy lock or a short lease records `notice_deferred_at` and its
+     * reason: the generation may still be current, the revision stays owed, and the target's next probe enforces it.
      */
     private function publish(int $revisionId, string $observedAt): void
     {
-        $targetId = ConnManagedRevision::query()->whereKey($revisionId)->value('conn_managed_target_id');
-        if (! is_int($targetId)) {
+        $row = ConnManagedRevision::query()->find($revisionId);
+        $environmentId = $row === null ? null : ConnManagedTarget::query()->whereKey($row->conn_managed_target_id)->value('environment_id');
+        if (! is_string($environmentId)) {
             return;
         }
 
         ConnManagedTargetLock::run(
-            $targetId,
-            fn () => $this->publishLocked($revisionId, $observedAt),
-            fn () => $this->record($revisionId, ['commit_observed_at' => $observedAt, 'notice_suppressed_at' => ConnManagedSecrets::now()]),
+            $environmentId,
+            fn (ConnManagedTargetLock $held) => $this->publishLocked($revisionId, $observedAt, $held),
+            fn () => $this->record($revisionId, ['commit_observed_at' => $observedAt, 'notice_deferred_at' => ConnManagedSecrets::now(), 'notice_deferred_reason' => 'lock_busy']),
         );
     }
 
-    private function publishLocked(int $revisionId, string $observedAt): void
+    private function publishLocked(int $revisionId, string $observedAt, ConnManagedTargetLock $held): void
     {
         $notice = DB::transaction(function () use ($revisionId, $observedAt): ?array {
             $row = ConnManagedRevision::query()->findOrFail($revisionId);
@@ -89,6 +91,11 @@ final readonly class ConnManagedRevocation implements NodeAccessRemovalTransacti
             ]];
         });
         if ($notice === null) {
+            return;
+        }
+        if (! $held->coversPublish()) {
+            $this->record($revisionId, ['notice_deferred_at' => ConnManagedSecrets::now(), 'notice_deferred_reason' => 'lease_short']);
+
             return;
         }
 

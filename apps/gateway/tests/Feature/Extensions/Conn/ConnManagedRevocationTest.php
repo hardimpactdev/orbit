@@ -519,8 +519,8 @@ describe('edge removal', function (): void {
         expect($row->notice_sent_at)->not->toBeNull()->and($row->superseded_at)->not->toBeNull()->and($row->notice_suppressed_at)->toBeNull();
     });
 
-    it('skips and suppresses the notice when the target lock stays taken, and never sends', function (): void {
-        $held = Cache::lock('orbit:conn-managed-target:'.$this->target->id, 30);
+    it('defers, never suppresses, the notice when the environment lock stays taken, and leaves the revision owed for the probe', function (): void {
+        $held = Cache::lock('orbit:conn-managed-environment:'.$this->environmentId, 30);
         expect($held->get())->toBeTrue();
 
         managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
@@ -528,7 +528,46 @@ describe('edge removal', function (): void {
 
         $row = ConnManagedRevision::query()->sole();
         expect($this->publisher->sent)->toBe([])
-            ->and($row->notice_sent_at)->toBeNull()->and($row->notice_suppressed_at)->not->toBeNull()->and($row->commit_observed_at)->not->toBeNull();
+            ->and($row)->notice_sent_at->toBeNull()->notice_suppressed_at->toBeNull()
+            ->notice_deferred_at->not->toBeNull()->notice_deferred_reason->toBe('lock_busy')->commit_observed_at->not->toBeNull();
+        managed_target_call($this->serving, $this->credential, $this->target, 'authority', ['nonce' => managed_nonce(), 'after_revision' => 0])
+            ->assertOk()->assertJsonPath('data.kind', 'delta')->assertJsonPath('data.revisions.0.revision', 1)->assertJsonPath('data.owed.0.revision', 1);
+    });
+
+    it('skips the send when the publisher no longer owns the lock right before it', function (): void {
+        ConnManagedRevision::saved(function (ConnManagedRevision $row): void {
+            if ($row->wasChanged('commit_observed_at')) {
+                Cache::lock('orbit:conn-managed-environment:'.$this->environmentId)->forceRelease();
+            }
+        });
+
+        managed_remove($this->operator, $this->serving, $this->callerA)->assertOk();
+
+        expect($this->publisher->sent)->toBe([])
+            ->and(ConnManagedRevision::query()->sole())->notice_sent_at->toBeNull()->notice_suppressed_at->toBeNull()
+            ->notice_deferred_reason->toBe('lease_short');
+    });
+
+    it('takes the environment lock for a first enrolment too', function (): void {
+        $otherId = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+        managed_environment($otherId, $this->serving);
+        $held = Cache::lock('orbit:conn-managed-environment:'.$otherId, 30);
+        expect($held->get())->toBeTrue();
+
+        expect(fn () => managed_enrol($otherId))->toThrow(ResourceOperationException::class, 'enrol again');
+        $held->release();
+
+        expect(ConnManagedTarget::query()->where('environment_id', $otherId)->exists())->toBeFalse();
+    });
+
+    it('commits no rotation when the enrolment lost its lock before the commit', function (): void {
+        ConnManagedTarget::saving(function (): void {
+            Cache::lock('orbit:conn-managed-environment:'.$this->environmentId)->forceRelease();
+        });
+
+        expect(fn () => managed_enrol($this->environmentId))->toThrow(ResourceOperationException::class, 'lost its lock');
+
+        expect($this->target->fresh())->generation->toBe(1)->credential_digest->toBe(hash('sha256', $this->credential));
     });
 
     it('suppresses the notice when a new generation replaced the captured one before the commit', function (): void {

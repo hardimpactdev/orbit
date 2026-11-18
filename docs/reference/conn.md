@@ -1274,9 +1274,29 @@ Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consu
 
 The transaction captures each target's generation with its revision. After the outermost commit, the Gateway records `commit_observed_at` and publishes `conn.authority.revoked` on the channel of that captured generation, `private-conn-target.{target_id}.{generation}`, and never on another. Its data are `environment_id`, the captured `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`.
 
-Publication and rotation of one target take that target's lock, a cache lock that is not the database writer lock. Publication holds it across the generation check, the send and its record, so no rotation lands between them. Each database step is its own short transaction, so a slow Reverb never delays a probe or another target. A rotation that finds the lock taken waits up to 10 seconds, then refuses with `conn.managed_target_busy`. A publication that finds it taken that long skips the notice and records `notice_suppressed_at`; it never sends to a generation that may have rotated.
+Publication and every enrolment of one environment, the first included, take that environment's lock. It is a cache lock keyed by the environment UUID with a 30-second lease, not the database writer lock. Publication holds it across the generation check, the send and its record. Each database step is its own short transaction, so a slow Reverb never makes a probe wait on the database. The notices of the targets that one removal affects still go out one after another.
 
-When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after the outermost commit, in its own transaction, even when the removal ran inside an enclosing transaction. It checks broader server access and is neither managed enforcement nor its acknowledgement.
+Right before the send, the publisher checks that it still owns the lock and that the lease covers the whole publish: Reverb's 2-second connect and 5-second request limits plus a 3-second margin. Otherwise it skips the send. Enrolment checks that it still owns the lock right before its commit, and refuses with `conn.managed_target_busy` otherwise. An enrolment that finds the lock taken waits up to 10 seconds, then refuses the same way.
+
+One window remains. A publisher that passed its check and then stalls before its request leaves, for longer than the rest of its lease, at least 20 seconds, can send after a rotation. That notice can only restrict:
+
+- it names the replaced generation and goes only to that generation's channel;
+- the Gateway signs that channel for nobody, and the replaced credential fails every route;
+- a target accepts a notice only for its own generation, and a notice only fences.
+
+So it can reach only a process of the replaced generation, which already fails closed, and it grants no access.
+
+A notice can go unsent for three reasons, each recorded on the revision:
+
+| Record | When | Enforcement |
+| --- | --- | --- |
+| `notice_suppressed_at` | A new generation replaced the captured one | The replaced generation fails closed; its owed rows are `superseded` |
+| `notice_deferred_at`, reason `lock_busy` | The lock stayed taken for 10 seconds | The generation may be current: the revision stays owed, and the target's next probe gets it in `delta` and `owed` |
+| `notice_deferred_at`, reason `lease_short` | The holder lost the lock, or its lease could not cover the publish | The same as `lock_busy` |
+
+When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing.
+
+The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) records its revoke obligation in the same deletion transaction: there, each held pairing on a server the consumer cannot reach after the delete is withdrawn. Only the native revoke on the T3 server waits for the outermost commit. A grant added again before that keeps the revoke owed, and the hourly sweep admits a revoke the callback did not. It checks broader server access and is neither managed enforcement nor its acknowledgement.
 
 A replaced target keeps no notice path: its old subscription is on the old generation's channel, which carries no notice of a later generation, and the Gateway signs only the current one. The owed rows of a replaced generation become `superseded`: enrolment records `superseded_at` in its transaction. They are never recorded as acknowledged, and `/ack` for them refuses with `conn.managed_generation_mismatch`.
 
@@ -1361,7 +1381,7 @@ The Gateway settles only the owed row with the same environment UUID, generation
 | `conn.managed_token_invalid` | 403 | The token is unknown, expired, revoked, of another target or of another generation. |
 | `conn.managed_peer_mismatch` | 403 | The socket peer does not resolve to the token's caller. |
 | `conn.managed_channel_forbidden` | 403 | The channel is not the current generation's channel of this target. |
-| `conn.managed_target_busy` | 409 | Enrolment found the target's notice publication running for 10 seconds; enrol again. |
+| `conn.managed_target_busy` | 409 | Enrolment found the environment's lock taken for 10 seconds, or lost it before its commit; enrol again. |
 
 An owed row without `acknowledged_at` means enforcement is unconfirmed: the target, its probe or its ACK did not arrive.
 
@@ -1384,7 +1404,8 @@ The Gateway and the target record these times separately, so the proof can measu
 | `fenced_at` | Target | When the edge is blocked; `null` in a `recovered` ACK |
 | `handlers_closed_at` | Target | When, after the fence, the target verified zero affected handlers and no sendable queued frame, including when that was already true; `null` in a `recovered` ACK |
 | `recovered_at` | Target | When a restarted target applied the snapshot; only in a `recovered` ACK, and only an upper bound on the close |
-| `notice_suppressed_at` | Gateway | When the Gateway skipped the notice: its generation was replaced, or the target's lock stayed taken |
+| `notice_suppressed_at` | Gateway | When the Gateway skipped the notice because its generation was replaced |
+| `notice_deferred_at`, `notice_deferred_reason` | Gateway | When the Gateway skipped the send for `lock_busy` or `lease_short`; the revision stays owed |
 | `acknowledged_at` | Gateway | On the first valid ACK of that revision |
 | `superseded_at` | Gateway | When enrolment started a new generation before the row was acknowledged |
 

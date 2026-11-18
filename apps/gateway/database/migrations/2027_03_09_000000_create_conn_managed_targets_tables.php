@@ -34,6 +34,8 @@ return new class extends Migration
             $table->string('commit_observed_at', 40)->nullable();
             $table->string('notice_sent_at', 40)->nullable();
             $table->string('notice_suppressed_at', 40)->nullable();
+            $table->string('notice_deferred_at', 40)->nullable();
+            $table->string('notice_deferred_reason', 16)->nullable();
             $table->string('ack_kind', 16)->nullable();
             $table->string('acknowledged_at', 40)->nullable();
             $table->string('notice_received_at', 40)->nullable();

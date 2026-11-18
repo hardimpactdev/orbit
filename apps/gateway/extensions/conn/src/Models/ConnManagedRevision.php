@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $commit_observed_at
  * @property string|null $notice_sent_at
  * @property string|null $notice_suppressed_at
+ * @property string|null $notice_deferred_at
+ * @property 'lock_busy'|'lease_short'|null $notice_deferred_reason
  * @property string|null $ack_kind
  * @property string|null $acknowledged_at
  * @property string|null $notice_received_at

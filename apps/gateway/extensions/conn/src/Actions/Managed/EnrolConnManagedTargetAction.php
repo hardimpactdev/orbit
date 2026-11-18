@@ -38,21 +38,17 @@ final readonly class EnrolConnManagedTargetAction
             throw new ResourceOperationException('conn.managed_credential_file_invalid', 'The credential file path is a directory.', 422);
         }
 
-        // A rotation takes the target's lock, so it never lands between a notice's generation check, send and record.
-        $existing = ConnManagedTarget::query()->where('conn_environment_id', $environment->id)->value('id');
-        if (! is_int($existing)) {
-            return $this->enrol($environment, $nodeId, $credentialFile);
-        }
-
+        // Every enrolment, the first included, takes the environment's lock before it reads the target, so a rotation never
+        // lands between a notice's generation check, send and record.
         return ConnManagedTargetLock::run(
-            $existing,
-            fn (): array => $this->enrol($environment, $nodeId, $credentialFile),
+            $environment->environment_id,
+            fn (ConnManagedTargetLock $held): array => $this->enrol($environment, $nodeId, $credentialFile, $held),
             static fn (): never => throw new ResourceOperationException('conn.managed_target_busy', 'A revocation notice of this target is being sent; enrol again.', 409),
         );
     }
 
     /** @return array{target_id: int, environment_id: string, generation: int, revision: int, node_id: int} */
-    private function enrol(ConnEnvironment $environment, int $nodeId, string $credentialFile): array
+    private function enrol(ConnEnvironment $environment, int $nodeId, string $credentialFile, ConnManagedTargetLock $held): array
     {
         $credential = ConnManagedSecrets::service();
         $temporary = $credentialFile.'.'.bin2hex(random_bytes(6)).'.tmp';
@@ -69,13 +65,14 @@ final readonly class EnrolConnManagedTargetAction
 
             // The file is delivered as the last step before the commit: a failed delivery rolls the rotation back, so the
             // old credential and owed rows stay valid. A commit that fails after delivery leaves a file the Gateway refuses.
-            $target = DB::transaction(function () use ($environment, $nodeId, $credential, $temporary, $credentialFile): ConnManagedTarget {
+            $target = DB::transaction(function () use ($environment, $nodeId, $credential, $temporary, $credentialFile, $held): ConnManagedTarget {
                 $target = ConnManagedTarget::query()->where('conn_environment_id', $environment->id)->first();
                 if (! $target instanceof ConnManagedTarget) {
                     $target = ConnManagedTarget::query()->create([
                         'conn_environment_id' => $environment->id, 'environment_id' => $environment->environment_id, 'node_id' => $nodeId,
                         'generation' => 1, 'revision' => 0, 'credential_digest' => ConnManagedSecrets::digest($credential),
                     ]);
+                    self::requireLock($held);
                     self::deliver($temporary, $credentialFile);
 
                     return $target;
@@ -86,6 +83,7 @@ final readonly class EnrolConnManagedTargetAction
                 $target->forceFill([
                     'node_id' => $nodeId, 'generation' => $target->generation + 1, 'credential_digest' => ConnManagedSecrets::digest($credential),
                 ])->save();
+                self::requireLock($held);
                 self::deliver($temporary, $credentialFile);
 
                 return $target;
@@ -97,6 +95,14 @@ final readonly class EnrolConnManagedTargetAction
         }
 
         return ['target_id' => $target->id, 'environment_id' => $target->environment_id, 'generation' => $target->generation, 'revision' => $target->revision, 'node_id' => $target->node_id];
+    }
+
+    /** A holder whose lease ended commits nothing: another holder may be checking or sending a notice. */
+    private static function requireLock(ConnManagedTargetLock $held): void
+    {
+        if (! $held->owns()) {
+            throw new ResourceOperationException('conn.managed_target_busy', 'The enrolment lost its lock; enrol again.', 409);
+        }
     }
 
     private static function deliver(string $temporary, string $credentialFile): void
