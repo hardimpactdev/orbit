@@ -1,0 +1,15 @@
+{
+  "note": "Completed final-source local orb measurements through bin/swamp-shape-gate with one shard at a time, each using the unchanged two fixture workers and 180-second unit ceiling. The gate leased both CPUs; no other fixture process ran concurrently. The unchanged host helper does not enable pipelining. The narrowed cases select shipped subsystem tasks from the verified dir-system boundary; all six passed. Estimates use ceil(body seconds * 2.1) + 1; the planner adds its unchanged six-second startup allowance. These are local observations, not hosted pool measurements. Earlier full-role declarations were 768 body-seconds; this completed source declares 310.",
+  "base_revision": "e6e2e38e5bd5049d7279b1998756640b66a59f65",
+  "source_sha256": "c21ef38a3933505e39deb96a42ad4b96fcc4a01dcbf6f3e0826c977e92bd98b8",
+  "host_support_sha256": "c76a5af6dd9e97210fa1ca0bf4d3546807d73e1c4e5638de2ca920f70b1b8a54",
+  "estimate_factor": 2.1,
+  "case_seconds": {
+    "bridge remains reject after a late unsafe running attachment, and profile NICs use only the proxy ACL": 29.537604396,
+    "a running attachment without its own NIC device passes the audit through the profile gate": 11.70965915,
+    "bridge remains reject after a late unsafe stopped attachment, and profile NICs use only the proxy ACL": 28.838383774999997,
+    "a stopped attachment without its own NIC device passes the audit through the profile gate": 11.589281634999999,
+    "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate": 27.549729547,
+    "a legacy allow bridge with an unsafe stopped second NIC is closed before the failed audit": 33.841001027
+  }
+}

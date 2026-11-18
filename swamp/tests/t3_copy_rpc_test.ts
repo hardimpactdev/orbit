@@ -7,18 +7,42 @@ const available = new Deno.Command("sh", { args: ["-c", "command -v node"] }).ou
 const thread = "mcp:66105c2c";
 const run = "run:thread:mcp%3A66105c2c:ordinal:1";
 const token = "t3-session-" + "x".repeat(40);
+const launchEnvironment = "fixture-launch-environment";
+const launchWitness = "session-1";
+const launchText = "  Fixture first message · β\nline two.  \n";
+const acceptedAt = "2026-11-17T17:58:00.123Z";
+const launchRequest = { commandId: "fixture-command", threadId: "fixture-thread", projectId: "fixture-project", creationSource: "mobile",
+    initialMessage: { messageId: "fixture-user-message", text: launchText, attachments: [] } };
+const acceptedProjection = () => ({ thread: { id: launchRequest.threadId, projectId: launchRequest.projectId },
+    messages: [{ id: launchRequest.initialMessage.messageId, threadId: launchRequest.threadId, role: "user", text: launchText, createdAt: acceptedAt }] });
+type LaunchProjection = ReturnType<typeof acceptedProjection>;
 
 type Request = { id: string; kind: string; status: string; responseCapability?: { type: "message" | "live" }; runId?: string };
 // `interrupt` is how T3 takes a `run.interrupt`: `end` ends the run, `refuse` answers a failure, `stuck` accepts it but the run never ends.
 type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck"; respond?: "refuse" | "stuck" | "raced";
-    projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[] };
+    projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[]; launchProjection?: LaunchProjection; dropLaunchReply?: boolean;
+    launchReadFails?: boolean; servedEnvironment?: string; config?: unknown; bounded?: unknown;
+    history?: Record<string, unknown>; historyReads?: string[]; replaceStateInPlace?: boolean };
 
 /** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
 function serve(state: Server) {
     return Deno.serve({ port: 0, hostname: "127.0.0.1", onListen: () => {} }, (request) => {
         const url = new URL(request.url);
+        if (url.pathname === "/.well-known/t3/environment") {
+            return Response.json({ environmentId: state.servedEnvironment ?? launchEnvironment, serverVersion: "0.1.7" });
+        }
         if (url.pathname === "/api/auth/websocket-ticket") {
             return request.headers.get("authorization") === `Bearer ${token}` ? Response.json({ ticket: "ticket-1" }) : new Response("no", { status: 401 });
+        }
+        const threadPath = "/api/orchestration/threads/" + launchRequest.threadId;
+        if (url.pathname.startsWith(threadPath + "/")) {
+            assert(request.headers.get("authorization") === "Bearer " + token);
+            assertEquals(request.headers.get("x-t3-orchestration-protocol"), "2");
+            if (url.pathname === threadPath + "/bounded") return Response.json(state.bounded ?? null);
+            assertEquals([url.pathname, url.searchParams.get("view")], [threadPath + "/history", "conversation"]);
+            const cursor = url.searchParams.get("cursor")!;
+            state.historyReads?.push(cursor);
+            return state.history?.[cursor] === undefined ? new Response(null, { status: 500 }) : Response.json(state.history[cursor]);
         }
         assertEquals([url.pathname, url.searchParams.get("orchestrationProtocol"), url.searchParams.get("wsTicket")], ["/ws", "2", "ticket-1"]);
         const { socket, response } = Deno.upgradeWebSocket(request);
@@ -31,7 +55,22 @@ function serve(state: Server) {
                 return;
             }
             if (frame._tag === "Interrupt") return;
-            if (frame.tag === "orchestration.getThreadProjection") {
+            if (frame.tag === "server.getConfig") {
+                value = state.config;
+            } else if (frame.tag === "orchestration.launchThread") {
+                state.commands.push(frame.payload);
+                state.launchProjection = acceptedProjection();
+                if (state.dropLaunchReply) {
+                    socket.close();
+                    return;
+                }
+                value = { threadId: launchRequest.threadId, projection: state.launchProjection };
+            } else if (frame.tag === "orchestration.getThreadProjection" && state.launchReadFails) {
+                socket.send(JSON.stringify({ _tag: "Exit", requestId: frame.id, exit: { _tag: "Failure", cause: launchText } }) + "\n");
+                return;
+            } else if (frame.tag === "orchestration.getThreadProjection" && state.launchProjection !== undefined) {
+                value = state.launchProjection;
+            } else if (frame.tag === "orchestration.getThreadProjection") {
                 value = { nodes: state.requests.map((r) => ({ id: `node:${r.id}`, runId: r.runId ?? run })), thread: { id: thread }, runs: [{ id: run, status: state.runStatus }], runtimeRequests: state.requests.map((r) => ({ ...r, nodeId: `node:${r.id}` })),
                     turnItems: Object.entries(state.questions).map(([requestId, questions]) => ({ type: "user_input_request", requestId, questions })) };
             } else {
@@ -60,12 +99,31 @@ function serve(state: Server) {
 }
 
 type Ran = { code: number; out: Record<string, unknown> | null; stderr: string; revoked: string[] };
-async function helper(state: Server, args: string[], issue = "json"): Promise<Ran> {
+async function helper(state: Server, args: string[], issue = "json", frozen?: (incarnation: string) => object): Promise<Ran> {
     const folder = Deno.makeTempDirSync();
     const server = serve(state);
     try {
-        Deno.mkdirSync(`${folder}/home/.t3/userdata`, { recursive: true });
-        Deno.writeTextFileSync(`${folder}/home/.t3/userdata/server-runtime.json`, JSON.stringify({ origin: `http://127.0.0.1:${server.addr.port}` }));
+        const userdata = `${folder}/home/.t3/userdata`;
+        Deno.mkdirSync(userdata, { recursive: true });
+        Deno.writeTextFileSync(`${userdata}/server-runtime.json`, JSON.stringify({ origin: `http://127.0.0.1:${server.addr.port}` }));
+        Deno.writeTextFileSync(`${userdata}/environment-id`, `${launchEnvironment}\n`);
+        const statePath = `${userdata}/statev2.sqlite`;
+        const makeState = async (path: string, witness: string) => {
+            const created = await new Deno.Command("node", {
+                args: ["--input-type=module", "-e", 'import { DatabaseSync } from "node:sqlite"; const db = new DatabaseSync(process.argv[1]); db.exec("CREATE TABLE auth_sessions (session_id TEXT)"); db.prepare("INSERT INTO auth_sessions VALUES (?)").run(process.argv[2]); db.close();', path, witness],
+            }).output();
+            assert(created.success);
+        };
+        if (args[0].includes("launch")) {
+            await makeState(statePath, launchWitness);
+            if (state.replaceStateInPlace) {
+                const original = Deno.statSync(statePath);
+                await makeState(`${userdata}/replacement.sqlite`, "other-session");
+                Deno.writeFileSync(statePath, Deno.readFileSync(`${userdata}/replacement.sqlite`));
+                const replaced = Deno.statSync(statePath);
+                assertEquals([replaced.dev, replaced.ino], [original.dev, original.ino]);
+            }
+        }
         const issued = issue === "json" ? JSON.stringify({ sessionId: "session-1", token }) : `warning: ${token} "sessionId": "session-1"`;
         Deno.writeTextFileSync(`${folder}/t3`, `#!/bin/sh
 if [ "$1 $2 $3" = "auth session issue" ]; then printf '%s' '${issued}'; exit 0; fi
@@ -73,10 +131,18 @@ if [ "$1 $2 $3" = "auth session revoke" ]; then echo "$4" >> "${folder}/revoked"
 exit 2
 `);
         Deno.chmodSync(`${folder}/t3`, 0o755);
-        const child = new Deno.Command("node", { args: ["-", `${folder}/t3`, ...args], stdin: "piped", stdout: "piped", stderr: "piped",
+        const command = frozen === undefined ? ["-"] : ["--input-type=module", "-e", Deno.readTextFileSync(script), "--", "orbit-rpc"];
+        const child = new Deno.Command("node", { args: [...command, `${folder}/t3`, ...args], stdin: "piped", stdout: "piped", stderr: "piped",
             env: { HOME: `${folder}/home`, PATH: Deno.env.get("PATH") ?? "" }, clearEnv: true }).spawn();
         const writer = child.stdin.getWriter();
-        await writer.write(Deno.readFileSync(script));
+        if (frozen === undefined) {
+            await writer.write(Deno.readFileSync(script));
+        } else {
+            const { dev, ino } = Deno.statSync(`${userdata}/statev2.sqlite`);
+            const bytes = new TextEncoder().encode(`${launchEnvironment}\0${dev}\0${ino}\0${launchWitness}`);
+            const incarnation = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+            await writer.write(new TextEncoder().encode(JSON.stringify(frozen(`${launchWitness}.${incarnation}`))));
+        }
         await writer.close();
         const done = await child.output();
         const stdout = new TextDecoder().decode(done.stdout);
@@ -230,4 +296,85 @@ Deno.test({ name: "interrupt never stops a new run for a stored question owned b
     const state = waiting([{ id: "r1", kind: "user_input", status: "pending", runId: "run:earlier" }], { r1: [color] });
     const done = await helper(state, ["interrupt", thread, run, "r1"]);
     assertEquals([done.out!.interrupted, state.commands, state.runStatus], [false, [], "running"]);
+} });
+
+const freezeLaunch = (incarnation: string) => ({ incarnation, environment_id: launchEnvironment, request: launchRequest });
+
+Deno.test({ name: "Conn launch uses its frozen first message and recovers a lost reply without resending", ignore: !available, async fn() {
+    const state = { ...waiting([], {}), dropLaunchReply: true, projects: [{ id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null }],
+        config: { providers: [], settings: { defaultModelSelection: { instanceId: "codex", model: "gpt-6.2-sol", options: { reasoningEffort: "high" } } } } };
+    const inspected = await helper(state, ["inspect-launch", launchEnvironment]);
+    assertEquals([inspected.code, inspected.out!.environment_id, inspected.out!.project_id, inspected.out!.error_code], [0, launchEnvironment, launchRequest.projectId, null]);
+    assertEquals(inspected.out!.model_selection, state.config.settings.defaultModelSelection);
+    assert(/^session-1\.[0-9a-f]{64}$/.test(String(inspected.out!.incarnation)));
+    const lost = await helper(state, ["launch"], "json", freezeLaunch);
+    assertEquals([lost.code, lost.out, lost.stderr, state.commands, lost.revoked],
+        [0, { error_code: "conn.launch_first_message_unconfirmed" }, "", [launchRequest], ["session-1"]]);
+    const recovered = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([recovered.code, recovered.out, recovered.stderr, state.commands, recovered.revoked],
+        [0, { accepted_at: acceptedAt, error_code: null }, "", [launchRequest], ["session-1"]]);
+} });
+
+Deno.test({ name: "Conn launch fails closed on a replaced server or mismatched first message", ignore: !available, async fn() {
+    const replaced = { ...waiting([], {}), servedEnvironment: "other-launch-environment" };
+    const refused = await helper(replaced, ["launch"], "json", freezeLaunch);
+    assertEquals([refused.out, replaced.commands], [{ error_code: "conn.launch_server_changed" }, []]);
+    const overwritten = { ...waiting([], {}), replaceStateInPlace: true };
+    for (const command of ["launch", "reconcile-launch"]) {
+        const refusedInPlace = await helper(overwritten, [command], "json", freezeLaunch);
+        assertEquals([refusedInPlace.out, overwritten.commands], [{ error_code: "conn.launch_server_changed" }, []]);
+    }
+    const original = waiting([], {});
+    const wrongState = await helper(original, ["reconcile-launch"], "json", () => freezeLaunch("previous-state"));
+    assertEquals([wrongState.out, original.commands], [{ error_code: "conn.launch_server_changed" }, []]);
+    const differentText = acceptedProjection();
+    differentText.messages[0].text = "A different user message.";
+    const partial = acceptedProjection();
+    partial.messages = [];
+    for (const state of [
+        { ...waiting([], {}), launchProjection: differentText },
+        { ...waiting([], {}), launchProjection: partial },
+        { ...waiting([], {}), launchReadFails: true },
+    ]) {
+        const rejected = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
+        assertEquals([rejected.out, rejected.stderr, state.commands], [{ error_code: "conn.launch_first_message_unconfirmed" }, "", []]);
+    }
+} });
+
+Deno.test({ name: "Conn launch keeps the requested model on an enabled provider and resolves the fallback for the workspace", ignore: !available, async fn() {
+    const project = { id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null };
+    const config = { providers: [
+        { instanceId: "disabled", driver: "codex", enabled: true, status: "ready", models: [{ slug: "disabled-model" }] },
+        { instanceId: "checking", driver: "codex", enabled: false, status: "checking", models: [] },
+        { instanceId: "codex", driver: "codex", enabled: true, status: "ready", models: [
+            { slug: "custom", isDefault: true, isCustom: true }, { slug: "ordinary" }, { slug: "default-model", isDefault: true },
+        ] },
+        { instanceId: "claudeAgent", driver: "claudeAgent", enabled: true, status: "ready", models: [{ slug: "claude-model" }] },
+    ], settings: { projectSettingsOverrides: { [project.id]: { providerInstances: { disabled: { enabled: false }, checking: { enabled: true } } } } } };
+    const state = { ...waiting([], {}), projects: [project], config };
+    const retained = await helper(state, ["inspect-launch", launchEnvironment, "checking"]);
+    assertEquals([retained.out!.requested_provider_available, retained.out!.model_selection, retained.revoked], [true, null, ["session-1"]]);
+    const fallback = await helper(state, ["inspect-launch", launchEnvironment, "disabled"]);
+    assertEquals([fallback.out!.requested_provider_available, fallback.out!.model_selection, state.commands],
+        [false, { instanceId: "codex", model: "default-model" }, []]);
+} });
+
+Deno.test({ name: "Conn launch finds the first message in older local history without consulting a command receipt", ignore: !available, async fn() {
+    const oldWindow = { ...acceptedProjection(), messages: [] };
+    const item = { threadId: launchRequest.threadId, type: "user_message", createdBy: "user",
+        messageId: launchRequest.initialMessage.messageId, text: launchText, startedAt: acceptedAt };
+    const historyItem = { sourceThreadId: launchRequest.threadId, visibility: "local", item };
+    const state = { ...waiting([], {}), launchProjection: oldWindow,
+        bounded: { projection: oldWindow, hasMoreHistory: true, historyCursor: "later" },
+        history: { later: { items: [], hasMoreHistory: true, nextCursor: "older" },
+            older: { items: [historyItem], hasMoreHistory: false, nextCursor: null } }, historyReads: [] as string[] };
+    const found = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([found.out, found.stderr, found.revoked, state.historyReads, state.commands],
+        [{ accepted_at: acceptedAt, error_code: null }, "", ["session-1"], ["later", "older"], []]);
+
+    state.history.older.items[0] = { ...historyItem, visibility: "inherited" };
+    const inherited = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([inherited.out, state.commands], [{ error_code: "conn.launch_first_message_unconfirmed" }, []]);
+    const broken = await helper({ ...state, history: {} }, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([broken.out, broken.stderr, state.commands], [{ error_code: "conn.launch_first_message_unconfirmed" }, "", []]);
 } });

@@ -23,11 +23,17 @@ final readonly class OperationBroadcaster
 
     public function created(Operation $operation): void
     {
+        if (in_array($operation->kind, OperationKinds::PrivateConnKinds, true)) {
+            return;
+        }
         $this->broadcaster->broadcast(RecordEventType::OperationCreated, $operation->id, self::notice($operation));
     }
 
     public function changed(Operation $operation, bool $statusChanged): void
     {
+        if (in_array($operation->kind, OperationKinds::PrivateConnKinds, true)) {
+            return;
+        }
         $notice = self::notice($operation);
         $this->broadcaster->broadcast(RecordEventType::OperationUpdated, $operation->id, $notice, self::channel($operation->id));
 
