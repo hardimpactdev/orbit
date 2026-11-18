@@ -286,7 +286,7 @@ finish_forward() {
       if [[ $(jq -r .status <<< "$exists") != Stopped ]]; then running=true; fi
     fi
   fi
-  if [[ $prev == host || $running == true ]]; then
+  if [[ $prev == host ]] || [[ $running == true ]]; then
     /usr/local/libexec/orbit-gateway-release-phase scheduler-window "$sha" "$operation"
     stop_background "$prev"
   fi
