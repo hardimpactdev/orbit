@@ -13,6 +13,16 @@ use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
+beforeEach(function (): void {
+    $this->releaseHome = sys_get_temp_dir().'/orbit-projection-'.bin2hex(random_bytes(6));
+    mkdir($this->releaseHome, 0700);
+    config(['orbit.home' => $this->releaseHome]);
+});
+
+afterEach(function (): void {
+    Illuminate\Support\Facades\File::deleteDirectory($this->releaseHome);
+});
+
 /** Ends one admitted `gateway.release` run with the given native terminal and returns its record. */
 function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = [], bool $retained = false, bool $reconcile = false, bool $container = false): GatewayRelease
 {
@@ -183,7 +193,6 @@ it('records the live SHA from the host inventory even when the failed candidate 
 });
 
 it('keeps migration failures excluded while a same-live reconciliation preserves the automation pause state', function (): void {
-    config(['orbit.home' => sys_get_temp_dir().'/orbit-fix-forward-'.bin2hex(random_bytes(5))]);
     $failed = endReleaseRun('failed', failedStep: 'Check the migration', container: true);
     $automation = app(GatewayReleaseAutomation::class);
     expect($automation->pause())->toBeNull();
