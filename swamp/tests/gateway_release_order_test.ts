@@ -88,7 +88,22 @@ Deno.test("failed web installation cannot migrate even when its clone is skipped
   const snapshot = release.find((step) => step.name === "Snapshot the database")!;
   const installation = snapshot.dependsOn!.find((edge) => edge.step === "Install the web build")!;
   assertEquals(installation.condition.conditions?.some((entry) => entry.type === "failed"), false);
-  assert(snapshot.guard?.includes('steps["Install the web build"].status != "succeeded"'));
-  assert(snapshot.guard?.includes('steps["Clone the prepared release"].status != "succeeded"'));
-  assert(snapshot.guard?.includes("!(has(inputs.intent.retained) && inputs.intent.retained)"));
+  const conditions = Object.fromEntries(snapshot.dependsOn!.map((edge) => [edge.step, edge.condition]));
+  const permits = (name: string, value: string) => {
+    const condition = conditions[name];
+    return condition.type === value || condition.conditions?.some((entry) => entry.type === value);
+  };
+  const reachesSnapshot = (build: string, web: string, clone: string) =>
+    Boolean(permits("Build the release", build) && permits("Install the web build", web) && permits("Clone the prepared release", clone));
+  assertEquals(reachesSnapshot("succeeded", "failed", "skipped"), false);
+  assertEquals(reachesSnapshot("succeeded", "succeeded", "failed"), false);
+  assertEquals(reachesSnapshot("failed", "skipped", "skipped"), false);
+  assertEquals(reachesSnapshot("succeeded", "skipped", "skipped"), true);
+});
+
+Deno.test("cleanup resumes only after scheduler handover or switch-back has ended", () => {
+  const cleanup = activate.find((step) => step.name === "Resume document cleanup")!;
+  assertEquals(cleanup.allowFailure, true);
+  assert(cleanup.dependsOn?.some((edge) => edge.step === "Retire the previous live" && edge.condition.type === "always"));
+  assert(cleanup.dependsOn?.some((edge) => edge.step === "Switch back" && edge.condition.type === "always"));
 });

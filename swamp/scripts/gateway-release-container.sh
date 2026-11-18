@@ -110,6 +110,43 @@ unit_wanted() {
   local definition=/var/lib/orbit/gateway-processes/$1.json
   [[ ! -f $definition ]] || jq -e '.removed != true and .desired == "running"' "$definition" >/dev/null
 }
+active_horizons() {
+  run_on "$1" systemctl list-units --state=active,activating,deactivating --type=service --plain --no-legend \
+    'orbit-process-*-horizon.service' orbit-gateway-horizon.service | awk '{print $1}'
+}
+drain_active_horizons() {
+  local machine=$1 unit units
+  units=$(active_horizons "$machine")
+  while IFS= read -r unit; do
+    [[ -n $unit ]] || continue
+    run_on "$machine" /bin/sh "$checkout/swamp/scripts/gateway-release-drain.sh" "$unit" </dev/null
+  done <<< "$units"
+  [[ -z $(active_horizons "$machine") ]] || fail 'previous Gateway still has active Horizon consumers'
+}
+wanted_horizons() {
+  local admitted=$1
+  if [[ -f $journal/horizons && -f $journal/candidate && $(cat "$journal/candidate") == "$sha" ]]; then
+    python3 <(src swamp/scripts/gateway-release-horizons.py) "$admitted" < "$journal/horizons"
+  else
+    python3 <(src swamp/scripts/gateway-release-horizons.py) "$admitted" </dev/null
+  fi
+}
+start_horizons() {
+  local machine=$1 selected=$2 unit selected_units
+  selected_units=$(wanted_horizons "$selected")
+  while IFS= read -r unit; do
+    [[ -n $unit ]] || continue
+    unit_wanted "$unit" || continue
+    if [[ $unit == orbit-gateway-horizon.service && $machine != host ]]; then
+      # Laravel resolves the authoritative Gateway queue in this release.
+      # shellcheck disable=SC2016
+      configured=$(php "$machine" -r 'require $argv[1]."/vendor/autoload.php"; $app=require $argv[1]."/bootstrap/app.php"; $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo App\Infrastructure\Gateway\GatewayQueueRedis::configured() ? "yes" : "no";' "$app")
+      [[ $configured == yes ]] || continue
+    fi
+    run_on "$machine" systemctl enable --now -- "$unit" </dev/null >&2
+    run_on "$machine" systemctl is-active --quiet -- "$unit" </dev/null
+  done <<< "$selected_units"
+}
 start_background() {
   local machine=$1
   while IFS= read -r unit; do
@@ -151,13 +188,9 @@ restore_switch() {
     rm -f -- "$inventory" "$upstream"
   fi
   stop_background "$candidate"
+  drain_active_horizons "$candidate"
   horizon=$(cat "$journal/horizon" 2>/dev/null || :)
-  if [[ -n $horizon ]]; then
-    if run_on "$candidate" systemctl cat "$horizon" >/dev/null 2>&1; then
-      run_on "$candidate" systemctl disable --now -- "$horizon"
-    fi
-    if unit_wanted "$horizon"; then run_on "$previous" systemctl enable --now -- "$horizon"; fi
-  fi
+  start_horizons "$previous" "$horizon"
   start_background "$previous"
   if [[ $previous != host ]]; then
     "${incus_cli[@]}" config set "$previous" boot.autostart=true
@@ -344,10 +377,17 @@ case "$action" in
       } | sort -u > "$journal/background"
       printf '%s\n' "$sha" > "$journal/candidate"
       printf '%s\n' "$operation" > "$journal/operation"
+      # Process controls use this same host lock. Fence any Horizon created or
+      # restarted after the earlier, potentially long drain.
+      printf '%s\n' "${2:-}" > "$journal/horizon"
+      active_horizons "$prev" > "$journal/horizons"
+      drain_active_horizons "$prev"
       if grep -qxF orbit-agent-view.service "$journal/background"; then
         enter "$candidate" systemctl start orbit-agent-view.service
       fi
       addr=$(ctl address gateway "$id")
+      enter "$candidate" systemctl enable orbit-gateway-web.service
+      "${incus_cli[@]}" config set "$candidate" boot.autostart=true
       set_upstream "$addr"
       set_inventory "$sha" "$previous"
       if ! /usr/local/libexec/orbit-gateway-site container >&2; then restore_switch; rm -f -- "$journal/operation"; fail 'Caddy reload failed; restored previous live'; fi
@@ -381,10 +421,7 @@ case "$action" in
     ;;
   start-horizon)
     live=$(field '.live')
-    if [[ -n $1 ]] && unit_wanted "$1"; then
-      enter "gateway-${live:0:12}" systemctl enable --now "$1"
-      enter "gateway-${live:0:12}" systemctl is-active --quiet "$1"
-    fi
+    start_horizons "gateway-${live:0:12}" "$1"
     install -d -m 0700 "$journal"
     printf '%s\n' "$1" > "$journal/horizon"
     ;;
@@ -411,10 +448,13 @@ case "$action" in
     enter "$candidate" systemctl enable orbit-gateway-web.service
     "${incus_cli[@]}" config set "$candidate" boot.autostart=true
     if [[ $prev != host ]]; then
-      horizon=$(cat "$journal/horizon")
-      if [[ -n $horizon ]] && run_on "$prev" systemctl cat -- "$horizon" >/dev/null 2>&1; then
-        run_on "$prev" systemctl disable -- "$horizon"
-      fi
+      drain_active_horizons "$prev"
+      while IFS= read -r unit; do
+        [[ -n $unit ]] || continue
+        if run_on "$prev" systemctl cat -- "$unit" </dev/null >/dev/null 2>&1; then
+          run_on "$prev" systemctl disable -- "$unit" </dev/null
+        fi
+      done < <(wanted_horizons "$(cat "$journal/horizon" 2>/dev/null || :)")
       "${incus_cli[@]}" config set "$prev" boot.autostart=false
       # A graceful unit stop waits for the FrankenPHP workers and their in-flight requests.
       enter "$prev" systemctl restart orbit-gateway-web.service

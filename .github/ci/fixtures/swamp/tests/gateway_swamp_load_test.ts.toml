@@ -9,6 +9,7 @@ cases = [
   "an unforced load moves the serve checkout forward",
   "the release passes its force flag to the load",
   "the checkout reads the release commit and the force flag from the load intent",
+  "retained rollback checks out the sealed commit with an unavailable origin",
 ]
 file = "swamp/tests/gateway_swamp_load_test.ts"
 host_programs = ["jq"]

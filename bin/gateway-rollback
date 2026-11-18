@@ -52,7 +52,7 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     candidate build true '{}' true >/dev/null
     candidate ready
     candidate drain "$horizon"
-    if ! candidate switch "${live:0:12}" >/dev/null; then
+    if ! candidate switch "${live:0:12}" "$horizon" >/dev/null; then
         candidate start-horizon "$horizon"
         fail "traffic switch failed"
     fi

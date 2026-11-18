@@ -58,7 +58,7 @@ jobs:
     # Fetches the commit into the shared repository when it is not there yet. The GitHub token arrives on stdin and reaches git only in its
     # environment, never in argv.
   - name: Fetch the commit
-    guard: '${{ has(inputs.intent.retained) && inputs.intent.retained }}'
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     labels: {role: swamp}
     writes: true
     task:
@@ -137,7 +137,7 @@ jobs:
         - '${{ string(inputs.intent.force) }}'
         - '${{ has(inputs.intent.manifest) ? inputs.intent.manifest : "" }}'
   - name: Install the web build
-    guard: '${{ has(inputs.intent.retained) && inputs.intent.retained }}'
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Build the release, condition: {type: succeeded}}]
@@ -176,7 +176,7 @@ jobs:
         - '${{ has(inputs.intent.web) ? inputs.intent.web.digest : "" }}'
     # VACUUM INTO a private copy before any migration above the disk floor; the newest two stay, and the one a pause names.
   - name: Clone the prepared release
-    guard: '${{ has(inputs.intent.retained) && inputs.intent.retained }}'
+    guard: '${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (has(inputs.intent.retained) && inputs.intent.retained) }}'
     labels: {role: swamp}
     writes: true
     dependsOn: [{step: Install the web build, condition: {type: succeeded}}]
@@ -204,7 +204,6 @@ jobs:
     labels: {role: swamp}
     writes: true
     # Only retained releases have a previously sealed web build and container.
-    guard: '${{ !(has(inputs.intent.retained) && inputs.intent.retained) && (steps["Install the web build"].status != "succeeded" || steps["Clone the prepared release"].status != "succeeded") }}'
     dependsOn:
     - {step: Build the release, condition: {type: succeeded}}
     - {step: Install the web build, condition: &built_or_retained {type: or, conditions: [{type: succeeded}, {type: skipped}]}}

@@ -72,11 +72,14 @@ if [[ -n $horizon ]]; then
   drained=true
   /bin/sh "$root/orbit/swamp/scripts/gateway-release-drain.sh" "$horizon"
 fi
-run_phase switch '' >/dev/null
+generations=$(run_phase switch '' "$horizon")
 run_phase public-ready
 run_phase start-horizon "$horizon"
 if [[ -n $horizon ]]; then systemctl disable "$horizon"; fi
 run_phase retire
+if ! run_phase cleanup "--before=$generations"; then
+  echo 'Gateway is serving; document cleanup remains paused.' >&2
+fi
 run_phase prune
 trap - EXIT
 printf 'Gateway %s is serving in its release container. Automatic releases remain disabled.\n' "$sha"
