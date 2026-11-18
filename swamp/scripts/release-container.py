@@ -7,7 +7,6 @@ import json
 import re
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 PROJECT = "orbit-releases"
@@ -167,24 +166,26 @@ def address(record):
 
 
 def wait_address(record, *, refresh=False):
-    deadline = time.monotonic() + ADDRESS_TIMEOUT
     name = record["name"]
     identity = {key: record["config"][PREFIX + key] for key in ("target", "role", "commit")}
     reservation = record["expanded_devices"].get("eth0", {}).get("ipv4.address")
-    while (remaining := deadline - time.monotonic()) > 0:
-        if refresh:
-            record = owned(instance(name, timeout=remaining), identity)
-        if record["status"] != "Running":
+
+    def current_address(item):
+        owned(item, identity)
+        if item["status"] != "Running":
             raise ValueError("release.candidate_not_running")
-        if reservation and record["expanded_devices"].get("eth0", {}).get("ipv4.address") != reservation:
+        if reservation and item["expanded_devices"].get("eth0", {}).get("ipv4.address") != reservation:
             raise ValueError("release.container_address_changed")
-        ip = address(record)
-        if ip:
-            return ip
-        # Incus may report Running while the guest still has neither eth0 nor its private DHCP lease.
-        time.sleep(max(0, min(1, deadline - time.monotonic())))
-        refresh = True
-    raise ValueError("release.container_address_unavailable")
+        return address(item)
+
+    ip = current_address(instance(name, timeout=ADDRESS_TIMEOUT) if refresh else record)
+    if ip:
+        return ip
+    incus("wait", name, "ipv4", "--interval", "1", "--timeout", str(ADDRESS_TIMEOUT), timeout=ADDRESS_TIMEOUT + 2)
+    ip = current_address(instance(name, timeout=ADDRESS_TIMEOUT))
+    if not ip:
+        raise ValueError("release.container_address_unavailable")
+    return ip
 
 
 def main(argv):
