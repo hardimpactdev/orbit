@@ -27,13 +27,36 @@ final class EngineBus implements MachineBus
 
     public const string EventsDeliver = 'orbit.gw.engine';
 
+    /** Seconds a connection may sit unused before its next use checks it first. */
+    private const int IdleCheckAfter = 10;
+
     private ?Client $client = null;
+
+    private float $usedAt = 0.0;
 
     /** @var array<int, true> */
     private array $nodes = [];
 
+    /**
+     * The connection for requests and publishes. The PHP client answers the server's pings only while it reads, so a
+     * connection that sat unused in a long-running process (the engine consumer, a queue worker) may be closed by the
+     * server. After an idle spell the connection is pinged first, and replaced when the ping fails.
+     */
     public function client(): Client
     {
+        $now = microtime(true);
+        if ($this->client !== null && $now - $this->usedAt > self::IdleCheckAfter) {
+            try {
+                $alive = $this->client->ping();
+            } catch (Throwable) {
+                $alive = false;
+            }
+            if (! $alive) {
+                $this->client = null;
+            }
+        }
+        $this->usedAt = $now;
+
         return $this->client ??= self::connect();
     }
 
@@ -126,6 +149,8 @@ final class EngineBus implements MachineBus
         try {
             $reply = $this->client()->dispatch("\$JS.API.DIRECT.GET.KV_NODES.\$KV.NODES.n{$node}", '');
         } catch (Throwable) {
+            $this->client = null; // Reconnect on the next call.
+
             return [];
         }
         $body = is_object($reply) && isset($reply->body) ? (string) $reply->body : (is_string($reply) ? $reply : '');
@@ -166,7 +191,9 @@ final class EngineBus implements MachineBus
         $subscriber->subscribe(self::ReceiptsDeliver, $handle(static fn (Payload $payload) => $receipt(self::decode($payload))));
         $subscriber->subscribe(self::EventsDeliver, $handle(static fn (Payload $payload) => $event((string) $payload->subject, self::decode($payload))));
         while (true) {
-            $subscriber->process(1);
+            // No automatic reply: the client would answer the acknowledgement subject with the handler's empty return value,
+            // which JetStream reads as an acknowledgement and which would override a negative one.
+            $subscriber->process(1, reply: false);
         }
     }
 
@@ -205,6 +232,11 @@ final class EngineBus implements MachineBus
     /** @param array<string, mixed> $config */
     private function consumer(string $stream, string $name, array $config): void
     {
-        $this->client()->api("CONSUMER.CREATE.{$stream}.{$name}", ['stream_name' => $stream, 'config' => ['durable_name' => $name, ...$config]]);
+        try {
+            $this->client()->api("CONSUMER.CREATE.{$stream}.{$name}", ['stream_name' => $stream, 'config' => ['durable_name' => $name, ...$config]]);
+        } catch (Throwable $exception) {
+            $this->client = null; // Reconnect on the next call.
+            throw new RuntimeException('engine.consumer_failed', previous: $exception);
+        }
     }
 }
