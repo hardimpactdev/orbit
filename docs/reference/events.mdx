@@ -61,7 +61,7 @@ A client asks the Gateway where Reverb is. `GET /api/v1/realtime` needs Gateway 
 
 ## Envelope
 
-Every event has the same shape. The broadcast name equals `type`.
+Every event has the same shape, except [`conn.profile.updated`](#conn-profile), which carries only its payload. The broadcast name equals `type`.
 
 | Field | Contract |
 | --- | --- |
