@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $fenced_at
  * @property string|null $handlers_closed_at
  * @property string|null $recovered_at
+ * @property string|null $superseded_at
  */
 final class ConnManagedRevision extends Model
 {

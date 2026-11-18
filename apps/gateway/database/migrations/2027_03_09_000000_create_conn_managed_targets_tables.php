@@ -23,7 +23,7 @@ return new class extends Migration
             $table->index(['node_id', 'id']);
         });
 
-        // One row per removal revision of a target. A row of the current generation without `acknowledged_at` is owed.
+        // One row per removal revision of a target. A row without `acknowledged_at` or `superseded_at` is owed.
         Schema::create('conn_managed_revisions', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('conn_managed_target_id')->constrained()->cascadeOnDelete();
@@ -39,6 +39,7 @@ return new class extends Migration
             $table->string('fenced_at', 40)->nullable();
             $table->string('handlers_closed_at', 40)->nullable();
             $table->string('recovered_at', 40)->nullable();
+            $table->string('superseded_at', 40)->nullable();
             $table->unique(['conn_managed_target_id', 'revision']);
         });
 

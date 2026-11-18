@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain\Managed;
 
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +23,13 @@ final readonly class ConnManagedAuthority
 {
     /** @return array<string, mixed> */
     public function state(ConnManagedTarget $target, string $nonce, ?int $afterRevision): array
+    {
+        // One transaction, so head, edges, revisions and owed come from one committed state.
+        return DB::transaction(fn (): array => $this->readState($target, $nonce, $afterRevision));
+    }
+
+    /** @return array<string, mixed> */
+    private function readState(ConnManagedTarget $target, string $nonce, ?int $afterRevision): array
     {
         $target = ConnManagedTarget::query()->findOrFail($target->id);
         $head = $target->revision;
@@ -47,7 +54,7 @@ final readonly class ConnManagedAuthority
             $state['revisions'] = $target->revisions()->where('revision', '>', $afterRevision)->orderBy('revision')->get()
                 ->map(static fn (ConnManagedRevision $row): array => ['revision' => $row->revision, 'edge_ids' => $row->edge_ids])->all();
         }
-        $state['owed'] = $target->revisions()->where('generation', $target->generation)->whereNull('acknowledged_at')->orderBy('revision')->get()
+        $state['owed'] = $target->revisions()->where('generation', $target->generation)->whereNull('acknowledged_at')->whereNull('superseded_at')->orderBy('revision')->get()
             ->map(static fn (ConnManagedRevision $row): array => ['revision' => $row->revision, 'edge_ids' => $row->edge_ids])->all();
 
         return $state;
@@ -70,7 +77,7 @@ final readonly class ConnManagedAuthority
             throw new ResourceOperationException('conn.managed_token_invalid', 'The managed token is not valid for this target.', 403);
         }
 
-        $caller = Node::query()->where('wireguard_ip', $peerAddress)->where('status', LifecycleStatus::Active->value)->first();
+        $caller = RequireActiveWireGuardPeer::activeNodeAt($peerAddress);
         if (! $caller instanceof Node || $caller->id !== $record->caller_node_id) {
             throw new ResourceOperationException('conn.managed_peer_mismatch', 'The socket peer is not the token\'s caller.', 403);
         }

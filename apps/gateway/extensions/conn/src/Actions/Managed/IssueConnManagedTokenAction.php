@@ -9,7 +9,6 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedSecrets;
-use Orbit\Extensions\Conn\Domain\Managed\ConnManagedTargets;
 use Orbit\Extensions\Conn\Models\ConnManagedTarget;
 use Orbit\Extensions\Conn\Models\ConnManagedToken;
 
@@ -27,8 +26,6 @@ final readonly class IssueConnManagedTokenAction
     /** @return array{token: string, expires_at: string, scopes: list<string>, generation: int, revision: int} */
     public function execute(Node $caller, string $environmentId): array
     {
-        ConnManagedTargets::requireEnabled();
-
         return DB::transaction(function () use ($caller, $environmentId): array {
             $target = ConnManagedTarget::query()->where('environment_id', $environmentId)->first();
             if (! $target instanceof ConnManagedTarget) {

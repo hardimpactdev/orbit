@@ -30,7 +30,6 @@ final class ConnManagedTargets
 
     public function authenticate(Request $request): ConnManagedTarget
     {
-        self::requireEnabled();
         $peer = $this->peer($request);
         $environmentId = $request->input('environment_id');
         $generation = $request->input('generation');

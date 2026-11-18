@@ -1126,7 +1126,7 @@ The transaction captures each target's generation with its revision. After the o
 
 When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after this commit, in its own transaction. It checks broader server access and is neither managed enforcement nor its acknowledgement.
 
-A replaced target keeps no notice path: its old subscription is on the old generation's channel, which carries no notice of a later generation, and the Gateway signs only the current one. The owed rows of a replaced generation become `superseded`. They are never recorded as acknowledged, and `/ack` for them refuses with `conn.managed_generation_mismatch`.
+A replaced target keeps no notice path: its old subscription is on the old generation's channel, which carries no notice of a later generation, and the Gateway signs only the current one. The owed rows of a replaced generation become `superseded`: enrolment records `superseded_at` in its transaction. They are never recorded as acknowledged, and `/ack` for them refuses with `conn.managed_generation_mismatch`.
 
 ### Authority state
 
@@ -1230,6 +1230,7 @@ The Gateway and the target record these times separately, so the proof can measu
 | `recovered_at` | Target | When a restarted target applied the snapshot; only in a `recovered` ACK, and only an upper bound on the close |
 | `notice_suppressed_at` | Gateway | When the Gateway skipped the notice of a replaced generation |
 | `acknowledged_at` | Gateway | On the first valid ACK of that revision |
+| `superseded_at` | Gateway | When enrolment started a new generation before the row was acknowledged |
 
 The proof reports fault to detection, last confirmed probe send to fence, commit to fence, and fence to ACK, with maximum values for idle and busy runs. It records the clock offset bounds between Gateway and target, from `server_time` and the probe round trip.
 
@@ -1249,6 +1250,8 @@ It proved no enforcement. The nested fleet had no Conn registration and one edge
 ### Gateway receipts
 
 The Gateway side ran on 2026-11-18 in task copy `task-5868` (Instance 3705) against its nested fleet, at source `b569d2663`. The nested Gateway served that checkout with the switch on for the run only. The target was a scripted Bun process on the nested `app-dev` Node, not Rust Conn. It drove the real routes with a 1 s probe and a 3 s lease, and served a small managed ingress with RPC and long streams. The preflight's fixture container was gone, so the script ran on the serving Node's host. All machines share one host clock, so the times compare directly.
+
+Three review fixes came after this run: the switch check before input checks, `superseded_at`, and one transaction per authority read. The Gateway tests cover them; this run does not.
 
 The fixtures: target 1 for a lab environment row with no T3 server, on Node 3 (`app-dev`, 10.45.0.2). Caller A was Node 4 (`app-prod`, 10.45.0.3) and caller B was Node 2 (`operator`, 10.45.0.10). Both got direct edges through `node:access:add`. Caller C was Node 1 (the Gateway Node, 10.45.0.1), with no direct edge. Edges were removed with `node:access:remove`.
 

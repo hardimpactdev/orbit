@@ -9,6 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Support\Facades\DB;
 use Orbit\Extensions\Conn\Domain\Managed\ConnManagedSecrets;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
+use Orbit\Extensions\Conn\Models\ConnManagedRevision;
 use Orbit\Extensions\Conn\Models\ConnManagedTarget;
 use RuntimeException;
 
@@ -52,6 +53,9 @@ final readonly class EnrolConnManagedTargetAction
                         'generation' => 1, 'revision' => 0, 'credential_digest' => ConnManagedSecrets::digest($credential),
                     ]);
                 }
+                // The old generation's owed rows can never be acknowledged now ([Revision order](/reference/conn#revision-order)).
+                ConnManagedRevision::query()->where('conn_managed_target_id', $target->id)->whereNull('acknowledged_at')->whereNull('superseded_at')
+                    ->update(['superseded_at' => ConnManagedSecrets::now()]);
                 $target->forceFill([
                     'node_id' => $nodeId, 'generation' => $target->generation + 1, 'credential_digest' => ConnManagedSecrets::digest($credential),
                 ])->save();

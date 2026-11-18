@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Nodes\NodeAccessRemovalTransactionHook;
+use App\Domain\WebSocket\WebSocketCredentialManager;
+use App\Domain\WebSocket\WebSocketCredentials;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -138,6 +142,19 @@ describe('target routes', function (): void {
         managed_target_call($this->serving, $this->credential, $this->target, 'authority', ['nonce' => managed_nonce(), 'after_revision' => null])
             ->assertNotFound()->assertJsonPath('error.code', 'conn.managed_disabled');
         managed_mint($this->callerA, $this->environmentId)->assertNotFound()->assertJsonPath('error.code', 'conn.managed_disabled');
+        managed_mint($this->callerA, $this->environmentId, ['scopes' => ['terminal:write']])->assertNotFound()->assertJsonPath('error.code', 'conn.managed_disabled');
+        managed_target_call($this->serving, $this->credential, $this->target, 'ack', [])->assertNotFound()->assertJsonPath('error.code', 'conn.managed_disabled');
+    });
+
+    it('records no Activity for target routes, which carry tokens', function (): void {
+        $token = managed_mint($this->callerA, $this->environmentId)->json('data.token');
+        $before = Activity::query()->count();
+
+        managed_introspect($this->serving, $this->credential, $this->target, $token, $this->callerA)->assertOk();
+        managed_target_call($this->serving, $this->credential, $this->target, 'authority', ['nonce' => managed_nonce(), 'after_revision' => null])->assertOk();
+
+        expect(Activity::query()->count())->toBe($before)
+            ->and(json_encode(Activity::query()->get()->toArray()))->not->toContain('conn_mt_')->not->toContain('conn_svc_');
     });
 
     it('refuses a wrong peer, a wrong credential, another target\'s credential and a wrong generation', function (): void {
@@ -159,6 +176,16 @@ describe('target routes', function (): void {
             ->assertForbidden()->assertJsonPath('error.code', 'conn.managed_channel_forbidden');
         managed_target_call($this->serving, $this->credential, $this->target, 'broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => 'private-conn-target.'.$this->target->id.'.0'])
             ->assertForbidden();
+    });
+
+    it('signs the current generation\'s channel with the Reverb secret', function (): void {
+        app()->forgetInstance(RealtimeConnection::class);
+        $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')->andReturn(new WebSocketCredentials('test-app', 'test-key', 'test-secret'));
+        $channel = 'private-conn-target.'.$this->target->id.'.1';
+
+        managed_target_call($this->serving, $this->credential, $this->target, 'realtime')->assertOk()->assertJsonPath('data.channel', $channel)->assertJsonPath('data.key', 'test-key');
+        managed_target_call($this->serving, $this->credential, $this->target, 'broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => $channel])
+            ->assertOk()->assertExactJson(['auth' => 'test-key:'.hash_hmac('sha256', '1.2:'.$channel, 'test-secret')]);
     });
 
     it('answers snapshot, delta, current and refuses a future revision', function (): void {
@@ -197,6 +224,14 @@ describe('tokens', function (): void {
 
         [, $rotated] = managed_enrol($this->environmentId);
         managed_introspect($this->serving, $rotated, $this->target, $token, $this->callerA)->assertForbidden()->assertJsonPath('error.code', 'conn.managed_token_invalid');
+    });
+
+    it('refuses a token after its 15 minute expiry', function (): void {
+        $token = managed_mint($this->callerA, $this->environmentId)->json('data.token');
+
+        $this->travel(15)->minutes();
+
+        managed_introspect($this->serving, $this->credential, $this->target, $token, $this->callerA)->assertForbidden()->assertJsonPath('error.code', 'conn.managed_token_invalid');
     });
 
     it('issues no token against an edge that is already removed, and a re-added edge does not revive an old token', function (): void {
@@ -321,6 +356,7 @@ describe('acknowledgement', function (): void {
             ->assertStatus(409)->assertJsonPath('error.code', 'conn.managed_generation_mismatch');
         managed_target_call($this->serving, $rotated, $this->target, 'authority', ['nonce' => managed_nonce(), 'after_revision' => null])
             ->assertOk()->assertJsonPath('data.generation', 2)->assertJsonPath('data.owed', []);
+        expect(ConnManagedRevision::query()->sole())->superseded_at->not->toBeNull()->acknowledged_at->toBeNull();
     });
 
     it('takes a recovered ACK after a restart', function (): void {
