@@ -90,4 +90,3 @@
           tags: [always]
           ansible.builtin.fail:
             msg: "{{ ansible_failed_result.msg | default('The power part failed.') }}"
-# probe: another Operation's playbook
