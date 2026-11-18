@@ -8,6 +8,7 @@ use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Operations\OperationStore;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
+use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -93,7 +94,11 @@ final readonly class Engine
         return (int) Carbon::now()->getTimestampMs();
     }
 
-    /** Applies one receipt to its step. A receipt for a finished step only counts as late. */
+    /**
+     * Applies one receipt to its step. A receipt for a finished step only counts as late.
+     *
+     * @param  array<string, mixed>  $line
+     */
     private static function record(OperationEngineStep $step, array $line): void
     {
         if (in_array($step->status, ['done', 'failed'], true)) {
@@ -132,12 +137,11 @@ final readonly class Engine
         $operation = DB::transaction(function () use ($operationId, $deadline, &$sends, &$locals, &$end): ?Operation {
             $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
             if ($operation === null || ! self::owns($operation) || $operation->status->terminal()
-                || ($operation->state['engine']['finished_ms'] ?? null) !== null) {
+                || (ValidatedData::object($operation->state['engine'] ?? [])['finished_ms'] ?? null) !== null) {
                 return null;
             }
             $now = self::nowMs();
-            /** @var array<string, OperationEngineStep> $steps */
-            $steps = OperationEngineStep::query()->where('operation_id', $operationId)->orderBy('id')->lockForUpdate()->get()->keyBy('name')->all();
+            $steps = self::steps($operationId, lock: true);
             foreach ($steps as $step) {
                 if ($step->status === 'sent' && $step->first_sent_ms !== null && $now - $step->first_sent_ms > $step->budget_ms) {
                     $step->update(['status' => 'failed', 'done_ms' => $now, 'error_code' => 'engine.step_budget_exceeded']);
@@ -162,7 +166,7 @@ final readonly class Engine
             };
             $state = $operation->state ?? [];
             if ($end !== null) {
-                $state['engine']['finished_ms'] = $now;
+                $state['engine'] = [...ValidatedData::object($state['engine'] ?? []), 'finished_ms' => $now];
                 $sends = $locals = [];
             }
             $state['native_progress'] = self::progress($operationId, $steps);
@@ -234,10 +238,23 @@ final readonly class Engine
     private function run(int $operationId): EngineRun
     {
         $operation = Operation::query()->findOrFail($operationId);
-        $steps = OperationEngineStep::query()->where('operation_id', $operationId)->orderBy('id')->get()->keyBy('name')->all();
-        $engine = $operation->state['engine'] ?? [];
+        $engine = ValidatedData::object($operation->state['engine'] ?? []);
+        $started = $engine['started_ms'] ?? null;
+        $finished = $engine['finished_ms'] ?? null;
 
-        return new EngineRun($operationId, $steps, (int) ($engine['started_ms'] ?? self::nowMs()), isset($engine['finished_ms']) ? (int) $engine['finished_ms'] : null);
+        return new EngineRun($operationId, self::steps($operationId), is_int($started) ? $started : self::nowMs(), is_int($finished) ? $finished : null);
+    }
+
+    /** @return array<string, OperationEngineStep> */
+    private static function steps(int $operationId, bool $lock = false): array
+    {
+        $query = OperationEngineStep::query()->where('operation_id', $operationId)->orderBy('id');
+        $steps = [];
+        foreach (($lock ? $query->lockForUpdate() : $query)->get() as $step) {
+            $steps[$step->name] = $step;
+        }
+
+        return $steps;
     }
 
     /**
@@ -255,7 +272,9 @@ final readonly class Engine
             if ($step->first_sent_ms === null) {
                 continue;
             }
-            $status = match ($step->status) { 'done' => 'succeeded', 'failed' => 'failed', default => 'running' };
+            $status = match ($step->status) {
+                'done' => 'succeeded', 'failed' => 'failed', default => 'running'
+            };
             $rows[$step->name] = ['name' => $step->name, 'job' => 'engine', 'status' => $status,
                 'started_at' => $at($step->first_sent_ms), 'finished_at' => $status === 'running' ? null : $at($step->done_ms)];
             if ($status === 'running') {

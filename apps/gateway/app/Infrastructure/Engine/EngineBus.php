@@ -6,6 +6,7 @@ namespace App\Infrastructure\Engine;
 
 use App\Domain\Engine\MachineBus;
 use App\Domain\Executor\SignedExecutorOrder;
+use App\Support\ValidatedData;
 use Basis\Nats\Client;
 use Basis\Nats\Configuration;
 use Basis\Nats\Message\Payload;
@@ -40,12 +41,15 @@ final class EngineBus implements MachineBus
     public static function connect(): Client
     {
         $nats = config('orbit.engine.nats');
-        if (! is_array($nats) || ! is_string($nats['password'] ?? null) || $nats['password'] === '') {
+        $host = is_array($nats) ? ($nats['host'] ?? null) : null;
+        $port = is_array($nats) ? ($nats['port'] ?? null) : null;
+        $user = is_array($nats) ? ($nats['user'] ?? null) : null;
+        $password = is_array($nats) ? ($nats['password'] ?? null) : null;
+        if (! is_string($host) || ! is_int($port) || ! is_string($user) || ! is_string($password) || $password === '') {
             throw new RuntimeException('engine.bus_unconfigured');
         }
 
-        return new Client(new Configuration(host: (string) $nats['host'], port: (int) $nats['port'],
-            user: (string) $nats['user'], pass: $nats['password'], timeout: 2));
+        return new Client(new Configuration(host: $host, port: $port, user: $user, pass: $password, timeout: 2));
     }
 
     /** The streams; idempotent. Work queues keep nothing once acknowledged, and every stream ages out. */
@@ -167,9 +171,7 @@ final class EngineBus implements MachineBus
     /** @return array<string, mixed> */
     private static function decode(Payload $payload): array
     {
-        $decoded = json_decode($payload->body, true, flags: JSON_THROW_ON_ERROR);
-
-        return is_array($decoded) ? $decoded : throw new RuntimeException('engine.message_invalid');
+        return ValidatedData::object(json_decode($payload->body, true, flags: JSON_THROW_ON_ERROR));
     }
 
     /** @param array<string, string> $headers */

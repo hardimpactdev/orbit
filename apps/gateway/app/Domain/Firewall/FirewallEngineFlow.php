@@ -63,6 +63,8 @@ final readonly class FirewallEngineFlow implements EngineDefinition
     {
         $rule = ValidatedData::object(ValidatedData::object($operation->input['firewall'] ?? [])['rule'] ?? []);
 
-        return (int) ($rule['node_id'] ?? $operation->node_id);
+        $node = $rule['node_id'] ?? $operation->node_id;
+
+        return is_int($node) ? $node : throw new LogicException('A firewall intent names its Node.');
     }
 }

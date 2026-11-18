@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
-use App\Domain\Engine\Engine;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Engine\Engine;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
@@ -53,6 +53,7 @@ final readonly class NativeRunCancellation
 
             return true;
         }
+
         // The row as it is under the lock: a step event that landed after the caller loaded the Operation keeps its state keys.
         return DB::transaction(function () use ($operation, $again, $reconcile): bool {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
