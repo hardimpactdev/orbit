@@ -3059,7 +3059,7 @@ The first seed of every run, the `seed` phase of "Prepare the container", was al
 
 After a restore, the run starts the restored fleet and waits for readiness. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
-| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
+| The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Automatic release waits for refresh and seed distribution before admitting the next release |
 
 It replaces the removed task VM refresh and its kind `task_vm.image_refresh`. [Old paths](/reference/old-paths) tracks the remaining fleet residue, not another refresh runtime. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
 
@@ -3120,6 +3120,8 @@ A CI Node is ready when the Gateway records, from its last `ci-runner` converge,
 One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add or converge admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
 
 So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
+
+The automatic release tick advances the recorded fleet, default and seed phases. It resumes the existing Operations after a restart and verifies the default seed commit before it checks CI Node copies. An admission blocked by active work stays pending. Refresh failures retry after ten minutes, up to three attempts for the release commit. A seed copy that did not start can be recovered from the current seed and the recorded attempts. A Node that failed a copy keeps its recorded seed and follows the existing retry rules above. The release records a terminal failed phase and a newer eligible revision can fix it forward.
 
 A seed is the commit and the time that the default took it, because a retake at the same commit keeps the seed's name. The default's runtime records both (`seed_commit`, `seed_taken_at`). The Gateway records the seed of each CI Node in `proof_seeds`: its holder, its commit and that time (`ProofSeeds`).
 
