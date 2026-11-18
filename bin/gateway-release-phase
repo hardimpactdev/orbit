@@ -149,7 +149,11 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
   if [[ -f $inventory && $(jq -er '.live' "$inventory") == "$sha" ]]; then exit 0; fi
   if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then
     # A refused or failed rollback may have started old. Park it again; it stays the rollback release.
-    ctl retire gateway "${sha:0:12}" "$operation"
+    # A refusal before the start leaves it parked, also when its own controller is older.
+    if ! "${incus_cli[@]}" list "$candidate" --format json | jq -e --arg name "$candidate" \
+        'any(.[]; .name==$name and .status=="Stopped" and .config["boot.autostart"]=="false")' >/dev/null; then
+      ctl retire gateway "${sha:0:12}" "$operation"
+    fi
     exit
   fi
   existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')

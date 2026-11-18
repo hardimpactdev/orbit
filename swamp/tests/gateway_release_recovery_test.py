@@ -464,6 +464,18 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assert_container_serves()
         self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": self.sha, "old": self.old, "host_retired": True})
 
+    def test_a_missing_former_live_keeps_the_earlier_old(self):
+        self.serving_former()
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": EARLIER, "host_retired": True}))
+        (self.state / "earlier").write_text("Stopped")
+        (self.state / f"gateway-{EARLIER[:12]}-boot").write_text("false")
+        self.assert_ok(self.switch())
+        (self.state / "former").unlink()
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
+        self.assertTrue((self.state / "earlier").exists())
+        self.assertEqual(json.loads(self.inventory.read_text())["old"], EARLIER)
+
     def test_a_running_old_refuses_the_next_build(self):
         self.released()
         (self.state / "former").write_text("Running")

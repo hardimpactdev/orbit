@@ -41,8 +41,13 @@ final readonly class OperationVersionCleanup
         }
         // The release that is about to serve owns the fence. After a rollback, it admits versions that the
         // rolled-back-from release closed, so it reopens every version that it can still start itself.
+        // A kind it does not define stays fenced.
+        $defined = $this->direct->definitions();
         foreach (DB::table('deprecated_operation_versions')->get(['kind', 'version']) as $row) {
-            $policy = $policies[$row->kind] ?? ['current' => 1, 'retained' => [], 'deprecated' => []];
+            $policy = $policies[$row->kind] ?? (array_key_exists($row->kind, $defined) ? ['current' => 1, 'retained' => [], 'deprecated' => []] : null);
+            if ($policy === null) {
+                continue;
+            }
             $version = (int) $row->version;
             if (($version === $policy['current'] || array_key_exists($version, $policy['retained'])) && ! in_array($version, $policy['deprecated'], true)) {
                 DB::table('deprecated_operation_versions')->where('kind', $row->kind)->where('version', $version)->delete();

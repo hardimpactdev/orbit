@@ -67,6 +67,13 @@ class GatewayColdRollback(GatewayReleaseFixture):
         self.assert_parked("former", self.old)
         self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
 
+    def test_cleanup_of_a_refused_rollback_leaves_the_parked_old_alone(self):
+        self.released()
+        before = (self.state / "events").read_text()
+        self.assert_ok(self.run_script(self.phase, "release-unused", self.old, "43"))
+        self.assertEqual((self.state / "events").read_text(), before)
+        self.assert_parked("former", self.old)
+
     def test_rollback_needs_a_stopped_old_release(self):
         self.serving_former()
         result = self.run_script(self.console, "")

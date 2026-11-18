@@ -113,21 +113,26 @@ it('reopens the versions that a rolled-back release admits when it fences before
     $store = app(OperationStore::class);
     $insertV1 = fn (string $kind) => DB::table('operations')->insert(['kind' => $kind, 'target_type' => 'node', 'target_id' => 7,
         'status' => 'queued', 'node_id' => $this->node->id, 'input' => '{}', 'state' => '{}']);
-    // Release N moves both kinds to v2 and closes v1. Its cleanup check proves that no v1 work remains.
-    operationVersionsForTest(['proof.verify' => ['current' => 2, 'deprecated' => [1]], 'proof.command' => ['current' => 2, 'deprecated' => [1]]]);
+    // Release N moves the kinds to v2 and closes v1. Its cleanup check proves that no v1 work remains.
+    operationVersionsForTest(['proof.verify' => ['current' => 2, 'deprecated' => [1]], 'fixture.known' => ['current' => 2, 'deprecated' => [1]],
+        'fixture.newer' => ['current' => 2, 'deprecated' => [1]]], ['fixture.known' => ['workflow' => 'fixture-known-v2', 'projection' => ProofVerifyProjection::class],
+            'fixture.newer' => ['workflow' => 'fixture-newer-v2', 'projection' => ProofVerifyProjection::class]]);
     $this->artisan('operations:check-cleanup', ['--json' => true])->assertSuccessful();
     expect(fn () => $insertV1('proof.verify'))->toThrow(QueryException::class, 'operation.version_deprecated')
-        ->and(fn () => $insertV1('proof.command'))->toThrow(QueryException::class, 'operation.version_deprecated');
-    $retired = $store->create('proof.verify', 'node', 8, $this->node->id, [], 'operator', null);
-    $retired->forceFill(['status' => 'succeeded'])->save();
-    // The rollback target knows only v1 of proof.verify and declares nothing for proof.command.
-    operationVersionsForTest(['proof.verify' => ['current' => 1], 'proof.run' => ['deprecated' => [1]]]);
+        ->and(fn () => $insertV1('fixture.known'))->toThrow(QueryException::class, 'operation.version_deprecated');
+    $newer = $store->create('proof.verify', 'node', 8, $this->node->id, [], 'operator', null);
+    $newer->forceFill(['status' => 'succeeded'])->save();
+    // The rollback target knows only v1 of proof.verify, defines fixture.known without a version policy and
+    // does not define fixture.newer at all.
+    operationVersionsForTest(['proof.verify' => ['current' => 1], 'proof.run' => ['deprecated' => [1]]],
+        ['fixture.known' => ['workflow' => 'fixture-known-v1', 'projection' => ProofVerifyProjection::class]]);
     $this->artisan('operations:check-cleanup', ['--fence-only' => true, '--json' => true])->expectsOutput('{"fenced":true}')->assertSuccessful();
     $insertV1('proof.verify');
-    $insertV1('proof.command');
+    $insertV1('fixture.known');
     expect(DB::table('deprecated_operation_versions')->get(['kind', 'version'])->map(fn ($row): string => $row->kind.'@'.$row->version)->all())
-        ->toBe(['proof.run@1'])
-        ->and(fn () => $insertV1('proof.run'))->toThrow(QueryException::class, 'operation.version_deprecated');
+        ->toBe(['fixture.newer@1', 'proof.run@1'])
+        ->and(fn () => $insertV1('proof.run'))->toThrow(QueryException::class, 'operation.version_deprecated')
+        ->and(fn () => $insertV1('fixture.newer'))->toThrow(QueryException::class, 'operation.version_deprecated');
     $old = $store->create('proof.verify', 'node', 9, $this->node->id, [], 'operator', null);
     expect($old->operation_version)->toBe(1);
     // A forward release closes v1 again.

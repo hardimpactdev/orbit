@@ -12,6 +12,7 @@ cases = [
   "cleanup resumes only after scheduler handover or switch-back has ended",
   "serving reconciliation brackets the retained workflow load with read-only checks",
   "Gateway and AppProd share the clone, handover, compensation and readback boundaries",
+  "a Gateway rollback starts the stopped old without fetch, web, clone or migration and still checks it",
 ]
 file = "swamp/tests/gateway_release_order_test.ts"
 cost = 1

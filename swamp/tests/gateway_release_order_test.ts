@@ -214,3 +214,24 @@ Deno.test("Gateway and AppProd share the clone, handover, compensation and readb
     edge.step === retire.name && edge.condition.type === "always"));
   assert(find(release, "Read the serving release").dependsOn?.every((edge) => edge.condition.type === "always"));
 });
+
+Deno.test("a Gateway rollback starts the stopped old without fetch, web, clone or migration and still checks it", async () => {
+  const release = await steps("workflow-production-release");
+  const find = (name: string) => {
+    const step = release.find((step) => step.name === name);
+    assert(step, name);
+    return step;
+  };
+  const retained = "(has(inputs.intent.retained) && inputs.intent.retained)";
+  for (const name of ["Fetch the commit", "Install the web build", "Clone the prepared release", "Migrate", "Check the migration"]) {
+    assert(find(name).guard?.includes(retained), name);
+  }
+  const build = find("Build the release").task.inputs as unknown as { argv: string };
+  assert(build.argv.includes('string(has(inputs.intent.retained) && inputs.intent.retained)'));
+  // A skipped migration check must not skip the private readiness check of old.
+  assert(find("Check the candidate").dependsOn?.some((edge) => edge.step === "Check the migration" &&
+    edge.condition.conditions?.some((condition) => condition.type === "skipped")));
+  assert(find("Check the candidate").guard?.includes('steps.exists(k, steps[k].status in ["failed", "cancelled"])'));
+  const load = find("Load Swamp on Node 209").task as unknown as { inputs: { intent: { retained: string } } };
+  assertEquals(load.inputs.intent.retained, "${{ has(inputs.intent.retained) && inputs.intent.retained }}");
+});

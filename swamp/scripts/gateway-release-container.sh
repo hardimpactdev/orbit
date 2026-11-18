@@ -292,7 +292,7 @@ publish_forward() {
   set_inventory "$sha" "$(former_sha)"
 }
 finish_forward() {
-  local prev previous_sha='' exists='{}' unit service_failed=false running=false http_pid drain_failed=0 earlier stale
+  local prev previous_sha='' exists='{}' unit service_failed=false running=false http_pid drain_failed=0 earlier stale enabled
   [[ $(field '.live') == "$sha" ]] || fail 'candidate no longer serves'
   if [[ ! -f $journal/operation ]]; then return; fi
   [[ $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] || fail 'handover identity changed'
@@ -301,7 +301,7 @@ finish_forward() {
   prev=$(cat "$journal/machine")
   if [[ $prev != host ]]; then
     previous_sha=$(former_sha)
-    [[ $prev == "gateway-${previous_sha:0:12}" && $previous_sha != "$sha" ]] || fail 'previous Gateway identity changed'
+    [[ $prev == "gateway-${previous_sha:0:12}" ]] && [[ $previous_sha != "$sha" ]] || fail 'previous Gateway identity changed'
     exists=$(record_of "$prev")
     if [[ $exists != '{}' ]]; then
       jq -e --arg sha "$previous_sha" '.config | .["user.orbit.release.role"]=="candidate" and
@@ -341,18 +341,24 @@ finish_forward() {
       (drain_active_horizons "$prev") || drain_failed=1
       wait "$http_pid" || drain_failed=1
       [[ $drain_failed == 0 ]] || fail 'former Gateway is still draining'
-      # A rollback starts old with its units as they are. Only the selected live consumes jobs.
-      while IFS= read -r unit; do
+      # A rollback starts old with its units as they are. Only the selected live consumes jobs or runs the scheduler.
+      enabled=$(enter "$prev" systemctl list-unit-files --state=enabled --type=service --plain --no-legend \
+        'orbit-process-*-horizon.service' 'orbit-process-*-schedule-work.service' orbit-gateway-horizon.service </dev/null | awk '{print $1}')
+      printf '%s\n' "$enabled" | sort -u - "$journal/horizons" | while IFS= read -r unit; do
         [[ -z $unit ]] || enter "$prev" systemctl disable -- "$unit" </dev/null >&2
-      done < "$journal/horizons"
+      done
     fi
     if [[ $exists != '{}' ]]; then
       # Stop, never freeze: old holds no memory or swap until a rollback starts it.
       ctl retire gateway "${previous_sha:0:12}" "$operation" >&2
     fi
     # Old replaces the earlier rollback release only now: the new live serves and the former live is parked.
+    # Without a former live container, the earlier old stays the rollback release.
     earlier=$(jq -r '.old // ""' "$journal/inventory")
-    if [[ -n $earlier && $earlier != "$sha" && $earlier != "$previous_sha" ]]; then
+    if [[ $exists == '{}' ]]; then
+      previous_sha=''
+      if [[ -n $earlier && $earlier != "$sha" ]] && parked "$(record_of "gateway-${earlier:0:12}")" "$earlier"; then previous_sha=$earlier; fi
+    elif [[ -n $earlier && $earlier != "$sha" && $earlier != "$previous_sha" ]]; then
       [[ $earlier =~ ^[a-f0-9]{40}$ ]] || fail 'invalid earlier rollback identity'
       stale=$(record_of "gateway-${earlier:0:12}")
       if [[ $stale != '{}' ]]; then
@@ -361,7 +367,6 @@ finish_forward() {
       fi
       ctl forget gateway "${earlier:0:12}" >&2
     fi
-    if [[ $exists == '{}' ]]; then previous_sha=''; fi
   fi
   cp "$journal/operation" "$journal/last-operation"
   touch "$journal/host-retired"

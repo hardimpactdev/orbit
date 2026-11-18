@@ -130,7 +130,8 @@ final readonly class AdmitSwampGatewayReleaseAction
             }
             // Admission must still have the same serving release after external publication checks.
             if ($this->layout->usesContainers() !== $container || $this->layout->currentReleaseId() !== $previous || ($trigger === 'reconcile'
-                && (! $this->layout->usesContainers() || $this->layout->preparedCommit($previous) !== $commit))) {
+                && (! $this->layout->usesContainers() || $this->layout->preparedCommit($previous) !== $commit))
+                || ($container && $trigger === 'rollback' && $this->layout->preparedCommit(GatewayReleaseCommit::id($commit)) !== $commit)) {
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
             }
 

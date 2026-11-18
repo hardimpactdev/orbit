@@ -127,6 +127,8 @@ The Gateway expects its managed Horizon and scheduler Processes to be named `hor
 7. Release the next forward commit. Check that preparation sleeps and the former live stops as old after HTTP and Horizon drain. Until then the Gateway has no old to roll back to.
 8. Converge the Gateway role to retire host PHP-FPM. Restore the previous automation setting.
 
+The installed phase dispatcher accepts only commits that carry its recovery protocol, now 3. When a release raises the protocol, converge the Gateway's container helpers first, then release that commit at once. Until that release serves, the new dispatcher refuses to reconcile the older live.
+
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
 An established Gateway has a sleeping preparation container, a serving container and a stopped old container with `boot.autostart=false`. During a deployment the candidate shares the preparation slot. Orbit finishes an interrupted handover before allocating another candidate, and refuses a build while old runs. It updates preparation in place, seals it, freezes it and takes a filesystem clone. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
