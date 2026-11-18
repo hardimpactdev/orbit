@@ -104,12 +104,13 @@ Keep console access and a verified off-host recovery copy. Check space for the S
 
 1. Run `orbit gateway:auto-release:disable`. Wait for any active release to finish.
 2. Deploy the container tooling through the host flow. Record its verified Operation ID, full serving commit and published web archive.
-3. Run `bin/gateway-container-prepare` in check mode with the Node's storage, network and image settings. Apply the same settings.
-4. From the verified host release, run `sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>`. This moves the same commit and preserves the database.
-5. Check `/up`, `orbit gateway:status` and an authenticated peer request through the public Gateway name. Check the background workers.
-6. To undo the first move, use `sudo /usr/local/libexec/orbit-gateway-rollback --host` while the host is still the recovery target.
-7. Deploy the next commit with `orbit gateway:release:deploy`. Check that it serves and both preparation and the previous live are frozen.
-8. Converge the Gateway role to remove host PHP-FPM once a container rollback exists. Restore the previous automation setting.
+3. Check the Gateway’s Node-owned systemd Processes. The container carries Horizon as `horizon` and the Gateway scheduler as `schedule-work`. If preflight reports a custom name, record its configuration and desired state, recreate the Process under the reported name, and verify a host release to obtain a current Operation receipt.
+4. Run `bin/gateway-container-prepare` in check mode with the Node's storage, network and image settings. Apply the same settings.
+5. From the verified host release, run `sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>`. This moves the same commit and preserves the database.
+6. Check `/up`, `orbit gateway:status` and an authenticated peer request through the public Gateway name. Check the background workers.
+7. To undo the first move, use `sudo /usr/local/libexec/orbit-gateway-rollback --host` while the host is still the recovery target.
+8. Deploy the next commit with `orbit gateway:release:deploy`. Check that it serves and both preparation and the previous live are frozen.
+9. Converge the Gateway role to remove host PHP-FPM once a container rollback exists. Restore the previous automation setting.
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 

@@ -82,14 +82,18 @@ def verify_archive(path, expected):
             raise ValueError("stock image does not match its supplied fingerprint")
 
 
-QUEUE_HOST = r"""
+GATEWAY_WORKLOADS = r"""
 require $argv[1].'/vendor/autoload.php';
 $app = require $argv[1].'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$problem = App\Domain\GatewayReleases\GatewayReleaseHost::initialWorkloadProblem();
+if ($problem !== null) { echo json_encode(['problem' => $problem], JSON_THROW_ON_ERROR); return; }
+$host = null;
 if (config('queue.connections.gateway.driver') === 'redis') {
     App\Infrastructure\Gateway\GatewayQueueRedis::configure();
-    echo config('database.redis.gateway.host');
+    $host = config('database.redis.gateway.host');
 }
+echo json_encode(['queue' => $host], JSON_THROW_ON_ERROR);
 """
 
 
@@ -136,7 +140,10 @@ def preflight(args):
         raise ValueError("missing managed Gateway database or root CA")
     if (SERVICE_HOME / ".orbit/gateway-containers.json").exists():
         raise ValueError("the Gateway already serves from containers; use release deployment for an active Gateway")
-    verify_queue(run("runuser", "-u", "orbit", "--", "php8.5", "-r", QUEUE_HOST, str(SERVICE_HOME / "orbit/apps/gateway")))
+    workload = json.loads(run("runuser", "-u", "orbit", "--", "php8.5", "-r", GATEWAY_WORKLOADS, str(SERVICE_HOME / "orbit/apps/gateway")))
+    if "problem" in workload:
+        raise ValueError(workload["problem"])
+    verify_queue(workload["queue"])
     info = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/recipe.json").read_text()))
     return {**net, **info, "dataset": dataset, "stock_image": str(args.stock_image.resolve()), "stock_sha256": args.stock_sha256,
             "uid": account.pw_uid, "gid": account.pw_gid, "source": str(ROOT)}

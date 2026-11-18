@@ -340,3 +340,18 @@ it('moves only the serving Gateway runtime and keeps FPM through its first host 
     $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     expect(GatewayReleaseHost::retiredFpm($node))->toBeFalse();
 });
+
+it('refuses unsupported Gateway workload names and stale Horizon receipts before a move', function (string $command, string $name): void {
+    $checkout = '/home/orbit/orbit/apps/gateway';
+    config(['orbit.gateway_checkout' => $checkout]);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'custom-worker', 'runtime' => 'systemd',
+        'desired_state' => 'stopped', 'working_directory' => $checkout, 'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', $command]]]);
+    expect(GatewayReleaseHost::initialWorkloadProblem())->toContain("Process {$process->id} [custom-worker]", "Recreate it as [{$name}]");
+    $process->update(['name' => $name]);
+    $current = $name === 'horizon' ? "orbit-process-{$process->id}-horizon.service" : '';
+    expect(GatewayReleaseHost::initialWorkloadProblem($current))->toBeNull()
+        ->and(GatewayReleaseHost::initialWorkloadProblem('orbit-process-999-custom-worker.service'))->toContain('Verify a host release');
+})->with([['horizon', 'horizon'], ['schedule:work', 'schedule-work']]);

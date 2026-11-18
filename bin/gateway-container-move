@@ -39,6 +39,8 @@ receipt=$(runuser -u orbit -- php8.5 -r '
   if ($release->outcome !== "verified" || $op->input["sha"] !== $argv[3] || $release->sha !== $argv[3]) {
       fwrite(STDERR, "The selected Operation did not verify the currently serving commit.\n"); exit(1);
   }
+  $problem = App\Domain\GatewayReleases\GatewayReleaseHost::initialWorkloadProblem($op->input["horizon_unit"] ?? "");
+  if ($problem !== null) { fwrite(STDERR, $problem."\n"); exit(1); }
   echo json_encode($op->input, JSON_THROW_ON_ERROR);
 ' "$app" "$operation" "$sha")
 repo=$(jq -er '.repository' <<< "$receipt")
