@@ -219,8 +219,8 @@ fn an_allow_range_with_protocol_any_converges_narrow_first_and_repeats_without_c
         ("2001:db8::/64", None, Some("2001:db8::/64")),
     ] {
         let ufw = Double::standard();
-        present(&ufw, &serde_json::json!({"port": "8000:8100", "protocol": "any", "source": "192.0.2.1"}));
-        present(&ufw, &serde_json::json!({"port": "8000:8100", "protocol": "any", "source": "2001:db8::1"}));
+        assert!(present(&ufw, &serde_json::json!({"port": "8000:8100", "protocol": "any", "source": "192.0.2.1"})).1.is_ok(), "setup step");
+        assert!(present(&ufw, &serde_json::json!({"port": "8000:8100", "protocol": "any", "source": "2001:db8::1"})).1.is_ok(), "setup step");
         let narrow = ufw.rows();
         let range = serde_json::json!({"port": "8000:8100", "protocol": "any", "source": source});
         let (commands, result) = present(&ufw, &range);
@@ -263,8 +263,8 @@ fn an_allow_range_with_protocol_any_converges_narrow_first_and_repeats_without_c
 #[test]
 fn a_deny_sits_above_wireguard_trust_and_an_allowed_source_above_the_deny() {
     let ufw = Double::standard();
-    present(&ufw, &serde_json::json!({"action": "deny", "port": "5432", "source": "any"}));
-    present(&ufw, &serde_json::json!({"port": "5432", "source": "10.44.0.6"}));
+    assert!(present(&ufw, &serde_json::json!({"action": "deny", "port": "5432", "source": "any"})).1.is_ok(), "setup step");
+    assert!(present(&ufw, &serde_json::json!({"port": "5432", "source": "10.44.0.6"})).1.is_ok(), "setup step");
     assert_eq!(ufw.tuples(None).get(..3), Some(&[
         tuple("5432/tcp", "allow", "10.44.0.6"),
         tuple("5432/tcp", "deny", "Anywhere"),
@@ -275,14 +275,14 @@ fn a_deny_sits_above_wireguard_trust_and_an_allowed_source_above_the_deny() {
 #[test]
 fn narrower_rules_sit_above_broader_ones_whatever_their_action() {
     let ufw = Double::standard();
-    present(&ufw, &serde_json::json!({"action": "deny", "port": "5432", "source": "any"}));
-    present(&ufw, &serde_json::json!({"port": "5432", "source": "192.0.2.10"}));
+    assert!(present(&ufw, &serde_json::json!({"action": "deny", "port": "5432", "source": "any"})).1.is_ok(), "setup step");
+    assert!(present(&ufw, &serde_json::json!({"port": "5432", "source": "192.0.2.10"})).1.is_ok(), "setup step");
     let first = ufw.tuples(Some("5432"));
-    present(&ufw, &serde_json::json!({"port": "25", "source": "any"}));
-    present(&ufw, &serde_json::json!({"action": "deny", "port": "25", "source": "192.0.2.10"}));
-    present(&ufw, &serde_json::json!({"port": "25", "source": "192.0.2.0/24"}));
+    assert!(present(&ufw, &serde_json::json!({"port": "25", "source": "any"})).1.is_ok(), "setup step");
+    assert!(present(&ufw, &serde_json::json!({"action": "deny", "port": "25", "source": "192.0.2.10"})).1.is_ok(), "setup step");
+    assert!(present(&ufw, &serde_json::json!({"port": "25", "source": "192.0.2.0/24"})).1.is_ok(), "setup step");
     let second: Vec<[String; 3]> = ufw.tuples(Some("25")).into_iter().take(3).collect();
-    present(&ufw, &serde_json::json!({"action": "deny", "port": "20:30", "source": "192.0.0.0/16"}));
+    assert!(present(&ufw, &serde_json::json!({"action": "deny", "port": "20:30", "source": "192.0.0.0/16"})).1.is_ok(), "setup step");
     let order = || -> Vec<[String; 3]> {
         ufw.tuples(None)
             .into_iter()
@@ -290,7 +290,7 @@ fn narrower_rules_sit_above_broader_ones_whatever_their_action() {
             .collect()
     };
     let third = order();
-    converge(&ufw, &serde_json::json!({"port": "25", "source": "192.0.2.0/24"}), "absent");
+    assert!(converge(&ufw, &serde_json::json!({"port": "25", "source": "192.0.2.0/24"}), "absent").1.is_ok(), "setup step");
     let narrow = tuple("25/tcp", "deny", "192.0.2.10");
     let network = tuple("25/tcp", "allow", "192.0.2.0/24");
     let broad = tuple("25/tcp", "allow", "Anywhere");
@@ -322,7 +322,7 @@ fn matching_ignores_the_comment_and_removal_keeps_other_tuples() {
     ufw.rows
         .borrow_mut()
         .splice(0..0, [row("443/tcp", "allow", "192.0.2.1", "set by hand"), row("400:500/tcp", "allow", "192.0.2.1", "orbit range")]);
-    present(&ufw, &serde_json::json!({}));
+    assert!(present(&ufw, &serde_json::json!({})).1.is_ok(), "setup step");
     assert_eq!(ufw.tuples(None).iter().filter(|t| **t == tuple("443/tcp", "allow", "192.0.2.1")).count(), 1);
     assert!(converge(&ufw, &serde_json::json!({}), "absent").1.is_ok());
     assert!(!ufw.tuples(None).iter().any(|[to, _, source]| to == "443/tcp" && source == "192.0.2.1"));
@@ -332,7 +332,7 @@ fn matching_ignores_the_comment_and_removal_keeps_other_tuples() {
 #[test]
 fn a_retained_removal_leaves_the_managed_line() {
     let ufw = Double::standard();
-    present(&ufw, &serde_json::json!({"action": "deny", "port": "25"}));
+    assert!(present(&ufw, &serde_json::json!({"action": "deny", "port": "25"})).1.is_ok(), "setup step");
     let (commands, result) = converge(&ufw, &serde_json::json!({"action": "deny", "port": "25", "retain": true}), "absent");
     assert_eq!(commands, NONE);
     assert_eq!(result, Ok(0));
@@ -345,7 +345,7 @@ fn an_inactive_firewall_a_lost_removal_and_invalid_input_refuse() {
     ufw.active.set(false);
     assert_eq!(present(&ufw, &serde_json::json!({})).1, Err("firewall.backend_inactive"));
     ufw.active.set(true);
-    present(&ufw, &serde_json::json!({}));
+    assert!(present(&ufw, &serde_json::json!({})).1.is_ok(), "setup step");
     let rows = inventory(&ufw.text()).expect("rows");
     assert_eq!(check(&rule("absent", &serde_json::json!({})), &rows), Err("firewall.remove_verify_failed"));
     for bad in [
@@ -365,7 +365,7 @@ fn an_inactive_firewall_a_lost_removal_and_invalid_input_refuse() {
 #[test]
 fn a_line_from_one_ipv6_address_sits_above_the_ipv6_deny_and_is_found_again() {
     let ufw = Double::standard();
-    present(&ufw, &serde_json::json!({"action": "deny", "port": "80", "source": "any"}));
+    assert!(present(&ufw, &serde_json::json!({"action": "deny", "port": "80", "source": "any"})).1.is_ok(), "setup step");
     assert!(present(&ufw, &serde_json::json!({"port": "80", "source": "fd42::10"})).1.is_ok());
     let rows = ufw.tuples(Some("80"));
     let allow = rows.iter().position(|[_, action, from]| action == "allow" && from == "fd42::10");
@@ -423,7 +423,7 @@ fn an_explicit_anywhere_of_one_family_affects_only_that_family_and_repeats_witho
 fn ipv4_embedded_ipv6_is_one_ipv6_rule_and_matches_the_equivalent_spelling() {
     let ufw = Double::standard();
     let changes = serde_json::json!({"source": "::ffff:192.0.2.1"});
-    present(&ufw, &changes);
+    assert!(present(&ufw, &changes).1.is_ok(), "setup step");
     assert_eq!(ufw.rows().iter().filter(|row| row.to.starts_with("443")).count(), 1);
     if let Some(found) = ufw.rows.borrow_mut().iter_mut().find(|row| row.to == "443/tcp") {
         "::ffff:c000:201".clone_into(&mut found.source);
