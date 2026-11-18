@@ -39,6 +39,8 @@ Enable and disable the extension with `orbit extension:enable tasks` and `orbit 
 
 ## Model
 
+A verified Gateway release can file a backlog Task in its source Project for an Operation version that has stopped accepting new work and finished its last run. The brief identifies the retained handlers and workflows to review. Repeated releases keep the same Task. See [Operation versions across a Gateway release](/reference/operations#operation-versions-across-a-gateway-release).
+
 A task is one row in the `tasks` table. A row with no `parent_id` is a top-level task: the Tasks board shows it, and it is one feature or bug fix delivered as one pull request. A row with `parent_id` is a subtask of that parent. A subtask has no children.
 
 A top-level task holds the task workspace, the branch, the reviewed pull request, the watched pull request, the current reviewer thread, and the settle metrics. A subtask holds its position, its deliverables, its implementer thread, its task checks, and its turn receipts. Both levels store a title, a brief, a status, assistance, comments, and metrics. The Gateway rejects a value in a column that the level does not use.

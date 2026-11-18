@@ -103,7 +103,7 @@ sequenceDiagram
       AC->>GN: Wait for queued responses<br/>Ansible retries · bounded
       AC->>GN: Retire the previous live<br/>stop it as old
       AC->>GN: Recreate preparation<br/>clone · promote
-      AC->>GN: Check deprecated<br/>operation versions
+      AC->>GN: Record eligible versions<br/>file cleanup Tasks
     end
     opt Failed host PHP-FPM check
       AC->>GN: Switch back<br/>restore host release
@@ -112,6 +112,7 @@ sequenceDiagram
     alt every step succeeded
       SW-->>GW: Run succeeded<br/>terminal result
       Note over GW: Record verified<br/>fleet rollout follows
+      %%> - the cleanup step files Tasks for earlier releases' versions once a later verified release has deleted the stopped old that held the earlier code
       %%> Next:
       %%> - the Gateway queues the existing fleet admission job; it follows each Node’s delivery and scoped role converge in order
       %%> - when enabled, nested-fleet refresh follows the first transition to `current`; with fleet rollout disabled it follows verification

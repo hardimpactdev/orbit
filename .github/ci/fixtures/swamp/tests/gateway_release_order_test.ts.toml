@@ -20,6 +20,7 @@ cost = 1
 inputs = [
   "swamp/workflows/workflow-production-release.yaml",
   "swamp/workflows/workflow-production-release-activate.yaml",
+  "swamp/workflows/workflow-gateway-operation-cleanup.yaml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",

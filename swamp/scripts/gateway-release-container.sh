@@ -23,7 +23,7 @@ fail() { echo "gateway.release_container_failed: $*" >&2; exit 1; }
 src() { git -c safe.directory="$mirror" -C "$mirror" show "$sha:$1"; }
 ctl() { python3 <(src swamp/scripts/release-container.py) "$@"; }
 enter() { local machine=$1; shift; "${incus_cli[@]}" exec "$machine" --cwd /home/orbit -- "$@"; }
-user() { local machine=$1; shift; enter "$machine" runuser -u orbit -- env HOME=/home/orbit "PATH=$runtime/bin:$runtime/php/8.5/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ORBIT_GATEWAY_SSH_MUX=/run/orbit/ssh-mux "$@"; }
+user() { local machine=$1; shift; enter "$machine" runuser -u orbit -- env HOME=/home/orbit "PATH=$runtime/bin:$runtime/php/8.5/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ORBIT_GATEWAY_SSH_MUX=/run/orbit/ssh-mux ORBIT_GATEWAY_CONTAINER=1 "$@"; }
 php() { local machine=$1; shift; user "$machine" "$runtime/php/8.5/bin/php" "$@"; }
 artisan() { local machine=$1; shift; php "$machine" "$app/artisan" "$@"; }
 field() { jq -er "$1" "$inventory"; }
@@ -368,7 +368,23 @@ stop_background() {
     run_on "$machine" systemctl disable --now "$unit" </dev/null >&2
   done < "${2:-$journal/background}"
 }
+# The handover marker sits in the state directory that every release container mounts. It names this operation and
+# candidate from before the candidate fences until the inventory names the candidate as live. While it exists the
+# outgoing release's scheduled fence repair skips, also after a crash between routing and the inventory write.
+handover=$home/gateway-handover
+routed=false
+handover_abandoned() { if [[ $routed != true ]]; then rm -f -- "$handover"; sync -f "$home"; fi; }
 fence_admissions() {
+  # A marker present on entry may belong to a switch that already routed traffic; only publish_forward, after the
+  # inventory write, removes it. This invocation removes only a marker it created, before its first routing attempt.
+  if [[ ! -e $handover ]]; then
+    printf '%s %s\n' "$operation" "$sha" > "$handover.next"
+    chown orbit:orbit "$handover.next"
+    mv -fT "$handover.next" "$handover"
+    sync -f "$home"
+    # A switch that fails before routing leaves the outgoing release live and removes the marker.
+    trap handover_abandoned EXIT
+  fi
   artisan "$candidate" operations:check-cleanup --fence-only --json >&2
 }
 publish_forward() {
@@ -380,6 +396,7 @@ publish_forward() {
     $("${incus_cli[@]}" config get "$candidate" user.orbit.release.operation) == "$operation" ]] || fail 'candidate identity changed'
   "${incus_cli[@]}" config set "$candidate" boot.autostart=true
   addr=$(ctl address gateway "$id")
+  routed=true
   set_upstream "$addr"
   sync -f /etc/caddy
   /usr/local/libexec/orbit-gateway-site container >&2
@@ -388,6 +405,13 @@ publish_forward() {
   if [[ $earlier == "$sha" ]]; then earlier=$(former_sha); fi
   set_inventory "$sha" "$earlier" "$(verified_list "$journal/inventory")" \
     "$(jq -r --arg sha "$sha" '.earlier // "" | select(. != $sha)' "$journal/inventory" 2>/dev/null || :)"
+  # The inventory durably names the candidate as live: the handover is published.
+  rm -f -- "$handover"
+  sync -f "$home"
+  # The release now serving rewrites the Operation-version fence from its own policy at once. A draining outgoing
+  # worker may have changed it since this release fenced. The scheduler's inline repair is the fallback.
+  artisan "$candidate" operations:repair-fence --release-lock-held >&2 ||
+    echo 'gateway.release_fence_repair_deferred: the scheduler repairs the Operation-version fence' >&2
 }
 waits=/var/lib/orbit/release-response-wait
 # The former live's web server stopped, but its kernel can still hold response bytes for slow clients, and a
@@ -766,8 +790,11 @@ case "$action" in
     ;;
   cleanup-versions)
     [[ ! -f $journal/operation && $(field '.live') == "$sha" ]] || fail 'finish the Gateway handover before checking cleanup'
+    # Only the handover that retire recorded last speaks for live. A replayed receipt of an earlier tenure of the same
+    # commit would record this tenure's stopped releases against the wrong release.
+    [[ $(cat "$journal/last-operation" 2>/dev/null) == "$operation" ]] || fail 'the cleanup check belongs to an earlier handover'
     rc=0
-    artisan "$candidate" operations:check-cleanup --json || rc=$?
+    artisan "$candidate" operations:check-cleanup --json --release-operation="$operation" || rc=$?
     case $rc in 0|75) ;; *) exit "$rc" ;; esac
     ;;
   quiesce) finish_forward quiesce ;;
