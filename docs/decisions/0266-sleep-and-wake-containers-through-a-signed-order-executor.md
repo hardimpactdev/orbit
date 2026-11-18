@@ -139,7 +139,7 @@ The visitor's request bound is part of the wake, not of the current settings: a 
 
 `ORBIT_EXECUTOR_WAKE_ENABLED` and `ORBIT_EXECUTOR_POWER_ENABLED` stay off until each item here is cleared. Open blockers from review: none.
 
-- Every app-dev Node runs the same executor build as the Gateway expects.
+- **Cleared.** Every app-dev Node runs the same executor build as the Gateway expects: the pin moved to `cli-v0.10774.0`, the delivery built from #4032's commit, so the next Gateway release's fleet rollout installs that build on every `app-dev` Node. [`orbit:executor-parity`](/reference/executor#build-parity) compares each Node's executor SHA-256 with the pin and names every Node that differs. The switch runs it first and changes no flag while it fails.
 - Every Instance already asleep wakes through the engine that froze it, or is drained before the switch.
 
 ### What this supersedes and changes

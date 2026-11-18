@@ -3,7 +3,7 @@ title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
   - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,clippy.toml,contract/fixtures/executor-order.json}
-  - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**}
+  - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
 ---
@@ -60,6 +60,31 @@ From then on the install is required, and a wrong pin fails the converge:
 - A pin with no release URL fails with `executor.release_invalid`.
 - More than two keys fail with `executor.keys_invalid`.
 - A binary whose SHA-256 differs from the pin is never installed.
+
+A new executor build reaches the Nodes only this way: a reviewed commit copies the newer release's `manifest.json` into `apps/gateway/resources/agent/frozen-manifest.json` ([Node agent: Delivery](/reference/node-agent#delivery)). The executor's pin is part of each `app-dev` Node's role input, so the next Gateway release's fleet rollout converges every such Node again and installs the new binary. A release that moves only the executor leaves the agent's own digest unchanged.
+
+### Build parity
+
+Every executor Node must run the build that the Gateway pins before `ORBIT_EXECUTOR_WAKE_ENABLED` or `ORBIT_EXECUTOR_POWER_ENABLED` goes on ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#must-clear-before-the-signed-power-flags-go-on)). Check it on the Gateway, as `orbit`:
+
+```bash
+php artisan orbit:executor-parity [--json]
+```
+
+For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor` and the state of `orbit-executor.service`. A changed binary restarts the service in the converge, so an active service runs the installed binary.
+
+It exits 0 when every such Node matches and its service is active. Otherwise it exits 1 and names each Node with its problem:
+
+| Problem | Meaning | Fix |
+| --- | --- | --- |
+| `executor.build_differs` | The Node's binary is another build | Finish the fleet rollout, or `orbit node:converge <node> --full` |
+| `executor.missing` | No binary at the path | `orbit node:converge <node> --full` |
+| `executor.inactive` | The service does not run | Read its journal, then converge the Node |
+| `executor.node_unreachable` | The SSH read failed | Repair the Node's access |
+| `executor.node_unmanaged` | The Node has no verified SSH management | Finish its enrollment |
+| `executor.release_missing`, `executor.keys_missing`, `executor.release_invalid`, `executor.keys_invalid` | The converge would skip or refuse the install ([Rollout](#rollout)) | Fix the pin or the keys |
+
+The flag switch runs this check first and changes no flag while it fails. A plain converge whose input did not change skips the executor phase, so it does not repair a binary changed by hand; `--full` does.
 
 systemd only starts the executor at boot and restarts it after a crash. No systemd call, script, path unit or socket unit sits on an action's path.
 
