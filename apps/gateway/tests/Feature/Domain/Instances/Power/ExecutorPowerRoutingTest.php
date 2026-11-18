@@ -14,6 +14,7 @@ use App\Domain\Instances\Power\InstanceStart;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Executor\ExecutorReply;
@@ -450,4 +451,118 @@ it('fails before any delivery with a missing signing key and releases the target
     app(ExecutorWake::class)->continueHandoff($wake->id);
     expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.sign_failed')->lock_key->toBeNull();
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
+});
+
+/** A bound Swamp recovery of a published signed Operation. */
+function inRecoveryRun(Operation $operation): string
+{
+    $run = (string) Str::uuid();
+    $operation->update(['status' => OperationStatus::Running, 'attempts' => 1, 'state' => [...$operation->state,
+        ExecutorWake::PublishedAt => now()->subSeconds(10)->getTimestampMs(), ExecutorWake::Recovery => true, 'swamp_run_id' => $run]]);
+
+    return $run;
+}
+
+/** @param array<string, mixed> $phase
+ * @return array<string, mixed>
+ */
+function runEnded(string $run, array $phase, string $status = 'failed'): array
+{
+    return ['run_id' => $run, 'status' => $status, 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => $phase];
+}
+
+/** A start admitted with a signed lifecycle phase whose bound Swamp run asked the Gateway to sign it. */
+function signedLifecycleStart(Instance $instance, string $phase): array
+{
+    $swamp = containerDefaultNode('swamp-worker', '10.44.0.8', listed: false);
+    $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    $operation = app(StartOperationAction::class)->execute(InstanceStart::Kind, 'instance', $instance->id, $instance->node_id,
+        ['signed_power' => true, 'executor_lifecycle_phase' => $phase], 'cli', null,
+        lockKey: OperationStore::lockKey('instance', $instance->id), start: false);
+    $run = (string) Str::uuid();
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
+    test()->withServerVariables(['REMOTE_ADDR' => '10.44.0.8'])->postJson('/api/v1/direct-operations/'.$operation->id.'/executor/sign',
+        ['run_id' => $run, 'phase' => $phase])->assertOk();
+
+    return [$operation->refresh(), $run];
+}
+
+it('R1: keeps a recorded freeze when the later Swamp transport fails', function (): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => 'running']);
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    $run = inRecoveryRun($sleep);
+    executorWakeReply($sleep, ['status' => 'done', 'action' => 'sleep', 'receipt' => ['sleep' => 'frozen']]);
+    app(InstanceSleep::class)->apply($sleep, runEnded($run, ['error_code' => 'executor.relay_transport']));
+    expect($sleep->refresh())->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull();
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+    config(['orbit.executor.power_enabled' => false]);
+    expect(ExecutorPowerIntent::managed(app(InstanceWake::class)->admitDeferred($instance, 'cli', null)))->toBeTrue();
+});
+
+it('R1: reports the boot and its readiness failure after a stopped-container handoff', function (): void {
+    $instance = managedPowerFixture();
+    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $run = inRecoveryRun($wake);
+    executorWakeReply($wake, ['status' => 'failed', 'code' => 'instance.container_stopped']);
+    app(InstanceWake::class)->apply($wake, runEnded($run, ['wake' => 'started', 'error_code' => 'instance.t3_unready']));
+    expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('instance.t3_unready');
+    expect($wake->result['wake'] ?? null)->toBe('started');
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
+});
+
+it('R2: keeps the fence of an issued lifecycle order whose reply was lost', function (): void {
+    $instance = managedPowerFixture();
+    [$operation, $run] = signedLifecycleStart($instance, 'resume');
+    expect(fn () => app(CancelOperationAction::class)->execute($operation))->toThrow(ResourceOperationException::class);
+    app(InstanceStart::class)->apply($operation, runEnded($run, ['error_code' => 'executor.relay_transport']));
+    expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')
+        ->lock_key->not->toBeNull();
+    expect(fn () => app(InstanceSleep::class)->start($instance, 'cli', null))->toThrow(ResourceOperationException::class);
+});
+
+it('R2: never projects an issued boot discard as success without its receipt', function (): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => 'stopped']);
+    [$operation, $run] = signedLifecycleStart($instance, 'boot');
+    app(InstanceStart::class)->apply($operation, runEnded($run, [], 'succeeded'));
+    expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')
+        ->lock_key->not->toBeNull();
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+});
+
+it('R2: settles a cancel between the running claim and the signature at once', function (): void {
+    $instance = managedPowerFixture();
+    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $wake->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now()]);
+    app(CancelOperationAction::class)->execute($wake);
+    expect($wake->refresh())->status->toBe(OperationStatus::Cancelled)->lock_key->toBeNull();
+    expect(ExecutorWake::completionDeadline($wake))->toBeNull();
+    Queue::fake();
+    expect(app(ExecutorWake::class)->request($wake))->toBeFalse();
+    expect($wake->refresh()->state[ExecutorWake::PublishedAt] ?? null)->toBeNull();
+});
+
+it('R3: keeps the freeze with its engine past a cancelled later sleep', function (): void {
+    $instance = managedPowerFixture();
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    $sleep->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'result' => ['sleep' => 'frozen']]);
+    $again = app(InstanceSleep::class)->start($instance, 'cli', null);
+    app(CancelOperationAction::class)->execute($again);
+    expect($again->refresh()->status)->toBe(OperationStatus::Cancelled);
+    config(['orbit.executor.power_enabled' => false]);
+    expect(ExecutorPowerIntent::managed(app(InstanceWake::class)->admitDeferred($instance, 'cli', null)))->toBeTrue();
+});
+
+it('R4: shows an interrupted wake as failed to a visit and to a retry under its fence', function (): void {
+    $instance = managedPowerFixture();
+    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
+    $run = inRecoveryRun($wake);
+    app(InstanceWake::class)->apply($wake, runEnded($run, ['error_code' => 'executor.relay_transport']));
+    expect($wake->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown');
+    foreach ([false, true] as $retry) {
+        expect(app(InstanceWake::class)->activate($instance, $retry, 'node'))->toContain('executor.result_unknown');
+    }
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
 });

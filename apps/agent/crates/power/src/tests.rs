@@ -481,7 +481,7 @@ fn caddy_admin_requires_the_full_loopback_authority() {
         let response: &[u8] = if request == "GET /config/ HTTP/1.0"
             && host == format!("Host: {address}")
         {
-            b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}]}"
+            b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}"
         } else {
             b"HTTP/1.0 403 Forbidden\r\n\r\n"
         };
@@ -500,7 +500,20 @@ fn caddy_admin_requires_the_full_loopback_authority() {
 fn caddy_must_have_the_exact_markers_matcher_in_its_loaded_config() {
     let instance_marker = Path::new("/markers/app-instance-2.asleep");
     assert!(route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"method\":\"GET\",\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}",
+        instance_marker,
+    ));
+    // The exact matcher alone is not enough: its route must forward the visit to activation (ADR 0266).
+    assert!(!route_checks(
         b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"static_response\",\"status_code\":503}]}",
+        instance_marker,
+    ));
+    assert!(!route_checks(
+        b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/20\"}}]}",
         instance_marker,
     ));
     assert!(!route_checks(
