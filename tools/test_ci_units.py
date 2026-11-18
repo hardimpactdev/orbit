@@ -389,6 +389,16 @@ class RegistrySelectionTest(unittest.TestCase):
                 edit(self.root / 'swamp/fleet-mounts.yml')
                 self.assertEqual(self.changes(narrow), (['swamp/process.ts'], False))
 
+    def test_a_changed_name_with_a_carriage_return_reaches_the_plan_unchanged(self):
+        name = 'swamp/tasks/sample\r.yml'
+        (self.root / 'swamp/tasks').mkdir(parents=True)
+        (self.root / name).write_text('---\n')
+        self.base = self.commit(self.initial)
+        (self.root / name).write_text('- changed\n')
+        head = self.commit(self.initial)
+        with contextlib.chdir(self.root):
+            self.assertEqual(units.selection.changed_inputs(self.base, head), (self.base, [name]))
+
     def test_fixture_inputs_edit_selects_only_its_file_through_cli(self):
         head = self.commit(self.initial.replace('cost = 40', 'cost = 40\ninputs = ["swamp/new.yml"]'))
         fixtures = {file: fixture(file) for file in ('swamp/process.ts', 'swamp/egress.py')}

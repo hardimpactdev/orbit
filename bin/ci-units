@@ -298,8 +298,6 @@ def registry_changes(base, head):
     # machinery change: it selects the machinery canary. A change to cases, to inputs that name a new file or to any other
     # key selects the fixture.
     test = lambda entry: {key: value for key, value in entry.items() if key not in SCHEDULING}
-    listing = lambda *command: [os.fsdecode(path) for path in
-                                subprocess.check_output(['git', *command], timeout=60).split(b'\0') if path]
     trees = {}
 
     def narrowed(before, after):
@@ -310,8 +308,8 @@ def registry_changes(base, head):
         if test({**before, 'inputs': []}) != test({**after, 'inputs': []}):
             return False
         if not trees:
-            trees['tracked'] = listing('ls-tree', '-rz', '--full-tree', '--name-only', head)
-            trees['touched'] = listing('diff', '--name-only', '--no-renames', '-z', base, head)
+            trees['tracked'] = selection.listed_paths('ls-tree', '-rz', '--full-tree', '--name-only', head)
+            trees['touched'] = selection.changed_paths(base, head)
         earlier = [selection_regex(pattern) for pattern in before.get('inputs', [])]
         later = [selection_regex(pattern) for pattern in after.get('inputs', [])]
         matches = lambda regexes, path: any(regex.fullmatch(path) for regex in regexes)
