@@ -40,13 +40,20 @@ The remaining Linux-only `certificate.request-leaf` command runs `openssl` from 
 
 The Gateway installs the observer only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. Only those Nodes hold an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The observer needs no role.
 
-On Linux the same binary also carries the executor's mode, `orbit-agent execute serve|relay` ([Executor: One agent binary](/reference/executor#one-agent-binary), [ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7). The observer runs as `orbit-agent` with no mode, as before. Until the Gateway pins a delivery with that mode, Nodes still run the executor from the separate `orbit-executor` binary.
-
 A macOS Node has no observer, agent secret or LaunchAgent. Native enrollment reads its platform and existing tunnel address through pinned SSH. It installs no agent binary. Tool operations keep the enrolled account and its existing package-manager scopes.
 
 Task VM host preparation belonged to the removed base refresh; nothing runs it now ([prepare an Incus host](/reference/compute-drivers#prepare-an-incus-host)). The agent observes Incus state.
 
 In disposable proof fleets, each batch installs the tested checkout's frozen pin with checksum verification before cases start. After installation, it stops all three observers, clears their old presence versions and host receipts, starts them, and waits for each expected version with its binary digest and a new host fact. An installed checksum alone does not prove that a reporter reached the Gateway. See [proof preparation](/reference/verification-cases).
+
+### The executor mode
+
+On Linux the `orbit-agent` binary also carries the executor ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7):
+
+- `orbit-agent` with no mode runs the observer, as before.
+- `orbit-agent execute serve` and `orbit-agent execute relay` run the executor ([Executor: One agent binary](/reference/executor#one-agent-binary)).
+
+Until the Gateway pins a delivery with that mode, Nodes still run the executor from the separate `orbit-executor` binary.
 
 ## What it observes
 
