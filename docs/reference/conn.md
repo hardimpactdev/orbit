@@ -1140,7 +1140,7 @@ A replaced target keeps no notice path: its old subscription is on the old gener
 
 `owed` lists every owed acknowledgement of this generation that is not settled, as `revision` and `edge_ids`.
 
-A target starts with a snapshot after connect or restart, and takes one to recover from failing closed. It never takes one while managed access is open. Each snapshot runs behind a barrier:
+A target starts with a snapshot after connect or restart, and takes one to recover from failing closed. It never takes one while managed access is open. Only a target that has not failed closed reconciles through `delta` and `current` replies. Each snapshot runs behind a barrier:
 
 1. Pause managed admission. Callers that arrive wait.
 2. Drop every outstanding introspection: its reply is discarded when it arrives.
@@ -1153,10 +1153,12 @@ The target keeps two fenced sets:
 
 | Set | Filled by | Ends |
 | --- | --- | --- |
-| Provisional | A notice | When verified state for that revision applies |
+| Provisional | A notice | When verified state for that revision applies, or a probe sent after the notice disproves it |
 | Confirmed | A verified `delta`, `owed` list or snapshot | Never, for the life of the generation |
 
 When verified state for a revision applies, the target moves each of its edge IDs to the confirmed set and closes any of their handlers still open. It then clears each provisional ID of that revision that the verified state does not name. A cleared ID can be admitted again only by a fresh introspection. Clearing never reopens a socket that the fence closed.
+
+A notice can also be disproved. The target records the monotonic time each notice arrived. When it applies a verified `current` or `delta` reply to a probe it sent after that time, and that reply's head is below the notice's revision, the notice named a revision that does not exist. The target clears that notice's provisional IDs, under the same rules as above. A reply to a probe sent before the notice arrived never clears it.
 
 It runs one probe at a time for both its timer and Reverb notices. When a greater revision becomes known while a probe runs, it probes again at once.
 
@@ -1167,7 +1169,7 @@ It runs one probe at a time for both its timer and Reverb notices. When a greate
 | A `current` reply to its outstanding probe | Renews the lease from that probe's send time. |
 | A reply whose nonce it already consumed or never sent | Drops it. It renews nothing. |
 | A revision ahead of its next one, without a contiguous edge list | Blocks every managed admission, dispatch and output until a probe applies the head. |
-| A missing revision, a wrong generation, a failed check, a closed control connection, or an expired lease | Fails closed for all managed access until a fresh snapshot or delta is applied and the lease is live. |
+| A missing revision, a wrong generation, a failed check, a closed control connection, or an expired lease | Fails closed for all managed access. It recovers only through the snapshot barrier above, with a live lease. A `delta` never reopens access after failing closed. |
 
 A notice is not proof of what the Gateway committed. Only an applied HTTPS reply moves the confirmed revision forward, renews the lease or names the edges of a revision. A Reverb message, presence or a WebSocket ping never renews authority.
 
@@ -1186,7 +1188,7 @@ The target acknowledges one revision at a time. It sends `/ack` for a revision o
 - it learned that revision's edges from a verified `delta` or from `owed`, never from a notice alone;
 - every handler of those edges has ended, and no queued frame of them can be sent.
 
-Bytes already passed to the operating system cannot be recalled. `notice_received_at` is `null` when no notice arrived for that revision. An `observed` ACK carries the measured `fenced_at` and `handlers_closed_at`, and `recovered_at` is `null`.
+Bytes already passed to the operating system cannot be recalled. `notice_received_at` is `null` when no notice arrived for that revision. An `observed` ACK carries the measured `fenced_at` and `handlers_closed_at`, and `recovered_at` is `null`. `handlers_closed_at` is the time the target verified, after the fence, that the edges had no handler left and no queued frame that could still be sent. It is the same rule when that was already true at the fence, such as for an edge that never opened a handler.
 
 A restarted target observed no close: its handlers ended with the old process. Once it has applied the snapshot, it sends a `recovered` ACK for each `owed` revision. That ACK confirms that no affected handler remains. Its `recovered_at` is the time it applied the snapshot, an upper bound on the close; `fenced_at`, `handlers_closed_at` and `notice_received_at` are `null`. The timing proof leaves `recovered` ACKs out of every fence and close measure.
 
@@ -1224,7 +1226,7 @@ The Gateway and the target record these times separately, so the proof can measu
 | `notice_sent_at` | Gateway | After the Reverb publish returns |
 | `notice_received_at` | Target | On the notice, reported in the ACK; `null` when none arrived |
 | `fenced_at` | Target | When the edge is blocked; `null` in a `recovered` ACK |
-| `handlers_closed_at` | Target | When the last affected handler ended; `null` in a `recovered` ACK |
+| `handlers_closed_at` | Target | When, after the fence, the target verified zero affected handlers and no sendable queued frame, including when that was already true; `null` in a `recovered` ACK |
 | `recovered_at` | Target | When a restarted target applied the snapshot; only in a `recovered` ACK, and only an upper bound on the close |
 | `notice_suppressed_at` | Gateway | When the Gateway skipped the notice of a replaced generation |
 | `acknowledged_at` | Gateway | On the first valid ACK of that revision |
