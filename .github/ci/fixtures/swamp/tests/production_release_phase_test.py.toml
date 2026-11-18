@@ -18,6 +18,7 @@ cases = [
   "test_distributed_role_contains_the_guest_resolvers_entire_local_import_tree",
   "test_guest_env_preserves_a_tracked_testing_file_in_a_monorepo",
   "test_pinned_step_runs_from_the_checkout_root_before_and_after_activation",
+  "test_resume_measures_the_git_layout_of_the_prepared_checkout",
   "test_a_changed_live_link_never_enters_preparation",
   "test_reload_failure_restores_only_the_selected_instance_before_unlocking_caddy",
   "test_the_earlier_rollback_survives_a_failed_swap_reclaim",

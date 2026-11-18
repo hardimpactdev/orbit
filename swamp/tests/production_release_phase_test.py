@@ -1,4 +1,5 @@
 """Production releases isolate Instance state, restore failed Caddy reloads and retain recoverable builds."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -130,6 +131,25 @@ class ProductionReleaseTest(unittest.TestCase):
                                            "timeout_seconds": 30}], phase_name)
                 self.assertEqual(command.call_args.kwargs["cwd"], phase.WORK)
                 self.assertEqual(list(command.call_args.args[4:-4]), prefix)
+
+    def test_resume_measures_the_git_layout_of_the_prepared_checkout(self):
+        encoded = json.dumps(self.plan, sort_keys=True, separators=(",", ":")).encode()
+        self.r.state.update(checkout_ready=True, plan_digest=hashlib.sha256(encoded).hexdigest(), step_outcomes=[])
+        for receipt in (None, {"scope": "current", "inputs": "inputs"}):
+            with self.subTest(receipt=receipt):
+                self.r.state.pop("built", None)
+                paths = [phase.WORK + "/"]
+                if receipt:
+                    self.r.state["dependency_receipt"] = receipt
+                    paths.append("/var/lib/orbit-release-git/")
+                with (patch.object(self.r, "reserve"), patch.object(self.r, "converge_checkout") as checkout,
+                      patch.object(self.r, "guest_action", return_value="sha256:" + "f" * 64),
+                      patch.object(self.r, "user", return_value=CompletedProcess([], 0, "517 total")) as measure):
+                    self.r.build(self.plan)
+                checkout.assert_not_called()
+                measure.assert_called_once_with(self.r.prep, "du", "-scxb", "--", *paths)
+                self.assertEqual(self.r.state["build_bytes"], 517)
+                self.assertTrue(self.r.state["built"])
 
     def test_a_changed_live_link_never_enters_preparation(self):
         self.r.link(OLD)
