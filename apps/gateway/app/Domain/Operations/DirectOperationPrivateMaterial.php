@@ -93,7 +93,7 @@ final readonly class DirectOperationPrivateMaterial
         if ($operation->status->terminal()) {
             throw new ResourceOperationException('operation.finished', 'The Operation has ended.', 409);
         }
-        $definition = $this->direct->definition($operation->kind);
+        $definition = $this->direct->definition($operation);
         $map = $definition[$field] ?? [];
         if ($map === []) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The kind declares no private transport.', 422);

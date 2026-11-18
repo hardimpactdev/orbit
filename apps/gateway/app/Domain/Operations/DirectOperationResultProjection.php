@@ -53,7 +53,7 @@ final readonly class DirectOperationResultProjection implements DirectOperationP
 
     private function hook(Operation $operation): DirectOperationResultHook
     {
-        $definition = $this->direct->definition($operation->kind);
+        $definition = $this->direct->definition($operation);
         $class = $definition['result_hook'] ?? null;
         if ($class === null) {
             throw new LogicException('The generic projection requires a result hook.');

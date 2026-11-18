@@ -323,6 +323,23 @@ describe('proof:run in copies: admission', function (): void {
             ->and($this->ssh->calls)->toBe(0);
     });
 
+    it('places the waiting proof with its admitted shard version across a Gateway upgrade', function (): void {
+        $proof = app(ProofRunIntent::class)->start(COPY_PROOF_SHA, false, 'tester', null);
+        $old = app(DirectOperation::class)->definition('proof.command');
+        $old['workflow'] = 'operation-proof-run-copy-v1';
+        config(['operation_versions' => ['proof.command' => ['current' => 2, 'retained' => [1 => $old], 'deprecated' => [1]]]]);
+        app()->forgetInstance(DirectOperation::class);
+        $this->artisan('operations:check-cleanup', ['--fence-only' => true])->assertSuccessful();
+
+        app(ProofRunIntent::class)->admit($proof->id);
+        $runs = copyProofRuns();
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and($runs)->not->toBeEmpty();
+        foreach ($runs as $run) {
+            expect($run->parent_operation_id)->toBe($proof->id)->and($run->operation_version)->toBe(1)
+                ->and(app(DirectOperation::class)->workflowFor($run))->toBe('operation-proof-run-copy-v1');
+        }
+    });
+
     it('starts one copy per shard, one shard per free place and at most one per batch, and a held run for each that names its copy', function (): void {
         $proof = copyProofAdmitted();
         $runs = copyProofRuns();

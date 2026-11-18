@@ -68,7 +68,7 @@ final class OperationIdempotency
      *
      * @phpstan-impure
      */
-    public function replay(string $kind): ?Operation
+    public function replay(string $kind, ?Operation $parent = null): ?Operation
     {
         if ($this->kind !== $kind || $this->key === null) {
             return null;
@@ -76,7 +76,8 @@ final class OperationIdempotency
 
         $operation = Operation::query()->where('kind', $kind)->where('idempotency_key', $this->key)->first();
 
-        if ($operation !== null && $operation->idempotency_fingerprint !== $this->fingerprint) {
+        $parentId = $operation->parent_operation_id ?? ($kind === 'proof.command' ? ($operation?->input['proof_operation_id'] ?? null) : null);
+        if ($operation !== null && ($operation->idempotency_fingerprint !== $this->fingerprint || ($parent !== null && $parentId !== $parent->id))) {
             throw new ResourceOperationException(
                 'operation.idempotency_conflict',
                 'This operation kind already has the Idempotency-Key with another target or input.',
