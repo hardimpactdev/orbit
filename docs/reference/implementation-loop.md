@@ -1017,7 +1017,7 @@ Process fixtures acknowledge readiness from their final executable before a case
 
 ### CI caches stay separate
 
-Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. Each run starts from a fresh runner. On `main` it uploads the quality exports that the [CI cache refs](#ci-cache-refs) carry. Pint and PHPStan key their caches on paths relative to the project, so their CI caches work in any checkout.
+Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. Each run starts from a fresh runner. A pull request reads its own caches and those of its base branch, never another pull request's. Main runs no tests, so the main-only job `Warm the Gateway test caches` saves the Gateway Pest caches there: both vendor folders, Deno, its firewall imports and Caddy. It runs the same setup steps as the shards, `.github/actions/gateway-test-dependencies`, so both compute one key for each cache. It gates nothing. On `main` it uploads the quality exports that the [CI cache refs](#ci-cache-refs) carry. Pint and PHPStan key their caches on paths relative to the project, so their CI caches work in any checkout.
 
 ### Style is fixed, not reported
 
