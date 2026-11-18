@@ -1098,7 +1098,7 @@ Worker output can arrive after a step finishes. In the pinned Swamp version, wor
 
 ## Agent threads
 
-An **agent thread** is one persistent conversation with a coding agent. It records the driver, the external conversation id, the Node, the task and subtask, the role, the model, and the effort. The external runtime writes the transcript. Orbit keeps recorded snapshots, the link and the metrics.
+An **agent thread** is one persistent conversation with a coding agent. It records the driver, the external conversation id, the Node, the task and subtask, the role, the model, and the effort. A copy thread also records how its external id came to be: `admitted` when Orbit set it and T3 has not reported it back, `confirmed` once T3 reported that same id, and `overwritten` when a turn reported another id ([admission](/reference/development-containers#admission)). The external runtime writes the transcript. Orbit keeps recorded snapshots, the link and the metrics.
 
 Each subtask gets a fresh implementer thread. Each subtask's first review starts a fresh reviewer thread. Thread titles are `Orbit task #{task} / subtask #{subtask} · Implementer: {title}` and `Orbit task #{task} · Review: {title}`.
 
@@ -1122,7 +1122,9 @@ The `pi` driver ran turns on task VMs and is removed with the Pi task loop. Thre
 
 ### Copy turn agents
 
-When a copy turn asks a question, Orbit stores it and stops the run. The next turn of that thread answers it: Orbit first resolves exactly the stored question requests in T3, then sends the answer with the questions quoted for context. Stopping the run alone can leave a question pending. Already resolved requests need no action. If resolution cannot be confirmed, the turn fails before launch with `tasks.copy_question_unresolved` and keeps the questions for another attempt. See [turn questions](/cli/task/turn#a-task-that-runs-in-a-copy).
+When a copy turn asks a question, Orbit stores it, with the run that owns its request, and stops the run. Only a turn whose run T3 confirmed replaces the stored questions; a turn that was only possibly sent keeps them.
+
+The next turn of that thread answers it: Orbit first resolves exactly the stored question requests in T3, then sends the answer with the questions quoted for context. Stopping the run alone can leave a question pending. Already resolved requests need no action. If resolution cannot be confirmed, the turn fails before launch with `tasks.copy_question_unresolved` and keeps the questions for another attempt. See [turn questions](/cli/task/turn#a-task-that-runs-in-a-copy).
 
 Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. A new copy thread resolves each of the three values on its own:
 
@@ -1156,11 +1158,11 @@ Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does n
 
 When the catalog omits a Codex model or cannot be read, the copy sends one bounded, tool-free request through the Codex configuration it uses for turns. The provider must return a usable response for the exact requested model. The probe leaves the cached catalog alone.
 
-For other drivers, without a readable catalog the model check is skipped. The provider can still reject the model in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
+For other drivers, without a readable catalog the model check is skipped. The provider can still reject the model in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed`. The error keeps no text of T3, which may quote the prompt.
 
 ### Archive finished threads
 
-Swamp records a redacted transcript with each terminal turn result. The Gateway stores normalized entries at `storage/app/private/task-transcripts/{task}/{thread}.json`. It keeps the thread row, metrics and transcript after the copy is destroyed. A turn without transcript evidence keeps its previous snapshot. Cleanup makes no transcript request. Transcripts from turns that finished before recorded turn snapshots shipped may be unavailable. This loss is accepted for those test and pipeline tasks; no migration fetches them.
+Swamp records a redacted transcript with each terminal turn result. A copy turn's transcript keeps a user message only by its ID, author and time, so the prompt stays out of the archive. The Gateway stores normalized entries at `storage/app/private/task-transcripts/{task}/{thread}.json`. It keeps the thread row, metrics and transcript after the copy is destroyed. A turn without transcript evidence keeps its previous snapshot. Cleanup makes no transcript request. Transcripts from turns that finished before recorded turn snapshots shipped may be unavailable. This loss is accepted for those test and pipeline tasks; no migration fetches them.
 
 ## Session routing
 

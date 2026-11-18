@@ -3,7 +3,7 @@ cases = [
   "the read prints every pending question in the result step's shape and stops nothing; free text without options is stored whole",
   "the stop ends the run only while it waits for exactly the stored questions",
   "a session issue that prints no JSON fails without quoting it and still revokes the session it names",
-  "the stop ends the thread's active run through the same interrupt and waits for its end; a thread with no active run is left alone",
+  "the stop ends exactly the named run through the same interrupt and waits for its end; a run already over is left alone",
   "a stop that T3 refuses, or a run that does not end within the deadline, answers stopped: false with the run's last state",
   "the create makes a thread of the workspace's project with the title, instance, model and options, in full access, and sends no message",
   "answered resolves exactly the stored pending questions once and leaves unrelated requests alone",
