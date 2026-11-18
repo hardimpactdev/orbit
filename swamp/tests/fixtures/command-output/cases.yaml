@@ -2016,6 +2016,12 @@ cases:
   expected:
   - nested-app-dev
 - file: tasks/instance-fleet-start.yml
+  task: Clear the network runtime files before the start
+  field: vars.fleet_runtime_names
+  context: fleet-start-list
+  expected:
+  - nested-app-dev
+- file: tasks/instance-fleet-start.yml
   task: Start the nested containers together
   field: vars.fleet_start_stopped
   context: fleet-start-list
