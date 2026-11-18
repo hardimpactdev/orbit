@@ -23,13 +23,13 @@ final readonly class GatewayBus
     /** The configuration, or null when the Gateway has no engine keys. */
     public static function config(): ?string
     {
-        $operator = config('orbit.engine.nats.operator_seed');
-        $account = config('orbit.engine.nats.account_seed');
-        $system = config('orbit.engine.nats.system_seed');
-        $port = config('orbit.engine.nats.port');
-        if (! is_string($operator) || $operator === '' || ! is_string($account) || $account === '' || ! is_string($system) || $system === '') {
+        if (! self::enabled()) {
             return null;
         }
+        $operator = (string) config('orbit.engine.nats.operator_seed');
+        $account = (string) config('orbit.engine.nats.account_seed');
+        $system = (string) config('orbit.engine.nats.system_seed');
+        $port = config('orbit.engine.nats.port');
         $accountKey = NatsCredentials::publicKey($account);
         $systemKey = NatsCredentials::publicKey($system);
 
@@ -42,6 +42,19 @@ final readonly class GatewayBus
     }
 
     /** The server's unit. It names the configuration's digest, so a changed configuration restarts the server. */
+    /** The Gateway runs the machine bus only once it holds all three keys (`orbit:engine-keys`). */
+    public static function enabled(): bool
+    {
+        foreach (['operator_seed', 'account_seed', 'system_seed'] as $key) {
+            $seed = config("orbit.engine.nats.{$key}");
+            if (! is_string($seed) || $seed === '') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public static function serverUnit(string $config): string
     {
         return "[Unit]\nDescription=NATS JetStream: the Orbit machine bus (ADR 0271)\nAfter=network-online.target\nWants=network-online.target\n"

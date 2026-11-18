@@ -181,3 +181,17 @@ it('forwards within the Gateway\'s own VPN subnet, as a nested fleet\'s hub has 
     expect(app(NodeFirewallRuleCatalog::class)->vpnPeerForwarding()->arguments)->toBe(['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out',
         'on', 'orbit', 'from', '10.45.0.0/24', 'to', '10.45.0.0/24', 'comment', 'orbit:vpn-peer-forwarding']);
 });
+
+it('opens the machine bus port on the Gateway over WireGuard only once the Gateway holds the bus keys', function (): void {
+    $catalog = app(NodeFirewallRuleCatalog::class);
+    $comments = static fn (): array => array_map(static fn ($rule): string => $rule->shape->comment,
+        $catalog->forRole(new Node(['wireguard_ip' => '10.44.0.1']), RoleName::Gateway));
+    expect($comments())->toBe(['orbit:gateway-https']);
+
+    config(['orbit.engine.nats.operator_seed' => 'SO-test', 'orbit.engine.nats.account_seed' => 'SA-test', 'orbit.engine.nats.system_seed' => 'SA-sys']);
+    $nats = array_values(array_filter($catalog->forRole(new Node(['wireguard_ip' => '10.44.0.1']), RoleName::Gateway),
+        static fn ($rule): bool => $rule->shape->comment === 'orbit:gateway-nats'));
+    expect($comments())->toBe(['orbit:gateway-https', 'orbit:gateway-nats'])
+        ->and($nats[0]->shape->port)->toBe('4222')
+        ->and($nats[0]->shape->inInterface)->toBe('orbit');
+});
