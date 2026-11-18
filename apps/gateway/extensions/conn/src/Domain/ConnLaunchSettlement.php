@@ -18,7 +18,6 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\PublishConnLaunchAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -251,7 +250,7 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
                 } elseif ($operation->status === OperationStatus::Queued && $operation->attempts === 0
                     && $operation->cancel_requested_at === null) {
                     if ($role === ConnLaunchChild::Wake) {
-                        $this->cancelQueuedWake($operation->id, $launch->id);
+                        $this->state->cancelQueuedWake($launch);
                     } else {
                         $this->cancel->execute($operation);
                     }
@@ -286,18 +285,6 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             return;
         }
         $this->instances->destroy($launch, $instance);
-    }
-
-    private function cancelQueuedWake(int $id, int $launchId): void
-    {
-        DB::transaction(function () use ($id, $launchId): void {
-            $wake = Operation::query()->whereKey($id)->lockForUpdate()->firstOrFail();
-            if ($wake->status === OperationStatus::Queued && $wake->attempts === 0 && $wake->cancel_requested_at === null
-                && ! isset($wake->state['swamp_run_id']) && ($wake->state['conn_launch_owner'] ?? null) === $launchId
-                && ($wake->state['wake_shared'] ?? false) !== true) {
-                $this->cancel->execute($wake);
-            }
-        });
     }
 
     private function settleWake(Operation $launch): bool

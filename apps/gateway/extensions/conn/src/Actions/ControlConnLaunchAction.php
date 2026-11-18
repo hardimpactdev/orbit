@@ -46,6 +46,7 @@ final readonly class ControlConnLaunchAction
             Arr::set($state, 'launch_stages.'.ConnLaunchStage::Cleanup->value, ConnLaunchStage::Cleanup->fact('running', ConnLaunchStage::at($now)));
             $this->store->change($launch, ['state' => $state, 'cancel_requested_at' => $now, 'status' => OperationStatus::Waiting,
                 'started_at' => $launch->started_at ?? $now, 'error_code' => null]);
+            $this->state->cancelQueuedWake($launch, executorOnly: true);
             ReconcileSwampOperations::dispatch()->afterCommit();
         });
     }

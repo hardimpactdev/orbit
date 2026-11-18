@@ -16,6 +16,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Power\AgentActivity;
 use App\Domain\Instances\Power\ContainerIdleSweep;
+use App\Domain\Instances\Power\ExecutorWake;
 use App\Domain\Instances\Power\InstanceAgentActivity;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceStart;
@@ -27,6 +28,7 @@ use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
+use App\Jobs\Operations\DispatchExecutorWake;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -665,6 +667,23 @@ describe('launch control and progress', function (): void {
         expect(ConnLaunchIntent::query()->whereKey($id)->exists())->toBeFalse()->and($wake->refresh()->cancel_requested_at)->toBeNull()
             ->and(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue();
     });
+
+    it('fences the signed publisher when Cancel commits before cleanup', function (bool $shared): void {
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $wake = app(ConnLaunchState::class)->admitChild($id, ConnLaunchChild::Wake, 'fixture-signed-wake', static function (Operation $launch) use ($shared): array {
+            $wake = launchNativeReceipt($launch, InstanceWake::Kind, 'fixture-signed-wake');
+            $wake->update(['state' => [ExecutorWake::State => true, ...($shared ? ['wake_shared' => true] : [])]]);
+
+            return ['operation' => $wake, 'owned' => true];
+        });
+
+        callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+        expect($wake->refresh())->status->toBe($shared ? OperationStatus::Queued : OperationStatus::Cancelled)->attempts->toBe(0);
+        if (! $shared) {
+            app()->call([new DispatchExecutorWake($wake->id), 'handle']);
+            expect($wake->refresh())->status->toBe(OperationStatus::Cancelled)->attempts->toBe(0);
+        }
+    })->with(['unshared' => [false], 'shared' => [true]]);
 
     it('does not clear a cancelling launch while its owned wake remains open', function (): void {
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');

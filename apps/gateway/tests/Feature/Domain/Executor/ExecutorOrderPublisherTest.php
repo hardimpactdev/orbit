@@ -10,7 +10,11 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Models\Operation;
 use Illuminate\Broadcasting\Channel;
+use Illuminate\Contracts\Broadcasting\Broadcaster;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Testing\Fakes\EventFake;
 
 beforeEach(function (): void {
     Event::fake([ExecutorOrderBroadcast::class]);
@@ -53,3 +57,73 @@ it('publishes nothing for an Operation without a node_id or for the order of ano
     'no node_id' => [null, '42'],
     'another Operation' => [7, '43'],
 ]);
+
+it('caps Pusher and Guzzle by the request budget and restores later broadcast limits', function (): void {
+    $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')->andReturn(new WebSocketCredentials('test-app', 'test-key', 'test-secret'));
+    $original = config('broadcasting.connections.reverb.options.timeout');
+    $fake = new class(app('events'), [ExecutorOrderBroadcast::class]) extends EventFake
+    {
+        /** @var list<float> */
+        public array $limits = [];
+
+        public function dispatch($event, $payload = [], $halt = false)
+        {
+            if ($event instanceof ExecutorOrderBroadcast) {
+                $this->limits = [config('broadcasting.connections.reverb.options.timeout'),
+                    config('broadcasting.connections.reverb.client_options.timeout'),
+                    config('broadcasting.connections.reverb.client_options.connect_timeout')];
+            }
+
+            return parent::dispatch($event, $payload, $halt);
+        }
+    };
+    Event::swap($fake);
+
+    app(ExecutorOrderPublisher::class)->publish($this->operation, $this->order, 0.2);
+
+    expect($fake->limits)->toHaveCount(3);
+    foreach ($fake->limits as $limit) {
+        expect($limit)->toBeGreaterThan(0)->toBeLessThanOrEqual(0.2);
+    }
+    expect(config('broadcasting.connections.reverb.options.timeout'))->toBe($original);
+    Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
+});
+
+it('sends nothing once the publish budget has ended', function (): void {
+    $this->mock(WebSocketCredentialManager::class)->shouldReceive('current')->andReturn(new WebSocketCredentials('test-app', 'test-key', 'test-secret'));
+
+    expect(fn () => app(ExecutorOrderPublisher::class)->publish($this->operation, $this->order, 0))->toThrow(RuntimeException::class, 'The executor publish budget ended.');
+
+    Event::assertNotDispatched(ExecutorOrderBroadcast::class);
+});
+
+it('only marks the old Reverb down for an attempted failing send', function (bool $attempt): void {
+    $home = sys_get_temp_dir().'/orbit-old-executor-reverb-'.bin2hex(random_bytes(8));
+    $manager = $this->mock(WebSocketCredentialManager::class);
+    $manager->shouldReceive('current')->andReturn(new WebSocketCredentials('fixture-app', 'fixture-key', 'fixture-secret',
+        servingAddresses: ['192.0.2.11', '192.0.2.12']));
+    $realtime = new RealtimeConnection($manager, $home);
+    [, $old] = $realtime->all();
+    $broadcaster = $this->mock(Broadcaster::class);
+    if ($attempt) {
+        $broadcaster->shouldReceive('broadcast')->once()->andThrow(new RuntimeException('Fixture send failed.'));
+    } else {
+        $broadcaster->shouldNotReceive('broadcast');
+    }
+    Broadcast::extend('reverb', fn () => $broadcaster);
+    $checks = 0;
+    $clock = static function () use ($attempt, &$checks): float {
+        $checks++;
+
+        return ! $attempt && $checks >= 4 ? 1.0 : 0.0;
+    };
+
+    try {
+        (new ExecutorOrderPublisher($realtime, $clock))->publish($this->operation, $this->order, 0.5);
+
+        Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
+        expect($realtime->oldServerSkipped($old))->toBe($attempt);
+    } finally {
+        File::deleteDirectory($home);
+    }
+})->with(['expired before old send' => [false], 'attempted old send fails' => [true]]);
