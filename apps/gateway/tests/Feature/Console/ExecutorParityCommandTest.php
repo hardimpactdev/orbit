@@ -48,7 +48,8 @@ beforeEach(function (): void {
     $this->reports = [];
     $this->mock(SshExecutor::class, fn ($mock) => $mock->shouldReceive('execute')
         ->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
-            expect($command->arguments[0])->toBe('sh')->and($command->arguments[2])->toContain('sha256sum /usr/local/libexec/orbit-executor');
+            expect($command->arguments[0])->toBe('sh')->and($command->arguments[2])->toContain('sha256sum /usr/local/libexec/orbit-executor')
+                ->and($command->arguments[2])->toContain('sudo -n sha256sum "/proc/$pid/exe"');
 
             return $this->reports[$connection->host] ?? new CommandResult(255, '', 'unreachable', 1, false);
         }));
@@ -59,8 +60,8 @@ afterEach(function (): void {
 });
 
 it('passes when every app-dev Node runs the pinned executor build, and reads no other Node', function (): void {
-    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\nactive\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\nactive\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\n", '', 1, false),
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity', ['--json' => true])
         ->expectsOutputToContain('"ok":true')
@@ -68,14 +69,14 @@ it('passes when every app-dev Node runs the pinned executor build, and reads no 
 });
 
 it('refuses and names each Node that runs another build, lacks the executor or is unreachable', function (): void {
-    $this->reports = ['10.45.0.2' => new CommandResult(0, str_repeat('d', 64)."\nactive\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "\ninactive\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, str_repeat('d', 64)."\n".str_repeat('d', 64)."\nactive\n", '', 1, false),
+        '10.45.0.4' => new CommandResult(0, "\n\ninactive\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.build_differs, app-dev-2 (#{$this->second->id}): executor.missing")
         ->assertFailed();
 
-    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\nfailed\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n\nfailed\n", '', 1, false)];
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.inactive, app-dev-2 (#{$this->second->id}): executor.node_unreachable")
         ->assertFailed();
@@ -87,4 +88,24 @@ it('refuses while the converge would skip the install', function (): void {
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain('executor.keys_missing')
         ->assertFailed();
+});
+
+it('refuses a Node whose service still runs another build than the installed pinned binary', function (): void {
+    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n".str_repeat('d', 64)."\nactive\n", '', 1, false),
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\n", '', 1, false)];
+
+    $this->artisan('orbit:executor-parity')
+        ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.running_build_differs")
+        ->assertFailed();
+    $this->artisan('orbit:executor-parity', ['--json' => true])
+        ->doesntExpectOutputToContain('Executor parity fails')
+        ->expectsOutputToContain('"problem":"executor.running_build_differs"')
+        ->assertFailed();
+});
+
+it('refuses when it checked no executor Node', function (): void {
+    Node::query()->whereIn('id', [$this->first->id, $this->second->id])->update(['status' => 'removing']);
+
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('checked no executor Node')->assertFailed();
+    $this->artisan('orbit:executor-parity', ['--json' => true])->expectsOutputToContain('"ok":false')->assertFailed();
 });

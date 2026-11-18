@@ -75,15 +75,16 @@ Every executor Node must run the build that the Gateway pins before `ORBIT_EXECU
 php artisan orbit:executor-parity [--json]
 ```
 
-For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor` and the state of `orbit-executor.service`. A changed binary restarts the service in the converge, so an active service runs the installed binary.
+For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`.
 
-It exits 0 when every such Node matches and its service is active. Otherwise it exits 1 and names each Node with its problem:
+It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
 
 | Problem | Meaning | Fix |
 | --- | --- | --- |
 | `executor.build_differs` | The Node's binary is another build | Finish the fleet rollout, or `orbit node:converge <node> --full` |
 | `executor.missing` | No binary at the path | `orbit node:converge <node> --full` |
 | `executor.inactive` | The service does not run | Read its journal, then converge the Node |
+| `executor.running_build_differs` | The file is the pinned build, but the service still runs another one: the binary changed without a restart | `systemctl restart orbit-executor` on the Node |
 | `executor.node_unreachable` | The SSH read failed | Repair the Node's access |
 | `executor.node_unmanaged` | The Node has no verified SSH management | Finish its enrollment |
 | `executor.release_missing`, `executor.keys_missing`, `executor.release_invalid`, `executor.keys_invalid` | The converge would skip or refuse the install ([Rollout](#rollout)) | Fix the pin or the keys |

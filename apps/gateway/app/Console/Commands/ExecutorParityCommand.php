@@ -23,13 +23,20 @@ final class ExecutorParityCommand extends Command
     {
         $rows = $parity->check();
         $differ = array_values(array_filter($rows, static fn (array $row): bool => $row['problem'] !== null));
+        $ok = $rows !== [] && $differ === [];
         if ($this->option('json')) {
-            $this->line(json_encode(['ok' => $differ === [], 'nodes' => $rows], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-        } else {
-            $this->table(['Node', 'Name', 'Pinned', 'Reported', 'Service', 'Problem'], array_map(static fn (array $row): array => [
-                $row['node_id'], $row['node'], substr((string) $row['expected'], 0, 16), substr((string) $row['reported'], 0, 16),
-                $row['state'] ?? '', $row['problem'] ?? '',
-            ], $rows));
+            $this->line(json_encode(['ok' => $ok, 'nodes' => $rows], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+            return $ok ? self::SUCCESS : self::FAILURE;
+        }
+        $this->table(['Node', 'Name', 'Pinned', 'Installed', 'Running', 'Service', 'Problem'], array_map(static fn (array $row): array => [
+            $row['node_id'], $row['node'], substr((string) $row['expected'], 0, 16), substr((string) $row['reported'], 0, 16),
+            substr((string) $row['running'], 0, 16), $row['state'] ?? '', $row['problem'] ?? '',
+        ], $rows));
+        if ($rows === []) {
+            $this->error('Executor parity checked no executor Node. Keep ORBIT_EXECUTOR_WAKE_ENABLED and ORBIT_EXECUTOR_POWER_ENABLED off.');
+
+            return self::FAILURE;
         }
         if ($differ !== []) {
             $this->error('Executor parity fails on '.implode(', ', array_map(static fn (array $row): string => "{$row['node']} (#{$row['node_id']}): {$row['problem']}", $differ))
@@ -37,9 +44,7 @@ final class ExecutorParityCommand extends Command
 
             return self::FAILURE;
         }
-        if (! $this->option('json')) {
-            $this->info($rows === [] ? 'No executor Nodes.' : 'Every executor Node runs the pinned build.');
-        }
+        $this->info('Every executor Node runs the pinned build.');
 
         return self::SUCCESS;
     }
