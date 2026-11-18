@@ -197,6 +197,46 @@ class BootstrapTest(unittest.TestCase):
             for obj in [other, excluded_blob]:
                 self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", obj], check=False).returncode, 0)
 
+            # Make two real package roots to exercise git clean's dependency exclusions.
+            git(mirror, "checkout", "-q", "--detach", commit)
+            for package in ("cli", "gateway"):
+                (mirror / "apps" / package).mkdir(parents=True)
+                (mirror / "apps" / package / "composer.json").write_text("{}")
+            git(mirror, "add", "apps")
+            git(mirror, "commit", "-qm", "package roots")
+            first = git(mirror, "rev-parse", "HEAD")
+            subprocess.run(["bash", script, mirror, first, release], check=True)
+            repo_inode = (release / ".git").stat().st_ino
+            packs = set((release / ".git/objects/pack").glob("*.pack"))
+            vendors = [release / "apps" / package / "vendor" for package in ("cli", "gateway")]
+            for vendor in vendors:
+                vendor.mkdir()
+                (vendor / "installed").write_text("complete")
+            (release / "REVISION").write_text(first)
+            (release / "stale-build-output").write_text("discard")
+            (mirror / "README").write_text("next release")
+            git(mirror, "commit", "-qam", "normal release")
+            second = git(mirror, "rev-parse", "HEAD")
+            subprocess.run(["bash", script, mirror, second, release], check=True)
+            self.assertEqual((release / ".git").stat().st_ino, repo_inode)
+            self.assertTrue(packs and packs.issubset((release / ".git/objects/pack").glob("*.pack")))
+            self.assertEqual((release / "README").read_text(), "next release")
+            self.assertFalse((release / "stale-build-output").exists())
+            self.assertTrue(all((vendor / "installed").read_text() == "complete" for vendor in vendors))
+            self.assertFalse((release / "REVISION").exists())
+
+            # Interrupt before the seal. The retry must discard partial Composer state.
+            (vendors[0] / "installed").write_text("partial")
+            (release / ".git/index.lock").touch()
+            subprocess.run(["bash", script, mirror, second, release], check=True)
+            self.assertTrue(all(not vendor.exists() for vendor in vendors))
+            self.assertEqual(git(release, "rev-parse", "HEAD"), second)
+            # A forced switch across histories cannot expose the discarded branch's objects.
+            (release / "REVISION").write_text(second)
+            subprocess.run(["bash", script, mirror, other, release], check=True)
+            self.assertNotEqual(subprocess.run(["git", "-C", release, "cat-file", "-e", second]).returncode, 0)
+            self.assertEqual(git(release, "for-each-ref"), "")
+
     def test_env_projection_tracks_atomic_edits_without_exposing_the_bare_repo(self):
         with tempfile.TemporaryDirectory() as root:
             shared = Path(root)

@@ -320,18 +320,10 @@ case "$action" in
     python3 <(src swamp/ansible/files/gateway-release-guest.py) --runtime "$operation" "$pinned_runtime" >&2
     # The candidate owns its sealed checkout as root. Trust only that path for fleet history reads as orbit.
     enter "$prep" git config --system --fixed-value --replace-all safe.directory "$checkout" "$checkout"
-    # Build in a fresh checkout. Composer's download cache stays outside it.
-    user "$prep" sh -eu -c 'cd /home/orbit; rm -rf .gateway-next; mkdir -m 0700 .gateway-next'
-    bash <(src swamp/scripts/gateway-release-checkout.sh) "$mirror" "$sha" "$root/.gateway-next" \
+    bash <(src swamp/scripts/gateway-release-checkout.sh) "$mirror" "$sha" "$checkout" \
       "${incus_cli[@]}" exec "$prep" -- runuser -u orbit --
     user "$prep" sh -eu -c '
-      cd /home/orbit
-      test ! -L orbit
-      rm -rf .gateway-previous
-      if test -d orbit; then mv -T orbit .gateway-previous; fi
-      mv -T .gateway-next orbit
-      rm -rf .gateway-previous
-      cd orbit/apps/gateway
+      cd /home/orbit/orbit/apps/gateway
       rm -rf storage
       ln -s /home/orbit/shared/gateway-storage storage
       ln -s /home/orbit/shared/gateway.env .env'
