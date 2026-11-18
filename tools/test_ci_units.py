@@ -185,6 +185,10 @@ class PlanningTest(unittest.TestCase):
             {'file': 'swamp/gap.ts', 'units': ['swamp/gap.ts#1/2'], 'reason': 'capacity gap per ADR 0262'},
             {'file': 'swamp/runner_gap.py', 'units': ['swamp/runner_gap.py'], 'reason': 'capacity gap per ADR 0262'}])
         self.assertNotIn('capacity', result)
+        # A change to the hosted gap file itself runs all of its units; the overflow then fails Required.
+        result = planned(['swamp/input', 'swamp/gap.ts'], fixtures, budget=budget)
+        self.assertEqual(sorted(names(result)), ['swamp/gap.ts#0/2', 'swamp/gap.ts#1/2'])
+        self.assertEqual(units.unplaced_units(result), ['swamp/other.py'])
         # Without the name, the same hosted overflow fails Required.
         result = planned(['swamp/input'], fixtures, budget={**budget, 'capacity_gap': ['swamp/runner_gap.py']})
         self.assertEqual(sorted(names(result)), ['swamp/gap.ts#0/2', 'swamp/gap.ts#1/2'])
