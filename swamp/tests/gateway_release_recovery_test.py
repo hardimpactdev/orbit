@@ -37,14 +37,17 @@ elif action in ("retire", "resume") and (state / key).exists():
     if os.environ.get("FIXTURE_INTERRUPT") == "after " + key + (" stop" if action == "retire" else " start"):
         os.killpg(os.getpgrp(), 9)
 elif action == "seed":
+    if (state / "seed-fails").exists():
+        sys.exit("seed failed")
     # Preparation is always a clone of the current live; one cloned from another release is replaced.
     origin = state / "prep-from"
-    if (state / "prep").exists() and origin.exists() and origin.read_text() != sys.argv[3]:
+    live = next(sha for sha in keys if sha[:12] == sys.argv[3])
+    if (state / "prep").exists() and origin.exists() and origin.read_text() != live:
         (state / "prep").unlink()
         event("delete prep")
     if not (state / "prep").exists():
         (state / "prep").write_text("Stopped")
-        origin.write_text(sys.argv[3])
+        origin.write_text(live)
         event("seed prep")
 elif action == "demote":
     target = keys[sys.argv[4]]
@@ -184,6 +187,11 @@ def stub(name, args):
                     (state / (machine + "-worker")).write_bytes(cached.read_bytes())
                 (state / (machine + "-orbit-gateway-web.service")).touch()
             elif command[0] == "ss":
+                if (state / "broken-gate").exists():
+                    # The probe fails, and so does the lookup that follows it.
+                    (state / "probe-failed").touch()
+                    event(f"probe {machine} failed")
+                    return 1
                 # Closing sockets of a former live that a slow reader still drains, one fewer per probe.
                 busy = state / f"busy-{machine}"
                 count = int(busy.read_text()) if busy.exists() else 0
@@ -229,6 +237,10 @@ def stub(name, args):
         elif action == "snapshot" and args[1] == "list":
             print("[]")
         elif action == "list":
+            if (state / "broken-lookup").exists() or (state / "probe-failed").exists():
+                (state / "probe-failed").unlink(missing_ok=True)
+                event("incus list failed")
+                return 1
             rows = []
             for key, target, commit in (("candidate", candidate, sha), ("former", "gateway-" + old[:12], old),
                                         ("earlier", "gateway-" + EARLIER[:12], EARLIER)):
@@ -240,8 +252,11 @@ def stub(name, args):
                         "boot.autostart": boot.read_text().strip() if boot.exists() else "false",
                     }})
             if (state / "prep").exists():
+                origin = state / "prep-from"
+                seeded = {"user.orbit.release.seeded-from": origin.read_text(), "user.orbit.release.seed-ready": "true"} \
+                    if origin.exists() else {}
                 rows.append({"name": "prepare-gateway", "status": (state / "prep").read_text().strip() or "Stopped",
-                             "config": {"user.orbit.release.target": "gateway", "user.orbit.release.role": "prepare"}})
+                             "config": {"user.orbit.release.target": "gateway", "user.orbit.release.role": "prepare", **seeded}})
             if (state / "orphan").exists():
                 rows.append({"name": "gateway-" + "c"*12, "status": "Stopped", "config": {"user.orbit.release.target":"gateway"}})
             print(json.dumps(rows))

@@ -49,26 +49,30 @@
     - name: Skip a wait this Operation already finished
       ansible.builtin.meta: end_host
       when: wait_words[:1] == [intent.operation | string] and wait_words[1:2] in [['drained'], ['timeout']]
-    - name: Read the former live's state from Incus
-      ansible.builtin.command:
-        argv: [incus, --force-local, --project, orbit-releases, list, "{{ intent.container }}", --format, json]
-      register: former_state
-      changed_when: false
     - name: Choose the start of the bound
       ansible.builtin.set_fact:
         wait_start: "{{ wait_words[2] if wait_words[:2] == [intent.operation | string, 'waiting'] else (now().timestamp() | int) }}"
-        # A successful lookup that shows the container stopped or absent needs no wait.
-        former_gone: "{{ former_state.stdout | from_json | selectattr('name', 'equalto', intent.container) | rejectattr('status', 'equalto', 'Stopped') | list | length == 0 }}"
     - name: Create the response wait records
       ansible.builtin.file:
         path: "{{ record_dir }}"
         state: directory
         mode: "0700"
-    - name: Record the start before the first probe
+    # The start is saved before any Incus call, so a hung or failing lookup still counts against one deadline.
+    - name: Record the start before any Incus call
       ansible.builtin.copy:
         dest: "{{ record }}"
         content: "{{ intent.operation }} waiting {{ wait_start }}\n"
         mode: "0600"
+    - name: Read the former live's state from Incus
+      ansible.builtin.command:
+        argv: [timeout, "15", incus, --force-local, --project, orbit-releases, list, "{{ intent.container }}", --format, json]
+      register: former_state
+      changed_when: false
+      failed_when: false
+    - name: Decide whether the former live can still send
+      ansible.builtin.set_fact:
+        # Only a lookup that succeeded and shows the container stopped or absent needs no wait. Unknown is busy.
+        former_gone: "{{ former_state.rc == 0 and (former_state.stdout | from_json | selectattr('name', 'equalto', intent.container) | rejectattr('status', 'equalto', 'Stopped') | list | length == 0) }}"
     - name: Read web sockets that still hold queued bytes
       when: not former_gone | bool
       ansible.builtin.command:

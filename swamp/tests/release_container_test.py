@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import call, patch
@@ -41,6 +42,16 @@ def addressed_candidate(**interfaces):
 
 
 class ReleaseTest(unittest.TestCase):
+    def setUp(self):
+        # The Gateway inventory names live and old; nothing else is owned.
+        state = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(state))
+        (state / "inventory.json").write_text(json.dumps({"version": 2, "live": SHA, "old": "b" * 40}))
+        for name, value in (("GATEWAY_INVENTORY", state / "inventory.json"), ("GATEWAY_CANDIDATE", state / "candidate")):
+            patcher = patch.object(release, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_capacity_refuses_each_shortage_before_mutating_a_release(self):
         gib = 1024**3
         prep = {"name": "prepare-instance-8", "status": "Frozen", "expanded_config": {},
@@ -414,7 +425,7 @@ class ReleaseTest(unittest.TestCase):
         pool = json.dumps({"driver": "zfs", "config": {"source": "tank/r"}})
         with patch.object(release.subprocess, "run", side_effect=run), patch.object(release.subprocess, "check_output", return_value=pool), \
                 patch.object(release, "incus") as incus, patch.object(release, "power") as power_call:
-            release.remove(prep)
+            release.remove(prep, "gateway")
         self.assertEqual([c for c in calls if c[0] == "promote"], [["promote", live]])
         incus.assert_called_once_with("delete", "prepare-gateway")
         power_call.assert_called_once_with("prepare-gateway", "discard")
@@ -430,8 +441,26 @@ class ReleaseTest(unittest.TestCase):
             with self.subTest(error=error), patch.object(release.subprocess, "run", side_effect=run), \
                     patch.object(release.subprocess, "check_output", return_value=pool), patch.object(release, "incus") as incus, \
                     self.assertRaisesRegex(ValueError, error):
-                release.remove(prep)
+                release.remove(prep, "gateway")
             incus.assert_not_called()
+
+    def test_removal_checks_every_clone_of_every_moving_snapshot_by_exact_name(self):
+        prep = {"name": "prepare-gateway", "expanded_devices": {"root": {"pool": "orbit-releases"}}}
+        root = "tank/r/containers/orbit-releases_"
+        pool = json.dumps({"driver": "zfs", "config": {"source": "tank/r"}})
+        # live is owned; an older snapshot also feeds a release name the inventory does not hold, and one feeds a look-alike.
+        for stranger in ("gateway-" + "d" * 12, "gateway-" + SHA[:12] + "-copy"):
+            listing = (f"{root}prepare-gateway@deleted-old\t5\t{root}{stranger}\n"
+                       f"{root}prepare-gateway@deleted-seed\t9\t{root}gateway-{SHA[:12]}\n")
+
+            def run(command, listing=listing, **kwargs):
+                return subprocess.CompletedProcess(command, 0, stdout=listing if command[1] == "list" else "")
+            with self.subTest(stranger=stranger), patch.object(release.subprocess, "run", side_effect=run) as zfs_run, \
+                    patch.object(release.subprocess, "check_output", return_value=pool), patch.object(release, "incus") as incus, \
+                    self.assertRaisesRegex(ValueError, "foreign_clone"):
+                release.remove(prep, "gateway")
+            incus.assert_not_called()
+            self.assertNotIn("promote", [c.args[0][1] for c in zfs_run.call_args_list])
 
     def test_a_preparer_with_an_unfinished_seed_never_wakes(self):
         prep = self.gateway("prepare-gateway", "prepare", operation="13", **{"seeded-from": SHA, "seed-ready": "false"})

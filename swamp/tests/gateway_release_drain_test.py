@@ -17,6 +17,14 @@ class GatewayReleaseDrain(GatewayReleaseFixture):
         (self.state / f"busy-{self.retained}").write_text("2")
         self.assert_ok(self.switch())
         self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        # A failing probe and lookup never count as drained, and the start is saved before either runs.
+        self.assert_ok(self.run_script(self.phase, "quiesce", self.sha, OPERATION))
+        (self.state / "broken-gate").touch()
+        self.assertIn("queued response bytes", self.run_script(self.phase, "retire", self.sha, OPERATION).stderr)
+        self.assertIn("incus list failed", (self.state / "events").read_text())
+        self.assertRegex((self.root / "var/release-response-wait" / self.retained).read_text(), rf"^{OPERATION} waiting \d+$")
+        self.assertNotEqual((self.state / "former").read_text(), "Stopped")
+        (self.state / "broken-gate").unlink()
         for _ in range(2):
             self.assertIn("queued response bytes", self.run_script(self.console, "--recover").stderr)
             self.assertNotEqual((self.state / "former").read_text(), "Stopped")
@@ -56,6 +64,12 @@ class GatewayReleaseDrain(GatewayReleaseFixture):
         self.assertFalse((self.journal / "operation").exists())
         self.assertTrue((self.journal / "rollback").exists())
         self.assertEqual((self.state / "former").read_text(), "Running")
+        # A failed Incus lookup proves nothing: --recover fails and the marker stays.
+        (self.state / "broken-lookup").touch()
+        self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)
+        self.assertTrue((self.journal / "rollback").exists())
+        self.assertEqual((self.state / "former").read_text(), "Running")
+        (self.state / "broken-lookup").unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assertFalse((self.journal / "rollback").exists())
         self.assert_parked("former", self.old)

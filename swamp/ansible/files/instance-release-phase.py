@@ -898,27 +898,41 @@ class Release:
         words = record.read_text().split() if record.exists() else []
         if words[:1] == [str(self.operation)] and words[1:] in (["drained"], ["timeout"]):
             return
-        probe = self.guest(machine, "ss", "-tanH", "( sport = :8080 )", check=False)
-        if probe.returncode == 0:
-            queued = [line for line in probe.stdout.splitlines()
-                      if len(line.split()) > 2 and line.split()[0] not in ("LISTEN", "TIME-WAIT") and int(line.split()[2]) > 0]
-            drained = not queued
-        else:
-            # A failed probe counts as drained only when a successful Incus lookup shows the container stopped or absent.
-            item = self.ctl["instance"](machine)
-            drained = item is None or item["status"] == "Stopped"
-        # The bound counts from the first probe of this Operation, the one the workflow's wait records or this one.
+        # The start is saved before any Incus call, so a hung or failing lookup counts against one deadline.
         RESPONSE_WAITS.mkdir(mode=0o700, parents=True, exist_ok=True)
         if words[:2] == [str(self.operation), "waiting"]:
             first = int(words[2])
         else:
             first = int(time.time())
             atomic(record, f"{self.operation} waiting {first}\n")
+        # Only a probe that ran, or a lookup that succeeded and shows the container stopped or absent, drains.
+        drained = False
+        try:
+            probe = self.guest(machine, "ss", "-tanH", "( sport = :8080 )", check=False, timeout=15)
+            if probe.returncode == 0:
+                drained = not [line for line in probe.stdout.splitlines()
+                               if len(line.split()) > 2 and line.split()[0] not in ("LISTEN", "TIME-WAIT") and int(line.split()[2]) > 0]
+            else:
+                item = self.ctl["instance"](machine, timeout=15)
+                drained = item is None or item["status"] == "Stopped"
+        except (OSError, ValueError, subprocess.SubprocessError):
+            drained = False
         if not drained and time.time() - first < RESPONSE_WAIT_SECONDS:
             raise Refusal(f"deployment.response_wait: {machine} still has queued response bytes; retry to keep waiting")
         if not drained:
             print(f"deployment.response_wait_timeout: {machine} still had queued response bytes; it stops now", file=sys.stderr)
         atomic(record, f"{self.operation} {'drained' if drained else 'timeout'}\n")
+
+    def stop_web(self, machine):
+        """Stop the web server gracefully, so in-flight requests finish, and confirm that it stopped."""
+        self.guest(machine, "systemctl", "disable", "--now", "orbit-frankenphp.service")
+        if self.guest(machine, "systemctl", "is-active", "--quiet", "orbit-frankenphp.service", check=False).returncode == 0:
+            raise Refusal(f"deployment.response_wait: the web server in {machine} is still running")
+
+    def drain(self, machine):
+        """The one drain before a container that may have served stops or goes: stop the web, then the response gate."""
+        self.stop_web(machine)
+        self.response_gate(machine)
 
     @staticmethod
     def parked(record):
@@ -934,7 +948,7 @@ class Release:
         if not self.state.get("quiesced_previous"):
             if not self.parked(self.identity(previous)):
                 # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
-                self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
+                self.stop_web(self.container(previous))
             self.persist(quiesced_previous=True)
         print(self.container(previous))
 
@@ -946,11 +960,8 @@ class Release:
         if previous and not self.state.get("parked_previous"):
             # A retry after a completed stop finds the container already parked; a stopped guest takes no exec.
             if not self.parked(self.identity(previous)):
-                if not self.state.get("quiesced_previous"):
-                    # A graceful web stop drains the old connections; a failed stop keeps this release recoverable.
-                    self.guest(self.container(previous), "systemctl", "disable", "--now", "orbit-frankenphp.service")
-                    self.persist(quiesced_previous=True)
-                self.response_gate(self.container(previous))
+                self.drain(self.container(previous))
+                self.persist(quiesced_previous=True)
                 self.primitive("retire", previous[:12], self.operation)
             self.persist(parked_previous=True)
         if old and old not in (self.sha, previous):
@@ -973,16 +984,16 @@ class Release:
         self.check_selection(self.state["previous"])
         if self.state["action"] == "rollback":
             # A retry after a completed stop finds old already parked.
+            # The rollback target may have served before the reversal: it drains before it stops again.
             if (self.state.get("rollback_awake") and self.sha == self.inventory["old"]
                     and not self.parked(self.identity(self.sha))):
-                self.guest(self.name, "systemctl", "stop", "orbit-frankenphp.service")
+                self.drain(self.name)
                 self.primitive("retire", self.sha[:12], self.operation)
         elif self.state.get("candidate_attempted") and self.sha not in (self.inventory["live"], self.inventory["old"]):
-            if self.state.get("switch_started") and self.ctl["instance"](self.name) is not None:
-                # The candidate may have served between the route switch and its reversal. Its web server already
-                # stopped in reverse(); its queued response bytes drain before the container goes.
-                self.guest(self.name, "systemctl", "disable", "--now", "orbit-frankenphp.service", check=False)
-                self.response_gate(self.name)
+            candidate = self.ctl["instance"](self.name)
+            if self.state.get("switch_started") and candidate is not None and candidate["status"] != "Stopped":
+                # The candidate may have served between the route switch and its reversal: it drains before it goes.
+                self.drain(self.name)
             self.discard(self.sha, owned_build=True)
             snapshot = "built-" + str(self.operation)
             snapshots = json.loads(self.incus("snapshot", "list", self.prep, "--format", "json").stdout)

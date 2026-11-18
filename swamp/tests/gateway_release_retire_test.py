@@ -86,8 +86,16 @@ class GatewayReleaseRetire(GatewayReleaseFixture):
         self.inventory_is(self.sha, self.old, verified=(self.old, EARLIER), earlier=EARLIER)
         # The next build refuses while C still fails; once C verifies, --recover frees the slot and rebuilds preparation.
         self.assertIn("has not passed its public check", self.direct("build", "false", "{}", "false").stderr)
+        self.assertTrue((self.journal / "prep-owed").exists())
         (self.state / f"broken-public-container-{self.sha}").unlink()
+        # A seed that fails after the earlier release is deleted keeps the marker; the next --recover finishes it.
+        (self.state / "seed-fails").touch()
+        self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)
+        self.assertFalse((self.state / "earlier").exists())
+        self.assertTrue((self.journal / "prep-owed").exists())
+        (self.state / "seed-fails").unlink()
         self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assertFalse((self.journal / "prep-owed").exists())
         self.assertFalse((self.state / "earlier").exists())
         self.assert_parked("former", self.old)
         self.assertTrue((self.state / "prep").exists())

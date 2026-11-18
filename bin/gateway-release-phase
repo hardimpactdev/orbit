@@ -153,11 +153,12 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
     # A refused or failed rollback may have started old. Park it again; it stays the rollback release.
     # A refusal before the start leaves it parked, also when its own controller is older.
     # A missing old is already gone; the next build forgets it.
-    if "${incus_cli[@]}" list "$candidate" --format json | jq -e --arg name "$candidate" \
-        'any(.[]; .name==$name and (.status!="Stopped" or .config["boot.autostart"]!="false"))' >/dev/null; then
+    # Capture the lookup first: a failed lookup is no proof that old is parked. Recovery markers stay for confirm_settled.
+    listing=$("${incus_cli[@]}" list "$candidate" --format json) || { echo 'Cannot read the retained Gateway release' >&2; exit 1; }
+    running=$(jq -r --arg name "$candidate" 'any(.[]; .name==$name and (.status!="Stopped" or .config["boot.autostart"]!="false"))' <<< "$listing")
+    if [[ $running == true ]]; then
       ctl retire gateway "${sha:0:12}" "$operation"
     fi
-    rm -f -- "$journal/rollback"
     exit
   fi
   existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')

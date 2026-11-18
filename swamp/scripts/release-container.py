@@ -15,6 +15,8 @@ from pathlib import Path
 PROJECT = "orbit-releases"
 ADDRESS_TIMEOUT = 15  # Same deadline as one private HTTP readiness probe.
 PREFIX = "user.orbit.release."
+GATEWAY_INVENTORY = Path("/home/orbit/.orbit/gateway-containers.json")
+GATEWAY_CANDIDATE = Path("/var/lib/orbit/gateway-release-switch/candidate")
 # Bind the writable Laravel cache first. The recursive checkout bind keeps that submount writable.
 # All sources are relative to the cloned root filesystem, including on a cold start.
 GATEWAY_MOUNTS = "\n".join(
@@ -259,7 +261,7 @@ def demote(target, operation, commit):
         raise ValueError("release.container_still_active")
     if instance("prepare-" + target) is not None:
         # Another preparer already holds the slot. This build never served, so it goes.
-        remove(record, force=True)
+        remove(record, target, force=True)
         return name
     halt(record, operation)
     # Units the switch enabled before it failed must not start in preparation. Read the stopped container itself.
@@ -292,7 +294,7 @@ def seed(target, revision, operation):
         # Preparation is always a clone of the current live. One cloned from another release is replaced.
         owned(prep, {"target": target, "role": "prepare"})
         halt(prep, operation)
-        remove(prep)
+        remove(prep, target)
         prep = None
     if prep is None:
         gateway_slots(target)
@@ -398,7 +400,22 @@ def prune(root):
             zfs("destroy", snapshot)
 
 
-def free_dependents(record):
+def owned_names(target):
+    """The exact container names a target owns: its preparer and the releases its records name."""
+    if target != "gateway":
+        return {"prepare-" + target} | {item["name"] for item in json.loads(incus("list", "--format", "json"))
+                                        if re.fullmatch(re.escape(target) + r"-[0-9a-f]{12}", item["name"])}
+    shas = []
+    if GATEWAY_INVENTORY.exists():
+        inventory = json.loads(GATEWAY_INVENTORY.read_text())
+        shas += [inventory.get(key) for key in ("live", "old", "earlier")]
+    if GATEWAY_CANDIDATE.exists():
+        # During a handover the new live is recorded in the journal before the inventory names it.
+        shas.append(GATEWAY_CANDIDATE.read_text().strip())
+    return {"prepare-gateway"} | {"gateway-" + sha[:12] for sha in shas if isinstance(sha, str) and SHA.fullmatch(sha)}
+
+
+def free_dependents(record, target):
     """Move the ZFS origin role off a release before it is deleted, without copying a file.
 
     After a promotion the preparer, or a release promoted from it, can be the origin of live and old. Incus cannot
@@ -409,6 +426,7 @@ def free_dependents(record):
         return
     prefix = root + "/containers/" + PROJECT + "_"
     dataset = prefix + record["name"]
+    allowed = {prefix + name for name in owned_names(target)}
     for _ in range(64):
         listing = zfs("list", "-H", "-p", "-t", "snapshot", "-o", "name,createtxg,clones", "-d", "1", dataset)
         rows = [line.split("\t") for line in listing.splitlines() if line.strip()]
@@ -416,7 +434,9 @@ def free_dependents(record):
         if not dependents:
             return
         limit, clones = max(dependents)
-        if any(not clone.startswith(prefix) for clone in clones):
+        # Every clone of every snapshot that would move must be one of this target's own containers, by exact name.
+        moving = [clone for txg, names in dependents if txg <= limit for clone in names]
+        if any(clone not in allowed for clone in moving):
             raise ValueError("release.foreign_clone: a dataset outside the release containers depends on " + record["name"])
         if any("@deleted-" not in snap for snap, txg, _clones in rows if int(txg) <= limit):
             raise ValueError("release.recorded_snapshot_would_move: delete the Incus snapshots of " + record["name"] + " first")
@@ -424,9 +444,9 @@ def free_dependents(record):
     raise ValueError("release.dependents_remain: " + record["name"])
 
 
-def remove(record, force=False):
+def remove(record, target, force=False):
     """Delete a release container only once no other release depends on its dataset."""
-    free_dependents(record)
+    free_dependents(record, target)
     incus("delete", record["name"], *(["--force"] if force else []))
     power(record["name"], "discard")
 
@@ -618,7 +638,7 @@ def main(argv):
         record = release(args.target, args.revision)
         if record["config"].get("boot.autostart") == "true":
             raise ValueError("release.container_still_active")
-        remove(record, force=args.force)
+        remove(record, args.target, force=args.force)
         return record["name"]
     if args.action in ("wake", "sleep"):
         record = preparer(args.target)

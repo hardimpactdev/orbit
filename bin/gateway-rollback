@@ -20,15 +20,13 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     flock -n 9 || fail "another Gateway release holds the lock"
     if [[ $id == --recover ]]; then
         if [[ ! -f $journal/operation ]]; then
-            # A rollback that stopped before its switch was journaled parks old again.
-            if [[ -f $journal/rollback ]]; then
-                read -r operation started < "$journal/rollback"
-                exec "$phase" release-unused "$started" "$operation"
-            fi
-            # An unverified live keeps an earlier release in the preparation slot; once it verifies, free the slot.
+            # Recovery markers record a rollback that stopped before its switch or an owed preparation. An unverified
+            # live keeps an earlier release. settle finishes each and clears a marker only once the result is proven.
             inventory=$base/.orbit/gateway-containers.json
-            [[ -n $(jq -r '.earlier // ""' "$inventory") ]] || fail "there is no interrupted handover"
-            exec "$phase" settle "$(jq -er '.live' "$inventory")" "$(cat "$journal/last-operation")"
+            earlier=$(jq -r '.earlier // ""' "$inventory")
+            [[ -f $journal/rollback || -f $journal/prep-owed || -n $earlier ]] || fail "there is no interrupted handover"
+            live=$(jq -er '.live' "$inventory")
+            exec "$phase" settle "$live" "$(cat "$journal/last-operation")"
         fi
         operation=$(cat "$journal/operation")
         candidate=$(cat "$journal/candidate")
@@ -94,6 +92,7 @@ for unit in $(systemctl list-unit-files --type=service --state=enabled --plain -
     case $unit in *@.service) continue ;; esac
     directory=$(systemctl show -p WorkingDirectory --value "$unit" 2>/dev/null) || continue
     case $directory in "$application" | "$application"/*) ;; *) continue ;; esac
-    { systemctl show -p ExecStart --value "$unit" 2>/dev/null || true; } | grep -q 'artisan horizon ;' || continue
+    command=$(systemctl show -p ExecStart --value "$unit" 2>/dev/null) || command=''
+    [[ $command == *'artisan horizon ;'* ]] || continue
     systemctl is-active --quiet "$unit" || { systemctl start "$unit" && echo "gateway-rollback: started $unit"; }
 done

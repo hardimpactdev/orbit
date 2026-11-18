@@ -34,6 +34,17 @@ phase = load("production_phase", "ansible/files/instance-release-phase.py")
 guest = load("production_guest", "ansible/files/instance-release-guest.py")
 
 
+def guest_answers(sockets):
+    """A guest whose web server stops when asked and whose `ss` prints the given lines."""
+    def answer(machine, *args, **kwargs):
+        if args[:1] == ("ss",):
+            return sockets if isinstance(sockets, CompletedProcess) else CompletedProcess([], 0, stdout=sockets)
+        if "is-active" in args:
+            return CompletedProcess([], 3, stdout="")
+        return CompletedProcess([], 0, stdout="")
+    return answer
+
+
 class ProductionReleaseTest(unittest.TestCase):
     def setUp(self):
         self.stack = ExitStack()
@@ -208,19 +219,19 @@ class ProductionReleaseTest(unittest.TestCase):
         self.r.link(NEXT)
         self.r.state["verified"] = True
         running = {"status": "Running", "config": {"boot.autostart": "false"}}
-        with patch.object(self.r, "guest") as guest, patch.object(self.r, "identity", return_value=running), \
+        with patch.object(self.r, "guest", side_effect=guest_answers("")) as guest, patch.object(self.r, "identity", return_value=running), \
                 patch("builtins.print") as printed:
             self.r.quiesce()
             self.r.quiesce()
-        guest.assert_called_once_with(self.r.container(CURRENT), "systemctl", "disable", "--now", "orbit-frankenphp.service")
+        self.assertEqual(guest.call_args_list[0].args, (self.r.container(CURRENT), "systemctl", "disable", "--now", "orbit-frankenphp.service"))
+        self.assertEqual(len(guest.call_args_list), 2)
         printed.assert_called_with(self.r.container(CURRENT))
         self.assertTrue(self.r.state["quiesced_previous"])
-        with patch.object(self.r, "guest") as guest, patch.object(self.r, "identity", return_value=running), \
+        with patch.object(self.r, "identity", return_value=running), \
                 patch.object(self.r, "primitive") as primitive, patch.object(self.r, "discard"), \
-                patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), patch.object(self.r, "response_gate") as gate:
+                patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), patch.object(self.r, "drain") as drain:
             self.r.retire()
-        guest.assert_not_called()
-        gate.assert_called_once_with(self.r.container(CURRENT))
+        drain.assert_called_once_with(self.r.container(CURRENT))
         primitive.assert_called_once_with("retire", CURRENT[:12], self.r.operation)
 
     def test_recovery_retire_waits_for_queued_response_bytes_up_to_the_bound(self):
@@ -228,16 +239,16 @@ class ProductionReleaseTest(unittest.TestCase):
         self.r.state.update(verified=True, quiesced_previous=True)
         running = {"status": "Running", "config": {"boot.autostart": "false"}}
         waits = self.r.root / "waits"
-        busy = CompletedProcess([], 0, stdout="LISTEN 0 4096 a:8080 *\nLAST-ACK 0 2048 a:8080 b:1\nTIME-WAIT 0 9 a:8080 b:2\n")
-        idle = CompletedProcess([], 0, stdout="LISTEN 0 4096 a:8080 *\nTIME-WAIT 0 9 a:8080 b:2\n")
+        busy = guest_answers("LISTEN 0 4096 a:8080 *\nLAST-ACK 0 2048 a:8080 b:1\nTIME-WAIT 0 9 a:8080 b:2\n")
+        idle = guest_answers("LISTEN 0 4096 a:8080 *\nTIME-WAIT 0 9 a:8080 b:2\n")
         with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "identity", return_value=running), \
                 patch.object(self.r, "discard"), patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), \
                 patch.object(self.r, "primitive") as primitive:
-            with patch.object(self.r, "guest", return_value=busy), self.assertRaisesRegex(phase.Refusal, "queued response bytes"):
+            with patch.object(self.r, "guest", side_effect=busy), self.assertRaisesRegex(phase.Refusal, "queued response bytes"):
                 self.r.retire()
             primitive.assert_not_called()
             # A retry after the bytes drained records the outcome and stops the container.
-            with patch.object(self.r, "guest", return_value=idle):
+            with patch.object(self.r, "guest", side_effect=idle):
                 self.r.retire()
             primitive.assert_called_once_with("retire", CURRENT[:12], self.r.operation)
         self.assertEqual((waits / self.r.container(CURRENT)).read_text(), "300 drained\n")
@@ -250,10 +261,10 @@ class ProductionReleaseTest(unittest.TestCase):
         waits.mkdir()
         # The workflow's wait recorded its first probe long ago; recovery keeps that start instead of a fresh one.
         (waits / self.r.container(CURRENT)).write_text("300 waiting 1\n")
-        busy = CompletedProcess([], 0, stdout="FIN-WAIT-1 0 2048 a:8080 b:1\n")
+        busy = guest_answers("FIN-WAIT-1 0 2048 a:8080 b:1\n")
         with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "identity", return_value=running), \
                 patch.object(self.r, "discard"), patch.object(self.r, "route_files"), patch.object(self.r, "free_capacity"), \
-                patch.object(self.r, "primitive") as primitive, patch.object(self.r, "guest", return_value=busy):
+                patch.object(self.r, "primitive") as primitive, patch.object(self.r, "guest", side_effect=busy):
             self.r.retire()
         primitive.assert_called_once()
         self.assertEqual((waits / self.r.container(CURRENT)).read_text(), "300 timeout\n")
@@ -263,26 +274,55 @@ class ProductionReleaseTest(unittest.TestCase):
         self.r.state.update(verified=True, quiesced_previous=True)
         waits = self.r.root / "waits"
         failed = CompletedProcess([], 1, stdout="", stderr="exec: ss: not found")
-        self.r.ctl["instance"] = lambda name: {"name": name, "status": "Running"}
+        self.r.ctl["instance"] = lambda name, **kwargs: {"name": name, "status": "Running"}
         with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "guest", return_value=failed), \
                 self.assertRaisesRegex(phase.Refusal, "queued response bytes"):
             self.r.response_gate(self.r.container(CURRENT))
-        self.r.ctl["instance"] = lambda name: {"name": name, "status": "Stopped"}
+        # The start was saved before the probe and the lookup.
+        self.assertTrue((waits / self.r.container(CURRENT)).read_text().startswith("300 waiting "))
+
+        def lookup_fails(name, **kwargs):
+            raise subprocess.TimeoutExpired(["incus", "list"], 15)
+        self.r.ctl["instance"] = lookup_fails
+        with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "guest", return_value=failed), \
+                self.assertRaisesRegex(phase.Refusal, "queued response bytes"):
+            self.r.response_gate(self.r.container(CURRENT))
+        self.r.ctl["instance"] = lambda name, **kwargs: {"name": name, "status": "Stopped"}
         with patch.object(phase, "RESPONSE_WAITS", waits), patch.object(self.r, "guest", return_value=failed):
             self.r.response_gate(self.r.container(CURRENT))
         self.assertEqual((waits / self.r.container(CURRENT)).read_text(), "300 drained\n")
 
     def test_a_reversed_candidate_that_may_have_served_drains_before_it_is_removed(self):
         self.r.state.update(action="deploy", candidate_attempted=True, switch_started=True, artifact="sha256:" + "f" * 64)
-        self.r.ctl["instance"] = lambda name: {"name": name, "status": "Running"}
+        self.r.ctl["instance"] = lambda name, **kwargs: {"name": name, "status": "Running"}
         order = []
         with patch.object(self.r, "reverse"), patch.object(self.r, "check_selection"), patch.object(self.r, "park"), \
-                patch.object(self.r, "free_capacity"), patch.object(self.r, "guest"), \
+                patch.object(self.r, "free_capacity"), patch.object(self.r, "guest", side_effect=guest_answers("")), \
                 patch.object(self.r, "response_gate", side_effect=lambda name: order.append("gate " + name)), \
                 patch.object(self.r, "discard", side_effect=lambda sha, owned_build: order.append("discard")), \
                 patch.object(self.r, "incus", return_value=CompletedProcess([], 0, stdout="[]")):
             self.r.release_unused()
         self.assertEqual(order, ["gate " + self.r.name, "discard"])
+
+    def test_a_rollback_target_that_served_drains_before_it_stops_again(self):
+        self.r.state.update(action="rollback", rollback_awake=True, sha=OLD)
+        self.r.sha = OLD
+        running = {"status": "Running", "config": {"boot.autostart": "false"}}
+        order = []
+        with patch.object(self.r, "reverse"), patch.object(self.r, "check_selection"), patch.object(self.r, "park"), \
+                patch.object(self.r, "free_capacity"), patch.object(self.r, "identity", return_value=running), \
+                patch.object(self.r, "drain", side_effect=lambda name: order.append("drain " + name)), \
+                patch.object(self.r, "primitive", side_effect=lambda *args: order.append(args[0])):
+            self.r.release_unused()
+        self.assertEqual(order, ["drain " + self.r.name, "retire"])
+
+    def test_the_web_server_must_stop_before_the_response_gate(self):
+        def still_running(machine, *args, **kwargs):
+            return CompletedProcess([], 0, stdout="")
+        with patch.object(self.r, "guest", side_effect=still_running), patch.object(self.r, "response_gate") as gate, \
+                self.assertRaisesRegex(phase.Refusal, "still running"):
+            self.r.drain(self.r.name)
+        gate.assert_not_called()
 
     def test_rollback_cleanup_leaves_an_already_parked_old_alone(self):
         self.r.state.update(action="rollback", rollback_awake=True, sha=OLD)

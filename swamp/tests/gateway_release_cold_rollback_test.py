@@ -13,7 +13,7 @@ class GatewayColdRollback(GatewayReleaseFixture):
         self.inventory_is(self.old, self.sha, verified=(self.old, self.sha))
         # Preparation is rebuilt from the release that serves now, never kept from the rolled-away live.
         self.assertTrue((self.state / "prep").exists())
-        self.assertEqual((self.state / "prep-from").read_text(), self.old[:12])
+        self.assertEqual((self.state / "prep-from").read_text(), self.old)
         self.assertIn("delete prep", (self.state / "events").read_text())
         self.assert_at_most_three()
         self.assertEqual((self.state / "former").read_text(), "Running")

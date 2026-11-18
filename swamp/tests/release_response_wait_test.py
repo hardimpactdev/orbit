@@ -18,7 +18,9 @@ INCUS = """#!/bin/sh
 state="$FIXTURE_STATE"
 case " $* " in
   *" list "*)
+    cat "$state/records/gateway-aaaaaaaaaaaa" > "$state/seen" 2>/dev/null
     status=$(cat "$state/status")
+    if [ "$status" = error ]; then echo "incus: cannot reach the daemon" >&2; exit 1; fi
     if [ "$status" = absent ]; then echo '[]'; else echo "[{\\"name\\": \\"gateway-aaaaaaaaaaaa\\", \\"status\\": \\"$status\\"}]"; fi
     exit 0 ;;
 esac
@@ -62,6 +64,7 @@ class ReleaseResponseWait(unittest.TestCase):
                 capture_output=True, text=True, timeout=180, check=False)
             calls = (root / "calls").read_text().splitlines()
             saved = records / "gateway-aaaaaaaaaaaa"
+            self.seen = (root / "seen").read_text() if (root / "seen").exists() else None
             return result, calls, saved.read_text() if saved.exists() else None
 
     def test_a_slow_reader_after_the_server_closed_is_waited_for(self):
@@ -80,10 +83,13 @@ class ReleaseResponseWait(unittest.TestCase):
         self.assertEqual(record, "42 timeout\n")
 
     def test_a_failed_probe_stays_busy_until_the_bound_unless_incus_reports_the_container_stopped(self):
-        result, calls, record = self.play("error", 0)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertGreaterEqual(len(calls), 2)
-        self.assertEqual(record, "42 timeout\n")
+        for status in ("Running", "error"):
+            result, calls, record = self.play("error", 0, status=status, seconds=3)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertGreaterEqual(len(calls), 2)
+            self.assertEqual(record, "42 timeout\n")
+            # The start was saved before the first Incus call.
+            self.assertRegex(self.seen, r"^42 waiting \d+\n?$")
         for status in ("Stopped", "absent"):
             result, calls, record = self.play("error", 0, status=status)
             self.assertEqual(calls, [])

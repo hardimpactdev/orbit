@@ -5,6 +5,7 @@ inputs = [
   "swamp/ansible/files/instance-container-power.py",
 ]
 cases = [
+  "test_removal_checks_every_clone_of_every_moving_snapshot_by_exact_name",
   "test_capacity_refuses_each_shortage_before_mutating_a_release",
   "test_first_gateway_build_counts_host_fpm_and_gateway_processes",
   "test_address_is_reserved_once_and_cannot_silently_drift_after_boot",
