@@ -1560,6 +1560,7 @@ name = "orbit-executor"
 version = "0.1.0"
 dependencies = [
  "orbit-executor-core",
+ "orbit-executor-firewall",
  "orbit-executor-power",
  "serde_json",
 ]
@@ -1576,6 +1577,15 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "orbit-executor-firewall"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
