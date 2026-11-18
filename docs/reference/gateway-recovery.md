@@ -334,7 +334,7 @@ The attest action is pinned by commit SHA, so its bundle format changes only whe
 
 #### Web build
 
-CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main CI run publishes it. It either builds it or verifies and republishes the artifact from a green PR run with the same tested Git tree; see [CI tree reuse](/reference/implementation-loop#reuse-a-green-pr-tree-on-main). PR artifacts alone cannot authorize release.
+CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main delivery run verifies and republishes the artifact from a green PR run with the same tested Git tree; see [CI tree reuse](/reference/implementation-loop#reuse-a-green-pr-tree-on-main). PR artifacts alone cannot authorize release.
 
 The Swamp step downloads the artifact with the run's GitHub token, checks its digest and extracts it into a private staging directory. It accepts only regular files and directories with safe relative names. It refuses links, special files, absolute paths, `..`, more than 20,000 entries or more than 512 MiB of files. The build must have `index.html` at its root. The step gives Caddy access and moves the build into `web/releases/<id>` with one rename. A complete build is reused.
 
@@ -342,7 +342,7 @@ The activate child switches `web/current` together with the Gateway code, before
 
 A missing or expired artifact refuses admission with `gateway.release_web_build_missing`. An invalid artifact returns `gateway.release_web_build_invalid`. A deploy or rollback needs a valid artifact even when it can reuse a sealed release.
 
-CI's `Required checks` needs the Web job, which uploads the artifact before it succeeds. Automatic releases also need `Gateway release inputs`. Every main commit runs both, including Swamp-only changes, because the release also [loads Swamp](#load-swamp).
+The main `Required checks` and `Gateway release inputs` checks depend on successful promotion of the PR build. Swamp-only changes use the same delivery path because the release also [loads Swamp](#load-swamp).
 
 ##### Accepted CI runs
 
@@ -423,7 +423,7 @@ Each tick of `gateway:release:auto` takes these steps and stops at the first tha
 3. It settles dead records and stops if this creates a pause.
 4. It reads the current release and its `REVISION`. An invalid layout stops the tick.
 5. It reads the repository origin locally with `git --git-dir <shared>/orbit.git config --get remote.origin.url`.
-6. It asks GitHub for the newest commit with passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit) that descends from the current release.
+6. It asks GitHub for the newest first-parent main commit that descends from the current release and has passing `Gateway release inputs` and [green checks](/reference/github-app#find-the-newest-green-commit). These checks certify a green PR run of the exact landed tree and promotion of the web artifact.
 7. It respects a manual pin and the retry delay, then admits the [Swamp run](#release-as-a-swamp-run) with trigger `auto`.
 
 `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and check, by default `main` and `Required checks`. A retryable failure waits 10 minutes between attempts, up to three attempts. Waiting for agent delivery spends no retry budget.

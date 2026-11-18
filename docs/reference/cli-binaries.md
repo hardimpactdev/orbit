@@ -20,9 +20,9 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 Every `main` commit whose `Main delivery checks` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries. When the agent source changed since the previous release, the release also holds the [`orbit-agent`](/reference/node-agent#releases).
 
-On a push or manual CI run on `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Main delivery checks` passes. A test job that the change did not select, so CI skipped it, does not stop it. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest trusted `ci.yml` main run has a successful `Main delivery checks` job on that exact SHA, then builds and publishes. A pull-request run never starts a release.
+On a push or manual CI run on `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Main delivery checks` passes. Delivery verifies the tested PR tree and web artifact for the landed commit. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest trusted `ci.yml` main run has a successful `Main delivery checks` job on that exact SHA, then builds and publishes. A pull-request run never starts a release.
 
-CI's dispatch is the only automatic release trigger; CI completion starts no second release run. Manual `workflow_dispatch` remains available for [backfill](#publish-a-missed-commit). Failed selected fixtures fail delivery and block the release. A failed fixture report does not invalidate successful delivery. Runs for the same commit run in sequence. A repeated dispatch checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
+CI's dispatch is the only automatic release trigger; CI completion starts no second release run. Manual `workflow_dispatch` remains available for [backfill](#publish-a-missed-commit). Missing or mismatched PR evidence blocks delivery and publication. Runs for the same commit run in sequence. A repeated dispatch checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -165,7 +165,7 @@ The publish step then fails with the error `Release refused for a non-tip commit
 
 ## Pull-request builds
 
-CI calls `Orbit CLI Binary`, `.github/workflows/orbit-cli-binary.yml`, only when the plan selects `cli` from the [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml). Each target has the table's two-minute timeout. These packaging checks are part of `Required checks` on PRs and `Main delivery checks` on main. Each PR has one concurrency group, and a newer run cancels its superseded run.
+CI calls `Orbit CLI Binary`, `.github/workflows/orbit-cli-binary.yml`, only when the plan selects `cli` from the [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml). Each target has the table's two-minute timeout. These packaging checks are part of `Required checks` on PRs. Main delivery uses the resulting PR evidence. Each PR has one concurrency group, and a newer run cancels its superseded run.
 
 The workflow also runs on `workflow_dispatch`. The release workflow calls the same `workflow_call` entry for its commit and always builds both targets, without a PR concurrency group. PR binary artifacts stay for 7 days; release-transfer and manual-build artifacts stay for 30 days.
 
