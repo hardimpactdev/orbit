@@ -2,6 +2,7 @@
 """Execute one Swamp release phase against exactly one AppProd Instance."""
 import argparse
 import fcntl
+import hashlib
 import ipaddress
 import json
 import os
@@ -249,12 +250,16 @@ class Release:
         self.check_selection(plan["expected_live"])
         if self.inventory["live"] != plan["expected_live"]:
             raise Refusal("deployment.selection_invalid: admitted live differs from release inventory")
+        bound = {key: value for key, value in plan.items() if key != "credential"}
+        fingerprint = hashlib.sha256(json.dumps(bound, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if self.state:
+            if self.state.get("plan_digest") != fingerprint:
+                raise Refusal("deployment.selection_invalid: admitted release input changed on retry")
             if self.state.get("built"):
                 return
         else:
             safe = {key: plan[key] for key in ("action", "routes", "health_path", "php_version", "application_suffix")}
-            self.persist(**safe, operation=self.operation, sha=self.sha, previous=self.inventory["live"],
+            self.persist(**safe, operation=self.operation, sha=self.sha, plan_digest=fingerprint, previous=self.inventory["live"],
                          previous_old=self.inventory["old"], legacy=plan.get("legacy"), shared_paths=plan["shared_paths"], units=[], completed_steps=[])
         if plan["action"] == "rollback":
             if self.inventory["old"] != self.sha:
@@ -661,10 +666,9 @@ class Release:
         if phase == "park-preparation":
             # Candidate readiness can proceed while memory is reclaimed. Only this operation's
             # marker is written by park(), and the native DAG joins both branches before switch.
-            with lock(self.private / "lock"):
-                self.state = read(self.operation_file, {})
-                if self.state.get("operation") != self.operation or self.state.get("sha") != self.sha:
-                    raise Refusal("deployment.selection_invalid: another release owns preparation")
+            self.state = read(self.operation_file, {})
+            if self.state.get("operation") != self.operation or self.state.get("sha") != self.sha:
+                raise Refusal("deployment.selection_invalid: another release owns preparation")
             self.park()
             return
         with lock(self.private / "lock"):
@@ -676,7 +680,11 @@ class Release:
             if phase == "readback":
                 return self.readback()
             if self.state and self.state["operation"] != self.operation:
-                if phase == "build" and (self.state.get("retired") or self.state.get("cleaned")):
+                if self.state.get("retired") or self.state.get("cleaned"):
+                    if phase in ("release-unused", "switch-back"):
+                        return  # The new build refused before it acquired this settled target.
+                    if phase != "build":
+                        raise Refusal("deployment.selection_invalid: operation has no admitted build")
                     self.state = {}
                 else:
                     raise Refusal("deployment.selection_invalid: another release owns the Instance")
