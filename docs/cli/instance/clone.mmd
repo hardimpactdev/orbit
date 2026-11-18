@@ -28,7 +28,7 @@ sequenceDiagram
   %%> Options:
   %%> - `--preview-name`: combined with Node 14's TLD, such as `shop.com.prod.orbit`
   %%> - `--branch`: another branch; the default is the candidate's branch
-  %%> - `--sqlite-source-path`: seed the production SQLite file from this file on the candidate
+  %%> - `--sqlite-source-path`: seed the production SQLite file from this file on a checkout candidate
   opt --branch
     Note over GW: Select another branch<br/>override candidate branch
     %%> What it changes:
@@ -36,6 +36,7 @@ sequenceDiagram
   end
   Note over GW: Validate, reserve 43<br/>render .env · task #5152
   %%> Requirements:
+  %%> - production clone is the sole new host-checkout exception until production containers ship; use an existing checkout or the Project’s active, running container default with a recorded seed
   %%> - your Node has access grants to Node 12 and Node 14
   %%> - a Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before any record: only `instance:create` makes Instances of such a Project, as containers
   %%> - Node 14 is active, has the `app-prod` role and a TLD
@@ -85,7 +86,8 @@ sequenceDiagram
   %%> How:
   %%> - Swamp reaches Node 12 over `@swamp/ssh` from 209, read-only
   %%> What it does:
-  %%> - checks the repository, branch and commit, a clean working tree and no submodules
+  %%> - checks the branch and commit, a clean working tree and no submodules
+  %%> - checks the Git origin of an existing checkout; for a container default, reads as the workspace owner and verifies HEAD against the recorded seed commit
   %%> - refuses an origin that contains credentials
   %%> Not included:
   %%> - copies no working files, dependencies or logs; the candidate keeps running

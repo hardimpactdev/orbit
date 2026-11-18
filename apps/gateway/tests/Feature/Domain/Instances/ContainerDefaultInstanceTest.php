@@ -9,6 +9,7 @@ use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Instances\StartInstanceEnvironmentImportAction;
 use App\Actions\Instances\StartInstanceStepListAction;
 use App\Actions\Instances\StartInstanceTransferAction;
+use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Instances\CloneInstanceData;
@@ -33,6 +34,7 @@ use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
@@ -56,7 +58,7 @@ beforeEach(function (): void {
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
 });
 
-describe('the first default Instance of a Project on a build-list Node', function (): void {
+describe('the first default Instance of a Project on an app-dev Node', function (): void {
     it('is a container: its runtime takes the first guest address and the Node\'s folder versions, with no T3 port', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
@@ -169,14 +171,45 @@ describe('other Instances of a Project with a container default', function (): v
     });
 });
 
-it('leaves a Node that is not on the build list on checkouts', function (): void {
+it('creates a container without a Node build-list opt-in', function (): void {
     $node = containerDefaultNode(listed: false);
+    app(AllocateInstanceBridgeAction::class)->execute($node);
 
     $operation = containerCreate(containerDefaultProject(), $node);
 
-    expect(InstanceRuntime::query()->count())->toBe(0)
-        ->and(containerIntentOf($operation))->toBeNull()
-        ->and(Instance::query()->findOrFail($operation->target_id)->checkout_path)->toBe('/home/orbit/apps/tool/default');
+    expect(InstanceRuntime::query()->count())->toBe(1)
+        ->and(containerIntentOf($operation))->not->toBeNull()
+        ->and(Instance::query()->findOrFail($operation->target_id)->checkout_path)->toStartWith('/var/lib/incus/storage-pools/orbit-instances/containers/');
+});
+
+it('refuses an unprepared Node instead of creating a host checkout', function (): void {
+    $node = containerDefaultNode(listed: false);
+
+    expect(containerRefusal(fn () => containerCreate(containerDefaultProject(), $node)))->toBe('instance.host_unavailable')
+        ->and(Instance::query()->count())->toBe(0)
+        ->and(InstanceRuntime::query()->count())->toBe(0)
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('refuses a new Instance without a container default but preserves the existing checkout retry', function (): void {
+    $node = containerDefaultNode();
+    $project = containerDefaultProject();
+    expect(containerRefusal(fn () => containerCreate($project, $node, 'new-feature')))->toBe('instance.default_missing')
+        ->and(Instance::query()->count())->toBe(0)
+        ->and(Operation::query()->count())->toBe(0);
+
+    $default = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+        'checkout_path' => '/home/orbit/apps/tool/default', 'source_layout' => 'checkout', 'status' => 'active', 'first_setup_pending' => false]);
+
+    expect(containerRefusal(fn () => containerCreate($project, $node, 'new-feature')))->toBe('instance.container_required')
+        ->and(Instance::query()->count())->toBe(1)
+        ->and(Operation::query()->count())->toBe(0);
+
+    $retry = containerCreate($project, $node);
+    expect($retry->target_id)->toBe($default->id)
+        ->and(containerIntentOf($retry))->toBeNull()
+        ->and($default->refresh()->checkout_path)->toBe('/home/orbit/apps/tool/default')
+        ->and(InstanceRuntime::query()->count())->toBe(0);
 });
 
 it('renders FrankenPHP as a web unit on the bridge address, with the Project\'s PHP first on its path', function (): void {
@@ -433,6 +466,8 @@ describe('the container PHP runtime development SSR origin', function (): void {
         ProcessDefinition::query()->create(['project_id' => $project->id, 'name' => 'dev', 'environments' => ['development'],
             'spec' => ['runtime' => 'systemd', 'preset' => 'vp-dev', 'command' => VpDevPreset::command()]]);
 
+        Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default',
+            'checkout_path' => '/home/orbit/apps/tool/default', 'source_layout' => 'checkout', 'status' => 'reserved', 'first_setup_pending' => true]);
         $operation = containerCreate($project, $node);
 
         expect(containerIntentOf($operation))->toBeNull();

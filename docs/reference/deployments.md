@@ -80,7 +80,7 @@ Prune removes the links with their releases and never follows them into the shar
 
 ## Development defaults
 
-A `default` Instance on an `app-dev` Node is a Git checkout, or an [Instance container](/reference/development-containers) on a Node of the build list, that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
+A new `default` Instance on an `app-dev` Node is an [Instance container](/reference/development-containers) that Orbit keeps at the newest commit of the Project's default branch. Existing checkout defaults keep working until they migrate. Other new development Instances clone the container default. `orbit instance:deploy ID`, the deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and the MCP tool `instance-deploy` can deploy a default by hand. Each starts an [operation](#deploy-through-the-api). The Project's default branch supplies the target commit; production branch overrides do not apply.
 
 The [automatic deployment tick](#automatic-deployments) deploys a default each time its default branch has a new commit. Only one deployment runs per Instance, including manual requests.
 

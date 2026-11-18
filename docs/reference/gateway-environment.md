@@ -220,7 +220,7 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 The fleet-owned `instances.mailpit` configuration names the main Docker Node Process and SMTP port. It needs no Gateway environment key or contributor setting; [development mail](/reference/development-containers#development-mail) applies only on a Node with that active publication.
 
-`ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default. A nested Gateway of an Instance fleet adds its fleet's `app-dev` Node without it.
+Containers need no environment opt-in or allow list. See [Container-only admission](/reference/development-containers#container-only-admission).
 
 `ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set allow list of nested-fleet Projects, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. List only the Orbit Project, whose container holds an inner fleet, and disposable trial Projects.
 
