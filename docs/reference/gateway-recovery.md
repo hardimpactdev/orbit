@@ -174,7 +174,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Build the release | Refuses a downgrade with `gateway.release_downgrade`, or a disk below the [floor](#migrations-and-the-snapshot) with `gateway.release_disk_low`. Builds and seals the release, and prints its grants. |
 | Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
 | Snapshot the database (host PHP-FPM releases) | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. Refuses with `gateway.release_disk_low` before the copy when the disk floor would break. The newest two stay, and the one a pause names. |
-| Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
+| Migrate | Runs `artisan migrate --force --isolated=1` from the new release and prints the end of its output with its exit code. |
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting Operations covered by the [release idle guard](#release-idle-guard) remain. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
@@ -406,7 +406,7 @@ When the copy would break the floor, the snapshot step first removes every older
 
 A new build checks the same floor before it writes anything. The 1 GiB for the build must fit as the disk is. The build and the database's size for the snapshot must fit when the older snapshots that the snapshot step would remove are gone. A copy that a stopped run left as `pre-*.sqlite.partial` goes at the next snapshot.
 
-The new release runs `php artisan migrate --force --isolated` while the old release still serves. Migrations must use expand and contract: both releases must work with the new schema. Before a schema squash, finish the existing migration chain, as the [contributor guide](/contributor-guide#3-implement-and-verify) requires.
+The new release runs `php artisan migrate --force --isolated=1` while the old release still serves. Migrations must use expand and contract: both releases must work with the new schema. Before a schema squash, finish the existing migration chain, as the [contributor guide](/contributor-guide#3-implement-and-verify) requires.
 
 A failed snapshot leaves the live database unchanged. A failed migration may have applied some changes. The run then pauses and names its snapshot. Restoring that snapshot is an operator action; follow [Recover a failed update](#recover-a-failed-update).
 
@@ -959,7 +959,7 @@ The old release serves while the new release migrates. Both must work with the r
 
 ### Laravel owns migrations
 
-Laravel owns migration discovery, including vendor migrations. The run uses `migrate --force --isolated` rather than duplicating that discovery in a release guard. A migration failure or another unresolved failure after it pauses automation and names the snapshot for the operator.
+Laravel owns migration discovery, including vendor migrations. The run uses `migrate --force --isolated=1` rather than duplicating that discovery in a release guard. A migration failure or another unresolved failure after it pauses automation and names the snapshot for the operator.
 
 ### The Gateway is not an Orbit Instance
 
