@@ -2223,7 +2223,11 @@ One rule names a turn ended, judged on the turn's own run, never on another run 
 | 8 | No status of the run: T3 lists no thread of the title, or lists it in a state that runs nothing | `true` |
 | 9 | Anything else, such as a thread listed active or in an unknown state, or no list | `false` |
 
-The settle of an earlier turn uses the same states that run nothing. A state it does not know leaves the turn open, and the next turn launches nothing. The settle finds the earlier turn's thread by its captured ID, and by its title only when no ID is recorded or listed. It stops only the earlier turn's captured run, through `t3_copy_rpc.mjs stop THREAD RUN`, and holds when T3 shows another run or none. A turn cut by its bound has no known run, so nothing stops it: it holds until T3 lists its thread in a state that runs nothing, or `task:cancel`. A stored question is kept only when this turn's run owns it, and the answer cancels only requests of that owner run. A T3 run status outside T3's known statuses is never named.
+The settle of an earlier turn uses the same states that run nothing. A state it does not know leaves the turn open, and the next turn launches nothing.
+
+The settle finds the earlier turn's thread by its captured ID, and by its title only when no ID is recorded or listed. It stops only the earlier turn's captured run, through `t3_copy_rpc.mjs stop THREAD RUN`, and holds when T3 shows another run or none.
+
+A turn cut by its bound has no known run, so nothing stops it: it holds until T3 lists its thread in a state that runs nothing, or `task:cancel`. A stored question is kept only when this turn's run owns it, and the answer cancels only requests of that owner run. A T3 run status outside T3's known statuses is never named.
 
 A question without its owner run is never stored. The turn records `tasks.copy_question_unread` and `ended: false`, so the next turn settles it. `tasks.copy_review_unrestored` outranks `tasks.copy_question_unread`: an unrestored reviewer turn keeps its code.
 
