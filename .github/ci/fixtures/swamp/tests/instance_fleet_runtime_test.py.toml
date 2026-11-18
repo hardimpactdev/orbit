@@ -1,0 +1,16 @@
+order = 1482
+cases = [
+  "test_an_empty_or_stale_pid_file_goes_and_the_network_state_stays",
+  "test_only_the_named_containers_are_cleared",
+  "test_no_path_leaves_the_root_disk_through_a_symlink",
+]
+file = "swamp/tests/instance_fleet_runtime_test.py"
+cost = 3
+# The file it reads: the clear of the inner Incus's network pid files, run as shipped.
+inputs = [
+  "swamp/ansible/instance_fleet_runtime.py",
+]
+[case_costs]
+"test_an_empty_or_stale_pid_file_goes_and_the_network_state_stays" = 1
+"test_only_the_named_containers_are_cleared" = 1
+"test_no_path_leaves_the_root_disk_through_a_symlink" = 1
