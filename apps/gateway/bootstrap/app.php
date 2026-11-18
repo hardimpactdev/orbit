@@ -73,6 +73,10 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Work runs on the Gateway queue; the scheduler only dispatches (docs/reference/gateway-queue.md#scheduled-work).
         // Housekeeping of the Gateway's own tables and Horizon metrics: Gateway-local, no Node and no Swamp work.
         GatewaySchedule::command($schedule, 'orbit:activity-finalize-interrupted', uniqueFor: 600, overlapMinutes: 10)->everyFiveMinutes();
+        // The serving release rewrites the Operation-version fence from its own policy, with or without Tasks. It runs
+        // inline, never through the Gateway queue, so busy or paused workers cannot delay it. Releases also run it
+        // right after they publish.
+        $schedule->command('operations:repair-fence')->everyFiveMinutes()->withoutOverlapping(5);
         GatewaySchedule::command($schedule, 'queue:prune-failed', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--hours='.config()->integer('retention.failed_jobs_hours')])->daily();
         GatewaySchedule::command($schedule, 'activitylog:clean', uniqueFor: 3600, overlapMinutes: 60, arguments: ['--days='.config()->integer('retention.activity_log_days'), '--force'])->daily();
         // A failed destroy starts again with backoff through the same admission as instance:destroy (InstanceRemovalReaper).

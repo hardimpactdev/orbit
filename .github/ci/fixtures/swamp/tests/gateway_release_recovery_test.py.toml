@@ -1,6 +1,6 @@
 order = 776
 file = "swamp/tests/gateway_release_recovery_test.py"
-cost = 54
+cost = 68
 inputs = [
   "bin/gateway-container-move",
   "bin/gateway-horizon-ready",
@@ -26,6 +26,9 @@ cases = [
   "test_recovery_keeps_former_consumers_when_the_new_horizon_fails",
   "test_admission_fence_failure_preserves_the_current_route_and_a_recoverable_target",
   "test_cleanup_reports_deferred_and_propagates_other_failures",
+  "test_the_handover_marker_holds_from_the_fence_until_the_inventory_names_the_candidate",
+  "test_cleanup_refuses_a_replayed_receipt_of_an_earlier_handover_of_the_same_commit",
+  "test_the_serving_release_repairs_the_fence_right_after_it_publishes_on_switch_and_recover",
 ]
 [case_costs]
 "test_first_move_publishes_before_draining_host_horizon" = 6
@@ -37,3 +40,6 @@ cases = [
 "test_recovery_keeps_former_consumers_when_the_new_horizon_fails" = 6
 "test_admission_fence_failure_preserves_the_current_route_and_a_recoverable_target" = 6
 "test_cleanup_reports_deferred_and_propagates_other_failures" = 6
+"test_the_serving_release_repairs_the_fence_right_after_it_publishes_on_switch_and_recover" = 5
+"test_cleanup_refuses_a_replayed_receipt_of_an_earlier_handover_of_the_same_commit" = 4
+"test_the_handover_marker_holds_from_the_fence_until_the_inventory_names_the_candidate" = 5
