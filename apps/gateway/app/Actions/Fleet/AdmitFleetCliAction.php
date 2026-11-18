@@ -44,8 +44,7 @@ final readonly class AdmitFleetCliAction
     {
         // Its steps run on the Swamp Node and read and record this intent, so that Node owns it.
         return $this->start->execute('fleet.cli_converge', 'fleet', $root, SwampNode::node()->id, [
-            'nodes' => array_map(fn (Node $node): array => ['node_id' => $node->id, ...$this->plan->fleetInput($node), 'agent' => null,
-                'daytime' => true], $nodes),
+            'nodes' => array_map(fn (Node $node): array => ['node_id' => $node->id, ...$this->plan->fleetInput($node), 'agent' => null], $nodes),
             'participant_node_ids' => array_values(array_unique([$root, SwampNode::id(), ...array_map(static fn (Node $node): int => $node->id, $nodes)])),
         ], $triggeredBy, $requestId);
     }

@@ -55,7 +55,7 @@ Ansible is approved for Node work: one Swamp step per phase, each phase an idemp
   5. Network, on the Node and its hub.
   6. Check.
 - `node:converge` has no footprint digests and no `--force`.
-- After each verified release, the fleet rollout runs `node:converge` on one Node at a time, in risk order. Nodes with only `app-dev` go at any hour; other Nodes wait for the maintenance window. It halts at the first failed Node.
+- After each verified release, the fleet rollout runs `node:converge` on one Node at a time, in risk order. Every Node goes at any hour, right after the release; on 2026-11-18 Nick removed the maintenance window that held all but `app-dev` Nodes. It halts at the first failed Node.
 - The software phase holds the recipe packages, so Tools cannot move them. Ubuntu `-security` updates still install through `unattended-upgrades`. Renovate then raises the pin, and the next test confirms it.
 
 **Tools.**

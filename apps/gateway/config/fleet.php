@@ -6,7 +6,7 @@ declare(strict_types=1);
  * The fleet rollout of ADR 0202 ([Fleet rollout](/reference/gateway-recovery#fleet-rollout)).
  */
 return [
-    // The verified release queues fleet rollout and the daily window schedule catches up.
+    // The verified release queues fleet rollout at once; a daily pass catches up drift between releases.
     'rollout' => filter_var(env('ORBIT_FLEET_ROLLOUT', true), FILTER_VALIDATE_BOOL),
 
     // The nightly drained reboot of the managed Linux Nodes (ADR 0253, /reference/gateway-recovery#fleet-reboot). On by default:
