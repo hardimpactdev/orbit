@@ -35,7 +35,7 @@ Orbit resumes a frozen container: its processes continue where they stopped, and
 
 The Gateway setting `ORBIT_EXECUTOR_WAKE_ENABLED`, off by default, selects the [executor wake](/reference/executor#the-wake-inside-the-request) for container Instances. When enabled, Orbit records or joins the wake before sending its signed order. A Route visit that observes a successful wake within `ORBIT_EXECUTOR_WAIT_MS` (500 ms by default) continues directly to the app with its original request. Otherwise it gets the existing progress page. Background work finishes the Operation without a deferred wake or Python/SSH path.
 
-Until the relay and run fallback lands in ADR 0266 slice 7, an unsuccessful published wake ends failed six seconds after publication. A missing order stays pending for recovery through the same Operation. Leave the setting off until that fallback and slice 5's Rust wake are available. The Node-level Process wake keeps its existing behavior.
+With [signed power routing](/reference/executor#signed-power-delivery), the Gateway tries its SSH relay if the Node has not accepted within 150 ms. If the terminal result is still missing after 6 s, Swamp gets a fresh order for the same Operation. A known frozen Instance wakes through the engine that froze it, even if the settings change. The Node-level Process wake keeps its existing behavior.
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 

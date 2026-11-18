@@ -40,11 +40,11 @@ When a sleep stops rather than freezes the container, the command says that its 
 
 The Instance must be a development container. No other lifecycle work and no task may run in it. Planned: a production Instance is accepted too, and the command puts its live release container to sleep ([Production containers](/reference/production-containers#sleep-and-wake)).
 
-Sleeping an Instance that already sleeps runs again and changes nothing. A freeze that fails removes the marker, and the container runs as before. Run the command again to retry.
+Sleeping an Instance that already sleeps runs again and changes nothing. If the freeze fails and the container still runs, Orbit removes the marker. If signed sleep fails after freezing, it reports the failure and keeps the marker and swap state. Wake the Instance through the same engine.
 
 The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sleep` Operation. The MCP tool is `instance-sleep`.
 
-The Rust executor also implements sleep for signed proof orders ([Executor](/reference/executor#rust-sleep-and-discard)). This command keeps the Python path until ADR 0266 slices 7/8.
+The command uses [signed power routing](/reference/executor#signed-power-delivery) when `ORBIT_EXECUTOR_POWER_ENABLED` is on. It defaults to off and keeps the Python path when off.
 
 ## How it works
 

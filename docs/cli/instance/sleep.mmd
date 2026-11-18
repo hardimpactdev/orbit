@@ -52,7 +52,7 @@ sequenceDiagram
     %% path: signed-sleep
     GW->>N: Publish signed sleep<br/>executor-order · WebSocket
     %%> - Check the loaded Caddy rule before any freeze and put up the marker before the app stops answering. Without a published Route there is no site to check.
-    %%> - The executor owns freeze, capture, swap and the final marker; it rolls back a failed freeze and never stops a nested fleet.
+    %%> - The executor owns freeze, capture, swap and the final marker. If sleep fails after the freeze, it reports the incomplete sleep and keeps the state for the same engine to wake. It never stops a nested fleet.
     opt no accepted line within 150 ms
       GW->>N: Relay same order<br/>SSH · stdin
     end

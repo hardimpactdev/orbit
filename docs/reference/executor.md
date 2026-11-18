@@ -211,6 +211,10 @@ Operation notices are saved with the change and relayed to `operations-prompt` a
 
 Swamp requests a fresh signature for the bound run and sends the order on the relay's stdin. The executor journal prevents another physical action for the same Operation and action. A refusal or deterministic failure is not lost transport. A legitimate stopped container can enter the existing boot flow; a nested default still requires deployment.
 
+Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting recovery result.
+
+The handoff to Swamp does not make a delivered action cancellable. Recovery allows the Node time to finish the action and read its journal. If the run ends without a terminal executor receipt, the Gateway reports an interruption and keeps the Instance fenced; verify the Node's outcome before clearing that hold. A signing failure before delivery does not need a hold.
+
 The signed `power_check` is `route` for a sleep with a published Route or `no_web` for a wake with no web unit. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 
 The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission. Before handback, stop admitting signed sleeps, let open signed Operations finish, and wake any frozen signed Instances with the signed engine. Verify that any failed sleep left either a running container or a recovered container before you retire the executor from the Node. Disabling the setting does not transfer a frozen plan between engines. Keep the executor installed and reachable until those plans are drained. Python remains installed until slice 8.
