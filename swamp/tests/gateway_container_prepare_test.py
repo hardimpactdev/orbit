@@ -186,7 +186,14 @@ class BootstrapTest(unittest.TestCase):
             git(mirror, "gc", "--quiet")
 
             script = ROOT / "swamp/scripts/gateway-release-checkout.sh"
+            abandoned = root / ".gateway-previous"
+            abandoned.mkdir()
+            (abandoned / "private-history").write_text("old build")
+            (root / ".gateway-next").symlink_to(mirror, target_is_directory=True)
             subprocess.run(["bash", script, mirror, commit, release], check=True)
+            self.assertFalse(abandoned.exists())
+            self.assertFalse((root / ".gateway-next").is_symlink())
+            self.assertTrue(mirror.is_dir())
             self.assertEqual((release / "README").read_text(), "release")
             self.assertEqual(git(release, "rev-parse", "HEAD"), commit)
             self.assertEqual(git(release, "rev-list", "--count", commit), "2")

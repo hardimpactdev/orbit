@@ -16,6 +16,8 @@ previous=$("$@" sh -eu -c '
   test ! -L "$1"
   mkdir -p -- "$1"
   cd "$1"
+  # One-time compatibility with interrupted deployments made by the old tree-rotation script.
+  rm -rf -- ../.gateway-next ../.gateway-previous
   if test -d .git && test ! -L .git && test -f REVISION && test ! -L REVISION; then
     head=$(git rev-parse --verify HEAD)
     if test "$(cat REVISION)" = "$head"; then printf "%s" "$head"; fi
