@@ -79,7 +79,7 @@ final readonly class ConnLaunchNativeProjection implements DirectOperationProjec
             || ! is_bool($requestedAvailable)
             || ($requestedAvailable ? $fallback !== null
                 : (! is_array($fallback) || ! is_string($fallback['instanceId'] ?? null) || ! is_string($fallback['model'] ?? null)
-                    || strlen(json_encode($fallback, JSON_THROW_ON_ERROR)) > 16_384))) {
+                    || ! ConnLaunchState::modelSelectionFits($fallback)))) {
             throw new ResourceOperationException('operation.result_invalid', 'The Conn launch preparation receipt does not match the registered workspace.', 422);
         }
 

@@ -23,6 +23,7 @@ use Orbit\Extensions\Conn\Data\ConnLaunchRequestData;
 use Orbit\Extensions\Conn\Data\ConnLaunchSnapshot;
 use Orbit\Extensions\Conn\Domain\ConnInstanceNames;
 use Orbit\Extensions\Conn\Domain\ConnLaunchAccess;
+use Orbit\Extensions\Conn\Domain\ConnLaunchState;
 use Orbit\Extensions\Conn\Domain\ConnThreadProjects;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnLaunchIntent;
@@ -69,6 +70,11 @@ final readonly class AdmitConnLaunchAction
             $operation = $this->idempotency->under($kind, $key, $fingerprint, function () use ($caller, $input, $profileId, $requestId, $existing, $kind): Operation {
                 if ($existing !== null) {
                     return $this->idempotency->replay($kind) ?? throw new \LogicException('The locked launch is not replayable.');
+                }
+
+                $model = $input->modelSelection();
+                if ($model !== null && ! ConnLaunchState::modelSelectionFits($model)) {
+                    throw ValidationException::withMessages(['model_selection' => ['The encoded model selection is too large.']]);
                 }
 
                 $this->assertWorkspace($profileId, $input->workspaceId);

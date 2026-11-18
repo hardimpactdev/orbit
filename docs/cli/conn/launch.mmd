@@ -8,6 +8,7 @@ sequenceDiagram
   participant S as Swamp
   C->>G: Admit the launch
   %%> Validate the expected device and its locked profile binding on first admission and replay.
+  %%> Check the encoded model selection size before creating a new Operation.
   %%> Store the encrypted request with the parent Operation.
   G-->>C: 202 · launch snapshot
   G->>S: Prepare the Instance

@@ -459,6 +459,46 @@ describe('launch admission', function (): void {
         expect(launchRecords())->toBe($baseline);
     });
 
+    it('refuses a model selection above the encoded dispatch limit before creating any records', function (): void {
+        launchFixtureDefault();
+        $baseline = launchRecords();
+        $selection = ['instanceId' => 'codex', 'model' => 'valid-model', 'options' => [['id' => 'fixture', 'value' => '']]];
+        $remaining = 16_385 - strlen(json_encode($selection, JSON_THROW_ON_ERROR));
+        $selection['options'][0]['value'] = str_repeat('/', intdiv($remaining, 2)).str_repeat('a', $remaining % 2);
+        expect(strlen(json_encode($selection, JSON_THROW_ON_ERROR)))->toBe(16_385)
+            ->and(strlen(json_encode($selection, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)))->toBeLessThan(16_384);
+        $body = [...$this->body, 'target' => ['kind' => 'new', 'name' => 'fixture-model-bound'], 'model_selection' => $selection];
+
+        callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)
+            ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection']]])
+            ->assertJsonMissingPath('data');
+        expect(launchRecords())->toBe($baseline);
+    });
+
+    it('admits the encoded model limit with a large first message and replays the same request', function (): void {
+        $selection = ['instanceId' => 'codex', 'model' => 'valid-model', 'options' => (object) ['value' => '']];
+        $remaining = 16_384 - strlen(json_encode($selection, JSON_THROW_ON_ERROR));
+        $selection['options']->value = str_repeat('π', intdiv($remaining, 6)).str_repeat('a', $remaining % 6);
+        expect(strlen(json_encode($selection, JSON_THROW_ON_ERROR)))->toBe(16_384);
+        $body = [...$this->body, 'model_selection' => $selection, 'prompt' => str_repeat('π', 70_001)];
+        $baseline = launchRecords();
+
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->json('data.id');
+        $admitted = launchRecords();
+        expect($admitted)->toBe(['operations' => $baseline['operations'] + 1, 'intents' => $baseline['intents'] + 1,
+            'instances' => $baseline['instances']]);
+        $request = json_decode(ConnLaunchIntent::query()->findOrFail($id)->request, flags: JSON_THROW_ON_ERROR);
+        expect($request->prompt)->toBe($body['prompt']);
+
+        callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->assertJsonPath('data.id', $id);
+        $selection['options']->value .= 'a';
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$body, 'model_selection' => $selection], (string) Str::uuid())
+            ->assertUnprocessable()->assertJsonStructure(['error' => ['details' => ['model_selection']]]);
+        callLaunchApi($this->phone, 'POST', 'conn/launches', [...$body, 'model_selection' => $selection], $this->key)
+            ->assertConflict()->assertJsonPath('error.code', 'operation.idempotency_conflict')->assertJsonMissingPath('data');
+        expect(launchRecords())->toBe($admitted);
+    });
+
     it('refuses unrepresentable model option numbers before admission or replay', function (): void {
         $body = [...$this->body, 'model_selection' => ['instanceId' => 'fixture', 'model' => 'fixture', 'options' => ['value' => 'fixture-number']]];
         $json = json_encode($body, JSON_THROW_ON_ERROR);

@@ -22,6 +22,13 @@ final readonly class ConnLaunchRequestData
         #[SensitiveParameter] private stdClass $body,
     ) {}
 
+    public function modelSelection(): ?stdClass
+    {
+        $selection = $this->body->model_selection ?? null;
+
+        return $selection instanceof stdClass ? $selection : null;
+    }
+
     public function privateRequest(): string
     {
         return json_encode($this->body, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);

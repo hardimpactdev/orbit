@@ -264,10 +264,16 @@ final readonly class ConnLaunchState
         });
     }
 
+    /** @param  stdClass|array<array-key, mixed>  $model */
+    public static function modelSelectionFits(#[SensitiveParameter] stdClass|array $model): bool
+    {
+        return strlen(json_encode($model, JSON_THROW_ON_ERROR)) <= 16_384;
+    }
+
     private function freeze(Operation $launch, string $environmentId, string $incarnation, string $t3ProjectId, #[SensitiveParameter] stdClass $model): void
     {
         if ($incarnation === '' || $t3ProjectId === '' || strlen($incarnation) > 255 || strlen($t3ProjectId) > 255
-            || strlen(json_encode($model, JSON_THROW_ON_ERROR)) > 16_384) {
+            || ! self::modelSelectionFits($model)) {
             throw new LogicException('The dispatch binding is missing or exceeds its limit.');
         }
         $intent = ConnLaunchIntent::query()->findOrFail($launch->id);

@@ -693,6 +693,8 @@ The admission identity is the original Node and `launch_id`, not the profile or 
 
 Compare every accepted request field, including a keyed, protected fingerprint of the exact prompt. Normalize omitted and `null` `workspace_id`, and omitted and `null` new-target `branch`, to the same values before fingerprinting. Compare the admitted selectors, not defaults resolved later from live state. A changed normalized request for the same admission identity returns `409`.
 
+For a new admission, the encoded model selection can use up to 16,384 bytes, including JSON escapes. A larger selection returns `422` on `model_selection` before Orbit records an Operation, private input, or child. The limit applies to the selection only. Already admitted requests keep the replay rules above.
+
 Keep the exact prompt and the private part of the frozen dispatch request encrypted. Only the declared private-material transport for the admitted native run may hydrate it on the target. Do not put them in public Operation input or results, Activity, broadcasts, runner arguments or output, or persistent Swamp data. Use a title seed that does not disclose the prompt; T3 generates the thread title. Keep only bounded acceptance evidence and the protected admission fingerprint after acceptance or verified cleanup. T3 keeps the actual message as part of the user's thread.
 
 ### Prepare, dispatch and publish
