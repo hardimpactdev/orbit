@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\AdmitFleetRolloutAction;
+use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
@@ -10,7 +11,16 @@ use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\Fleet\FleetServingRelease;
 use App\Domain\Fleet\ReleaseHistory;
+use App\Domain\Fleet\ReleaseNodeInputs;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Metrics\ExporterSelection;
+use App\Domain\Metrics\ExporterSelectionReason;
+use App\Domain\Metrics\MetricsExporterProjection;
+use App\Domain\Metrics\MetricsExporterProjectionItem;
+use App\Domain\Nodes\CiRunnerStateFiles;
+use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
+use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Problems\ProblemRecovery;
 use App\Domain\Problems\ProblemSource;
@@ -21,14 +31,19 @@ use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\StaticCliRelease;
 use App\Jobs\Fleet\AdmitFleetRollout;
+use App\Models\Cluster;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\ProblemFingerprint;
+use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
@@ -291,4 +306,387 @@ it('retains the minute retry after partial admission and admits CI callers when 
     $next = Operation::query()->where('kind', 'fleet.rollout')->latest('id')->firstOrFail();
     expect(array_column($next->input['nodes'], 'node_id'))->toBe([$this->nodes['dev']]);
     expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
+});
+
+it('refuses host-wide input changes before starting a delivery or a role converge', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    Node::query()->findOrFail($this->nodes['dev'])->forceFill(['release_inputs' => ['host' => str_repeat('c', 64)]])->save();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    $fleet = $release->refresh()->phases['fleet'];
+    expect($fleet['status'])->toBe('failed')
+        ->and($fleet['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
+        ->and($fleet['nodes'][$this->nodes['db']]['status'])->toBe('pending')
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+function copyRolloutHostTree(string $path): void
+{
+    $root = dirname(base_path(), 2);
+    $recipe = '/apps/gateway/resources/machine-software/recipe.json';
+    File::ensureDirectoryExists(dirname($path.$recipe));
+    File::copy($root.$recipe, $path.$recipe);
+    foreach (['/apps/gateway/app/Domain/Nodes', '/swamp/ansible/tasks'] as $folder) {
+        File::copyDirectory($root.$folder, $path.$folder);
+    }
+}
+
+it('requires host approval for a network child task change before fleet work or default refresh', function (?string $child): void {
+    Queue::fake();
+    Log::spy();
+    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
+    config(['instances.nested_fleet_refresh' => true]);
+    $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
+    copyRolloutHostTree($previous);
+    $inputs = app(ReleaseNodeInputs::class);
+    expect($inputs->host($previous))->toBe($inputs->host());
+
+    file_put_contents($this->base.'/agent.json', json_encode(['commit' => RolloutCommit, 'version' => '1.2.3',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']]], JSON_THROW_ON_ERROR));
+    $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
+    app()->instance(AgentDelivery::class, $delivery);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    $rolesBefore = $inputs->roles($dev, root: $previous);
+    if ($child !== null) {
+        file_put_contents($previous.'/swamp/ansible/tasks/'.$child.'.yml', "\n# Change just this included network task.\n", FILE_APPEND);
+    }
+    expect($inputs->roles($dev, root: $previous))->toBe($rolesBefore);
+
+    foreach (Node::query()->whereKey(array_values($this->nodes))->get() as $node) {
+        $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
+            'agent' => $delivery->pin($node),
+            'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($node)),
+        ]])->saveQuietly();
+    }
+    $release = GatewayRelease::query()->sole();
+    $release->update(['previous_release_id' => substr(OtherCommit, 0, 12), 'phases' => [
+        ...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []],
+    ]]);
+
+    app()->call([new AdmitFleetRollout($release->id), 'handle']);
+
+    $fleet = $release->refresh()->phases['fleet'];
+    expect(Operation::query()->count())->toBe(0);
+    if ($child === null) {
+        expect($fleet['status'])->toBe('current');
+        Log::shouldHaveReceived('info')->with('Nested-fleet refresh admissions.', ['commit' => RolloutCommit, 'defaults' => []])->once();
+    } else {
+        expect($fleet['status'])->toBe('failed')
+            ->and($fleet['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed')
+            ->and($dev->refresh()->release_inputs['host'])->toBe($inputs->host($previous));
+        Log::shouldNotHaveReceived('info', ['Nested-fleet refresh admissions.', Mockery::any()]);
+    }
+})->with([
+    'unchanged control' => [null],
+    'hub move' => ['node-converge-hub-move'],
+    'address repair' => ['node-converge-address'],
+    'hub switch' => ['node-converge-hub-switch'],
+    'hub LAN proof' => ['node-hub-lan-proof'],
+    'hub peer check' => ['node-converge-hub-peers'],
+    'peer handshake' => ['node-converge-handshake'],
+    'hub prune through the hub task' => ['node-converge-hub-prune'],
+    'absent peer filter through the hub task' => ['node-converge-hub-filter-absent'],
+    'hub source through the hub task' => ['node-hub-source'],
+]);
+
+it('preserves every prior host approval before an early halt and across a superseding release', function (): void {
+    $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
+    copyRolloutHostTree($previous);
+    file_put_contents($previous.'/swamp/ansible/tasks/node-kernel-policy.yml', "\n# Earlier unapproved host change.\n", FILE_APPEND);
+
+    $release = GatewayRelease::query()->sole();
+    $release->update(['previous_release_id' => substr(OtherCommit, 0, 12), 'phases' => [
+        ...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []],
+    ]]);
+    $action = app(ContinueReleaseFleetAction::class);
+    $action->execute($release);
+
+    $inputs = app(ReleaseNodeInputs::class);
+    $old = $inputs->host($previous);
+    expect($old)->not->toBe($inputs->host())
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
+        ->and(Node::query()->whereKey(array_values($this->nodes))->get()->map(fn (Node $node) => $node->release_inputs['host'])->all())
+        ->toBe([$old, $old, $old]);
+
+    // The next release's immediate predecessor carries the unapproved change.
+    $matching = str_repeat('c', 12);
+    symlink(dirname(base_path(), 2), $this->base.'/releases/'.$matching);
+    $nextCommit = str_repeat('d', 40);
+    $nextPath = 'releases/'.substr($nextCommit, 0, 12);
+    mkdir($this->base.'/'.$nextPath.'/apps/gateway', 0700, true);
+    file_put_contents($this->base.'/'.$nextPath.'/REVISION', $nextCommit."\n");
+    symlink($nextPath, $this->base.'/orbit-next');
+    rename($this->base.'/orbit-next', $this->base.'/orbit');
+    app()->instance(FleetServingRelease::class, new FleetServingRelease($this->base.'/'.$nextPath.'/apps/gateway'));
+    $next = GatewayRelease::query()->create(['sha' => $nextCommit, 'trigger' => 'auto', 'outcome' => 'verified',
+        'previous_release_id' => $matching, 'phases' => ['fleet' => ['status' => 'pending', 'nodes' => []]], 'duration_ms' => 0]);
+    Node::query()->findOrFail($this->nodes['dev'])->update(['status' => LifecycleStatus::Failed]);
+    $action->execute($next);
+    expect($next->refresh()->phases['fleet']['nodes'][$this->nodes['db']]['error_code'])->toBe('fleet.host_inputs_changed')
+        ->and(Operation::query()->count())->toBe(0);
+});
+
+it('detects membership, agent pin drift and late CLI publication on the daily pass after fleet current', function (string $change): void {
+    Queue::fake();
+    $this->travelTo(now('Europe/Amsterdam')->setTime(3, 5));
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    app(GatewayServingHost::class)->remember($gateway);
+    config(['swamp.run_token' => 'test-token']);
+    file_put_contents($this->base.'/agent.json', json_encode(['commit' => RolloutCommit, 'version' => '1.2.3',
+        'artifacts' => ['linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']]], JSON_THROW_ON_ERROR));
+    $delivery = new AgentDelivery($this->base.'/agent.json', '/unused');
+    app()->instance(AgentDelivery::class, $delivery);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    if ($change === 'late CLI') {
+        $dev->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    }
+    $inputs = app(ReleaseNodeInputs::class);
+    $rows = [];
+    foreach (Node::query()->whereKey([...array_values($this->nodes), $gateway->id])->get() as $node) {
+        $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
+            'host' => $inputs->host(), 'agent' => $delivery->pin($node), 'cli' => $node->id === $dev->id && $change === 'late CLI' ? '0.9000.0' : null,
+            'roles' => array_map(fn (array $role): string => $role['digest'], $inputs->roles($node)),
+        ]])->saveQuietly();
+        $rows[$node->id] = ['node_id' => $node->id, 'name' => $node->name, 'status' => 'current'];
+    }
+    if ($change === 'membership') {
+        unset($rows[$dev->id]);
+        $dev->refresh()->forceFill(['release_inputs' => null])->saveQuietly();
+    } elseif ($change === 'agent drift') {
+        app(AgentReportedVersions::class)->record($dev->id, '1.2.3+0000000000000000');
+    }
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => $rows]]]);
+
+    $job = new AdmitFleetRollout()->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+    $job->assertReleased(10);
+
+    $operation = Operation::query()->where('kind', 'fleet.rollout')->sole();
+    expect(array_column($operation->input['nodes'], 'node_id'))->toBe([$dev->id])
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('pending')
+        ->and($release->phases['fleet']['nodes'][$dev->id]['delivery_operation_id'])->toBe($operation->id);
+    if ($change === 'late CLI') {
+        expect($operation->input['nodes'][0]['release']['version'])->toBe($this->cli);
+    }
+})->with(['membership', 'agent drift', 'late CLI']);
+
+it('fingerprints a state.py-only change on the CI runner and leaves another role stable', function (): void {
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    $path = $this->base.'/role-resources';
+    mkdir($path.'/ci-runner', 0700, true);
+    foreach (['state.py', 'hold.py'] as $name) {
+        copy(resource_path('ci-runner/'.$name), $path.'/ci-runner/'.$name);
+    }
+    app()->instance(CiRunnerStateFiles::class, new CiRunnerStateFiles($path.'/ci-runner'));
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node);
+    file_put_contents($path.'/ci-runner/state.py', "\n# Test a different deployed script.\n", FILE_APPEND);
+    $after = $inputs->roles($node);
+
+    expect($after[$runner->id]['digest'])->not->toBe($before[$runner->id]['digest'])
+        ->and($after[$dev->id]['digest'])->toBe($before[$dev->id]['digest']);
+});
+
+it('fingerprints plan-only Instance host changes without reacting to the bridge admission time', function (string $change): void {
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    config(['instances.container_nodes' => [$node->id]]);
+    $node->forceFill(['instance_bridge' => '10.253.1.0/24'])->saveQuietly();
+    $recipe = '/resources/machine-software/recipe.json';
+    $gateway = $this->base.'/orbit/apps/gateway';
+    mkdir(dirname($gateway.$recipe), 0700, true);
+    copy(base_path().$recipe, $gateway.$recipe);
+    $host = app(InstanceHostIntent::class);
+    $inputs = app(ReleaseNodeInputs::class);
+    $beforePlan = $host->for($node);
+    $before = $inputs->roles($node);
+
+    $this->travel(1)->minute();
+    expect($host->for($node)['bridge_admitted_at'])->not->toBe($beforePlan['bridge_admitted_at'])
+        ->and($inputs->roles($node))->toBe($before);
+
+    if ($change === 'folders') {
+        // The serving recipe supplies the built folder plan. The checkout's raw Instance stanza is unchanged.
+        $servingRecipe = json_decode(file_get_contents($gateway.$recipe), true, flags: JSON_THROW_ON_ERROR);
+        $servingRecipe['instances']['agent']['t3']['bin']['t3'] = 'bin/t3-fixture';
+        file_put_contents($gateway.$recipe, json_encode($servingRecipe, JSON_THROW_ON_ERROR));
+    } else {
+        $node->forceFill(['settings' => ['nested_fleet' => true]])->saveQuietly();
+    }
+    $afterPlan = $host->for($node);
+    $after = $inputs->roles($node);
+
+    if ($change === 'folders') {
+        expect($afterPlan['folders']['agent']['version'])->not->toBe($beforePlan['folders']['agent']['version']);
+    } else {
+        expect($afterPlan['nested']['image']['alias'])->toStartWith('orbit-instance-nested-')
+            ->and($afterPlan['ids'])->toBeGreaterThan($beforePlan['ids']);
+    }
+    expect($after[$dev->id]['digest'])->not->toBe($before[$dev->id]['digest'])
+        ->and($after[$runner->id])->toBe($before[$runner->id]);
+})->with(['folders', 'nested image and ranges']);
+
+it('fingerprints edits to a shared play or a dependency of that role', function (string $path, bool $shared): void {
+    $root = $this->base.'/playbooks';
+    $repo = dirname(base_path(), 2);
+    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    foreach ([$recipe, $path] as $file) {
+        mkdir(dirname($root.'/'.$file), 0700, true);
+        copy($repo.'/'.$file, $root.'/'.$file);
+    }
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node, true, null, $root);
+    file_put_contents($root.'/'.$path, "\n# Test a different shipped play.\n", FILE_APPEND);
+    $after = $inputs->roles($node, true, null, $root);
+
+    expect($after[$runner->id]['digest'])->not->toBe($before[$runner->id]['digest']);
+    if ($shared) {
+        expect($after[$dev->id]['digest'])->not->toBe($before[$dev->id]['digest']);
+    } else {
+        expect($after[$dev->id])->toBe($before[$dev->id]);
+    }
+})->with([
+    'converge workflow' => ['swamp/workflows/workflow-operation-node-converge-direct.yaml', true],
+    'shipped input behavior' => ['swamp/extensions/behaviors/operations/ansible-input/write.ts', true],
+    'shared runtime' => ['swamp/ansible/tasks/node-role-runtime.yml', true],
+    'shared runtime check' => ['swamp/ansible/tasks/check-runtime.yml', true],
+    'CI seed certificate' => ['swamp/ansible/tasks/proof-seed-certificate.yml', false],
+]);
+
+it('fingerprints a shared Instance host helper only for the role that runs it', function (string $path): void {
+    $root = $this->base.'/instance-helper';
+    $repo = dirname(base_path(), 2);
+    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    foreach ([$recipe, $path] as $file) {
+        mkdir(dirname($root.'/'.$file), 0700, true);
+        copy($repo.'/'.$file, $root.'/'.$file);
+    }
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    config(['instances.container_nodes' => [$dev->id]]);
+    $ci = Node::query()->findOrFail($this->nodes['db']);
+    $ci->forceFill(['settings' => ['ci' => ['places' => 1]]])->saveQuietly();
+    $runner = $ci->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $database = $ci->roles()->where('role', RoleName::Database)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $beforeDev = $inputs->roles($dev, root: $root);
+    $beforeCi = $inputs->roles($ci, root: $root);
+    file_put_contents($root.'/'.$path, "\n# Changed Instance host helper.\n", FILE_APPEND);
+    $afterCi = $inputs->roles($ci, root: $root);
+
+    expect($inputs->roles($dev, root: $root))->not->toBe($beforeDev)
+        ->and($afterCi[$runner->id])->not->toBe($beforeCi[$runner->id])
+        ->and($afterCi[$database->id])->toBe($beforeCi[$database->id]);
+})->with([
+    'NIC check' => 'swamp/ansible/instance_network.py',
+    'nested clone probe' => 'swamp/ansible/instance_nested.py',
+]);
+
+it('fingerprints a base play change for the roles whose units it applies', function (RoleName $role): void {
+    $root = $this->base.'/base-play';
+    $repo = dirname(base_path(), 2);
+    $recipe = 'apps/gateway/resources/machine-software/recipe.json';
+    $play = 'swamp/ansible/tasks/node-converge-base.yml';
+    foreach ([$recipe, $play] as $file) {
+        mkdir(dirname($root.'/'.$file), 0700, true);
+        copy($repo.'/'.$file, $root.'/'.$file);
+    }
+    $node = SwampNodeFixture::ensure();
+    $node->roles()->create(['role' => RoleName::Database, 'status' => LifecycleStatus::Active]);
+    if ($role !== RoleName::Swamp) {
+        $node->roles()->create(['role' => $role, 'status' => LifecycleStatus::Active]);
+    }
+    $assignment = $node->roles()->where('role', $role)->sole();
+    $database = $node->roles()->where('role', RoleName::Database)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node, root: $root);
+    file_put_contents($root.'/'.$play, "\n# Changed unit application.\n", FILE_APPEND);
+    $after = $inputs->roles($node, root: $root);
+
+    expect($after[$assignment->id])->not->toBe($before[$assignment->id])
+        ->and($after[$database->id])->toBe($before[$database->id]);
+})->with([RoleName::Swamp, RoleName::WebSocket]);
+
+it('fingerprints the effective app-dev storage folder for that role only', function (): void {
+    $node = Node::query()->findOrFail($this->nodes['dev']);
+    $runner = $node->roles()->create(['role' => RoleName::CiRunner, 'status' => LifecycleStatus::Active]);
+    $dev = $node->roles()->where('role', RoleName::AppDev)->sole();
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node);
+    $node->forceFill(['settings' => ['apps' => ['path' => '/home/orbit/apps']]])->saveQuietly();
+    expect($inputs->roles($node))->toBe($before);
+
+    $node->forceFill(['settings' => ['apps' => ['path' => '/fast/apps']]])->saveQuietly();
+    $after = $inputs->roles($node);
+    expect($after[$dev->id])->not->toBe($before[$dev->id])
+        ->and($after[$runner->id])->toBe($before[$runner->id]);
+});
+
+it('fingerprints the Swamp helper tool pins from the selected software plan', function (string $tool): void {
+    $node = SwampNodeFixture::ensure();
+    $node->roles()->create(['role' => RoleName::Database, 'status' => LifecycleStatus::Active]);
+    $swamp = $node->roles()->where('role', RoleName::Swamp)->sole();
+    $database = $node->roles()->where('role', RoleName::Database)->sole();
+    $root = $this->base.'/recipe-tree';
+    copyRolloutHostTree($root);
+    $file = $root.'/apps/gateway/resources/machine-software/recipe.json';
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node, root: $root);
+    $host = $inputs->host($root);
+
+    $recipe = json_decode(file_get_contents($file), true, flags: JSON_THROW_ON_ERROR);
+    if ($tool === 'deno') {
+        $recipe['tools'][$tool]['artifacts']['amd64']['sha256'] = str_repeat('a', 64);
+    } else {
+        $recipe['tools'][$tool]['version'] .= '+fixture1';
+    }
+    file_put_contents($file, json_encode($recipe, JSON_THROW_ON_ERROR));
+    $after = $inputs->roles($node, root: $root);
+    expect($after[$swamp->id])->not->toBe($before[$swamp->id])
+        ->and($after[$database->id])->toBe($before[$database->id])
+        ->and($inputs->host($root))->toBe($host);
+
+    $recipe['tools']['rsync']['version'] .= '+fixture1';
+    file_put_contents($file, json_encode($recipe, JSON_THROW_ON_ERROR));
+    expect($inputs->host($root))->not->toBe($host);
+})->with(['deno', 'unzip']);
+
+it('fingerprints the rendered Metrics plan without the private password or exporter apply intent', function (): void {
+    $node = Node::query()->findOrFail($this->nodes['db']);
+    $metrics = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $database = $node->roles()->where('role', RoleName::Database)->sole();
+    $ingress = Node::query()->findOrFail($this->nodes['prod']);
+    $cluster = Cluster::query()->create(['name' => 'metrics-fixture', 'tld' => 'metrics.test', 'state' => 'active']);
+    $ingress->forceFill(['cluster_id' => $cluster->id])->saveQuietly();
+    $ingress->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
+    $item = new MetricsExporterProjectionItem($ingress, new ExporterSelection(true, ExporterSelectionReason::RoleDefault));
+    $this->mock(MetricsExporterProjection::class, fn ($projection) => $projection->shouldReceive('for', 'forNode')
+        ->andReturnUsing(fn (...$arguments) => count($arguments) === 1 ? [$item] : $item));
+    $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $cluster->id,
+        'domain' => 'after.metrics.test', 'publication' => 'public', 'provenance' => 'explicit', 'status' => 'pending']);
+    $inputs = app(ReleaseNodeInputs::class);
+    $before = $inputs->roles($node);
+
+    $route->forceFill(['status' => 'active'])->saveQuietly();
+    $after = $inputs->roles($node);
+
+    expect($after[$metrics->id])->not->toBe($before[$metrics->id])
+        ->and($after[$database->id])->toBe($before[$database->id]);
+    $spec = app(NodeRoleRuntimeInput::class)->capture($node, $metrics, publicOnly: true);
+    $runtime = app(NativeNodeRoleRuntimeInput::class)->capture($node, $metrics, ['runtime' => $spec], null, converge: true);
+    $plan = $runtime['intent']['metrics']['plan'];
+    foreach ($plan['services'] as $service) {
+        expect($service['argv'])->toContain($service['image']);
+    }
+    expect($runtime['execution_secrets'])->toBe([])
+        ->and(array_column($runtime['intent']['files'], 'path'))->not->toContain('/etc/orbit/metrics/grafana/admin-password');
 });

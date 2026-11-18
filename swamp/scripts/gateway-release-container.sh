@@ -492,9 +492,6 @@ case "$action" in
     install -d -m 0700 "$journal"
     printf '%s\n' "$1" > "$journal/horizon"
     ;;
-  refresh)
-    artisan "$candidate" instances:refresh-nested-fleets --commit="$sha" --no-interaction
-    ;;
   cleanup)
     live=$(field '.live')
     artisan "gateway-${live:0:12}" gateway:release:cleanup --no-interaction "$1"

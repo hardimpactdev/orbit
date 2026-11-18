@@ -41,21 +41,10 @@ Deno.test("Swamp load requires the bounded DB busy guard, including forced relea
 });
 
 Deno.test("the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release", () => {
-  const refresh = activate.find((step) => step.name === "Admit nested-fleet refresh")!;
-  assert(refresh, "the activate child admits the nested-fleet refresh");
-  assert(!release.some((step) => step.name === "Admit nested-fleet refresh"));
-  assertEquals(activate.filter((step) => step.name === "Admit nested-fleet refresh").length, 1);
-  assertEquals(refresh.allowFailure, true);
-  assertEquals(refresh.guard, undefined);
-  assertEquals(refresh.dependsOn, [
-    { step: "Verify the Gateway", condition: { type: "succeeded" } },
-    { step: "Start Horizon", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } },
-  ]);
-  const argv = refresh.task.inputs?.argv!;
-  assertEquals(argv.slice(0, 2), ["/usr/bin/timeout", "120"]);
-  assert(argv.join(" ").includes('php8.5 artisan instances:refresh-nested-fleets --commit="$2"'));
-  // Nothing else in the release waits for it.
-  assert(!activate.some((step) => step.dependsOn?.some((d) => d.step === "Admit nested-fleet refresh")));
+  for (const step of [...release, ...activate]) {
+    assert(!step.task.inputs?.argv?.join(" ").includes("instances:refresh-nested-fleets"),
+      `${step.name} must leave the refresh to verified release fleet admission`);
+  }
 });
 
 Deno.test("the sealed web build precedes clone; sleep can start in parallel with candidate preparation", () => {
@@ -69,6 +58,15 @@ Deno.test("the sealed web build precedes clone; sleep can start in parallel with
 });
 
 Deno.test("only a verified public switch retires the former live container; pruning follows the handover", () => {
+  const horizon = activate.find((step) => step.name === "Start Horizon")!;
+  assertEquals(horizon.dependsOn?.map(({ step, condition }) => [step, condition.type]), [
+    ["Drain Horizon", "always"], ["Switch the release", "always"],
+    ["Verify the Gateway", "always"], ["Switch back", "always"],
+  ]);
+  const argv = horizon.task.inputs?.argv!;
+  assert(argv[2].includes('exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"'));
+  assertEquals(argv[4], "start-horizon");
+  assertEquals(argv.slice(-3), ["/usr/bin/systemctl", "start", "${{ inputs.intent.horizon_unit }}"]);
   const retire = activate.find((step) => step.name === "Retire the previous live")!;
   assertEquals(retire.allowFailure, undefined);
   assertEquals(retire.dependsOn, [

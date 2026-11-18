@@ -11,6 +11,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolPackageProtection;
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\VitePlusRuntimeLock;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
@@ -31,7 +32,7 @@ final readonly class NodeDesiredConvergeInput
     /** @param list<string> $roles
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
-    public function capture(Node $node, array $roles, bool $all, Operation $operation, ?Node $hub): array
+    public function capture(Node $node, array $roles, bool $all, Operation $operation, ?Node $hub, bool $release = false): array
     {
         // The agent's configuration refuses an unsupported Node before any execution copy.
         $agent = $this->agent($node);
@@ -40,7 +41,7 @@ final readonly class NodeDesiredConvergeInput
         $plans = [];
         $playbook = null;
         foreach ($node->roles()->whereIn('role', $roles)->orderBy('id')->get() as $assignment) {
-            $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false);
+            $snapshot = app(NodeRoleDirectInput::class)->capture($node, $assignment, false, includeCli: ! $release);
             $plan = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, [], $operation, true);
             $rolePlan = $plan['intent'];
             $runtime = ValidatedData::object($rolePlan['runtime']);
@@ -52,19 +53,31 @@ final readonly class NodeDesiredConvergeInput
             $rolePlan['publications'] = [];
             $rolePlan['exporters'] = [];
             $rolePlan['prometheus'] = null;
-            $versions = array_keys($recipe->phpExtensions($recipe->profile($assignment->role->value)));
-            $phpPlans = array_map(ValidatedData::object(...), is_array($rolePlan['php'] ?? null) ? $rolePlan['php'] : []);
-            $rolePlan['php'] = array_values(array_filter($phpPlans, static fn (array $php): bool => in_array($php['version'], $versions, true)));
-            $services = array_map(ValidatedData::object(...), is_array($rolePlan['services'] ?? null) ? $rolePlan['services'] : []);
-            $rolePlan['services'] = array_values(array_filter($services, static fn (array $service): bool => preg_match('/^php([0-9.]+)-fpm[.]service$/', ValidatedData::string($service['name']), $match) !== 1 || in_array($match[1], $versions, true)));
-            $plans[] = $rolePlan;
+            $plans[] = [...$rolePlan, ...$this->roleResources($rolePlan, $recipe, $assignment->role)];
             if (array_intersect_key($copies, $plan['execution_secrets']) !== []) {
                 throw new \LogicException('Converge role execution-copy names must be distinct.');
             }
             $copies = [...$copies, ...$plan['execution_secrets']];
         }
 
-        return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook), 'execution_secrets' => $copies];
+        return ['intent' => $this->intent($node, $agent, $roles, $all, $hub, $plans, $playbook, $release), 'execution_secrets' => $copies];
+    }
+
+    /**
+     * The Node-local resources consumed by node-converge-role.yml and node-converge-role-check.yml.
+     *
+     * @param  array<string,mixed>  $rolePlan
+     * @return array{directories:mixed,files:mixed,php:list<array<string,mixed>>,services:list<array<string,mixed>>}
+     */
+    public function roleResources(array $rolePlan, MachineRecipe $recipe, RoleName $role): array
+    {
+        $versions = array_keys($recipe->phpExtensions($recipe->profile($role->value)));
+        $phpPlans = array_map(ValidatedData::object(...), is_array($rolePlan['php'] ?? null) ? $rolePlan['php'] : []);
+        $services = array_map(ValidatedData::object(...), is_array($rolePlan['services'] ?? null) ? $rolePlan['services'] : []);
+
+        return ['directories' => $rolePlan['directories'], 'files' => $rolePlan['files'],
+            'php' => array_values(array_filter($phpPlans, static fn (array $php): bool => in_array($php['version'], $versions, true))),
+            'services' => array_values(array_filter($services, static fn (array $service): bool => preg_match('/^php([0-9.]+)-fpm[.]service$/', ValidatedData::string($service['name']), $match) !== 1 || in_array($match[1], $versions, true)))];
     }
 
     /**
@@ -121,7 +134,7 @@ final readonly class NodeDesiredConvergeInput
                 }
                 $runtime = is_array($role['runtime'] ?? null) ? $role['runtime'] : [];
                 if (is_array($runtime['instances'] ?? null)) {
-                    $runtime['instances'] = array_diff_key($runtime['instances'], ['bridge_admitted_at' => true]);
+                    $runtime['instances'] = InstanceHostIntent::withoutAdmission(ValidatedData::object($runtime['instances']));
                     $role['runtime'] = $runtime;
                 }
 
@@ -147,7 +160,7 @@ final readonly class NodeDesiredConvergeInput
      * @param  list<array<string,mixed>>  $plans
      * @return array<string,mixed>
      */
-    private function intent(Node $node, array $agent, array $roles, bool $all, ?Node $hub, array $plans, ?string $playbook): array
+    private function intent(Node $node, array $agent, array $roles, bool $all, ?Node $hub, array $plans, ?string $playbook, bool $release = false): array
     {
         $delivery = app(AgentDelivery::class);
         $recipe = new RecipeLoader()->source();
@@ -171,7 +184,7 @@ final readonly class NodeDesiredConvergeInput
         return ['node_id' => $node->id, 'user' => $node->user,
             'ssh' => app(SwampSshExecutionInput::class)->forNode($node), 'roles' => $plans, 'selected_roles' => $roles,
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
-            'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
+            'cli' => $release ? null : app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
             ...(GatewayReleaseHost::retiredFpm($node) ? ['retired_gateway_fpm' => true] : []),
             'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),

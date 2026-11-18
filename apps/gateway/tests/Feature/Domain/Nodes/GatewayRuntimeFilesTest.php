@@ -323,6 +323,7 @@ it('moves only the serving Gateway runtime and keeps FPM through its first host 
         ['version' => 1, 'live' => str_repeat('a', 40), 'old' => $old, 'host_retired' => $retired], JSON_THROW_ON_ERROR));
     $write(null);
     $files = static fn (): array => array_column(app(GatewayRuntimeFiles::class)->render($node)['files'], 'ensure', 'path');
+    $vpnPackages = static fn (): array => array_column(app(NativeNodeRoleAddInput::class)->nodeResources($node, RoleName::Vpn)['php_packages'], 'name');
     expect($files())->not->toHaveKey(GatewayRuntimeFiles::Pool)
         ->and(app(GatewayRuntimeFiles::class)->render($node)['units'])->toBe([])
         ->and(GatewayReleaseHost::target($node))->toBe(['project' => 'orbit-releases', 'name' => 'gateway-'.str_repeat('a', 12), 'release' => str_repeat('a', 40)])
@@ -332,13 +333,16 @@ it('moves only the serving Gateway runtime and keeps FPM through its first host 
         ->and(GatewayReleaseHost::retiredFpm($node))->toBeFalse();
     $write(str_repeat('b', 40));
     expect($files())->not->toHaveKey(GatewayRuntimeFiles::Pool)
-        ->and(GatewayReleaseHost::retiredFpm($node))->toBeFalse();
+        ->and(GatewayReleaseHost::retiredFpm($node))->toBeFalse()
+        ->and($vpnPackages())->toContain('php8.5-fpm');
     $write(str_repeat('b', 40), true);
     expect($files()[GatewayRuntimeFiles::Pool])->toBe('absent')
         ->and($files()['/etc/systemd/system/orbit-process-'.$process->id.'-schedule-work.service'])->toBe('absent')
-        ->and(GatewayReleaseHost::retiredFpm($node))->toBeTrue();
+        ->and(GatewayReleaseHost::retiredFpm($node))->toBeTrue()
+        ->and($vpnPackages())->not->toContain('php8.5-fpm');
     $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    expect(GatewayReleaseHost::retiredFpm($node))->toBeFalse();
+    expect(GatewayReleaseHost::retiredFpm($node))->toBeFalse()
+        ->and($vpnPackages())->toContain('php8.5-fpm');
 });
 
 it('refuses unsupported Gateway workload names and stale Horizon receipts before a move', function (string $command, string $name): void {

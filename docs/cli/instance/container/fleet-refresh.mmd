@@ -17,16 +17,16 @@ sequenceDiagram
   participant F as Inner fleet<br/>3 containers
   Note over GW: Admit nested-fleet refresh<br/>release commit
   %%> Started by:
-  %%> - the release step "Admit nested-fleet refresh", after the Gateway is verified and Horizon runs: `instances:refresh-nested-fleets --commit`
+  %%> - the verified release reaching fleet current, or Gateway verification when fleet rollout is disabled
   %%> When:
-  %%> - only while the Gateway setting `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on; off, the step prints one line and admits nothing
+  %%> - only while the Gateway setting `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on; off, the Gateway admits nothing
   %%> - one deployment per nested-fleet default whose runtime is in `orbit-instances-nested` on a Node with the nested-fleet switch on
-  %%> - none exists: the step prints one line and admits nothing
+  %%> - with no eligible default, the Gateway admits nothing
   %%> - a clone of the default is being created: refused, `instance.clone_in_flight`; the next release tries again
   %%> - a deployment of the default is open: refused by the Instance lock, `operation.target_busy`
   %%> - the release commit is missing from the Project's repository: the admission's source read refuses it, `project.source_unavailable`
   %%> Result:
-  %%> - best effort: the step allows failure and nothing waits for it; the release stays live
+  %%> - best effort: a refresh failure leaves the release live
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
   %%> What it does:
   %%> - the intent carries `fleet` (NestedFleetIntent): the fleet's names, the operator, the checkout path and the egress proxy

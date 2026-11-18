@@ -586,6 +586,8 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 `orbit node:converge <node> [--base | --roles=a,b] [--idempotency-key=KEY] [--json]` repairs one active, managed Linux Node against the release. It never runs `node:add`, changes an Instance, or adds or removes a role assignment, so a Node that owns Instances can converge. Fleet release rollout remains a separate CLI and observer publication path.
 
+A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses host-wide inputs.
+
 [Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
 
 With no scope flag, the attempt includes Orbit's base and every recorded role. `--base` selects only the agent, the Node’s CLI state and Orbit-owned files and units. `--roles=a,b` selects the base plus the named existing assignments, and refuses an empty, unknown or unassigned role. The two scope flags are mutually exclusive. `--full` runs every phase of the scope, whatever its [digest](#skip-a-phase-whose-input-did-not-change) says.
@@ -611,6 +613,8 @@ No recorded network in scope means no network mutation. DNS routing domains stay
 A failed phase stops later phases and fails the Operation with its failed step and error code. Completed and partial machine changes remain; there is no rollback. Fix the cause and start a new attempt from input. An individual Tool failure is different: it marks only that Tool failed, lets other Tools continue, and does not alone fail an otherwise successful parent. Temporary private run files are removed after work stops on success or failure. Incomplete cleanup is exposed without replacing the original failure, and interruption proves no cleanup.
 
 ### Skip a phase whose input did not change
+
+A converge that defers a T3 restart records the container in its Operation result and leaves the roles digest unset so the next pass can retry. See [T3 restarts](/reference/development-containers#t3s-unit-drop-ins).
 
 This is the one rule for a skipped phase. It applies to `node:converge` and to the role Operations of [`node:role:add`](/cli/node/role-add), with and without `--converge`. They share one digest, one comparison and one record.
 

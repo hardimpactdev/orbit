@@ -14,7 +14,7 @@ orbit gateway:release:deploy [<commit>] [--json]
 
 The Gateway checks the commit's agent pin and selects its web build. It then starts the `gateway.release` run on Node 209. The container release flow deploys the commit in a permanent preparation container that receives no traffic. Orbit clones the finished build, checks the clone, and switches traffic to it. After the clone exists, preparation can sleep while the clone is checked. The previous serving container drains after the verified switch and sleeps for rollback. Both sleepers reclaim memory to swap. A rollback wakes the retained release and checks it before switching traffic. A failed check switches back to the previous release. Automatic releases run the same way. [Release as a Swamp run](/reference/gateway-recovery#release-as-a-swamp-run) describes the run.
 
-The CLI reads the record every 2 seconds until the run ends. The record shows the run's Operation under `phases.run` and gets its outcome from the run's end. JSON prints the final record. The command exits 0 only when the outcome is `verified`.
+The CLI reads the record every 2 seconds until the run ends. The record shows the run's Operation under `phases.run` and gets its outcome from the run's end. JSON prints the final record. The command exits 0 when the Gateway is `verified`. The fleet pass continues in the background. Read `phases.fleet` with `gateway:release:show` to see each Node and confirm that the release is fleet current.
 
 Interrupting the CLI stops following, not the release. Read the outcome later with `gateway:release:show <id>`. The CLI keeps reading while the Gateway reloads. It gives up with `gateway.release_follow_failed` after 30 failed reads in a row, or once 65 minutes have passed, whatever the reads return.
 

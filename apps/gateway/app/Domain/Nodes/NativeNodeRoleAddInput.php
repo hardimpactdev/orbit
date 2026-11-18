@@ -40,68 +40,8 @@ final readonly class NativeNodeRoleAddInput
             throw new ResourceOperationException('operation.execution_forbidden', 'Role resources require their admitted assignment.', 422);
         }
         $role = $assignment->role;
-        $packages = app(NodeBootstrapPackageCatalog::class)->forRole($node, $role);
-        $caddy = in_array('caddy', $packages, true);
-        $services = [...($caddy ? ['caddy.service'] : []),
-            ...(in_array('docker.io', $packages, true) ? ['docker.service'] : [])];
-        if ($role === RoleName::CiRunner) {
-            $services[] = 'incus.socket';
-        }
-
-        $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;
-        $php = in_array($role, [RoleName::AppDev, RoleName::AppProd], true)
-            ? app(PhpRuntimeFootprintArtifact::class)->inputs($node) : [];
-        $directories = [];
-        $files = [];
-        $managers = [];
-        $bun = null;
-        $phpPackages = [];
-        if (in_array($role, [RoleName::AppDev, RoleName::AppProd], true)) {
-            foreach ([ToolManagerName::Vp, ToolManagerName::Composer] as $manager) {
-                $managers[] = ['manager' => $manager->value, 'platform' => $node->platform,
-                    'architecture' => MachineArchitecture::normalize($node->architecture), 'user' => $node->user,
-                    'setup' => app(ToolManagerIntent::class)->nativeInput($node, $manager)];
-            }
-            $recipe = new RecipeLoader()->load();
-            $build = PhpBuildInstaller::input($recipe, array_map(static fn (array $configuration): string => ValidatedData::string($configuration['version']), $php), $role === RoleName::AppDev,
-                extras: 'keep', fpm: 'all', opentelemetry: true);
-            $phpPackages = $this->phpPackages($build);
-            $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
-            $bunPin = $recipe->tools['bun']->forArchitecture('amd64');
-            $bunArtifact = $bunPin->artifacts['amd64'];
-            $bunRoot = '/opt/orbit/bun/releases/'.$bunArtifact->digest;
-            $bun = ['url' => $bunArtifact->location, 'checksum' => $bunArtifact->algorithm.':'.$bunArtifact->digest,
-                'path' => '/var/cache/orbit/role-bun/'.$bunArtifact->digest.'.zip', 'dest' => $bunRoot,
-                'binary' => $bunRoot.'/bun-linux-x64/bun', 'version' => $bunPin->version, 'user' => $node->user];
-            foreach (['/var/cache/orbit/role-bun', '/opt/orbit/bun', '/opt/orbit/bun/bin', '/opt/orbit/bun/releases', $bunRoot] as $path) {
-                $directories[] = ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
-            }
-        }
-        if ($role === RoleName::Vpn) {
-            $build = PhpBuildInstaller::input(new RecipeLoader()->load(), [NodePrivateDnsListenerFootprint::PhpVersion], false,
-                extras: 'keep', fpm: 'none', opentelemetry: false);
-            $phpPackages = $this->phpPackages($build);
-            if (GatewayReleaseHost::retiredFpm($node)) {
-                $phpPackages = array_values(array_filter($phpPackages, static fn (array $package): bool => $package['name'] !== 'php8.5-fpm'));
-            }
-            $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
-        }
-        if ($role === RoleName::AppDev) {
-            $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(
-                NodeSettingsData::from($node->settings ?? []), $node, new ManagedUserAccount($node->user, $node->user, $home));
-            $directories[] = ['path' => $storage->value, 'owner' => $node->user, 'group' => $node->user, 'mode' => '0755'];
-            array_push($directories, ...AppDevRuntimeFootprint::directories());
-            array_push($files, ...AppDevRuntimeFootprint::files());
-        }
-        foreach ($php as $configuration) {
-            $services[] = 'php'.ValidatedData::string($configuration['version']).'-fpm.service';
-        }
-        if ($caddy) {
-            $directories[] = ['path' => '/etc/systemd/system/caddy.service.d', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
-            $files[] = ['path' => '/etc/systemd/system/caddy.service.d/orbit-vpn.conf',
-                'content' => "# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n",
-                'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
-        }
+        $resources = $this->nodeResources($node, $role);
+        ['packages' => $packages, 'caddy' => $caddy, 'php' => $php] = $resources;
         $certificates = ValidatedData::object($snapshot['certificates']);
         $leafIdentity = static fn (array $leaf): array => ['node_id' => ValidatedData::integer($leaf['node_id']), 'scope' => ValidatedData::string($leaf['scope'])];
         $prospective = ['leaves' => array_map($leafIdentity, RouteExecutionProof::objects($certificates['leaves'])),
@@ -164,10 +104,10 @@ final readonly class NativeNodeRoleAddInput
             'packages' => array_values(array_diff($packages, ['caddy'])),
             'apt_proxy' => null,
             'caddy_package' => $caddy ? NativeCaddyPackageInput::make() : null,
-            'directories' => $directories, 'files' => $files, 'php_packages' => $phpPackages, 'php' => $php,
-            'managers' => $managers, 'bun' => $bun, 'certificates' => $snapshot['certificates'], 'publications' => $publications, 'runtime' => $runtime['intent'],
+            'directories' => $resources['directories'], 'files' => $resources['files'], 'php_packages' => $resources['php_packages'], 'php' => $php,
+            'managers' => $resources['managers'], 'bun' => $resources['bun'], 'certificates' => $snapshot['certificates'], 'publications' => $publications, 'runtime' => $runtime['intent'],
             'exporters' => $exporters, 'prometheus' => $prometheus, 'artifact_digests' => $artifactDigests,
-            'services' => array_map(static fn (string $name, int $index): array => ['name' => $name, 'index' => $index], $services, array_keys($services)),
+            'services' => $resources['services'],
             'firewall' => app(NodeRoleFirewallInput::class)->convergeCommands($node, $role)];
 
         $gatewayDns = $runtime['intent']['gateway_dns'];
@@ -179,6 +119,81 @@ final readonly class NativeNodeRoleAddInput
         app(GatewayPrivateDnsState::class)->claim($node->id, $runtime['intent']);
 
         return ['intent' => $intent, 'execution_secrets' => $runtime['execution_secrets'], 'participant_node_ids' => [SwampNode::id(), $node->id]];
+    }
+
+    /**
+     * Render the resources shared by standalone role admission and Node convergence.
+     *
+     * @return array{packages:list<string>,caddy:bool,directories:list<array<string,string>>,files:list<array<string,string>>,php:list<array<string,mixed>>,php_packages:list<array<string,mixed>>,managers:list<array<string,mixed>>,bun:?array<string,mixed>,services:list<array{name:string,index:int}>}
+     */
+    public function nodeResources(Node $node, RoleName $role): array
+    {
+        $packages = app(NodeBootstrapPackageCatalog::class)->forRole($node, $role);
+        $caddy = in_array('caddy', $packages, true);
+        $services = [...($caddy ? ['caddy.service'] : []),
+            ...(in_array('docker.io', $packages, true) ? ['docker.service'] : [])];
+        if ($role === RoleName::CiRunner) {
+            $services[] = 'incus.socket';
+        }
+
+        $home = $node->user === 'root' ? '/root' : '/home/'.$node->user;
+        $php = in_array($role, [RoleName::AppDev, RoleName::AppProd], true)
+            ? app(PhpRuntimeFootprintArtifact::class)->inputs($node) : [];
+        $directories = [];
+        $files = [];
+        $managers = [];
+        $bun = null;
+        $phpPackages = [];
+        if (in_array($role, [RoleName::AppDev, RoleName::AppProd], true)) {
+            foreach ([ToolManagerName::Vp, ToolManagerName::Composer] as $manager) {
+                $managers[] = ['manager' => $manager->value, 'platform' => $node->platform,
+                    'architecture' => MachineArchitecture::normalize($node->architecture), 'user' => $node->user,
+                    'setup' => app(ToolManagerIntent::class)->nativeInput($node, $manager)];
+            }
+            $recipe = new RecipeLoader()->load();
+            $build = PhpBuildInstaller::input($recipe, array_map(static fn (array $configuration): string => ValidatedData::string($configuration['version']), $php), $role === RoleName::AppDev,
+                extras: 'keep', fpm: 'all', opentelemetry: true);
+            $phpPackages = $this->phpPackages($build);
+            $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
+            $bunPin = $recipe->tools['bun']->forArchitecture('amd64');
+            $bunArtifact = $bunPin->artifacts['amd64'];
+            $bunRoot = '/opt/orbit/bun/releases/'.$bunArtifact->digest;
+            $bun = ['url' => $bunArtifact->location, 'checksum' => $bunArtifact->algorithm.':'.$bunArtifact->digest,
+                'path' => '/var/cache/orbit/role-bun/'.$bunArtifact->digest.'.zip', 'dest' => $bunRoot,
+                'binary' => $bunRoot.'/bun-linux-x64/bun', 'version' => $bunPin->version, 'user' => $node->user];
+            foreach (['/var/cache/orbit/role-bun', '/opt/orbit/bun', '/opt/orbit/bun/bin', '/opt/orbit/bun/releases', $bunRoot] as $path) {
+                $directories[] = ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
+            }
+        }
+        if ($role === RoleName::Vpn) {
+            $build = PhpBuildInstaller::input(new RecipeLoader()->load(), [NodePrivateDnsListenerFootprint::PhpVersion], false,
+                extras: 'keep', fpm: 'none', opentelemetry: false);
+            $phpPackages = $this->phpPackages($build);
+            if (GatewayReleaseHost::retiredFpm($node)) {
+                $phpPackages = array_values(array_filter($phpPackages, static fn (array $package): bool => $package['name'] !== 'php8.5-fpm'));
+            }
+            $directories[] = ['path' => '/var/cache/orbit/role-php', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
+        }
+        if ($role === RoleName::AppDev) {
+            $storage = app(ConfiguredStoragePathValidator::class)->validateEffective(
+                NodeSettingsData::from($node->settings ?? []), $node, new ManagedUserAccount($node->user, $node->user, $home));
+            $directories[] = ['path' => $storage->value, 'owner' => $node->user, 'group' => $node->user, 'mode' => '0755'];
+            array_push($directories, ...AppDevRuntimeFootprint::directories());
+            array_push($files, ...AppDevRuntimeFootprint::files());
+        }
+        foreach ($php as $configuration) {
+            $services[] = 'php'.ValidatedData::string($configuration['version']).'-fpm.service';
+        }
+        if ($caddy) {
+            $directories[] = ['path' => '/etc/systemd/system/caddy.service.d', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
+            $files[] = ['path' => '/etc/systemd/system/caddy.service.d/orbit-vpn.conf',
+                'content' => "# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n",
+                'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
+        }
+
+        return ['packages' => $packages, 'caddy' => $caddy, 'directories' => $directories, 'files' => $files, 'php' => $php,
+            'php_packages' => $phpPackages, 'managers' => $managers, 'bun' => $bun,
+            'services' => array_map(static fn (string $name, int $index): array => ['name' => $name, 'index' => $index], $services, array_keys($services))];
     }
 
     /** @param array<string,mixed> $build

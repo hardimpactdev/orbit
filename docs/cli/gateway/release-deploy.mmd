@@ -96,24 +96,19 @@ sequenceDiagram
     %%> - starting a running unit changes nothing
     %%> Decided by the orchestrator, for review:
     %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
-    opt switch verified
-    AC->>GN: Admit nested-fleet refresh<br/>artisan · verified release
-    %%> What it does:
-    %%> - only after verification succeeds and Start Horizon finishes (or is skipped), admits one `instance.deploy` to the release commit for each nested-fleet default on a switched-on Node (instance/container/fleet-refresh.mmd)
-    %%> - with no such default it prints one line and admits nothing; no release step admits a task VM image refresh any more
-    %%> On failure:
-    %%> - best effort: a refusal or a failed admission never fails the release, and nothing waits for the refresh
-    AC->>GN: Resume document cleanup<br/>best effort
+    opt switch verified and Horizon started
+      AC->>GN: Retire the previous live<br/>drain · freeze · reclaim to swap
+      AC->>GN: Prune old releases<br/>remove displaced rollback
+    end
+    AC->>GN: Resume document cleanup<br/>after retirement or switch-back
     %%> Why:
     %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
-    AC->>GN: Retire the previous live<br/>drain · freeze · reclaim to swap
-    AC->>GN: Prune old releases<br/>remove displaced rollback
-    end
     alt every step succeeded
       SW-->>GW: Run succeeded<br/>terminal result
       Note over GW: Record verified<br/>fleet rollout follows
       %%> Next:
-      %%> - the Gateway queues one `fleet.rollout` admission for the Nodes behind this commit (`fleet:rollout`)
+      %%> - the Gateway queues the existing fleet admission job; it follows each Node’s delivery and scoped role converge in order
+      %%> - when enabled, nested-fleet refresh follows the first transition to `current`; with fleet rollout disabled it follows verification
     else a step before Migrate fails
       SW--xGW: Run failed<br/>failed step
       Note over GW: Mark failed<br/>nothing changed · rerun safe

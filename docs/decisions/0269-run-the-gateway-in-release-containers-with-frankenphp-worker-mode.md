@@ -74,7 +74,7 @@ The Gateway keeps its one release record and its one Swamp run per release. The 
 | Verify `/up` and the status version through `https://gateway.orbit` | inline | Unchanged, through the public name, right after the switch |
 | Switch back after a failed verify | `gateway-release-switch-back.sh` | Put the previous upstream file and live link back and reload Caddy once. The previous live still runs, so this starts nothing |
 | Start Horizon, always | inline | Start Horizon in whichever container is live at the end, always. The rest of the [handover](#3-long-running-parts-and-their-switch) follows |
-| Admit nested-fleet refresh | inline | Unchanged, run in live after Horizon starts |
+| Admit nested-fleet refresh | Gateway fleet admission | The Gateway admits refresh after the [fleet is current](/reference/gateway-recovery#fleet-rollout), or after verification when fleet rollout is off |
 | Resume document cleanup | `artisan gateway:release:cleanup` | Unchanged, run in live |
 | Prune old releases | `gateway-release-prune.sh` | **Retire.** After requests drain, freeze the former live, reclaim its memory to swap and retire the earlier old container |
 
