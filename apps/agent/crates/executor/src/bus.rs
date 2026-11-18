@@ -23,6 +23,7 @@ pub const CONFIG_PATH: &str = "/etc/orbit/executor/nats.json";
 pub const BLOBS_PATH: &str = "/var/lib/orbit/executor/blobs";
 const PROGRESS_EVERY: Duration = Duration::from_secs(2);
 const RECONNECT_AFTER: Duration = Duration::from_secs(1);
+const CONSUMER_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,10 +89,24 @@ async fn consume<R: Run + 'static>(
     let client = async_nats::ConnectOptions::with_credentials(&config.credentials)?.connect(config.url.as_str()).await?;
     let context = jetstream::new(client.clone());
     let node = settings.node.as_str().to_owned();
-    let consumer: jetstream::consumer::PullConsumer =
-        context.get_consumer_from_stream(format!("node-{node}"), "ORDERS").await?;
-    let width = slots();
+    // The report comes first: the Gateway starts a kind on the state machine only for a Node that reported, and makes the
+    // Node's consumer with its first order. Until then the consumer is missing, and the bus waits for it quietly.
     report_actions(&context, settings, &node).await?;
+    let mut waited = false;
+    let consumer: jetstream::consumer::PullConsumer = loop {
+        match context.get_consumer_from_stream(format!("node-{node}"), "ORDERS").await {
+            Ok(consumer) => break consumer,
+            Err(error) if consumer_missing(&error) => {
+                if !waited {
+                    log(&format!("nats bus waits for consumer node-{node}: {error}"));
+                    waited = true;
+                }
+                tokio::time::sleep(CONSUMER_WAIT).await;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    };
+    let width = slots();
     log(&format!("nats bus joined as node-{node} with {width} slots"));
     let permits = Arc::new(tokio::sync::Semaphore::new(width));
     let mut messages = consumer.stream().max_messages_per_batch(width).messages().await?;
@@ -106,6 +121,12 @@ async fn consume<R: Run + 'static>(
         });
     }
     Ok(())
+}
+
+/// The Node's consumer does not exist yet: the Gateway has sent this Node no order so far.
+fn consumer_missing(error: &jetstream::stream::ConsumerError) -> bool {
+    matches!(error.kind(), jetstream::stream::ConsumerErrorKind::JetStream(inner)
+        if inner.error_code() == jetstream::ErrorCode::CONSUMER_NOT_FOUND)
 }
 
 /// Tells the Gateway which primitives this Node runs: every action whose family the Node's roles enable, in KV `NODES` under
