@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Engine;
 
-use App\Infrastructure\Engine\NatsCredentials;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Engine\NatsCredentials;
 use App\Models\Node;
 
 /**

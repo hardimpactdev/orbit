@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Firewall;
 
-use App\Infrastructure\Engine\GatewayBus;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
@@ -22,6 +21,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\LanAddress;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Models\Node;

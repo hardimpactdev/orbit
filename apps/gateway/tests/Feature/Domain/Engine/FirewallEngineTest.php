@@ -233,4 +233,3 @@ it('signs the input the executor\'s ufw.ensure_rule reads, as the shared contrac
 
     expect($this->bus->payload(0)['input'])->toBe($fixture['input']);
 });
-
