@@ -12,6 +12,8 @@ use App\Domain\Instances\InstanceBranchSelection;
 use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Operation;
@@ -31,6 +33,8 @@ final readonly class ConnLaunchInstances
         private StartInstanceCompleteAction $complete,
         private StartInstanceDestroyAction $destroy,
         private InstanceWake $wake,
+        private ConnInstanceWorkState $work,
+        private ConnAgentActivity $activity,
     ) {}
 
     public function create(Operation $launch, stdClass $request): Operation
@@ -100,12 +104,38 @@ final readonly class ConnLaunchInstances
 
     public function destroy(Operation $launch, Instance $instance): Operation
     {
-        $previous = ConnLaunchChild::Destroy->operationId($launch);
-        $key = self::key($launch, 'destroy', predecessor: $previous);
+        $previous = ConnLaunchChild::Destroy->operation($launch);
+        if (ConnLaunchChild::Create->operation($launch)?->status === OperationStatus::Succeeded) {
+            $this->assertCleanupSafe($launch, $instance, $previous);
+        }
+        $key = self::key($launch, 'destroy', predecessor: $previous?->id);
 
         return $this->keyed(InstanceDestroyKind::forInstance($instance), $key,
             fn (): Operation => $this->destroy->execute($instance, true, $launch->triggered_by, $launch->request_id,
                 within: fn (Closure $record): Operation => $this->record($launch, ConnLaunchChild::Destroy, $key, $record)));
+    }
+
+    private function assertCleanupSafe(Operation $launch, Instance $instance, ?Operation $previous): void
+    {
+        $used = Operation::query()->where('kind', OperationKinds::ConnLaunch)->whereKeyNot($launch->id)
+            ->whereNot('status', OperationStatus::Cancelled)
+            ->where(static fn ($query) => $query->where('input->instance_id', $instance->id)
+                ->orWhere('state->launch_instance_id', $instance->id))->exists();
+        if ($used) {
+            throw new ResourceOperationException('instance.unsaved_work', 'Another Conn launch uses this Instance.', 409);
+        }
+
+        $work = $this->work->read($instance);
+        // A retry after the owned removal reached deletion can find the exact container stopped by that removal.
+        $stoppedByRemoval = ($work['reason'] ?? null) === 'stopped'
+            && ($previous?->result['failed_step'] ?? null) === 'Delete the container';
+        if ($stoppedByRemoval) {
+            return;
+        }
+        $activity = $work['state'] === 'clean' ? $this->activity->read($instance) : null;
+        if ($activity === null || ! $activity->readable || $activity->turnRuns || $activity->lastActivityUnix !== null) {
+            throw new ResourceOperationException('instance.unsaved_work', 'The Instance may hold work from another caller.', 409);
+        }
     }
 
     /** @param Closure(): Operation $admit */

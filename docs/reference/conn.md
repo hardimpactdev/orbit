@@ -738,7 +738,9 @@ Recheck control authority and the action under lock. Audit which Node requested 
 
 If Cancel wins, settle owned child work before admitting teardown. If a probe times out, wait for evidence that its native run ended and for the remaining T3 session lifetime to expire. Measure that wait from the recorded native end, not the Gateway's timeout.
 
-For a launch-owned clone, verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart.
+Use the ordinary Conn workspace check before removing a completed launch-owned clone. Check for T3 activity and other launches too. Keep cleanup pending if the workspace is dirty, a required read fails, or another launch uses the Instance.
+
+Verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart.
 
 Preserve pre-existing Instances and unrelated work. Do not claim ownership from a matching name. Restore a launch-owned wake only when the lifecycle guard proves the Instance still has no other consumer; do not restore a wake the launch joined. Only verified cleanup clears the private prompt on cancellation and ends the launch as `cancelled`.
 
