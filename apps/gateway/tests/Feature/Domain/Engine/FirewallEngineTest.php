@@ -110,7 +110,7 @@ beforeEach(function (): void {
     $this->allow = function (): Operation {
         $response = $this->postJson('/api/v1/nodes/'.$this->node->id.'/firewall-rules/allow', ['port' => '443', 'protocol' => 'tcp', 'source' => '192.0.2.1']);
         $response->assertStatus(202);
-        $operation = Operation::query()->findOrFail($response->json('data.operation.id'));
+        $operation = Operation::query()->findOrFail($response->json('data.id'));
         app(StartSwampRun::class)->start($operation);
 
         return $operation->refresh();
