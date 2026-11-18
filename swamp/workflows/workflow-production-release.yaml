@@ -192,8 +192,8 @@ jobs:
         - park-preparation
         - '${{ inputs.intent.sha }}'
         - '${{ string(inputs.operation_id) }}'
-  # Migrations are expand-only, so old's code runs on the current schema. A rollback never migrates or restores data.
   - name: Migrate
+    # Migrations are expand-only, so old's code runs on the current schema. A rollback never migrates or restores data.
     labels: {role: swamp}
     writes: true
     guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) || inputs.kind != "gateway.release" || (has(inputs.intent.retained) && inputs.intent.retained) }}'
