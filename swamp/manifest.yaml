@@ -110,6 +110,7 @@ additionalFiles:
   - ansible/instance-container-destroy.yml
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
+  - ansible/instance_root_disk.py
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/gateway-container-process.yml
