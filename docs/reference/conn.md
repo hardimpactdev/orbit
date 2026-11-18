@@ -1308,49 +1308,56 @@ It proved no enforcement. The nested fleet had no Conn registration and one edge
 
 ### Gateway receipts
 
-The Gateway side ran on 2026-11-18 in task copy `task-5868` (Instance 3705) against its nested fleet, at source `b569d2663`. The nested Gateway served that checkout with the switch on for the run only. The target was a scripted Bun process on the nested `app-dev` Node, not Rust Conn. It drove the real routes with a 1 s probe and a 3 s lease, and served a small managed ingress with RPC and long streams. The preflight's fixture container was gone, so the script ran on the serving Node's host. All machines share one host clock, so the times compare directly.
+The Gateway side ran on 2026-11-18 from 16:31 to 16:33 UTC in task copy `task-5868` (Instance 3705) against its nested fleet. The nested Gateway served the checkout at Gateway head `a357769851ff`, with the switch on for the run only. Commits after that head change only documentation.
 
-Three review fixes came after this run: the switch check before input checks, `superseded_at`, and one transaction per authority read. The Gateway tests cover them; this run does not.
+The target was a scripted Bun process on the nested `app-dev` Node, not Rust Conn. It drove the real routes with a 1 s probe and a 3 s lease, and served a small managed ingress with RPC and long streams. The preflight's fixture container was gone, so the script ran on the serving Node's host. All machines share one host clock, so the times compare directly. Target times have millisecond resolution.
 
-The fixtures: target 1 for a lab environment row with no T3 server, on Node 3 (`app-dev`, 10.45.0.2). Caller A was Node 4 (`app-prod`, 10.45.0.3) and caller B was Node 2 (`operator`, 10.45.0.10). Both got direct edges through `node:access:add`. Caller C was Node 1 (the Gateway Node, 10.45.0.1), with no direct edge. Edges were removed with `node:access:remove`.
+The fixtures were target 1, for a lab environment row with no T3 server, on Node 3 (`app-dev`, 10.45.0.2). Caller A was Node 4 (`app-prod`, 10.45.0.3). Caller B was Node 2 (`operator`, 10.45.0.10), the copy itself; it also holds the operator's edge to the Gateway Node. Caller C was Node 1, the Gateway Node, with no direct edge. Edges were added and removed through `node:access:add` and `node:access:remove`.
 
-Times below are seconds within 15:46 to 15:48 UTC.
+#### Commit and fence
 
-#### Revocation
+The Gateway brackets each commit: `committed_at` is sampled inside the transaction before its writes, and `commit_observed_at` in the after-commit callback. Each interval below is measured from both bounds, from `commit_observed_at` first.
 
-Caller C asked for a token and got `conn.managed_direct_edge_required`.
+Revision 1 removed A's edge 7 while A and B held streams. The commit lies between 32.640842 and 32.643407. The notice went out at 32.656379. Then:
 
-Revision 1 removed edge 2 while A and B held streams. The Gateway committed at 34.334135 and sent the notice at 34.344220. The target received it and fenced at 34.343. It verified the handlers closed at 34.387 and its `observed` ACK settled at 34.413930.
+| Step | Time | After the commit |
+| --- | --- | --- |
+| Notice received, fence | 32.657 | 13.6 to 16.2 ms |
+| A's client reads end of stream | 32.658143 | 14.7 to 17.3 ms |
+| Verified handler close, from the verified `delta` | 32.712 | 68.6 to 71.2 ms |
+| ACK settled | 32.757129 | 113.7 to 116.3 ms |
 
-A's stream closed 9 ms after the commit. B's stream ran on, and B's token still introspected. A's old token then got `conn.managed_token_invalid`, and a new token request got `conn.managed_direct_edge_required`.
-
-Adding A's edge again gave the new edge ID 4. The old token stayed refused. A new token was admitted on edge 4.
+B's stream ran on to its client timeout, and B's token still introspected. A's old token got `conn.managed_token_invalid`. A new token request got `conn.managed_direct_edge_required`, as did caller C.
 
 #### Recovery
 
-For revision 2 the target dropped the notice. Its next probe fenced at 17.521, 36 ms after the commit. The `observed` ACK has `notice_received_at` `null`.
+Adding A's edge again gave the new edge ID 9. The old token stayed refused, and a new token was admitted on edge 9.
 
-For revision 3 the target sent no ACK, and the row stayed owed. After a restart, the snapshot listed `owed: [3]`. The target sent a `recovered` ACK 25 ms later. An exact retry returned the first result. An ACK of revision 99 got `conn.managed_ack_unknown`.
+For revision 2 the target dropped the notice. Its next probe fenced, closed and verified at 04.756 to 04.757, 0.965 to 0.978 s after the commit. The `observed` ACK settled at 04.938364 with `notice_received_at` `null`.
 
-Revision 4 was not acknowledged before rotation to generation 2. The old process's next probe got `conn.managed_target_identity` 0.67 s after enrolment returned. Generation 2 started with `owed: []`. An ACK of revision 4 got `conn.managed_generation_mismatch`. B's generation 1 token got `conn.managed_token_invalid`.
+For revision 3 the target sent no ACK, and the row stayed owed. After a restart, the snapshot listed `owed: [3]`, and the `recovered` ACK settled 26 ms later. An exact retry returned the first result. An ACK of revision 99 got `conn.managed_ack_unknown`.
+
+Revision 4 was owed when enrolment rotated the target to generation 2. Enrolment recorded `superseded_at` on it. The old process's next probe, 69 ms after enrolment returned, got `conn.managed_target_identity`. Generation 2 started with `owed: []`. An ACK of revision 4 got `conn.managed_generation_mismatch` from either generation. B's generation 1 token got `conn.managed_token_invalid`, and a new token was admitted.
 
 #### Authority loss
 
-The rotation was a clean loss: the old process failed closed on the refused probe and closed B's stream.
+The rotation was a clean loss: the old process failed closed on the refused probe and B's client read the end of its stream 1 ms later.
 
-For a silent loss, the serving Node dropped its traffic to the Gateway. The target failed closed 2.42 s after the fault, 44.5 ms after its lease ended, and closed B's stream. A snapshot recovered it 0.37 s after the fault ended. B came back only through a fresh introspection.
+For a silent loss, the serving Node dropped its traffic to the Gateway at 50.494936. The target failed closed at 53.090, 2.595 s after the fault and 20.6 ms after its lease ended. B's client read the end of its stream at 53.091668. A snapshot recovered the target at 57.157, 0.484 s after the fault ended. B came back only through a fresh introspection.
 
-The teardown removal of edge 3 committed revision 5 and sent its notice. The target was already stopped, so the row stays owed: enforcement unconfirmed.
+The teardown removal of B's edge 8 committed revision 5 and sent its notice. The target was already stopped, so the row stays owed: enforcement unconfirmed.
 
-Teardown removed both lab edges, the target and environment rows, every lab credential and token file, and the switch. It turned Conn off again in the nested Gateway. No live Node, edge or grant changed.
+Teardown removed both lab edges, the target and environment rows, every lab credential and token file, the packet filter and the switch. It turned Conn off again in the nested Gateway. No live Node, edge or grant changed.
 
 The Rust target proof still has to show:
 
 - the Rust fence on real RPC, terminal and preview streams;
 - media tickets, including a stale one;
+- reconnect of a Rust RPC or media session after revocation;
 - the managed ingress refusing native credentials;
 - the caller's address, seen through the NAT-mode proxy from a container;
 - target egress through a product route instead of the serving host;
+- a second caller that holds no Gateway edge, beside an unrelated one;
 - fence, close and ACK times under busy load.
 
 ### Limits
