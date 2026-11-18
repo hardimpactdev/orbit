@@ -12,8 +12,8 @@ use crate::order::MAX_ORDER_BYTES;
 /// The largest reply the relay copies, in bytes.
 pub const MAX_REPLY_BYTES: usize = 64 * 1024;
 
-/// How long the relay waits for the executor's reply.
-pub const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long the relay waits for the executor's reply, including capture and a possible clean stop.
+pub const REPLY_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Why the relay could not hand over an order.
 #[derive(Debug, thiserror::Error)]
@@ -53,4 +53,17 @@ pub fn relay(socket: &Path, input: impl Read, mut output: impl Write) -> Result<
     io::copy(&mut stream.take(reply_limit), &mut output)?;
     output.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_can_wait_for_capture_and_a_clean_stop_in_one_sleep() {
+        let reader_drain = Duration::from_secs(10);
+        let capture = Duration::from_secs(30);
+        let stop_wait = Duration::from_secs(40);
+        assert!(REPLY_TIMEOUT > reader_drain + capture + stop_wait);
+    }
 }

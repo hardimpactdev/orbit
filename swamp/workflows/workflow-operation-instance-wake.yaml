@@ -1,7 +1,7 @@
 id: 2d0e5e38-2784-42df-9092-377969d45ad9
 name: operation-instance-wake
 autoContinue: false
-description: Start a sleeping development container, remove its asleep marker once the app answers, then wait for T3.
+description: Recover a signed wake through the relay or run the disabled-mode wake; boot only an eligible stopped container.
 queueTimeout: 10
 labels: {role: swamp}
 inputs:

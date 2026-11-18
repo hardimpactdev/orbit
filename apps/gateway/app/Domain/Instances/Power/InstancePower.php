@@ -16,6 +16,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -153,6 +154,14 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
     }
 
+    /** @param array<string, mixed> $receipt
+     * @return array<string, mixed>
+     */
+    public function signedResult(Operation $operation, array $receipt): array
+    {
+        return [...$this->result($operation), ...$this->kept($receipt), 'executor' => $receipt];
+    }
+
     /**
      * The power Operations' shared refusal of other lifecycle work: an Instance that is not active, or a Process of it with an open
      * Operation. A sleep, a wake and the start of a nested-fleet clone (InstanceStart) all call it inside the Instance lock.
@@ -191,25 +200,103 @@ abstract readonly class InstancePower implements DirectOperationProjection
 
     public function apply(Operation $operation, array $data): Operation
     {
-        $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
-        $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
-        $kept = $this->kept($phase);
-        $endedBefore = in_array($operation->status->value, OperationStatus::terminalValues(), true);
-
-        $operation = DB::transaction(function () use ($operation, $data, $phase, $succeeded, $kept): Operation {
+        [$operation, $endedBefore] = DB::transaction(function () use ($operation, $data): array {
+            $operation = Operation::query()->lockForUpdate()->findOrFail($operation->id);
+            $endedBefore = $operation->status->terminal();
+            $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
+            $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
+            $kept = $this->kept($phase);
+            $action = ExecutorPowerIntent::action($operation);
+            $receipt = null;
+            if ($action !== null) {
+                // ADR 0266, R1: the durable receipt decides; the run's transport only decides whether to ask again.
+                $receipt = $endedBefore ? ExecutorResults::matchingReceipt($operation, $action, $operation->executor_result)
+                    : ExecutorFence::record($operation, $action, $phase['executor'] ?? null);
+                $runError = $phase['error_code'] ?? $data['error_code'] ?? null;
+                $verdict = $this->signedVerdict($receipt, $succeeded, is_string($runError) ? $runError : null, ($phase['wake'] ?? null) === 'started');
+                $succeeded = $verdict['succeeded'];
+                $data['status'] = $succeeded ? OperationStatus::Succeeded->value
+                    : (($data['status'] ?? null) === OperationStatus::Succeeded->value ? OperationStatus::Failed->value : ($data['status'] ?? OperationStatus::Failed->value));
+                $phase['error_code'] = $verdict['error_code'];
+            }
+            $result = $succeeded ? $this->result($operation) : array_intersect_key($phase, ['error_code' => true]);
+            if ($receipt !== null) {
+                if ($succeeded) {
+                    $result = $this->signedResult($operation, $receipt);
+                } else {
+                    $result['executor'] = $receipt;
+                }
+            }
+            if ($action === 'sleep') {
+                $kept = [];
+                if (! $succeeded && InstanceSleep::isIncompleteFreeze($receipt)) {
+                    $result += ['sleep' => 'incomplete', 'power_state' => InstanceRuntimePowerState::Stopped->value];
+                }
+            }
             $operation = app(DirectOperation::class)->project($operation,
                 [...$data, 'error_code' => $succeeded ? null : ($phase['error_code'] ?? $data['error_code'] ?? null)],
-                $succeeded ? [...$this->result($operation), ...$kept] : [...array_intersect_key($phase, ['error_code' => true]), ...$kept]);
-            if ($this->reached($operation)) {
+                $action === null ? [...$result, ...$kept] : [...$kept, ...$result]);
+            if (! $endedBefore && ($this->reached($operation) || ($action === 'sleep' && InstanceSleep::isIncompleteFreeze($receipt)))) {
                 InstanceRuntime::query()->where('instance_id', $operation->target_id)->update(['power_state' => $this->powerState()]);
             }
 
-            return $operation;
+            return [$operation, $endedBefore];
         });
         if (! $endedBefore && in_array($operation->status->value, OperationStatus::terminalValues(), true)) {
             $this->ended($operation);
         }
 
         return $operation;
+    }
+
+    /**
+     * R1 with the kind's proof of a signed success: the one verdict of every end of a signed power Operation, in apply() and settle().
+     *
+     * @param  array<string, mixed>|null  $receipt
+     * @return array{succeeded: bool, error_code: ?string}
+     */
+    private function signedVerdict(?array $receipt, bool $ran, ?string $runError, bool $booted): array
+    {
+        $verdict = ExecutorFence::verdict($receipt, $ran, $runError, $booted);
+
+        return $verdict['succeeded'] && ! $this->provesSignedSuccess($receipt) ? ['succeeded' => false, 'error_code' => 'executor.result_unproven'] : $verdict;
+    }
+
+    /**
+     * R1 for an end that apply() did not write (ExecutorFence::settle()): a refused or expired run, or a late receipt. The write keeps
+     * its outcome when it already is the receipt's verdict; otherwise it takes that verdict, its result, its power state and its lock.
+     *
+     * @param  array<string, mixed>  $changes
+     * @return array<string, mixed>
+     */
+    public function settle(Operation $current, array $changes): array
+    {
+        $receipt = ExecutorPowerIntent::action($current) === null ? null : $current->executor_result;
+        if ($receipt === null) {
+            return $changes;
+        }
+        $result = is_array($changes['result'] ?? null) ? $changes['result'] : ($current->result ?? []);
+        $written = ($changes['status'] ?? null) === OperationStatus::Succeeded;
+        $code = is_string($changes['error_code'] ?? null) ? $changes['error_code'] : null;
+        $verdict = $this->signedVerdict($receipt, $written, $code, ($result['wake'] ?? null) === 'started');
+        if ($verdict['succeeded'] === $written && ($written || $verdict['error_code'] === $code)) {
+            return $changes;
+        }
+        if (! $verdict['succeeded']) {
+            return [...$changes, 'status' => $written ? OperationStatus::Failed : $changes['status'], 'error_code' => $verdict['error_code'],
+                'lock_key' => null, 'result' => [...$result, 'error_code' => $verdict['error_code'], 'executor' => $receipt]];
+        }
+        InstanceRuntime::query()->where('instance_id', $current->target_id)->update(['power_state' => $this->powerState()]);
+        $id = $current->id;
+        DB::afterCommit(fn () => $this->ended(Operation::query()->findOrFail($id)));
+
+        return [...$changes, 'status' => OperationStatus::Succeeded, 'error_code' => null, 'lock_key' => null,
+            'result' => $this->signedResult($current, $receipt)];
+    }
+
+    /** @param array<string, mixed>|null $receipt */
+    protected function provesSignedSuccess(?array $receipt): bool
+    {
+        return true;
     }
 }
