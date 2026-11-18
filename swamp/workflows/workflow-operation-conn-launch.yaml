@@ -67,10 +67,10 @@ jobs:
         task:
           type: behavior
           behaviorType: '@swamp/ssh'
-          behaviorName: conn-launch-private-input
+          behaviorName: conn-launch-stage-stdin
           methodName: exec
           globalArgs:
-            name: conn-launch-private-input
+            name: conn-launch-stage-stdin
             transport:
               kind: ssh
               user: ${{ inputs.intent.staging_ssh.target.user }}
