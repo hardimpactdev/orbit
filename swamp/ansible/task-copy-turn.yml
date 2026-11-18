@@ -37,6 +37,10 @@
           '/usr/sbin/runuser', '-u', 'agent', '--', '/usr/bin/env', '-i', 'HOME=/home/agent', 'PATH=/usr/local/bin:/usr/bin:/bin'] }}
     copy_git: "{{ copy_exec + ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace'] }}"
     reviewer: "{{ intent.turn.candidate | default(none) is not none }}"
+    # T3's run statuses that end a run, and the thread states that run nothing; the result step's RunOver and ThreadOver hold the same
+    # lists (task-copy-turn/mod.ts). A state in neither is unknown and names no end.
+    run_over: ['completed', 'failed', 'cancelled', 'interrupted', 'rolled_back']
+    thread_over: ['completed', 'failed', 'cancelled', 'interrupted', 'rolled_back', 'idle']
   tasks:
     - name: Validate the admitted turn
       ansible.builtin.assert:
@@ -65,6 +69,12 @@
           - intent.turn.answered | default([]) | reject('string') | list | length == 0
           - intent.turn.answered | default([]) | select('equalto', '') | list | length == 0
           - intent.turn.thread == 'continue' or intent.turn.answered | default([]) | length == 0
+          # The captured thread and run of each earlier turn, and the run that owns the answered requests: only these are matched or stopped.
+          - intent.turn.settle | selectattr('t3_thread_id', 'defined') | map(attribute='t3_thread_id') | select('string') | reject('match', '^[A-Za-z0-9][A-Za-z0-9:._%-]{0,199}$') | list | length == 0
+          - intent.turn.settle | selectattr('run_id', 'defined') | map(attribute='run_id') | select('string') | reject('match', '^[A-Za-z0-9][A-Za-z0-9:._%-]{0,199}$') | list | length == 0
+          - intent.turn.answered | default([]) | length == 0 or intent.turn.answered_run | default('') is match('^[A-Za-z0-9][A-Za-z0-9:._%-]{0,199}$')
+          - intent.turn.settle | selectattr('answered_run', 'defined') | map(attribute='answered_run') | select('string') | reject('match', '^[A-Za-z0-9][A-Za-z0-9:._%-]{0,199}$') | list | length == 0
+          - intent.turn.t3_thread_id | default(none) is not string or intent.turn.t3_thread_id is match('^[A-Za-z0-9][A-Za-z0-9:._%-]{0,199}$')
         fail_msg: tasks.copy_turn_invalid
     # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
     - name: Reach the copy as agent
@@ -157,17 +167,20 @@
           ansible.builtin.assert:
             that: model_accepted
             fail_msg: "{{ 'tasks.copy_turn_model_unverified' if not driver_known or (codex_model and probe_exit != 2) else 'tasks.copy_turn_model_unoffered' }}"
-    # An earlier turn that may still run is settled before any launch, by one rule: T3 lists its thread in no active state, or none of its title, and
-    # a reviewer's detach is undone. Every such turn is over in Orbit (cut by its bound, cancelled or lost), so a thread T3 still shows
-    # active has its run stopped first, by the helper's `stop`, once per thread; a run the stop ended, or a thread it found with no active
-    # run, has ended. The copy's ref `refs/orbit/review-detach` marks a detach in effect, at the tip the branch had: only with it, and once
-    # no earlier run can still write, is the checkout restored as after a reviewer's turn. Without it nothing in the tree is touched.
-    # While a run goes on because its stop failed, nothing is touched or launched, and the work in the copy stays.
+    # An earlier turn that may still run is settled before any launch, by one rule (docs/reference/development-containers.md#earlier-turns):
+    # its run is over, and a reviewer's detach is undone. Its thread is the one of its captured thread ID; only a turn with no captured ID
+    # is found by its title. A turn with a recorded run is over only when the helper's `stop` reads that exact run in a status that ends
+    # it: the helper leaves a run T3 shows over alone, and stops a run that still goes on, once per run, since every such turn is over in
+    # Orbit (cut by its bound, cancelled or lost). An accepted interrupt, a run T3 does not show, or a thread T3 does not list proves
+    # nothing, and the turn holds. A turn with no recorded run is over when T3 lists its thread in a state that runs nothing; for a turn
+    # with no captured thread, also when T3 holds no thread of its title. A turn that sent nothing has no run. The copy's ref
+    # `refs/orbit/review-detach` marks a detach in effect, at the tip the branch had: only with it, and once no earlier run can still
+    # write, is the checkout restored as after a reviewer's turn. Without it nothing in the tree is touched. While a run goes on, nothing
+    # is touched or launched, and the work in the copy stays.
     - name: Settle the earlier turns
       when: intent.turn.settle | length > 0
       vars:
         settle_listed: "{{ settle_threads.stdout | from_json if settle_threads.rc | default(1) == 0 else none }}"
-        settle_active: ['preparing', 'queued', 'starting', 'running', 'waiting']
         settle_reviewer: "{{ intent.turn.settle | selectattr('branch', 'string') | list }}"
       block:
         - name: List the threads to settle
@@ -177,42 +190,56 @@
           failed_when: false
           changed_when: false
           no_log: true
-        - name: Name the threads that still run
+        # Each earlier turn's thread: the one of its captured ID, whatever its title; only a turn with no captured ID, the one of its title.
+        # An admitted ID is one T3 was never seen to receive: the CLI made its own, so that turn too is found by its title.
+        - name: Match the earlier turns' threads
+          ansible.builtin.set_fact:
+            settle_mine: >-
+              {% set mine = {} %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set captured = none if entry.admitted
+              | default(false) is true else entry.t3_thread_id | default(none) %}{% set _ = mine.update({entry.operation_id | string: settle_listed
+              | selectattr('threadId', 'equalto', captured) | list if captured is string
+              else settle_listed | selectattr('title', 'equalto', entry.title) | list}) %}{% endfor %}{{ mine }}
+          no_log: true
+        # Each recorded run of a turn that may have sent, on its captured thread, once: the helper reads it and stops it only while it goes
+        # on, never another run of its thread.
+        - name: Name the runs to prove over
           ansible.builtin.set_fact:
             settle_running: >-
-              {% set running = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
-              | selectattr('title', 'equalto', entry.title) | list %}{% if mine | length == 1 and mine[0].status in settle_active
-              and mine[0].threadId not in running %}{% set _ = running.append(mine[0].threadId) %}{% endif %}{% endfor %}{{ running }}
+              {% set running = [] %}{% for entry in intent.turn.settle if settle_listed is not none and entry.sent | default(true) is not false
+              and entry.run_id | default(none) is string and entry.run_id not in running | map(attribute='run') %}{% set mine = settle_mine[entry.operation_id
+              | string] %}{% set captured = none if entry.admitted | default(false) is true else entry.t3_thread_id | default(none) %}{% set thread
+              = captured if captured is string else (mine[0].threadId if mine | length == 1 else none) %}{% if thread is not none %}{% set _ = running.append({'thread': thread, 'run': entry.run_id}) %}{% endif %}{% endfor %}{{ running }}
           no_log: true
         - name: Stop the earlier runs
           ansible.builtin.command:
-            argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'stop', item] }}"
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'stop', item.thread, item.run] }}"
             stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
           loop: "{{ settle_running }}"
           register: settle_stops
           failed_when: false
           changed_when: true
           no_log: true
-        # A stop that failed, or whose answer is no JSON, ends nothing: its turn stays open.
-        - name: Name the threads whose run ended
+        # Only an answer that reads the exact run in a status that ends it proves its end. A stop that failed, refused, found no such
+        # run or whose answer is no JSON ends nothing: its turn stays open.
+        - name: Name the runs that ended
           ansible.builtin.set_fact:
             settle_ended: >-
               {% set ended = {} %}{% for stop in settle_stops.results | default([]) if stop.rc == 0 %}{% set answer = stop.stdout
-              | from_json %}{% if answer.stopped or answer.run is none %}{% set _ = ended.update({stop.item: answer.run}) %}{% endif
-              %}{% endfor %}{{ ended }}
+              | from_json %}{% if answer.over | default(false) is true and answer.run == stop.item.run %}{% set _ = ended.update({stop.item.run:
+              answer.stopped is true}) %}{% endif %}{% endfor %}{{ ended }}
           no_log: true
         - name: Name the turns whose run is over
           ansible.builtin.set_fact:
             settle_over: >-
-              {% set over = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
-              | selectattr('title', 'equalto', entry.title) | list %}{% if mine | length == 0 or (mine | length == 1
-              and (mine[0].status not in settle_active or mine[0].threadId in settle_ended)) %}{% set _ = over.append(entry.operation_id)
-              %}{% endif %}{% endfor %}{{ over }}
+              {% set over = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_mine[entry.operation_id
+              | string] %}{% set captured = none if entry.admitted | default(false) is true else entry.t3_thread_id | default(none) %}{% if entry.sent
+              | default(true) is false or (entry.run_id in settle_ended if entry.run_id | default(none) is string
+              else ((mine | length == 0 and captured is not string) or (mine | length == 1 and mine[0].status in thread_over)))
+              %}{% set _ = over.append(entry.operation_id) %}{% endif %}{% endfor %}{{ over }}
             settle_stopped: >-
-              {% set stopped = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
-              | selectattr('title', 'equalto', entry.title) | list %}{% if mine | length == 1 and settle_ended.get(mine[0].threadId) is string
-              %}{% set _ = stopped.append({'operation_id': entry.operation_id, 'run': settle_ended[mine[0].threadId]}) %}{% endif
-              %}{% endfor %}{{ stopped }}
+              {% set stopped = [] %}{% for entry in intent.turn.settle if entry.run_id | default(none) is string
+              and settle_ended.get(entry.run_id) is true %}{% set _ = stopped.append({'operation_id': entry.operation_id,
+              'run': entry.run_id}) %}{% endfor %}{{ stopped }}
           no_log: true
         - name: Undo a reviewer's detach
           when: settle_reviewer | length > 0 and settle_over | length == intent.turn.settle | length
@@ -300,8 +327,9 @@
           ansible.builtin.assert:
             that: intent.turn.settle | map(attribute='operation_id') | reject('in', settle_done | default([])) | list | length == 0
             fail_msg: tasks.copy_turn_unended
-    # A continued turn sends to the T3 thread whose title names the Orbit thread. Without exactly one, nothing is launched. A list that
-    # fails or is not JSON names no exit code: that is T3 failing, not a missing thread.
+    # A continued turn sends to the T3 thread of its captured ID when T3 holds that ID (a turn reported it), whatever its title. Only a
+    # thread whose ID T3 never received, admitted or provisional, is found by the title that names the Orbit thread. Without exactly one,
+    # nothing is launched. A list that fails or is not JSON names no exit code: that is T3 failing, not a missing thread.
     - name: Find the thread to continue
       when: intent.turn.thread == 'continue'
       block:
@@ -316,6 +344,9 @@
           ansible.builtin.set_fact:
             turn_resumed: >-
               {{ ((turn_threads.stdout | from_json) if turn_threads.rc == 0 else [])
+                 | selectattr('threadId', 'equalto', intent.turn.t3_thread_id) | map(attribute='threadId') | list
+                 if intent.turn.t3_thread_id | default(none) is string and intent.turn.admission | default('') in ['confirmed', 'overwritten']
+                 else ((turn_threads.stdout | from_json) if turn_threads.rc == 0 else [])
                  | selectattr('title', 'equalto', intent.turn.title) | map(attribute='threadId') | list }}
           no_log: true
       rescue:
@@ -351,8 +382,8 @@
         - name: Resolve the requests in T3
           ansible.builtin.command:
             argv: >-
-              {{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'answered', turn_resumed | first]
-                 + intent.turn.answered }}
+              {{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'answered', turn_resumed | first,
+                 intent.turn.answered_run] + intent.turn.answered }}
             stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
           register: turn_answered
           failed_when: false
@@ -530,50 +561,9 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
-        # A wait that the bound cut leaves T3's run going. It is stopped here, before the read back and a reviewer's restore, on the
-        # thread found by its title: the start printed nothing. The answer is written as soon as the stop ends.
-        - name: Stop the run cut by its bound
-          when: turn_start.rc in [124, 137]
-          block:
-            - name: Find the cut thread by its title
-              ansible.builtin.command:
-                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.t3, 'thread', 'list', '--project', '/srv/workspace', '--json'] }}"
-              register: turn_cut_list
-              failed_when: false
-              changed_when: false
-              no_log: true
-            - name: Name the cut thread
-              ansible.builtin.set_fact:
-                turn_cut: >-
-                  {{ ((turn_cut_list.stdout | from_json) if turn_cut_list.rc == 0 else [])
-                     | selectattr('title', 'equalto', intent.turn.title) | list }}
-              no_log: true
-            - name: Stop the cut run
-              when: turn_cut | length == 1
-              ansible.builtin.command:
-                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'stop', (turn_cut | first).threadId] }}"
-                stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
-              register: turn_stop
-              failed_when: false
-              changed_when: true
-              no_log: true
-          rescue:
-            # A list that is not JSON finds no thread to stop: the result reads the turn as one that may still run.
-            - name: Stop no cut run
-              ansible.builtin.meta: noop
-          always:
-            - name: Write the stop evidence
-              when: turn_stop.rc is defined
-              ansible.builtin.copy:
-                content: "{{ {'stop_exit': turn_stop.rc, 'stop': turn_stop.stdout | default('')} | to_json }}"
-                dest: "{{ run }}/stop.json"
-                mode: "0600"
-              delegate_to: localhost
-              become: false
-              no_log: true
-              vars:
-                ansible_connection: local
-                ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        # A wait that the bound cut leaves T3's run going. The start printed nothing, so Orbit does not know the run's ID and cannot prove
+        # that a run of the thread is this turn's: it stops none. The turn stays unended until T3 lists its thread in a state that runs
+        # nothing, and the group holds until then or task:cancel.
         # `--wait` exits 2 when the run waits for an answer. The question is stored first; the run is stopped only after its evidence is
         # written, so a stopped run's question is never lost. The helper reads its session from `t3 auth session issue` itself and keeps it
         # in its memory only; the phase passes it nothing.
@@ -635,18 +625,20 @@
                 ansible_python_interpreter: "{{ ansible_playbook_python }}"
         - name: Read the thread back
           block:
-            - name: Find the thread by its title
+            - name: Find the thread of the run
               ansible.builtin.command:
                 argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.t3, 'thread', 'list', '--project', '/srv/workspace', '--json'] }}"
               register: turn_list
               failed_when: false
               changed_when: false
               no_log: true
+            # The thread the turn sent to, by its ID whatever its title; only a turn that made no thread is looked for by title.
             - name: Name the thread of this turn
               ansible.builtin.set_fact:
                 turn_found: >-
                   {{ ((turn_list.stdout | from_json) if turn_list.rc == 0 else [])
-                     | selectattr('title', 'equalto', intent.turn.title) | list }}
+                     | selectattr('threadId', 'equalto', turn_target) | list if turn_target | default(none, true) is not none
+                     else ((turn_list.stdout | from_json) if turn_list.rc == 0 else []) | selectattr('title', 'equalto', intent.turn.title) | list }}
               no_log: true
             - name: Show the thread
               when: turn_found | length == 1
@@ -669,7 +661,7 @@
               ansible.builtin.copy:
                 content: >-
                   {{ {'list_exit': none if turn_list_unreadable | default(false) else turn_list.rc | default(none),
-                      'found': turn_found | default([]) | length,
+                      'thread_id': turn_target | default(none, true), 'found': turn_found | default([]) | length,
                       'status': ((turn_found | first).status | default(none)) if turn_found | default([]) | length == 1 else none,
                       'show_exit': turn_show.rc | default(none), 'show': turn_show.stdout | default('')} | to_json }}
                 dest: "{{ run }}/read.json"
@@ -681,11 +673,33 @@
                 ansible_connection: local
                 ansible_python_interpreter: "{{ ansible_playbook_python }}"
       always:
-        # After a reviewer turn, also a failed or cut one: what the reviewer changed goes, and the task branch is checked out again at
-        # the tip it had. A checkout that is not clean on that branch and tip, or a run that still goes on and may change it again, holds
-        # its group until task:cancel destroys the copy.
+        # Whether the turn's run is over, by the rows of the result step's `over` (task-copy-turn/mod.ts): nothing sent; the start read
+        # its own run in a status that ends it; a run that asks whose interrupt the helper read ended; or, with no status of its run, T3
+        # lists the thread the turn sent to, by its ID, in a state that runs nothing. Anything else may still write.
+        - name: Name whether the run is over
+          block:
+            - name: Read the run's end
+              vars:
+                started: "{{ (turn_start.stdout | from_json) if turn_start.stdout | default('') | trim | length > 0 else {} }}"
+                halted: "{{ (turn_interrupt.stdout | from_json) if turn_interrupt.rc | default(1) == 0 else {} }}"
+                listed: "{{ turn_found | default([]) }}"
+              ansible.builtin.set_fact:
+                turn_over: >-
+                  {{ turn_start is not defined or turn_target | default(none, true) is none
+                     or started.status | default(none) in run_over
+                     or (started.status | default(none) == 'waiting' and halted.interrupted | default(false) is true)
+                     or (started.status is not defined and listed | length == 1
+                         and listed[0].status | default(none) in thread_over) }}
+              no_log: true
+          rescue:
+            - name: Name the run as possibly running
+              ansible.builtin.set_fact:
+                turn_over: false
+        # After a reviewer turn whose run is over, also a failed one: what the reviewer changed goes, and the task branch is checked out
+        # again at the tip it had. A run that may still write is left alone: the detach mark stays, the checkout is not touched, and the
+        # next turn restores it once it proves the run over. A checkout that is not clean on that branch and tip holds its group too.
         - name: Restore the checkout after the reviewer
-          when: review_restore is defined
+          when: review_restore is defined and turn_over | default(false) | bool
           block:
             - name: Discard the reviewer's changes
               ansible.builtin.command:
@@ -737,3 +751,15 @@
               vars:
                 ansible_connection: local
                 ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Write the restore evidence of a run that may still write
+          when: review_restore is defined and not turn_over | default(false) | bool
+          ansible.builtin.copy:
+            content: "{{ {'restored': false} | to_json }}"
+            dest: "{{ run }}/restore.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"

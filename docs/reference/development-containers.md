@@ -2045,6 +2045,233 @@ Discover the active project for `/srv/workspace` from `orchestration.subscribeSh
 
 Separate the read-only preparation evidence from permission to dispatch. Only native work admitted under the committed launch fence may send. Mark sending as a native write; recovery checks the pinned server and exact thread projection before any possible replay. Stock T3 writes separate command receipts for thread creation and the initial message, and can schedule the run before returning the launch response. A thread with no matching first message is not an acceptance receipt. Keep projection reads bounded and compare the exact message in the container; return only safe facts for the Gateway to project.
 
+### Task-copy RPC (target)
+
+This is the target transport for a copy turn. It is not built. It waits for Conn integration item 4 (task 5868), which supplies the task-scoped authority and the target's exact owner check. Nothing ships to a live fleet until then. The transport reuses Conn's orchestration WebSocket protocol 2 and the task-copy bookkeeping that is already in place. It adds no engine and no admin scope. The [Conn launch transport](#conn-launch-transport) keeps its own callers of `t3_copy_rpc.mjs` and does not depend on this contract.
+
+A local proof ran against Rust Conn and T3 0.1.10 at Conn `ffa3803db91`, on protocol 2. It proved stable message and run replay, exact interrupt and cancel, and replay after a server restart. It did not prove the task credential, the allowlist or the owner check: no target enforces them yet. The first pilot runs on Rust Conn. Pinned stock T3 joins only if it meets [ownership](#ownership-at-dispatch) and the [credential](#task-worker-grant) without changes. Compatibility with the deployed stock 0.1.7 is gated separately. MCP is not a path: `t3_pending_request` cannot cancel one exact stale request.
+
+Where this section says the worker refuses, task 5873 must refuse too. It must not add a workaround.
+
+#### Protocol calls
+
+| Purpose | Protocol 2 call |
+| --- | --- |
+| Create the role's thread | `orchestration.dispatchCommand` with `thread.create` |
+| Send the turn | `orchestration.dispatchCommand` with `message.dispatch` |
+| Read the thread, its runs and requests | `orchestration.getThreadProjection` and the existing subscriptions |
+| Cancel a stale question | `orchestration.dispatchCommand` with `runtime-request.respond`, decision `cancel` |
+| Stop a run | `orchestration.dispatchCommand` with `run.interrupt` |
+
+Reads need `orchestration:read`. Writes need `orchestration:operate`. Neither scope is enough without the grant's allowlist.
+
+#### Admission
+
+`TaskCopyTurn::capture` admits each turn under the group's lock, as it does today. It names the copy, the role's `AgentThread` and the thread's `external_id`:
+
+- **New thread.** Capture sets a UUID as `external_id` and marks it admitted: `external_id_admission` is `admitted`. `thread.create` uses that exact ID. The target must not choose another.
+- **Confirmed.** A turn that reports that same ID back makes it `confirmed`. Capture names the ID as `turn.t3_thread_id` and its standing as `turn.admission`.
+- **Established thread.** The turn uses an admitted `external_id`. The worker never looks a thread up by its title.
+- **Binding.** Before dispatch, the worker confirms the target's environment ID and its one admitted workspace project for `/srv/workspace`. A thread of another environment or project is refused.
+
+Rows made before this contract need one rule. Today `capture` sets a UUID, but `t3_copy_rpc.mjs create` makes its own thread ID. A continued turn finds its thread by title in `thread list`. `TaskCopyTurnProjection::record` then writes the reported ID over the row. So these rows fall in two groups:
+
+| Row | How to tell | Rule |
+| --- | --- | --- |
+| Provisional | No turn of the thread reported a `t3_thread_id`. The row still holds the UUID that capture set, which T3 never received | The next turn creates the thread with that UUID and marks it admitted |
+| Overwritten | A turn reported a `t3_thread_id` | Refused with `tasks.copy_thread_missing`. The turn launches nothing |
+
+`TaskCopyTurn::admission` reads the standing. A row from before the mark has a null `external_id_admission`; it is `provisional` while no copy turn of the thread reported a `t3_thread_id`, and `overwritten` after. A reported ID that differs from the row's ID, or any report on a row without the mark, sets `overwritten`.
+
+The provenance of an overwritten ID is not guaranteed. A first turn reports the ID that the helper made, but a continued turn reports the ID of a title match, and a person's thread with the same title passes that match. The row does not say which happened, so every overwritten row is refused, and the caller starts a new thread with `--thread=new`.
+
+#### Stable IDs
+
+Capture fixes, in the intent, one command ID per step, the thread ID and the message ID (`turn.message_id`). It also freezes the create body: project, title, provider instance, model and options. The message body is frozen too. Before any send of a step, a retry sends the same IDs and the same bodies. Once a step may have been sent, every retry of it only reads.
+
+The worker counts the turn as launched only when `getThreadProjection` shows the admitted message and exactly one run that the target started from that message ID. It records that run ID. A message that may have been sent but has no confirmed run is only possibly sent. The result keeps the two apart:
+
+| Result | `sent` | `launched` | `ended` |
+| --- | --- | --- | --- |
+| Nothing sent | `false` | `false` | `true`, unless the checkout is detached |
+| Nothing sent, over a detached checkout not restored | `false` | `false` | `false` |
+| Possibly sent, no confirmed run | `true` | `false` | `false` |
+| Confirmed launch | `true` | `true` | As the run went |
+
+`TaskCopyTurnProjection::record` replaces a thread's stored questions only when `launched` is `true`. So a possibly sent answer keeps the questions. `ended: false` keeps the hold through `TaskCopyTurn::unsettled`. A reviewer's turn cut after its detach and before its send holds the group too, as it does today with `tasks.copy_review_unrestored`.
+
+#### Recovery of a lost reply
+
+A lost reply or a dropped socket makes a step ambiguous. The worker then reads `getThreadProjection` for the exact admitted thread ID, with its grant. The target answers only when the grant's environment UUID and registration generation match.
+
+That match does not prove that the server state is the same. The [durable launch](/reference/conn#durable-launches-v1) proves it with a probe session row, which needs a session that the stock 0.1.7 CLI issues locally. The task worker grant has no such witness, and item 4 supplies none. So the worker makes no decision that needs continuity. It accepts only a positive match on exact IDs and frozen bodies, which an older restored state cannot make up. It treats every absence as ambiguous, and it never replays.
+
+| Step | Found | Result |
+| --- | --- | --- |
+| `thread.create` | The thread, with the frozen project, title, provider instance, model and options, and no message | The create happened. The worker goes on to dispatch |
+| `thread.create` | The thread, with any other field or anything in it | The turn launches nothing and fails. The row is not reused |
+| `thread.create` | No thread | Not proof that the create failed. The turn launches nothing and fails. A thread that appears later holds no message and stays idle |
+| `message.dispatch` | The message, byte for byte, and one run started from its ID | The dispatch happened. The worker follows that run |
+| `message.dispatch` | The message with no run, more than one run, or a different body | Ambiguous |
+| `message.dispatch` | No message | Ambiguous. A bounded projection does not prove absence, and Rust Conn evicts receipts after 4,096 commands |
+
+A replay would need the target to prove that it did not take the command ID. No target gives that proof, so the worker never replays a step. An ambiguous dispatch sends nothing more and fails with `tasks.copy_turn_failed`. Its result is possibly sent: `sent: true`, `launched: false`, `ended: false`. The turn stays unsettled, the group holds, and stored questions stay.
+
+#### Ownership at dispatch
+
+The worker never marks queued work as started. It never adopts a run that its own admitted message did not start. It never stops a run that someone else started. The group lock and the unsettled-turn check stay.
+
+A person may write to the same thread from Conn at any time, also between `thread.create` and the first message. So the target checks ownership as part of accepting every `message.dispatch`, the first and each continued one. In one step it confirms that the grant names this thread, that no run is active and no message is queued, and then starts the run. Otherwise it refuses the message. It never queues it and never steers another run.
+
+No target makes this check today. Item 4 supplies it. Until it lands, the worker refuses to dispatch, and task 5873 proves only that refusal.
+
+#### Earlier turns
+
+The settle rule in [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) stops the thread's current active run. That run may be a person's by then. So under this contract, capture passes, for each unsettled turn, its thread ID, its frozen message ID, the SHA-256 digest of its frozen message body, any run ID it recorded, its `sent` and its `answered` list. A turn with no result counts as possibly sent. Each entry of `turn.settle` holds `t3_thread_id`, `admitted`, `message_id`, `digest`, `run_id`, `sent` and `answered`. A turn admitted before `message_id` has `message_id: null`. A result from before `sent` gives it from `launched`.
+
+The thread ID is the one the turn reported. The worker reports the thread it targeted even when its last read of T3 fails. A turn with no report and an admitted ID passes that ID with `admitted: true`: it may have been sent, so the target can find the thread by it. No T3 was seen to hold that ID, so the CLI driver still finds such a turn's thread by its title.
+
+An earlier turn whose result says `sent: false` has no message and no run to find. Only its marked checkout holds it. The worker restores and verifies that checkout, then names the turn settled.
+
+For any other earlier turn, the earlier worker may have died after the target started the run but before it recorded the ID. So the next turn finds the earlier run by its link to the frozen message, never as the thread's current active run. The message counts only when its body has the passed digest, the same exact-body check as [Recovery of a lost reply](#recovery-of-a-lost-reply):
+
+- Exactly one run started from the message, and it has ended: the run is over.
+- Exactly one run started from the message, and it is active: the worker interrupts that exact run and waits for proof of its end.
+- Another run is active: the worker leaves it alone. Only the earlier message's own run counts.
+- The message is missing: the earlier turn stays unsettled. The worker launches nothing.
+- No run or several runs started from the message: the same.
+- The body does not match the digest, or cannot be read: the same. The worker interrupts nothing and names nothing spent.
+
+A recorded run ID must equal the run that the link finds. Otherwise the earlier turn stays unsettled.
+
+Settling keeps today's order. First the worker proves that the earlier run ended. Then, for a reviewer's turn whose detach mark is set, it restores the checkout and verifies it, only when the restore is safe as [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) says. Only then does it name the turn settled. A reviewer's run that ended over a checkout not yet restored leaves the turn unsettled. A reviewer's turn without the mark is settled once its run is over, as today.
+
+An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears a thread's stored questions when their request IDs are exactly the spent ones. A partial overlap or a superset clears nothing. It does not wait for the earlier Operation, which is not recorded a second time.
+
+The current turn froze its prompt at capture, so it may quote those spent questions as the question it answers. When its own `answered` list holds a spent request, it launches nothing and fails with `tasks.copy_question_answered`. The caller sends its prompt again. The next capture composes it without the spent questions.
+
+#### Questions
+
+The flow of [A question ends the turn](#a-question-ends-the-turn) stays, on the new calls:
+
+1. A run started from the turn's message waits. Every pending request must be a complete user-input question, and each request's node must belong to that run.
+2. The worker stores the questions, bounded, with each request ID. Each question's `run_id` names its owner run.
+3. It reads the projection again. The same request IDs must still be pending, with the same owner run.
+4. It interrupts that run and waits for proof that the run ended. Only then is the turn `asking_for_input` and over.
+
+A request whose owner the worker cannot read stores no question and stops no run. An approval, a request without a question, or a request of another run is never a reason to interrupt. The turn then fails as it does today, and the group holds.
+
+The answer is a new turn. Capture admits the stored request IDs and their owner run into its grant. The only change the grant allows to those prior requests is `runtime-request.respond` with decision `cancel`. The target accepts the cancel only when the request is still pending, is a user-input request of the admitted thread, and its owner is the stored run.
+
+The worker first reads the thread. A stored request that this read shows resolved, cancelled or absent needs no action, as in #3980. It cancels each stored request that is still pending, then reads them back.
+
+If the target cannot confirm the owner, or a read fails, or a request stays pending, the turn fails with `tasks.copy_question_unresolved`. The questions stay. There is no checkout and no send, and the grant allows no other change to those requests. Once every stored request is resolved, the answer goes out as the turn's own admitted message, with its own stable IDs, under [ownership at dispatch](#ownership-at-dispatch).
+
+Approvals and refusals are not questions. The worker never answers an approval and never cancels one.
+
+#### Task worker grant
+
+The worker gets a separate task worker grant on item 4's managed binding. It reuses that binding and its revocation fence; the [Conn layer](/reference/conn) page holds the contract once it lands. There is no second mechanism.
+
+- The Gateway issues an opaque bearer and stores only its digest.
+- The Rust target checks it by an authenticated `POST` to the Gateway.
+- It is bound to the target's environment UUID and registration generation. It names the task, the copy and the admitted turn.
+- Its scopes are fixed. A caller cannot set them.
+- A cache does not extend its expiry.
+
+The grant holds an allowlist, fixed at capture:
+
+| Allows | On |
+| --- | --- |
+| `getThreadProjection` and the thread's subscriptions | The admitted thread: its messages, runs and requests, also an empty thread right after create |
+| `getThreadProjection` | Each earlier turn's thread named at capture, also another role's thread: only to find the run of its frozen message, its end and its requests |
+| `thread.create` | The admitted thread ID, with the frozen body |
+| `message.dispatch` | The admitted message ID on the admitted thread, under the owner check |
+| `run.interrupt` | The run that the target started from the admitted message |
+| `run.interrupt` | The run that the target started from each earlier turn's frozen message, as [Earlier turns](#earlier-turns) says |
+| `runtime-request.respond`, decision `cancel` | The stored question requests of their stored owner run |
+
+The grant covers a run that appears after dispatch only through the target's link from that run to an admitted message. It covers no other run. The target refuses any thread, run, request or command outside the allowlist, even when the scopes match. A grant of an ended turn cannot drive a later one. The worker's authority to operate is separate from a user's authority, through Orbit, to watch the thread or answer a question. Item 4's lab reader cannot run task work. No generic bearer and no admin scope is used.
+
+Until task 5870 lands, the target does not check the allowlist or the turn binding. Until then, only a local proof runs, with no live writes.
+
+#### Turn evidence
+
+The Operation's result names:
+
+- the admitted turn and its step IDs;
+- the environment, thread, run and message IDs, as the target spells them;
+- whether it was sent, whether it launched and whether it ended;
+- the earlier turns it settled, with the run each stopped;
+- the waiting request IDs, their owner run and their questions;
+- one fixed outcome code;
+- the reviewer's checkout and restore, as [Calls](#calls) describes.
+
+The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`.
+
+The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds the fixed sentence of its code, and nothing parsed from any text. A turn that has not ended adds a fixed sentence that the group holds. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's, and drops any other error field. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
+
+One rule names a turn ended, judged on the turn's own run, never on another run of its thread. The first row that applies decides:
+
+| # | Evidence | `ended` |
+| --- | --- | --- |
+| 1 | A reviewer's checkout is detached and not restored | `false` |
+| 2 | Nothing was launched | `true` |
+| 3 | The run asks, its question is stored with its owner run, and the interrupt of that run is confirmed | `true` |
+| 4 | The run asks, and its question could not be read, a request is not this run's own, or the interrupt is not confirmed | `false` |
+| 5 | The start printed a status that ends a run | `true` |
+| 6 | The start printed any other status, such as `running` or `queued`, or one that Orbit does not know | `false` |
+| 7 | The stop of the run that the bound cut proved its end | `true` |
+| 8 | No status of the run: T3 lists no thread of the title, or lists it in a state that runs nothing | `true` |
+| 9 | Anything else, such as a thread listed active or in an unknown state, or no list | `false` |
+
+The settle of an earlier turn uses the same states that run nothing. A state it does not know leaves the turn open, and the next turn launches nothing.
+
+The settle finds the earlier turn's thread by its captured ID, and by its title only when no ID is recorded or listed. It stops only the earlier turn's captured run, through `t3_copy_rpc.mjs stop THREAD RUN`, and holds when T3 shows another run or none.
+
+A turn cut by its bound has no known run, so nothing stops it: it holds until T3 lists its thread in a state that runs nothing, or `task:cancel`. A stored question is kept only when this turn's run owns it, and the answer cancels only requests of that owner run. A T3 run status outside T3's known statuses is never named.
+
+A question without its owner run is never stored. The turn records `tasks.copy_question_unread` and `ended: false`, so the next turn settles it. `tasks.copy_review_unrestored` outranks `tasks.copy_question_unread`: an unrestored reviewer turn keeps its code.
+
+The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run: the folder is mode `0700`, `intent.json` is mode `0600`, and its cleanup removes the folder. The RPC worker drops that staging with the CLI calls.
+
+The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. The archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The CLI driver already shapes it so, and the projection drops a user message's text that an older worker still sends. The stock CLI gives no message ID or time: under it, an entry's ID is the run ID and the message's index, and its time is empty. The Gateway already holds the admitted prompt in the Operation's input.
+
+#### Proof and removal
+
+Task 5873 proves this on one isolated copy. Each case passes only on its observable result:
+
+| Case | Passes when |
+| --- | --- |
+| A user watches the same thread | The user sees the turn. The worker's run and messages are unchanged |
+| A person sends between create and first message, and the person's run is still active at dispatch | The target refuses the worker's message. Nothing is queued. The person's run goes on |
+| A person's run is active on a continued turn | The target refuses the dispatch. Nothing is queued or steered |
+| Two workers at once on one turn | One message and one run exist. The second worker launches nothing |
+| A wrong task grant | The target refuses every call. Nothing changes in the thread |
+| The create reply is lost | The worker finds the empty thread and dispatches once, or launches nothing when the thread is missing |
+| The dispatch reply is lost | The worker finds the message and its one run and follows it |
+| A queued message with no run | The turn fails as possibly sent, stays unsettled, keeps any stored questions, and nothing else is sent |
+| Recovery after receipt eviction | With the message unreadable, the worker replays nothing and the turn stays unsettled |
+| A person's run is active during cleanup | The earlier turn's run is stopped only if it is its own. The person's run goes on. The reviewer checkout is untouched while unsettled |
+| The earlier worker died before it recorded its run ID | The next turn finds that run by its message and stops only it |
+| A reviewer's run ended, then the worker died before the restore | The turn stays unsettled until the next turn restores and verifies the checkout |
+| A reviewer's turn cut after its detach and before its send, with `sent: false` recorded | The next turn restores and verifies the checkout, then settles it without looking for a run |
+| A reviewer's turn cut after its detach, with no result | It counts as possibly sent. With no matching message, it stays unsettled and the checkout is untouched |
+| An earlier answer turn's message with a different body | The earlier turn stays unsettled. No run is interrupted and no request is named spent |
+| A reviewer turn follows an interrupted implementer turn | The reviewer's worker reads the implementer thread, stops only the run of its frozen message, then settles it |
+| A possibly sent answer that ran | The next turn finds its run, names its stored requests spent, and fails with `tasks.copy_question_answered` when its own prompt quotes them. The turn after that sends no stale question |
+| A stored request already resolved on the answer turn | No cancel is sent, and the answer runs as a new run |
+| A live question | The questions are stored with owner run, the run is interrupted, and the turn is `asking_for_input` |
+| A stale question on the answer turn | Only the stored request is cancelled, then the answer runs as a new run |
+| A cancel with a wrong owner or failed readback | The turn fails with `tasks.copy_question_unresolved`. The questions stay. No checkout and no send |
+| An approval and a refusal | The worker neither interrupts nor answers. The turn fails and the group holds |
+| A timeout, a cancel and the cleanup | Only the turn's own run is stopped. The next turn settles it |
+| A worker restart, then a server restart | Recovery finds the same message and run each time. No second message or run exists |
+| A legacy overwritten row | The turn fails with `tasks.copy_thread_missing` and launches nothing |
+| Evidence | The result, run folder and logs hold no prompt, bearer, ticket or raw projection |
+
+Once that proof passes, the task driver drops `t3 thread send --wait`, `thread list` and `thread show`, the title lookup, and the CLI session that each helper call issues. The durable launch keeps its caller.
+
 ### Reach and authentication
 
 Stock T3 0.1.7 serves its thread tools at `/mcp`, but accepts there only an MCP client session. A session that `t3 auth session issue` makes, as the create's `Orbit Swamp` session, is refused. A session issued with the MCP client subject is held to `approval-required`, because the CLI cannot give it a higher mode. Only T3 itself issues a full-access MCP session, through its OAuth approval or in its own process. So Swamp uses T3's own CLI:
@@ -2138,17 +2365,25 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 
 ### Hold after a turn that may still run
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A run cut by the turn's bound is stopped in the same phase, through T3's own RPC, and its turn is over once that stop ended the run or found none active. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports, or a cut turn whose stop failed.
+One rule decides when a turn's run is over.
 
-One rule settles a turn that is not over: T3 lists its thread in no active state, or none of its title. For a reviewer's turn, its detach must also be undone. Only a turn's phase can read that, so the next turn settles it:
+A thread is named only by its captured T3 thread ID, whatever its title. Only a turn with no ID that T3 holds is found by its title. A new thread's admitted UUID is such an ID, because T3 never received it.
+
+A run is over only when a readback shows that exact run ID in a status that ends it. An accepted interrupt is no proof. A run that T3 does not show is no proof either, and neither is a thread that T3 does not list. The turn then holds. A turn with no recorded run, such as one cut by its bound, is over when T3 lists its thread in a state that runs nothing.
+
+Nothing that needs the run over happens before it ends. That covers the reviewer's restore, the clearing of the detach mark, the settle and `ended: true`.
+
+A turn is over when nothing was launched, or when the start printed an end of its run. A run that asks is over once the helper read it interrupted. A run cut by the turn's bound is not stopped, since the start printed no run ID: its turn is over once T3 lists its thread in no active state. Until then a reviewer's checkout stays detached and its mark set. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports.
+
+The same rule settles a turn that is not over. For a reviewer's turn, its detach must also be undone. Only a turn's phase can read that, so the next turn settles it:
 
 - The Gateway puts every turn that is not settled into the next turn's intent, with its title. A reviewer's turn adds the task branch.
 - Each of these turns is over in Orbit: it timed out, was cancelled or was lost.
 - The result names the settled turns. The Gateway counts them settled from then on.
 
-The phase lists T3's threads first. A thread that T3 still shows active is stopped with `t3_copy_rpc.mjs stop`, which interrupts its active run and waits for its end. A run that stopped, or a thread with no active run, has ended. The phase writes which turns it found settled, and names each run it stopped.
+The phase lists T3's threads first. For each recorded run, `t3_copy_rpc.mjs stop` reads that exact run on the captured thread. It leaves a run that T3 shows over alone, and interrupts a run that still goes on, then waits for its end. It answers `over` only when its last read shows the run in a status that ends it. A turn with no recorded run is judged by its thread's listed state. A turn that sent nothing has no run. The phase writes which turns it found settled, and names each run it stopped.
 
-When a stop fails, the earlier turn is not settled. The phase touches nothing and launches nothing, and fails with `tasks.copy_turn_unended`. The work in the copy stays.
+When a stop fails or proves no end, the earlier turn is not settled. The phase touches nothing and launches nothing, and fails with `tasks.copy_turn_unended`. The work in the copy stays.
 
 A reviewer's detach marks the copy with the ref `refs/orbit/review-detach`, at the tip the branch had. Only a verified restore clears the mark. The phase restores the checkout only when the mark is set, every earlier run is over, and the checkout is still detached. The restore is a reset, a clean and a checkout of the task branch. The checkout must then be clean on that branch at the mark's tip, and the phase clears the mark.
 
