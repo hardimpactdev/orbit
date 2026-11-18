@@ -108,7 +108,12 @@ final readonly class FilesystemGatewayReleaseObserver implements GatewayReleaseO
 
         $ids = array_map(strval(...), array_keys($commits));
 
-        return new GatewayReleaseInventory($ids[0], 'adopted', $superseded, $commits, [], $ids);
+        $hostRetired = $record['host_retired'] ?? false;
+        if (! is_bool($hostRetired) || ($hostRetired && count($ids) !== 2)) {
+            throw $this->failed();
+        }
+
+        return new GatewayReleaseInventory($ids[0], 'adopted', $superseded, $commits, [], $ids, $hostRetired);
     }
 
     /** The release the current path links to, or null for an in-place checkout or a link to anything else. */

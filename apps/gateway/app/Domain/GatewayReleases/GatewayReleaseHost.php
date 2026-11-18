@@ -39,7 +39,7 @@ final readonly class GatewayReleaseHost
     {
         $inventory = self::inventory($node);
 
-        return $inventory !== null && count($inventory->retained) === 2
+        return $inventory !== null && $inventory->hostRetired
             && ! $node->roles()->whereIn('role', [RoleName::AppDev, RoleName::AppProd])->exists();
     }
 

@@ -68,7 +68,7 @@ final readonly class GatewayRuntimeFiles
         if ($inventory === null) {
             array_unshift($files, $file(self::Pool, $this->pool($application, $home)));
             $files[] = $file('/etc/systemd/system/orbit-runtime-hibernator.service', $this->service('Orbit runtime hibernator', 'oneshot', 'orbit:runtime-hibernator'));
-        } elseif (count($inventory->retained) === 2) {
+        } elseif ($inventory->hostRetired) {
             // The second serving container replaces the first move's host rollback.
             $files[] = $file(self::Pool, '', 'absent');
             foreach (Process::query()->where('owner_type', Node::class)->where('owner_id', $node->id)

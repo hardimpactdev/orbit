@@ -70,9 +70,11 @@ prune_previous() {
   rm -- "$journal/pending-prune"
 }
 set_inventory() {
-  local live=$1 old=$2 tmp
+  local live=$1 old=$2 tmp retired=false
+  if [[ -f $journal/host-retired ]]; then retired=true; fi
   tmp=$(mktemp "$home/.gateway-containers.XXXXXXXX")
-  jq -n --arg live "$live" --arg old "$old" '{version:1,live:$live,old:(if $old=="" then null else $old end)}' > "$tmp"
+  jq -n --arg live "$live" --arg old "$old" --argjson retired "$retired" \
+    '{version:1,live:$live,old:(if $old=="" then null else $old end),host_retired:$retired}' > "$tmp"
   chown orbit:orbit "$tmp"
   chmod 0600 "$tmp"
   mv -fT "$tmp" "$inventory"
@@ -364,7 +366,7 @@ case "$action" in
     exit 1
     ;;
   restore-host)
-    [[ $(field '.live') == "$sha" && $(jq -r '.old // ""' "$inventory") == "" ]] || fail 'there is a newer container release'
+    [[ ! -f $journal/host-retired && $(field '.live') == "$sha" && $(jq -r '.old // ""' "$inventory") == "" ]] || fail 'there is a newer container release'
     [[ $(cat "$root/orbit/REVISION") == "$sha" ]] || fail 'host checkout changed'
     if [[ -n $1 ]]; then
       enter "$candidate" /bin/sh "$checkout/swamp/scripts/gateway-release-drain.sh" "$1"
@@ -395,7 +397,13 @@ case "$action" in
     ;;
   retire)
     [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'
-    if [[ ! -f $journal/operation ]]; then exit 0; fi
+    if [[ ! -f $journal/operation ]]; then
+      # A host restart can fall between committing the handover and publishing its marker to the Gateway.
+      if [[ -f $journal/host-retired ]] && ! jq -e '.host_retired == true' "$inventory" >/dev/null; then
+        set_inventory "$sha" "$(field '.old')"
+      fi
+      exit 0
+    fi
     [[ $(cat "$journal/operation") == "$operation" ]] || fail 'switch identity changed'
     prev=$(cat "$journal/machine")
     stop_background "$prev"
@@ -423,7 +431,13 @@ case "$action" in
       fi
     fi
     cp "$journal/operation" "$journal/last-operation"
-    rm -f -- "$journal/operation"
+    if [[ $prev == host ]]; then
+      rm -f -- "$journal/operation"
+    else
+      # This rename closes recovery of the switch and records that a verified container rollback exists.
+      mv -fT "$journal/operation" "$journal/host-retired"
+      if ! jq -e '.host_retired == true' "$inventory" >/dev/null; then set_inventory "$sha" "$(field '.old')"; fi
+    fi
     ;;
   prune)
     [[ $(field '.live') == "$sha" ]] || fail 'candidate is no longer live'

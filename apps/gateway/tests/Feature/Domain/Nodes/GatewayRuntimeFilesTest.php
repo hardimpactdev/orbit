@@ -319,7 +319,8 @@ it('moves only the serving Gateway runtime and keeps FPM through its first host 
         'desired_state' => 'running', 'working_directory' => '/home/orbit/orbit/apps/gateway', 'runtime_config' => ['command' => ['php', 'artisan', 'schedule:work']]]);
     $other = $node->replicate()->forceFill(['name' => 'other', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']);
     $other->saveQuietly();
-    $write = fn (?string $old) => file_put_contents($base.'/.orbit/gateway-containers.json', json_encode(['version' => 1, 'live' => str_repeat('a', 40), 'old' => $old], JSON_THROW_ON_ERROR));
+    $write = fn (?string $old, bool $retired = false) => file_put_contents($base.'/.orbit/gateway-containers.json', json_encode(
+        ['version' => 1, 'live' => str_repeat('a', 40), 'old' => $old, 'host_retired' => $retired], JSON_THROW_ON_ERROR));
     $write(null);
     $files = static fn (): array => array_column(app(GatewayRuntimeFiles::class)->render($node)['files'], 'ensure', 'path');
     expect($files())->not->toHaveKey(GatewayRuntimeFiles::Pool)
@@ -330,6 +331,9 @@ it('moves only the serving Gateway runtime and keeps FPM through its first host 
         ->and(app(ProcessOperationAdmission::class)->inputFor($process, 'start')['container'])->toBe(GatewayReleaseHost::target($node))
         ->and(GatewayReleaseHost::retiredFpm($node))->toBeFalse();
     $write(str_repeat('b', 40));
+    expect($files())->not->toHaveKey(GatewayRuntimeFiles::Pool)
+        ->and(GatewayReleaseHost::retiredFpm($node))->toBeFalse();
+    $write(str_repeat('b', 40), true);
     expect($files()[GatewayRuntimeFiles::Pool])->toBe('absent')
         ->and($files()['/etc/systemd/system/orbit-process-'.$process->id.'-schedule-work.service'])->toBe('absent')
         ->and(GatewayReleaseHost::retiredFpm($node))->toBeTrue();
