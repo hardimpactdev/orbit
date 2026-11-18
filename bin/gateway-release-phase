@@ -8,10 +8,11 @@ repo=/home/orbit/shared/orbit.git
 script=swamp/scripts/gateway-release-container.sh
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  switch|restore|switch-back|start-horizon|retire|prune|prune-pending|release-unused)
+  switch|restore|switch-back|restore-host|start-horizon|retire|prune|prune-pending|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9<>/home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
+      export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
     fi
     ;;
 esac
@@ -39,7 +40,11 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
   # A failed run may have woken the rollback container or left its new clone private.
   # The operation that created the clone and the serving inventory fence deletion.
   if [[ ! -f $inventory && ${ORBIT_GATEWAY_INITIAL_MOVE:-0} != 1 ]]; then exit 0; fi
-  [[ ! -e $journal/operation ]] || { echo 'Unfinished traffic switch needs recovery' >&2; exit 1; }
+  if [[ -e $journal/operation ]]; then
+    [[ ! -e $inventory && -f $journal/host-fallback/verified &&
+      $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
+      { echo 'Unfinished traffic switch needs recovery' >&2; exit 1; }
+  fi
   # A failed Incus copy can leave only the preparer snapshot. Check the seal that
   # created it rather than trusting the name of a snapshot or the current preparer.
   snapshot="built-$operation"
@@ -59,11 +64,16 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
     exit
   fi
   existing=$("${incus_cli[@]}" list "$candidate" --format json | jq -ce --arg name "$candidate" 'map(select(.name==$name))|first // {}')
-  [[ $(jq -r '.config["user.orbit.release.operation"] // ""' <<< "$existing") == "$operation" ]] || exit 0
-  jq -e --arg sha "$sha" '.config | .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha and .["user.orbit.release.role"]=="candidate" and .["boot.autostart"]=="false"' <<< "$existing" >/dev/null
-  "${incus_cli[@]}" delete "$candidate" --force
+  if [[ $existing != '{}' || ! -f $journal/operation ]]; then
+    if [[ $(jq -r '.config["user.orbit.release.operation"] // ""' <<< "$existing") != "$operation" ]]; then
+      [[ ! -f $journal/operation ]] || { echo 'Refusing to clean up a clone from another operation' >&2; exit 1; }
+      exit 0
+    fi
+    jq -e --arg sha "$sha" '.config | .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha and .["user.orbit.release.role"]=="candidate" and .["boot.autostart"]=="false"' <<< "$existing" >/dev/null
+    "${incus_cli[@]}" delete "$candidate" --force
+  fi
   ctl forget gateway "${sha:0:12}"
-  rm -f -- "$journal/rollback-$sha"
+  if [[ ! -f $journal/operation ]]; then rm -f -- "$journal/rollback-$sha"; fi
   exit
 fi
 git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:$script"

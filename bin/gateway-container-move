@@ -11,18 +11,20 @@ archive=${2:-}
 root=/home/orbit
 app=$root/orbit/apps/gateway
 inventory=$root/.orbit/gateway-containers.json
-[[ ! -e $inventory ]] || { echo 'Gateway already has a container inventory' >&2; exit 1; }
+journal=/var/lib/orbit/gateway-release-switch
 phase=/usr/local/libexec/orbit-gateway-release-phase
 test -x "$phase"
 test -x /usr/local/libexec/orbit-gateway-site
-sha=$(cat "$root/orbit/REVISION")
-[[ $sha =~ ^[a-f0-9]{40}$ ]] || { echo 'The serving host release has no sealed commit' >&2; exit 1; }
 # This is the same admission lock as normal releases. The host still serves during preparation.
 lock=$root/.orbit/gateway-release.lock
 if [[ ! -e $lock ]]; then runuser -u orbit -- touch "$lock"; fi
 exec 9<>"$lock"
 export ORBIT_GATEWAY_RELEASE_LOCK_HELD=1
 flock -n 9 || { echo 'Another Gateway release is active' >&2; exit 1; }
+[[ ! -e $journal/operation ]] || { echo 'Recover the interrupted Gateway switch with --recover first' >&2; exit 1; }
+[[ ! -e $inventory ]] || { echo 'Gateway already has a container inventory' >&2; exit 1; }
+sha=$(cat "$root/orbit/REVISION")
+[[ $sha =~ ^[a-f0-9]{40}$ ]] || { echo 'The serving host release has no sealed commit' >&2; exit 1; }
 # The PHP interpreter expands this program.
 # shellcheck disable=SC2016
 receipt=$(runuser -u orbit -- php8.5 -r '
@@ -51,13 +53,11 @@ if [[ -z $horizon ]] && systemctl is-active --quiet orbit-gateway-horizon.servic
   horizon=orbit-gateway-horizon.service
 fi
 run_phase() { env ORBIT_GATEWAY_INITIAL_MOVE=1 ORBIT_GATEWAY_WEB_ARCHIVE_STDIN=1 "$phase" "$1" "$sha" "$operation" "${@:2}"; }
-drained=false
 restore() {
   rc=$?
   trap - EXIT
   if [[ $rc != 0 ]]; then
-    if [[ -f $inventory ]]; then run_phase switch-back || :; fi
-    if [[ $drained == true && -n $horizon ]]; then systemctl enable --now "$horizon"; fi
+    if [[ -f $journal/operation ]]; then run_phase restore || :; fi
     run_phase park-preparation || :
     run_phase release-unused || :
   fi
@@ -70,10 +70,6 @@ run_phase clone "$digest"
 run_phase park-preparation
 run_phase wait-idle
 run_phase ready
-if [[ -n $horizon ]]; then
-  drained=true
-  /bin/sh "$root/orbit/swamp/scripts/gateway-release-drain.sh" "$horizon"
-fi
 generations=$(run_phase switch '' "$horizon")
 run_phase public-ready
 run_phase start-horizon "$horizon"

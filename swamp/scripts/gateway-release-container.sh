@@ -44,8 +44,22 @@ cache_config() {
 }
 check_release() { src bin/gateway-release-check | bash -se -- "$@"; }
 private_ready() { check_release "$sha" "$(ctl address gateway "$id")"; }
+host_ready() { src swamp/scripts/gateway-release-host-check.py | runuser -u caddy -- python3 - "$checkout" "$sha"; }
 
 journal=/var/lib/orbit/gateway-release-switch
+host_fallback=$journal/host-fallback
+record_switch() {
+  printf '%s\n' "$sha" > "$journal/candidate"
+  printf '%s\n' "$operation" > "$journal/operation.next"
+  # Persist the recovery data before making the operation visible to --recover.
+  sync -f "$journal"
+  mv -fT "$journal/operation.next" "$journal/operation"
+  sync -f "$journal"
+}
+clear_switch() {
+  rm -f -- "$journal/operation"
+  sync -f "$journal"
+}
 # A delete may fail after promotion. Keep its exact SHA across journal rotation.
 prune_previous() {
   local discarded other matches live old
@@ -125,15 +139,15 @@ drain_active_horizons() {
   [[ -z $(active_horizons "$machine") ]] || fail 'previous Gateway still has active Horizon consumers'
 }
 wanted_horizons() {
-  local admitted=$1 observed=/dev/null
-  if [[ -f $journal/horizons && -f $journal/candidate && $(cat "$journal/candidate") == "$sha" ]]; then
+  local admitted=$1 observed=${2:-/dev/null}
+  if [[ $# == 1 && -f $journal/horizons && -f $journal/candidate && $(cat "$journal/candidate") == "$sha" ]]; then
     observed=$journal/horizons
   fi
   src swamp/scripts/gateway-release-horizons.py | python3 - "$admitted" "$observed"
 }
 start_horizons() {
   local machine=$1 selected=$2 unit selected_units
-  selected_units=$(wanted_horizons "$selected")
+  selected_units=$(wanted_horizons "$selected" "${@:3}")
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
     unit_wanted "$unit" || continue
@@ -148,43 +162,54 @@ start_horizons() {
   done <<< "$selected_units"
 }
 start_background() {
-  local machine=$1
+  local machine=$1 unit
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
     unit_wanted "$unit" || continue
     run_on "$machine" systemctl enable --now "$unit" </dev/null >&2
     run_on "$machine" systemctl is-active --quiet "$unit" </dev/null
-  done < "$journal/background"
+  done < "${2:-$journal/background}"
 }
 stop_background() {
-  local machine=$1
+  local machine=$1 unit
   while IFS= read -r unit; do
     [[ -n $unit ]] || continue
     run_on "$machine" systemctl disable --now "$unit" </dev/null >&2
-  done < "$journal/background"
+  done < "${2:-$journal/background}"
+}
+restore_container() {
+  local saved_inventory=$1 previous=$2 previous_sha address
+  previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$saved_inventory")
+  [[ $previous == "gateway-${previous_sha:0:12}" && $(owned_sha "$previous") == "$previous_sha" ]] || fail 'saved previous release identity changed'
+  ctl resume gateway "${previous#gateway-}" "$operation" >&2
+  /usr/local/libexec/orbit-gateway-release-phase ready "$previous_sha" "$operation" >&2
+  address=$(ctl address gateway "${previous#gateway-}")
+  check_release "$previous_sha" "$address"
+  rm -f -- "$journal/recovery-source-upstream"
+  if [[ -f $upstream ]]; then cp -- "$upstream" "$journal/recovery-source-upstream"; fi
+  set_upstream "$address"
+  if ! /usr/local/libexec/orbit-gateway-site container >&2; then
+    if [[ -f $journal/recovery-source-upstream ]]; then
+      install -m 0644 "$journal/recovery-source-upstream" "$upstream.restore"
+      mv -fT "$upstream.restore" "$upstream"
+    else
+      rm -f -- "$upstream"
+    fi
+    fail 'Caddy could not restore the verified previous release'
+  fi
+  install -o orbit -g orbit -m 0600 "$saved_inventory" "$inventory.restore"
+  mv -fT "$inventory.restore" "$inventory"
 }
 restore_switch() {
   [[ -f $journal/operation && $(cat "$journal/operation") == "$operation" ]] || fail 'there is no matching switch to reverse'
-  local previous previous_sha address
+  local previous horizon
   previous=$(cat "$journal/machine")
   if [[ -f $journal/inventory ]]; then
-    previous_sha=$(jq -er '.live | select(test("^[0-9a-f]{40}$"))' "$journal/inventory")
-    [[ $previous == "gateway-${previous_sha:0:12}" && $(owned_sha "$previous") == "$previous_sha" ]] || fail 'saved previous release identity changed'
-    ctl resume gateway "${previous#gateway-}" "$operation" >&2
-    /usr/local/libexec/orbit-gateway-release-phase ready "$previous_sha" "$operation" >&2
-    address=$(ctl address gateway "${previous#gateway-}")
-    check_release "$previous_sha" "$address"
-    cp -- "$upstream" "$journal/recovery-source-upstream"
-    set_upstream "$address"
-    if ! /usr/local/libexec/orbit-gateway-site container >&2; then
-      install -m 0644 "$journal/recovery-source-upstream" "$upstream.restore"
-      mv -fT "$upstream.restore" "$upstream"
-      fail 'Caddy could not restore the verified previous release'
-    fi
-    install -o orbit -g orbit -m 0600 "$journal/inventory" "$inventory.restore"
-    mv -fT "$inventory.restore" "$inventory"
+    restore_container "$journal/inventory" "$previous"
   else
+    host_ready
     /usr/local/libexec/orbit-gateway-site host >&2
+    check_release "$sha"
     rm -f -- "$inventory" "$upstream"
   fi
   stop_background "$candidate"
@@ -194,8 +219,35 @@ restore_switch() {
   start_background "$previous"
   if [[ $previous != host ]]; then
     "${incus_cli[@]}" config set "$previous" boot.autostart=true
+  else
+    sync -f "$home" /etc/caddy
   fi
   "${incus_cli[@]}" config set "$candidate" boot.autostart=false
+}
+finish_host_fallback() {
+  rm -f -- "$inventory" "$upstream"
+  sync -f "$home" /etc/caddy
+  ORBIT_GATEWAY_INITIAL_MOVE=1 /usr/local/libexec/orbit-gateway-release-phase release-unused "$sha" "$operation"
+  clear_switch
+  rm -f -- "$journal/rollback-$sha" "$host_fallback"/{inventory,horizons,background,verified,verified.next}
+}
+reverse_host_fallback() {
+  local horizon units
+  restore_container "$host_fallback/inventory" "$candidate"
+  stop_background host
+  units=$(active_horizons host)
+  drain_active_horizons host
+  while IFS= read -r unit; do
+    [[ -n $unit ]] || continue
+    systemctl disable -- "$unit" </dev/null
+  done <<< "$units"
+  horizon=$(cat "$journal/horizon")
+  start_horizons "$candidate" "$horizon" "$host_fallback/horizons"
+  start_background "$candidate" "$host_fallback/background"
+  "${incus_cli[@]}" config set "$candidate" boot.autostart=true
+  sync -f "$home" /etc/caddy
+  clear_switch
+  rm -f -- "$host_fallback"/{inventory,horizons,background,verified,verified.next}
 }
 
 case "$action" in
@@ -346,8 +398,10 @@ case "$action" in
       /usr/local/libexec/orbit-gateway-unit apply-candidate "$operation" "$sha" >&2
       private_ready
       install -d -m 0700 "$journal"
-      if [[ ! -e $journal/operation ]]; then prune_previous; fi
-      if [[ -e $journal/operation && $(cat "$journal/operation") != "$operation" ]]; then fail 'another switch needs recovery'; fi
+      [[ ! -e $journal/operation ]] || fail 'an interrupted switch needs recovery'
+      prune_previous
+      # Discard an uncommitted host fallback stage before reusing the journal.
+      rm -f -- "$host_fallback"/{inventory,horizons,background,verified,verified.next}
       # Stage recovery before publishing the switch. The host adapter can recover even if power fails mid-switch.
       rollback_file=$(mktemp "$journal/.rollback.XXXXXXXX")
       if ! src bin/gateway-rollback > "$rollback_file"; then rm -f "$rollback_file"; fail 'missing recovery program'; fi
@@ -368,12 +422,11 @@ case "$action" in
           if unit_wanted "${unit%.json}"; then echo "${unit%.json}"; fi
         done
       } | sort -u > "$journal/background"
-      printf '%s\n' "$sha" > "$journal/candidate"
-      printf '%s\n' "$operation" > "$journal/operation"
-      # Process controls use this same host lock. Fence any Horizon created or
-      # restarted after the earlier, potentially long drain.
+      # Process controls use this same host lock. Record the source workers
+      # before draining them, including the first move from PHP-FPM.
       printf '%s\n' "${2:-}" > "$journal/horizon"
       active_horizons "$prev" > "$journal/horizons"
+      record_switch
       drain_active_horizons "$prev"
       if grep -qxF orbit-agent-view.service "$journal/background"; then
         enter "$candidate" systemctl start orbit-agent-view.service
@@ -383,7 +436,7 @@ case "$action" in
       "${incus_cli[@]}" config set "$candidate" boot.autostart=true
       set_upstream "$addr"
       set_inventory "$sha" "$previous"
-      if ! /usr/local/libexec/orbit-gateway-site container >&2; then restore_switch; rm -f -- "$journal/operation"; fail 'Caddy reload failed; restored previous live'; fi
+      if ! /usr/local/libexec/orbit-gateway-site container >&2; then restore_switch; clear_switch; fail 'Caddy reload failed; restored previous live'; fi
     fi
     printf '%s\n' "$generations"
     ;;
@@ -391,26 +444,47 @@ case "$action" in
     check_release "$sha"
     ;;
   restore|switch-back)
+    if [[ -f $host_fallback/inventory ]]; then
+      [[ $action == restore && $(cat "$journal/operation") == "$operation" && $(cat "$journal/candidate") == "$sha" ]] ||
+        fail 'there is no matching host rollback to recover'
+      if [[ -f $host_fallback/verified ]]; then
+        finish_host_fallback
+      else
+        reverse_host_fallback
+      fi
+      exit
+    fi
     restore_switch
     enter "$candidate" systemctl stop orbit-gateway-web.service
-    rm -f -- "$journal/operation"
+    clear_switch
     if [[ $action == restore ]]; then exit 0; fi
     echo "gateway.release_switched_back: verification failed, previous Gateway is serving again" >&2
     exit 1
     ;;
   restore-host)
     [[ ! -f $journal/host-retired && $(field '.live') == "$sha" && $(jq -r '.old // ""' "$inventory") == "" ]] || fail 'there is a newer container release'
-    [[ $(cat "$root/orbit/REVISION") == "$sha" ]] || fail 'host checkout changed'
-    if [[ -n $1 ]]; then
-      enter "$candidate" /bin/sh "$checkout/swamp/scripts/gateway-release-drain.sh" "$1"
-      enter "$candidate" systemctl disable "$1"
-    fi
+    [[ ! -e $journal/operation ]] || fail 'an interrupted switch needs recovery'
+    host_ready
+    install -d -m 0700 "$host_fallback"
+    rm -f -- "$host_fallback"/{verified,verified.next}
+    cp -- "$inventory" "$host_fallback/inventory"
+    active_horizons "$candidate" > "$host_fallback/horizons"
+    remember_background "$candidate" > "$host_fallback/background"
+    record_switch
+    drain_active_horizons "$candidate"
     /usr/local/libexec/orbit-gateway-site host >&2
-    stop_background "$candidate"
+    check_release "$sha"
+    stop_background "$candidate" "$host_fallback/background"
+    start_horizons host "$1"
     start_background host
-    if [[ -n $1 ]]; then systemctl enable --now "$1"; fi
     "${incus_cli[@]}" config set "$candidate" boot.autostart=false
-    rm -f -- "$inventory" "$upstream"
+    # Once the host has passed verification and taken over, recovery completes
+    # cleanup instead of returning to the container.
+    touch "$host_fallback/verified.next"
+    sync -f "$journal" /etc/caddy
+    mv -fT "$host_fallback/verified.next" "$host_fallback/verified"
+    sync -f "$journal"
+    finish_host_fallback
     ;;
   start-horizon)
     live=$(field '.live')
@@ -465,7 +539,8 @@ case "$action" in
     fi
     cp "$journal/operation" "$journal/last-operation"
     if [[ $prev == host ]]; then
-      rm -f -- "$journal/operation"
+      sync -f "$home" /etc/caddy
+      clear_switch
     else
       # This rename closes recovery of the switch and records that a verified container rollback exists.
       mv -fT "$journal/operation" "$journal/host-retired"

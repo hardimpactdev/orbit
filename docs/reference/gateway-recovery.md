@@ -113,6 +113,10 @@ The Gateway expects its managed Horizon and scheduler Processes to be named `hor
 7. Deploy the next commit with `orbit gateway:release:deploy`. Check that it serves and both preparation and the previous live are frozen.
 8. Converge the Gateway role to remove host PHP-FPM once a container rollback exists. Restore the previous automation setting.
 
+The first move records how to restore the host before draining Horizon. If the move is interrupted after that point, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` from the Node console.
+
+Host rollback checks the PHP-FPM listener and its release before draining the container. It keeps the container available until the host passes public verification. If verification fails, the command restores the container. After an interruption, `--recover` restores the container or finishes cleanup if the host switch was already committed.
+
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
 Once established, each target has three containers. A release wakes preparation, installs the exact commit and web archive, and clones the sealed result. Preparation can sleep while the candidate starts. The existing container serves until the candidate passes its private check. After switching Caddy, the public check and drain must succeed before the former live is frozen for rollback. Orbit then removes the older rollback.

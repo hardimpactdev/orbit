@@ -26,8 +26,12 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
         test -f "$journal/operation" || fail "there is no interrupted traffic switch"
         operation=$(cat "$journal/operation")
         candidate=$(cat "$journal/candidate")
-        "$phase" restore "$candidate" "$operation"
-        ORBIT_GATEWAY_INITIAL_MOVE=1 "$phase" release-unused "$candidate" "$operation"
+        if [[ -f $journal/host-fallback/inventory ]]; then
+            "$phase" restore "$candidate" "$operation"
+        else
+            "$phase" restore "$candidate" "$operation"
+            ORBIT_GATEWAY_INITIAL_MOVE=1 "$phase" release-unused "$candidate" "$operation"
+        fi
         exit
     fi
     live=$(jq -er '.live' "$inventory")
@@ -38,9 +42,12 @@ if [[ -f $base/.orbit/gateway-containers.json || $id == --recover && -f $journal
     if [[ $id == --host ]]; then
         [[ -z $old && $(cat "$base/orbit/REVISION") == "$live" ]] || fail "host rollback is available only just after the move"
         operation=$(cat "$journal/last-operation")
-        "$phase" restore-host "$live" "$operation" "$horizon"
-        "$phase" public-ready "$live" "$operation"
-        ORBIT_GATEWAY_INITIAL_MOVE=1 "$phase" release-unused "$live" "$operation"
+        if ! "$phase" restore-host "$live" "$operation" "$horizon"; then
+            if [[ -f $journal/operation && ! -f $journal/host-fallback/verified ]]; then
+                "$phase" restore "$live" "$operation"
+            fi
+            fail "host rollback failed"
+        fi
         exit
     fi
     [[ $old =~ ^[a-f0-9]{40}$ && ( -z $id || $id == "${old:0:12}" ) ]] || fail "choose the retained rollback container"
