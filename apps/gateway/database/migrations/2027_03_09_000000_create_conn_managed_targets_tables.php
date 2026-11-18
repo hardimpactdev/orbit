@@ -31,6 +31,7 @@ return new class extends Migration
             $table->unsignedInteger('revision');
             $table->json('edge_ids');
             $table->string('committed_at', 40);
+            $table->string('commit_observed_at', 40)->nullable();
             $table->string('notice_sent_at', 40)->nullable();
             $table->string('notice_suppressed_at', 40)->nullable();
             $table->string('ack_kind', 16)->nullable();

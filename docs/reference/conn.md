@@ -1096,7 +1096,7 @@ This section is the contract for the first isolated proof: a lab Gateway removes
 
 A managed target is a registered Conn environment with one managed target record. The record holds the environment UUID, the registration generation, the serving Node and the digest of the target's service credential. The serving Node is the environment's registered Node.
 
-The switch `orbit.conn.managed_targets` (`ORBIT_CONN_MANAGED_TARGETS`) is off by default. While it is off, every route below refuses with `conn.managed_disabled` (404). The switch gates only the routes. Edge removal writes managed revisions for every enrolled target whether the switch is on or off. So a target cannot probe while the switch is off, its lease ends, and it fails closed. When the switch is on again, the target sees every removal it missed.
+The switch `orbit.conn.managed_targets` (`ORBIT_CONN_MANAGED_TARGETS`) is off by default. While it is off, every route below refuses with `conn.managed_disabled` (404), before any peer, extension or input check. The switch gates only the routes. Edge removal writes managed revisions for every enrolled target whether the switch is on or off. So a target cannot probe while the switch is off, its lease ends, and it fails closed. When the switch is on again, the target sees every removal it missed.
 
 ### Credentials
 
@@ -1113,7 +1113,7 @@ No log, response or Activity row holds token or credential material, apart from 
 
 An operator on the Gateway runs `php artisan conn:managed-target:enrol {environment_id} --credential-file=<path>`. The environment must be registered, its Node active, and its ID a lowercase canonical UUID; registration itself accepts any string without whitespace, so enrolment checks the UUID and refuses with `conn.managed_environment_id_invalid` (422).
 
-The command starts generation 1 at revision 0, or replaces the generation of an existing record with the next one. It writes the new credential to the file with mode `0600` and never prints it. A new generation refuses the old credential, every token of the old generation, and every owed acknowledgement of the old generation at once.
+The command starts generation 1 at revision 0, or replaces the generation of an existing record with the next one. It writes the new credential to the file with mode `0600` and never prints it. The file is delivered as the last step before the commit: when delivery fails, the command fails and the current generation, credential and owed rows stay as they were. A new generation refuses the old credential, every token of the old generation, and every owed acknowledgement of the old generation at once.
 
 The operator gives the target its protected provisioning input: the Gateway URL, the path of the lab Orbit CA, the expected environment UUID, the generation and the credential file path. The target treats the UUID and the generation as fixed. A clone or a replacement at the same address is enrolled again before its service starts. An ordinary service restart keeps the generation and the credential. The public instance file never holds these values.
 
@@ -1125,7 +1125,7 @@ The target calls these routes over HTTPS. It verifies the Gateway name against t
 - the credential digest matches the record of that environment;
 - the environment UUID and generation are the current ones of that record.
 
-A managed token, a native Conn token, or a credential of another target on the same Node never passes. The ordinary `/api/v1/realtime` and `/api/v1/broadcasting/auth` stay out of this path.
+A managed token, a native Conn token, or a credential of another target on the same Node never passes. Each route reads and writes in one transaction that checks the generation again, so a request authenticated before a rotation never reads or settles the new generation's state. The ordinary `/api/v1/realtime` and `/api/v1/broadcasting/auth` stay out of this path.
 
 | Method and path under `/api/v1/conn/managed` | Request | Response `data` |
 | --- | --- | --- |
@@ -1139,9 +1139,9 @@ A `nonce` is 16 to 64 base64url characters that the target draws at random for e
 
 ### Caller route
 
-`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The body accepts no scopes: `reader` maps to `orchestration:read` and `terminal:read`. The response (201) holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
+`POST /api/v1/conn/environments/{environment_id}/managed-tokens` with `{"purpose": "reader"}` issues one managed token for one managed target. The caller is the active Node of `RequireActiveWireGuardPeer`. It needs a direct `node_access` row to the target's serving Node. A caller whose only access is Gateway authority gets no token. The body holds `purpose` and nothing else: any other field, such as `scopes`, is refused even when it is empty or `null`. `reader` maps to `orchestration:read` and `terminal:read`. The response (201) holds `token`, `expires_at`, `scopes`, `generation` and `revision`.
 
-The token expires 15 minutes after issue and has no renewal; the caller asks for a new one. This lifetime is a lab choice. It does not bound enforcement: revocation ends a token at once, whatever its expiry.
+The token expires 15 minutes after issue, at a whole second, and has no renewal; the caller asks for a new one. Introspection enforces exactly the advertised `expires_at`. This lifetime is a lab choice. It does not bound enforcement: revocation ends a token at once, whatever its expiry.
 
 Issue runs in the same transaction kind as edge removal. It reads the edge row and the target's revision under the write lock, so no token is issued against an edge that is already removed.
 
@@ -1180,9 +1180,9 @@ Removing a direct edge through `DELETE /api/v1/nodes/{servingNode}/access/{consu
 4. Mark the edge's managed tokens as revoked at that revision.
 5. Record one owed acknowledgement for each target: its environment UUID, generation, revision and `committed_at`.
 
-The transaction captures each target's generation with its revision. After the outermost commit, the Gateway publishes `conn.authority.revoked` on the channel of that captured generation, `private-conn-target.{target_id}.{generation}`, and never on another. Its data are `environment_id`, the captured `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`.
+The transaction captures each target's generation with its revision. After the outermost commit, the Gateway records `commit_observed_at` and publishes `conn.authority.revoked` on the channel of that captured generation, `private-conn-target.{target_id}.{generation}`, and never on another. Its data are `environment_id`, the captured `generation`, `revision` and `edge_ids`; the Gateway records `notice_sent_at`. The generation check, the publish and its record hold one write lock, so a rotation commits either before the check or after the send.
 
-When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after this commit, in its own transaction. It checks broader server access and is neither managed enforcement nor its acknowledgement.
+When a new generation replaced the captured one before the publish, the Gateway skips the notice and records `notice_suppressed_at`. It never sends or relabels an old generation's removal for its successor. It does not wait for an Operation. A rollback publishes nothing. The existing held-session withdrawal ([Removing an edge](#removing-an-edge)) runs after the outermost commit, in its own transaction, even when the removal ran inside an enclosing transaction. It checks broader server access and is neither managed enforcement nor its acknowledgement.
 
 A replaced target keeps no notice path: its old subscription is on the old generation's channel, which carries no notice of a later generation, and the Gateway signs only the current one. The owed rows of a replaced generation become `superseded`: enrolment records `superseded_at` in its transaction. They are never recorded as acknowledged, and `/ack` for them refuses with `conn.managed_generation_mismatch`.
 
@@ -1250,7 +1250,7 @@ Bytes already passed to the operating system cannot be recalled. `notice_receive
 
 A restarted target observed no close: its handlers ended with the old process. Once it has applied the snapshot, it sends a `recovered` ACK for each `owed` revision. That ACK confirms that no affected handler remains. Its `recovered_at` is the time it applied the snapshot, an upper bound on the close; `fenced_at`, `handlers_closed_at` and `notice_received_at` are `null`. The timing proof leaves `recovered` ACKs out of every fence and close measure.
 
-The Gateway settles only the owed row with the same environment UUID, generation and revision. One ACK never settles another revision. It records `acknowledged_at` and the reported target times on the first valid ACK. An exact retry answers that first result and changes nothing. A lost request leaves the row owed, and the target sends it again while `owed` lists it.
+The Gateway settles only the owed row with the same environment UUID, generation and revision. One ACK never settles another revision. It records `acknowledged_at` and the reported target times on the first valid ACK. An exact retry answers that first result and changes nothing. Every reported time is an RFC 3339 string with an offset, and `handlers_closed_at` is not earlier than `fenced_at`. An ACK that breaks this is refused with `validation.failed` (422), and the revision stays owed. A lost request leaves the row owed, and the target sends it again while `owed` lists it.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
@@ -1280,7 +1280,8 @@ The Gateway and the target record these times separately, so the proof can measu
 
 | Time | Clock | Recorded by |
 | --- | --- | --- |
-| `committed_at` | Gateway | The edge-removal transaction |
+| `committed_at` | Gateway | Inside the edge-removal transaction, before its writes: a lower bound on the commit |
+| `commit_observed_at` | Gateway | In the after-commit callback, before the publish: an upper bound on the commit |
 | `notice_sent_at` | Gateway | After the Reverb publish returns |
 | `notice_received_at` | Target | On the notice, reported in the ACK; `null` when none arrived |
 | `fenced_at` | Target | When the edge is blocked; `null` in a `recovered` ACK |

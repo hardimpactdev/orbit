@@ -7,6 +7,7 @@ namespace Orbit\Extensions\Conn\Console;
 use App\Domain\Shared\ResourceOperationException;
 use Illuminate\Console\Command;
 use Orbit\Extensions\Conn\Actions\Managed\EnrolConnManagedTargetAction;
+use RuntimeException;
 
 /** Enrols one lab managed target or replaces its generation ([Enrol a lab target](/reference/conn#enrol-a-lab-target)). Never prints the credential. */
 final class EnrolConnManagedTargetCommand extends Command
@@ -32,6 +33,10 @@ final class EnrolConnManagedTargetCommand extends Command
             $result = $action->execute((string) $this->argument('environment_id'), $file);
         } catch (ResourceOperationException $exception) {
             $this->error($exception->errorCode.': '.$exception->getMessage());
+
+            return self::FAILURE;
+        } catch (RuntimeException $exception) {
+            $this->error($exception->getMessage().' The target keeps its current generation.');
 
             return self::FAILURE;
         }

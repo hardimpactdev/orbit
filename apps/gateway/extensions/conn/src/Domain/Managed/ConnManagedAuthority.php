@@ -29,9 +29,9 @@ final readonly class ConnManagedAuthority
     }
 
     /** @return array<string, mixed> */
-    private function readState(ConnManagedTarget $target, string $nonce, ?int $afterRevision): array
+    private function readState(ConnManagedTarget $authenticated, string $nonce, ?int $afterRevision): array
     {
-        $target = ConnManagedTarget::query()->findOrFail($target->id);
+        $target = $this->current($authenticated);
         $head = $target->revision;
         if ($afterRevision !== null && $afterRevision > $head) {
             throw new ResourceOperationException('conn.managed_revision_future', 'after_revision is above the head.', 409, details: ['head_revision' => $head]);
@@ -61,12 +61,18 @@ final readonly class ConnManagedAuthority
     }
 
     /** @return array<string, mixed> */
-    public function introspect(ConnManagedTarget $target, string $nonce, #[SensitiveParameter] string $token, string $peerAddress): array
+    public function introspect(ConnManagedTarget $authenticated, string $nonce, #[SensitiveParameter] string $token, string $peerAddress): array
     {
+        return DB::transaction(fn (): array => $this->readClaims($authenticated, $nonce, $token, $peerAddress));
+    }
+
+    /** @return array<string, mixed> */
+    private function readClaims(ConnManagedTarget $authenticated, string $nonce, #[SensitiveParameter] string $token, string $peerAddress): array
+    {
+        $target = $this->current($authenticated);
         $record = str_starts_with($token, ConnManagedSecrets::TokenPrefix)
             ? ConnManagedToken::query()->where('token_digest', ConnManagedSecrets::digest($token))->first()
             : null;
-        $target = ConnManagedTarget::query()->findOrFail($target->id);
 
         if (! $record instanceof ConnManagedToken
             || $record->conn_managed_target_id !== $target->id
@@ -100,10 +106,10 @@ final readonly class ConnManagedAuthority
      * @param  array{revision: int, kind: string, notice_received_at: ?string, fenced_at: ?string, handlers_closed_at: ?string, recovered_at: ?string}  $ack
      * @return array<string, mixed>
      */
-    public function acknowledge(ConnManagedTarget $target, array $ack): array
+    public function acknowledge(ConnManagedTarget $authenticated, array $ack): array
     {
-        return DB::transaction(function () use ($target, $ack): array {
-            $target = ConnManagedTarget::query()->findOrFail($target->id);
+        return DB::transaction(function () use ($authenticated, $ack): array {
+            $target = $this->current($authenticated);
             $row = $target->revisions()->where('revision', $ack['revision'])->first();
             if (! $row instanceof ConnManagedRevision) {
                 throw new ResourceOperationException('conn.managed_ack_unknown', 'The ACK names no owed revision.', 409);
@@ -130,6 +136,20 @@ final readonly class ConnManagedAuthority
                 'acknowledged_at' => $row->acknowledged_at,
             ];
         });
+    }
+
+    /**
+     * The target as committed now, inside the caller's transaction. A request authenticated for a generation that a
+     * rotation replaced since then never reads or settles the successor's state.
+     */
+    private function current(ConnManagedTarget $authenticated): ConnManagedTarget
+    {
+        $target = ConnManagedTarget::query()->findOrFail($authenticated->id);
+        if ($target->generation !== $authenticated->generation) {
+            throw new ResourceOperationException('conn.managed_generation_mismatch', 'The generation is not the current one.', 409);
+        }
+
+        return $target;
     }
 
     /** @return array{nonce: string, environment_id: string, generation: int} */

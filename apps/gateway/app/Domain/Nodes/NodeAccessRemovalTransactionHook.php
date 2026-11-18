@@ -14,5 +14,5 @@ use App\Models\NodeAccess;
  */
 interface NodeAccessRemovalTransactionHook
 {
-    public function removing(NodeAccess $edge): void;
+    public function edgeDeleted(NodeAccess $edge): void;
 }

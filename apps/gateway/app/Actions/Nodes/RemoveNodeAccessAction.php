@@ -46,7 +46,7 @@ final readonly class RemoveNodeAccessAction
             }
             $edge->delete();
             foreach ($this->transactionHooks as $hook) {
-                $hook->removing($edge);
+                $hook->edgeDeleted($edge);
             }
 
             return true;
@@ -56,9 +56,12 @@ final readonly class RemoveNodeAccessAction
             $this->metricsAccess->revoke();
         }
         if ($wasDeleted) {
-            foreach ($this->hooks as $hook) {
-                $hook->removed($consumer, $serving);
-            }
+            // After the outermost commit: an enclosing transaction must commit the delete before an extension acts on it.
+            DB::afterCommit(function () use ($consumer, $serving): void {
+                foreach ($this->hooks as $hook) {
+                    $hook->removed($consumer, $serving);
+                }
+            });
         }
 
         $selfLockout = $wasDeleted && $caller->is($consumer) && $this->access->isGatewayNode($serving);

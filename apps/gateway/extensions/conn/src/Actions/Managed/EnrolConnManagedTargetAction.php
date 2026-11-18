@@ -33,11 +33,14 @@ final readonly class EnrolConnManagedTargetAction
         }
         $nodeId = $environment->node->id;
 
+        if (is_dir($credentialFile)) {
+            throw new ResourceOperationException('conn.managed_credential_file_invalid', 'The credential file path is a directory.', 422);
+        }
         $credential = ConnManagedSecrets::service();
         $temporary = $credentialFile.'.'.bin2hex(random_bytes(6)).'.tmp';
         $previous = umask(0077);
         try {
-            if (file_put_contents($temporary, $credential) === false || ! chmod($temporary, 0600)) {
+            if (@file_put_contents($temporary, $credential) === false || ! chmod($temporary, 0600)) {
                 throw new RuntimeException('The credential file could not be written.');
             }
         } finally {
@@ -45,13 +48,18 @@ final readonly class EnrolConnManagedTargetAction
         }
 
         try {
-            $target = DB::transaction(function () use ($environment, $nodeId, $credential): ConnManagedTarget {
+            // The file is delivered as the last step before the commit: a failed delivery rolls the rotation back, so the
+            // old credential and owed rows stay valid. A commit that fails after delivery leaves a file the Gateway refuses.
+            $target = DB::transaction(function () use ($environment, $nodeId, $credential, $temporary, $credentialFile): ConnManagedTarget {
                 $target = ConnManagedTarget::query()->where('conn_environment_id', $environment->id)->first();
                 if (! $target instanceof ConnManagedTarget) {
-                    return ConnManagedTarget::query()->create([
+                    $target = ConnManagedTarget::query()->create([
                         'conn_environment_id' => $environment->id, 'environment_id' => $environment->environment_id, 'node_id' => $nodeId,
                         'generation' => 1, 'revision' => 0, 'credential_digest' => ConnManagedSecrets::digest($credential),
                     ]);
+                    self::deliver($temporary, $credentialFile);
+
+                    return $target;
                 }
                 // The old generation's owed rows can never be acknowledged now ([Revision order](/reference/conn#revision-order)).
                 ConnManagedRevision::query()->where('conn_managed_target_id', $target->id)->whereNull('acknowledged_at')->whereNull('superseded_at')
@@ -59,6 +67,7 @@ final readonly class EnrolConnManagedTargetAction
                 $target->forceFill([
                     'node_id' => $nodeId, 'generation' => $target->generation + 1, 'credential_digest' => ConnManagedSecrets::digest($credential),
                 ])->save();
+                self::deliver($temporary, $credentialFile);
 
                 return $target;
             });
@@ -67,8 +76,14 @@ final readonly class EnrolConnManagedTargetAction
 
             throw $exception;
         }
-        rename($temporary, $credentialFile);
 
         return ['target_id' => $target->id, 'environment_id' => $target->environment_id, 'generation' => $target->generation, 'revision' => $target->revision, 'node_id' => $target->node_id];
+    }
+
+    private static function deliver(string $temporary, string $credentialFile): void
+    {
+        if (! @rename($temporary, $credentialFile)) {
+            throw new RuntimeException('The credential file could not be delivered.');
+        }
     }
 }

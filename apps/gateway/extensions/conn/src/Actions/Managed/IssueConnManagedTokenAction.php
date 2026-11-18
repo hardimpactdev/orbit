@@ -37,7 +37,8 @@ final readonly class IssueConnManagedTokenAction
             }
 
             $token = ConnManagedSecrets::token();
-            $expiresAt = now()->addMinutes(self::LifetimeMinutes);
+            // Whole seconds: the stored expiry and the advertised one are the same instant.
+            $expiresAt = now()->addMinutes(self::LifetimeMinutes)->startOfSecond();
             ConnManagedToken::query()->create([
                 'conn_managed_target_id' => $target->id,
                 'generation' => $target->generation,
