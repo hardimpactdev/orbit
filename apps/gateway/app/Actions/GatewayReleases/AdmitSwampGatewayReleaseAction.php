@@ -158,6 +158,7 @@ final readonly class AdmitSwampGatewayReleaseAction
     {
         return $this->operations->execute('gateway.release', 'gateway_release', $record->id, SwampNode::id(), [
             'sha' => $commit,
+            ...($this->layout->usesContainers() ? ['target' => 'gateway'] : []),
             'id' => GatewayReleaseCommit::id($commit),
             'force' => $force,
             'previous' => $previous,

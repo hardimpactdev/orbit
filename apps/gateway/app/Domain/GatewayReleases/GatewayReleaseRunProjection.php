@@ -53,6 +53,8 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         'Wait for active Operations' => ['idle', 'gateway.release_idle_check_failed', true],
         'Check the candidate' => ['ready', 'gateway.release_candidate_unhealthy', true],
         'Load Swamp on Node 209' => ['swamp', 'gateway.release_swamp_load_failed', true],
+        'Read the activation workflow' => ['handoff', 'gateway.release_handoff_failed', true],
+        'Hand over a retained Gateway release' => ['handoff', 'gateway.release_handoff_failed', true],
         'Hand over the release' => ['handoff', 'gateway.release_handoff_failed', true],
         'Release unused candidate' => ['cleanup', 'gateway.release_candidate_cleanup_failed', true],
     ];
@@ -70,7 +72,11 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
 
     public function workflow(Operation $operation): string
     {
-        return ($operation->input['reconcile'] ?? false) === true ? 'operation-gateway-reconcile' : 'operation-gateway-release';
+        if (($operation->input['reconcile'] ?? false) === true) {
+            return 'operation-gateway-reconcile';
+        }
+
+        return ($operation->input['target'] ?? null) === 'gateway' ? 'production-release' : 'operation-gateway-release';
     }
 
     public function input(Operation $operation): array
@@ -79,7 +85,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
             return ['intent' => array_intersect_key($operation->input, array_flip(['sha', 'ssh', 'swamp_ssh', 'grants']))];
         }
 
-        return ['intent' => array_intersect_key($operation->input, array_flip(['sha', 'id', 'force', 'previous', 'repository', 'manifest', 'web', 'retained',
+        return ['intent' => array_intersect_key($operation->input, array_flip(['target', 'sha', 'id', 'force', 'previous', 'repository', 'manifest', 'web', 'retained',
             'horizon_unit', 'horizon_drain_seconds', 'keep', 'ssh', 'swamp_ssh']))];
     }
 

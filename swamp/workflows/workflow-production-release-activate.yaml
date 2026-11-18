@@ -1,0 +1,220 @@
+id: 653c7a78-56d3-49af-89fe-27c72b11c662
+name: production-release-activate
+autoContinue: false
+description: Switch one target, check its public route, hand over background work and park its former live.
+queueTimeout: 120
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, enum: [gateway.release, instance.deploy, instance.rollback]}
+    intent:
+      type: object
+      properties:
+        sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+        target: {type: string, pattern: '^gateway$|^instance-[1-9][0-9]*$'}
+        instance_id: {type: integer, minimum: 1}
+        retained: {type: boolean}
+        ssh: {type: object}
+      required: [target, sha, ssh]
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+- name: activate
+  labels: {role: swamp}
+  steps:
+  - name: Check the release target
+    labels: {role: swamp}
+    task:
+      type: assert
+      severity: high
+      message: The activation target does not match the admitted kind and Instance.
+      expr: >-
+        inputs.kind == "gateway.release" ? inputs.intent.target == "gateway" && !has(inputs.intent.instance_id)
+          : has(inputs.intent.instance_id) && inputs.intent.target == "instance-" + string(inputs.intent.instance_id)
+  - name: Switch the release
+    dependsOn: [{step: Check the release target, condition: {type: succeeded}}]
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-switch-" + string(inputs.operation_id) }}'
+      globalArgs: &ssh
+        name: '${{ "production-release-ssh-" + string(inputs.node_id) + "-" + string(inputs.operation_id) }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.ssh.target.user }}'
+          port: '${{ inputs.intent.ssh.target.port }}'
+          identityFile: '${{ inputs.intent.ssh.identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.ssh.target.host }}'
+          transport: {hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 3810
+        argv: >-
+          ${{ ["/usr/bin/timeout", "3780", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "switch", inputs.intent.sha, string(inputs.operation_id)] + (inputs.kind == "gateway.release" ? [(has(inputs.intent.previous) ? inputs.intent.previous : ""), (has(inputs.intent.horizon_unit) ? inputs.intent.horizon_unit : "")] : []) }}
+  - name: Verify the serving release
+    labels: {role: swamp}
+    allowFailure: true
+    dependsOn:
+    - {step: Switch the release, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-public-ready-" + string(inputs.operation_id) }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 180
+        argv:
+        - /usr/bin/timeout
+        - "150"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - public-ready
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Switch back
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: Verify the serving release, condition: {type: failed}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-switch-back-" + string(inputs.operation_id) }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 270
+        argv:
+        - /usr/bin/timeout
+        - "240"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - switch-back
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Start Horizon
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.kind != "gateway.release" }}'
+    dependsOn:
+    - {step: Verify the serving release, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-start-horizon-" + string(inputs.operation_id) }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 150
+        argv: >-
+          ${{ ["/usr/bin/timeout", "120", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "start-horizon", inputs.intent.sha, string(inputs.operation_id)] + [(has(inputs.intent.horizon_unit) ? inputs.intent.horizon_unit : "")] }}
+  - name: Run after activation steps
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ inputs.kind != "instance.deploy" }}'
+    dependsOn:
+    - {step: Verify the serving release, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-after-" + string(inputs.operation_id) }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 2430
+        argv:
+        - /usr/bin/timeout
+        - "2400"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - after
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Retire the previous live
+    labels: {role: swamp}
+    writes: true
+    guard: '${{ steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}'
+    dependsOn:
+    - {step: Verify the serving release, condition: {type: succeeded}}
+    - {step: Start Horizon, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    - {step: Run after activation steps, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-retire-" + string(inputs.operation_id) }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 930
+        argv:
+        - /usr/bin/timeout
+        - "900"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - retire
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'
+  - name: Resume document cleanup
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    guard: '${{ inputs.kind != "gateway.release" }}'
+    dependsOn:
+    - {step: Retire the previous live, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-cleanup-" + string(inputs.operation_id) }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 330
+        argv: >-
+          ${{ ["/usr/bin/timeout", "300", "/usr/local/libexec/orbit-production-release-phase", inputs.intent.target, "cleanup", inputs.intent.sha, string(inputs.operation_id)] + ["--before=" + steps["Switch the release"].outputs.stdout] }}
+  - name: Prune old releases
+    labels: {role: swamp}
+    writes: true
+    allowFailure: true
+    guard: '${{ inputs.kind != "gateway.release" }}'
+    dependsOn:
+    - {step: Retire the previous live, condition: {type: succeeded}}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-prune-" + string(inputs.operation_id) }}'
+      globalArgs: *ssh
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 330
+        argv:
+        - /usr/bin/timeout
+        - "300"
+        - /usr/local/libexec/orbit-production-release-phase
+        - '${{ inputs.intent.target }}'
+        - prune
+        - '${{ inputs.intent.sha }}'
+        - '${{ string(inputs.operation_id) }}'

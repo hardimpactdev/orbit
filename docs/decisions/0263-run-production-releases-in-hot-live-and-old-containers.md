@@ -18,7 +18,7 @@ When hot is ready, Caddy points the Routes at it in one reload, and hot becomes 
 
 In progress.
 
-Production Instance integration is planned. The Gateway work implements the shared clone and swap-backed power operations. The app-prod role, Instance commands, persistence and Route integration below still need their own implementation and proof. See [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance) and the [earlier container trials](/solutions/development-container-runtime#a-release-switch-is-not-a-data-rollback).
+Gateway and production Instance Operations now enter the same Swamp release workflow. Each Instance on an app-prod Node has its own preparation container, routing state and rollback receipt. See the [production container reference](/reference/production-containers) for the release sequence and the existing checkout transition.
 
 Principle: [One way, one name](/mission#principles) and [No exceptions and no legacy](/mission#principles). Production uses the container machinery of development: images, ZFS clones, snapshots, the runtime folder, the bridge and the egress proxy. Each old production path below goes when its replacement is built.
 

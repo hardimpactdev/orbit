@@ -9,6 +9,26 @@ script=swamp/scripts/gateway-release-container.sh
 workflow=swamp/workflows/workflow-gateway-release-activate.yaml
 inventory=/home/orbit/.orbit/gateway-containers.json
 journal=/var/lib/orbit/gateway-release-switch
+# These entry points belong to the installed Node role. Fetch runs before the
+# target exists in the mirror. The token travels through stdin as the mirror owner.
+if [[ $phase == fetch ]]; then
+  exec runuser -u orbit -- bash -euo pipefail -c '
+    repo=$1 sha=$2
+    if git -C "$repo" cat-file -e "$sha^{commit}" 2>/dev/null; then exit 0; fi
+    basic=$(printf "x-access-token:%s" "$(cat)" | base64 -w0)
+    GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader \
+      GIT_CONFIG_VALUE_0="Authorization: Basic $basic" git -C "$repo" fetch --quiet --no-tags origin "$sha"
+    git -C "$repo" cat-file -e "$sha^{commit}"
+  ' bash "$repo" "$sha"
+fi
+if [[ $phase == activation-workflow ]]; then
+  if git -c safe.directory="$repo" -C "$repo" cat-file -e "$sha:swamp/workflows/workflow-production-release-activate.yaml" 2>/dev/null; then
+    echo production-release-activate
+  else
+    echo gateway-release-activate
+  fi
+  exit
+fi
 check_recovery() {
   local path
   for path in "$script" "$workflow"; do

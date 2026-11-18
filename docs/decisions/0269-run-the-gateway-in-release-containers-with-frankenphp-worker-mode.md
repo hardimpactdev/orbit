@@ -20,7 +20,7 @@ On an established target, live, preparation and rollback are three distinct cont
 
 In progress.
 
-The release implementation and disposable Gateway tests are in progress. Production adoption remains open. The timing comparison between PHP-FPM and FrankenPHP also remains open.
+Gateway and app-prod use the same Swamp build, verification and handover workflow. Gateway runs Laravel Octane in FrankenPHP worker mode. Production adoption remains open. The timing comparison between PHP-FPM and FrankenPHP also remains open.
 
 Principle: [One way, one name](/mission#principles). The Gateway uses the release states and traffic switch of ADR 0263. Its clone source is a permanent preparation container. It also serves [No exceptions and no legacy](/mission#principles): the worktree releases, the PHP-FPM pool and `bin/gateway-rollback` go when their replacements are built.
 

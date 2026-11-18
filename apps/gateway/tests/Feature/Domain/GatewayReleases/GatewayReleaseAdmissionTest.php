@@ -165,6 +165,12 @@ it('resumes a retained release without minting a GitHub token or selecting a new
     Http::assertNothingSent();
 });
 
+it('dispatches adopted containers through the common production workflow and preserves earlier admissions', function (): void {
+    $projection = app(GatewayReleaseRunProjection::class);
+    expect($projection->workflow(new Operation(['input' => ['target' => 'gateway']])))->toBe('production-release')
+        ->and($projection->workflow(new Operation(['input' => []])))->toBe('operation-gateway-release');
+});
+
 it('drains the container Horizon fallback only when the Gateway uses its queue', function (): void {
     $node = Node::query()->firstOrFail();
     config(['orbit.gateway_queue.connection' => 'queue']);

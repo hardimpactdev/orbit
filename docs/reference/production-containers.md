@@ -1,13 +1,13 @@
 ---
 title: "Production containers"
-description: "Planned production Instance integration. Build each release in its off-traffic preparation container, clone the finished build, switch traffic to the ready clone, and freeze the previous release for rollback."
+description: "Build each production Instance release in its off-traffic preparation container, clone the finished build, switch traffic to the ready clone, and freeze the previous release for rollback."
 ---
 
 # Production containers
 
-**Production Instance integration is planned.** Orbit has shared Incus operations for cloning a sealed build, sleeping the preparation and rollback containers, and waking them. [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) defines the remaining app-prod integration. Until it ships, production Instances deploy as [Instance releases](/reference/deployments) describes.
+Gateway and app-prod Instances use the `production-release` Swamp workflow. Admission fixes the Node, Instance and commit before work starts. The Node builds in the target’s own preparation container. Swamp checks the new clone, switches that target’s traffic and keeps the former live as rollback. See [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers).
 
-A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route. An idle live [sleeps and wakes](#sleep-and-wake) as a development container does ([ADR 0265](/decisions/0265-sleep-idle-production-containers)).
+A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route. [ADR 0265](/decisions/0265-sleep-idle-production-containers) describes the separate plan for [sleeping an idle live Instance](#sleep-and-wake).
 
 ## Release states
 

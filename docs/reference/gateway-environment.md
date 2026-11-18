@@ -88,7 +88,9 @@ set +x
 <the key on stdin> | php /home/orbit/orbit/apps/gateway/artisan gateway:nested-fleet-club-key:install
 ```
 
-On a prepared Gateway, the installer also publishes the replacement into the directory mounted read-only by every release. Only the current env file is visible there. The backup stays on the host. Each successful installation takes effect without a worker reload. The queue workers that start runs keep the configuration they loaded at boot, so each run start reads this one setting from the env file itself. The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). If the host process stops during publication, run `sudo /usr/local/libexec/orbit-gateway-environment refresh` before starting another nested fleet. This republishes the complete host file. Keep the private backup under the Gateway operator's retention policy.
+On a prepared Gateway, the installer also publishes the replacement into the directory mounted read-only by every release. Only the current env file is visible there. The backup stays on the host.
+
+Each successful installation takes effect without a worker reload. The queue workers that start runs keep the configuration they loaded at boot, so each run start reads this one setting from the env file itself. The next start of each nested-fleet container delivers it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)). If the host process stops during publication, run `sudo /usr/local/libexec/orbit-gateway-environment refresh` before starting another nested fleet. This republishes the complete host file. Keep the private backup under the Gateway operator's retention policy.
 
 ### Rotate the Swamp reader credential
 

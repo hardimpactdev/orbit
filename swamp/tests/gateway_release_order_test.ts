@@ -172,3 +172,30 @@ Deno.test("serving reconciliation brackets the retained workflow load with read-
   assertEquals(reconcile[2].dependsOn, [{ step: reconcile[1].name, condition: { type: "succeeded" } }]);
   assert(reconcile[2].task.inputs?.argv?.includes("reconcile-verify"));
 });
+
+Deno.test("Gateway and AppProd share the clone, handover, compensation and readback boundaries", async () => {
+  const release = await steps("workflow-production-release");
+  const handover = await steps("workflow-production-release-activate");
+  const find = (steps: Step[], name: string) => {
+    const step = steps.find((step) => step.name === name);
+    assert(step, name);
+    return step;
+  };
+  const clone = find(release, "Clone the prepared release");
+  for (const name of ["Build the release", "Build the Instance release"]) {
+    assert(clone.dependsOn?.some((edge) => edge.step === name));
+  }
+  for (const name of ["Sleep preparation", "Check the Instance candidate"]) {
+    assert(find(release, name).dependsOn?.some((edge) => edge.step === clone.name));
+  }
+  const activate = find(release, "Hand over the release");
+  assertEquals(activate.task.workflowIdOrName, "production-release-activate");
+  for (const name of ["Sleep preparation", "Check the candidate", "Check the Instance candidate"]) {
+    assert(activate.dependsOn?.some((edge) => edge.step === name));
+  }
+  const verify = find(handover, "Verify the serving release");
+  assertEquals(find(handover, "Switch back").dependsOn, [{ step: verify.name, condition: { type: "failed" } }]);
+  assert(find(handover, "Retire the previous live").dependsOn?.some((edge) =>
+    edge.step === verify.name && edge.condition.type === "succeeded"));
+  assert(find(release, "Read the serving release").dependsOn?.every((edge) => edge.condition.type === "always"));
+});

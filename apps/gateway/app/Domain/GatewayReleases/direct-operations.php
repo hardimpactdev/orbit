@@ -6,9 +6,9 @@ use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
 
 return [
     'gateway.release' => [
-        'workflow' => 'operation-gateway-release', 'alternate_workflows' => ['operation-gateway-reconcile'], 'workflow_inputs' => true,
+        'workflow' => 'operation-gateway-release', 'alternate_workflows' => ['operation-gateway-reconcile', 'production-release'], 'workflow_inputs' => true,
         // A failed or paused release names the database copy from before its migration, and a failed migration its output.
-        'terminal_result' => ['job' => 'release', 'step' => 'Hand over the release', 'alternatives' => ['Verify the serving release'], 'native' => true,
+        'terminal_result' => ['job' => 'release', 'step' => 'Hand over the release', 'alternatives' => ['Verify the serving release', 'Hand over a retained Gateway release'], 'native' => true,
             'captures' => ['snapshot' => ['job' => 'release', 'step' => 'Snapshot the database', 'field' => 'stdout'],
                 'migrate' => ['job' => 'release', 'step' => 'Migrate', 'field' => 'stdout']]],
         'projection' => GatewayReleaseRunProjection::class,
