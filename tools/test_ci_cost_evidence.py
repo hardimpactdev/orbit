@@ -127,6 +127,30 @@ class FixtureCostEvidenceTest(unittest.TestCase):
             with self.subTest(file=file):
                 self.assertEqual(fixtures[file]['cases'], units.collect(file)['cases'])
 
+    def test_split_container_cases_keep_measured_costs_and_explicit_remaining_debt(self):
+        file = 'swamp/tests/ansible_instance_container_test.ts'
+        evidence = json.loads((ROOT / 'tools/tests/ci-container-split-costs.json').read_text())
+        budget, fixtures, _ = units.configuration()
+        fixture = fixtures[file]
+        self.assertTrue(fixture['self_hosted'])
+        self.assertEqual(len(fixture['cases']), evidence['registered_case_count'])
+        self.assertEqual(fixture['slices'], len(fixture['cases']))
+        self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
+        for case, seconds in evidence['case_seconds'].items():
+            with self.subTest(case=case):
+                self.assertIn(case, fixture['cases'])
+                self.assertEqual(fixture['case_costs'][case], math.ceil(seconds * 2.1) + 1)
+        actual, oversized = [], []
+        for unit, cost in units.units_for(fixture, budget):
+            cases = units.case_names(unit, fixtures)
+            self.assertEqual(len(cases), 1)
+            actual.extend(cases)
+            if cost > budget['shard_seconds']:
+                oversized.extend(cases)
+        self.assertCountEqual(actual, fixture['cases'])
+        self.assertCountEqual(oversized, evidence['oversized_cases'])
+        self.assertIn(file, budget['capacity_gap'])
+
     def test_renewal_costs_keep_all_cases_in_bounded_self_hosted_units(self):
         file = 'swamp/tests/swamp_worker_renewal_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-worker-renewal-costs.json').read_text())
