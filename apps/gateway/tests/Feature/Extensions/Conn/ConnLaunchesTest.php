@@ -11,10 +11,13 @@ use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Power\ContainerIdleSweep;
 use App\Domain\Instances\Power\InstanceSleep;
+use App\Domain\Instances\Power\InstanceStart;
+use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Instances\Power\NodeFileTimes;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
@@ -602,6 +605,75 @@ describe('launch control and progress', function (): void {
         expect(ConnLaunchIntent::query()->whereKey($id)->exists())->toBeTrue();
         callLaunchApi($this->phone, 'GET', "conn/launches/{$id}")->assertOk()->assertJsonPath('data.phase', 'cancelling');
     });
+
+    it('gives a joined wake to the other caller even if its launch is cancelled', function (bool $nested, bool $joinFirst, bool $duringCancelRead = false): void {
+        $this->project->forceFill(['nested_fleet' => $nested])->save();
+        $this->host->update(['settings' => [...$this->host->settings, 'nested_fleet' => $nested]]);
+        $default = Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id,
+            'name' => 'default', 'checkout_path' => '/workspace/default', 'root' => '.', 'status' => InstanceState::Active]);
+        $container = app(InstanceContainer::class);
+        $container->reserve($default, $this->host)->update(['seed_commit' => str_repeat('a', 40)]);
+        $this->instance->update(['status' => InstanceState::Active]);
+        $container->reserve($this->instance, $this->host, $default);
+        $kind = $nested ? InstanceStart::Kind : InstanceWake::Kind;
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $launch = Operation::query()->findOrFail($id);
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance($launch);
+        $wake = ConnLaunchChild::Wake->operation($launch->refresh());
+        expect($wake->kind)->toBe($kind)->and($wake->status)->toBe(OperationStatus::Queued)
+            ->and($wake->state['conn_launch_owner'])->toBe($launch->id);
+
+        $key = (string) Str::uuid();
+        $join = fn (): int => callLaunchApi($this->desktop, 'POST', "instances/{$this->instance->id}/wake", key: $key)
+            ->assertAccepted()->assertJsonPath('data.kind', $kind)->json('data.id');
+        if ($joinFirst && ! $duringCancelRead) {
+            expect($join())->toBe($wake->id);
+        }
+        callLaunchApi($this->desktop, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+        $joinedDuringRead = null;
+        if ($duringCancelRead) {
+            $instance = $this->instance;
+            $caller = 'node:'.$this->desktop->id;
+            DB::listen(static function (QueryExecuted $query) use ($wake, $instance, $caller, &$joinedDuringRead): void {
+                if ($joinedDuringRead === null && $query->bindings === [$wake->id] && str_starts_with($query->sql, 'select * from "operations"')) {
+                    $joinedDuringRead = 0;
+                    $joinedDuringRead = app(InstanceWake::class)->admitDeferred($instance, $caller, null)->id;
+                }
+            });
+        }
+        $settlement->advance($launch->refresh());
+        if ($duringCancelRead) {
+            expect($joinedDuringRead)->toBe($wake->id);
+        }
+
+        if ($joinFirst) {
+            expect($wake->refresh()->status)->toBe(OperationStatus::Queued)
+                ->and($wake->cancel_requested_at)->toBeNull()
+                ->and($wake->state['wake_shared'])->toBeTrue();
+            $wake->update(['status' => OperationStatus::Succeeded, 'started_at' => now(), 'finished_at' => now()]);
+            $this->instance->runtime()->update(['power_state' => InstanceRuntimePowerState::Running]);
+            expect(Operation::query()->where('kind', $kind)->count())->toBe(1);
+        } else {
+            expect($wake->refresh()->status)->toBe(OperationStatus::Cancelled)
+                ->and($wake->state['wake_shared'] ?? null)->toBeNull();
+            $replacement = $join();
+            expect($replacement)->not->toBe($wake->id)->and($join())->toBe($replacement)
+                ->and(Operation::query()->where('kind', $kind)->count())->toBe(2);
+        }
+        $settlement->advance($launch->refresh());
+        callLaunchApi($this->desktop, 'GET', "conn/launches/{$id}")->assertOk()
+            ->assertJsonPath('data.phase', 'cancelled')->assertJsonPath('data.readiness.first_message', false)
+            ->assertJsonPath('data.thread', null);
+        expect(Operation::query()->whereIn('kind', [InstanceSleep::Kind, ConnLaunchDispatchSource::Kind])->exists())->toBeFalse();
+    })->with([
+        'ordinary join first' => [false, true],
+        'nested start join first' => [true, true],
+        'ordinary join during cancellation' => [false, true, true],
+        'nested start join during cancellation' => [true, true, true],
+        'ordinary cancel first' => [false, false],
+        'nested start cancel first' => [true, false],
+    ]);
 
     it('does not claim a clone that was reserved independently after launch admission', function (): void {
         launchFixtureDefault();

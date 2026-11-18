@@ -742,7 +742,7 @@ Use the ordinary Conn workspace check and confirm there is no T3 activity before
 
 Verify that teardown removes the exact Instance and its owned resources. If a teardown response is lost, reconcile the recorded child and its effect before admitting another attempt. Keep the launch `cancelling` with a sanitized reason when cleanup fails or remains blocked, and resume it after restart. If the launch's own removal stopped the container before it failed, Orbit can retry that removal while the workspace reports the container stopped. The ownership and other-launch checks still apply.
 
-Preserve pre-existing Instances and unrelated work. Restore a launch-owned wake through native sleep when the lifecycle guard proves the Instance has no other consumer. Keep a shared wake and any Instance with recognized activity since the wake began. A failed activity read keeps cleanup pending with `conn.launch_wake_restore_unproven`.
+Preserve pre-existing Instances and unrelated work. Joining an open `instance.wake` or `instance.start` records shared use under the same Operation lock that launch cleanup takes before cancelling queued work. If the join wins, the wake runs for the other caller and cleanup leaves the Instance awake. If cleanup cancels an unshared queued wake first, the next caller can admit a fresh wake. Restore a completed, unshared wake through native sleep only when the lifecycle guard confirms the Instance is idle. A failed activity read keeps cleanup pending with `conn.launch_wake_restore_unproven`.
 
 Only verified cleanup clears the private prompt on cancellation and ends the launch as `cancelled`.
 

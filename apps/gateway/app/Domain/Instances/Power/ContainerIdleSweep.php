@@ -153,8 +153,7 @@ final readonly class ContainerIdleSweep
         }
         $latest = Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceStart::Kind])
             ->where('target_type', 'instance')->where('target_id', $instance->id)->latest('id')->value('id');
-        if ($latest !== $wake->id || ($wake->state['wake_shared'] ?? false) === true
-            || $this->standing($instance, $runtime, ContainerSleepScope::All) !== null) {
+        if ($latest !== $wake->id || $this->standing($instance, $runtime, ContainerSleepScope::All) !== null) {
             return false;
         }
 

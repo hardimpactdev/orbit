@@ -19,6 +19,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\PublishConnLaunchAction;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -229,12 +230,19 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
                 return;
             }
             if (! $this->nativeCancellation->settled($operation)) {
+                if ($role === ConnLaunchChild::Wake && ($operation->state['wake_shared'] ?? false) === true) {
+                    return;
+                }
                 if ($operation->status->terminal()) {
                     $this->nativeCancellation->request($operation);
                     $this->blocked($launch, ConnLaunchStage::Cleanup, $operation->error_code);
                 } elseif ($operation->status === OperationStatus::Queued && $operation->attempts === 0
                     && $operation->cancel_requested_at === null) {
-                    $this->cancel->execute($operation);
+                    if ($role === ConnLaunchChild::Wake) {
+                        $this->cancelQueuedWake($operation->id, $launch->id);
+                    } else {
+                        $this->cancel->execute($operation);
+                    }
                 }
                 // A started remote step can keep working after the cancellation of its SSH client.
                 // Wait for its native end before allowing teardown.
@@ -268,10 +276,23 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         $this->instances->destroy($launch, $instance);
     }
 
+    private function cancelQueuedWake(int $id, int $launchId): void
+    {
+        DB::transaction(function () use ($id, $launchId): void {
+            $wake = Operation::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+            if ($wake->status === OperationStatus::Queued && $wake->attempts === 0 && $wake->cancel_requested_at === null
+                && ! isset($wake->state['swamp_run_id']) && ($wake->state['conn_launch_owner'] ?? null) === $launchId
+                && ($wake->state['wake_shared'] ?? false) !== true) {
+                $this->cancel->execute($wake);
+            }
+        });
+    }
+
     private function settleWake(Operation $launch): bool
     {
         $wake = ConnLaunchChild::Wake->operation($launch);
-        if ($wake === null || Arr::get($launch->state ?? [], 'launch_children.'.ConnLaunchChild::Wake->value.'.owned') !== true) {
+        if ($wake === null || ($wake->state['wake_shared'] ?? false) === true
+            || Arr::get($launch->state ?? [], 'launch_children.'.ConnLaunchChild::Wake->value.'.owned') !== true) {
             return true;
         }
         $instance = $this->instance($launch);

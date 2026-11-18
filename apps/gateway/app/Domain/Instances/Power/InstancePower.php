@@ -93,12 +93,8 @@ abstract readonly class InstancePower implements DirectOperationProjection
 
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
-            ['runtime' => $runtime, 'open' => $open] = $this->admissible($instance);
+            ['runtime' => $runtime, 'open' => $open] = $this->admissible($instance, join: true);
             if ($open !== null) {
-                if (isset($open->state['conn_launch_owner']) && ! isset($open->state['wake_shared'])) {
-                    app(OperationStore::class)->change($open, ['state' => [...$open->state, 'wake_shared' => true]]);
-                }
-
                 return $open;
             }
 
@@ -116,7 +112,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
      *
      * @return array{runtime: InstanceRuntime, open: ?Operation}
      */
-    private function admissible(Instance $instance): array
+    private function admissible(Instance $instance, bool $join = false): array
     {
         $runtime = $instance->runtime()->first();
         if ($runtime === null) {
@@ -126,7 +122,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
         if ($instance->placementEnvironment() !== 'development') {
             throw new ResourceOperationException('instance.sleep_unsupported', 'Only a development container sleeps and wakes.', 409);
         }
-        if (($open = $this->open($instance)) !== null) {
+        if (($open = $this->open($instance, $join)) !== null) {
             return ['runtime' => $runtime, 'open' => $open];
         }
         self::assertIdle($instance);
@@ -162,7 +158,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
     }
 
     /** An open Operation of this kind that a second caller joins; only a wake is joined. */
-    protected function open(Instance $instance): ?Operation
+    protected function open(Instance $instance, bool $join): ?Operation
     {
         return null;
     }

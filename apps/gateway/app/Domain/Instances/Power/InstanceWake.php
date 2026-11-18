@@ -266,10 +266,22 @@ final readonly class InstanceWake extends InstancePower
         });
     }
 
-    protected function open(Instance $instance): ?Operation
+    protected function open(Instance $instance, bool $join): ?Operation
     {
-        return Operation::query()->where('kind', self::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first();
+        return self::openWake($instance, self::Kind, $join);
+    }
+
+    /** Find the open wake or nested start. A join runs in the Instance admission transaction and locks the Operation against cancellation. */
+    public static function openWake(Instance $instance, string $kind, bool $join): ?Operation
+    {
+        $query = Operation::query()->where('kind', $kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id');
+        $operation = $join ? $query->lockForUpdate()->first() : $query->first();
+        if ($join && $operation !== null && isset($operation->state['conn_launch_owner']) && ! isset($operation->state['wake_shared'])) {
+            app(OperationStore::class)->change($operation, ['state' => [...$operation->state, 'wake_shared' => true]]);
+        }
+
+        return $operation;
     }
 
     /**
