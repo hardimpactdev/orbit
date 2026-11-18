@@ -13,6 +13,13 @@ sequenceDiagram
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
   participant N as app-prod Node<br/>Node 12 over ssh
+  opt Instance already serves from containers
+    CLI->>GW: Select its retained previous commit
+    GW->>SW: Start production-release for rollback
+    SW->>N: Wake, verify and switch this Instance only
+    %%> Full flow: /cli/instance/container/rollback-production
+  end
+  Note over GW,N: Checkout rollback before container adoption follows below
   CLI->>GW: instance:rollback 42
   %%> Command:
   %%> - `orbit instance:rollback 42 --release=20261030T101500Z`

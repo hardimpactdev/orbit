@@ -204,7 +204,9 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire, Closure $onTerminal): Operation
     {
         $direct = app(DirectOperation::class);
-        $selector = $direct->definition($operation->kind)['terminal_result'] ?? null;
+        $definition = $direct->definition($operation->kind);
+        $alternates = $definition['alternate_results'] ?? [];
+        $selector = $alternates[$direct->workflowFor($operation) ?? ''] ?? $definition['terminal_result'] ?? null;
         if ($selector === null || ! $direct->usesNativeTerminal($operation)) {
             return $expire->execute($operation);
         }

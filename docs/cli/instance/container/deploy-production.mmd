@@ -1,154 +1,21 @@
 sequenceDiagram
-  %% Target design, production containers (ADR 0263, docs/reference/production-containers.md#deploy): the deploy of a production Instance. Hot builds and migrates the next commit while live serves; one Caddy reload switches the Routes; the work moves to the new live; the previous live becomes old. The automatic tick starts the same deploy, pinned (docs/cli/instance/auto-deploy.mmd). A sleeping live stays asleep: hot clones its snapshot, and the switch removes the asleep marker (planned, ADR 0265). When the charts move into place, this becomes the production branch of the deploy chart.
-  %% status: draft
   %% command: instance:deploy
   %% kind: instance.deploy
+  %% status: migrated
   autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane SW icon=workflow pill=executes tone=green
-  %% lane N icon=server pill=target tone=amber
-  %% lane C icon=server pill=target tone=purple
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
-  participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>workflow execution
-  participant N as app-prod Node<br/>reached over ssh
-  participant C as Hot<br/>release container
-  CLI->>GW: instance:deploy INSTANCE
-  %%> Command:
-  %%> - `orbit instance:deploy INSTANCE`
-  %%> - syntax: `<instance> [--commit=SHA] [--idempotency-key=KEY] [--json]`
-  %%> Input:
-  %%> - without `--commit`, the newest commit of the deployment branch; `--commit` pins a commit on its first-parent chain
-  Note over GW: Validate, freeze intent<br/>Instance locked · TASK
-  %%> Requirements:
-  %%> - the Instance is an active production Instance in containers; no other operation holds it, else `operation.target_busy`
-  %%> Freezes:
-  %%> - live, its `release` snapshot and its image; the Node's image and pinned runtime folder version
-  %%> - the commit, the release name, the steps, the shared paths, the memory limit when one is set
-  %%> - the Process and Schedule definitions, the health path and the domain of each Route
-  %%> Not included:
-  %%> - no wake: a sleeping live stays asleep, because hot clones its `release` snapshot (planned, ADR 0265); a visit during the deploy wakes live as at any other time
-  %%> Result:
-  %%> - a running deployment row; a manual deploy pauses automatic deploys, as today
-  GW->>SW: Push token and .env<br/>vault: token-TASK, env-TASK
-  %%> Why:
-  %%> - the repository is private and `.env` holds secrets; both travel only through the vault, never as inputs
-  GW->>SW: Start run, full intent<br/>instance-deploy-production
-  %%> What it does:
-  %%> - one run; its long steps lock a behavior of this Instance on its Node, so two Instances on one Node never wait for each other
-  GW-->>CLI: 202 Accepted<br/>TASK
-  %%> Next:
-  %%> - the CLI follows the task until it ends
-  SW->>N: Check live and capacity<br/>Ansible · tags admit
-  %%> What it does:
-  %%> - the live link must name the frozen live container, else `deployment.selection_invalid`
-  %%> - the capacity check: available memory covers hot's need plus 1 GiB: the Instance's memory limit, or live's memory use without one, and the pool has 10 GiB free
-  %%> - planned: for a sleeping live, its memory use is the one its last sleep recorded before the freeze, and the available memory also covers it, because a visit or the handover can resume live
-  %%> Why on the Node:
-  %%> - free memory and pool space change between admission and the run
-  %%> On failure:
-  %%> - nothing was made; nothing to clean up
-  alt live has a snapshot of the Node's image
-    SW->>N: Clone live's snapshot<br/>Ansible · tags hot
-    %%> What it does:
-    %%> - a ZFS clone of live's `release` snapshot: warm dependencies, build output and caches; about a second, no file copied
-    %%> - live's changes after its snapshot (logs, caches, request files) never reach hot
-    %%> Then:
-    %%> - attaches the storage volume at `/srv/shared`, sets the memory limit when one is set, mounts the pinned runtime folder version, starts hot and applies the Node's pending package upgrades
-  else no live, or a newer image
-    SW->>N: Launch hot from image<br/>Ansible · tags hot
-    %%> What it does:
-    %%> - a cold hot: the first release, or the Node's image is newer than live's; it installs every dependency and starts a new clone chain
-    %%> - then the same preparation as a clone
-  end
-  SW->>C: Fetch, check out, .env<br/>Ansible · tags source
-  %%> What it does:
-  %%> - the Node's mirror fetches the commit with the token; Orbit pushes it into hot and checks it out; untracked dependency folders stay
-  %%> - links each shared path into the volume, then writes the rendered `.env`
-  %%> Why .env after the clone:
-  %%> - a warm hot carries live's `.env` from the snapshot until this step; secrets never come from the image or the mirror
-  SW->>C: Run before steps<br/>incus exec · as www-data
-  %%> What it does:
-  %%> - each `before_activation` step in order, at the repository root; `migrate` changes the shared database here while live serves
-  %%> Requirements on the Project's steps:
-  %%> - every migration is expand and contract: live's code works on the new schema
-  %%> - a `before_activation` step writes no compiled view or cache into a shared path; `optimize` and `view:cache` are `after_activation` steps (production-containers.md#storage)
-  SW->>C: Install units, snapshot<br/>Ansible · tags release
-  %%> What it does:
-  %%> - installs a disabled unit for each Process and a disabled container timer for each systemd-calendar Schedule
-  %%> - restarts FrankenPHP and takes hot's `release` snapshot before any request reaches it
-  SW->>N: Check hot is ready<br/>Ansible · tags ready
-  %%> What it does:
-  %%> - FrankenPHP is active; the health path answers `200` three times through hot's bridge address on port 8080, with a Route's domain as `Host`
-  %%> - 5 s per request, 60 s in all; the requests also warm OPcache
-  %%> - hot's PHP loads neither PCOV nor PHP Data Bridge
-  %%> On failure:
-  %%> - `deployment.not_ready`
-  SW->>N: Switch the Routes<br/>Ansible · tags switch
-  %%> What it does:
-  %%> - writes the new upstream file and live link beside the current ones, validates Caddy, renames both into place and reloads Caddy once
-  %%> - requests in progress on the previous live finish there; a Cluster Route needs no Router change
-  %%> - planned: in the same step, once the reload succeeded, removes the Instance's asleep marker under the Instance's power lock, so a request never waits for a wake; the new live just passed readiness and starts its own watch of one idle window
-  %%> On failure:
-  %%> - Orbit renames the previous files back, so live serves unchanged; `deployment.switch_failed`
-  %%> - planned: the marker stays, or is put back, with them
-  opt the previous live is frozen, planned
-    Note over N: Resume the previous live<br/>no restore · close swap
-    %%> Why:
-    %%> - a sleeping live slept on (ADR 0265); the handover must stop its units, and a clean stop of a frozen container times out (development-containers.md#sleep-and-wake)
-    %%> What it does:
-    %%> - under the Instance's power lock: `incus resume` with no prepared restore, then `memory.swap.max` back to 0; no request reaches it, because the switch already moved the Routes
-  end
-  SW->>N: Hand over the work<br/>Ansible · tags handover
-  %%> What it does:
-  %%> - disables and stops the previous live's container timers, then enables and starts the new live's
-  %%> - disables each Process unit of the previous live and stops it gracefully within 120 s: Horizon terminates, workers finish their job
-  %%> - enables and starts each Process whose desired state is `running` in the new live; moves `boot.autostart` to it
-  %%> Why this order:
-  %%> - no timer, Process or job runs in two release containers
-  SW->>C: Run after steps<br/>incus exec · as www-data
-  %%> What it does:
-  %%> - each `after_activation` step in order, in the new live
-  SW->>N: Retire, read back<br/>Ansible · tags retire · check
-  %%> What it does:
-  %%> - waits until no native Schedule fire runs in the previous live, up to its timeout
-  %%> - stops the previous live, which becomes old, and removes the earlier old
-  %%> - reads back the live link, the upstream file, the commit and the Process states
-  opt a migrated home remains
-    SW->>N: Retire the home<br/>last copy · remove account
-    %%> When:
-    %%> - the first deploy after `instance:migrate` of a checkout; the native Schedules already fire in live
-    %%> What it does:
-    %%> - copies each shared path of the home into the volume a last time: only files the volume lacks or holds in an older version
-    %%> - removes the home, its stopped PHP-FPM pool and the production account
-  end
-  alt all steps pass
-    SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Record the release states<br/>live, old · commit · Processes
-    %%> Result:
-    %%> - hot is live and the previous live is old; the deployment row records the release and commit
-    %%> - the Gateway republishes the automatic tick's inputs with live's commit
-  else Node lacks capacity
-    SW--xGW: Run failed<br/>deployment.node_capacity
-    %%> Result:
-    %%> - nothing changed; the automatic tick retries it and never counts it toward blocking the commit
-  else a step fails before or at the switch
-    SW->>N: Remove hot<br/>always · live untouched
-    %%> What it does:
-    %%> - deletes hot and its snapshot; live keeps serving with its work
-    %%> - a failed migration keeps what it changed; Orbit undoes no data change
-    SW--xGW: Run failed<br/>failed step, error code
-    %%> Result:
-    %%> - a failure in a deploy step or later blocks the commit for the automatic tick; an earlier failure is retried with backoff
-  else a step fails after the switch
-    SW--xGW: Run failed<br/>failed step, error code
-    %%> Result:
-    %%> - hot is live and serves; the Gateway records the release states that the run reached
-    %%> Retry:
-    %%> - deploy again after a fix; it is a new task with a new hot
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
-    GW-->>CLI: status + result
-  end
+  participant CLI as CLI / MCP
+  participant GW as Gateway
+  participant SW as Swamp
+  participant N as Owning AppProd Node
+  CLI->>GW: instance:deploy and optional pinned commit
+  GW->>GW: Hold this Instance and record the admitted commit
+  Note over GW: First checkout migration pins its serving commit
+  GW->>SW: Start production-release with a private vault reference
+  SW->>N: Validate Instance, Node, source, live selection and prerequisites
+  SW->>N: Wake preparation, deploy, migrate and seal the build
+  SW->>N: Clone the finished build and sleep preparation
+  SW->>N: Verify candidate and switch the Instance Routes
+  SW->>N: Handover workloads, drain and freeze former live
+  SW->>N: Read actual live and old identities
+  SW-->>GW: Operation, Node, Instance, commit and artifact receipt
+  GW-->>CLI: Record verified selection and deployment outcome

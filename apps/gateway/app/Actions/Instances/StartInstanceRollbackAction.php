@@ -8,8 +8,10 @@ use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\Deployment\RecordedReleases;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -41,16 +43,30 @@ final readonly class StartInstanceRollbackAction
             if (! $instance->placedOnAppProd()) {
                 throw new ResourceOperationException('deployment_config.unavailable', 'Only a production Instance can be rolled back.', 409);
             }
-            $deployment = $this->intent->snapshot($instance, rollback: true);
-            $retained = RecordedReleases::of($instance);
-            if (! array_key_exists($release, $retained)) {
-                throw new ResourceOperationException('rollback.release_not_retained', "The Instance does not retain the release [{$release}]. List its releases with instance:release:list.", 422, details: ['release' => $release]);
+            if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceRollback)) !== null) {
+                return $existing;
             }
-            $operation = $this->operations->execute(OperationKinds::InstanceRollback, OperationKinds::InstanceTarget, $instance->id, $instance->node_id, [
-                'instance_id' => $instance->id, 'release' => $release, 'commit' => $retained[$release], 'deployment' => $deployment,
-                'php_input' => $deployment['php'] === true ? ['service' => ProductionPhpRuntimeIdentity::from($instance)->service] : null,
-                'runtime_definitions' => ['restart' => $this->restart($instance)],
-            ], $triggeredBy, $requestId, lockKey: OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
+            if ($instance->production_release !== null) {
+                $old = $instance->production_release['old'];
+                if ($old === null || ! in_array($release, [substr($old, 0, 12), $old], true)) {
+                    throw new ResourceOperationException('rollback.release_not_retained', 'Only the previous serving container of this Instance can be selected.', 422);
+                }
+                $input = ['instance_id' => $instance->id, 'release' => $release, 'deployment' => ['variant' => 'production-release'],
+                    ...app(ProductionContainerRelease::class)->admission($instance, $old, rollback: true)];
+            } else {
+                $deployment = $this->intent->snapshot($instance, rollback: true);
+                $retained = RecordedReleases::of($instance);
+                if (! array_key_exists($release, $retained)) {
+                    throw new ResourceOperationException('rollback.release_not_retained', "The Instance does not retain the release [{$release}]. List its releases with instance:release:list.", 422, details: ['release' => $release]);
+                }
+                $input = [
+                    'instance_id' => $instance->id, 'release' => $release, 'commit' => $retained[$release], 'deployment' => $deployment,
+                    'php_input' => $deployment['php'] === true ? ['service' => ProductionPhpRuntimeIdentity::from($instance)->service] : null,
+                    'runtime_definitions' => ['restart' => $this->restart($instance)],
+                ];
+            }
+            $operation = $this->operations->execute(OperationKinds::InstanceRollback, OperationKinds::InstanceTarget, $instance->id, $instance->node_id,
+                $input, $triggeredBy, $requestId, lockKey: OperationStore::lockKey(OperationKinds::InstanceTarget, $instance->id));
             if (! $operation->wasRecentlyCreated) {
                 return $operation;
             }

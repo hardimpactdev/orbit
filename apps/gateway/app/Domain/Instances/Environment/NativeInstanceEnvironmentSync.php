@@ -55,17 +55,7 @@ final readonly class NativeInstanceEnvironmentSync
     {
         $plan = ValidatedData::object($operation->input['direct_environment']);
         $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
-        $context = $this->contexts->resolve($instance, true);
-        if ($operation->node_id !== $instance->node_id || $plan['node_id'] !== $context->nodeId || $plan['base'] !== $context->path
-            || $plan['user'] !== $context->executionUser || $plan['environment'] !== $context->environment) {
-            throw new ResourceOperationException('operation.execution_forbidden', 'The Instance environment placement changed after admission.', 422);
-        }
-        $files = $this->render($context, ($plan['testing_skipped'] ?? null) === null);
-        $testing = $files['testing'] === null ? null : hash('sha256', $files['testing']['content']);
-        $planned = $plan['testing'] === null ? null : ValidatedData::object($plan['testing'])['sha256'];
-        if (hash('sha256', $files['content']) !== $plan['sha256'] || $testing !== $planned) {
-            throw new ResourceOperationException('env.configuration_changed', 'The Instance environment changed after admission.', 409);
-        }
+        $files = $this->admittedFiles($operation);
 
         $secrets = ['environment' => $this->steps->executionCopy('orbit-control-inputs', 'instance-environment-'.$operation->id, $files['content'])];
         if ($files['testing'] !== null) {
@@ -78,10 +68,37 @@ final readonly class NativeInstanceEnvironmentSync
     }
 
     /** @return array{content:string,keys:list<string>,testing:array{content:string,test_database:string}|null} */
+    public function admittedFiles(Operation $operation): array
+    {
+        $plan = ValidatedData::object($operation->input['direct_environment']);
+        $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
+        $context = $this->contexts->resolve($instance, true, productionContainer: isset($operation->input['production_release']));
+        if ($operation->node_id !== $instance->node_id || $plan['node_id'] !== $context->nodeId || $plan['base'] !== $context->path
+            || $plan['user'] !== $context->executionUser || $plan['environment'] !== $context->environment) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The Instance environment placement changed after admission.', 422);
+        }
+        $files = $this->render($context, ($plan['testing_skipped'] ?? null) === null);
+        $testing = $files['testing'] === null ? null : hash('sha256', $files['testing']['content']);
+        $planned = $plan['testing'] === null ? null : ValidatedData::object($plan['testing'])['sha256'];
+        if (hash('sha256', $files['content']) !== $plan['sha256'] || $testing !== $planned) {
+            throw new ResourceOperationException('env.configuration_changed', 'The Instance environment changed after admission.', 409);
+        }
+
+        return $files;
+    }
+
+    /** @return array{content:string,keys:list<string>,testing:array{content:string,test_database:string}|null} */
     private function render(InstanceEnvironmentContext $context, bool $writeTesting): array
     {
         $values = $this->store->synchronizationSnapshot($context)->values();
         $testing = $writeTesting ? $this->testing->plan($context->instanceId, $values) : null;
+        if ($context->productionContainer && ($values['DB_CONNECTION'] ?? null) === 'sqlite') {
+            $legacy = '/home/orbit-app-'.$context->projectId.'/database.sqlite';
+            if (! in_array($values['DB_DATABASE'] ?? null, [null, '', $legacy, '/srv/shared/database.sqlite'], true)) {
+                throw new ResourceOperationException('deployment.sqlite_location_unsupported', 'The SQLite database must use this Instance’s managed persistent database path.', 409);
+            }
+            $values['DB_DATABASE'] = '/srv/shared/database.sqlite';
+        }
 
         return ['content' => $this->renderer->render($context, $values), 'keys' => array_keys($values),
             'testing' => $testing === null ? null : ['content' => $this->renderer->render($context, $testing->values),

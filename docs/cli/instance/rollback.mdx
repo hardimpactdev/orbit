@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:rollback"
 sidebarTitle: "instance:rollback"
-description: "Select one retained release of a production Instance through `current`."
+description: "Return a production Instance to a retained release."
 ---
 
 ```bash
@@ -42,15 +42,15 @@ Pressing Ctrl-C stops following, not the rollback. In human output the CLI print
 | The Gateway refused the request. | Nonzero, with the one-line error. Nothing changes. |
 | You pressed Ctrl-C. | `130`. The rollback keeps running. |
 
-A failure in `Activate release` or `Swap current` leaves the recorded selection in place, and the result's `selected_release` is null. A failure after the swap, in the PHP refresh, a Process restart or the read-back, leaves the rolled-back release selected and names the failed step; a failure in `Read current back` or `Check the selection` means `current` may not name it, so check it. A run that outlasts its deadline reports `selected_release` null even when the swap already ran, so check `current` then too. A failure outside these steps, such as a lost SSH connection, ends with `operation.native_failed`. Orbit undoes no step. After you fix the cause, run the same command again.
+For a container release, the result records the selected commit only after the Node confirms this Instance’s traffic selection. A failed Operation can still identify a release that became active before a later step failed. Before container adoption, rollback uses the existing checkout selection.
 
 ## How it works
 
 <div className="flow-at" data-chart="instance/rollback"></div>
 
-### Production in containers (planned)
+### Production release containers
 
-This flow is planned by [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) and not built. A rollback starts old, the stopped release before live, checks it as ready and switches the Routes to it. It takes no `--release`. See [Production containers](/reference/production-containers#rollback).
+Pass the previous release shown by `instance:release:list`. The shared `production-release` workflow wakes and verifies that container with the current environment, switches this Instance’s Routes, then retains the former live as rollback. The full SHA or the 12-character name from the list identifies the retained release.
 
 <div className="flow-at" data-chart="instance/container/rollback-production"></div>
 

@@ -12,10 +12,7 @@ use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
-use App\Domain\Instances\Deployment\InstanceRuntimeDefinitions;
-use App\Domain\Instances\Deployment\ProductionDeployInput;
-use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
-use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
@@ -25,8 +22,6 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitCommitSha;
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Domain\Tools\ToolManagerIntent;
-use App\Domain\Tools\ToolManagerName;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -82,6 +77,9 @@ final readonly class StartInstanceDeployAction
             if ($automatic) {
                 $this->writer->assertSwamp($instance);
             }
+            if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
+                return $existing;
+            }
             $container = $instance->runtime()->exists();
             if ($container || $configuration !== null) {
                 if (($existing = app(OperationIdempotency::class)->replay(OperationKinds::InstanceDeploy)) !== null) {
@@ -96,7 +94,6 @@ final readonly class StartInstanceDeployAction
             }
             // A checkout default serializes its deployments with the checkout lock on the Node; a container default holds the Instance.
             $development = $instance->placedOnAppDev();
-            $members = $development ? null : app(InstanceRuntimeDefinitions::class)->capture($instance);
             if ($container) {
                 $this->intent->assertDevelopment($instance);
                 $facts = app(CaptureProjectSourceFactsAction::class);
@@ -110,7 +107,10 @@ final readonly class StartInstanceDeployAction
                 // Render the runtime definitions only after capturing the deployed commit's facts.
                 app(InstantiateProjectRuntimeDefinitionsAction::class)->refreshForContainer($instance);
             }
-            $deployment = $this->intent->snapshot($instance);
+            $deployment = $development ? $this->intent->snapshot($instance) : [
+                'variant' => 'production-release', 'project_id' => $instance->project_id,
+                'steps' => array_map(static fn ($step): array => ['timeout_seconds' => $step->timeoutSeconds], app(InstanceDeploymentConfigResolver::class)->resolve($instance)->steps),
+            ];
             if ($development && $deployment['projection_route_id'] !== null) {
                 throw new ResourceOperationException('deployment.projection_pending', 'The default Route projection must finish before deployment.', 409);
             }
@@ -130,11 +130,7 @@ final readonly class StartInstanceDeployAction
                 $input['development_runtime'] = app(DevelopmentDeployInput::class)->capture($instance, $deployment['needs_vp'] === true);
                 $input['github'] = ['$secret' => 'github.installation', 'id' => $instance->node_id];
             } else {
-                $input['runtime_definitions'] = $members;
-                $input['direct_environment'] = app(NativeInstanceEnvironmentSync::class)->plan(
-                    app(InstanceEnvironmentContextResolver::class)->resolve($instance, requireActiveNode: true, lockRoute: true), includeRuntime: false);
-                $input['php_input'] = app(ProductionDeployInput::class)->phpInput($instance, $deployment);
-                $input['vp_setup'] = $deployment['needs_vp'] === true ? app(ToolManagerIntent::class)->nativeInput($instance->node, ToolManagerName::Vp) : null;
+                $input = [...$input, ...app(ProductionContainerRelease::class)->admission($instance, $commit, automatic: $automatic)];
             }
             if ($callerNodeId !== null) {
                 $input['caller_node_id'] = $callerNodeId;

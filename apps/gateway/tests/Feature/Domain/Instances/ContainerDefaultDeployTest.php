@@ -667,12 +667,17 @@ it('skips source capture for a production deployment', function (bool $automatic
     app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
     $commit = str_repeat('a', 40);
+    $instance->forceFill(['starting_commit' => $commit])->save();
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'domain' => 'adopt.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $instance->routes()->attach($route->id, ['position' => 0]);
+    $route->update(['status' => 'active']);
 
     $operation = $automatic
         ? app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit)
         : app(StartInstanceDeployAction::class)->execute($instance, 'manual', null, $commit);
 
-    expect($operation->input['deployment']['variant'])->toBe('production');
+    expect($operation->input['deployment']['variant'])->toBe('production-release');
     expect($operation->input['commit'])->toBe($commit);
     expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
     expect($instance->project->environmentTemplate()->exists())->toBeFalse();

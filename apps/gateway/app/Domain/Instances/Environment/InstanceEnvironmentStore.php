@@ -320,7 +320,7 @@ final readonly class InstanceEnvironmentStore
                     lockRoute: true,
                 )
                 : $this->contexts->resolve($instance, $requireActiveNode, lockRoute: true,
-                    createOperationId: $expected->createOperationId);
+                    createOperationId: $expected->createOperationId, productionContainer: $expected->productionContainer);
         } catch (ResourceOperationException) {
             $this->conflict();
         }

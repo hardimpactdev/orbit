@@ -1,92 +1,19 @@
 sequenceDiagram
-  %% Target design, production containers (ADR 0263, docs/reference/production-containers.md#rollback): the rollback of a production Instance returns to old, the stopped release before live. It starts old, checks it as ready, switches the Routes and hands over the work; the rolled-away live becomes old, so a second rollback goes forward again. It selects code only. The switch removes the asleep marker of a sleeping live, and the handover resumes a frozen rolled-away live before it stops it (planned, ADR 0265). When the charts move into place, this replaces the release branch of the rollback chart.
-  %% status: draft
   %% command: instance:rollback
   %% kind: instance.rollback
+  %% status: migrated
   autonumber
-  %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane SW icon=workflow pill=executes tone=green
-  %% lane N icon=server pill=target tone=amber
-  %% lane C icon=server pill=target tone=purple
-  participant CLI as CLI / MCP<br/>orbit · MCP tools
-  participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>workflow execution
-  participant N as app-prod Node<br/>reached over ssh
-  participant C as Old<br/>release container
-  CLI->>GW: instance:rollback INSTANCE
-  %%> Command:
-  %%> - `orbit instance:rollback INSTANCE`
-  %%> - syntax: `<instance> [--idempotency-key=KEY] [--json]`
-  %%> Input:
-  %%> - only the Instance: old is the one release a rollback can select
-  alt the Instance has no old release
-    GW--xCLI: Refused<br/>rollback.release_not_retained
-    %%> Result:
-    %%> - nothing changes; to go back further, deploy the earlier commit with `instance:deploy --commit`
-  else old exists
-    Note over GW: Admit, pause auto-deploy<br/>Instance locked · TASK
-    %%> Requirements:
-    %%> - no started operation holds the Instance, else `operation.target_busy`
-    %%> Freezes:
-    %%> - live and old, the Process and Schedule definitions, the health path and the domain of each Route
-    %%> Result:
-    %%> - a running rollback row; automatic deploys pause and their trigger is removed
-    GW->>SW: Push .env<br/>vault: env-TASK
-    %%> Why:
-    %%> - old gets the Instance's current `.env`, so a changed secret reaches it; secrets travel only through the vault
-    GW->>SW: Start run, full intent<br/>instance-rollback-production
-    %%> Not included:
-    %%> - no GitHub token: a rollback fetches nothing
-    GW-->>CLI: 202 Accepted<br/>TASK
-    SW->>C: Write .env, start old<br/>Ansible · tags start
-    %%> What it does:
-    %%> - writes `.env` into old and starts it; its units and timers are disabled, so only FrankenPHP runs
-    %%> Why no capacity check:
-    %%> - no deploy runs beside a rollback, so old runs in the place that hot takes during a deploy
-    SW->>N: Check old is ready<br/>Ansible · tags ready
-    %%> What it does:
-    %%> - the readiness of a deploy, without the snapshot condition: old already has its snapshot
-    SW->>N: Switch the Routes<br/>Ansible · tags switch
-    %%> What it does:
-    %%> - the same switch as a deploy: one Caddy reload; requests in progress on live finish there
-    %%> - planned: in the same step, once the reload succeeded, removes the asleep marker; a failed switch keeps it, or puts it back, with the previous files
-    opt the rolled-away live is frozen, planned
-      Note over N: Resume rolled-away live<br/>no restore · close swap
-      %%> Why:
-      %%> - a sleeping live slept on (ADR 0265); the handover must stop its units, and a clean stop of a frozen container times out (development-containers.md#sleep-and-wake)
-      %%> What it does:
-      %%> - under the Instance's power lock: `incus resume` with no prepared restore, then `memory.swap.max` back to 0; no request reaches it, because the switch already moved the Routes
-    end
-    SW->>N: Hand over the work<br/>Ansible · tags handover
-    %%> What it does:
-    %%> - moves timers, then Processes, from live to old with the bounded graceful stop, and moves `boot.autostart`
-    %%> Requirement:
-    %%> - queued job payloads stay readable across one release, so old's workers can run jobs that live queued
-    SW->>N: Retire, read back<br/>Ansible · tags retire · check
-    %%> What it does:
-    %%> - waits for native Schedule fires in the rolled-away live, then stops it; it becomes old; no container is removed
-    %%> - reads back the live link, the upstream file, the commit and the Process states
-    alt all steps pass
-      SW-->>GW: Run succeeded<br/>terminal event
-      Note over GW: Swap live and old<br/>block rolled-away commit
-      %%> Result:
-      %%> - the rollback row records old's release and commit
-      %%> - the rolled-away commit is blocked; automatic deploys stay paused until `instance:auto-deploy:enable`
-      %%> Not included:
-      %%> - no deploy step and no data change; a migration is never undone
-    else a step fails before or at the switch
-      SW->>C: Stop old again<br/>always · live untouched
-      %%> What it does:
-      %%> - live keeps serving with its work; old stays the stopped release
-      SW--xGW: Run failed<br/>failed step, error code
-    else a step fails after the switch
-      SW--xGW: Run failed<br/>failed step, error code
-      %%> Result:
-      %%> - old serves as live; the Gateway records the release states that the run reached
-    end
-  end
-  loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
-    GW-->>CLI: status + result
-  end
+  participant CLI as CLI / MCP
+  participant GW as Gateway
+  participant SW as Swamp
+  participant N as Owning AppProd Node
+  CLI->>GW: instance:rollback with the previous release name
+  GW->>GW: Check the retained commit and hold this Instance
+  GW->>SW: Start production-release for the retained commit
+  SW->>N: Check target ownership and the current live selection
+  SW->>N: Wake rollback and apply current environment
+  SW->>N: Verify readiness and switch the Instance Routes
+  SW->>N: Handover workloads, drain and freeze former live
+  SW->>N: Read actual live and old identities
+  SW-->>GW: Operation, Node, Instance, commit and artifact receipt
+  GW-->>CLI: Record the verified selection and rollback outcome
