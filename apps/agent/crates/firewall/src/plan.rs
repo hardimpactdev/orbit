@@ -122,7 +122,6 @@ pub fn inventory(stdout: &str) -> Result<Vec<Row>, Refusal> {
     if stdout.lines().filter(|line| line.trim() == "Status: active").count() != 1 {
         return Err("firewall.backend_inactive");
     }
-    let text = |captures: &regex::Captures<'_>, group: usize| captures.get(group).map_or("", |found| found.as_str());
     Ok(stdout
         .lines()
         .filter_map(|line| NUMBERED.captures(line.trim()).map(|numbered| text(&numbered, 1).to_owned()))
@@ -138,6 +137,11 @@ pub fn inventory(stdout: &str) -> Result<Vec<Row>, Refusal> {
             None => Row { to: rest, action: String::new(), direction: "in".to_owned(), source: String::new(), comment: String::new() },
         })
         .collect())
+}
+
+/// One capture group's text, or empty when the group did not match.
+fn text<'h>(captures: &regex::Captures<'h>, group: usize) -> &'h str {
+    captures.get(group).map_or("", |found| found.as_str())
 }
 
 fn network(text: &str) -> Option<Network> {
