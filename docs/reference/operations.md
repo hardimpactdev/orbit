@@ -5,7 +5,7 @@ covers:
   - apps/gateway/config/operation_versions.php
   - apps/gateway/app/{Domain/Operations/**,Actions/Operations/**,Data/Operations/**,Http/Requests/Operations/**,Console/Commands/CheckOperationCleanupCommand.php}
   - apps/gateway/app/{Http/Controllers/Api/OperationsController.php,Models/Operation*.php,Jobs/Operations/**}
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_28_000000_add_operation_idempotency_keys,*route_publication_holds*,*pin_operation_versions}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_28_000000_add_operation_idempotency_keys,*route_publication_holds*,*pin_operation_versions,*fence_conn_launch_retries}.php
   - packages/php-sdk/src/{Requests,Responses}/Operations/**
   - apps/cli/app/{Commands/Operations/**,Support/Operations/**,Commands/Concerns/FollowsOperations.php}
   - apps/web/src/{api/operations.ts,realtime/operation.ts,pages/OperationPanel.tsx}
