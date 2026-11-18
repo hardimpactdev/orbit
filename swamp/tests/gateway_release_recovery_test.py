@@ -18,19 +18,36 @@ WORKFLOW = "swamp/workflows/workflow-production-release-activate.yaml"
 CONTROLLER = "swamp/scripts/gateway-release-container.sh"
 EARLIER = "e" * 40
 # Only the release-container operations that change power state matter to the handover.
+# Only the release-container operations that change containers matter to the handover. Each records the count.
 CTL = """import os, sys
 from pathlib import Path
 state = Path(os.environ["FIXTURE_ROOT"]) / "state"
-action, revision = sys.argv[1], sys.argv[3] if len(sys.argv) > 3 else ""
-key = {os.environ["FIXTURE_SHA"][:12]: "candidate", os.environ["FIXTURE_OLD"][:12]: "former", "e" * 12: "earlier"}.get(revision)
+action = sys.argv[1]
+keys = {os.environ["FIXTURE_SHA"]: "candidate", os.environ["FIXTURE_OLD"]: "former", "e" * 40: "earlier"}
+key = {sha[:12]: name for sha, name in keys.items()}.get(sys.argv[3] if len(sys.argv) > 3 else "")
+def event(text):
+    with (state / "events").open("a") as out:
+        print(text, file=out)
+        print("count %d" % sum((state / name).exists() for name in ("prep", "candidate", "former", "earlier", "orphan")), file=out)
 if action == "address":
     print("10.1.0.2" if key == "candidate" else "10.1.0.3")
 elif action in ("retire", "resume") and (state / key).exists():
     (state / key).write_text("Stopped" if action == "retire" else "Running")
-    with (state / "events").open("a") as out:
-        print(("stop " if action == "retire" else "start ") + key, file=out)
+    event(("stop " if action == "retire" else "start ") + key)
     if os.environ.get("FIXTURE_INTERRUPT") == "after " + key + " stop":
         os.killpg(os.getpgrp(), 9)
+elif action == "seed" and not (state / "prep").exists():
+    (state / "prep").write_text("Stopped")
+    event("seed prep")
+elif action == "demote":
+    target = keys[sys.argv[4]]
+    if (state / target).exists():
+        (state / target).unlink()
+        if not (state / "prep").exists():
+            (state / "prep").write_text("Stopped")
+        event("demote " + target)
+elif action == "rest" and (state / "prep").exists():
+    (state / "prep").write_text("Stopped")
 """
 PROTOCOL = "# orbit-gateway-recovery-protocol: 3\n"
 
@@ -194,15 +211,19 @@ def stub(name, args):
                         "user.orbit.release.role": "candidate", "user.orbit.release.commit": commit,
                         "boot.autostart": boot.read_text().strip() if boot.exists() else "false",
                     }})
+            if (state / "prep").exists():
+                rows.append({"name": "prepare-gateway", "status": (state / "prep").read_text().strip() or "Stopped",
+                             "config": {"user.orbit.release.target": "gateway", "user.orbit.release.role": "prepare"}})
             if (state / "orphan").exists():
                 rows.append({"name": "gateway-" + "c"*12, "status": "Stopped", "config": {"user.orbit.release.target":"gateway"}})
             print(json.dumps(rows))
         elif action in ("delete", "stop"):
             target = args[1]
-            key = {candidate: "candidate", "gateway-" + old[:12]: "former"}.get(target, "earlier")
+            key = {candidate: "candidate", "gateway-" + old[:12]: "former", "prepare-gateway": "prep"}.get(target, "earlier")
             if action == "delete":
                 (state / key).unlink()
                 event("delete " + key)
+                event(f"count {sum((state / name).exists() for name in ('prep', 'candidate', 'former', 'earlier', 'orphan'))}")
                 interrupt("after " + key + " deletion")
             else:
                 (state / key).write_text("Stopped")
@@ -260,6 +281,7 @@ class GatewayReleaseFixture(unittest.TestCase):
         (self.state / "events").touch()
         (self.state / "env").write_text("A")
         (self.state / f"host-{HORIZON}").touch()
+        (self.state / "prep").write_text("Stopped")
 
         self.env = {**os.environ, "PATH": f"{self.stubs}:{os.environ['PATH']}",
                     "FIXTURE_ROOT": str(self.root),
@@ -287,6 +309,7 @@ class GatewayReleaseFixture(unittest.TestCase):
   build) if [[ ${3:-} != true ]]; then echo '{}'; exit; fi ;;
   web) cat >/dev/null; exit ;;
   clone)
+    rm -f "$FIXTURE_ROOT/state/prep"
     touch "$FIXTURE_ROOT/state/candidate"
     printf false > "$FIXTURE_ROOT/state/gateway-${sha:0:12}-boot"
     exit ;;
@@ -362,6 +385,8 @@ esac
         self.assertFalse((self.journal / "operation").exists())
 
     def serving_former(self):
+        # The candidate was promoted from preparation: live, the candidate and, when set, old.
+        (self.state / "prep").unlink(missing_ok=True)
         (self.state / f"host-{HORIZON}").unlink(missing_ok=True)
         self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": None, "host_retired": True}))
         self.upstream.write_text("vars gateway_release_upstream 10.1.0.3:8080\n")
@@ -378,6 +403,15 @@ esac
     def direct(self, action, *args):
         return self.run_script(self.mirror / CONTROLLER, action, self.sha, OPERATION, *args)
 
+    def assert_at_most_three(self):
+        counts = [int(line.split()[1]) for line in (self.state / "events").read_text().splitlines() if line.startswith("count ")]
+        self.assertTrue(counts, "no container change was recorded")
+        self.assertLessEqual(max(counts), 3, counts)
+
+    def inventory_is(self, live, old, pending=None, verified=()):
+        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": live, "old": old, "pending": pending,
+                                                                 "verified": sorted(verified), "host_retired": True})
+
     def assert_parked(self, key, sha):
         self.assertEqual((self.state / key).read_text(), "Stopped")
         self.assertEqual((self.state / f"gateway-{sha[:12]}-boot").read_text(), "false")
@@ -389,7 +423,9 @@ esac
         self.assert_ok(self.switch())
         self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
         self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": self.sha, "old": self.old, "host_retired": True})
+        self.inventory_is(self.sha, self.old, verified=(self.sha, self.old))
+        self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
 
     def assert_pending(self, sha):
         self.assertTrue((self.journal / "operation").exists(), "the switch has no recovery marker")
@@ -405,7 +441,10 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assertLess(events.index("site container"), events.index("drain host"))
         self.assertLess(events.index("start " + self.candidate + " " + HORIZON), events.index("drain host"))
         self.assert_container_serves()
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version":2, "host_retired":True, "old":None, "live":self.sha})
+        self.assertEqual(json.loads(self.inventory.read_text()), {"version":2, "host_retired":True, "old":None, "pending":None,
+                                                                  "verified":[self.sha], "live":self.sha})
+        self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
 
     def test_interruption_after_caddy_publication_republishes_only_the_candidate(self):
         self.assert_interrupted(self.run_move("after container switch"))
@@ -423,16 +462,19 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
         self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
 
-    def test_interrupted_drain_finishes_forward_with_a_failing_public_check(self):
+    def test_interrupted_drain_with_a_failing_public_check_keeps_the_verified_former_as_old(self):
         self.serving_former()
         self.assert_ok(self.switch())
         (self.state / f"broken-public-container-{self.sha}").touch()
         self.assertNotEqual(self.run_script(self.phase, "public-ready", self.sha, OPERATION).returncode, 0)
         self.assert_interrupted(self.run_script(self.phase, "retire", self.sha, OPERATION, interrupt=f"before {self.retained} drain"))
         self.assertTrue((self.state / "former").exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
+        result = self.run_script(self.console, "--recover")
+        self.assertIn("public check failed", result.stderr)
         self.assert_parked("former", self.old)
         self.assert_container_serves()
+        self.inventory_is(self.sha, self.old, verified=(self.old,))
+        self.assert_at_most_three()
 
     def test_crash_after_parking_the_former_finishes_with_it_as_old(self):
         self.serving_former()
@@ -451,18 +493,23 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         (self.state / "earlier").write_text("Stopped")
         (self.state / f"gateway-{EARLIER[:12]}-boot").write_text("false")
         self.assert_ok(self.switch())
-        # The candidate serves; the former live is old while it drains, and the earlier old still exists.
-        self.assertEqual(json.loads(self.inventory.read_text())["old"], self.old)
+        # The candidate serves. Until retire decides, the inventory keeps the earlier old, which still exists.
+        self.assertEqual(json.loads(self.inventory.read_text())["old"], EARLIER)
         self.assertTrue((self.state / "earlier").exists())
         self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
         self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
         events = (self.state / "events").read_text()
-        self.assertLess(events.index("stop former"), events.index("delete earlier"))
+        # Verify the new live, delete the earlier old, then drain and stop the former live and recreate preparation.
+        self.assertLess(events.rindex(f"public container {self.sha}"), events.index("delete earlier"))
+        self.assertLess(events.index("delete earlier"), events.index("stop former"))
+        self.assertLess(events.index("stop former"), events.index("seed prep"))
         self.assertFalse((self.state / "earlier").exists())
         self.assert_parked("former", self.old)
         self.assertIn(f"systemctl disable {HORIZON}", events)
         self.assert_container_serves()
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": self.sha, "old": self.old, "host_retired": True})
+        self.inventory_is(self.sha, self.old, verified=(self.sha, self.old))
+        self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
 
     def test_a_missing_former_live_keeps_the_earlier_old(self):
         self.serving_former()
@@ -475,11 +522,80 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
         self.assertTrue((self.state / "earlier").exists())
         self.assertEqual(json.loads(self.inventory.read_text())["old"], EARLIER)
+        self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
+
+    def unverified_live_with_earlier_old(self, verified):
+        self.serving_former()
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": EARLIER, "pending": None,
+                                              "verified": verified, "host_retired": True}))
+        (self.state / "earlier").write_text("Stopped")
+        (self.state / f"gateway-{EARLIER[:12]}-boot").write_text("false")
+        (self.state / f"broken-public-container-{self.sha}").touch()
+        self.assert_ok(self.switch())
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        self.assertIn("public check failed", self.run_script(self.phase, "retire", self.sha, OPERATION).stderr)
+        self.assertFalse((self.journal / "operation").exists())
+        self.assert_at_most_three()
+
+    def test_two_failed_releases_in_a_row_keep_the_verified_rollback_target(self):
+        # The serving release never verified. The new one fails too: the earlier verified old stays, the former goes.
+        self.unverified_live_with_earlier_old([EARLIER])
+        self.assertFalse((self.state / "former").exists())
+        self.assertTrue((self.state / "earlier").exists())
+        self.assertTrue((self.state / "prep").exists())
+        self.inventory_is(self.sha, EARLIER, verified=(EARLIER,))
+
+    def test_an_unverified_live_keeps_both_verified_releases_until_it_settles(self):
+        self.unverified_live_with_earlier_old([self.old, EARLIER])
+        self.assert_parked("former", self.old)
+        self.assertTrue((self.state / "earlier").exists())
+        self.assertFalse((self.state / "prep").exists())
+        self.inventory_is(self.sha, self.old, EARLIER, verified=(self.old, EARLIER))
+        # The next build settles first; while live still fails its public check, nothing changes.
+        self.assertIn("unverified", self.direct("build", "false", "{}", "false").stderr)
+        (self.state / f"broken-public-container-{self.sha}").unlink()
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assertFalse((self.state / "earlier").exists())
+        self.assert_parked("former", self.old)
+        self.assertTrue((self.state / "prep").exists())
+        self.inventory_is(self.sha, self.old, verified=(self.sha, self.old))
+        self.assert_at_most_three()
+
+    def test_a_verified_candidate_keeps_the_verified_earlier_old_over_an_unverified_former(self):
+        self.serving_former()
+        self.inventory.write_text(json.dumps({"version": 2, "live": self.old, "old": EARLIER, "pending": None,
+                                              "verified": [EARLIER], "host_retired": True}))
+        (self.state / "earlier").write_text("Stopped")
+        (self.state / f"gateway-{EARLIER[:12]}-boot").write_text("false")
+        self.assert_ok(self.switch())
+        self.assert_ok(self.run_script(self.phase, "start-horizon", self.sha, OPERATION, HORIZON))
+        self.assert_ok(self.run_script(self.phase, "retire", self.sha, OPERATION))
+        self.assertFalse((self.state / "former").exists())
+        self.inventory_is(self.sha, EARLIER, verified=(self.sha, EARLIER))
+        self.assert_at_most_three()
+
+    def test_a_missing_old_is_forgotten_instead_of_blocking_releases(self):
+        self.released()
+        (self.state / "former").unlink()
+        self.assert_ok(self.run_script(self.phase, "release-unused", self.old, "43"))
+        result = self.direct("build", "false", "{}", "false")
+        self.assertIn("gateway.release_container_missing", result.stderr)
+        self.assertIn("already serves", result.stderr)
+        self.assertIsNone(json.loads(self.inventory.read_text())["old"])
+
+    def test_a_candidate_that_never_served_returns_to_the_preparation_slot(self):
+        self.serving_former()
+        self.assert_ok(self.run_script(self.phase, "release-unused", self.sha, OPERATION))
+        self.assertFalse((self.state / "candidate").exists())
+        self.assertTrue((self.state / "prep").exists())
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
+        self.assert_at_most_three()
 
     def test_a_running_old_refuses_the_next_build(self):
         self.released()
         (self.state / "former").write_text("Running")
-        self.assertIn("retained Gateway release is running", self.direct("build", "false", "{}", "false").stderr)
+        self.assertIn("is running; finish its rollback", self.direct("build", "false", "{}", "false").stderr)
         (self.state / "former").write_text("Stopped")
         self.assertIn("already serves", self.direct("build", "false", "{}", "false").stderr)
 

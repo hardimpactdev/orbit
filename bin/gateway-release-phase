@@ -33,15 +33,16 @@ fi
 check_recovery() {
   local path
   for path in "$script" "$workflow"; do
-    if ! git -c safe.directory="$repo" -C "$repo" grep -q '^# orbit-gateway-recovery-protocol: 3$' "$sha" -- "$path"; then
-      echo "gateway.release_recovery_incompatible: $sha lacks container rollback protocol 3 in $path" >&2
+    # Protocol 3 and later keep the stopped old and roll back through the journal.
+    if ! git -c safe.directory="$repo" -C "$repo" grep -qE '^# orbit-gateway-recovery-protocol: ([3-9]|[1-9][0-9]+)$' "$sha" -- "$path"; then
+      echo "gateway.release_recovery_incompatible: $sha lacks container rollback protocol 3 or later in $path" >&2
       return 1
     fi
   done
 }
 # Manual moves and offline recovery already hold the same lock.
 case "$phase" in
-  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|build|build-checked|web|clone|park-preparation|switch|recover|start-horizon|retire|cleanup-versions|release-unused)
+  reconcile-begin|reconcile-end|reconcile-idle|reconcile-verify|check-load|check-recovery|build|build-checked|web|clone|park-preparation|switch|recover|start-horizon|retire|settle|cleanup-versions|release-unused)
     if [[ ${ORBIT_GATEWAY_RELEASE_LOCK_HELD:-0} != 1 ]]; then
       exec 9</home/orbit/.orbit/gateway-release.lock
       flock -w 130 9 || { echo 'Gateway release lock is busy' >&2; exit 1; }
@@ -114,7 +115,7 @@ if [[ $phase == reconcile-idle || $phase == reconcile-begin || $phase == reconci
 fi
 if [[ $phase == build-checked ]]; then phase=build; fi
 case "$phase" in
-  build|web|clone|switch|recover|start-horizon|retire|park-preparation|release-unused) ;;
+  build|web|clone|switch|recover|start-horizon|retire|settle|park-preparation|release-unused) ;;
   migrate|ready|wait-idle|cleanup|cleanup-versions|snapshot|public-ready) check_recovery ;;
   *) echo "Unknown Gateway release phase: $phase" >&2; exit 64 ;;
 esac
@@ -125,7 +126,8 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
   incus_cli=(incus --force-local --project orbit-releases)
   ctl() { python3 <(git -c safe.directory="$repo" -C "$repo" show "$sha:swamp/scripts/release-container.py") "$@"; }
   if [[ $phase == park-preparation ]]; then
-    if [[ $("${incus_cli[@]}" config get prepare-gateway user.orbit.release.operation) == "$operation" ]]; then ctl sleep gateway "$operation"; fi
+    # The promoted preparer is the candidate now. A build that failed before promotion stops its preparer.
+    ctl rest gateway "$operation" >/dev/null
     exit
   fi
   if [[ -e $journal/operation ]]; then
@@ -133,10 +135,10 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
     exit 1
   fi
   if [[ ! -f $inventory && ${ORBIT_GATEWAY_INITIAL_MOVE:-0} != 1 ]]; then exit 0; fi
-  # A failed Incus copy can leave only the preparer snapshot. Check the seal that
+  # A failed Incus copy of an older protocol can leave only the preparer snapshot. Check the seal that
   # created it rather than trusting the name of a snapshot or the current preparer.
   snapshot="built-$operation"
-  snapshots=$("${incus_cli[@]}" snapshot list prepare-gateway --format json)
+  snapshots=$("${incus_cli[@]}" snapshot list prepare-gateway --format json 2>/dev/null || echo '[]')
   if jq -e --arg name "$snapshot" 'any(.[]; .name==$name)' <<< "$snapshots" >/dev/null; then
     jq -e --arg name "$snapshot" --arg op "$operation" --arg sha "$sha" '
       any(.[]; .name==$name and .config["user.orbit.release.target"]=="gateway"
@@ -150,8 +152,9 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
   if [[ -f $inventory && $(jq -r '.old // ""' "$inventory") == "$sha" ]]; then
     # A refused or failed rollback may have started old. Park it again; it stays the rollback release.
     # A refusal before the start leaves it parked, also when its own controller is older.
-    if ! "${incus_cli[@]}" list "$candidate" --format json | jq -e --arg name "$candidate" \
-        'any(.[]; .name==$name and .status=="Stopped" and .config["boot.autostart"]=="false")' >/dev/null; then
+    # A missing old is already gone; the next build forgets it.
+    if "${incus_cli[@]}" list "$candidate" --format json | jq -e --arg name "$candidate" \
+        'any(.[]; .name==$name and (.status!="Stopped" or .config["boot.autostart"]!="false"))' >/dev/null; then
       ctl retire gateway "${sha:0:12}" "$operation"
     fi
     exit
@@ -162,10 +165,10 @@ if [[ $phase == park-preparation || $phase == release-unused ]]; then
       [[ ! -f $journal/operation ]] || { echo 'Refusing to clean up a clone from another operation' >&2; exit 1; }
       exit 0
     fi
-    jq -e --arg sha "$sha" '.config | .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha and .["user.orbit.release.role"]=="candidate" and .["boot.autostart"]=="false"' <<< "$existing" >/dev/null
-    "${incus_cli[@]}" delete "$candidate" --force
+    jq -e --arg sha "$sha" '.config | .["user.orbit.release.target"]=="gateway" and .["user.orbit.release.commit"]==$sha and .["boot.autostart"]=="false"' <<< "$existing" >/dev/null
+    # The candidate was the preparer. It returns to the preparation slot, so live, old and preparation remain.
+    ctl demote gateway "$operation" "$sha" >/dev/null
   fi
-  ctl forget gateway "${sha:0:12}"
   if [[ ! -f $journal/operation ]]; then rm -f -- "$journal/rollback-$sha"; fi
   exit
 fi

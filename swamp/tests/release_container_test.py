@@ -247,6 +247,71 @@ class ReleaseTest(unittest.TestCase):
         incus.assert_called_once_with("start", stopped["name"])
         self.assertEqual(power_call.call_count, 2)
 
+    def gateway(self, name, role, status="Stopped", **tags):
+        item = record(name, role, status=status, target="gateway", **tags)
+        item.setdefault("devices", {})
+        return item
+
+    def test_gateway_preparer_itself_becomes_the_candidate_without_a_copy(self):
+        seal = {"operation": "13", "commit": SHA, "artifact": DIGEST}
+        prep = self.gateway("prepare-gateway", "prepare", status="Running", **seal, **{"parked-seal": f"13/{SHA}/{DIGEST}"})
+        name = "gateway-" + SHA[:12]
+        renamed = {**prep, "name": name, "status": "Stopped"}
+        promoted = {**renamed, "config": {**renamed["config"], release.PREFIX + "role": "candidate"}}
+        with patch.object(release, "instance", side_effect=[None, prep, renamed, promoted]), \
+                patch.object(release, "incus") as incus, patch.object(release, "power") as power_call:
+            self.assertEqual(release.main(["promote", "gateway", "13", SHA, DIGEST]), name)
+        self.assertEqual([c.args[0] for c in incus.call_args_list], ["stop", "rename", "config", "start"])
+        self.assertNotIn("copy", [c.args[0] for c in incus.call_args_list])
+        self.assertIn("raw.lxc=" + release.GATEWAY_MOUNTS, incus.call_args_list[2].args)
+        power_call.assert_called_once_with("prepare-gateway", "discard")
+        with self.assertRaisesRegex(ValueError, "gateway_only"):
+            release.promote("instance-8", "13", SHA, DIGEST)
+
+    def test_a_candidate_that_never_served_returns_to_the_preparation_slot(self):
+        name = "gateway-" + SHA[:12]
+        candidate = self.gateway(name, "candidate", status="Running", operation="13", commit=SHA)
+        candidate["config"]["boot.autostart"] = "false"
+        with patch.object(release, "instance", side_effect=[candidate, None]), patch.object(release, "incus") as incus, \
+                patch.object(release, "power"):
+            self.assertEqual(release.main(["demote", "gateway", "13", SHA]), "prepare-gateway")
+        self.assertEqual([c.args[:2] for c in incus.call_args_list][-1], ("rename", name))
+        serving = {**candidate, "config": {**candidate["config"], "boot.autostart": "true"}}
+        with patch.object(release, "instance", return_value=serving), self.assertRaisesRegex(ValueError, "still_active"):
+            release.demote("gateway", "13", SHA)
+
+    def test_seed_recreates_a_stopped_preparer_from_live_without_its_address_or_work(self):
+        live = self.gateway("gateway-" + SHA[:12], "candidate", status="Running", commit=SHA)
+        seeded = self.gateway("prepare-gateway", "prepare", **{"seeded-from": SHA, "commit": SHA})
+        seeded["config"]["raw.lxc"] = "x"
+        seeded["devices"] = {"eth0": {"ipv4.address": "10.2.3.4"}}
+        outputs = {("snapshot", "list"): ["[]", json.dumps([{"name": "seed-14"}])],
+                   ("exec",): ["/etc/systemd/system/multi-user.target.wants/orbit-gateway-horizon.service\n"]}
+
+        def run(*args, **kwargs):
+            for key, values in outputs.items():
+                if args[:len(key)] == key:
+                    return values.pop(0)
+            return ""
+        with patch.object(release, "instance", side_effect=[live, None, seeded]), patch.object(release, "incus", side_effect=run) as incus, \
+                patch.object(release.subprocess, "run") as delete:
+            self.assertEqual(release.main(["seed", "gateway", SHA[:12], "14"]), "prepare-gateway")
+        copy = next(c.args for c in incus.call_args_list if c.args[0] == "copy")
+        self.assertIn("eth0,ipv4.address=", copy)
+        self.assertIn("boot.autostart=false", copy)
+        unset = [c.args for c in incus.call_args_list if c.args[:2] == ("config", "unset")]
+        self.assertIn(("config", "unset", "prepare-gateway", "raw.lxc"), unset)
+        self.assertIn(("config", "device", "unset", "prepare-gateway", "eth0", "ipv4.address"), [c.args for c in incus.call_args_list])
+        self.assertIn("prepare-gateway/etc/systemd/system/multi-user.target.wants/orbit-gateway-horizon.service", delete.call_args.args[0])
+        self.assertEqual(incus.call_args_list[-1].args, ("snapshot", "delete", live["name"], "seed-14"))
+
+    def test_gateway_capacity_reserves_no_swap_for_a_preparer_that_is_never_frozen(self):
+        gib = 1024**3
+        meminfo = f"MemAvailable: {6 * gib // 1024} kB\nSwapFree: 0 kB"
+        pool = json.dumps({"space": {"total": 20 * gib, "used": 0}})
+        with patch.object(Path, "read_text", return_value=meminfo), patch("subprocess.check_output", return_value=pool):
+            self.assertEqual(release.capacity_estimate((0, 0, 0), (2 * gib, gib, 0), "pool", reclaim=False)["required_bytes"]["swap"], 0)
+
     def test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build(self):
         with patch.object(release, "instance", return_value=record("prepare-instance-8", "prepare")), patch.object(release, "power") as power_call:
             with self.assertRaisesRegex(ValueError, "preparation_changed"):

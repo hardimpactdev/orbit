@@ -106,10 +106,11 @@ def capacity(target, live, host_gateway):
     preparation = memory_use(prep)
     if max(preparation[0], served[0]) <= 0:
         raise ValueError("cannot estimate candidate memory")
-    return capacity_estimate(preparation, served, prep["expanded_devices"]["root"]["pool"])
+    # The Gateway preparer becomes the candidate and is never frozen, so it reclaims nothing to swap.
+    return capacity_estimate(preparation, served, prep["expanded_devices"]["root"]["pool"], reclaim=target != "gateway")
 
 
-def capacity_estimate(preparation, served, pool):
+def capacity_estimate(preparation, served, pool, reclaim=True):
     prep_need, prep_resident, prep_swap = preparation
     live_need, live_resident, _live_swap = served
     working = max(prep_need, live_need)
@@ -117,7 +118,7 @@ def capacity_estimate(preparation, served, pool):
     # swap slots are already excluded from the Node's free counts. Only preparation is
     # reclaimed to swap; retire stops the drained live, so it needs none.
     ram = 2 * working - prep_resident + max(0, live_need - live_resident) + 1024**3
-    swap = working - prep_swap
+    swap = working - prep_swap if reclaim else 0
     meminfo = {}
     for line in Path("/proc/meminfo").read_text().splitlines():
         key, values = line.split(":", 1)
@@ -207,6 +208,109 @@ def stop(record, operation):
     return {"name": name, "outcome": "stopped"}
 
 
+def halt(record, operation):
+    """Shut a container down cleanly; a frozen one is thawed first."""
+    if record["status"] == "Frozen":
+        power(record["name"], "restore", operation)
+    if record["status"] != "Stopped":
+        incus("stop", record["name"], "--timeout", "120", timeout=180)
+
+
+def promote(target, operation, commit, artifact):
+    """The Gateway keeps three containers: its sealed preparer itself becomes the candidate.
+
+    Incus renames only a stopped container. Its boot mounts then make the checkout and web build read-only."""
+    if target != "gateway":
+        raise ValueError("release.promote_gateway_only")
+    name = f"{target}-{commit[:12]}"
+    seal = {"target": target, "operation": operation, "commit": commit, "artifact": artifact}
+    existing = instance(name)
+    if existing is None:
+        prep = owned(preparer(target), {**seal, "role": "prepare", "parked-seal": f"{operation}/{commit}/{artifact}"})
+        halt(prep, operation)
+        incus("rename", prep["name"], name)
+        power(prep["name"], "discard")
+        existing = instance(name)
+    owned(existing, seal)
+    if existing["config"].get(PREFIX + "role") != "candidate":
+        incus("config", "set", name, "boot.autostart=false", PREFIX + "role=candidate", "raw.lxc=" + GATEWAY_MOUNTS)
+        existing = instance(name)
+    owned(existing, {**seal, "role": "candidate"})
+    if existing["status"] == "Stopped":
+        incus("start", name)
+    elif existing["status"] != "Running":
+        raise ValueError("release.candidate_not_running")
+    return name
+
+
+def demote(target, operation, commit):
+    """Return a Gateway candidate that never served to the preparation slot, warm, writable and stopped."""
+    name = f"{target}-{commit[:12]}"
+    record = instance(name)
+    if record is None:
+        return ""
+    owned(record, {"target": target, "operation": operation, "commit": commit})
+    if record["config"].get("boot.autostart") == "true":
+        raise ValueError("release.container_still_active")
+    if instance("prepare-" + target) is not None:
+        # Another preparer already holds the slot. This build never served, so it goes.
+        incus("delete", name, "--force")
+        power(name, "discard")
+        return name
+    halt(record, operation)
+    if record["config"].get(PREFIX + "role") == "candidate":
+        incus("config", "unset", name, "raw.lxc")
+        incus("config", "set", name, PREFIX + "role=prepare")
+    incus("rename", name, "prepare-" + target)
+    power(name, "discard")
+    return "prepare-" + target
+
+
+def seed(target, revision, operation):
+    """Recreate a missing Gateway preparer from the new live, stopped, with no serving state or enabled work."""
+    if target != "gateway":
+        raise ValueError("release.seed_gateway_only")
+    name = "prepare-" + target
+    live = release(target, revision)
+    snapshot = "seed-" + operation
+    prep = instance(name)
+    if prep is None:
+        snapshots = json.loads(incus("snapshot", "list", live["name"], "--format", "json"))
+        if not any(entry["name"] == snapshot for entry in snapshots):
+            incus("snapshot", "create", live["name"], snapshot)
+        # The live address reservation stays with live; the preparer takes a fresh DHCP lease.
+        incus("copy", live["name"] + "/" + snapshot, name, "--stateless", "--device", "eth0,ipv4.address=",
+              "--config", "boot.autostart=false", "--config", PREFIX + "role=prepare",
+              "--config", PREFIX + "operation=" + operation, "--config", PREFIX + "seeded-from=" + live["config"][PREFIX + "commit"])
+        prep = instance(name)
+    if prep["config"].get(PREFIX + "seeded-from") == live["config"][PREFIX + "commit"] and prep["status"] == "Stopped":
+        owned(prep, {"target": target, "role": "prepare"})
+        for key in ("raw.lxc", PREFIX + "commit", PREFIX + "artifact", PREFIX + "parked-seal"):
+            if key in prep["config"]:
+                incus("config", "unset", name, key)
+        if prep["devices"].get("eth0", {}).get("ipv4.address"):
+            incus("config", "device", "unset", name, "eth0", "ipv4.address")
+        # Live's enabled Processes, timers and web server must not start when the next release wakes the preparer.
+        wanted = incus("exec", live["name"], "--", "find", "/etc/systemd/system", "-mindepth", "2", "-maxdepth", "2",
+                       "-path", "*.wants/*", "-name", "orbit-*")
+        for path in wanted.split():
+            subprocess.run(["incus", "--force-local", "--project", PROJECT, "file", "delete", name + path],
+                           stdin=subprocess.DEVNULL, capture_output=True, timeout=60, check=False)
+    if any(entry["name"] == snapshot for entry in json.loads(incus("snapshot", "list", live["name"], "--format", "json"))):
+        incus("snapshot", "delete", live["name"], snapshot)
+    return name
+
+
+def rest(target, operation):
+    """Stop this operation's running preparer after a failed build. The Gateway never freezes it."""
+    record = instance("prepare-" + target)
+    if record is None or record["config"].get(PREFIX + "operation") != operation:
+        return ""
+    owned(record, {"target": target, "role": "prepare"})
+    halt(record, operation)
+    return record["name"]
+
+
 def candidate(target, operation, commit, artifact):
     prep = preparer(target)
     name = f"{target}-{commit[:12]}"
@@ -256,7 +360,7 @@ def address(record):
     values = [entry["address"] for entry in network.get("addresses", [])
               if entry["family"] == "inet" and entry["scope"] == "global"]
     if not values:
-        return None
+        return ""
     if len(values) != 1 or not ipaddress.IPv4Address(values[0]).is_private:
         raise ValueError("release.container_address_unavailable")
     ip = values[0]
@@ -324,6 +428,20 @@ def main(argv):
         if command == "candidate":
             action.add_argument("commit", type=matches(SHA))
             action.add_argument("artifact", type=matches(DIGEST))
+    for command in ("promote", "demote"):
+        action = commands.add_parser(command)
+        action.add_argument("target", type=matches(OWNER))
+        action.add_argument("operation", type=matches(OPERATION))
+        action.add_argument("commit", type=matches(SHA))
+        if command == "promote":
+            action.add_argument("artifact", type=matches(DIGEST))
+    seeding = commands.add_parser("seed")
+    seeding.add_argument("target", type=matches(OWNER))
+    seeding.add_argument("revision", type=matches(REVISION))
+    seeding.add_argument("operation", type=matches(OPERATION))
+    resting = commands.add_parser("rest")
+    resting.add_argument("target", type=matches(OWNER))
+    resting.add_argument("operation", type=matches(OPERATION))
     admission = commands.add_parser("capacity")
     admission.add_argument("target", type=matches(OWNER))
     serving = admission.add_mutually_exclusive_group(required=True)
@@ -338,6 +456,14 @@ def main(argv):
             raise ValueError(f"{code}: {error}") from error
     if args.action == "candidate":
         return candidate(args.target, args.operation, args.commit, args.artifact)
+    if args.action == "promote":
+        return promote(args.target, args.operation, args.commit, args.artifact)
+    if args.action == "demote":
+        return demote(args.target, args.operation, args.commit)
+    if args.action == "seed":
+        return seed(args.target, args.revision, args.operation)
+    if args.action == "rest":
+        return rest(args.target, args.operation)
     if args.action in ("wake", "sleep"):
         record = preparer(args.target)
         if args.action == "wake":

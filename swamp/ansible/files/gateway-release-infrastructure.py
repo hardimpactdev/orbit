@@ -77,6 +77,11 @@ def main(plan):
                 "boot.autostart": "false", "security.privileged": "false", "security.nesting": "false"}
     prep = existing("instances", PREP, PROJECT)
     if prep is None:
+        # A release promotes the preparer to its candidate. Its retire recreates preparation; a converge never
+        # adds a fourth Gateway container beside a candidate, live and old.
+        names = json.loads(output(*SCOPED, "list", "--format", "json"))
+        owned = [item for item in names if item["name"].startswith("gateway-") or item["config"].get("user.orbit.release.target") == "gateway"]
+        require(len(owned) < 3, "a Gateway release holds the preparation slot; finish it before converging")
         args = [*SCOPED, "init", digest, PREP, "--no-profiles", "-s", PROJECT, "-n", NETWORK]
         for key, value in identity.items():
             args.extend(["-c", f"{key}={value}"])

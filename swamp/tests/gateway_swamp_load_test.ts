@@ -346,7 +346,7 @@ Deno.test("a resumed load checks the exact Gateway target before changing the st
             assertEquals(result.code, 1);
             assertEquals(
                 new TextDecoder().decode(result.stderr).trim(),
-                `gateway.release_recovery_incompatible: ${sha} lacks container rollback protocol 3 in ${missing}`,
+                `gateway.release_recovery_incompatible: ${sha} lacks container rollback protocol 3 or later in ${missing}`,
             );
             assertEquals(await git(staging, "rev-parse", "HEAD"), live);
         }

@@ -102,7 +102,7 @@ The archive contains secrets. Do not attach it to a bug report or commit it to G
 
 The Gateway Node keeps Caddy, WireGuard, the SQLite database and the Gateway identity. An unprivileged container runs the application with FrankenPHP in Laravel Octane worker mode. The first move runs the same commit and uses the same database on both sides of the switch.
 
-Keep console access and a verified off-host recovery copy. Check space for preparation, live, the stopped old and one candidate. A frozen preparation container still uses storage and swap; the stopped old uses only storage. Test queue and cache access from the private bridge. A host-loopback address points into the container.
+Keep console access and a verified off-host recovery copy. Check space for three Gateway containers: preparation, live and the stopped old. The Gateway never holds more. Stopped containers use only storage. Test queue and cache access from the private bridge. A host-loopback address points into the container.
 
 Before waking preparation, each new build measures the serving workload, free RAM, free swap and free space in the release pool. A capacity refusal reports the resource and the required and available bytes. A later attempt can release the same commit when space is available. See the [production capacity rules](/reference/production-containers#capacity).
 
@@ -124,16 +124,28 @@ The Gateway expects its managed Horizon and scheduler Processes to be named `hor
 4. From the verified host release, run `sudo bin/gateway-container-move <verified-release-operation-id> <published-web.zip>`. This moves the same commit and preserves the database.
 5. Check `/up`, `orbit gateway:status` and an authenticated peer request through the public Gateway name. Check the background workers.
 6. If the move was interrupted, run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` at the Node console. Inspect the selected commit, public traffic and background services.
-7. Release the next forward commit. Check that preparation sleeps and the former live stops as old after HTTP and Horizon drain. Until then the Gateway has no old to roll back to.
+7. Release the next forward commit. Check that the former live stops as old after HTTP and Horizon drain, and that preparation returns. Until then the Gateway has no old to roll back to.
 8. Converge the Gateway role to retire host PHP-FPM. Restore the previous automation setting.
 
-The installed phase dispatcher accepts only commits that carry its recovery protocol, now 3. When a release raises the protocol, converge the Gateway's container helpers first, then release that commit at once. Until that release serves, the new dispatcher refuses to reconcile the older live.
+The installed phase dispatcher accepts commits that carry recovery protocol 3 or later. Protocol 3 is the first that keeps a stopped old and rolls back through the journal. A dispatcher from before it strands the stopped old and any interrupted handover. Converge the Gateway's container helpers first, then release.
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
-An established Gateway has a sleeping preparation container, a serving container and a stopped old container with `boot.autostart=false`. During a deployment the candidate shares the preparation slot. Orbit finishes an interrupted handover before allocating another candidate, and refuses a build while old runs. It updates preparation in place, seals it, freezes it and takes a filesystem clone. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
+An established Gateway has three containers: a stopped preparation container, a serving container and a stopped old container with `boot.autostart=false`. A release never adds a fourth.
 
-The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch. A failed public check reports a failed release. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal. Once the old Horizon workers and HTTP connections have drained, Orbit disables the former live's Horizon units and stops it as old. Only then does it delete the earlier old. It also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
+Orbit finishes an interrupted handover before it builds, and refuses a build while old runs. A recorded old or pending release whose container is gone is forgotten instead of blocking the release. It updates preparation in place and seals it. Then it stops preparation, renames it to `gateway-<id>`, adds the read-only boot mounts and starts it as the candidate. A candidate that fails before the switch returns to the preparation slot. The candidate migrates the shared database, passes private checks and loads compatible Swamp definitions. Operations already running can continue. New Operations can start throughout the deployment.
+
+The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal.
+
+Retire runs in this order, with at most three containers at each step:
+
+1. It checks the new live through the public name and records the result in the inventory's `verified` list. A successful public check outside a handover records it too.
+2. If the new live is verified, it deletes the earlier old. Only a verified former live replaces it.
+3. An unverified former live is deleted after its drain. The earlier old then stays.
+4. It waits for the former live's HTTP requests and Horizon jobs, disables its Horizon and scheduler units, and stops it with `boot.autostart=false`.
+5. It recreates preparation from a snapshot of the new live, stopped, without the live address reservation, boot mounts or enabled units.
+
+If the new live fails its public check, retire keeps every earlier stopped release and the former live when it was verified. The inventory records the older one as `pending`; it holds the preparation slot. The release fails. Roll back to old, or fix the cause and run `--recover`, which verifies live, keeps one stopped release and recreates preparation. The next build does the same before it starts. It also checks which closed Operation versions have finished their work. To leave a broken release, [roll back](#roll-back) to old or deploy a corrective commit.
 
 If the selected Horizon unit cannot start, inspect its journal in the selected container. Orbit keeps the outgoing workers and the handover journal. Repair the reported dependency, configuration or service in place and rerun `--recover`. For an emergency code patch, use a temporary systemd override on the affected Horizon unit to mount the corrected file read-only from a writable path in that container. Commit the same patch and deploy the forward release after the journal clears. The correction then lives in the sealed release. The temporary override stays in the stopped old until the next release replaces it.
 
@@ -431,7 +443,7 @@ On a container Gateway, `<id>` must be old. The Gateway admits a forced `gateway
 5. An interrupted rollback resumes with `--recover`.
 6. Retire stops the rolled-away live as the new old. A second rollback goes forward again.
 
-The candidate fences the Operation versions it deprecates and reopens every version it can still start. A rollback therefore reopens the versions that the rolled-away release closed. A failure before the switch stops old again and leaves live serving. A rollback uses the current database as it is.
+The candidate fences the Operation versions it deprecates and reopens every version it can still start. A rollback therefore reopens the versions that the rolled-away release closed. Rollback does not yet check for open work pinned to versions that only the rolled-away release defines; that work waits for a release that defines them again. A failure before the switch stops old again and leaves live serving. A rollback uses the current database as it is. It creates no container: preparation stays, and the count stays at three.
 
 On a host PHP-FPM Gateway, the Gateway resolves that release's full commit and admits a forced `gateway.release` run with trigger `rollback`. Force skips the ancestry check. The build reuses the sealed release and refreshes its configuration. The load step brings back that commit's Swamp workflows. The host PHP-FPM workflow snapshots the database, runs migrations, switches both links and verifies the Gateway.
 

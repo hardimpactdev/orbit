@@ -7,9 +7,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gateway_release_recovery_test import HORIZON, GatewayReleaseFixture
 
+
 class GatewayColdRollback(GatewayReleaseFixture):
     def assert_rolled_back(self):
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": self.old, "old": self.sha, "host_retired": True})
+        self.inventory_is(self.old, self.sha, verified=(self.old, self.sha))
+        self.assertTrue((self.state / "prep").exists())
+        self.assert_at_most_three()
         self.assertEqual((self.state / "former").read_text(), "Running")
         self.assertTrue((self.state / f"{self.retained}-{HORIZON}").exists())
         self.assert_parked("candidate", self.sha)
@@ -63,7 +66,7 @@ class GatewayColdRollback(GatewayReleaseFixture):
         result = self.run_script(self.console, "")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.journal / "operation").exists())
-        self.assertEqual(json.loads(self.inventory.read_text()), {"version": 2, "live": self.sha, "old": self.old, "host_retired": True})
+        self.inventory_is(self.sha, self.old, verified=(self.sha, self.old))
         self.assert_parked("former", self.old)
         self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
 

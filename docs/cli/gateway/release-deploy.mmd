@@ -57,7 +57,7 @@ sequenceDiagram
   %%> - the host PHP-FPM build checks disk space for the build and database copy
   SW->>GN: Install the web build<br/>artifact · digest · rename
   alt Container release
-    SW->>GN: Clone the prepared release<br/>seal · freeze · clone
+    SW->>GN: Clone the prepared release<br/>seal · promote preparation
     SW->>GN: Sleep preparation<br/>before migration
   else Host PHP-FPM release
     SW->>GN: Snapshot the database<br/>VACUUM INTO
@@ -99,7 +99,7 @@ sequenceDiagram
     end
     opt Container Gateway
       AC->>GN: Retire the previous live<br/>drain HTTP and Horizon
-      AC->>GN: Stop it as old<br/>delete the earlier old
+      AC->>GN: Stop it as old<br/>recreate preparation
       AC->>GN: Check deprecated<br/>operation versions
     end
     opt Failed host PHP-FPM check
