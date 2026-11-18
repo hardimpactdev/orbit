@@ -119,7 +119,7 @@ final readonly class NativeNodeRoleRuntimeInput
                 'node_id' => $node->id,
                 'nested' => $nested,
                 'incus' => $incus,
-                'folder' => [...InstanceFolderPlan::for($recipe->instances, InstanceFolderPlan::shift($node))['runtime'], 'path' => '/opt/orbit-production-runtime'],
+                'folder' => InstanceFolderPlan::for($recipe->instances, InstanceFolderPlan::shift($node), '/opt/orbit-production-runtime')['runtime'],
             ];
         }
         if ($instances !== null) {

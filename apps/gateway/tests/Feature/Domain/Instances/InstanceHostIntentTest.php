@@ -143,6 +143,11 @@ describe('the container branch of the app-dev converge', function (): void {
                 ->and(array_diff_key($unshifted[$name], ['shift' => true, 'version' => true]))->toBe(array_diff_key($shifted[$name], ['version' => true]));
         }
         expect(InstanceFolderPlan::for($folders, true))->toBe($shifted);
+        $production = InstanceFolderPlan::for($folders, false, '/opt/orbit-production-runtime');
+        expect($production['agent'])->toBe($unshifted['agent'])
+            ->and($production['runtime']['version'])->not->toBe($unshifted['runtime']['version'])
+            ->and($production['runtime']['vite_plus']['home'])->toBe('/opt/orbit-production-runtime/vite-plus/'.basename($unshifted['runtime']['vite_plus']['home']))
+            ->and($unshifted['runtime']['vite_plus']['home'])->toStartWith('/opt/orbit-runtime/vite-plus/');
     });
 
     // docs/reference/development-containers.md#instance-host-in-the-fleet: the refresh rebuilds the host when this digest moves.

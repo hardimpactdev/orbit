@@ -13,6 +13,7 @@ STOCK = "ubuntu-26.04-instance-stock"
 OWNER = "user.orbit.release.target"
 ROLE = "user.orbit.release.role"
 ROOT = Path("/var/lib/orbit/production")
+VITE_ROOTS = {Path("/opt/orbit-production-runtime/vite-plus"), Path("/opt/orbit-runtime/vite-plus")}
 
 
 def run(*args, stdin=None, timeout=300):
@@ -56,7 +57,7 @@ def vite_home(runtime):
     if not (link.is_symlink() or launcher.is_symlink() or launcher.exists()):
         return None
     home = link.readlink()
-    if (home.parent != Path("/opt/orbit-runtime/vite-plus") or not re.fullmatch(r"[0-9a-f]{12}", home.name)
+    if (home.parent not in VITE_ROOTS or not re.fullmatch(r"[0-9a-f]{12}", home.name)
             or home.resolve() != home or not (home / ".complete").is_file()
             or launcher.resolve(strict=True) != home / "bin/vp"):
         raise ValueError("Refusing an incomplete or unexpected pinned Vite+ home")
@@ -68,7 +69,7 @@ def bind_vite_home(machine, prep, runtime):
     previous = prep["devices"].get("vite-plus")
     if previous and previous.get("source") != str(home):
         source = Path(previous["source"])
-        if (source.parent != Path("/opt/orbit-runtime/vite-plus") or not re.fullmatch(r"[0-9a-f]{12}", source.name)
+        if (source.parent not in VITE_ROOTS or not re.fullmatch(r"[0-9a-f]{12}", source.name)
                 or previous != {"type":"disk","source":str(source),"path":str(source),"readonly":"true"}):
             raise ValueError("Refusing an unexpected preparer Vite+ mount")
         inc("config", "device", "remove", machine, "vite-plus")
