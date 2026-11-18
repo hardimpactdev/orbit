@@ -14,6 +14,7 @@ sequenceDiagram
   G->>S: Prepare the Instance
   %%> Use the exact owned create or admitted wake. Record application completion separately.
   %%> On explicit Retry, admit a fresh wake if the existing Instance slept again. Wait for it before probing T3 again.
+  %%> If sleep restoration was admitted first, wait for it to settle before checking power and probing T3.
   %%> Read the registered stock T3 project and model defaults.
   alt Cancel wins the Operation lock
     %% path: cancel
@@ -21,6 +22,7 @@ sequenceDiagram
     %%> Check the clone for work and T3 activity even when its create failed.
     %%> Lock the Instance and check for other launches before admitting teardown.
     %%> If the owned removal stopped the container before it failed, retry that removal using the recorded stop result.
+    %%> After reading activity for a completed wake, lock the Instance and recheck the exact wake owner and current consumers before admitting sleep.
     %%> Verified cleanup ends the launch. A failed or unproven cleanup remains Cancelling.
     S-->>G: Cleanup proof
   else Dispatch wins the Operation lock

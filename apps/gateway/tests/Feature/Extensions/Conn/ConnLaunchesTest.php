@@ -14,7 +14,9 @@ use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Power\AgentActivity;
 use App\Domain\Instances\Power\ContainerIdleSweep;
+use App\Domain\Instances\Power\InstanceAgentActivity;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceStart;
 use App\Domain\Instances\Power\InstanceWake;
@@ -961,6 +963,114 @@ describe('launch control and progress', function (): void {
             ->assertJsonPath('data.phase', 'cancelled')->assertJsonPath('data.children.destroy_operation_id', null);
         expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue();
     });
+
+    it('orders wake restoration and existing-target admission on the same Instance', function (string $kind, string $order): void {
+        $nested = $kind === InstanceStart::Kind;
+        $this->project->forceFill(['nested_fleet' => $nested])->save();
+        $this->host->update(['settings' => [...$this->host->settings, 'nested_fleet' => $nested]]);
+        $default = Instance::query()->create(['node_id' => $this->host->id, 'project_id' => $this->project->id,
+            'name' => 'default', 'checkout_path' => '/workspace/default', 'root' => '.', 'status' => InstanceState::Active]);
+        $container = app(InstanceContainer::class);
+        $container->reserve($default, $this->host)->update(['seed_commit' => str_repeat('a', 40)]);
+        $this->instance->update(['status' => InstanceState::Active]);
+        $runtime = $container->reserve($this->instance, $this->host, $default);
+        $read = new class implements NodeFileTimes
+        {
+            public ?Closure $duringRead = null;
+
+            public function read(Node $node, array $paths): ?array
+            {
+                $admit = $this->duringRead;
+                $this->duringRead = null;
+                $admit?->__invoke();
+
+                return array_fill_keys($paths, null);
+            }
+        };
+        $idleAgent = new class implements InstanceAgentActivity
+        {
+            public function read(Instance $instance): AgentActivity
+            {
+                return AgentActivity::read(false, null);
+            }
+        };
+        app()->instance(ContainerIdleSweep::class, new ContainerIdleSweep($read, app(InstanceSleep::class), [$idleAgent]));
+        Http::fake(['http://10.44.0.30:3773/*' => Http::response(['threads' => []])]);
+
+        $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
+        $owner = Operation::query()->findOrFail($id);
+        $settlement = app(ConnLaunchSettlement::class);
+        $settlement->advance($owner);
+        $wake = ConnLaunchChild::Wake->operation($owner->refresh());
+        expect($wake->kind)->toBe($kind)->and($wake->state['conn_launch_owner'])->toBe($owner->id);
+        $wake->update(['lock_key' => null, 'status' => OperationStatus::Succeeded,
+            'started_at' => now()->subMinute(), 'finished_at' => now()]);
+        $runtime->update(['power_state' => InstanceRuntimePowerState::Running]);
+        callLaunchApi($this->phone, 'POST', "conn/launches/{$id}/cancel")->assertAccepted();
+
+        $consumerKey = (string) Str::uuid();
+        $body = launchBody($this->desktop, $this->profile);
+        $consumerId = null;
+        $admit = function () use ($body, $consumerKey, &$consumerId): void {
+            $consumerId = callLaunchApi($this->desktop, 'POST', 'conn/launches', $body, $consumerKey)->assertAccepted()
+                ->assertJsonPath('data.instance_id', $this->instance->id)->json('data.id');
+        };
+        $read->duringRead = match ($order) {
+            'consumer first' => $admit,
+            'newer wake' => static function () use ($owner, $kind): void {
+                launchNativeReceipt($owner, $kind)->update(['status' => OperationStatus::Succeeded,
+                    'started_at' => now(), 'finished_at' => now()]);
+            },
+            'changed owner' => static function () use ($wake): void {
+                $wake->update(['state' => [...$wake->state, 'conn_launch_owner' => $wake->id]]);
+            },
+            default => null,
+        };
+
+        $settlement->advance($owner->refresh());
+        expect($read->duringRead)->toBeNull();
+
+        $sleeps = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_id', $this->instance->id);
+        if ($order === 'sleep first') {
+            $sleep = $sleeps->sole();
+            $admit();
+            $consumer = Operation::query()->findOrFail($consumerId);
+            $settlement->advance($consumer);
+            expect(Operation::query()->where('kind', OperationKinds::ConnLaunchInspect)->exists())->toBeFalse()
+                ->and(ConnLaunchChild::Wake->operation($consumer->refresh()))->toBeNull();
+            $settlement->advance($owner->refresh());
+            expect($sleeps->sole()->id)->toBe($sleep->id)
+                ->and($owner->refresh()->status->terminal())->toBeFalse()
+                ->and($runtime->refresh()->power_state)->toBe(InstanceRuntimePowerState::Running);
+
+            $sleep->update(['lock_key' => null, 'status' => OperationStatus::Succeeded, 'finished_at' => now(), 'result' => ['sleep' => 'frozen']]);
+            $runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+            $settlement->advance($consumer->refresh());
+            $newWake = ConnLaunchChild::Wake->operation($consumer->refresh());
+            expect($newWake?->id)->not->toBeNull()->not->toBe($wake->id)
+                ->and($newWake?->kind)->toBe(InstanceWake::Kind)
+                ->and($newWake?->triggered_by)->toBe('node:'.$this->desktop->id)
+                ->and($newWake?->status)->toBe(OperationStatus::Queued);
+        } else {
+            expect($sleeps->exists())->toBeFalse()
+                ->and($runtime->refresh()->power_state)->toBe(InstanceRuntimePowerState::Running);
+            if ($order === 'consumer first') {
+                expect($consumerId)->not->toBeNull();
+                $settlement->advance(Operation::query()->findOrFail($consumerId));
+                expect(Operation::query()->where('kind', OperationKinds::ConnLaunchInspect)->sole()->input['launch_operation_id'])
+                    ->toBe($consumerId);
+            }
+        }
+
+        $settlement->advance($owner->refresh());
+        callLaunchApi($this->phone, 'POST', "conn/launches/{$id}/cancel")->assertAccepted()->assertJsonPath('data.phase', 'cancelled');
+        expect($sleeps->count())->toBe($order === 'sleep first' ? 1 : 0)
+            ->and($wake->refresh()->status)->toBe(OperationStatus::Succeeded);
+        if ($consumerId !== null) {
+            callLaunchApi($this->desktop, 'POST', 'conn/launches', $body, $consumerKey)->assertAccepted()
+                ->assertJsonPath('data.id', $consumerId)->assertJsonPath('data.phase', 'preparing');
+        }
+    })->with([InstanceWake::Kind, InstanceStart::Kind])->with(['consumer first', 'sleep first', 'newer wake', 'changed owner']);
 
     it('resumes a transient preparation failure using the exact successful workspace child', function (ConnLaunchChild $role): void {
         $body = $this->body;

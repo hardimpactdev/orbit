@@ -46,14 +46,14 @@ enum ConnLaunchChild: string
         return is_int($id) ? $id : null;
     }
 
-    public function operation(Operation $launch): ?Operation
+    public function operation(Operation $launch, bool $lock = false): ?Operation
     {
         $id = $this->operationId($launch);
         if ($id === null) {
             return null;
         }
 
-        $child = Operation::query()->find($id);
+        $child = Operation::query()->when($lock, static fn (Builder $query) => $query->lockForUpdate())->find($id);
 
         return $child !== null && $this->accepts($child->kind) && $child->node_id === $launch->node_id
             && $child->target_type === 'instance' && $child->target_id === self::instanceId($launch) ? $child : null;

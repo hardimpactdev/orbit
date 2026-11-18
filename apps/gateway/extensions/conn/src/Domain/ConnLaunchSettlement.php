@@ -8,7 +8,6 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\Power\ContainerIdleSweep;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationRecordCoordinator;
@@ -38,7 +37,6 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
         private PublishConnLaunchAction $publish,
         private CancelOperationAction $cancel,
         private NativeRunCancellation $nativeCancellation,
-        private ContainerIdleSweep $idle,
     ) {}
 
     public function sweep(): void
@@ -156,6 +154,10 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             return null;
         }
         $existing = ($launch->input['target_kind'] ?? null) === 'existing';
+        $restoring = $existing ? $this->instances->wakeRestoration($instance) : null;
+        if ($restoring !== null && ! $this->nativeCancellation->settled($restoring)) {
+            return null;
+        }
         $asleep = $existing && $instance->runtime()->firstOrFail()->power_state !== InstanceRuntimePowerState::Running;
         if ($wake !== null && ! $retry && ($wake->status !== OperationStatus::Succeeded || $asleep)) {
             $this->blocked($launch, ConnLaunchStage::Workspace, $wake->error_code);
@@ -310,29 +312,29 @@ final readonly class ConnLaunchSettlement implements OperationRecordCoordinator
             return true;
         }
         $instance = $this->instance($launch);
-        $restore = $this->instances->wakeRestoration($launch, $instance);
+        $restore = $this->instances->wakeRestoration($instance, $launch);
         if ($restore !== null && ! $this->nativeCancellation->settled($restore)) {
             return false;
         }
         if ($instance->runtime()->firstOrFail()->power_state === InstanceRuntimePowerState::Stopped) {
             return true;
         }
-        $safe = $this->instances->usedByAnotherLaunch($launch, $instance, $wake->started_at)
-            ? false : $this->idle->canRestoreWake($instance, $wake);
+        $safe = $this->instances->canRestoreWake($launch, $instance, $wake);
         if ($safe === null) {
             $this->blocked($launch, ConnLaunchStage::Cleanup, 'conn.launch_wake_restore_unproven');
 
             return false;
         }
-        if ($safe === false) {
-            return true;
-        }
-        if ($restore !== null) {
-            $this->blocked($launch, ConnLaunchStage::Cleanup, $restore->error_code);
-        }
-        $this->instances->restoreWake($launch, $instance, $restore);
+        if ($safe && $this->instances->restoreWake($launch, $instance, $wake, $restore) !== null) {
+            if ($restore !== null) {
+                $this->blocked($launch, ConnLaunchStage::Cleanup, $restore->error_code);
+            }
 
-        return false;
+            return false;
+        }
+        $current = $this->instances->wakeRestoration($instance, $launch);
+
+        return $current === null || $this->nativeCancellation->settled($current);
     }
 
     private function probeCredentialExpired(Operation $probe): bool

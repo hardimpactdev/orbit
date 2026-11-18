@@ -151,9 +151,7 @@ final readonly class ContainerIdleSweep
         if ($runtime === null || $since === null || $wake->finished_at === null) {
             return null;
         }
-        $latest = Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceStart::Kind])
-            ->where('target_type', 'instance')->where('target_id', $instance->id)->latest('id')->value('id');
-        if ($latest !== $wake->id || $this->standing($instance, $runtime, ContainerSleepScope::All) !== null) {
+        if (! $this->wakeStillRestorable($instance, $runtime, $wake)) {
             return false;
         }
 
@@ -170,6 +168,15 @@ final readonly class ContainerIdleSweep
 
         return ! ($used($evidence->lastHttpAt) || $used($evidence->lastDeployAt)
             || $evidence->t3?->turnRuns === true || $used($evidence->t3?->lastActivityUnix));
+    }
+
+    /** The recorded conditions can be checked again under the Instance admission lock. */
+    public function wakeStillRestorable(Instance $instance, InstanceRuntime $runtime, Operation $wake): bool
+    {
+        $latest = Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceStart::Kind])
+            ->where('target_type', 'instance')->where('target_id', $instance->id)->latest('id')->value('id');
+
+        return $latest === $wake->id && $this->standing($instance, $runtime, ContainerSleepScope::All) === null;
     }
 
     /** The reasons that need no read of the Node or the container: the value's own first, then in the order the sleep admission checks them. */

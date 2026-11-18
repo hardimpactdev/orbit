@@ -11,6 +11,7 @@ use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\InstanceBranchSelection;
 use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Power\ContainerIdleSweep;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Operations\OperationIdempotency;
@@ -39,6 +40,7 @@ final readonly class ConnLaunchInstances
         private InstanceSleep $sleep,
         private ConnInstanceWorkState $work,
         private ConnAgentActivity $activity,
+        private ContainerIdleSweep $idle,
     ) {}
 
     public function create(Operation $launch, stdClass $request): Operation
@@ -70,18 +72,51 @@ final readonly class ConnLaunchInstances
         });
     }
 
-    public function wakeRestoration(Operation $launch, Instance $instance): ?Operation
+    public function wakeRestoration(Instance $instance, ?Operation $launch = null): ?Operation
     {
         return Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')
-            ->where('target_id', $instance->id)->where('node_id', $launch->node_id)->where('triggered_by', $launch->triggered_by)
-            ->where('idempotency_key', 'like', 'conn-launch:'.$launch->id.':restore-wake:%')->latest('id')->first();
+            ->where('target_id', $instance->id)->where('node_id', $instance->node_id)
+            ->when($launch, static fn ($query, Operation $owner) => $query->where('triggered_by', $owner->triggered_by))
+            ->where('idempotency_key', 'like', 'conn-launch:'.($launch->id ?? '%').':restore-wake:%')->latest('id')->first();
     }
 
-    public function restoreWake(Operation $launch, Instance $instance, ?Operation $previous): void
+    public function canRestoreWake(Operation $launch, Instance $instance, Operation $wake): ?bool
+    {
+        return $this->usedByAnotherLaunch($launch, $instance, $wake->started_at)
+            ? false : $this->idle->canRestoreWake($instance, $wake);
+    }
+
+    public function restoreWake(Operation $launch, Instance $instance, Operation $wake, ?Operation $previous): ?Operation
     {
         $key = self::key($launch, 'restore-wake', predecessor: $previous?->id);
-        $this->keyed(InstanceSleep::Kind, $key,
-            fn (): Operation => $this->sleep->start($instance, $launch->triggered_by, $launch->request_id));
+
+        return $this->keyed(InstanceSleep::Kind, $key, fn (): ?Operation => $this->sleep->startIf(
+            $instance, $launch->triggered_by, $launch->request_id,
+            fn (Instance $target): bool => $this->ownsRestorableWake($launch->id, $target, $wake->id, $previous?->id),
+        ));
+    }
+
+    /** The Instance lock orders this check with other launch claims. */
+    private function ownsRestorableWake(int $launchId, Instance $instance, int $wakeId, ?int $previousSleepId): bool
+    {
+        $launch = Operation::query()->findOrFail($launchId);
+        $record = Arr::get($launch->state ?? [], 'launch_children.'.ConnLaunchChild::Wake->value);
+        if ($launch->cancel_requested_at === null || $launch->status->terminal() || ConnLaunchChild::instanceId($launch) !== $instance->id
+            || $launch->node_id !== $instance->node_id || ($launch->input['project_id'] ?? null) !== $instance->project_id
+            || ! is_array($record) || ($record['id'] ?? null) !== $wakeId || ($record['owned'] ?? null) !== true
+            || ! is_string($record['key'] ?? null)) {
+            return false;
+        }
+
+        $wake = ConnLaunchChild::Wake->operation($launch, lock: true);
+        $runtime = $instance->runtime()->first();
+
+        return $wake !== null && $runtime !== null
+            && $wake->triggered_by === $launch->triggered_by && $wake->idempotency_key === $record['key']
+            && ($wake->state['conn_launch_owner'] ?? null) === $launchId && ($wake->state['wake_shared'] ?? false) !== true
+            && $this->wakeRestoration($instance, $launch)?->id === $previousSleepId
+            && ! $this->usedByAnotherLaunch($launch, $instance, $wake->started_at)
+            && $this->idle->wakeStillRestorable($instance, $runtime, $wake);
     }
 
     public function observeCompletion(Operation $launch): ?Operation
@@ -164,7 +199,7 @@ final readonly class ConnLaunchInstances
                 ->where('target_id', $instance->id)->whereKeyNot($create->id)->exists();
     }
 
-    public function usedByAnotherLaunch(Operation $launch, Instance $instance, ?DateTimeInterface $since = null): bool
+    private function usedByAnotherLaunch(Operation $launch, Instance $instance, ?DateTimeInterface $since = null): bool
     {
         return Operation::query()->where('kind', OperationKinds::ConnLaunch)->whereKeyNot($launch->id)
             ->whereNot('status', OperationStatus::Cancelled)

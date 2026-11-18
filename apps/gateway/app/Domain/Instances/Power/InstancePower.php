@@ -21,7 +21,9 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use App\Models\Task;
+use Closure;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * Sleep and wake of a development container (docs/reference/development-containers.md#sleep-and-wake). The sleep freezes the whole
@@ -83,6 +85,12 @@ abstract readonly class InstancePower implements DirectOperationProjection
 
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
+        return $this->startWhen($instance, $caller, $requestId) ?? throw new LogicException('Power admission requires a receipt.');
+    }
+
+    /** @param  (Closure(Instance): bool)|null  $guard  A condition checked under the Instance lock after the preflight. */
+    protected function startWhen(Instance $instance, ?string $caller, ?string $requestId, ?Closure $guard = null): ?Operation
+    {
         if (($replay = app(OperationIdempotency::class)->replay($this->kind())) !== null) {
             return $replay;
         }
@@ -91,8 +99,11 @@ abstract readonly class InstancePower implements DirectOperationProjection
             $this->beforeAdmission($instance);
         }
 
-        return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
+        return DB::transaction(function () use ($instance, $caller, $requestId, $guard): ?Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
+            if ($guard !== null && ! $guard($instance)) {
+                return null;
+            }
             ['runtime' => $runtime, 'open' => $open] = $this->admissible($instance, join: true);
             if ($open !== null) {
                 return $open;
