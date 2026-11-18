@@ -11,6 +11,10 @@ cases = [
   "a bundle file that no phase names, such as the collection pins, moves every phase digest",
   "a templated include in an entry playbook makes its phase read the whole bundle",
   "a changed file inside a copied folder moves the phase that copies it",
+  "each shipped bundle file is in exactly one class, and another Operation's playbooks are in no phase",
+  "a change only in another Operation's playbook and the task file it alone includes moves no converge digest",
+  "a task file that another Operation and a converge phase both include moves that phase",
+  "a new file in filter_plugins moves every phase digest",
 ]
 file = "swamp/tests/phase_code_test.ts"
 cost = 4

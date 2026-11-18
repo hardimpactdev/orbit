@@ -1,7 +1,7 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { fileURLToPath } from "node:url";
 import { phaseCodeDigests } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
-import { named, phases, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
+import { classify, named, phases, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
 import { codeTree } from "./phase_code_fixture.ts";
 
 const shipped = fileURLToPath(new URL("../ansible", import.meta.url));
@@ -32,7 +32,7 @@ Deno.test("every bundle file that a reached file names is in that phase's set", 
     for (const phase of phases) {
         const set = new Set(resolved[phase].files!);
         // A file no phase names is in every set whole; it is not loaded by a name, so nothing it includes is.
-        for (const file of [...set].filter((file) => !resolved[phase].unnamed.includes(file))) {
+        for (const file of [...set].filter((file) => !resolved[phase].everyPhase.includes(file))) {
             if (shared.includes(file) && file.endsWith(".yml")) continue;
             const text = await Deno.readTextFile(`${shipped}/${file}`);
             assertEquals(unresolved(file, text), null);
@@ -49,8 +49,8 @@ Deno.test("a reference the resolver cannot name makes only its phase read the wh
     try {
         const [ansible] = code;
         const before = await resolvePhases(ansible);
-        // The files no phase names (the check phase's file and an unused one) are in every phase.
-        assertEquals(before.network.files, ["ansible.cfg", "build_vars.py", "operation-node-converge-local-dns.yml", "operation-node-converge.yml",
+        // The files nothing reaches (the check phase's file and an unused one) and the implicit module are in every phase.
+        assertEquals(before.network.files, ["ansible.cfg", "build_vars.py", "library/orbit_artifact.py", "operation-node-converge-local-dns.yml", "operation-node-converge.yml",
             "tasks/check.yml", "tasks/network.yml", "tasks/shared.yml", "tasks/unused.yml"]);
         assertEquals(before.software.files!.includes("library/orbit_artifact.py"), true);
         assertEquals(before.roles.files!.includes("helper.py"), true);
@@ -194,5 +194,61 @@ Deno.test("a changed file inside a copied folder moves the phase that copies it"
         await Deno.writeTextFile(`${ansible}/files/net/a.conf`, "two\n");
         const now = await phaseCodeDigests(code);
         assertEquals(phases.filter((phase) => now[phase] !== first[phase]), ["network"]);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+// docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: the four classes of a bundle file.
+Deno.test("each shipped bundle file is in exactly one class, and another Operation's playbooks are in no phase", async () => {
+    const classes = await classify(shipped);
+    const all = [...classes.a.keys(), ...classes.b, ...classes.c, ...classes.d];
+    assertEquals(all.length, new Set(all).size);
+    const resolved = await resolvePhases(shipped);
+    for (const file of ["instance-container-power.yml", "instance-container.yml", "tasks/instance-container-phase.yml", "tasks/instance-container-run-phase.yml", "tasks/executor-power-relay.yml"]) {
+        assertEquals(classes.c.includes(file), true, file);
+        for (const phase of phases) assertEquals(resolved[phase].files!.includes(file), false, `${phase} ${file}`);
+    }
+    for (const file of ["ansible.cfg", "requirements.yml", "build_vars.py", "library/orbit_artifact.py"]) assertEquals(classes.b.includes(file), true, file);
+});
+
+Deno.test("a change only in another Operation's playbook and the task file it alone includes moves no converge digest", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const [ansible] = code;
+        await Deno.writeTextFile(`${ansible}/instance-container-power.yml`, "- hosts: target\n  tasks:\n    - ansible.builtin.include_tasks: tasks/instance-power-only.yml\n");
+        await Deno.writeTextFile(`${ansible}/tasks/instance-power-only.yml`, "- ansible.builtin.debug: { msg: one }\n");
+        const classes = await classify(ansible);
+        assertEquals(classes.c.sort(), ["instance-container-power.yml", "tasks/instance-power-only.yml"]);
+        const first = await phaseCodeDigests(code);
+        await Deno.writeTextFile(`${ansible}/instance-container-power.yml`, "# changed\n- hosts: target\n  tasks:\n    - ansible.builtin.include_tasks: tasks/instance-power-only.yml\n");
+        await Deno.writeTextFile(`${ansible}/tasks/instance-power-only.yml`, "- ansible.builtin.debug: { msg: two }\n");
+        const now = await phaseCodeDigests(code);
+        assertEquals(phases.filter((phase) => now[phase] !== first[phase]), []);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+Deno.test("a task file that another Operation and a converge phase both include moves that phase", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const [ansible] = code;
+        await Deno.writeTextFile(`${ansible}/instance-container-power.yml`, "- hosts: target\n  tasks:\n    - ansible.builtin.include_tasks: tasks/power-shared.yml\n");
+        await Deno.writeTextFile(`${ansible}/tasks/power-shared.yml`, "- ansible.builtin.debug: { msg: one }\n");
+        await Deno.writeTextFile(`${ansible}/tasks/network.yml`, "- ansible.builtin.include_tasks: power-shared.yml\n");
+        assertEquals((await classify(ansible)).a.get("tasks/power-shared.yml"), ["network"]);
+        const first = await phaseCodeDigests(code);
+        await Deno.writeTextFile(`${ansible}/tasks/power-shared.yml`, "- ansible.builtin.debug: { msg: two }\n");
+        const now = await phaseCodeDigests(code);
+        assertEquals(phases.filter((phase) => now[phase] !== first[phase]), ["network"]);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+Deno.test("a new file in filter_plugins moves every phase digest", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        const first = await phaseCodeDigests(code);
+        await Deno.mkdir(`${code[0]}/filter_plugins`);
+        await Deno.writeTextFile(`${code[0]}/filter_plugins/orbit.py`, "class FilterModule: pass\n");
+        assertEquals((await classify(code[0])).b.includes("filter_plugins/orbit.py"), true);
+        const now = await phaseCodeDigests(code);
+        assertEquals(phases.filter((phase) => now[phase] === first[phase]), []);
     } finally { await Deno.remove(tree, { recursive: true }); }
 });

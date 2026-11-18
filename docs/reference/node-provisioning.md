@@ -668,9 +668,20 @@ The tasks that a phase selects in a converge playbook get the same check as the 
 
 The resolver does resolve four forms: a playbook-relative path that ends in a literal file name, a run-folder path, a loop item of a literal loop, and a fileglob item.
 
-A bundle file that no phase names is in every phase digest. Ansible can read a file without naming it, such as the collection pins in `requirements.yml`. So a change to a playbook of another Operation, or to any other file that no converge phase names, runs every phase again. Git ignores Python byte code, so it is in no digest.
+Each bundle file is in exactly one of four classes. The resolver checks them in this order:
 
-A test fails when a phase of the shipped bundle falls back to the whole bundle, or when a reached file includes a task file outside its phase's set (`swamp/tests/phase_code_test.ts`). It also fails when a file that no phase names, a templated include in a converge playbook, or a file in a copied folder does not move its digests. A role Operation's phases still read the whole bundle.
+| Class | Which files | In which phase digests |
+| --- | --- | --- |
+| Implicit | `ansible.cfg`, `build_vars.py`, the collection and Python pins (`requirements*.yml`, `requirements*.txt`, `galaxy.yml`), and every file under `library/`, `module_utils/`, a `*_plugins/` folder, `group_vars/`, `host_vars/`, `roles/`, `collections/`, `vars/`, `defaults/` or `meta/` | every phase |
+| Converge | a file that a phase walk reaches | each phase that reaches it |
+| Other Operation | a file that only the walk of another playbook reaches. Another playbook is any bundle YAML file that is a list of plays, other than the converge playbooks | none |
+| Unreached | a file that nothing reaches | every phase |
+
+Ansible may load an implicit file without a name, so it is in every phase. A converge phase loads any other file only by a name that its walk sees. A reference that the walk cannot name makes the phase read the whole bundle. So a file that only another Operation's playbooks reach cannot change a converge, and a change to such a playbook, such as `instance-container-power.yml`, runs no phase again.
+
+Ansible finds a relative `copy` or `template` source in `files/` or `templates/` only by its name, which the walk sees, so those folders are not implicit. Git ignores Python byte code, so it is in no digest.
+
+A test fails when a phase of the shipped bundle falls back to the whole bundle, or when a reached file includes a task file outside its phase's set (`swamp/tests/phase_code_test.ts`). It also fails when a file that nothing reaches, an implicit file, a templated include in a converge playbook, or a file in a copied folder does not move its digests, or when another Operation's playbook moves one. A role Operation's phases still read the whole bundle.
 
 The first converge of each Node after this rule shipped finds every code digest moved and runs every phase once.
 

@@ -3124,7 +3124,9 @@ Each Node has its own reason in the result, `converge_reasons`. The refresh only
 
 A digest cannot be read when the Node's intent cannot be built, when the read failed, or when the checkout gives no tree ID of the `swamp` files.
 
-`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). Each phase digest holds the `swamp/ansible` files that phase can load and every file that no phase names, so a changed converge task file runs only the phases that load it. A change to `ansible.cfg`, the converge playbooks, `build_vars.py` or a file that no converge phase names runs every phase ([phase code](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change)).
+`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change).
+
+Each phase digest holds the `swamp/ansible` files that phase can load, the implicit files and the files that nothing reaches. So a changed converge task file runs only the phases that load it, and a file that only another Operation's playbooks reach runs none. A change to `ansible.cfg`, the converge playbooks, `build_vars.py`, an implicit file or a file that nothing reaches runs every phase ([phase code](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change)).
 
 A change only to the five files excluded from the host digest does not make `nested-app-dev` due. It still counts for any part that reads those files, such as the nested Gateway's grants digest when the Club key is present. If no other work changes a nested disk and no other snapshot rule applies, `base` stays as it was.
 

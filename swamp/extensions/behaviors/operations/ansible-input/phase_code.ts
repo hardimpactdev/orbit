@@ -9,7 +9,11 @@ import { parse } from "jsr:@std/yaml@1.0.12";
  * file a reached file names: by relative path, by file name, or by module name for a Python file (Ansible modules, module_utils and
  * imported helpers). A directory a reached file names, such as a `copy` source or a fileglob, brings every file under it. Shared
  * infrastructure is in every phase. A reference the resolver cannot name, such as a templated include, makes that phase read the whole
- * bundle. A bundle file that no phase names is in every phase: Ansible may read it without a name, as it reads the collection pins.
+ * bundle.
+ *
+ * Every bundle file is in exactly one class (classify()): (b) implicit, a file any Ansible run may load without a name, is in every phase;
+ * (a) a file a phase walk reaches is in that phase; (c) a file only the walk of another Operation's playbook reaches is in no phase, since a
+ * converge phase loads a file only through a name its walk sees or through an implicit location; (d) a file nothing reaches is in every phase.
  */
 
 export const phases = ["agent", "software", "roles", "tools", "network"] as const;
@@ -28,8 +32,18 @@ export const entries: Record<Phase, string[]> = {
  * variables. Each phase also follows the names in the shared files. */
 export const shared = ["ansible.cfg", "build_vars.py", ...new Set(Object.values(entries).flat())];
 
-/** `unnamed` holds the bundle files that no phase names; each is in every phase that does not read the whole bundle. */
-export type Resolution = { files: string[]; whole: false; unnamed: string[] } | { files: null; whole: true; reason: string; unnamed: string[] };
+/** `everyPhase` holds the bundle files of classes (b) and (d); each is in every phase that does not read the whole bundle. */
+export type Resolution = { files: string[]; whole: false; everyPhase: string[] } | { files: null; whole: true; reason: string; everyPhase: string[] };
+
+/** The class of each bundle file: `phases` names the phases of a class (a) file. */
+export type Classes = { a: Map<string, Phase[]>; b: string[]; c: string[]; d: string[] };
+
+/** Class (b): what Ansible may load without a name. The configuration, the collection and Python pins, the role materializer, and every
+ * plugin, variable and role folder that Ansible searches by itself. A relative `copy` or `template` source is found in `files/` or
+ * `templates/` only by its name, which the walk sees, so those folders are not implicit. */
+const implicitFile = /^(ansible\.cfg|build_vars\.py|galaxy\.ya?ml|[^/]*requirements[^/]*\.(txt|ya?ml))$/;
+const implicitFolder = /(^|\/)(library|module_utils|[a-z]+_plugins|group_vars|host_vars|roles|collections|vars|defaults|meta)\//;
+export const implicit = (file: string) => implicitFile.test(file) || implicitFolder.test(file);
 
 type Bundle = { files: string[]; texts: Map<string, string>; byPath: Map<string, string[]>; byStem: Map<string, string[]>; byDir: Map<string, string[]> };
 
@@ -261,13 +275,58 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
         if (reason) for (let file = reason.split(":")[0]; file; file = via.get(file) ?? "") reason += ` <- ${via.get(file) || "root"}`;
         reach[phase] = { reached, reason };
     }
-    const named_ = new Set(phases.flatMap((phase) => [...reach[phase].reached]));
-    const unnamed = files.filter((file) => !named_.has(file));
+    const classes = classOf(files, texts, byPath, byStem, byDir, reach);
+    const everyPhase = [...classes.b, ...classes.d].sort();
     const result = {} as Record<Phase, Resolution>;
     for (const phase of phases) {
         const { reached, reason } = reach[phase];
-        result[phase] = reason ? { files: null, whole: true, reason, unnamed }
-            : { files: [...new Set([...reached, ...unnamed])].filter((file) => texts.has(file)).sort(), whole: false, unnamed };
+        result[phase] = reason ? { files: null, whole: true, reason, everyPhase }
+            : { files: [...new Set([...reached, ...everyPhase])].filter((file) => texts.has(file)).sort(), whole: false, everyPhase };
     }
+    lastClasses.set(root, classes);
     return result;
+}
+
+const lastClasses = new Map<string, Classes>();
+
+/** Each bundle file's class (see the module comment). */
+export async function classify(root: string): Promise<Classes> {
+    await resolvePhases(root);
+    return lastClasses.get(root)!;
+}
+
+/** The playbooks of the bundle other than the converge playbooks: every YAML file that is a list of plays. */
+function otherPlaybooks(files: string[], texts: Map<string, string>): string[] {
+    const converge = new Set(Object.values(entries).flat());
+    return files.filter((file) => {
+        if (!/\.ya?ml$/.test(file) || converge.has(file)) return false;
+        try {
+            const plays = parse(texts.get(file) ?? "");
+            return Array.isArray(plays) && plays.length > 0 && plays.every((play) =>
+                play !== null && typeof play === "object" && ("hosts" in play || "import_playbook" in play || "ansible.builtin.import_playbook" in play));
+        } catch {
+            return false;
+        }
+    });
+}
+
+function classOf(files: string[], texts: Map<string, string>, byPath: Map<string, string[]>, byStem: Map<string, string[]>, byDir: Map<string, string[]>,
+    reach: Record<Phase, { reached: Set<string> }>): Classes {
+    const b = files.filter(implicit);
+    const a = new Map<string, Phase[]>();
+    for (const file of files) {
+        if (implicit(file)) continue;
+        const reaching = phases.filter((phase) => reach[phase].reached.has(file));
+        if (reaching.length) a.set(file, reaching);
+    }
+    // The walk of every other playbook, with all its tasks: names only, as a phase walk follows them.
+    const other = new Set<string>();
+    const queue = otherPlaybooks(files, texts);
+    for (const file of queue) other.add(file);
+    while (queue.length) {
+        for (const name of named(texts.get(queue.shift()!) ?? "", byPath, byStem, byDir)) if (!other.has(name)) { other.add(name); queue.push(name); }
+    }
+    const c = files.filter((file) => !implicit(file) && !a.has(file) && other.has(file));
+    const d = files.filter((file) => !implicit(file) && !a.has(file) && !other.has(file));
+    return { a, b, c, d };
 }
