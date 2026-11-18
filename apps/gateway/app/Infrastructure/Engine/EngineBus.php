@@ -10,6 +10,7 @@ use App\Support\ValidatedData;
 use Basis\Nats\Client;
 use Basis\Nats\Configuration;
 use Basis\Nats\Message\Payload;
+use Carbon\Carbon;
 use Closure;
 use RuntimeException;
 use Throwable;
@@ -27,6 +28,10 @@ final class EngineBus implements MachineBus
 
     public const string EventsDeliver = 'orbit.gw.engine';
 
+    public const string Ack = '+ACK';
+
+    public const string Nak = '-NAK {"delay": 1000000000}';
+
     /** Seconds a connection may sit unused before its next use checks it first. */
     private const int IdleCheckAfter = 10;
 
@@ -37,6 +42,9 @@ final class EngineBus implements MachineBus
     /** @var array<int, true> */
     private array $nodes = [];
 
+    /** @param  (Closure(): Client)|null  $connector  Makes a connection; the default reads the Gateway's configuration. */
+    public function __construct(private readonly ?Closure $connector = null) {}
+
     /**
      * The connection for requests and publishes. The PHP client answers the server's pings only while it reads, so a
      * connection that sat unused in a long-running process (the engine consumer, a queue worker) may be closed by the
@@ -44,7 +52,7 @@ final class EngineBus implements MachineBus
      */
     public function client(): Client
     {
-        $now = microtime(true);
+        $now = Carbon::now()->getPreciseTimestamp(3) / 1000;
         if ($this->client !== null && $now - $this->usedAt > self::IdleCheckAfter) {
             try {
                 $alive = $this->client->ping();
@@ -57,7 +65,7 @@ final class EngineBus implements MachineBus
         }
         $this->usedAt = $now;
 
-        return $this->client ??= self::connect();
+        return $this->client ??= ($this->connector ?? self::connect(...))();
     }
 
     /** A connection of its own, so a subscription never shares a socket with publishes made inside its handler. */
@@ -174,27 +182,33 @@ final class EngineBus implements MachineBus
             'deliver_subject' => self::EventsDeliver, 'ack_policy' => 'explicit', 'ack_wait' => 30 * self::Second, 'max_deliver' => -1,
             'deliver_policy' => 'new']);
         $subscriber = self::connect();
-        $handle = static function (Closure $work) use ($subscriber): Closure {
-            return static function (Payload $payload, ?string $reply) use ($work, $subscriber): void {
-                try {
-                    $work($payload);
-                    $verdict = '+ACK';
-                } catch (Throwable $exception) {
-                    report($exception);
-                    $verdict = '-NAK {"delay": 1000000000}';
-                }
-                if ($reply !== null) {
-                    $subscriber->publish($reply, $verdict);
-                }
-            };
-        };
-        $subscriber->subscribe(self::ReceiptsDeliver, $handle(static fn (Payload $payload) => $receipt(self::decode($payload))));
-        $subscriber->subscribe(self::EventsDeliver, $handle(static fn (Payload $payload) => $event((string) $payload->subject, self::decode($payload))));
+        $subscriber->subscribe(self::ReceiptsDeliver, self::settle(static fn (Payload $payload) => $receipt(self::decode($payload))));
+        $subscriber->subscribe(self::EventsDeliver, self::settle(static fn (Payload $payload) => $event((string) $payload->subject, self::decode($payload))));
         while (true) {
-            // No automatic reply: the client would answer the acknowledgement subject with the handler's empty return value,
-            // which JetStream reads as an acknowledgement and which would override a negative one.
-            $subscriber->process(1, reply: false);
+            $subscriber->process(1);
         }
+    }
+
+    /**
+     * A message handler that returns its verdict: the client sends the return value as the one reply on the message's
+     * acknowledgement subject. Work that throws is negatively acknowledged and comes back after a second.
+     *
+     * @param  Closure(Payload): void  $work
+     * @return Closure(Payload): string
+     */
+    public static function settle(Closure $work): Closure
+    {
+        return static function (Payload $payload) use ($work): string {
+            try {
+                $work($payload);
+            } catch (Throwable $exception) {
+                report($exception);
+
+                return self::Nak;
+            }
+
+            return self::Ack;
+        };
     }
 
     /** @return array<string, mixed> */
