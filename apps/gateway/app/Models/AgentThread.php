@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $driver
  * @property string $runtime_key
  * @property string $external_id
+ * @property string|null $external_id_admission how a copy thread's external_id came to be (TaskCopyTurn::admission); null on rows made before it
  * @property string $role
  * @property string|null $model
  * @property string|null $effort
@@ -71,7 +72,7 @@ final class AgentThread extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'role', 'model', 'effort', 'provider_instance', 'questions', 'state', 'observation_version', 'observed_at', 'archived_at', 'archive_command_id', 'archive_attempts', 'archive_retry_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'cost_usd', 'lines_added', 'lines_deleted', 't3_input_tokens', 't3_cached_input_tokens', 't3_output_tokens', 't3_model_calls', 't3_peak_context_tokens', 't3_counted_total_processed_tokens', 't3_observed_total_processed_tokens', 't3_event_sequence', 't3_metrics_partial', 't3_metrics_initialized', 't3_metrics_collected_at', 't3_metrics_final_at', 't3_metrics_retry_at', 't3_metrics_attempts', 't3_metrics_activity_version', 't3_metrics_observed_activity_version'];
+    protected $fillable = ['task_group_id', 'task_id', 'node_id', 'driver', 'runtime_key', 'external_id', 'external_id_admission', 'role', 'model', 'effort', 'provider_instance', 'questions', 'state', 'observation_version', 'observed_at', 'archived_at', 'archive_command_id', 'archive_attempts', 'archive_retry_at', 'observation_error', 'error', 'tokens', 'input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens', 'cost_usd', 'lines_added', 'lines_deleted', 't3_input_tokens', 't3_cached_input_tokens', 't3_output_tokens', 't3_model_calls', 't3_peak_context_tokens', 't3_counted_total_processed_tokens', 't3_observed_total_processed_tokens', 't3_event_sequence', 't3_metrics_partial', 't3_metrics_initialized', 't3_metrics_collected_at', 't3_metrics_final_at', 't3_metrics_retry_at', 't3_metrics_attempts', 't3_metrics_activity_version', 't3_metrics_observed_activity_version'];
 
     /** An admitted unfinished turn is active even while its last observation says done. */
     public function activityState(): ?AgentThreadState
