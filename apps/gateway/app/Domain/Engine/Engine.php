@@ -46,21 +46,29 @@ final readonly class Engine
         $this->bus->publishStart($operation->id);
     }
 
-    /** A start event or a deadline from the `ENGINE` stream. */
+    /**
+     * A start event or a deadline from the `ENGINE` stream.
+     *
+     * @param  array<string, mixed>  $event
+     */
     public function onEvent(string $subject, array $event): void
     {
-        $operation = (int) ($event['operation'] ?? 0);
-        if ($operation > 0) {
+        $operation = $event['operation'] ?? null;
+        if (is_int($operation) && $operation > 0) {
             $this->advance($operation, $subject === 'orbit.engine.deadline');
         }
     }
 
-    /** A receipt from a Node's executor: `{node, line}`, the line's `operation` being `<id>:<step>`. */
+    /**
+     * A receipt from a Node's executor: `{node, line}`, the line's `operation` being `<id>:<step>`.
+     *
+     * @param  array<string, mixed>  $receipt
+     */
     public function onReceipt(array $receipt): void
     {
-        $line = is_array($receipt['line'] ?? null) ? $receipt['line'] : [];
-        $node = (int) ($receipt['node'] ?? 0);
-        if (preg_match('/\A(\d+):([A-Za-z0-9._-]{1,100})\z/D', (string) ($line['operation'] ?? ''), $match) !== 1) {
+        $line = ValidatedData::object($receipt['line'] ?? []);
+        $node = is_string($receipt['node'] ?? null) && ctype_digit($receipt['node']) ? (int) $receipt['node'] : ($receipt['node'] ?? 0);
+        if (! is_int($node) || preg_match('/\A(\d+):([A-Za-z0-9._-]{1,100})\z/D', self::text($line['operation'] ?? null), $match) !== 1) {
             return; // Not an engine order's receipt.
         }
         $operationId = (int) $match[1];
@@ -89,6 +97,11 @@ final readonly class Engine
         return ($operation->state['swamp_run_id'] ?? null) === EngineRun::runIdOf($operation->id);
     }
 
+    private static function text(mixed $value): string
+    {
+        return is_string($value) ? $value : '';
+    }
+
     public static function nowMs(): int
     {
         return (int) Carbon::now()->getTimestampMs();
@@ -106,12 +119,12 @@ final readonly class Engine
 
             return;
         }
-        $status = (string) ($line['status'] ?? '');
-        $reason = (string) ($line['reason'] ?? '');
+        $status = self::text($line['status'] ?? null);
+        $reason = self::text($line['reason'] ?? null);
         match (true) {
             in_array($status, ['done', 'applied', 'output'], true) => $step->update(['status' => 'done', 'done_ms' => self::nowMs(),
                 'output' => match ($status) {
-                    'applied' => (string) (int) ($line['changes'] ?? 0),
+                    'applied' => (string) (is_int($line['changes'] ?? null) ? $line['changes'] : 0),
                     'output' => is_string($line['stdout'] ?? null) ? $line['stdout'] : null,
                     default => null,
                 }]),
@@ -120,7 +133,7 @@ final readonly class Engine
             // The order waited longer than its expiry: the next transition sends a new one.
             $status === 'refused' && $reason === 'expired' => $step->update(['status' => 'pending']),
             in_array($status, ['failed', 'partial', 'refused'], true) => $step->update(['status' => 'failed', 'done_ms' => self::nowMs(),
-                'error_code' => mb_strcut((string) ($line['code'] ?? $line['reason'] ?? 'executor.failed'), 0, 128)]),
+                'error_code' => mb_strcut(self::text($line['code'] ?? null) ?: ($reason ?: 'executor.failed'), 0, 128)]),
             default => null,
         };
     }
