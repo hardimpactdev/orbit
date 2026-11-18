@@ -95,8 +95,8 @@ Deno.test("a question Orbit could not read is not stopped and not over; a stop t
 
 Deno.test("a run that ends other than done or asking fails the turn with T3's status", () => {
     assertEquals(turn(1, started("failed", "api_error_529")), {
-        state: "failed", error: "T3 run failed: HTTP 529, api_error", error_code: "tasks.turn_failed", ended: true, t3_thread_id: thread, run_id: run, ...named, transcript,
-        diagnostic: { http_status: 529, retry_after_seconds: null, provider_error: "api_error" },
+        state: "failed", error: "T3 run failed: HTTP 529", error_code: "tasks.turn_failed", ended: true, t3_thread_id: thread, run_id: run, ...named, transcript,
+        diagnostic: { http_status: 529, retry_after_seconds: null, provider_error: null },
     });
     // Without a run T3 prints only the thread, with no status and no run id.
     assertEquals(turn(0, JSON.stringify({ threadId: thread, projectId: "p", runId: null })).error, "T3 started no run");
@@ -157,10 +157,11 @@ Deno.test("a continued turn reads like a new one, and one whose thread T3 does n
     }
 });
 
-Deno.test("a new thread whose model T3's catalog does not offer is tasks.copy_turn_model_unoffered with the offered slugs, and nothing launched", () => {
+Deno.test("a new thread whose model T3's catalog does not offer is tasks.copy_turn_model_unoffered, naming no catalog entry, and nothing launched", () => {
     const offered = ["claude-opus-5-5", "claude-sonnet-5-5"];
     assertEquals(shapeTurn({ ...none, model: { model: "claude-opus-9", offered, accepted: false }, launched: false, start: null, read: null }), {
-        state: "failed", error: "The copy's T3 does not offer the model claude-opus-9; it offers: claude-opus-5-5, claude-sonnet-5-5.",
+        // The catalog's entries stay in the run folder: the error names none of them.
+        state: "failed", error: "The copy's T3 does not offer the thread's model.",
         error_code: "tasks.copy_turn_model_unoffered", ended: true, t3_thread_id: null, run_id: null, ...unlaunched, transcript: [],
     });
     // An offered model, or a catalog the phase could not read, runs the turn.
@@ -210,7 +211,7 @@ Deno.test("a detached reviewer checkout without a restore holds the group whatev
     // (B) The run failed and the restore could not reset the checkout: the turn is unrestored, not only failed, and holds the group.
     const failed = turn(1, started("failed", "api_error_529"), { review: ready, detached: true, restore: { restored: false } });
     assertEquals([failed.state, failed.error_code, failed.ended, failed.error],
-        ["failed", "tasks.copy_review_unrestored", false, "The checkout was not restored after the reviewer's turn. The run: T3 run failed: HTTP 529, api_error"]);
+        ["failed", "tasks.copy_review_unrestored", false, "The checkout was not restored after the reviewer's turn. The run: T3 run failed: HTTP 529"]);
     // (C) A cancel cut the phase after the detach and before the launch mark: nothing ran, but nothing was restored either.
     const cut = shapeTurn({ ...none, review: null, detached: true, launched: false, start: null, read: null });
     assertEquals([cut.state, cut.error_code, cut.ended], ["failed", "tasks.copy_review_unrestored", false]);
@@ -296,7 +297,7 @@ Deno.test("the method reads the stop of a cut run and the runs the settle stoppe
     }
 });
 
-Deno.test("the method reads the model evidence: a model the catalog does not offer fails with what it offers", async () => {
+Deno.test("the method reads the model evidence: a model the catalog does not offer fails without naming the catalog", async () => {
     const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
     Deno.mkdirSync(folder);
     try {
@@ -304,7 +305,7 @@ Deno.test("the method reads the model evidence: a model the catalog does not off
         Deno.writeTextFileSync(`${folder}/model.json`, JSON.stringify({ model: "claude-opus-9", offered: ["claude-opus-5-5"], accepted: false }));
         const refused = await behavior.methods.result.execute({ folder }, context);
         assertEquals([refused.successful, refused.turn.error_code, refused.turn.ended], [false, "tasks.copy_turn_model_unoffered", true]);
-        assertEquals(refused.turn.error, "The copy's T3 does not offer the model claude-opus-9; it offers: claude-opus-5-5.");
+        assertEquals(refused.turn.error, "The copy's T3 does not offer the thread's model.");
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }
@@ -358,14 +359,24 @@ Deno.test("a failure keeps no text of T3 or the provider, only a diagnostic of k
     // The prompt "Acquire Juniper" quoted whole in a provider's error: none of it reaches the result.
     const quoted = turn(1, started("failed", "Invalid input: Acquire Juniper"));
     assertEquals([quoted.error, quoted.error_code, quoted.diagnostic], ["T3 run failed", "tasks.turn_failed", undefined]);
-    // A rate limit keeps its status, its wait and its type, whatever the prompt said.
-    const limited = turn(1, started("failed", "rate_limit_error: HTTP 429 Too Many Requests; retry after 37 seconds. Prompt: HTTP 500 and more"));
+    // A rate limit keeps its status, its wait in seconds and the type of its JSON error object.
+    const limited = turn(1, started("failed", 'API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"Acquire Juniper"}} retry after 37 seconds'));
     assertEquals([limited.error, limited.diagnostic], ["T3 run failed: HTTP 429, retry after 37 seconds, rate_limit_error",
         { http_status: 429, retry_after_seconds: 37, provider_error: "rate_limit_error" }]);
-    assertEquals(turn(1, started("failed", "api_error_529")).diagnostic, { http_status: 529, retry_after_seconds: null, provider_error: "api_error" });
+    // A type word in free text, such as quoted input, names no type; minutes count as seconds, a bare number not at all.
+    assertEquals(turn(1, started("failed", 'HTTP 429 rate_limit_error; input was "api_error"; retry after 2 minutes')).diagnostic,
+        { http_status: 429, retry_after_seconds: 120, provider_error: null });
+    assertEquals(turn(1, started("failed", "HTTP 503; retry after 30")).diagnostic, { http_status: 503, retry_after_seconds: null, provider_error: null });
     // A refused start's stderr is read the same way.
     const refused = shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "", error: "T3 could not create the thread: Acquire Juniper (status 400)" }, read: null });
     assertEquals([refused.error, refused.diagnostic], ["T3 did not report the turn's end (exit 1): HTTP 400.", { http_status: 400, retry_after_seconds: null, provider_error: null }]);
-    // A status outside T3's vocabulary is not named either.
-    assertEquals(turn(1, JSON.stringify({ threadId: thread, runId: run, status: "Acquire Juniper", error: null })).error, "T3 run ended");
+});
+
+Deno.test("a run status outside T3's known statuses is not named and names no end", () => {
+    for (const status of ["acquire_juniper", "Acquire Juniper"]) {
+        const unknown = turn(1, JSON.stringify({ threadId: thread, runId: run, status, error: null }), { read: { ...read, status: "running" } });
+        assertEquals([unknown.error, unknown.error_code, unknown.ended], ["T3 reported a run status Orbit does not know", "tasks.turn_failed", false]);
+    }
+    // A known status that ends a run is named and ends it.
+    assertEquals([turn(1, started("cancelled"), { read: { ...read, status: "running" } }).ended], [true]);
 });

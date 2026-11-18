@@ -10,7 +10,7 @@ cases = [
   "a wait that the bound killed and whose run the phase stopped is over and holds nothing, still failing tasks.turn_timeout",
   "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
   "a continued turn reads like a new one, and one whose thread T3 does not hold is tasks.copy_thread_missing with nothing launched",
-  "a new thread whose model T3's catalog does not offer is tasks.copy_turn_model_unoffered with the offered slugs, and nothing launched",
+  "a new thread whose model T3's catalog does not offer is tasks.copy_turn_model_unoffered, naming no catalog entry, and nothing launched",
   "a start T3 refused on stderr keeps none of T3's message in the result",
   "a continued turn whose thread list failed or printed no JSON is tasks.copy_turn_failed, not a missing thread",
   "a reviewer turn fails when its checkout could not be put on the candidate or was not restored after a run T3 ended",
@@ -19,12 +19,13 @@ cases = [
   "transcript text is redacted and bounded to the newest entries",
   "the method reads each evidence file on its own, so an oversized read keeps the start's end",
   "the method reads the stop of a cut run and the runs the settle stopped",
-  "the method reads the model evidence: a model the catalog does not offer fails with what it offers",
+  "the method reads the model evidence: a model the catalog does not offer fails without naming the catalog",
   "an answered question whose resolution cannot be confirmed fails before launch and holds no run",
   "the method reads the answered evidence and refuses an unconfirmed resolution before launch",
   "a question whose owner run Orbit could not read is not stored and its run is not stopped or over",
   "a start that printed no status names no end: with no run and a queued readback the turn is possibly sent and holds",
   "a failure keeps no text of T3 or the provider, only a diagnostic of known shapes",
+  "a run status outside T3's known statuses is not named and names no end",
 ]
 file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
 cost = 2

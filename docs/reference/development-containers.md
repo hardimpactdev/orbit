@@ -2205,7 +2205,11 @@ The Operation's result names:
 - one fixed outcome code;
 - the reviewer's checkout and restore, as [Calls](#calls) describes.
 
-The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`. The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds a fixed sentence of its code and a `diagnostic` of known shapes: `http_status`, `retry_after_seconds` and `provider_error`, one of a fixed list of provider error types. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's.
+The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`.
+
+The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds a fixed sentence of its code and a `diagnostic` of known shapes: `http_status`, `retry_after_seconds` only when the text gives the unit, and `provider_error`, taken only from the `type` of a JSON error object and one of a fixed list. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
+
+A T3 run status outside T3's known statuses is never named and names no end. A question without its owner run is never stored. The turn records `tasks.copy_question_unread` and `ended: false`, so the next turn settles it. `tasks.copy_review_unrestored` outranks `tasks.copy_question_unread`: an unrestored reviewer turn keeps its code.
 
 The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run: the folder is mode `0700`, `intent.json` is mode `0600`, and its cleanup removes the folder. The RPC worker drops that staging with the CLI calls.
 

@@ -454,7 +454,7 @@ Deno.test({ name: "an uncatalogued Codex model needs provider confirmation befor
         assertEquals([done.ok, done.launched, done.result.error_code], [accepted, accepted, errorCode]);
         assertEquals(done.calls.filter((call) => call.args.includes("/usr/bin/python3")).length, 1);
         assertEquals(git(done.calls), []);
-        if (probe === "rejected") assertEquals(done.result.error, `The copy's Codex provider rejected the model ${model}.`);
+        if (probe === "rejected") assertEquals(done.result.error, "The copy's Codex provider rejected the thread's model.");
     }
     const model = "gpt-6.2-sol-typo";
     for (const settings of [{ T3_SETTINGS: "unreadable", T3_CODEX_DRIVER: "codex" }, { T3_SETTINGS: "readable", T3_CODEX_DRIVER: "   " }]) {

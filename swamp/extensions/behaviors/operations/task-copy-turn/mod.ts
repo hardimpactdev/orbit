@@ -3,7 +3,6 @@ import { redactText } from "../../_lib/public_output.ts";
 
 /** The longest public transcript of one turn, as for a task VM turn. */
 const TranscriptBytes = 262144;
-const ErrorChars = 2000;
 const StartBytes = 16777216;
 const ReadBytes = 16777216;
 const AskBytes = 1048576;
@@ -65,6 +64,8 @@ const Read = z.object({
 }).strict();
 /** Thread states in which T3's run may still change the checkout. */
 const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]);
+/** T3's run statuses that end a run. A run status in neither set is unknown: it names no end and is never echoed. */
+const RunOver = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 export type Evidence = {
     settle?: z.infer<typeof Settle> | null;
     resumed: z.infer<typeof Resumed> | null;
@@ -147,12 +148,29 @@ export type Turn = z.infer<typeof Turn>;
  * which no redaction catches, so it stays in the private run folder (docs/reference/development-containers.md#turn-evidence).
  */
 export function diagnose(text: string): Diagnostic | null {
-    const status = text.match(/\bHTTP[ /]?(?:\d(?:\.\d)? )?([1-5]\d\d)\b/i) ?? text.match(/\bstatus(?: code)?[:= ]+([1-5]\d\d)\b/i)
+    const status = text.match(/\bHTTP[ /]?(?:\d(?:\.\d)? )?([1-5]\d\d)\b/i) ?? text.match(/\bstatus(?: code)?[:= ]+([1-5]\d\d)\b/i) ?? text.match(/\bAPI Error:? ([1-5]\d\d)\b/)
         ?? text.match(/\bapi_error_([1-5]\d\d)\b/);
-    const retry = text.match(/\bretry[- _]after[:= ]*(\d{1,5})\b/i);
-    const type = ProviderErrors.find((name) => new RegExp(`\\b${name}(?:_\\d{3})?\\b`).test(text)) ?? null;
-    const diagnostic = { http_status: status ? Number(status[1]) : null, retry_after_seconds: retry ? Math.min(Number(retry[1]), 86400) : null, provider_error: type };
+    // A wait counts only with its unit: seconds as they are, minutes times 60. A bare number is omitted.
+    const retry = text.match(/\bretry[- _]after[:= ]*(\d{1,5}) ?(seconds?|secs?|s|minutes?|mins?)\b/i);
+    const seconds = retry === null ? null : Math.min(Number(retry[1]) * (retry[2].toLowerCase().startsWith("m") ? 60 : 1), 86400);
+    // The provider's error type only from its JSON error object, never from a word anywhere in the text, which may quote input.
+    const type = structuredType(text);
+    const diagnostic = { http_status: status ? Number(status[1]) : null, retry_after_seconds: seconds, provider_error: type };
     return Object.values(diagnostic).every((value) => value === null) ? null : diagnostic;
+}
+
+/** The `type` of the JSON error object the text carries, as Anthropic's API and Codex print it, when it is a known provider error type. */
+function structuredType(text: string): string | null {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    try {
+        const body = JSON.parse(text.slice(start, end + 1));
+        const type = body?.error?.type ?? (body?.type !== "error" ? body?.type : null);
+        return typeof type === "string" && ProviderErrors.includes(type) ? type : null;
+    } catch {
+        return null;
+    }
 }
 
 /** A diagnostic in words, after a fixed message. */
@@ -220,7 +238,7 @@ function shapeRun(evidence: Evidence): Turn {
     // checkout.
     const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
     // A start that printed no status names no end: its run may be queued.
-    const ended = !evidence.launched || (started?.status !== undefined && started.status !== "waiting") || cutEnded
+    const ended = !evidence.launched || (started?.status !== undefined && RunOver.has(started.status)) || cutEnded
         || (listed !== null && (listed.found === 0 || (listed.found === 1 && listed.status !== null && !Active.has(listed.status))));
     const base = {
         ended,
@@ -245,7 +263,8 @@ function shapeRun(evidence: Evidence): Turn {
     if (started !== null) {
         const diagnostic = diagnose(started.error ?? "");
         // T3's run status is one word of its own vocabulary; anything else is not named.
-        const status = started.status === undefined ? "T3 started no run" : /^[a-z_]{1,32}$/.test(started.status) ? `T3 run ${started.status}` : "T3 run ended";
+        const status = started.status === undefined ? "T3 started no run" : RunOver.has(started.status) || Active.has(started.status)
+            ? `T3 run ${started.status}` : "T3 reported a run status Orbit does not know";
         return { ...base, state: "failed", error: `${status}${said(diagnostic)}`, error_code: "tasks.turn_failed", ...(diagnostic === null ? {} : { diagnostic }) };
     }
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
@@ -254,17 +273,17 @@ function shapeRun(evidence: Evidence): Turn {
     }
     if (evidence.model !== null && !evidence.model.accepted) {
         if (evidence.model.driver_unresolved) {
-            return { ...base, state: "failed", error: `The copy's T3 provider instance could not be resolved for model ${evidence.model.model}.`,
+            return { ...base, state: "failed", error: "The copy's T3 provider instance could not be resolved for the thread's model.",
                 error_code: "tasks.copy_turn_model_unverified" };
         }
         if (evidence.model.probe === "rejected") {
-            return { ...base, state: "failed", error: `The copy's Codex provider rejected the model ${evidence.model.model}.`, error_code: "tasks.copy_turn_model_unoffered" };
+            return { ...base, state: "failed", error: "The copy's Codex provider rejected the thread's model.", error_code: "tasks.copy_turn_model_unoffered" };
         }
         if (evidence.model.probe === "unavailable") {
-            return { ...base, state: "failed", error: `The copy's Codex provider could not verify the model ${evidence.model.model}.`, error_code: "tasks.copy_turn_model_unverified" };
+            return { ...base, state: "failed", error: "The copy's Codex provider could not verify the thread's model.", error_code: "tasks.copy_turn_model_unverified" };
         }
-        const offered = (evidence.model.offered ?? []).join(", ").slice(0, ErrorChars);
-        return { ...base, state: "failed", error: `The copy's T3 does not offer the model ${evidence.model.model}; it offers: ${offered}.`, error_code: "tasks.copy_turn_model_unoffered" };
+        // The catalog's entries stay in the run folder's evidence: the error names none of them.
+        return { ...base, state: "failed", error: "The copy's T3 does not offer the thread's model.", error_code: "tasks.copy_turn_model_unoffered" };
     }
     if (evidence.resumed !== null && evidence.resumed.list_exit !== 0) {
         const exit = evidence.resumed.list_exit === null ? "no JSON" : `exit ${evidence.resumed.list_exit}`;

@@ -3083,9 +3083,13 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
 
         expect($asked->status)->toBe(OperationStatus::Failed)->and($asked->error_code)->toBe('tasks.copy_question_unread')
             ->and($asked->result['questions'])->toBe([])
-            ->and(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull()
-            // The next turn has nothing to answer.
-            ->and(copyTurn($group, ['prompt' => 'Blue.'])->input['turn']['answered'])->toBe([]);
+            // Its run may still wait on that request: the turn holds the group, and the next turn settles it.
+            ->and($asked->result['ended'])->toBeFalse()
+            ->and(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull();
+        // The next turn settles it first and has nothing to answer.
+        $next = copyTurn($group, ['prompt' => 'Blue.']);
+        expect(copyTurnSettle($next))->toBe([['operation_id' => $asked->id, 'title' => $asked->input['turn']['title'], 'branch' => null]])
+            ->and($next->input['turn']['answered'])->toBe([]);
     });
 
     it('matches spent request IDs as strings, in any order', function (): void {
@@ -3099,5 +3103,31 @@ describe('the turn state a copy turn keeps for the task-copy RPC', function (): 
             'ended' => true, 't3_thread_id' => null, 'run_id' => null, 'sent' => false, 'launched' => false, 'spent' => ['1', '01'], 'transcript' => []]);
 
         expect(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull();
+    });
+
+    it('keeps an unrestored reviewer\'s code over an unread ownerless question', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $older = [...copyTurnAsked('mcp:1'), 'state' => 'asking_for_input', 'error' => 'Unrestored.', 'error_code' => 'tasks.copy_review_unrestored', 'ended' => false];
+        $older['questions'] = array_map(static fn (array $question): array => Arr::except($question, 'run_id'), $older['questions']);
+
+        $reviewer = copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'failed', $older);
+
+        expect($reviewer->error_code)->toBe('tasks.copy_review_unrestored')->and($reviewer->result['error_code'])->toBe('tasks.copy_review_unrestored')
+            ->and($reviewer->result['questions'])->toBe([])->and($reviewer->result['ended'])->toBeFalse();
+    });
+
+    it('records a code outside the copy turn\'s codes as tasks.copy_turn_failed', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+
+        $ended = copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'Acquire Juniper', 'error_code' => 'tasks.acquire_juniper', 'ended' => true,
+            't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'launched' => true, 'transcript' => []]);
+
+        expect($ended->error_code)->toBe('tasks.copy_turn_failed')->and($ended->result['error_code'])->toBe('tasks.copy_turn_failed')
+            ->and($ended->result['error'])->toBe(TaskCopyTurnProjection::Errors['tasks.copy_turn_failed'])
+            ->and(json_encode($ended->result, JSON_THROW_ON_ERROR))->not->toContain('juniper')->not->toContain('Juniper');
     });
 });

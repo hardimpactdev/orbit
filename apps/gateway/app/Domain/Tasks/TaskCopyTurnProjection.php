@@ -71,10 +71,13 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
                 $result['effort'] = $thread->effort;
                 $result['agent_id'] = $thread->id;
                 $result['reply'] = self::reply($operation->target_id, $thread->id, $result['transcript'] ?? null);
-                // A question without the run that owns it could never be cancelled exactly: it is not stored, and the turn did not read it.
+                // A question without the run that owns it could never be cancelled exactly: it is not stored, the turn did not read it, and
+                // its run may still wait, so the turn holds the group until the next turn settles it. An unrestored reviewer checkout outranks
+                // the unread question: its code stays.
                 if (array_filter(is_array($result['questions'] ?? null) ? $result['questions'] : [],
                     static fn (mixed $question): bool => ! is_array($question) || ! is_string($question['run_id'] ?? null) || $question['run_id'] === '') !== []) {
-                    $result = [...$result, 'questions' => [], 'error_code' => 'tasks.copy_question_unread', 'error' => ''];
+                    $result = [...$result, 'questions' => [], 'ended' => false, 'error' => '',
+                        'error_code' => ($result['error_code'] ?? null) === 'tasks.copy_review_unrestored' ? 'tasks.copy_review_unrestored' : 'tasks.copy_question_unread'];
                     $data['status'] = ($data['status'] ?? null) === 'succeeded' ? 'failed' : ($data['status'] ?? null);
                 }
                 $result = [...array_diff_key($result, ['diagnostic' => true]), ...self::error($result)];
@@ -163,22 +166,24 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
      * the worker's own text.
      *
      * @param  array<string, mixed>  $result
-     * @return array{error: string|null, diagnostic?: array{http_status: int|null, retry_after_seconds: int|null, provider_error: string|null}}
+     *                                        A code outside Errors, or an error with no code, is `tasks.copy_turn_failed`.
+     * @return array{error: string|null, error_code?: string, diagnostic?: array{http_status: int|null, retry_after_seconds: int|null, provider_error: string|null}}
      */
     private static function error(array $result): array
     {
         if (($result['error'] ?? null) === null && ! isset($result['error_code'])) {
             return ['error' => null];
         }
-        $code = is_string($result['error_code'] ?? null) ? $result['error_code'] : null;
+        $code = is_string($result['error_code'] ?? null) && array_key_exists($result['error_code'], self::Errors) ? $result['error_code'] : 'tasks.copy_turn_failed';
         $raw = is_array($result['diagnostic'] ?? null) ? $result['diagnostic'] : [];
         $status = is_int($raw['http_status'] ?? null) && $raw['http_status'] >= 100 && $raw['http_status'] <= 599 ? $raw['http_status'] : null;
         $retry = is_int($raw['retry_after_seconds'] ?? null) && $raw['retry_after_seconds'] >= 0 && $raw['retry_after_seconds'] <= 86400 ? $raw['retry_after_seconds'] : null;
         $type = in_array($raw['provider_error'] ?? null, self::ProviderErrors, true) ? ValidatedData::string($raw['provider_error']) : null;
         $said = array_filter([$status === null ? null : 'HTTP '.$status, $retry === null ? null : "retry after {$retry} seconds", $type]);
-        $error = ($code === null ? 'The copy turn failed.' : self::Errors[$code] ?? 'The copy turn failed.').($said === [] ? '' : ' ('.implode(', ', $said).')');
+        $error = self::Errors[$code].($said === [] ? '' : ' ('.implode(', ', $said).')');
 
-        return $said === [] ? ['error' => $error] : ['error' => $error, 'diagnostic' => ['http_status' => $status, 'retry_after_seconds' => $retry, 'provider_error' => $type]];
+        return ['error' => $error, 'error_code' => $code,
+            ...($said === [] ? [] : ['diagnostic' => ['http_status' => $status, 'retry_after_seconds' => $retry, 'provider_error' => $type]])];
     }
 
     /**
