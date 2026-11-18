@@ -1,0 +1,36 @@
+file = "swamp/tests/gateway_release_host_rollback_test.py"
+cost = 104
+inputs = [
+  "bin/gateway-container-move",
+  "bin/gateway-container-rollback",
+  "bin/gateway-container-site",
+  "bin/gateway-release-check",
+  "bin/gateway-release-phase",
+  "bin/gateway-rollback",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-release-drain.sh",
+  "swamp/scripts/gateway-release-host-check.py",
+  "swamp/scripts/gateway-release-horizons.py",
+  "swamp/scripts/gateway-release-switch.sh",
+  "swamp/workflows/workflow-gateway-release-activate.yaml",
+  "swamp/tests/gateway_release_recovery_test.py",
+]
+cases = [
+  "test_host_rollback_refuses_broken_listener_before_drain",
+  "test_host_rollback_refuses_wrong_served_commit_before_drain",
+  "test_host_rollback_restores_container_on_public_failure",
+  "test_host_rollback_recovers_before_drain",
+  "test_host_rollback_recovers_after_drain_before_switch",
+  "test_host_rollback_recovers_after_switch_before_verification",
+  "test_host_rollback_completes_cleanup_after_verified_switch",
+  "test_ordinary_fpm_release_and_rollback",
+]
+[case_costs]
+"test_host_rollback_refuses_broken_listener_before_drain" = 10
+"test_host_rollback_refuses_wrong_served_commit_before_drain" = 10
+"test_host_rollback_restores_container_on_public_failure" = 16
+"test_host_rollback_recovers_before_drain" = 14
+"test_host_rollback_recovers_after_drain_before_switch" = 14
+"test_host_rollback_recovers_after_switch_before_verification" = 18
+"test_host_rollback_completes_cleanup_after_verified_switch" = 16
+"test_ordinary_fpm_release_and_rollback" = 6

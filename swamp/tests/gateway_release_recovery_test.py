@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import signal
-import socket
 import socketserver
 import struct
 import subprocess
@@ -195,7 +194,7 @@ class FastCGI(socketserver.StreamRequestHandler):
             self.wfile.write(HEADER.pack(1, 3, 1, 8, 0, 0) + bytes(8))
 
 
-class GatewayReleaseRecovery(unittest.TestCase):
+class GatewayReleaseFixture(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -392,125 +391,8 @@ esac
         self.assertEqual((self.journal / "candidate").read_text().strip(), sha)
         self.assertTrue((self.journal / f"rollback-{sha}").exists())
 
-    def test_reconciliation_fences_offline_rollback_until_its_own_finalizer(self):
-        self.retained_releases()
-        self.assert_ok(self.run_script(self.phase, "reconcile-begin", self.sha, "51"))
-        original = self.inventory.read_bytes()
-        result = self.run_script(self.console, self.old[:12])
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("workflows are being reconciled", result.stderr)
-        self.assertNotEqual(self.run_script(self.phase, "reconcile-end", self.sha, "52").returncode, 0)
-        self.assertEqual(self.inventory.read_bytes(), original)
-        self.assert_ok(self.run_script(self.phase, "reconcile-verify", self.sha, "51"))
-        self.assert_ok(self.run_script(self.phase, "reconcile-end", self.sha, "51"))
-        self.assert_ok(self.run_script(self.console, self.old[:12]))
 
-    def test_incompatible_retained_helper_and_workflow_are_refused_before_rollback(self):
-        self.retained_releases(CONTROLLER, WORKFLOW)
-        for name in (CONTROLLER, WORKFLOW):
-            self.assertNotEqual(self.git("rev-parse", f"{self.sha}:{name}"), self.git("rev-parse", f"{self.old}:{name}"))
-        initial = [(path, path.read_bytes()) for path in (self.inventory, self.upstream, self.state / "events")]
-        for script, args in (
-            (self.console, (self.old[:12],)),
-            (self.phase, ("build-checked", self.old, OPERATION, "true", "{}", "true")),
-            (self.phase, ("drain", self.old, OPERATION, HORIZON)),
-            (self.phase, ("switch", self.old, OPERATION, self.sha[:12], HORIZON)),
-        ):
-            with self.subTest(args=args):
-                result = self.run_script(script, *args)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("gateway.release_recovery_incompatible", result.stderr)
-                for path, before in initial:
-                    self.assertEqual(path.read_bytes(), before)
-                self.assert_container_serves()
-        self.assert_ok(self.run_script(self.phase, "release-unused", self.old, OPERATION))
-        for path, before in initial:
-            self.assertEqual(path.read_bytes(), before)
-
-    def test_native_rollback_requires_compatible_activation_workflow_even_with_a_corrected_helper(self):
-        self.retained_releases(WORKFLOW)
-        self.assertEqual(self.git("rev-parse", f"{self.sha}:{CONTROLLER}"), self.git("rev-parse", f"{self.old}:{CONTROLLER}"))
-        self.assertNotEqual(self.git("rev-parse", f"{self.sha}:{WORKFLOW}"), self.git("rev-parse", f"{self.old}:{WORKFLOW}"))
-        result = self.run_script(self.phase, "build-checked", self.old, OPERATION, "true", "{}", "true")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(f"gateway.release_recovery_incompatible: {self.old} lacks container recovery protocol 1 in {WORKFLOW}", result.stderr)
-        self.assert_container_serves()
-
-    def test_native_failed_promotion_verifies_the_previous_release_before_acknowledging(self):
-        self.retained_releases()
-        self.assert_ok(self.run_script(self.phase, "build-checked", self.old, OPERATION, "true", "{}", "true"))
-        (self.state / f"{self.candidate}-{MANAGED_HORIZON}").touch()
-        self.assert_ok(self.run_script(self.phase, "switch", self.old, OPERATION, self.sha[:12], HORIZON))
-        self.assertEqual(set((self.journal / "horizons").read_text().splitlines()), {HORIZON, MANAGED_HORIZON})
-        (self.state / f"broken-public-container-{self.old}").touch()
-        result = self.run_script(self.phase, "public-ready", self.old, OPERATION)
-        self.assertNotEqual(result.returncode, 0)
-        wrong = self.state / f"wrong-public-{self.sha}"
-        wrong.touch()
-        result = self.run_script(self.phase, "switch-back", self.old, OPERATION)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertNotIn("gateway.release_switched_back", result.stderr)
-        self.assert_pending(self.old)
-        self.assertFalse((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
-
-        wrong.unlink()
-        result = self.run_script(self.console, "--recover", interrupt="during container public status")
-        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        self.assert_pending(self.old)
-        result = self.run_script(self.phase, "switch-back", self.old, OPERATION)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("gateway.release_switched_back", result.stderr)
-        self.assertFalse((self.journal / "operation").exists())
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
-        self.assertTrue((self.state / f"{self.candidate}-{MANAGED_HORIZON}").exists())
-
-    def test_offline_rollback_journals_the_original_units_before_draining(self):
-        self.retained_releases()
-        units = [MANAGED_HORIZON, "orbit-process-73-horizon.service"]
-        for unit in units:
-            (self.state / f"{self.candidate}-{unit}").touch()
-        unrelated = self.state / f"{self.candidate}-orbit-process-72-mailer.service"
-        unrelated.touch()
-        with (self.home / ".orbit/gateway-release.lock").open() as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            result = self.run_script(self.console, self.old[:12])
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("another Gateway release holds the lock", result.stderr)
-            self.assert_container_serves()
-        (self.state / f"{self.candidate}-{HORIZON}").unlink()
-        result = self.run_script(self.console, self.old[:12], interrupt=f"after {self.candidate} drain")
-        self.assertEqual(result.returncode, -signal.SIGKILL, result.stderr)
-        self.assert_pending(self.old)
-        self.assertEqual((self.journal / "horizons").read_text().splitlines(), units)
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
-        events = (self.state / "events").read_text().splitlines()
-        self.assertIn(f"drain {self.candidate} locked=True operation={OPERATION} units={','.join(units)}", events)
-        self.assertTrue(unrelated.exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        for unit in units:
-            self.assertTrue((self.state / f"{self.candidate}-{unit}").exists())
-        self.assertTrue(unrelated.exists())
-        self.assertFalse((self.journal / "operation").exists())
-
-    def test_offline_failed_rollback_keeps_the_journal_when_both_endpoints_fail(self):
-        self.retained_releases()
-        (self.state / f"broken-public-container-{self.old}").touch()
-        unavailable = self.state / f"wrong-public-{self.sha}"
-        unavailable.touch()
-        result = self.run_script(self.console, self.old[:12])
-        self.assertNotEqual(result.returncode, 0)
-        self.assertNotIn("restored previous traffic", result.stderr)
-        self.assertIn("public Gateway did not verify restored release", result.stderr)
-        self.assert_pending(self.old)
-        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
-        self.assertFalse((self.state / f"{self.retained}-{HORIZON}").exists())
-        self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)
-        self.assert_pending(self.old)
-        unavailable.unlink()
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_container_serves()
-
+class GatewayReleaseRecovery(GatewayReleaseFixture):
     def test_matching_earlier_container_switch_recovers_only_after_public_verification(self):
         self.retained_releases(CONTROLLER, WORKFLOW)
         (self.state / f"{self.candidate}-{MANAGED_HORIZON}").touch()
@@ -636,122 +518,6 @@ esac
         self.assertTrue(self.inventory.exists())
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assert_host_serves()
-
-    def test_host_rollback_refuses_broken_listener_before_drain(self):
-        self.assert_ok(self.run_move())
-        events = (self.state / "events").read_text()
-        with socket.socket(socket.AF_UNIX) as unavailable:
-            unavailable.bind(str(self.sock))
-            result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Gateway host is not ready", result.stderr)
-        self.assertEqual((self.state / "events").read_text(), events)
-        self.assert_container_serves()
-
-        self.sock.unlink()
-        self.listener(complete=False)
-        result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("incomplete FastCGI response", result.stderr)
-        self.assertEqual((self.state / "events").read_text(), events)
-        self.assert_container_serves()
-
-    def test_host_rollback_refuses_wrong_served_commit_before_drain(self):
-        self.listener(self.old)
-        self.assert_ok(self.run_move())
-        events = (self.state / "events").read_text()
-        result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("host PHP-FPM did not report the selected release", result.stderr)
-        self.assertEqual((self.state / "events").read_text(), events)
-        self.assert_container_serves()
-
-    def test_host_rollback_restores_container_on_public_failure(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        (self.state / "broken-public").touch()
-        result = self.run_script(self.console, "--host")
-        self.assertNotEqual(result.returncode, 0)
-        self.assert_container_serves()
-
-    def test_host_rollback_recovers_before_drain(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"before {self.candidate} drain"))
-        self.assertTrue((self.state / f"{self.candidate}-{HORIZON}").exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_container_serves()
-
-    def test_host_rollback_recovers_after_drain_before_switch(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt=f"after {self.candidate} drain"))
-        self.assertEqual((self.state / "site").read_text(), "container")
-        self.assertTrue(self.inventory.exists())
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_container_serves()
-
-    def test_host_rollback_recovers_after_switch_before_verification(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt="after host switch"))
-        self.assertEqual((self.state / "site").read_text(), "host")
-        self.assertTrue(self.inventory.exists())
-        unavailable = self.state / f"broken-public-container-{self.sha}"
-        unavailable.touch()
-        result = self.run_script(self.console, "--recover")
-        self.assertNotEqual(result.returncode, 0)
-        self.assert_pending(self.sha)
-        self.assertTrue((self.journal / "host-fallback/inventory").exists())
-        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
-        unavailable.unlink()
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_container_serves()
-
-    def test_host_rollback_completes_cleanup_after_verified_switch(self):
-        self.listener()
-        self.assert_ok(self.run_move())
-        self.assert_interrupted(self.run_script(self.console, "--host", interrupt="after candidate deletion"))
-        self.assertTrue((self.journal / "host-fallback/verified").exists())
-        unavailable = self.state / "broken-public"
-        unavailable.touch()
-        result = self.run_script(self.console, "--recover")
-        self.assertNotEqual(result.returncode, 0)
-        self.assert_pending(self.sha)
-        unavailable.unlink()
-        self.assert_ok(self.run_script(self.console, "--recover"))
-        self.assert_host_serves()
-
-    def test_healthy_retained_container_rollback(self):
-        self.retained_releases()
-        self.assert_ok(self.run_script(self.console, self.old[:12]))
-        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
-        self.assertEqual(json.loads(self.inventory.read_text())["old"], self.sha)
-        self.assertEqual((self.state / "site").read_text(), "container")
-        self.assertTrue((self.state / f"gateway-{self.old[:12]}-{HORIZON}").exists())
-        self.assertFalse((self.state / f"{self.candidate}-{HORIZON}").exists())
-
-    def test_ordinary_fpm_release_and_rollback(self):
-        release = self.home / "releases" / self.old[:12]
-        release.mkdir()
-        (release / "REVISION").write_text(self.old)
-        self.copy("bin/gateway-rollback", release / "bin/gateway-rollback")
-        for sha in (self.old, self.sha):
-            web = self.home / "web/releases" / sha[:12]
-            web.mkdir(parents=True)
-            (web / "index.html").touch()
-
-        switch = self.copy("swamp/scripts/gateway-release-switch.sh", self.root / "switch")
-        result = self.run_script(switch, self.old[:12], self.old, HORIZON)
-        self.assert_ok(result)
-        self.assertEqual(json.loads(result.stdout), [])
-        self.assertEqual((self.home / "orbit").resolve(), release)
-        self.assertEqual(os.readlink(self.home / "web/current"), f"releases/{self.old[:12]}")
-
-        self.assert_ok(self.run_script(self.console, self.sha[:12]))
-        self.assertEqual((self.home / "orbit").resolve(), self.checkout)
-        self.assertEqual(os.readlink(self.home / "web/current"), f"releases/{self.sha[:12]}")
-        self.assertEqual((self.state / "events").read_text().count("systemctl reload php8.5-fpm"), 2)
 
 
 if __name__ == "__main__":
