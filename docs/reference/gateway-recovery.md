@@ -129,6 +129,8 @@ An established Gateway has a sleeping preparation container and a serving contai
 
 The switch journal records the new serving commit before the host publishes the upstream. After that decision, recovery finishes the switch forward. A failed public check reports a failed release. A drain timeout preserves the former container. Run `sudo /usr/local/libexec/orbit-gateway-rollback --recover` to resume the journal, then deploy a corrective commit. Once the old Horizon workers and HTTP connections have drained, Orbit removes the former release and checks which closed Operation versions have finished their work.
 
+If the selected Horizon unit cannot start, inspect its journal in the selected container. Orbit keeps the outgoing workers and the handover journal. Repair the reported dependency, configuration or service in place and rerun `--recover`. For an emergency code patch, use a temporary systemd override on the affected Horizon unit to mount the corrected file read-only from a writable path in that container. Commit the same patch and deploy the forward release after the journal clears. The correction then lives in the sealed release and the temporary override expires with the former container.
+
 ## Release layout
 
 The following layout describes the host deployment used before the first container move.
