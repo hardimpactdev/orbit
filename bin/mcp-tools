@@ -6,7 +6,7 @@ Run from any directory:
     bin/mcp-tools            write the MCP manifest
     bin/mcp-tools --check    exit 1 when the manifest differs from what the OpenAPI document produces
 
-Every Gateway API operation becomes one MCP tool named after its operationId. The tool's input schema is the
+Each included Gateway API operation becomes one MCP tool named after its operationId. The tool's input schema is the
 operation's path, query, and header parameters and JSON body properties flattened into one object; the manifest
 records which inputs travel in the path, query, and headers, and the rest form the body. Run bin/docs-openapi first
 when routes, form requests, or data classes changed.
@@ -25,6 +25,7 @@ OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
 # discovery, watch list, and log stream list, live log streams that need a Reverb socket, Caddy forward-auth, the wake page a browser receives, the completion report a Node's schedule timer
 # posts, and the two pages that carry a GitHub App registration through the operator's browser.
 EXCLUDED = {
+    'operation-direct-executor-sign',
     'operation-direct-failure',
     'operation-direct-private-material',
     'operation-direct-secret-output',

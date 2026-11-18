@@ -295,10 +295,38 @@ def registry_changes(base, head):
     reordered = [file for file in old if file in new] != [file for file in new if file in old]
     shared = reordered or any(before.get(key) != after.get(key) for key in ('budget', 'fixtures', 'runner-pool'))
     # Scheduling metadata decides where and when a fixture runs, not what it tests. A change to it alone is a
-    # machinery change: it selects the machinery canary. A change to cases, inputs or any other key selects the fixture.
+    # machinery change: it selects the machinery canary. A change to cases, to inputs that name a new file or to any other
+    # key selects the fixture.
     test = lambda entry: {key: value for key, value in entry.items() if key not in SCHEDULING}
+    trees = {}
+
+    def narrowed(before, after):
+        """The entries differ only by an input list that names no new file. Each pattern the list gained matches tracked
+        files, and the old list matched every one of them. No path that this change touches left the list. The fixture then
+        has nothing new to test, and a changed path that the new list still names selects it by that path. Such an edit is a
+        machinery change, like scheduling metadata."""
+        if test({**before, 'inputs': []}) != test({**after, 'inputs': []}):
+            return False
+        if not trees:
+            trees['tracked'] = selection.listed_paths('ls-tree', '-rz', '--full-tree', '--name-only', head)
+            trees['touched'] = selection.changed_paths(base, head)
+        earlier = [selection_regex(pattern) for pattern in before.get('inputs', [])]
+        later = [selection_regex(pattern) for pattern in after.get('inputs', [])]
+        matches = lambda regexes, path: any(regex.fullmatch(path) for regex in regexes)
+        # A path that the same change edits or deletes, and that only the old list names, still selects the fixture.
+        if any(matches(earlier, path) and not matches(later, path) for path in trees['touched']):
+            return False
+        for pattern in after.get('inputs', []):
+            if pattern in before.get('inputs', []):
+                continue
+            matched = [path for path in trees['tracked'] if selection_regex(pattern).fullmatch(path)]
+            if not matched or any(not matches(earlier, path) for path in matched):
+                return False
+        return True
+
     changed = sorted(file for file in old.keys() | new.keys()
-                     if file not in old or file not in new or test(old[file]) != test(new[file]))
+                     if file not in old or file not in new or
+                     test(old[file]) != test(new[file]) and not narrowed(old[file], new[file]))
     shared = shared or any(file in old and file not in changed and old[file] != new[file] for file in new)
     return changed, shared
 
@@ -359,7 +387,9 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
     mandatory, reserved = [], {False: [], True: []}
     for file in selected:
         fixture = fixtures[file]
-        changed = machinery or file in paths or file in inventory_changed or file in registry_changed
+        # A machinery change reserves the mandatory cases of the machinery canary files only.
+        changed = machinery and file in budget['machinery_canary'] or file in paths or file in inventory_changed or \
+            file in registry_changed
         cases = {name for pattern, names in fixture.get('mandatory_cases', {}).items()
                  if changed or any(selection_regex(pattern).fullmatch(path) for path in paths)
                  for name in names}

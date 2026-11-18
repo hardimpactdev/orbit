@@ -38,13 +38,28 @@
     - name: Run the part
       tags: [always]
       block:
-        - name: Run the part's tasks
+        - name: Run the disabled-mode part
+          when: not intent.signed_power | default(false) | bool
           ansible.builtin.include_tasks:
             file: tasks/instance-container-power.yml
             apply: {tags: [always]}
           tags: [always]
           vars:
             power: "{{ ansible_run_tags | first }}"
+        - name: Deliver the recovery sleep order
+          when: intent.signed_power | default(false) | bool
+          ansible.builtin.include_tasks:
+            file: tasks/executor-power-relay.yml
+            apply: {tags: [always]}
+          tags: [always]
+          vars:
+            executor_phase: power
+            executor_action: sleep
+        - name: Keep the signed sleep receipt
+          when: intent.signed_power | default(false) | bool
+          tags: [always]
+          ansible.builtin.set_fact:
+            power_result: "{{ {'executor': executor_receipt} }}"
         - name: Write the result
           tags: [always]
           ansible.builtin.copy:
@@ -62,9 +77,9 @@
           tags: [always]
           ansible.builtin.copy:
             content: >-
-              {{ {'error_code': ansible_failed_result.msg
+              {{ ({'executor': executor_receipt} if executor_receipt is defined else {}) | combine({'error_code': ansible_failed_result.msg
                   if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))
-                  else 'instance.container_' ~ ('asleep' if sleep_prepared is not defined else 'freeze') ~ '_failed'} | to_json }}
+                  else 'instance.container_' ~ ('asleep' if sleep_prepared is not defined else 'freeze') ~ '_failed'}) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost

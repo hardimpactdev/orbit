@@ -1,5 +1,11 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  executor-route-unready:
+    executor_receipt: {status: failed, code: instance.sleep_route_unready}
+  executor-unrecognized-failure:
+    executor_receipt: {status: failed, code: 'unexpected failure text'}
+  executor-refusal:
+    executor_receipt: {status: refused, reason: expired}
   fleet-command-current:
     fleet_gateway_commands:
       stdout: "list  List commands\ngateway:known-hosts:sync  Restore recorded pins\n"
@@ -1273,6 +1279,21 @@ cases:
   field: vars.fleet_node_held
   context: fleet-node-dir-pool
   expected: ["/1.0/instances/instance-7?project=orbit-instances"]
+- file: tasks/executor-power-relay.yml
+  task: Respect the executor's terminal outcome
+  field: ansible.builtin.fail.msg
+  context: executor-route-unready
+  expected: instance.sleep_route_unready
+- file: tasks/executor-power-relay.yml
+  task: Respect the executor's terminal outcome
+  field: ansible.builtin.fail.msg
+  context: executor-unrecognized-failure
+  expected: executor.power_failed
+- file: tasks/executor-power-relay.yml
+  task: Respect the executor's terminal outcome
+  field: ansible.builtin.fail.msg
+  context: executor-refusal
+  expected: executor.order_refused
 - file: tasks/role-swamp.yml
   task: Check Swamp units
   field: loop
