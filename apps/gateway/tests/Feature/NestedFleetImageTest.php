@@ -17,7 +17,7 @@ function nestedImageHost(bool $switch): Node
         'wireguard_ip' => '10.44.0.11', 'public_ssh_host' => '10.44.0.11', 'user' => 'orbit',
         'settings' => $switch ? ['nested_fleet' => true] : [],
     ]));
-    config(['instances.container_nodes' => [$node->id]]);
+    $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     app(InstanceHostIntent::class)->prepare($node);
 
     return $node->refresh();
@@ -69,9 +69,10 @@ it('pins the nested image definition for a planned Node converge', function (): 
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {
-    $off = app(InstanceHostIntent::class)->for(nestedImageHost(false));
-    Node::query()->delete();
-    $on = app(InstanceHostIntent::class)->for(nestedImageHost(true));
+    $host = nestedImageHost(false);
+    $off = app(InstanceHostIntent::class)->for($host);
+    $host->update(['settings' => ['nested_fleet' => true]]);
+    $on = app(InstanceHostIntent::class)->for($host->refresh());
 
     expect(array_keys($off))->toBe(['project', 'network', 'nic_acl', 'pool', 'cidr', 'address', 'build_address', 'dhcp_range', 'stock',
         'forwarder_port', 'ingress', 'bridge_admitted_at', 'bridge_endpoints', 'egress', 'ids', 'incus', 'image', 'folders',

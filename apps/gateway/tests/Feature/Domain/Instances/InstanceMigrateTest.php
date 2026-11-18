@@ -404,7 +404,17 @@ describe('the admission of a move', function (): void {
         expect(containerRefusal(fn () => migrateStart($instance)))->toBe($code)
             ->and(Operation::query()->count())->toBe($before);
     })->with([
-        'a Node that is not on the build list' => [fn (): Instance => migrateCheckout(containerDefaultProject(), containerDefaultNode('shark', '10.44.0.8', listed: false)), 'instance.migrate_unsupported'],
+        'a checkout on a mixed-role Node' => [function (Node $node): Instance {
+            $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+
+            return migrateCheckout(containerDefaultProject(), $node);
+        }, 'instance.migrate_unsupported'],
+        'a production checkout' => [function (Node $node): Instance {
+            $node->roles()->delete();
+            $node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+
+            return migrateCheckout(containerDefaultProject(), $node);
+        }, 'instance.migrate_unsupported'],
         'an Instance that already runs in a container' => [fn (Node $node): Instance => migrateMovedDefault(containerDefaultProject(), $node), 'instance.migrate_unsupported'],
         'an Instance that is not active' => [function (Node $node): Instance {
             $instance = migrateCheckout(containerDefaultProject(), $node);

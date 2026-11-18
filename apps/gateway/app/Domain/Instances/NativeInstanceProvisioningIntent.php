@@ -14,16 +14,27 @@ use App\Domain\SourceControl\ApplicationDirectory;
 use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Support\ValidatedData;
 
 /** Immutable parent admission. No child Operations and no Node effects. */
 final readonly class NativeInstanceProvisioningIntent
 {
-    public function assertCloneSupported(Instance $candidate, ?string $sqliteSource): void
+    public function cloneCandidateRuntime(Instance $candidate, ?string $sqliteSource): ?InstanceRuntime
     {
         if ($candidate->databaseConnectionTargets()->exists()) {
             $this->unavailable();
         }
+
+        $runtime = $candidate->runtime()->first();
+        if ($runtime === null) {
+            return null;
+        }
+        if ($candidate->name !== DefaultInstanceName::Name || $runtime->seed_commit === null || $sqliteSource !== null) {
+            $this->unavailable();
+        }
+
+        return $runtime;
     }
 
     /** @param array<string,mixed> $input

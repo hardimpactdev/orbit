@@ -22,22 +22,20 @@ function fleetNode(string $name, string $address): Node
 
 beforeEach(function (): void {
     $this->marker = sys_get_temp_dir().'/orbit-instance-fleet-'.getmypid().'-'.bin2hex(random_bytes(4));
-    config(['instances.fleet_marker' => $this->marker, 'instances.container_nodes' => []]);
+    config(['instances.fleet_marker' => $this->marker]);
 });
 
 afterEach(fn () => @unlink($this->marker));
 
-it('puts the fleet\'s app-dev Node on the build list of the nested Gateway of an Instance fleet only', function (): void {
+it('identifies the fleet\'s app-dev Node only in the nested Gateway of an Instance fleet', function (): void {
     $appDev = fleetNode('app-dev', NestedFleetLayout::Layout['app-dev']['address']);
     $appProd = fleetNode('app-prod', NestedFleetLayout::Layout['app-prod']['address']);
-    $nodes = app(ContainerNodes::class);
-    expect($nodes->includes($appDev))->toBeFalse();
+    expect(ContainerNodes::fleetNode($appDev))->toBeFalse();
 
     touch($this->marker);
 
-    expect($nodes->includes($appDev))->toBeTrue()
-        ->and($nodes->includes($appProd))->toBeFalse()
-        ->and($nodes->ids())->toBe([]);
+    expect(ContainerNodes::fleetNode($appDev))->toBeTrue()
+        ->and(ContainerNodes::fleetNode($appProd))->toBeFalse();
 });
 
 it('reads the fleet\'s egress proxy from HTTPS_PROXY on the nested Gateway of an Instance fleet only', function (): void {

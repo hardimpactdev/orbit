@@ -184,7 +184,7 @@ An existing apps folder gets the managed user, group and mode 0755, as a new one
 
 The API-only boolean `nested_fleet` records the Node hosting switch and defaults to false. An omitted member preserves its value, including a captured update that predates the member. A combined apps-path and switch update stores the switch only after storage preparation succeeds. An unrelated update preserves it. The update only records the switch: converge the `app-dev` role afterwards.
 
-On a Node of the [build list](/reference/development-containers#the-build-list) with the switch on, the converge also prepares nested-fleet hosting:
+On every app-dev Node with the switch on, the converge also prepares nested-fleet hosting:
 
 - The Incus project `orbit-instances-nested`. It uses the same pool, bridge, ACLs and stock image source as `orbit-instances`.
 - Its restrictions: those of `orbit-instances`, with isolated privilege and no virtual machines. It also allows nesting, syscall interception and low-level container keys.

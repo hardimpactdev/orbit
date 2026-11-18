@@ -106,6 +106,39 @@ Deno.test("a publish starts for a copy: every expression of operation-task-publi
   assertEquals(unresolved("workflow-operation-task-publish.yaml", intents.publish_copy), []);
 });
 
+Deno.test("production clone candidate reads resolve for both a checkout and a container default", () => {
+  const workflow = "workflow-instance-clone-candidate.yaml";
+  const parsed = parse(Deno.readTextFileSync(new URL(`../workflows/${workflow}`, import.meta.url))) as { jobs: { steps: Step[] }[] };
+  const steps = parsed.jobs[0].steps;
+  const branch = steps.find((step) => step.name === "candidate-branch")!;
+  const origin = steps.find((step) => step.name === "candidate-origin")!;
+  const ssh = {
+    identity_file: "/etc/orbit/fixture",
+    target: { host: "192.0.2.7", user: "orbit", port: 22, host_keys: ["fixture"] },
+  };
+  const checkout = { checkout: "/home/orbit/apps/tool/default", ssh_execution: ssh };
+  const container = {
+    container: { project: "orbit-instances", name: "instance-7", workspace: "/srv/workspace", seed_commit: "a".repeat(40) },
+    ssh_execution: ssh,
+  };
+  for (const candidate of [checkout, container]) {
+    const inputs = { intent: { candidate } };
+    assertEquals(unresolved(workflow, inputs), []);
+    const context = { inputs };
+    const guest = "container" in candidate;
+    assertEquals(value(branch.task!.inputs!.sudo, context), guest);
+    assertEquals(value(origin.guard ?? false, context), guest);
+    assertEquals(value(branch.task!.inputs!.argv, context), [
+      ...(guest
+        ? ["/usr/bin/incus", "exec", "--project", "orbit-instances", "instance-7", "--", "/usr/sbin/runuser", "-u", "agent", "--",
+          "/usr/bin/git", "--no-optional-locks"]
+        : ["/usr/bin/git"]),
+      "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C",
+      guest ? "/srv/workspace" : "/home/orbit/apps/tool/default", "branch", "--show-current",
+    ]);
+  }
+});
+
 Deno.test("serve's secret rule: a vault.get expression with any container comparison is refused, has() is not one", () => {
   const refused = (expression: string) => secretRefusal(expression) !== null;
   // The turn-11 guard of "Check the .env content", which serve would have refused for every publish.
