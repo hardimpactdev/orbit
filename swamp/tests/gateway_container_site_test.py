@@ -39,6 +39,7 @@ class GatewaySiteTest(unittest.TestCase):
         self.base = Path(temp.name)
         names = {
             "CADDY": self.base, "CONFIG": self.base / "Caddyfile", "MODES": self.base / "modes",
+            "HANDOVER": self.base / "operation",
             "SELECTION": self.base / "selected", "PREPARED": self.base / "prepared",
         }
         self.addCleanup(patch.stopall)
@@ -71,6 +72,21 @@ class GatewaySiteTest(unittest.TestCase):
             site.apply("container")
         self.assertEqual(reload.call_count, 1)
         self.assertEqual(site.SELECTION.readlink(), site.MODES / "container.caddy")
+
+        with patch.object(site, "reload_config") as reload:
+            site.HANDOVER.touch()
+            for mode in ("host", "prepare"):
+                with self.assertRaisesRegex(ValueError, "--recover"):
+                    site.apply(mode)
+            site.PREPARED.with_name("gateway-containers.json").write_text('{"version":2}')
+            site.HANDOVER.unlink()
+            with self.assertRaisesRegex(ValueError, "forward container"):
+                site.apply("host")
+            site.CONFIG.write_text(CONFIG)
+            with self.assertRaisesRegex(ValueError, "restore the managed"):
+                site.apply("prepare")
+            reload.assert_not_called()
+            self.assertEqual(site.SELECTION.readlink(), site.MODES / "container.caddy")
 
     def test_host_and_container_modes_keep_metrics_authorized_across_publication(self):
         script = r"""

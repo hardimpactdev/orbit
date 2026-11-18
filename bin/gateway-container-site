@@ -13,6 +13,7 @@ CADDY = Path("/etc/caddy")
 CONFIG = CADDY / "Caddyfile"
 MODES = CADDY / "orbit-gateway-modes"
 SELECTION = CADDY / "orbit-gateway-handlers.caddy"
+HANDOVER = Path("/var/lib/orbit/gateway-release-switch/operation")
 PREPARED = Path("/home/orbit/.orbit/gateway-site-prepared")
 
 
@@ -43,7 +44,7 @@ def select(mode):
     os.replace(temp, SELECTION)
 
 
-def prepare(config):
+def prepare(config, managed):
     if not config.startswith("# Managed by Orbit: Node Caddy build\n"):
         raise ValueError("expected a managed Node Caddyfile")
     sections = tuple(re.finditer(r"(?ms)^# orbit: gateway [^\n]+\n.*?^\}", config))
@@ -54,6 +55,8 @@ def prepare(config):
     if not match:
         raise ValueError("Gateway site has no private IPv4 bind")
     include = f"    import {SELECTION} {match[1]}\n"
+    if managed and (include not in block[0] or not SELECTION.is_symlink() or SELECTION.readlink() != MODES / "container.caddy"):
+        raise ValueError("restore the managed Gateway container handlers before preparing the site")
     if include in block[0]:
         if not SELECTION.is_symlink() or not (MODES / "host.caddy").is_file():
             raise ValueError("missing handler selection or host recovery configuration")
@@ -116,6 +119,11 @@ def reload_config():
 
 
 def apply(mode):
+    managed = PREPARED.with_name("gateway-containers.json").exists()
+    if mode != "container" and HANDOVER.exists():
+        raise ValueError("finish the committed Gateway handover with --recover")
+    if mode == "host" and managed:
+        raise ValueError("the managed Gateway only accepts forward container releases")
     status = CONFIG.stat()
     permissions = status.st_mode & 0o777
     owner = (status.st_uid, status.st_gid)
@@ -127,7 +135,7 @@ def apply(mode):
     try:
         candidate = original.decode()
         if mode == "prepare":
-            candidate = prepare(candidate)
+            candidate = prepare(candidate, managed)
         else:
             if not PREPARED.is_file():
                 raise ValueError("prepare the Gateway Caddy site first")
