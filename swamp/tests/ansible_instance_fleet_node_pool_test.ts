@@ -39,7 +39,7 @@ exit 0
         await Deno.writeTextFile(`${folder}/tasks.yml`, JSON.stringify(poolTasks()));
         await Deno.writeTextFile(`${folder}/play.yml`, JSON.stringify([{
             hosts: "localhost", connection: "local", gather_facts: false,
-            vars: { instances: { pool: "orbit-instances" } },
+            vars: { instances: { pool: "orbit-instances", project: "orbit-instances" } },
             tasks: [{ name: "The pool of the fleet Node", "ansible.builtin.include_tasks": `${folder}/tasks.yml` }],
         }]));
         const result = await new Deno.Command("ansible-playbook", {
@@ -69,28 +69,38 @@ Deno.test("a btrfs pool stays as it is", { ignore: !hasAnsible }, async () => {
     assertEquals(calls, []);
 });
 
-Deno.test("a directory pool used only by profiles is replaced by a btrfs pool", { ignore: !hasAnsible }, async () => {
-    const { code, calls } = await run([pool("dir", ["/1.0/profiles/default?project=orbit-instances", "/1.0/profiles/spare"])], {
-        default: {
-            name: "default",
-            devices: { root: { type: "disk", path: "/", pool: "orbit-instances" }, eth0: { type: "nic", network: "orbitinst0" } },
-        },
-        spare: { name: "spare", devices: { data: { type: "disk", path: "/data", pool: "orbit-instances" } } },
-    });
+const managed = {
+    name: "default",
+    devices: { root: { type: "disk", path: "/", pool: "orbit-instances" }, eth0: { type: "nic", network: "orbitinst0" } },
+};
+
+Deno.test("a directory pool used only by the managed root device is replaced by a btrfs pool", { ignore: !hasAnsible }, async () => {
+    const { code, calls } = await run([pool("dir", ["/1.0/profiles/default?project=orbit-instances"])], { default: managed });
     assertEquals(code, 0);
-    assertEquals(calls, [
-        "profile device remove default root --project orbit-instances",
-        "profile device remove spare data --project default",
-        "storage delete orbit-instances",
-        create,
-    ]);
+    assertEquals(calls, ["profile device remove default root --project orbit-instances", "storage delete orbit-instances", create]);
+});
+
+Deno.test("a directory pool that another profile device uses refuses and stays", { ignore: !hasAnsible }, async () => {
+    const { code, calls, out } = await run([pool("dir", ["/1.0/profiles/default?project=orbit-instances", "/1.0/profiles/spare"])], {
+        default: { ...managed, devices: { ...managed.devices, data: { type: "disk", path: "/data", pool: "orbit-instances" } } },
+        spare: { name: "spare", devices: { root: { type: "disk", path: "/", pool: "orbit-instances" } } },
+    });
+    assertEquals(code === 0, false);
+    assertEquals(calls, []);
+    assertStringIncludes(out, "the dir driver and holds orbit-instances/default data, default/spare root;");
+});
+
+Deno.test("a rerun after the root device went on deletes the unused pool", { ignore: !hasAnsible }, async () => {
+    const { code, calls } = await run([pool("dir")]);
+    assertEquals(code, 0);
+    assertEquals(calls, ["storage delete orbit-instances", create]);
 });
 
 Deno.test("a directory pool that holds an Instance or a volume refuses and stays", { ignore: !hasAnsible }, async () => {
     const { code, calls, out } = await run([pool("dir", [
         "/1.0/profiles/default?project=orbit-instances",
         "/1.0/instances/instance-7?project=orbit-instances",
-    ])]);
+    ])], { default: managed });
     assertEquals(code === 0, false);
     assertEquals(calls, []);
     assertStringIncludes(out, "instance.host_unavailable: the Incus pool orbit-instances uses the dir driver and holds /1.0/instances/instance-7");

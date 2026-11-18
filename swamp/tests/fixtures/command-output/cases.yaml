@@ -1265,9 +1265,16 @@ contexts:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
   # `incus query /1.0/storage-pools?recursion=1` on a pre-btrfs nested app-dev Node, with one Instance left on the pool.
   fleet-node-dir-pool:
-    instances: {pool: orbit-instances}
+    instances: {pool: orbit-instances, project: orbit-instances}
     fleet_node_pools:
       stdout: '[{"config":{"source":"/var/lib/incus/storage-pools/orbit-instances"},"description":"","name":"orbit-instances","driver":"dir","used_by":["/1.0/instances/instance-7?project=orbit-instances","/1.0/profiles/default","/1.0/profiles/orbit-instance?project=orbit-instances"],"status":"Created","locations":["none"]}]'
+    # `incus query` of each profile on that pool: the managed root, and a custom profile's root that refuses the migration.
+    fleet_node_profiles:
+      results:
+      - item: /1.0/profiles/default
+        stdout: '{"name":"default","description":"","config":{},"devices":{},"used_by":[]}'
+      - item: /1.0/profiles/orbit-instance?project=orbit-instances
+        stdout: '{"name":"orbit-instance","description":"","config":{},"devices":{"root":{"path":"/","pool":"orbit-instances","type":"disk"}},"used_by":[]}'
 cases:
 - file: tasks/instance-fleet-node.yml
   task: Read the profiles that use the pool
@@ -1275,10 +1282,10 @@ cases:
   context: fleet-node-dir-pool
   expected: ["/1.0/profiles/default", "/1.0/profiles/orbit-instance?project=orbit-instances"]
 - file: tasks/instance-fleet-node.yml
-  task: Refuse a pool that holds more than profile devices
+  task: Refuse a pool that another user holds
   field: vars.fleet_node_held
   context: fleet-node-dir-pool
-  expected: ["/1.0/instances/instance-7?project=orbit-instances"]
+  expected: ["/1.0/instances/instance-7?project=orbit-instances", "orbit-instances/orbit-instance root"]
 - file: tasks/executor-power-relay.yml
   task: Respect the executor's terminal outcome
   field: ansible.builtin.fail.msg

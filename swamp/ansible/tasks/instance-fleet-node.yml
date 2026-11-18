@@ -36,44 +36,52 @@
   register: fleet_node_pools
   changed_when: false
 
-# A Node made before the btrfs pool has a directory pool. It holds no Instance and no volume, only the root device of profiles, which
-# the profile step below writes again. Anything else refuses, and the pool stays as it is.
+# A Node made before the btrfs pool has a directory pool. It holds nothing but the root device of the managed `default` profile of the
+# Instance projects, which the profile step of the role writes again (task-container-host-prepare.yml). Any other user refuses before
+# anything changes. A rerun after a break part way goes on: once the root device is gone the pool is unused and is deleted, and a
+# deleted pool is created below.
 - name: Replace a pool of another driver
   when: fleet_node_pool | length > 0 and (fleet_node_pool | first).driver != 'btrfs'
   vars:
     fleet_node_pool: "{{ fleet_node_pools.stdout | from_json | selectattr('name', 'equalto', instances.pool) | list }}"
+    fleet_node_managed_projects: "{{ [instances.project] + ([instances.nested.project] if instances.nested is defined else []) }}"
+    # Every device on the pool in the profiles read below. A used_by entry names its project in `?project=`; without one it is the
+    # default project.
+    fleet_node_devices: >-
+      {%- set ns = namespace(out=[]) -%}
+      {%- for read in fleet_node_profiles.results | default([]) -%}
+        {%- set profile = read.stdout | from_json -%}
+        {%- set project = read.item.split('project=')[1] if 'project=' in read.item else 'default' -%}
+        {%- for device in profile.devices | dict2items if device.value.pool | default('') == instances.pool -%}
+          {%- set ns.out = ns.out + [{'project': project, 'label': project ~ '/' ~ profile.name ~ ' ' ~ device.key,
+                                      'managed': profile.name == 'default' and device.key == 'root'
+                                                 and project in fleet_node_managed_projects}] -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ ns.out }}
   block:
-    - name: Refuse a pool that holds more than profile devices
-      ansible.builtin.assert:
-        that: fleet_node_held | length == 0
-        fail_msg: >-
-          instance.host_unavailable: the Incus pool {{ instances.pool }} uses the {{ (fleet_node_pool | first).driver }} driver and
-          holds {{ fleet_node_held | join(', ') }}; the converge replaces it with a btrfs pool only when it holds no Instance or volume
-        quiet: true
-      vars:
-        fleet_node_held: "{{ (fleet_node_pool | first).used_by | reject('match', '^/1.0/profiles/') | list }}"
     - name: Read the profiles that use the pool
       ansible.builtin.command: { argv: [incus, query, "--", "{{ item }}"] }
       loop: "{{ (fleet_node_pool | first).used_by | select('match', '^/1.0/profiles/') | list }}"
       register: fleet_node_profiles
       changed_when: false
-    - name: Remove the profiles' devices on the pool
-      ansible.builtin.command:
-        argv: [incus, profile, device, remove, "{{ item.profile }}", "{{ item.device }}", --project, "{{ item.project }}"]
-      loop: "{{ fleet_node_profile_devices }}"
-      loop_control: { label: "{{ item.project }}/{{ item.profile }} {{ item.device }}" }
+    - name: Refuse a pool that another user holds
+      ansible.builtin.assert:
+        that: fleet_node_held | length == 0
+        fail_msg: >-
+          instance.host_unavailable: the Incus pool {{ instances.pool }} uses the {{ (fleet_node_pool | first).driver }} driver and
+          holds {{ fleet_node_held | join(', ') }}; the converge replaces it with a btrfs pool only when nothing but the root device
+          of the managed default profile uses it
+        quiet: true
       vars:
-        # A used_by entry names its project in `?project=`; without one it is the default project.
-        fleet_node_profile_devices: >-
-          {%- set ns = namespace(out=[]) -%}
-          {%- for read in fleet_node_profiles.results -%}
-            {%- set profile = read.stdout | from_json -%}
-            {%- set project = read.item.split('project=')[1] if 'project=' in read.item else 'default' -%}
-            {%- for device in profile.devices | dict2items if device.value.pool | default('') == instances.pool -%}
-              {%- set ns.out = ns.out + [{'profile': profile.name, 'device': device.key, 'project': project}] -%}
-            {%- endfor -%}
-          {%- endfor -%}
-          {{ ns.out }}
+        fleet_node_held: >-
+          {{ (fleet_node_pool | first).used_by | reject('match', '^/1.0/profiles/') | list
+             + fleet_node_devices | rejectattr('managed') | map(attribute='label') | list }}
+    - name: Remove the managed root device on the pool
+      ansible.builtin.command:
+        argv: [incus, profile, device, remove, default, root, --project, "{{ item.project }}"]
+      loop: "{{ fleet_node_devices | selectattr('managed') | list }}"
+      loop_control: { label: "{{ item.label }}" }
       changed_when: true
     - name: Delete the pool of another driver
       ansible.builtin.command: { argv: [incus, storage, delete, "{{ instances.pool }}"] }

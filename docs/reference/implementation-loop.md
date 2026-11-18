@@ -355,7 +355,7 @@ The WireGuard hub LAN Python fixture cost 167 seconds as one file, and a Python 
 
 The Instance host updates file runs in self-hosted fixture shards. Across 24 PR observations per case, the runtime update reached 166.761 seconds and the Squid rollback reached 152.639 seconds. Both cases are near the 180-second ceiling and above the lane, so each is split into stages that fit a lane. Each stage keeps the initial converge and the changed-input converge that the case needs.
 
-Changes to `swamp/ansible/tasks/instance-host.yml` require the dir, ZFS and nested prepare-boundary producers, the nested prepare repeat, and the default-remote replacement proof. These five cases are always placed. Their names are validated against the registry, so a rename must update the admission rule.
+Changes to `swamp/ansible/tasks/instance-host.yml` require the btrfs, ZFS and nested prepare-boundary producers, the nested prepare repeat, and the default-remote replacement proof. These five cases are always placed. Their names are validated against the registry, so a rename must update the admission rule.
 
 The nested-fleet image cases of the Instance host image file run on pull requests, one case per slice. Their costs are Beast estimates until hosted runs measure them.
 
