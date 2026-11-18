@@ -2209,13 +2209,21 @@ The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt,
 
 The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds the fixed sentence of its code, and nothing parsed from any text. A turn that has not ended adds a fixed sentence that the group holds. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's, and drops any other error field. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
 
-One rule names a turn ended. Nothing launched is ended, unless a reviewer's checkout stays detached. Otherwise only positive evidence ends it:
+One rule names a turn ended, judged on the turn's own run, never on another run of its thread. The first row that applies decides:
 
-- T3 lists no thread of the title, or lists it in a state that runs nothing.
-- The start printed a status that ends a run.
-- The stop of a cut run proved its end.
+| # | Evidence | `ended` |
+| --- | --- | --- |
+| 1 | A reviewer's checkout is detached and not restored | `false` |
+| 2 | Nothing was launched | `true` |
+| 3 | The run asks, its question is stored with its owner run, and the interrupt of that run is confirmed | `true` |
+| 4 | The run asks, and its question, its owner or the interrupt could not be confirmed | `false` |
+| 5 | The start printed a status that ends a run | `true` |
+| 6 | The start printed a status that Orbit does not know | `false` |
+| 7 | The stop of the run that the bound cut proved its end | `true` |
+| 8 | No status of the run: T3 lists no thread of the title, or lists it in a state that runs nothing | `true` |
+| 9 | Anything else, such as a thread listed active or in an unknown state, or no list | `false` |
 
-A status that Orbit does not know, in the start or the list, keeps the turn unended. So does a thread that T3 lists active, or a question without its owner run. A T3 run status outside T3's known statuses is never named.
+The settle of an earlier turn uses the same states that run nothing. A state it does not know leaves the turn open, and the next turn launches nothing. A T3 run status outside T3's known statuses is never named.
 
 A question without its owner run is never stored. The turn records `tasks.copy_question_unread` and `ended: false`, so the next turn settles it. `tasks.copy_review_unrestored` outranks `tasks.copy_question_unread`: an unrestored reviewer turn keeps its code.
 

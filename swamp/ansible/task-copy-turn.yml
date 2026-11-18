@@ -157,7 +157,7 @@
           ansible.builtin.assert:
             that: model_accepted
             fail_msg: "{{ 'tasks.copy_turn_model_unverified' if not driver_known or (codex_model and probe_exit != 2) else 'tasks.copy_turn_model_unoffered' }}"
-    # An earlier turn that may still run is settled before any launch, by one rule: T3 lists its thread in no active state, or none of its title, and
+    # An earlier turn that may still run is settled before any launch, by one rule: T3 lists its thread in a state that runs nothing, or none of its title, and
     # a reviewer's detach is undone. Every such turn is over in Orbit (cut by its bound, cancelled or lost), so a thread T3 still shows
     # active has its run stopped first, by the helper's `stop`, once per thread; a run the stop ended, or a thread it found with no active
     # run, has ended. The copy's ref `refs/orbit/review-detach` marks a detach in effect, at the tip the branch had: only with it, and once
@@ -168,6 +168,9 @@
       vars:
         settle_listed: "{{ settle_threads.stdout | from_json if settle_threads.rc | default(1) == 0 else none }}"
         settle_active: ['preparing', 'queued', 'starting', 'running', 'waiting']
+        # The thread states that run nothing; the result step's ThreadOver holds the same list (task-copy-turn/mod.ts). A state in
+        # neither list is unknown: its turn stays open, and nothing is launched.
+        settle_terminal: ['completed', 'failed', 'cancelled', 'interrupted', 'rolled_back', 'idle']
         settle_reviewer: "{{ intent.turn.settle | selectattr('branch', 'string') | list }}"
       block:
         - name: List the threads to settle
@@ -206,7 +209,7 @@
             settle_over: >-
               {% set over = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
               | selectattr('title', 'equalto', entry.title) | list %}{% if mine | length == 0 or (mine | length == 1
-              and (mine[0].status not in settle_active or mine[0].threadId in settle_ended)) %}{% set _ = over.append(entry.operation_id)
+              and (mine[0].status in settle_terminal or mine[0].threadId in settle_ended)) %}{% set _ = over.append(entry.operation_id)
               %}{% endif %}{% endfor %}{{ over }}
             settle_stopped: >-
               {% set stopped = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed

@@ -67,7 +67,7 @@ const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]
 /** T3's run statuses that end a run. A run status in neither set is unknown: it names no end and is never echoed. */
 const RunOver = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 /** The thread states in which T3 runs nothing. A thread state in neither this set nor Active is unknown and names no end. */
-const ThreadOver = new Set([...RunOver, "idle"]);
+export const ThreadOver = new Set([...RunOver, "idle"]);
 export type Evidence = {
     settle?: z.infer<typeof Settle> | null;
     resumed: z.infer<typeof Resumed> | null;
@@ -261,19 +261,36 @@ function shapeRun(evidence: Evidence): Turn {
 }
 
 /**
- * The one rule for whether the copy is free of this turn. Nothing launched is over, unless a reviewer's checkout stays detached. Else
- * over only on positive evidence of an end: T3 holds no thread of this title, lists it in a state that runs nothing, the start
- * printed a status that ends a run, or the stop of a cut run ended it. A status of T3 that Orbit does not know, from the start or the
- * list, a thread T3 lists active, and a question whose owner run Orbit could not read each keep the turn unended.
+ * The one rule for whether the copy is free of this turn, judged on this turn's own run, never on another run of its thread
+ * (docs/reference/development-containers.md#turn-evidence). In order, the first row that applies decides:
+ *
+ * | # | Evidence | ended |
+ * | 1 | A reviewer's checkout detached and not restored | false |
+ * | 2 | Nothing launched | true |
+ * | 3 | The run asks, and Orbit stored its question with its owner run and confirmed the interrupt of that run | true |
+ * | 4 | The run asks, and Orbit could not read its question, or its owner, or confirm the interrupt | false |
+ * | 5 | The start printed a status that ends a run | true |
+ * | 6 | The start printed a status Orbit does not know | false |
+ * | 7 | The stop of the run its bound cut proved its end | true |
+ * | 8 | With no status of its run: T3 holds no thread of the title, or lists it in a state that runs nothing | true |
+ * | 9 | Anything else: a thread listed active or in an unknown state, or no list | false |
  */
-function over(evidence: Evidence, status: string | undefined, listed: z.infer<typeof Read> | null, cutEnded: boolean): boolean {
+export function over(evidence: Evidence, status: string | undefined, listed: z.infer<typeof Read> | null, cutEnded: boolean): boolean {
     if (evidence.detached && evidence.restore?.restored !== true) return false;
     if (!evidence.launched) return true;
-    const shown = listed?.found === 1 ? listed.status : null;
-    if (status !== undefined && !RunOver.has(status) && !Active.has(status)) return false;
-    if (shown !== null && (Active.has(shown) || !ThreadOver.has(shown))) return false;
-    if (status === "waiting" && ownerless(evidence)) return false;
-    return listed?.found === 0 || shown !== null || (status !== undefined && RunOver.has(status)) || cutEnded;
+    if (status === "waiting") return question(evidence) === "stopped";
+    if (status !== undefined && RunOver.has(status)) return true;
+    if (status !== undefined && !Active.has(status)) return false;
+    if (cutEnded) return true;
+    return listed?.found === 0 || (listed?.found === 1 && listed.status !== null && ThreadOver.has(listed.status));
+}
+
+/** How far a run that asks got: its question unread (or without its owner run), stored but its run not stopped, or stored and stopped. */
+function question(evidence: Evidence): "unread" | "unstopped" | "stopped" {
+    const read = evidence.ask?.ask_exit === 0 ? parse(Asked, evidence.ask.ask) : null;
+    if (read === null || !read.stoppable || ownerless(evidence)) return "unread";
+    const stopped = evidence.interrupt?.interrupt_exit === 0 ? parse(Stopped, evidence.interrupt.interrupt) : null;
+    return stopped?.interrupted === true ? "stopped" : "unstopped";
 }
 
 /** Whether the question read names a request without the run that owns it. */

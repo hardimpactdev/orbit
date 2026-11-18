@@ -204,7 +204,7 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     sys.exit({'completed': 0, 'waiting': 2}.get(mode, 1))
 assert rest[0] == '/usr/bin/timeout' and rest[1] == '60' and rest[2] == os.environ['T3_PROGRAM'], rest
 if rest[3:5] == ['thread', 'list']:
-    if os.environ['T3_START'] == 'listfail':
+    if os.environ['T3_START'] == 'listfail' or os.environ.get('T3_LISTFAIL'):
         sys.stderr.write('server not running')
         sys.exit(1)
     titles = [] if os.environ['T3_START'] in ('refused', 'missing') else ['Orbit task 4970 thread 77']
@@ -580,6 +580,10 @@ Deno.test({ name: "a run that asks has its question stored before the run is sto
     assertEquals(asked.result.questions.map((question) => [question.request_id, question.run_id, question.question]), [["request:1", "run:1", "Which color?"]]);
     // A turn that ends other than at a question runs no helper.
     assertEquals(helper((await phase("completed")).calls), []);
+    // The confirmed interrupt of the run that asks ends the turn, also when the list after it fails.
+    const unlisted = await phase("waiting", {}, "clean", "questions", "", { T3_LISTFAIL: "1" });
+    assertEquals([unlisted.ok, unlisted.read!.list_exit, unlisted.result.state, unlisted.result.error, unlisted.result.ended, unlisted.result.questions.length],
+        [true, 1, "asking_for_input", null, true, 1]);
 } });
 
 Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored", ignore: !available, async fn() {
@@ -611,6 +615,9 @@ Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the
     // A list that fails settles nothing and stops nothing.
     const unread = await phase("listfail", { settle: [earlier] });
     assertEquals([unread.ok, unread.settle, unread.launched, helper(unread.calls)], [false, { list_exit: 1, settled: [], open: [9], stopped: [] }, false, []]);
+    // A state T3 lists that Orbit does not know settles nothing, stops nothing and launches nothing.
+    const paused = await phase("completed", { settle: [earlier] }, "clean", "questions", "paused");
+    assertEquals([paused.ok, paused.settle, paused.launched, helper(paused.calls)], [false, { list_exit: 0, settled: [], open: [9], stopped: [] }, false, []]);
 } });
 
 Deno.test({ name: "an earlier turn whose run T3 still runs is stopped, settled, and the turn runs; a stop T3 refuses launches nothing", ignore: !available, async fn() {
