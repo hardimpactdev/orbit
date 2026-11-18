@@ -30,7 +30,8 @@ class GatewayTestsPolicyTest(unittest.TestCase):
         self.assertNotIn('ORBIT_SLOW_CHECKS_BLOCKING', JOB)
         command = next(line.strip() for line in JOB.splitlines() if 'vendor/bin/pest ' in line)
         # Stock Pest: `--parallel` takes every CPU of the runner, and `--shard` balances by the committed times.
-        self.assertEqual(command, 'vendor/bin/pest --parallel --shard=${{ matrix.shard }}/%d --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"' % len(shards))
+        # Pest lets a shard pass with no test unless the command refuses an empty suite.
+        self.assertEqual(command, 'vendor/bin/pest --parallel --shard=${{ matrix.shard }}/%d --fail-on-empty-test-suite --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"' % len(shards))
         self.assertNotIn('--processes', JOB)
         self.assertIn('name: Gateway Pest suite (${{ matrix.shard }}/%d)' % len(shards), JOB)
         timings = json.loads((ROOT / 'apps/gateway/tests/.pest/shards.json').read_text())['timings']

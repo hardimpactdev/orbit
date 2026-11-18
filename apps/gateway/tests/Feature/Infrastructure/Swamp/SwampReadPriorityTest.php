@@ -341,7 +341,7 @@ it('holds another Project only when serve answered for it, not when its answer d
 
     expect(readDependencies($first))->toBe('available')
         // The read waited its five seconds for the answer that did not come.
-        ->and($this->serve->waited)->toBeGreaterThan(4.9)->toBeLessThanOrEqual(5.0);
+        ->and($this->serve->waited)->toEqualWithDelta(5.0, 0.001);
     $drop = false;
 
     // The lost answer leaves no hold: the second Project's own read asks serve and finds its index.

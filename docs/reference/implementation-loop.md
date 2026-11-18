@@ -523,7 +523,7 @@ The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PH
 
 Gateway Pest runs in five hosted shards, `Gateway Pest suite (1/5)` to `(5/5)`. Each shard runs stock `pest --parallel --shard=<n>/5`: Pest starts one worker for each CPU of the runner and gives each worker its own in-memory SQLite database. The shard count is in one place, the `shard` list of the job.
 
-Pest balances the shards by the times in `apps/gateway/tests/.pest/shards.json`. A test file with no time there still runs: Pest spreads such files over the shards in turn and warns that the file is out of date. To record the times again, run `bin/pest-plain vendor/bin/pest --parallel --update-shards` in `apps/gateway` and commit the file. The wrapper gives the workers one temporary directory, which Pest needs to collect their times.
+Pest balances the shards by the times in `apps/gateway/tests/.pest/shards.json`. A test file with no time there still runs: Pest spreads such files over the shards in turn and warns that the file is out of date. To record the times again, run `../../bin/pest-plain vendor/bin/pest --parallel --update-shards` in `apps/gateway` and commit the file. The wrapper gives the workers one temporary directory, which Pest needs to collect their times.
 
 Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. The Web build job installs the locked Playwright WebKit and Chromium headless shell with their system libraries on `ubuntu-26.04`, then runs `bun run test:unit` and `bun run test:browser` in order before building. Both stages gate its artifact and Required checks under the [Web job budget](#ci-budget). Tests for remote programs still run only locally.
 
@@ -941,7 +941,7 @@ Running the checks on a development machine to fill a cache is a rejected altern
 
 ### Gateway Pest gates selected changes
 
-The Gateway default suite runs in five hosted shards, each on every CPU of its runner, so the suite ends in under a minute. All five must pass. There are no quarantined files. The CLI suite has its own hosted job. Other PHP suites remain local checks.
+The Gateway default suite runs in five hosted shards, each on every CPU of its runner, so each shard ends in about a minute. All five must pass. There are no quarantined files. The CLI suite has its own hosted job. Other PHP suites remain local checks.
 
 ### Full suites gate merges
 

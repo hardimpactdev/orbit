@@ -216,7 +216,7 @@ jobs:
         run: |
           php -r 'if (ini_get("memory_limit") !== "1G") { exit(1); }'
           command -v caddy
-          vendor/bin/pest --parallel --shard=${{ matrix.shard }}/5 --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"
+          vendor/bin/pest --parallel --shard=${{ matrix.shard }}/5 --fail-on-empty-test-suite --fail-on-skipped --compact --colors=never --log-junit="$RUNNER_TEMP/gateway-tests.xml"
       - name: Publish Gateway Pest results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

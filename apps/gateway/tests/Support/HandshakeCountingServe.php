@@ -91,10 +91,10 @@ final class HandshakeCountingServe implements WebSocketClient
         return $answers;
     }
 
-    /** The clock of a reader of this serve: real time, plus the time its unanswered reads would have blocked. */
+    /** The clock of a reader of this serve: only the time its unanswered reads would have blocked, so no real pause counts. */
     public function clock(): float
     {
-        return microtime(true) + $this->waited;
+        return $this->waited;
     }
 
     public function close(): void

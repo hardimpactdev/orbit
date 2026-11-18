@@ -57,5 +57,9 @@ it('reads the current recipe again after more texts than it keeps passed through
         expect($recipe->json)->toContain($date);
     }
 
-    expect(new RecipeLoader()->decode(shippedRecipeText())->identity)->toBe($shipped->identity);
+    $again = new RecipeLoader()->decode(shippedRecipeText());
+
+    // The first value was dropped: the loader keeps a bounded number of texts.
+    expect($again)->not->toBe($shipped)
+        ->and($again->identity)->toBe($shipped->identity);
 });
