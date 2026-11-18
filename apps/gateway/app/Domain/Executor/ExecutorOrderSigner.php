@@ -11,8 +11,9 @@ use RuntimeException;
 use SensitiveParameter;
 
 /**
- * Builds and signs one executor order (ADR 0266 "The order", docs/reference/executor.md#the-order). The payload holds exactly
- * `action`, `node`, `target`, `operation`, `nonce` (128 random bits, hex) and `expires_ms` (Gateway time plus 5 s). The
+ * Builds and signs one executor order (ADR 0266 "The order", docs/reference/executor.md#the-order). The payload holds
+ * `action`, `node`, `target`, `operation`, `nonce` (128 random bits, hex) and `expires_ms` (Gateway time plus 5 s), then
+ * `power_check` when the order carries one; the page names the executor's optional fields (ADR 0271 adds `input`). The
  * secret key is the Gateway setting `orbit.executor.signing_key`; it never leaves this class.
  */
 final readonly class ExecutorOrderSigner

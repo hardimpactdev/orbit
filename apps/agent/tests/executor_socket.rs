@@ -1,3 +1,4 @@
+#![cfg(target_os = "linux")]
 //! End to end over a real socket: the caller check, the relay binary, and the order checks behind them.
 
 use std::fs;
@@ -70,14 +71,14 @@ fn start(dir: &Path, policy: Policy) -> PathBuf {
 }
 
 /// The relay is this test process: the core's relay entry point runs here, so the executable the executor checks is the test
-/// binary. The shipped binary has only `orbit-executor relay`, with the fixed socket.
+/// binary. The shipped binary has only `orbit-agent execute relay`, with the fixed socket.
 fn relay_policy() -> Policy {
     policy_with_relay(std::env::current_exe().expect("own executable"))
 }
 
 /// A policy whose relay executable is another program than this test process.
 fn other_program_policy() -> Policy {
-    policy_with_relay(PathBuf::from(env!("CARGO_BIN_EXE_orbit-executor")))
+    policy_with_relay(PathBuf::from(env!("CARGO_BIN_EXE_orbit-agent")))
 }
 
 fn policy_with_relay(relay_exe: PathBuf) -> Policy {
@@ -194,8 +195,8 @@ fn an_order_of_exactly_four_kilobytes_passes_the_size_check() {
 fn the_shipped_binary_takes_no_socket_path() {
     let dir = tempfile::tempdir().expect("tempdir");
     let socket = start(dir.path(), relay_policy());
-    let output = Command::new(env!("CARGO_BIN_EXE_orbit-executor"))
-        .args(["relay", "--socket"])
+    let output = Command::new(env!("CARGO_BIN_EXE_orbit-agent"))
+        .args(["execute", "relay", "--socket"])
         .arg(&socket)
         .stdin(Stdio::null())
         .output()

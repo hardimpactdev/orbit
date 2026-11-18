@@ -46,6 +46,15 @@ Task VM host preparation belonged to the removed base refresh; nothing runs it n
 
 In disposable proof fleets, each batch installs the tested checkout's frozen pin with checksum verification before cases start. After installation, it stops all three observers, clears their old presence versions and host receipts, starts them, and waits for each expected version with its binary digest and a new host fact. An installed checksum alone does not prove that a reporter reached the Gateway. See [proof preparation](/reference/verification-cases).
 
+### The executor mode
+
+On Linux the `orbit-agent` binary also carries the executor ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7):
+
+- `orbit-agent` with no mode runs the observer, as before.
+- `orbit-agent execute serve` and `orbit-agent execute relay` run the executor ([Executor: One agent binary](/reference/executor#one-agent-binary)).
+
+Until the Gateway pins a delivery with that mode, Nodes still run the executor from the separate `orbit-executor` binary.
+
 ## What it observes
 
 The agent watches two sources and reports each Orbit Process unit or container by its full name, such as `orbit-process-42-web`.
