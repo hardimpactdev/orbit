@@ -29,7 +29,7 @@ final class RelocateNodeRoleCommand extends NodeCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Move a relocatable singleton role to another node.';
+    protected $description = 'Move a relocatable role to another node.';
 
     public function handle(
         GatewayConfigRepository $repository,

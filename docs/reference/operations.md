@@ -35,7 +35,7 @@ Native terminal projection reads Swamp history and any private result material o
 
 Removing a [Node service target record](/reference/processes-and-schedules#node-service-target-records) returns an already completed `instance.node_service_detach` Operation. This record-only operation works after a successful migration and performs no network, environment or runtime change. It still refuses an active lifecycle operation or an unfinished failed migration with a retained runtime.
 
-Automatic release role convergence reserves the Node against Instance and task Operations that participate on it. Admission refuses a conflict with `operation.target_busy`. A refused automatic converge queues ahead of new Instance and task work on the Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
+Automatic release convergence, the role converge and the full converge for changed host inputs, reserves the Node against Instance, Conn and Process Operations that participate on it. Task work (`tasks.*`) neither waits for nor holds it. Admission refuses a conflict with `operation.target_busy`, and `details.operation_ids` names the holders. A refused automatic converge queues ahead of new Instance, Conn and Process work on the Node. A removal (`instance.destroy` or `instance.unregister`) passes the queue. After 300 seconds the converge is admitted beside its holders, and their continuations still finish while it runs. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
 
 Containerized AppProd deployments and rollbacks capture their build and activation budgets on the Operation. A failed cutover can still return a verified serving commit. The Gateway records that observed selection before an operator retries.
 
@@ -579,6 +579,8 @@ A refused or failed call does not fail the run; the terminal status frees the No
 The release records `route_withdrawn_at` on the removal. A retry of that removal skips `Withdraw the Route` and takes no hold, so it never waits for another Route write.
 
 `instance.register` and the Cluster Router writes hold the same Nodes for one step only. `tasks.provision`, `tasks.cancel` and `tasks.maintenance_finish` hold none: no Operation of the first starts, and the run of the other two publishes no Route. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
+
+`node.role_relocate` is no Route write, but it publishes Caddyfiles rendered at its admission. Admission holds every Node of the Cluster for the whole run, or refuses with `route.publication_held` when a Route write holds or waits for one of them; nothing waits. The terminal status of the move frees the Nodes.
 
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts.
 

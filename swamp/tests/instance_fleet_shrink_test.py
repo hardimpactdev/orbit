@@ -34,7 +34,13 @@ class FleetShrinkTest(unittest.TestCase):
         self.driver = 'btrfs'
         for name in NAMES:
             self.machine(name)
-        self.stub('incus', 'case "$2" in /1.0/instances/*) echo \'{"expanded_devices": {"root": {"pool": "inner"}}}\';;\n'
+        self.clean_log = self.folder / 'clean.log'
+        self.held = self.folder / 'held'
+        self.held.mkdir()
+        # `incus exec <name> -- apt-get clean` as apt runs it: it fails while an apt run holds the archives' lock, else empties them.
+        self.stub('incus', f'if [ "$1" = exec ]; then echo "$@" >> {self.clean_log}; [ -e "{self.held}/$2" ] && exit 100\n'
+                  f'find "{self.pools}/inner/containers/$2/rootfs/var/cache/apt/archives" -name "*.deb" -delete; exit 0; fi\n'
+                  'case "$2" in /1.0/instances/*) echo \'{"expanded_devices": {"root": {"pool": "inner"}}}\';;\n'
                   '/1.0/storage-pools/inner) echo "{\\"driver\\": \\"$DRIVER\\"}";; *) exit 1;; esac\n')
         self.stub('duperemove', f'echo "$@" >> {self.duperemove_log}\n')
 
@@ -88,9 +94,26 @@ class FleetShrinkTest(unittest.TestCase):
             self.assertEqual([self.links(name, locale) for locale in LOCALES], [1, 1])
             self.assertEqual(sorted(path.name for path in (disk / 'usr/lib/cargo/bin/coreutils').iterdir()), ['cat', 'ls', 'yes'])
         self.assertEqual(self.duperemove_log.read_text().split(), ['-d', '-r', '-q', *[str(self.disk(name)) for name in NAMES]])
-        # Nothing changed since: the check is current and a forced run relinks nothing.
+        # The shrink ran after the last `base`: `base` is due once, and once retaken the check is current.
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'shrunk'})
+        self.assertEqual(self.shrink('based'), {'based': True})
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
+        # Nothing changed since: a forced run relinks nothing.
         self.assertEqual(self.shrink('run')['relinked'], 0)
+
+    def test_a_base_retaken_after_a_package_changed_is_not_recorded_as_holding_the_shrink(self):
+        self.shrink('run')
+        status = self.disk('nested-app-dev') / 'var/lib/dpkg/status'
+        status.write_text(status.read_text() + '\nPackage: btrfs-progs\nStatus: install ok installed\n')
+        self.assertEqual(self.shrink('based'), {'based': False})
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'packages'})
+
+    def test_a_record_of_a_stopped_base_without_the_base_key_is_current(self):
+        self.shrink('run')
+        recorded = json.loads(self.record.read_text())
+        del recorded['base']
+        self.record.write_text(json.dumps(recorded))
+        self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
 
     def test_the_package_files_in_apt_archives_go_and_the_lock_stays(self):
         self.shrink('run')
@@ -98,23 +121,15 @@ class FleetShrinkTest(unittest.TestCase):
             archives = self.disk(name) / 'var/cache/apt/archives'
             self.assertEqual(sorted(str(path.relative_to(archives)) for path in archives.rglob('*')), ['lock', 'partial'])
 
-    def test_the_cache_removal_follows_no_symlink_out_of_the_disk(self):
-        outside = self.folder / 'outside'
-        (outside / 'partial').mkdir(parents=True)
-        for name in ['kept.deb', 'partial/kept.deb']:
-            (outside / name).write_bytes(b'x')
-        gateway, dev, prod = (self.disk(name) / 'var/cache/apt' for name in NAMES)
-        # A symlinked parent, a symlinked archives folder and a symlinked package file.
-        subprocess.run(['rm', '-rf', str(gateway)], check=True)
-        (outside / 'apt').mkdir()
-        (outside / 'apt/archives').symlink_to(outside)
-        gateway.symlink_to(outside / 'apt')
-        subprocess.run(['rm', '-rf', str(dev / 'archives')], check=True)
-        (dev / 'archives').symlink_to(outside)
-        (prod / 'archives/linked.deb').symlink_to(outside / 'kept.deb')
-        self.assertEqual(self.shrink('run')['shrink'], 'ran')
-        self.assertEqual(sorted(str(path.relative_to(outside)) for path in outside.rglob('*.deb')), ['kept.deb', 'partial/kept.deb'])
-        self.assertTrue((prod / 'archives/linked.deb').is_symlink())
+    def test_each_nested_apt_cleans_its_own_archives_and_a_held_lock_keeps_them(self):
+        # apt-get on nested-app-dev holds the archives' lock between its download and dpkg's unpack: its clean fails and its files stay.
+        (self.held / 'nested-app-dev').touch()
+        done = subprocess.run([sys.executable, '-I', '-c', SCRIPT.read_text(), 'run', str(self.record), str(self.pools), *NAMES], capture_output=True,
+                              text=True, check=False, env={**os.environ, 'PATH': f'{self.bin}:/usr/bin:/bin', 'DRIVER': self.driver})
+        self.assertEqual(json.loads(done.stdout.splitlines()[-1])['shrink'], 'ran')
+        self.assertIn('nested-app-dev: apt-get clean exited 100', done.stderr)
+        self.assertEqual(self.clean_log.read_text().splitlines(), [f'exec {name} -- apt-get clean' for name in NAMES])
+        self.assertEqual([len(list((self.disk(name) / 'var/cache/apt/archives').rglob('*.deb'))) for name in NAMES], [0, 2, 0])
 
     def outer(self, relative):
         """A file outside every root disk, on the same device, with the bytes, owner and mode of the shipped binary."""
@@ -222,6 +237,7 @@ class FleetShrinkTest(unittest.TestCase):
         disk.rename(moved)
         disk.symlink_to(moved)
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'unreadable'})
+        self.assertEqual(self.shrink('based'), {'based': False})
         self.assertEqual(self.shrink('run'), {'shrink': 'failed', 'relinked': 0, 'dedupe': 'failed'})
         self.assertFalse(self.duperemove_log.exists())
         self.assertEqual((moved / 'usr/bin/coreutils').stat().st_nlink, 1)
@@ -246,6 +262,7 @@ class FleetShrinkTest(unittest.TestCase):
         self.record.write_text(json.dumps({**recorded, 'rule': '1'}))
         self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
         self.shrink('run')
+        self.shrink('based')
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
 
     def test_a_file_that_differs_from_the_shipped_one_is_never_replaced(self):
@@ -282,9 +299,17 @@ class FleetShrinkTest(unittest.TestCase):
         self.assertFalse(self.record.exists())
         self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
 
+    def test_a_package_that_changes_during_the_run_writes_no_record(self):
+        status = self.disk('nested-app-dev') / 'var/lib/dpkg/status'
+        self.stub('duperemove', f'echo "Package: htop" >> {status}\n')
+        self.assertEqual(self.shrink('run')['shrink'], 'ran')
+        self.assertFalse(self.record.exists())
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
+
     def test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record(self):
         self.stub('incus', 'exit 1\n')
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'unreadable'})
+        self.assertEqual(self.shrink('based'), {'based': False})
         self.assertEqual(self.shrink('run'), {'shrink': 'failed', 'relinked': 0, 'dedupe': 'failed'})
         self.assertFalse(self.record.exists())
 

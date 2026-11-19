@@ -388,6 +388,8 @@ orbit project:update <project> --default-auto-deploy=false
 
 The default of a nested-fleet Project, such as Orbit's own, deploys only through its [refresh after a release](/reference/development-containers#refresh-after-a-release). A commit on its repository does not deploy it.
 
+That refresh never waits for the shrink of the nested root disks. When a shrink is due, the refresh takes `base` of the running fleet and starts the shrink after it, as the unit `orbit-fleet-shrink`, which runs on after the Operation ends. The next refresh retakes `base`, so the seed then holds the small disks ([The inner machines stay small](/reference/development-containers#the-inner-machines-stay-small)).
+
 This is the shared eligibility rule. Discovery, admission and the deploy worker all use it, so a default that stops being eligible stops between two runs. A production Instance never takes this path.
 
 Every minute, a Gateway scheduler job reads each eligible Project's default branch once and compares the head with the default's `seed_commit`, the commit of its newest seed. A default whose seed matches starts no Swamp run. A failed commit does not loop. A default whose last policy result is `commit_failed` for this head starts no run. After a `failed` result for this head, it waits 10 minutes, the policy's first backoff. A manual deploy that ends after that result lifts both holds. Only the defaults behind their branch enter one on-demand Swamp run, `automatic-development-deploy`, with their Instance ids. That run applies the development policy:

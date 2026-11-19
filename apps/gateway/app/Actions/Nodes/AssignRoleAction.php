@@ -91,7 +91,7 @@ final readonly class AssignRoleAction
         $definition = $this->registry->definition($role);
 
         if ($role === RoleName::Ingress) {
-            $this->validateIngressCluster($node);
+            $this->validateIngressCluster($node, $ignoreExistingSingleton);
         }
 
         if ($definition->singleton && ! $ignoreExistingSingleton) {
@@ -128,10 +128,14 @@ final readonly class AssignRoleAction
         }
     }
 
-    private function validateIngressCluster(Node $node): void
+    /** A transfer moves the Cluster's one Ingress, so its current holder does not refuse the target. */
+    private function validateIngressCluster(Node $node, bool $transfer = false): void
     {
         if (! is_int($node->cluster_id)) {
             throw new RoleAssignmentException('Role [ingress] requires Cluster membership.');
+        }
+        if ($transfer) {
+            return;
         }
 
         $assigned = NodeRole::query()
