@@ -1,4 +1,4 @@
-"""A real checkout tree, trusted PR CI and immutable web bytes authorize reuse."""
+"""A green merge queue run on the exact main commit and its immutable web bytes authorize delivery."""
 from contextlib import chdir
 import io
 import json
@@ -16,10 +16,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 receipt = type('Receipt', (), runpy.run_path(str(ROOT / 'bin/ci-tree-receipt')))
 REPO = 'hardimpactdev/orbit'
-HEAD, TESTED, MAIN, TREE = (c * 40 for c in 'abcd')
-BASE = 'e' * 40
-BODY = 'Docs-unaffected: docs/reference/implementation-loop.md: No contract change.'
-START, UPLOAD, END, MERGE = ('2026-11-13T22:00:00Z', '2026-11-13T22:00:30Z', '2026-11-13T22:00:40Z', '2026-11-13T22:01:00Z')
+MAIN, TREE, BASE, AHEAD = (c * 40 for c in 'cdeb')
+START, UPLOAD, END = ('2026-11-13T22:00:00Z', '2026-11-13T22:00:30Z', '2026-11-13T22:00:40Z')
 JOBS = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
 
 
@@ -31,120 +29,219 @@ def archive(files):
     return buf.getvalue()
 
 
-def checkout(sha):
-    return f'2026-11-13T22:00:00Z [command]/usr/bin/git log -1 --format=%H\n2026-11-13T22:00:00Z {sha}\n'
-
-
 class API:
     repository = REPO
 
     def __init__(self):
-        self.pr = dict(number=7, merged_at=MERGE, merge_commit_sha=MAIN, body=BODY,
-                       base={'ref': 'main', 'repo': {'full_name': REPO}}, head={'sha': HEAD, 'repo': {'full_name': REPO}})
-        self.run = dict(id=50, workflow_id=8, path=receipt.WORKFLOW, head_sha=HEAD,
-                        event='pull_request', repository={'full_name': REPO}, head_repository={'full_name': REPO},
-                        status='completed', run_attempt=1, created_at=START, html_url='https://github.com/hardimpactdev/orbit/actions/runs/50')
-        self.main_delivered = True
+        self.run = dict(id=50, workflow_id=8, path=receipt.WORKFLOW, head_sha=MAIN, event='merge_group',
+                        head_branch=f'gh-readonly-queue/main/pr-7-{BASE}', repository={'full_name': REPO},
+                        head_repository={'full_name': REPO}, status='completed', conclusion='success', run_attempt=1,
+                        html_url='https://github.com/hardimpactdev/orbit/actions/runs/50')
         self.runs = [self.run]
-        self.jobs = [dict(id=i, name=name, run_attempt=1, head_sha=HEAD, status='completed',
+        self.jobs = [dict(id=i, name=name, run_attempt=1, head_sha=MAIN, status='completed',
                           conclusion='success', started_at=START, completed_at=END)
-                     for i, name in enumerate(('Required checks', 'Select build inputs', 'Docs build', 'Web build'), 60)]
-        self.logs = {j['id']: checkout(TESTED) for j in self.jobs}
-        self.logs[61] += f'2026-11-13T22:00:32Z PR delivery target: main\n2026-11-13T22:00:32Z PR delivery baseline: {BASE}\n'
-        self.logs[62] += f'2026-11-13T22:00:35Z Docs body SHA256: {receipt.sha256(BODY.encode())}\n'
-        self.web_bytes = archive({'index.html': '<h1>Checked</h1>', 'version.json': json.dumps({'buildId': TESTED}), 'assets/test.js': 'tested code'})
-        self.web = self.artifact(100, 'web-pr-50-1', self.web_bytes)
-        self.record = dict(repository=REPO, pr=7, head=HEAD, base_ref='main', run=50, attempt=1, tested_commit=TESTED,
-                           tree=TREE, body_sha256=receipt.sha256(BODY.encode()), delivery_base=BASE, web_id=100,
-                           web_digest=self.web['digest'].split(':')[1], web_attempt=1)
-        self.commit = dict(tree={'sha': TREE}, parents=[{'sha': 'e' * 40}, {'sha': HEAD}])
-        self.refresh_record()
-
-    def artifact(self, id, name, data):
-        return dict(id=id, name=name, workflow_run={'id': 50}, digest='sha256:' + receipt.sha256(data),
-                    size_in_bytes=len(data), expired=False, created_at=UPLOAD)
-
-    def refresh_record(self):
-        self.record_bytes = archive({'receipt.json': json.dumps(self.record)})
-        self.provenance = self.artifact(101, 'ci-tree-50-' + str(self.record['attempt']), self.record_bytes)
+                     for i, name in enumerate(('Required checks', 'Select build inputs', 'Web build'), 60)]
+        self.web_bytes = archive({'index.html': '<h1>Checked</h1>', 'version.json': json.dumps({'buildId': MAIN}), 'assets/test.js': 'tested code'})
+        self.web = dict(id=100, name='web-queue-50-1', workflow_run={'id': 50}, digest='sha256:' + receipt.sha256(self.web_bytes),
+                        size_in_bytes=len(self.web_bytes), expired=False, created_at=UPLOAD)
+        # Main delivery passed on these commits.
+        self.delivered = {BASE}
 
     def one(self, path):
-        return {'actions/workflows/ci.yml': {'id': 8, 'path': receipt.WORKFLOW},
-                'pulls/7': self.pr, 'git/commits/' + TESTED: self.commit,
-                'actions/artifacts/100': self.web}[path]
+        return {'actions/workflows/ci.yml': {'id': 8, 'path': receipt.WORKFLOW}}[path]
 
     def rows(self, path, key=None):
-        if path.startswith('commits/'):
-            return [self.pr]
-        if 'branch=main' in path:
-            return [self.run | {'id': 70, 'event': 'push', 'head_branch': 'main', 'head_sha': BASE}] if self.main_delivered else []
-        if '/70/jobs?' in path:
-            return [self.jobs[0] | {'name': 'Main delivery checks', 'head_sha': BASE}]
-        if path.startswith('actions/workflows/'):
+        if 'event=merge_group' in path:
             return self.runs
+        if 'branch=main' in path:
+            sha = path.rsplit('=', 1)[-1]
+            return [dict(self.run, id=70, event='push', head_branch='main', head_sha=sha)]
+        if '/70/jobs?' in path:
+            return [dict(self.jobs[0], name='Main delivery checks', head_sha=sha,
+                         conclusion='success' if sha in self.delivered else 'failure')
+                    for sha in (BASE, AHEAD, MAIN)]
         if '/jobs?' in path:
             return self.jobs
         if path.endswith('/artifacts'):
-            return [self.provenance, self.web]
+            return [self.web]
         raise AssertionError(path)
 
     def raw(self, path):
-        if path.endswith('/logs'):
-            return self.logs[int(path.split('/')[2])].encode()
-        return {'actions/artifacts/100/zip': self.web_bytes, 'actions/artifacts/101/zip': self.record_bytes}[path]
+        return {'actions/artifacts/100/zip': self.web_bytes}[path]
+
+
+class History(API):
+    """Each commit has its own main delivery result and, when named, its own merge queue run."""
+    def __init__(self, queue=None):
+        super().__init__()
+        self.queue = queue or {}
+
+    def rows(self, path, key=None):
+        sha = path.rsplit('=', 1)[-1]
+        if 'event=merge_group' in path:
+            return [dict(self.run, head_sha=sha, **self.queue[sha])] if sha in self.queue else []
+        if 'branch=main' in path:
+            return [dict(self.run, id=int(sha[0], 16), event='push', head_branch='main', head_sha=sha)]
+        sha = next(sha for sha in (BASE, AHEAD, MAIN) if f'/{int(sha[0], 16)}/jobs?' in path)
+        return [dict(self.jobs[0], name='Main delivery checks', head_sha=sha,
+                     conclusion='success' if sha in self.delivered else 'failure')]
 
 
 class ReceiptTest(unittest.TestCase):
     def verify(self, api=None):
         return receipt.verify(api or API(), MAIN, TREE)
 
-    def test_api_captures_log_and_archive_bytes_without_terminal_filtering(self):
+    def test_api_captures_archive_bytes_without_terminal_filtering(self):
         # gh 2.104 rejects ANSI in non-JSON output even when stdout is a pipe.
-        for path, payload in (('actions/jobs/60/logs', b'checkout\x1b[0m\n'),
-                              ('actions/artifacts/100/zip', b'PK\x03\x04\x1b[31m\x00')):
-            with self.subTest(path=path), patch.object(subprocess, 'check_output', return_value=payload) as call:
-                api = receipt.GitHub(REPO)
-                self.assertEqual(api.raw(path), payload)
-                self.assertEqual(call.call_args.args[0],
-                    ['gh', 'api', '--allow-escape-sequences', f'repos/{REPO}/{path}'])
-                self.assertLessEqual(call.call_args.kwargs['timeout'], 10)
+        payload = b'PK\x03\x04\x1b[31m\x00'
+        with patch.object(subprocess, 'check_output', return_value=payload) as call:
+            api = receipt.GitHub(REPO)
+            self.assertEqual(api.raw('actions/artifacts/100/zip'), payload)
+            self.assertEqual(call.call_args.args[0],
+                ['gh', 'api', '--allow-escape-sequences', f'repos/{REPO}/actions/artifacts/100/zip'])
+            self.assertLessEqual(call.call_args.kwargs['timeout'], 10)
 
-    def test_delivery_baseline_walks_past_an_undelivered_main_parent(self):
-        class History(API):
-            def rows(self, path, key=None):
-                if path.startswith('actions/workflows/'):
-                    sha = path.rsplit('=', 1)[-1]
-                    return [self.run | {'id': 51 if sha == MAIN else 50, 'event': 'push',
-                                        'head_branch': 'main', 'head_sha': sha}]
-                return [self.jobs[0] | {'name': 'Main delivery checks',
-                                        'head_sha': MAIN if '/51/' in path else BASE,
-                                        'conclusion': 'failure' if '/51/' in path else 'success'}]
+    def test_the_queue_run_on_the_exact_commit_delivers_its_web_build(self):
+        evidence, files = self.verify()
+        self.assertEqual(evidence, dict(repository=REPO, tested_commit=MAIN, tree=TREE, run=50, attempt=1,
+                                        source_url=API().run['html_url'], web_id=100, source_artifact_digest=API().web['digest']))
+        self.assertEqual(files['index.html'], b'<h1>Checked</h1>')
+        self.assertEqual(json.loads(files['version.json'])['buildId'], MAIN)
 
-        self.assertEqual(receipt.delivery_baseline(History(), [MAIN, BASE]), BASE)
-        with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
-            receipt.delivery_baseline(History(), [MAIN])
-
-    def test_retargeted_run_cannot_supply_a_main_delivery_receipt(self):
+    def test_a_commit_that_no_queue_run_tested_is_refused(self):
+        # A commit merged past the queue has a pull request run at most: no tree comparison can bless it.
         api = API()
-        api.logs[61] = api.logs[61].replace('delivery target: main', 'delivery target: staging')
-        with self.assertRaisesRegex(ValueError, 'must originally target main'):
+        api.runs = []
+        with self.assertRaisesRegex(ValueError, 'No merge queue CI run tested this commit'):
             self.verify(api)
 
-    def test_a_claimed_baseline_without_verified_main_delivery_blocks_promotion(self):
+    def test_fork_other_workflow_same_name_and_non_queue_runs_cannot_spoof(self):
+        for mutation in ({'head_repository': {'full_name': 'fork/orbit'}}, {'repository': {'full_name': 'fork/orbit'}},
+                         {'head_repository': None}, {'repository': None},
+                         {'workflow_id': 99, 'name': 'CI'}, {'path': '.github/workflows/fake.yml', 'name': 'CI'},
+                         {'event': 'pull_request'}, {'event': 'workflow_dispatch'}, {'head_sha': 'f' * 40},
+                         {'head_branch': 'gh-readonly-queue/release/pr-7-' + BASE}, {'head_branch': None}):
+            api = API()
+            api.run.update(mutation)
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'No merge queue CI run'):
+                self.verify(api)
+
+    def test_newest_run_and_newest_attempt_cannot_be_hidden_by_old_green(self):
+        for state in ('failure', 'skipped', 'cancelled', None):
+            api = API()
+            api.run['run_attempt'] = 2
+            api.jobs.append(api.jobs[0] | dict(id=99, run_attempt=2, conclusion=state))
+            with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'Required checks is not green'):
+                self.verify(api)
+        # The gate of a rerun has not started: the first attempt's green gate does not count.
         api = API()
-        api.main_delivered = False
-        with self.assertRaisesRegex(ValueError, 'No verified main delivery'):
+        api.run['run_attempt'] = 2
+        with self.assertRaisesRegex(ValueError, 'current attempt'):
+            self.verify(api)
+        api = API()
+        api.runs = [api.run, api.run | dict(id=51)]
+        failed = [job | dict(conclusion='failure') for job in api.jobs]
+        rows = api.rows
+        api.rows = lambda path, key=None: failed if '/51/jobs?' in path else rows(path, key)
+        with self.assertRaisesRegex(ValueError, 'Required checks is not green'):
             self.verify(api)
 
-    def test_baseline_must_be_in_the_tested_first_parent_history(self):
+    def test_the_gate_counts_before_github_closes_the_run(self):
+        # The queue merges when Required checks reports; the run itself ends a moment later.
         api = API()
-        api.commit['parents'][0]['sha'] = MAIN
-        one = api.one
-        api.one = lambda path: {'parents': []} if path == f'git/commits/{MAIN}' else one(path)
-        with self.assertRaisesRegex(ValueError, 'outside the tested first-parent history'):
+        api.run.update(status='in_progress', conclusion=None)
+        self.assertEqual(self.verify(api)[0]['run'], 50)
+
+    def test_every_evidence_job_must_be_green_on_the_commit(self):
+        for index in range(3):
+            for change in ({'conclusion': 'failure'}, {'status': 'in_progress'}, {'head_sha': 'f' * 40}):
+                api = API()
+                api.jobs[index].update(change)
+                with self.subTest(job=api.jobs[index]['name'], change=change), self.assertRaisesRegex(ValueError, 'is not green'):
+                    self.verify(api)
+
+    def test_a_failed_only_rerun_keeps_the_first_web_build(self):
+        # Actions copies a green Web build to the new attempt: new attempt number, first times, no new artifact
+        # (observed on run 44421680598).
+        api = API()
+        api.run['run_attempt'] = 2
+        for job in api.jobs:
+            job['run_attempt'] = 2
+        self.assertEqual(self.verify(api)[0]['web_id'], 100)
+
+    def test_a_rerun_web_build_delivers_its_own_artifact(self):
+        api = API()
+        api.run['run_attempt'] = 2
+        for job in api.jobs:
+            job.update(run_attempt=2, started_at='2026-11-13T22:05:00Z', completed_at='2026-11-13T22:05:40Z')
+        rebuilt = archive({'index.html': '<h1>Rebuilt</h1>', 'version.json': json.dumps({'buildId': MAIN})})
+        second = dict(api.web, id=101, name='web-queue-50-2', digest='sha256:' + receipt.sha256(rebuilt),
+                      size_in_bytes=len(rebuilt), created_at='2026-11-13T22:05:30Z')
+        rows, raw = api.rows, api.raw
+        api.rows = lambda path, key=None: [api.web, second] if path.endswith('/artifacts') else rows(path, key)
+        api.raw = lambda path: rebuilt if path == 'actions/artifacts/101/zip' else raw(path)
+        evidence, files = self.verify(api)
+        self.assertEqual(evidence['web_id'], 101)
+        self.assertEqual(files['index.html'], b'<h1>Rebuilt</h1>')
+        # Two builds inside one execution's window name no single tested build.
+        second['created_at'] = api.web['created_at'] = '2026-11-13T22:05:30Z'
+        with self.assertRaisesRegex(ValueError, 'No unique web build'):
             self.verify(api)
 
-    def test_carried_gateway_change_selects_gateway_checks_for_a_docs_pr(self):
+    def test_wrong_artifact_name_digest_metadata_bytes_run_and_timestamp_are_refused(self):
+        mutations = [lambda a: a.web.update(name='web-pr-50-1'), lambda a: a.web.update(name='web-queue-51-1'),
+                     lambda a: a.web.update(digest='sha256:' + '0' * 64),
+                     lambda a: setattr(a, 'web_bytes', a.web_bytes + b'tampered'),
+                     lambda a: a.web.update(workflow_run={'id': 51}),
+                     lambda a: a.web.update(expired=True),
+                     lambda a: a.web.update(created_at='2026-11-13T22:01:00Z'),
+                     lambda a: setattr(a, 'web_bytes', archive({'index.html': 'only'}))]
+        for index, mutation in enumerate(mutations):
+            api = API()
+            mutation(api)
+            if index == 7:
+                api.web.update(digest='sha256:' + receipt.sha256(api.web_bytes), size_in_bytes=len(api.web_bytes))
+            with self.subTest(mutation=index), self.assertRaises(ValueError):
+                self.verify(api)
+
+    def test_baseline_is_the_group_base_when_the_queue_tests_or_tested_it(self):
+        # The group ahead is still running: the queue merges this group only after that one is green.
+        for state in (dict(status='in_progress', conclusion=None), dict(status='queued', conclusion=None),
+                      dict(status='completed', conclusion='success')):
+            with self.subTest(state=state):
+                self.assertEqual(receipt.queue_baseline(History({AHEAD: state}), [AHEAD, BASE]), AHEAD)
+
+    def test_baseline_walks_past_a_commit_that_neither_the_queue_nor_main_verified(self):
+        # AHEAD reached main past the queue and its delivery failed: the plan must also cover its changes.
+        self.assertEqual(receipt.queue_baseline(History(), [AHEAD, BASE]), BASE)
+        for state in ('failure', 'cancelled'):
+            with self.subTest(state=state):
+                api = History({AHEAD: dict(status='completed', conclusion=state)})
+                self.assertEqual(receipt.queue_baseline(api, [AHEAD, BASE]), BASE)
+        with self.assertRaisesRegex(ValueError, 'No verified commit'):
+            receipt.queue_baseline(History(), [AHEAD])
+
+    def test_baseline_reads_the_merge_group_base_and_its_first_parent_history(self):
+        with tempfile.TemporaryDirectory() as scratch, chdir(scratch):
+            def git(*args):
+                return subprocess.check_output(['git', '-c', 'user.name=Fixture', '-c', 'user.email=test@example.com', *args],
+                                               text=True).strip()
+            git('init', '-q')
+            git('commit', '-q', '--allow-empty', '-m', 'Delivered main')
+            git('commit', '-q', '--allow-empty', '-m', 'Group ahead')
+            history = git('rev-list', 'HEAD').splitlines()
+            seen = []
+            output = io.StringIO()
+            with patch.dict(os.environ, QUEUE_BASE=history[0], GITHUB_REPOSITORY=REPO), \
+                    patch.dict(receipt.baseline.__globals__, queue_baseline=lambda api, shas: seen.append(shas) or shas[1]), \
+                    patch('sys.stdout', output):
+                receipt.baseline()
+            self.assertEqual(seen, [history])
+            self.assertEqual(output.getvalue().strip(), history[1])
+            with patch.dict(os.environ, QUEUE_BASE='', GITHUB_REPOSITORY=REPO), self.assertRaisesRegex(ValueError, 'Missing merge group base'):
+                receipt.baseline()
+
+    def test_carried_gateway_change_selects_gateway_checks_for_a_docs_group(self):
         import test_ci_build_plan
 
         with tempfile.TemporaryDirectory() as scratch, chdir(scratch):
@@ -160,127 +257,16 @@ class ReceiptTest(unittest.TestCase):
             gateway.parent.mkdir(parents=True)
             gateway.write_text('<?php')
             git('add', '.')
-            git('commit', '-qm', 'Undelivered main change')
+            git('commit', '-qm', 'Main change merged past the queue')
             parent = git('rev-parse', 'HEAD')
             docs = Path('docs/reference/release.md')
             docs.parent.mkdir(parents=True)
             docs.write_text('Test')
             git('add', '.')
-            git('commit', '-qm', 'Docs PR')
+            git('commit', '-qm', 'Docs group')
             plan = test_ci_build_plan.plan
-            self.assertFalse(plan.select(plan.changed_inputs(parent, 'HEAD')[1], pull_request=True)['jobs']['gateway-tests'])
-            self.assertTrue(plan.select(plan.changed_inputs(base, 'HEAD')[1], pull_request=True)['jobs']['gateway-tests'])
-
-    def test_same_tested_tree_reuses_bytes_even_when_pr_head_tree_differs(self):
-        api = API()
-        api.run['head_commit'] = {'tree_id': 'f' * 40}
-        evidence, files = self.verify(api)
-        self.assertEqual(evidence['tree'], TREE)
-        self.assertEqual(files['index.html'], b'<h1>Checked</h1>')
-        self.assertEqual(json.loads(files['version.json'])['buildId'], TESTED)
-
-    def test_fork_other_workflow_same_name_and_non_pr_runs_cannot_spoof(self):
-        for mutation in ({'head_repository': {'full_name': 'fork/orbit'}},
-                         {'repository': {'full_name': 'fork/orbit'}},
-                         {'workflow_id': 99, 'name': 'CI'}, {'path': '.github/workflows/fake.yml', 'name': 'CI'},
-                         {'event': 'workflow_dispatch'}, {'head_sha': 'f' * 40}):
-            api = API()
-            api.run.update(mutation)
-            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'No trusted'):
-                self.verify(api)
-
-    def test_fork_pr_does_not_qualify_even_with_an_imitating_run(self):
-        api = API()
-        api.pr['head']['repo']['full_name'] = 'fork/orbit'
-        with self.assertRaisesRegex(ValueError, 'No unique'):
-            self.verify(api)
-
-    def test_latest_run_and_latest_attempt_cannot_be_hidden_by_old_green(self):
-        for state in ('failure', 'skipped', 'cancelled', None):
-            api = API()
-            api.run['run_attempt'] = 2
-            api.jobs.append(api.jobs[0] | dict(id=99, run_attempt=2, conclusion=state))
-            with self.subTest(state=state), self.assertRaisesRegex(ValueError, 'Required checks'):
-                self.verify(api)
-        api = API()
-        api.runs.append(api.run | dict(id=51, created_at='2026-11-13T22:02:00Z'))
-        with self.assertRaisesRegex(ValueError, 'after merge'):
-            self.verify(api)
-
-    def test_pending_rerun_cannot_inherit_the_previous_attempts_green_receipt(self):
-        for status in ('queued', 'in_progress', 'waiting'):
-            api = API()
-            api.run.update(status=status, run_attempt=2)
-            with self.subTest(status=status), self.assertRaisesRegex(ValueError, 'not complete'):
-                self.verify(api)
-        api = API()
-        api.run['run_attempt'] = 2
-        with self.assertRaisesRegex(ValueError, 'current attempt'):
-            self.verify(api)
-
-    def test_changed_body_and_gate_only_rerun_cannot_bless_stale_docs(self):
-        api = API()
-        api.pr['body'] += '\nChanged after green'
-        with self.assertRaisesRegex(ValueError, 'body changed'):
-            self.verify(api)
-        # Even a rewritten receipt claiming the new body cannot replace the actual Docs job log.
-        api.run['run_attempt'] = 2
-        api.jobs[0]['run_attempt'] = 2
-        api.record['attempt'] = 2
-        api.record['body_sha256'] = receipt.sha256(api.pr['body'].encode())
-        api.refresh_record()
-        with self.assertRaisesRegex(ValueError, 'Docs body evidence'):
-            self.verify(api)
-
-    def test_failed_only_docs_and_required_rerun_preserves_successful_web_execution(self):
-        api = API()
-        api.pr['body'] += '\nA reviewed reason'
-        # Actions may copy successful job records to a new attempt, preserving their timestamps and logs.
-        api.run['run_attempt'] = 2
-        for job in api.jobs:
-            job['run_attempt'] = 2
-        api.record.update(attempt=2, body_sha256=receipt.sha256(api.pr['body'].encode()))
-        api.logs[62] = checkout(TESTED) + f"2026-11-13T22:00:35Z Docs body SHA256: {api.record['body_sha256']}\n"
-        api.refresh_record()
-        self.assertEqual(self.verify(api)[0]['web_attempt'], 1)
-
-    def test_wrong_artifact_digest_metadata_bytes_run_and_timestamp_are_refused(self):
-        mutations = [lambda a: a.web.update(digest='sha256:' + '0' * 64),
-                     lambda a: setattr(a, 'web_bytes', a.web_bytes + b'tampered'),
-                     lambda a: a.web.update(workflow_run={'id': 51}),
-                     lambda a: a.web.update(expired=True),
-                     lambda a: a.web.update(created_at=MERGE)]
-        for mutation in mutations:
-            api = API()
-            mutation(api)
-            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
-                self.verify(api)
-
-    def test_actual_checkout_tree_wins_over_claims_and_merge_behind_main_is_refused(self):
-        api = API()
-        api.commit['tree']['sha'] = 'f' * 40
-        with self.assertRaisesRegex(ValueError, 'tree differs'):
-            self.verify(api)
-        api = API()
-        api.logs[63] = checkout(HEAD)
-        with self.assertRaisesRegex(ValueError, 'different checkouts'):
-            self.verify(api)
-        api = API()
-        api.commit['parents'][1]['sha'] = 'e' * 40
-        with self.assertRaisesRegex(ValueError, 'final PR merge'):
-            self.verify(api)
-
-    def test_forged_or_unavailable_receipt_is_refused(self):
-        for key, value in (('delivery_base', 'f' * 40), ('pr', 8), ('head', 'f' * 40), ('run', 51), ('attempt', 2)):
-            api = API()
-            api.record[key] = value
-            api.refresh_record()
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                self.verify(api)
-        api = API()
-        api.provenance['expired'] = True
-        with self.assertRaisesRegex(ValueError, 'expired'):
-            self.verify(api)
+            self.assertFalse(plan.select(plan.changed_inputs(parent, 'HEAD')[1], merge_group=True)['jobs']['gateway-tests'])
+            self.assertTrue(plan.select(plan.changed_inputs(base, 'HEAD')[1], merge_group=True)['jobs']['gateway-tests'])
 
     def test_unsafe_zip_is_refused_before_promotion(self):
         for path in ('../evil', '/tmp/evil', 'assets/../../evil', 'assets\\evil'):
@@ -315,18 +301,9 @@ class ReceiptTest(unittest.TestCase):
             self.assertEqual(Path(tmp, 'output').read_text(), 'reuse=true\n')
             self.assertEqual(Path(tmp, 'web/index.html').read_bytes(), web['index.html'])
             self.assertEqual(json.loads(Path(tmp, 'main-tree-receipt.json').read_text())['source_artifact_digest'], api.web['digest'])
-            self.assertIn(TESTED, Path(tmp, 'summary').read_text())
+            self.assertIn(MAIN, Path(tmp, 'summary').read_text())
 
-    def test_null_repository_metadata_blocks_delivery(self):
-        for field in ('head_repository', 'repository'):
-            api = API()
-            api.run[field] = None
-            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'No trusted'):
-                self.verify(api)
-        api = API()
-        api.pr['head']['repo'] = None
-        with self.assertRaisesRegex(ValueError, 'No unique'):
-            self.verify(api)
+    def test_an_unexpected_api_shape_blocks_delivery(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, GITHUB_EVENT_NAME='push',
                 GITHUB_REF='refs/heads/main', GITHUB_REPOSITORY=REPO, GITHUB_SHA=MAIN,
                 GITHUB_OUTPUT=tmp + '/output', GITHUB_STEP_SUMMARY=tmp + '/summary'), \
@@ -337,30 +314,16 @@ class ReceiptTest(unittest.TestCase):
             self.assertFalse(Path(tmp, 'output').exists())
             self.assertIn('Main delivery blocked after', Path(tmp, 'summary').read_text())
 
-    def test_pr_record_binds_real_environment_and_rejects_missing_job_outputs(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            event = Path(tmp, 'event.json')
-            event.write_text(json.dumps({'number': 7, 'pull_request': {'head': {'sha': HEAD}, 'base': {'ref': 'main'}}}))
-            env = dict(GITHUB_EVENT_NAME='pull_request', GITHUB_EVENT_PATH=str(event),
-                       GITHUB_REPOSITORY=REPO, GITHUB_RUN_ID='50', GITHUB_RUN_ATTEMPT='2',
-                       DOCS_BODY_SHA256=receipt.sha256(BODY.encode()), DELIVERY_BASE=BASE, WEB_ID='100',
-                       WEB_DIGEST='e' * 64, WEB_ATTEMPT='1')
-            path = Path(tmp, 'receipt.json')
-            with patch.dict(os.environ, env), patch.dict(receipt.record.__globals__,
-                    git=lambda a: TESTED if a == 'HEAD' else TREE):
-                receipt.record(path)
-                data = json.loads(path.read_text())
-                self.assertEqual(data, dict(repository=REPO, pr=7, head=HEAD, base_ref='main', run=50, attempt=2,
-                    tested_commit=TESTED, tree=TREE, body_sha256=env['DOCS_BODY_SHA256'],
-                    delivery_base=BASE, web_id=100, web_digest='e' * 64, web_attempt=1))
-                for key, value in (('WEB_ID', ''), ('WEB_DIGEST', ''), ('WEB_DIGEST', 'sha256:' + 'e' * 64),
-                                   ('DOCS_BODY_SHA256', ''), ('WEB_ATTEMPT', '')):
-                    with self.subTest(key=key, value=value), patch.dict(os.environ, {key: value}), self.assertRaises(ValueError):
-                        receipt.record(path)
+    def test_delivery_runs_only_from_main(self):
+        for env in (dict(GITHUB_EVENT_NAME='merge_group', GITHUB_REF='refs/heads/main'),
+                    dict(GITHUB_EVENT_NAME='push', GITHUB_REF='refs/heads/gh-readonly-queue/main/pr-7-' + BASE)):
+            with self.subTest(env=env), patch.dict(os.environ, env), self.assertRaisesRegex(ValueError, 'only from main CI'):
+                receipt.attempt(Path('unused'))
 
     def test_real_workflow_reuse_selects_no_tests_and_still_checks_delivery(self):
         from test_ci_build_plan import plan
-        self.assertTrue(plan.select(['docs/a.md'], pull_request=True)['jobs']['web'])
+        self.assertTrue(plan.select(['tools/a.py'], merge_group=True)['jobs']['web'])
+        self.assertFalse(plan.select(['tools/a.py'], pull_request=True)['jobs']['web'])
         select = next(s for s in JOBS['changes']['steps'] if s.get('id') == 'plan')
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ | dict(MAIN='true', GITHUB_OUTPUT=tmp + '/output')
@@ -368,7 +331,7 @@ class ReceiptTest(unittest.TestCase):
             outputs = dict(line.split('=', 1) for line in Path(tmp, 'output').read_text().splitlines())
         self.assertFalse(any(json.loads(outputs['jobs']).values()))
         guard = JOBS['delivery']['steps'][0]['run']
-        success = dict(POLICY='success', CHANGES='success', REUSE='true', RELEASE='success')
+        success = dict(CHANGES='success', REUSE='true')
         for missing in (None, *success):
             failed = {missing: ''} if missing else {}
             with self.subTest(missing=missing):
@@ -377,7 +340,18 @@ class ReceiptTest(unittest.TestCase):
                 self.assertEqual(result.returncode, bool(missing))
         self.assertIn("github.ref == 'refs/heads/main'", next(s for s in JOBS['changes']['steps'] if s.get('id') == 'reuse')['if'])
         self.assertEqual(JOBS['changes']['permissions'], {'contents': 'read', 'actions': 'read', 'pull-requests': 'read'})
-        self.assertEqual(JOBS['gateway-release']['name'], 'Gateway release inputs')
+        # The queue run and the main run share a commit, and the release needs every run of this name on it to pass.
+        # So only main reports it, last: after its Required checks, which follows delivery and the promoted web build.
+        self.assertEqual(JOBS['gateway-release']['name'], 'Release inputs of this change')
+        self.assertTrue(JOBS['gateway-release']['if'].startswith("github.ref != 'refs/heads/main' && "))
+        marker = JOBS['main-release-inputs']
+        self.assertEqual(marker['name'], "${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Main release inputs' }}")
+        self.assertEqual(marker['needs'], 'main-required')
+        self.assertEqual(marker['if'], "always() && needs.main-required.result == 'success' && github.ref == 'refs/heads/main' && "
+                                       "contains(fromJSON('[\"push\", \"workflow_dispatch\"]'), github.event_name)")
+        names = [job.get('name') for job in JOBS.values()]
+        self.assertEqual(sum('Gateway release inputs' in str(name) for name in names), 1)
+        self.assertEqual(JOBS['ci-policy']['if'], "github.ref != 'refs/heads/main'")
         self.assertIn("'Required checks'", JOBS['main-required']['name'])
         for job in JOBS.values():
             self.assertNotIn('checks', job.get('permissions', {}))
