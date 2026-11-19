@@ -563,7 +563,7 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(ran, check['CI_POLICY'])
         self.assertEqual(code, 0)
         self.assertIn('  passed       ci-policy (', output.getvalue())
-        self.assertIn('selected by .agents/skills/swamp/SKILL.md, read by tools/test_ci_swamp_skills.py', output.getvalue())
+        self.assertIn('selected by .agents/skills/swamp/SKILL.md, which a policy test reads', output.getvalue())
 
     def test_a_docs_page_that_no_policy_test_reads_leaves_the_part_to_ci(self):
         ran = []
@@ -577,59 +577,33 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(ran, [])
         self.assertIn('not selected ci-policy (0.0s; no changed path is read by a policy test', output.getvalue())
 
-    def test_each_file_that_a_policy_test_reads_selects_it_and_no_other_does(self):
-        read = {'bin/ci-units': 'tools/test_ci_changed_paths.py', 'tools/test_ci_units.py': "CI's test discovery",
-                'tools/ci-runners/user-manager.sh': 'tools/ci-runners/test_user_manager.py',
-                # Named only by a script that a policy test runs; built from parts, as below.
-                ''.join(('tools/', 'pest_', 'runtime.py')): 'tools/test_ci_check_processes.py, through bin/pest-plain',
-                'swamp/ansible/tasks/apt-proxy.yml': 'tools/test_ci_units.py',
-                '.github/ci/checks.toml': 'tools/test_ci_table.py',
-                '.github/actionlint.yaml': 'tools/test_ci_workflow.py',
-                '.github/actions/php/action.yml': 'tools/test_ci_workflow.py',
-                '.agents/skills/swamp-getting-started/references/tracks.md': 'tools/test_ci_swamp_skills.py',
-                'apps/agent/src/commands/ci_runner.rs': 'tools/test_ci_runner_project_config.py',
-                'apps/cli/design/Flows/node-add.json': 'tools/test_ci_cli_flow.py',
-                'apps/docs/composer.json': 'tools/test_ci_docs_tests.py',
-                'docs/reference/compute-drivers.md': 'tools/test_ci_incus_upgrade_runbook.py',
-                'apps/gateway/tests/.pest/shards.json': 'tools/test_ci_gateway_tests.py',
-                'apps/cli/tests/Feature/CommandSurfaceTest.php': 'tools/test_ci_task_check.py',
-                # The Pest and PHPStan selection tests need these files to exist.
-                'apps/gateway/app/Domain/Tasks/TaskTurn.php': 'tools/test_ci_task_check.py',
-                GATEWAY_TEST: 'tools/test_ci_task_check.py',
-                'apps/gateway/ci-unit-times.json': 'tools/test_ci_policy.py',
-                # test_ci_table.py reads every tracked path and each literal input of the CI table.
-                '.node-version': 'tools/test_ci_table.py', 'new-root/file.txt': 'tools/test_ci_table.py'}
-        for path, reader in read.items():
+    def test_the_tooling_trees_and_each_file_a_policy_test_reads_select_it_and_no_other_does(self):
+        trees = 'bin/, tools/, .github/ select it whole'
+        for path in ('bin/ci-units', 'tools/base64.py', 'tools/notes/README.md', '.github/new-config.yml'):
             with self.subTest(path=path):
-                self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}, read by {reader}')
-        # Built from parts: this file is a policy test, and a file name it spells out counts as one it reads.
-        unread = [''.join(parts) for parts in (
-            ('.github/ISSUE_TEMPLATE/', 'bug_report', '.yml'), ('.github/', 'dependabot', '.yml'),
-            ('bin/', 'web-', 'deploy'), ('tools/swamp-proof-guest/', 'ufw-', 'shim.sh'),
-            ('bin/', 'operator-handoff-', 'notes.txt'), ('tools/', 'operator-handoff-', 'notes.txt'))]
+                self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}; {trees}')
+        # Opened in the recorded run, or checked for existence by a policy test.
+        for path in ('swamp/ansible/tasks/apt-proxy.yml', '.agents/skills/swamp-getting-started/references/tracks.md',
+                     'apps/agent/src/commands/ci_runner.rs', 'apps/cli/design/Flows/node-add.json',
+                     'apps/docs/composer.json', 'docs/reference/compute-drivers.md',
+                     'apps/gateway/tests/.pest/shards.json', 'apps/cli/tests/Feature/CommandSurfaceTest.php',
+                     'apps/gateway/app/Domain/Tasks/TaskTurn.php', GATEWAY_TEST, '.node-version'):
+            with self.subTest(path=path):
+                self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}, which a policy test reads')
         for path in ('docs/reference/tasks.md', 'apps/pi-server/src/main.ts', 'apps/web/src/main.ts',
-                     'apps/gateway/app/Domain/Tasks/TaskVms/TaskVm.php', '.agents/skills/orbit-tasks/SKILL.md',
+                     'swamp/docs/automatic-deploy.md', '.agents/skills/orbit-tasks/SKILL.md',
                      'apps/cli/design/Flows/NodeAddFlowCommand.php',
-                     'apps/cli/tests/Expected/database-connections/database-create/postgres.json', *unread):
+                     'apps/cli/tests/Expected/database-connections/database-create/postgres.json'):
             with self.subTest(path=path):
                 self.assertIsNone(check['ci_policy_input']([path]))
 
-    def test_a_module_that_cis_discovery_loads_selects_it_in_any_package(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            root = Path(scratch)
-            for folder in ('tools/boost', 'tools/ci-runners/deep'):
-                (root / folder).mkdir(parents=True)
-                (root / folder / '__init__.py').write_text('')
-            (root / 'tools/plain').mkdir()
-            with patch.dict(check['discovered'].__globals__, {'ROOT': root}):
-                for path in ('tools/boost/test_ci_scoped_policy.py', 'tools/boost/__init__.py',
-                             'tools/ci-runners/deep/test_hook.py', 'tools/test_ci_new.py'):
-                    with self.subTest(path=path):
-                        self.assertEqual(check['discovered'](path), path)
-                # Discovery skips a folder that is no package and a module that its pattern does not match.
-                for path in ('tools/plain/test_ci_scoped_policy.py', 'tools/boost/helper.py', 'tools/test_other.py'):
-                    with self.subTest(path=path):
-                        self.assertIsNone(check['discovered'](path))
+    def test_every_listed_read_names_a_tracked_file_or_folder_outside_the_tooling_trees(self):
+        tracked = subprocess.check_output(['git', 'ls-files'], cwd=ROOT, text=True).splitlines()
+        for glob in check['CI_POLICY_READS']:
+            with self.subTest(glob=glob):
+                rules = check['units'].selection.input_rules([glob])
+                self.assertTrue(any(check['units'].selection.matches(path, rules) for path in tracked), glob)
+                self.assertFalse(glob.startswith(check['CI_POLICY_TREES']), glob)
 
     def test_a_renamed_file_selects_by_its_old_name(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -650,8 +624,7 @@ class CiPolicyTest(unittest.TestCase):
                         run('commit', '-qm', 'rename')
                     paths = check['policy_paths'](base, committed, ['docs/reference/compute-driver-guide.md'])
                     self.assertIn('docs/reference/compute-drivers.md', paths)
-        self.assertEqual(check['ci_policy_input'](paths), 'selected by docs/reference/compute-drivers.md, read by '
-                                                          'tools/test_ci_incus_upgrade_runbook.py')
+        self.assertEqual(check['ci_policy_input'](paths), 'selected by docs/reference/compute-drivers.md, which a policy test reads')
 
     def test_expensive_checks_follow_their_inputs_not_the_pr_docs_job(self):
         cases = [([], []), (['packages/php-sdk/tests/Unit/Requests/Tasks/TaskRequestsTest.php'], []),
