@@ -10,14 +10,39 @@ const register = Deno.test;
 // deno-lint-ignore no-explicit-any
 type Callback = (...args: any[]) => any;
 const pending: { register: Callback; args: unknown[]; name: string }[] = [];
-const receipt: { startup_seconds?: number; registered: string[]; cases: { name: string; status: string; seconds: number; started_at_ms?: number }[] } = {
+const receipt: { startup_seconds?: number; registered: string[]; cases: { name: string; status: string; seconds: number; started_at_ms?: number; failed_step?: boolean }[] } = {
   registered: [], cases: [],
 };
 function save() {
   if (file) Deno.writeTextFileSync(file, JSON.stringify(receipt));
 }
+// A failed step does not end its case: the case can go on and hang. The receipt records the failed step at once, so a
+// unit that the runner cuts later still counts as failed. Steps of steps are followed too.
+function stepped(context: unknown, row: typeof receipt.cases[number]): unknown {
+  if (!context || typeof context !== "object" || typeof (context as { step?: unknown }).step !== "function") return context;
+  const follow = (arg: unknown) => {
+    if (typeof arg === "function") return (inner: unknown) => (arg as Callback)(stepped(inner, row));
+    if (arg && typeof arg === "object" && "fn" in arg) return { ...arg, fn: (inner: unknown) => (arg.fn as Callback)(stepped(inner, row)) };
+    return arg;
+  };
+  return new Proxy(context, {
+    get(target, property) {
+      const value = Reflect.get(target, property);
+      if (property !== "step") return typeof value === "function" ? value.bind(target) : value;
+      return async (...args: unknown[]) => {
+        const passed = await (value as Callback).apply(target, args.map(follow));
+        if (!passed) {
+          row.failed_step = true;
+          save();
+        }
+        return passed;
+      };
+    },
+  });
+}
 function timed(fn: Callback, row: typeof receipt.cases[number]): Callback {
   const wrapped = async (...args: unknown[]) => {
+    args = [stepped(args[0], row), ...args.slice(1)];
     if (receipt.startup_seconds === undefined) {
       receipt.startup_seconds = (Date.now() - Number(Deno.env.get("ORBIT_TEST_STARTED_AT_MS"))) / 1000;
     }

@@ -402,7 +402,7 @@ The nested-fleet image cases of the Instance host image file run on pull request
 
 Each fixture shard has a four-minute job limit. The runner stops the shard at its deadline and names running units as `OVER BUDGET` and queued units as `NOT RUN`. Each unit also has a 180-second ceiling; the runner stops a unit that exceeds it and names it `OVER BUDGET`, with its time.
 
-A slow check never gates. A unit that the ceiling or the deadline cut, and in which no case failed, does not fail its shard or `Required checks`. A failure fails as before, also in a unit that was cut later: a failed case in the unit's receipt, a failed case or step that Deno printed, or a failure in unittest's progress line.
+A slow check never gates. A unit that the ceiling or the deadline cut, and in which no case failed, does not fail its shard or `Required checks`. A failure fails as before, also in a unit that was cut later: a failed case or step in a Deno unit's receipt, or a unittest failure, which `tools/ci_unit_failures.py` records at once.
 
 The shard prints a warning for each cut unit. `Required checks` reads the times of every shard with `bin/ci-units cuts`, writes the cut units to its summary and posts them as one comment on the pull request. A unit that is named in every run hangs or is too slow: split it or make it faster.
 

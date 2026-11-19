@@ -952,21 +952,41 @@ class ExecutionTest(unittest.TestCase):
             self.assertEqual(0, code(['swamp/pass.py', 'swamp/slow.py']))
             self.assertEqual([None, True], [r.get('cut') for r in json.loads((folder / 'times.json').read_text())])
             self.assertEqual(1, code(['swamp/pass.py', 'swamp/slow.py', 'swamp/failed.py']))
-            # A failure printed before the cut gates: unittest's progress line, and Deno's failed case or step.
-            hang = 'import sys, signal; sys.stderr.write({!r}); sys.stderr.flush(); signal.pause()'
-            for name, tool, text, gates in (('swamp/py-fail.py', 'python3', '.F', True), ('swamp/py-error.py', 'python3', 'E', True),
-                                            ('swamp/py-fine.py', 'python3', '..s\nother output', False),
-                                            ('swamp/step.ts', 'deno', 'outer ...\n  first step ... FAILED (3ms)\n', True),
-                                            ('swamp/fine.ts', 'deno', 'outer ...\n  first step ... ok (3ms)\n', False)):
+            # A unittest failure before the cut gates, whatever the unit printed: the recorder marks it at once.
+            suite = '''import signal, sys, unittest
+class Fixture(unittest.TestCase):
+    def test_a(self):
+        sys.stderr.write('working'); sys.stderr.flush()
+        {first}
+    def test_b(self):
+        signal.pause()
+if __name__ == '__main__':
+    unittest.main()
+'''
+            for name, first, gates in (('fail', 'self.assertEqual(1, 2)', True), ('error', 'raise RuntimeError()', True),
+                                       ('subtest', 'with self.subTest(): self.fail()', True),
+                                       ('fine', "sys.stderr.write('\\nEntering setup\\nFatal is a word\\n')", False)):
                 with self.subTest(name=name):
-                    # The runner reads the tool from the step's first word; a stand-in `deno` runs the same script.
-                    steps[name] = units.gate.Step('shape', name, [tool, '-c', hang.format(text)])
-                    with contextlib.redirect_stdout(io.StringIO()):
-                        result = units.run_unit(steps[name], environment, .5)
+                    file = folder / f'{name}_test.py'
+                    file.write_text(suite.format(first=first))
+                    steps[f'swamp/{name}.py'] = units.gate.Step('shape', name, ['python3', '-I', str(file)])
+                    self.assertEqual(int(gates), code([f'swamp/{name}.py']))
+                    row = json.loads((folder / 'times.json').read_text())[0]
+                    self.assertEqual(('OVER BUDGET', gates, not gates), (row['status'], row.get('failed_before_cut', False), row.get('cut', False)))
+            # The recorder leaves a passing file as it was: the exit code and unittest's own output.
+            file = folder / 'pass_test.py'
+            file.write_text(suite.format(first='pass').replace('signal.pause()', 'pass'))
+            steps['swamp/passes.py'] = units.gate.Step('shape', 'passes', ['python3', str(file)])
+            self.assertEqual(0, code(['swamp/passes.py']))
+            # A failed Deno case or step in the receipt gates, and so does one that Deno printed.
+            for case in ({'name': 'outer', 'status': 'CENSORED', 'failed_step': True}, {'name': 'outer', 'status': 'FAILED'}):
+                self.assertEqual([], units.cut_units([{'unit': 'swamp/x.ts', 'status': 'OVER BUDGET', 'seconds': 1, 'cases': [case]}]))
+            hang = 'import sys, signal; sys.stderr.write({!r}); sys.stderr.flush(); signal.pause()'
+            for name, text, gates in (('swamp/step.ts', 'outer ...\n  first step ... FAILED (3ms)\n', True),
+                                      ('swamp/fine.ts', 'outer ...\n  first step ... ok (3ms)\n', False)):
+                with self.subTest(name=name), contextlib.redirect_stdout(io.StringIO()):
+                    result = units.run_unit(units.gate.Step('shape', name, ['deno', '-c', hang.format(text)]), environment, .5)
                     self.assertEqual(('OVER BUDGET', gates), (result['status'], result.get('failed_before_cut', False)))
-                    self.assertEqual(not gates, result in units.cut_units([result]))
-                    if tool == 'python3':
-                        self.assertEqual(int(gates), code([name]))
             # The report command reads the times of every shard and prints nothing without a cut.
             (folder / 'times.json').unlink()
             (folder / 'shard').mkdir()

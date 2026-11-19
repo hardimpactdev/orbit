@@ -724,7 +724,13 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
                'ORBIT_TEST_STARTED_AT_MS': str(time.time_ns() // 1_000_000),
                'ORBIT_TEST_TIMING_FILE': str(Path(scratch) / 'startup.json')}
         receipt = Path(scratch) / 'unit-receipt.json'
-        process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *step.argv],
+        failure = Path(scratch) / 'failure'
+        argv = step.argv
+        if argv[0] == 'python3' and argv[-1].endswith('.py'):
+            # A unittest file runs through the recorder, which marks the first failure at once.
+            argv = [*argv[:-1], str(ROOT / 'tools/ci_unit_failures.py'), argv[-1]]
+            env['ORBIT_TEST_FAILURE_FILE'] = str(failure)
+        process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *argv],
                                    cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT)
         sent_cancel = False
         while True:
@@ -763,11 +769,12 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
             if not valid:
                 result['status'] = 'FAILED'
                 captured += '\nFixture lacks a valid receipt proving every selected Deno case passed (ignored and unrun cases fail).\n'
-        # A failure that the unit printed before it was cut is a failed assertion, and the unit gates. Deno prints each
-        # failed case and step as `... FAILED`. unittest prints a progress line of `.`, `s`, `x`, `F` and `E`; a line
-        # that starts like one with an F or E counts, so other output can only make a unit gate, never pass.
-        if result['status'] == 'OVER BUDGET' and re.search(
-                r'\.\.\. FAILED\b' if step.argv[0] == 'deno' else r'(?m)^[.sx]*[FE]', captured):
+        # A failure before the cut is a failed assertion, and the unit gates. A Deno unit's receipt holds its failed
+        # cases and steps; Deno also prints each one as `... FAILED`. A unittest unit writes a marker at its first
+        # failure, because unittest prints the details only when the whole run ends.
+        if result['status'] == 'OVER BUDGET' and (
+                failure.exists() or step.argv[0] == 'deno' and re.search(r'\.\.\. FAILED\b', captured)
+                or any(row.get('status') == 'FAILED' or row.get('failed_step') for row in result.get('cases') or [])):
             result['failed_before_cut'] = True
         if re.search(r'Ran 0 tests\b', captured):
             result['status'] = 'FAILED'
@@ -856,7 +863,7 @@ def run(units, budget, fixtures, times, tools=None):
 def cut_units(results):
     """The units that the unit ceiling or the shard deadline cut, without a failed case: they do not gate."""
     return [row for row in results if row['status'] in ('OVER BUDGET', 'NOT RUN') and not row.get('failed_before_cut')
-            and not any(case.get('status') == 'FAILED' for case in row.get('cases') or [])]
+            and not any(case.get('status') == 'FAILED' or case.get('failed_step') for case in row.get('cases') or [])]
 
 
 def cut_report(cut):
