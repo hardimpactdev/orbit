@@ -53,7 +53,7 @@ On Linux the `orbit-agent` binary also carries the executor ([ADR 0271](/decisio
 - `orbit-agent` with no mode runs the observer, as before.
 - `orbit-agent execute serve` and `orbit-agent execute relay` run the executor ([Executor: One agent binary](/reference/executor#one-agent-binary)).
 
-Until the Gateway pins a delivery with that mode, Nodes still run the executor from the separate `orbit-executor` binary. Since agent 0.16.0 the executor also joins the Gateway's machine bus and runs the `firewall` family ([Executor: The machine bus](/reference/executor#the-machine-bus)). Agent 0.17.0 adds the `route` family: `tls.ensure_csr` and `route.publish_site`. Agent 0.18.0 adds the `dns` family for VPN Nodes: `dns.publish_records`.
+Until the Gateway pins a delivery with that mode, Nodes still run the executor from the separate `orbit-executor` binary. Since agent 0.16.0 the executor also joins the Gateway's machine bus and runs the `firewall` family ([Executor: The machine bus](/reference/executor#the-machine-bus)). Agent 0.17.0 adds the `route` family: `tls.ensure_csr` and `route.publish_site`. Agent 0.18.0 adds the `dns` family for VPN Nodes: `dns.publish_records`. Agent 0.18.1 keeps reporting while the executor waits for its order consumer, so a Node with no order yet stays routable.
 
 ## What it observes
 
@@ -296,7 +296,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-Gateway releases and desired fleet state use the pinned `cli-v0.10848.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
+Gateway releases and desired fleet state use the pinned `cli-v0.10856.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. `orbit:bootstrap` records that identity, and with `--operator-ip` the roleless `operator` Node, from the Gateway's own code and runs no agent command; until it has, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
@@ -633,7 +633,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Every Gateway release uses the pinned `cli-v0.10848.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
+Every Gateway release uses the pinned `cli-v0.10856.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {
