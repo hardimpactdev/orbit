@@ -29,7 +29,7 @@ final readonly class NodeWorkAdmission
 
     /**
      * A refused automatic role converge queues: new Instance, Conn and Process work on the Node waits behind it, so it starts once the
-     * current holders end. A removal goes on, and so does a holder's continuation: an Operation whose parent, or whose input
+     * current holders end. A removal goes on, also beside a running automatic converge, and so does a holder's continuation: an Operation whose parent, or whose input
      * `*_operation_id` (such as the completion of a create), leads back to a holder, step by step. New work on a holder's target waits
      * like any other. The wait is bounded: after WaitLimitSeconds the converge is admitted beside the holders, and it records them in
      * its state as `admitted_beside`, so their continuations go on while it runs. Task work (`tasks.*`: copy turns, checks,
@@ -42,6 +42,11 @@ final readonly class NodeWorkAdmission
     {
         $patterns = [...WaitForGatewayReleaseIdleAction::BlockingKindPatterns, 'instance.transfer'];
         $roles = $kind === 'node.converge' && data_get($input, '_converge.intent.release_roles_only') === true;
+        // A removal is accepted at once and never waits for a converge, waiting or running: its Caddy writes take the Node's publication
+        // lock and check the live file before the rename, as a converge admitted beside Instance work relies on too.
+        if (! $roles && InstanceDestroyKind::removes($kind)) {
+            return [];
+        }
         if (! $roles && ! Str::is(array_map(static fn (string $pattern): string => str_replace('%', '*', $pattern), $patterns), $kind)) {
             return [];
         }
@@ -49,7 +54,7 @@ final readonly class NodeWorkAdmission
         $nodes = $roles ? [$nodeId] : array_values(array_unique([$nodeId, ...ValidatedData::integerList($input['participant_node_ids'] ?? [])]));
         Node::query()->whereKey($nodes)->orderBy('id')->lockForUpdate()->get();
         $lineage = $roles ? [] : self::lineage($parentId, $input);
-        if (! $roles && ! InstanceDestroyKind::removes($kind) && array_any($nodes, static fn (int $id): bool => ($wait = self::wait($id)) !== null
+        if (! $roles && array_any($nodes, static fn (int $id): bool => ($wait = self::wait($id)) !== null
             && array_intersect($lineage, $wait['holders']) === [])) {
             throw new ResourceOperationException('operation.target_busy', 'An automatic role converge waits for this Node.', 409);
         }

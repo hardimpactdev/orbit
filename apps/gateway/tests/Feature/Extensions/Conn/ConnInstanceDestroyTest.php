@@ -44,6 +44,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
@@ -395,6 +396,30 @@ it('admits the forced engine and follows its Conn-owned Operation through succes
     $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->getJson('/api/v1/conn/environments')
         ->assertOk()->assertJsonCount(0, 'data');
     connRemovalCall($instance->id, ['acknowledge_unsaved' => true], 'new-key')->assertNotFound();
+});
+
+it('accepts a Conn destroy at once while an automatic role converge runs on the Node, and it finishes with no second request', function (): void {
+    // Review 5964: this request was refused with operation.target_busy after it had already removed the Schedule, and nothing retried it.
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    $converge = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $instance->node_id,
+        'node_id' => $instance->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true]]], 'state' => [],
+        'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test', 'lock_key' => 'node:'.$instance->node_id]);
+    $start = count($this->socket->messages);
+
+    $response = connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()
+        ->assertJsonPath('data.kind', 'instance.destroy');
+    $operation = Operation::query()->findOrFail($response->json('data.id'));
+    expect(array_column(array_slice($this->socket->messages, $start), 'type'))->toContain('workflow.trigger.remove')
+        ->and($operation->status)->toBe(OperationStatus::Queued)
+        ->and(InstanceRemoval::query()->whereKey($operation->input['removal_id'])->exists())->toBeTrue()
+        ->and($instance->refresh()->status)->toBe(InstanceState::Removing);
+
+    // The removal runs while the converge still runs; nothing waits for it to end.
+    connRemovalSucceed($operation->refresh());
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)->and($converge->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($instance->fresh())->toBeNull()
+        ->and(Route::query()->where('domain', 'feature.fixture.test')->exists())->toBeFalse();
 });
 
 it('drops the removed clone\'s attached threads from every profile when the destroy succeeds', function (): void {

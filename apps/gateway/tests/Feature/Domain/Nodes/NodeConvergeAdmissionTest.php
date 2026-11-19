@@ -626,6 +626,13 @@ it('serializes automatic role admission with participating work in both admissio
     $busy->update(['state' => [...$expired, 'native_cancel_confirmed_at' => now()->toISOString()]]);
 
     $scope = $converge();
+    if ($kind === 'instance.destroy') {
+        // A removal is accepted at once beside a running automatic converge (docs/reference/node-provisioning.md).
+        expect($admit($participants)->status)->toBe(OperationStatus::Queued)->and(Operation::query()->count())->toBe(3);
+        $scope->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
+
+        return;
+    }
     expect(fn () => $admit($participants))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
     expect($admit([$this->control->id])->status)->toBe(OperationStatus::Queued)
         ->and(Operation::query()->count())->toBe(3);

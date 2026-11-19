@@ -1457,7 +1457,7 @@ describe('a cancel of a group that owns a copy', function (): void {
         expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
     });
 
-    it('answers HTTP 409 operation.target_busy, recorded as such, while an automatic role converge runs on the copy\'s Node', function (): void {
+    it('answers HTTP 409 operation.target_busy recorded as such, and admits the copy\'s destroy at once while an automatic role converge runs on its Node', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
         $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
@@ -1471,14 +1471,21 @@ describe('a cancel of a group that owns a copy', function (): void {
             'node_id' => $copy->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true]]], 'state' => [], 'status' => OperationStatus::Running,
             'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test', 'lock_key' => 'node:'.$copy->node_id]);
 
-        // The refusal of release 2161's first cancel of group 5956: a running release converge holds the copy's Node until it ends.
-        $this->withHeader('Idempotency-Key', 'cancel-converging')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
-            ->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy')
-            ->assertJsonPath('error.message', 'Automatic role convergence and Instance work share a Node.')
-            ->assertJsonPath('error.details.operation_ids', [$converge->id]);
+        // A refusal of the cancel answers HTTP 409 with its own code, never gateway.unhandled, and Activity records that code.
+        $other = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test']);
+        $this->withHeader('Idempotency-Key', 'cancel-busy')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
+            ->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy');
         $activity = Activity::query()->where('command', 'task:cancel')->sole();
-        expect([$activity->status, $activity->error_code])->toBe(['failed', 'operation.target_busy'])
-            ->and(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse();
+        expect([$activity->status, $activity->error_code])->toBe(['failed', 'operation.target_busy']);
+        $other->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()]);
+
+        // Release 2161's first cancel of group 5956 was refused while a release converge ran on the copy's Node. The copy's destroy is
+        // now accepted at once beside it (docs/reference/node-provisioning.md).
+        $this->withHeader('Idempotency-Key', 'cancel-converging')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
+            ->assertStatus(202)->assertJsonPath('data.kind', 'tasks.cancel');
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue()
+            ->and($converge->refresh()->status)->toBe(OperationStatus::Running);
     });
 
     it('admits no destroy when another Operation takes the group lock after the cancel\'s checks', function (): void {
