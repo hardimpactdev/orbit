@@ -23,18 +23,19 @@ use RuntimeException;
  * - `csr-<i>`: `tls.ensure_csr` on the leaf's Node, which answers a request for a key that never leaves it;
  * - `sign-<i>`: the Gateway signs the request against the admitted leaf, as `operation:direct:certificate-sign` does;
  * - `site-<node>`: `route.publish_site` on each Node with Route work;
+ * - `dns-<i>`: `dns.publish_records` on each VPN Node whose private DNS records change;
  * - `probe-<i>`: the Gateway's TLS handshake with each serving Node, by its WireGuard address and the Route's name.
  *
- * A Route that needs private DNS, the Ingress edge, a LAN rule, a production `.env` or awake markers starts on Swamp
+ * A Route that needs the Ingress edge, a LAN rule, a production `.env` or awake markers starts on Swamp
  * ([EngineUnsupported]). Step labels map onto the chart's, so a failure records the same `failed_step` and error code.
  */
 final readonly class RouteEngineFlow implements EngineDefinition
 {
     /** Each step prefix's chart label (NativeRouteConvergenceProjection::StepCodes). */
     private const array Labels = ['csr' => 'Make a CSR on the Node', 'sign' => 'Sign the CSR', 'site' => 'Install cert, publish site',
-        'probe' => 'Probe the site over TLS'];
+        'dns' => 'Publish private DNS', 'probe' => 'Probe the site over TLS'];
 
-    private const array Unsupported = ['lan', 'ingress', 'ingress_ports', 'dns', 'env_files', 'awake'];
+    private const array Unsupported = ['lan', 'ingress', 'ingress_ports', 'env_files', 'awake'];
 
     /** The executor's own shape rules (orbit-executor-route), checked here first so a mismatch starts on Swamp. */
     private const string Name = '/\A[a-z_][a-z0-9_-]{0,31}\z/D';
@@ -73,6 +74,13 @@ final readonly class RouteEngineFlow implements EngineDefinition
             // The budget covers every command's own time limit: five access commands of 120 s, the pool tests, trust and Caddy.
             $steps[] = $sites[] = new StepSpec("site-{$node}", $node, 'route.publish_site', (string) $node, $after, budgetMs: 900_000, resendMs: 30_000);
         }
+        // Private DNS follows the signatures, beside the sites, as the chart orders it. A probe reaches the Node by its
+        // WireGuard address, so it waits for the sites alone.
+        foreach (RouteExecutionProof::objects($plan['dns'] ?? []) as $index => $row) {
+            $vpn = ValidatedData::integer($row['node_id']);
+            $steps[] = new StepSpec("dns-{$index}", $vpn, 'dns.publish_records', (string) $vpn, array_map(static fn (StepSpec $step): string => $step->name, $signs),
+                budgetMs: 120_000, resendMs: 20_000);
+        }
         $after = array_map(static fn (StepSpec $step): string => $step->name, $sites);
         foreach (array_keys(RouteExecutionProof::objects($plan['probes'])) as $index) {
             $steps[] = new StepSpec("probe-{$index}", 0, 'route.probe', 'gateway', $after, budgetMs: 60_000);
@@ -90,6 +98,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
             'csr' => self::csrInput(RouteExecutionProof::objects($plan['leaves'])[(int) $index]),
             'site' => $this->siteInput($plan, (int) $index, static fn (int $leaf): string => $run->output("sign-{$leaf}")
                 ?? throw new LogicException("Leaf {$leaf} has no signed certificate.")),
+            'dns' => self::dnsInput(RouteExecutionProof::objects($plan['dns'])[(int) $index]),
             default => throw new LogicException("Step [{$step}] is a Gateway step."),
         };
     }
@@ -143,6 +152,18 @@ final readonly class RouteEngineFlow implements EngineDefinition
         }
 
         return ['directory' => $directory, 'domain' => $domain];
+    }
+
+    /**
+     * A VPN Node's records and catalog, as the Gateway rendered them, both as blobs.
+     *
+     * @param  array<string, mixed>  $row
+     * @return array{records: array{blob: array{content: string}}, catalog: array{blob: array{content: string}}}
+     */
+    private static function dnsInput(array $row): array
+    {
+        return ['records' => ['blob' => ['content' => ValidatedData::string($row['records'])]],
+            'catalog' => ['blob' => ['content' => ValidatedData::string($row['catalog'])]]];
     }
 
     /**

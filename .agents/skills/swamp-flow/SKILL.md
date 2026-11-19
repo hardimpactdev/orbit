@@ -7,7 +7,7 @@ description: Routes implementation and review of an Orbit command's Swamp workfl
 
 Start from the command's chart and public page. The [chart README](../../../docs/cli/README.md) owns design rules; [flow-tighten](../flow-tighten/SKILL.md) is a critique checklist. The binding [Swamp shape guide](../../../swamp/docs/swamp-shape.md) alone owns machine execution, placement, secrets, callbacks and result transport. Do not copy grandfathered workflows as templates.
 
-Load the official [swamp skill](../swamp/SKILL.md) for native CLI and workflow mechanics. Use the [porting reference](../../../docs/swamp/porting.md) for Orbit integration and [ansible-phase](../ansible-phase/SKILL.md) for playbooks.
+Load the official [swamp skill](../../../.agents/swamp-upstream/skills/swamp/SKILL.md) for native CLI and workflow mechanics. Use the [porting reference](../../../docs/swamp/porting.md) for Orbit integration and [ansible-phase](../ansible-phase/SKILL.md) for playbooks.
 
 ## Implement and check
 
