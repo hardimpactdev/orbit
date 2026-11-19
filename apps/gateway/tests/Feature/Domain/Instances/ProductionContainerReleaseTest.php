@@ -377,6 +377,27 @@ describe('production container deployments', function (): void {
         }
     });
 
+    it('maps the Node\'s managed headless Chrome of any version to the runtime folder\'s Chrome and keeps refusing other Chrome paths', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'host-chrome', str_repeat('c', 40));
+        $container = '/opt/orbit-runtime/current/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell';
+        $host = '/opt/orbit/chrome-headless-shell/150.0.7871.24/chrome-headless-shell-linux64/chrome-headless-shell';
+        InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'OG_IMAGE_CHROME_PATH', 'env_value' => $host]);
+        InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'OG_IMAGE_NODE_BINARY', 'env_value' => '/opt/orbit/vite-plus/js_runtime/node/'.app(ContainerProcessCommands::class)->version('node').'/bin/node']);
+
+        $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+        expect(app(NativeInstanceEnvironmentSync::class)->admittedFiles($operation)['content'])
+            ->toContain("OG_IMAGE_CHROME_PATH=\"{$container}\"", 'OG_IMAGE_NODE_BINARY="/opt/orbit-runtime/current/bin/node"')->not->toContain('/opt/orbit/');
+        $paths = app(ContainerHostPaths::class);
+        foreach (['/opt/orbit/chrome-headless-shell/releases/'.str_repeat('a', 64).'/chrome-headless-shell-linux64/chrome-headless-shell',
+            '/opt/orbit/chrome-headless-shell/157.0.8103.78/chrome-headless-shell-linux64/chrome-headless-shell'] as $path) {
+            expect($paths->map("--chrome={$path}", $instance, '8.5', 'Process [3:og] argument'))->toBe("--chrome={$container}");
+        }
+        foreach (['/opt/orbit/chrome-headless-shell/150.0.7871.24/chrome-headless-shell-linux64/libEGL.so', '/opt/orbit/chrome-headless-shell/current'] as $path) {
+            expect(fn () => $paths->map($path, $instance, '8.5', 'Process [3:og] argument'))
+                ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.host_path_unsupported'));
+        }
+    });
+
     it('finds host paths after shell operators, assignments and quotes in a shell command string', function (): void {
         $paths = app(ContainerHostPaths::class);
         $instance = appProdReleasePlacement($this->prod, 'host-shell', str_repeat('c', 40));

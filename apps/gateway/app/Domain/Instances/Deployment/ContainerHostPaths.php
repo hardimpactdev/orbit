@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Models\Instance;
 
 /**
@@ -28,7 +29,13 @@ final readonly class ContainerHostPaths
     /** A literal path: only these characters may be mapped. Anything else, such as `$`, `*`, `?`, `[` or `\`, refuses. */
     private const string Literal = '~\A[A-Za-z0-9._/+@%=-]+\z~D';
 
-    public function __construct(private ContainerProcessCommands $commands) {}
+    /**
+     * A Node's managed headless Chrome (swamp/ansible/tasks/node-converge-browser.yml): its sha256 release folder, or a
+     * version folder that an older host kept. Chrome is not version-pinned like Node: any of them maps to the runtime folder's one.
+     */
+    private const string HostChrome = '~\A/opt/orbit/chrome-headless-shell/(?:releases/)?[A-Za-z0-9._-]+/chrome-headless-shell-linux64/chrome-headless-shell\z~D';
+
+    public function __construct(private ContainerProcessCommands $commands, private CurrentRecipe $recipes) {}
 
     public function map(string $value, Instance $instance, string $php, string $label): string
     {
@@ -73,6 +80,10 @@ final readonly class ContainerHostPaths
 
                 return InstanceHostIntent::RuntimeFolder.'/current/bin/'.$name;
             }
+        }
+        $chrome = $this->recipes->currentRecipe()->instances->runtime['chrome-headless-shell'] ?? null;
+        if ($chrome !== null && preg_match(self::HostChrome, $path) === 1) {
+            return InstanceHostIntent::RuntimeFolder.'/current/chrome-headless-shell/'.$chrome->bin['chrome-headless-shell'];
         }
         $home = '/home/orbit-app-'.$instance->project_id;
         foreach (array_filter([$instance->checkout_path, $home.'/current']) as $checkout) {
