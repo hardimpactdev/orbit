@@ -38,24 +38,35 @@ use Throwable;
 final readonly class ExecutorParity
 {
     /**
-     * Prints the installed binary's SHA-256, the running executable's SHA-256 (empty when none runs), the service state, then
-     * `frozen:` and one line per FROZEN container. The `frozen:` line comes only when Incus answered, so a failed read is no pass.
+     * Prints the installed binary's SHA-256 (empty when none is installed, so each part keeps its line), the running executable's SHA-256 (empty when none runs), the service state, then
+     * the frozen containers (see Frozen), then `caddy:` and one line per activation proxy when the admin API answered.
      */
-    private const string Read = 'sha256sum '.NodeExecutorInput::Binary.' 2>/dev/null | cut -d " " -f 1; '
+    private const string Read = 'echo "$(sha256sum '.NodeExecutorInput::Binary.' 2>/dev/null | cut -d " " -f 1)"; '
         .'pid=$(systemctl show -p MainPID --value orbit-executor.service 2>/dev/null); '
         .'if [ "${pid:-0}" != 0 ]; then sudo -n sha256sum "/proc/$pid/exe" 2>/dev/null | cut -d " " -f 1; else echo; fi; '
         .'systemctl is-active orbit-executor.service 2>/dev/null; '
-        .'if containers=$(sudo -n incus list --all-projects --format csv --columns ns 2>/dev/null); then echo frozen:; '
-        .'printf "%s\n" "$containers" | grep ",FROZEN$" | cut -d , -f 1; fi; '
+        .self::Frozen
         .'if config=$(curl -fsS -m 5 http://127.0.0.1:2019/config/ 2>/dev/null) '
         .'&& proxies=$(printf "%s" "$config" | python3 -I -c \''.self::Proxies.'\'); then echo caddy:; printf "%s\n" "$proxies"; fi; true';
 
     /**
+     * Prints `frozen:` and one line per FROZEN container. A Node where root finds no `incus` command, such as a services Node, has
+     * no containers, so none frozen: it prints `frozen:` alone. When sudo fails, or Incus is installed but its list fails, it prints
+     * nothing, so the read fails closed.
+     */
+    private const string Frozen = 'if sudo -n true 2>/dev/null && ! sudo -n sh -c "command -v incus" >/dev/null 2>&1; then echo frozen:; '
+        .'elif containers=$(sudo -n incus list --all-projects --format csv --columns ns 2>/dev/null); then echo frozen:; '
+        .'printf "%s\n" "$containers" | grep ",FROZEN$" | cut -d , -f 1; fi; ';
+
+    /**
      * Finds each Instance's activation proxy the way the executor's Caddy guard does: by the route renderer's asleep-marker matcher
      * (`file` with `try_files /app-instance-<id>.asleep`), not by the rewrite. A site is one top-level route of a Caddy server,
-     * named by its host, server and index: the same host on two listeners is two sites. For each site and Instance it prints one JSON line: the first handler other than `vars` that a
-     * marked visit to that site reaches, without its response routes, with `site`, `instance` and `resolved`, every address its
-     * upstreams' hosts resolve to on the Node (null when one does not resolve).
+     * named by its host, server and index: the same host on two listeners is two sites. Within a site, every route that carries
+     * the marker counts, at any depth, in config order. The same marker may sit on several sibling routes, one with only `vars`,
+     * another with the proxy, and `forward_auth` compiles to a `subroute` that wraps it. So the proxy is the first handler other
+     * than `vars` that a marked visit reaches through those routes' handlers, descending into each `subroute`. For each site and
+     * Instance it prints one JSON line: that handler without its response routes (empty when none), with `site`, `instance` and
+     * `resolved`, every address its upstreams' hosts resolve to on the Node (null when one does not resolve).
      */
     private const string Proxies = <<<'PY'
         import json, re, socket, sys
@@ -68,11 +79,22 @@ final readonly class ExecutorParity
                     if found:
                         return int(found.group(1))
             return None
+        def reached(handles):
+            for handler in handles if isinstance(handles, list) else []:
+                if not isinstance(handler, dict) or handler.get("handler") == "vars":
+                    continue
+                if handler.get("handler") != "subroute":
+                    return handler
+                for route in handler.get("routes") or []:
+                    found = reached(route.get("handle") if isinstance(route, dict) else None)
+                    if found is not None:
+                        return found
+            return None
         def walk(site, value):
             if isinstance(value, dict):
                 instance = marker(value)
                 if instance is not None:
-                    handlers.setdefault((site, instance), []).extend(value.get("handle") or [])
+                    handlers.setdefault((site, instance), []).append(reached(value.get("handle")))
                 for child in value.values():
                     walk(site, child)
             elif isinstance(value, list):
@@ -84,7 +106,7 @@ final readonly class ExecutorParity
                 hosts = [host for matcher in route.get("match") or [] for host in matcher.get("host") or []]
                 walk((",".join(hosts) or "no host") + f" on {server} route {index}", route)
         for (site, instance), found in sorted(handlers.items()):
-            handler = next((h for h in found if isinstance(h, dict) and h.get("handler") != "vars"), None) or {}
+            handler = next((h for h in found if h is not None), None) or {}
             proxy = {key: handler[key] for key in handler if key != "handle_response"}
             proxy["site"] = site
             proxy["instance"] = instance
