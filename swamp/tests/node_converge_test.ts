@@ -697,6 +697,8 @@ Deno.test("an Instance that comes or goes does not move the roles digest; a chan
     assertEquals(await moved(host({ machine_names: [], t3_files: [t3("instance-2", "/opt/orbit-agent/current/bin/conn-server")] })), ["agent", "software", "tools", "network"]);
     assertEquals(await moved(host({ machine_names: [], t3_files: [t3("instance-2")], ingress: [{ action: "allow" }] })), ["agent", "software", "tools", "network"]);
     assertEquals(await moved({ ...host({ machine_names: [], t3_files: [t3("instance-2")] }, "two.orbit") }), ["agent", "software", "tools", "network"]);
+    // A field of a T3 entry that the projection does not know still counts.
+    assertEquals(await moved(host({ machine_names: [], t3_files: [{ ...t3("instance-2"), user: "agent" }] })), ["agent", "software", "tools", "network"]);
 });
 
 Deno.test("a changed shipped Tool file that the Tool helper imports moves the tools digest", async () => {

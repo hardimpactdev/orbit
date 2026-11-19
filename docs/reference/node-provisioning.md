@@ -614,7 +614,7 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Run the Tool helper once to prove that it works. Then apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
 | `network` | Apply the recorded hub before the Node and wait for the handshake. A target hub is applied once; without peers it needs no handshake. |
-| `check` | Read back selected software, units, role configuration and recorded tunnel state. |
+| `check` | Write each Instance container's presented [machine name](/reference/development-containers#the-machine-name) where it differs. Read back selected software, units, role configuration and recorded tunnel state. |
 
 No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs `input` and `check`. Each other phase runs or skips by the [phase digest rule](#skip-a-phase-whose-input-did-not-change). A phase that runs with matching intent reports zero target changes, and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is admitted as a new Operation; admission never skips it. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
 
@@ -659,9 +659,9 @@ A few inputs belong to one `node.converge` phase only, and the other phases leav
 
 The roles phase reads an Instance host's per-Instance lists (the `app-dev` or `ci-runner` role's `instances`) without the Instances themselves, because Instances come and go between any two converges:
 
-- `machine_names`, each container's presented name, is left out. The clone script, the container phase and every start write a container's name files themselves.
-- `t3_files` counts as its distinct server programs and drop-ins. Every container that runs the same server gets the same drop-ins.
-- So a new or removed Instance does not move the roles digest. A changed drop-in still moves it.
+- `machine_names`, each container's presented name, is left out. The `check` tag of every converge writes the names where they differ, so a renamed Project's running containers get their new names without the roles phase.
+- `t3_files` counts as its distinct entries without their container. Every container that runs the same server gets the same drop-ins.
+- So a new or removed Instance does not move the roles digest, unless it is the first or last container with its server program. A changed drop-in still moves it.
 
 The roles phase still gets both lists whole when it runs.
 

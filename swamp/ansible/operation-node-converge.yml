@@ -153,6 +153,16 @@
         apply: { tags: [network] }
       when: intent.network != None
       tags: [network]
+    # The one write of the check tag: an Instance host's presented machine names, which the roles digest leaves out.
+    - name: Apply the presented machine names of the Instance containers
+      ansible.builtin.include_tasks:
+        file: tasks/instance-container-names.yml
+        apply: { tags: [check] }
+      when: role_plan.runtime.instances.machine_names is defined
+      vars: { instances: "{{ role_plan.runtime.instances }}" }
+      loop: "{{ intent.roles }}"
+      loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
+      tags: [check]
     - name: Check the managed agent files without changing the Node
       ansible.builtin.stat: { path: /usr/local/bin/orbit-agent, checksum_algorithm: sha256 }
       register: agent_check

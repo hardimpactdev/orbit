@@ -689,7 +689,7 @@ Where each path writes the name:
 | Create of a default, a move | The container phase, right after the first start: the files, then the kernel hostname at once |
 | Clone and task copy | `/etc/machine-info` as a boot file before the first start; the rest in the private names pass right after it |
 | Start, wake, deployment | Only a stopped container: the start phase writes the files through the file API before it boots it. A running or frozen container gets nothing |
-| Node converge | The files, in running, stopped and frozen containers, through the file API. Nothing restarts and the kernel hostname stays |
+| Node converge | Its `check` tag, every time, and its roles phase when it runs: the files that differ, in running, stopped and frozen containers, through the file API. Nothing restarts and the kernel hostname stays |
 
 T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
 

@@ -1,0 +1,20 @@
+---
+# The presented machine name of each Instance container the Gateway names (docs/reference/development-containers.md#the-machine-name),
+# on every Node converge, whether or not its roles phase ran: instance_container_files.py `names` mode writes a file only where its text
+# differs. So a renamed Project's running containers get their new names from an ordinary converge, while the roles digest leaves the
+# name list out (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). Input: `instances` (InstanceHostIntent).
+- name: Write the changed machine names into the existing containers
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -I
+      - "-"
+      - >-
+        {{ {'mode': 'names',
+            'projects': instances.runtime_projects | default([instances.project] + ([instances.nested.project] if instances.nested is defined else [])),
+            'machine_names': instances.machine_names,
+            'machine_name_code': lookup('ansible.builtin.file', playbook_dir ~ '/instance_machine_name.py')} | to_json }}
+    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
+  register: container_names
+  changed_when: (container_names.stdout | from_json).written | length > 0
+  failed_when: container_names.rc != 0

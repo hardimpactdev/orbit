@@ -79,16 +79,22 @@ export function admissionValues(intent: unknown): string[] {
 
 /** A role as the roles digest reads it: an Instance host's per-Instance lists (InstanceHostIntent) change with every Instance that comes or
  * goes, so they count only by what the role writes from them for any container. `machine_names` names each container's presented name,
- * which the clone script, the container phase and every start write themselves (instance_machine_name.py); it counts not at all. Each
+ * which the `check` tag of every converge writes where it differs (tasks/instance-container-names.yml); it counts not at all. Each
  * entry of `t3_files` holds the drop-ins of one server program, the same text for every container that runs it
- * (InstanceContainer::t3DropIns); it counts as its distinct programs and drop-ins, so a changed drop-in still moves the roles phase
+ * (InstanceContainer::t3DropIns); it counts as its distinct entries without their container, so a changed drop-in still moves the roles phase
  * (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
 export function churnFreeRole(role: unknown): unknown {
     const runtime = (role as { runtime?: { instances?: Record<string, unknown> } } | null)?.runtime;
     const instances = runtime?.instances;
     if (instances === null || typeof instances !== "object" || Array.isArray(instances)) return role;
     const { machine_names: _names, t3_files: t3, ...rest } = instances;
-    const servers = Array.isArray(t3) ? [...new Set(t3.map((entry) => JSON.stringify({ program: entry?.program, files: entry?.files })))].sort().map((text) => JSON.parse(text)) : t3;
+    // Every field of an entry but its container counts, a field this code does not know included.
+    const server = (entry: unknown) => {
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return JSON.stringify(entry);
+        const { container: _container, ...rest } = entry as Record<string, unknown>;
+        return JSON.stringify(rest);
+    };
+    const servers = Array.isArray(t3) ? [...new Set(t3.map(server))].sort().map((text) => JSON.parse(text)) : t3;
     return { ...(role as Record<string, unknown>), runtime: { ...runtime, instances: { ...rest, ...(t3 === undefined ? {} : { t3_files: servers }) } } };
 }
 
