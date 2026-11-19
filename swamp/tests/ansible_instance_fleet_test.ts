@@ -2677,20 +2677,19 @@ Deno.test({
 /** The grants reload changed the nested Gateway's disk: its `base` alone is due, and nothing else differs. */
 const grantsDue = (state: Record<string, unknown>) => Object.assign(state, { grantsChanged: 2, digests: { "apps/gateway": "a1", swamp: "e2" } });
 
-Deno.test({
-  name: "on a btrfs inner pool a failed hold of the queue writes or a failed queue save lets the writes go and takes base with the fleet stopped",
-  ignore: !hasAnsible,
-  fn() {
-    const f = refreshedOnce();
-    try {
-      f.change((state) => state.poolDriver = "btrfs");
-      // A hold of the writes or a queue save that fails lets the writes go and takes the stopped path: no freeze, no armed thaw.
-      for (const [swamp, failure] of [["e4", "queuePauseFails"], ["e5", "queueSaveFails"]]) {
+// A hold of the writes or a queue save that fails lets the writes go and takes the stopped path: no freeze, no armed thaw.
+// One case for each failure in this group: together their refreshes ran past the unit ceiling on the pool.
+for (const [what, swamp, failure] of [["a failed hold of the queue writes", "e4", "queuePauseFails"], ["a failed queue save", "e5", "queueSaveFails"]]) {
+  Deno.test({
+    name: `on a btrfs inner pool ${what} lets the writes go and takes base with the fleet stopped`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = refreshedOnce();
+      try {
         f.change((state) => {
+          state.poolDriver = "btrfs";
           grantsDue(state);
           state.digests = { "apps/gateway": "a1", swamp };
-          delete state.queuePauseFails;
-          delete state.queueSaveFails;
           state[failure] = true;
         });
         const unsaved = f.run("refresh");
@@ -2700,16 +2699,15 @@ Deno.test({
         assert(!unsavedCalls.some((call) => call.startsWith("incus pause") || call.startsWith("systemd-run")), unsavedCalls.join("\n"));
         assertEquals(f.state().queuePaused, undefined, failure);
         assertEquals(f.refreshed()?.base_mode, "stopped");
+      } finally {
+        f.cleanup();
       }
-    } finally {
-      f.cleanup();
-    }
-  },
-});
+    },
+  });
+}
 
-// A second case: with the two failures above, the four refreshes ran past the unit ceiling on the pool.
 Deno.test({
-  name: "on a btrfs inner pool a hold without room or a stalled freeze lets the writes go and takes base with the fleet stopped",
+  name: "on a btrfs inner pool a hold without room lets the writes go and takes base with the fleet stopped",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -2732,9 +2730,22 @@ Deno.test({
       assertEquals(lateCalls.filter((call) => call === "incus snapshot delete nested-gateway base").length, 1);
       assertEquals([f.state().queuePaused, f.state().thawArmed], [undefined, undefined]);
       assertEquals(f.refreshed()?.base_mode, "stopped");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "on a btrfs inner pool a stalled freeze lets the writes go and takes base with the fleet stopped",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
       // A freeze that stalls past the hold's time left minus 5 s is ended by its timeout: each target is resumed, the writes go, the armed
       // thaw is cancelled, nothing stays frozen, and the stopped path takes base. A 16 s hold leaves the freeze at most 10 s.
       f.change((state) => {
+        state.poolDriver = "btrfs";
         grantsDue(state);
         state.digests = { "apps/gateway": "a1", swamp: "e7" };
         state.pauseDelay = 11;

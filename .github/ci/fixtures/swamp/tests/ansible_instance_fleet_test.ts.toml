@@ -73,8 +73,10 @@ cases = [
   "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema",
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
   "on a btrfs inner pool base is taken of the frozen running fleet after one readiness wait, a reset clears its pid file, and a failed snapshot still thaws it",
-  "on a btrfs inner pool a failed hold of the queue writes or a failed queue save lets the writes go and takes base with the fleet stopped",
-  "on a btrfs inner pool a hold without room or a stalled freeze lets the writes go and takes base with the fleet stopped",
+  "on a btrfs inner pool a failed hold of the queue writes lets the writes go and takes base with the fleet stopped",
+  "on a btrfs inner pool a failed queue save lets the writes go and takes base with the fleet stopped",
+  "on a btrfs inner pool a hold without room lets the writes go and takes base with the fleet stopped",
+  "on a btrfs inner pool a stalled freeze lets the writes go and takes base with the fleet stopped",
   "a directory pool takes base with the fleet stopped",
   "an unreadable pool read takes base with the fleet stopped",
   "a due shrink takes base with the fleet stopped",
@@ -90,8 +92,8 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3545
-slices = 88
+cost = 3625
+slices = 90
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
   ".github/workflows/ci.yml",
@@ -201,8 +203,10 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema" = 49
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 27
   "on a btrfs inner pool base is taken of the frozen running fleet after one readiness wait, a reset clears its pid file, and a failed snapshot still thaws it" = 40 # ESTIMATE: local 39s on a runner where the grants unit (27) took 33s, scaled, plus 20%
-  "on a btrfs inner pool a failed hold of the queue writes or a failed queue save lets the writes go and takes base with the fleet stopped" = 100 # ESTIMATE: half of the unsplit case with its own setup; it ran 133, 151 and 166 s on the pool and once past the 180 s ceiling
-  "on a btrfs inner pool a hold without room or a stalled freeze lets the writes go and takes base with the fleet stopped" = 100 # ESTIMATE: half of the unsplit case with its own setup; it ran 133, 151 and 166 s on the pool and once past the 180 s ceiling
+  "on a btrfs inner pool a failed hold of the queue writes lets the writes go and takes base with the fleet stopped" = 65 # ESTIMATE: the two-refresh halves ran 98 and 165 s on the pool; one refresh with its own setup, plus the freeze wait
+  "on a btrfs inner pool a failed queue save lets the writes go and takes base with the fleet stopped" = 65 # ESTIMATE: the two-refresh halves ran 98 and 165 s on the pool; one refresh with its own setup, plus the freeze wait
+  "on a btrfs inner pool a hold without room lets the writes go and takes base with the fleet stopped" = 65 # ESTIMATE: the two-refresh halves ran 98 and 165 s on the pool; one refresh with its own setup, plus the freeze wait
+  "on a btrfs inner pool a stalled freeze lets the writes go and takes base with the fleet stopped" = 85 # ESTIMATE: the two-refresh halves ran 98 and 165 s on the pool; one refresh with its own setup, plus the freeze wait
   "a directory pool takes base with the fleet stopped" = 65 # ESTIMATE: a third of the unsplit case, which ran 106 and 129 s on the pool and twice past the 180 s ceiling
   "an unreadable pool read takes base with the fleet stopped" = 65 # ESTIMATE: a third of the unsplit case, which ran 106 and 129 s on the pool and twice past the 180 s ceiling
   "a due shrink takes base with the fleet stopped" = 65 # ESTIMATE: a third of the unsplit case, which ran 106 and 129 s on the pool and twice past the 180 s ceiling
