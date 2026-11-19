@@ -2,8 +2,10 @@
 # The presented machine name of each Instance container the Gateway names (docs/reference/development-containers.md#the-machine-name),
 # on every Node converge, whether or not its roles phase ran: instance_container_files.py `names` mode writes a file only where its text
 # differs. So a renamed Project's running containers get their new names from an ordinary converge, while the roles digest leaves the
-# name list out (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). Input: `instances` (InstanceHostIntent).
+# name list out (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). Input: `instances` (InstanceHostIntent), or none for any other role.
 - name: Write the changed machine names into the existing containers
+  # Only an Instance container host's role has `instances`.
+  when: instances.machine_names is defined
   ansible.builtin.command:
     argv:
       - python3

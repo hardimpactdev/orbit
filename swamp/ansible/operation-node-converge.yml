@@ -158,8 +158,7 @@
       ansible.builtin.include_tasks:
         file: tasks/instance-container-names.yml
         apply: { tags: [check] }
-      when: role_plan.runtime.instances.machine_names is defined
-      vars: { instances: "{{ role_plan.runtime.instances }}" }
+      vars: { instances: "{{ role_plan.runtime.instances | default(none) }}" }
       loop: "{{ intent.roles }}"
       loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
       tags: [check]
