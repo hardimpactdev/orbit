@@ -35,7 +35,7 @@
       "change": "Select shipped Swamp pin callers and their three result expressions."
     },
     {
-      "name": "a due shrink keeps base of the running fleet and starts after it; the next refresh stops none, retakes base of all three and is then current",
+      "name": "a due shrink retakes base of all three of the running fleet and starts after it; the next refresh stops none, retakes base again and is then current",
       "hosted_run": "43998762978",
       "hosted_unit": "swamp/tests/ansible_instance_fleet_test.ts#40/76",
       "hosted_source_sha256": "964c4f885e346981ce970acb54f40f2ab2991cfffb3d709ac3895ccf71e72f5b",

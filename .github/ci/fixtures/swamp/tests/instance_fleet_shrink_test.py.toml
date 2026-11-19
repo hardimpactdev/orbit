@@ -4,6 +4,7 @@ cases = [
   "test_a_base_retaken_after_a_package_changed_is_not_recorded_as_holding_the_shrink",
   "test_a_record_of_a_stopped_base_without_the_base_key_is_current",
   "test_the_package_files_in_apt_archives_go_and_the_lock_stays",
+  "test_a_cache_keeps_its_package_files_while_apt_holds_a_lock_or_a_lock_file_is_missing",
   "test_the_cache_removal_follows_no_symlink_out_of_the_disk",
   "test_an_absolute_path_in_the_md5sums_never_reaches_a_file_outside_the_disk",
   "test_a_path_that_starts_with_two_slashes_is_absolute_too",
@@ -24,7 +25,7 @@ cases = [
   "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record",
 ]
 file = "swamp/tests/instance_fleet_shrink_test.py"
-cost = 22
+cost = 23
 # The file it reads: the shrink of the nested root disks, run as shipped.
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -39,6 +40,7 @@ inputs = [
 "test_the_package_files_in_apt_archives_go_and_the_lock_stays" = 1
 "test_a_record_of_an_older_rule_is_due_once" = 1
 "test_the_cache_removal_follows_no_symlink_out_of_the_disk" = 1
+"test_a_cache_keeps_its_package_files_while_apt_holds_a_lock_or_a_lock_file_is_missing" = 1
 "test_a_record_that_is_no_object_is_no_record" = 1
 "test_an_absolute_path_in_the_md5sums_never_reaches_a_file_outside_the_disk" = 1
 "test_a_dotdot_path_in_the_md5sums_never_reaches_a_file_outside_the_disk" = 1

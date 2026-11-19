@@ -44,7 +44,7 @@ cases = [
   "a converge with changed tasks retakes base only for the changed Node and Gateway",
   "a converge without change counts retakes all three bases",
   "a missing base is retaken without another converge",
-  "a due shrink keeps base of the running fleet and starts after it; the next refresh stops none, retakes base of all three and is then current",
+  "a due shrink retakes base of all three of the running fleet and starts after it; the next refresh stops none, retakes base again and is then current",
   "a shrink that still runs stops before the refresh writes anything; a check that fails keeps base and a start that fails is named",
   "a failed refresh that changed a Node removes its old record and writes none",
   "a refresh after a failed run converges every part and retakes all three bases",
@@ -222,7 +222,7 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base" = 67 # ESTIMATE: local 31.411s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps" = 60
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 45
-  "a due shrink keeps base of the running fleet and starts after it; the next refresh stops none, retakes base of all three and is then current" = 76 # ESTIMATE: local 35.566s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
+  "a due shrink retakes base of all three of the running fleet and starts after it; the next refresh stops none, retakes base again and is then current" = 76 # ESTIMATE: local 35.566s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "a shrink that still runs stops before the refresh writes anything; a check that fails keeps base and a start that fails is named" = 56 # ESTIMATE: three refreshes, local 26s x 2.1
 
   "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired" = 40 # ESTIMATE: local 18 s x 2.1, rounded up plus 1 s
