@@ -24,7 +24,7 @@ base64 = "0.22"
 sha2 = "0.10"
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
-async-nats = { version = "=0.51.0", default-features = false, features = ["ring", "jetstream", "nuid", "nkeys", "server_2_14"] }
+async-nats = { version = "=0.51.0", default-features = false, features = ["ring", "jetstream", "nuid", "server_2_14"] }
 
 [lints]
 workspace = true

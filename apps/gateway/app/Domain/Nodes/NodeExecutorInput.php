@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\Engine\NodeBusCredentials;
+use App\Domain\Engine\NodeBusAccess;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -52,9 +52,9 @@ final readonly class NodeExecutorInput
         $intent = self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,
             $delivery->artifacts(), is_array($keys) ? array_values(array_filter($keys, is_string(...))) : [], $delivery->version());
 
-        // The machine bus (ADR 0271): the credentials travel as the converge's private `executor_bus` copy; the intent says only whether
-        // they exist. Without the engine's keys the file is removed, and the executor serves its socket alone.
-        return $intent === null ? null : [...$intent, 'bus' => NodeBusCredentials::for($node) !== null, 'bus_path' => NodeBusCredentials::Path];
+        // The machine bus (ADR 0271): only the Gateway's address. A Node holds no bus credential; the Gateway admits it by its
+        // WireGuard address. Without the engine's key the file is removed, and the executor serves its socket alone.
+        return $intent === null ? null : [...$intent, 'bus_url' => NodeBusAccess::url(), 'bus_path' => NodeBusAccess::Path];
     }
 
     /**

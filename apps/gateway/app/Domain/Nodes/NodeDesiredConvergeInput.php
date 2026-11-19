@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\Engine\NodeBusCredentials;
 use App\Domain\Fleet\CliConvergePlan;
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Instances\ContainerNodes;
@@ -39,11 +38,6 @@ final readonly class NodeDesiredConvergeInput
         $agent = $this->agent($node);
         $recipe = new RecipeLoader()->source();
         $copies = ['agent_verifier' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'node-converge-operation-'.$operation->id.'-agent-verifier', (string) $node->agent_secret_hash)];
-        // The executor's bus credentials hold its nkey seed, so they travel like the verifier, never in the intent (ADR 0271).
-        $bus = NodeBusCredentials::for($node);
-        if ($bus !== null) {
-            $copies['executor_bus'] = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'node-converge-operation-'.$operation->id.'-executor-bus', $bus);
-        }
         $plans = [];
         $playbook = null;
         foreach ($node->roles()->whereIn('role', $roles)->orderBy('id')->get() as $assignment) {

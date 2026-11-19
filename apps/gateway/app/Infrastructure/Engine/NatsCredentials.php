@@ -11,28 +11,23 @@ use InvalidArgumentException;
 use SensitiveParameter;
 
 /**
- * NATS decentralized authentication for the machine bus (ADR 0271; docs/reference/gateway-engine.md#credentials). The Gateway
- * holds three nkey seeds: the operator, the `ORBIT` account and the system account. `nats-server` trusts the operator and the
- * two account JWTs, so a Node joins with a user JWT the Gateway signs and the server's configuration never changes when Nodes
- * come and go. Each user JWT carries its own publish and subscribe permissions.
- *
- * A user's key is derived from the account seed and the user's name, so a Node's credentials stay the same across converges;
- * replacing the account seed revokes every user at once. The JWTs follow the format of `nsc`: `ed25519-nkey`, claims version 2.
+ * The nkeys and JWTs of the machine bus's auth callout (ADR 0271; docs/reference/gateway-engine.md#authentication). The
+ * Gateway holds one account seed, `ORBIT_NATS_SEED`. Its public key is the callout's issuer, which `nats-server` trusts, and
+ * the Gateway's own nkey user derives from it. A Node holds no credential: the callout answers each of its connections with a
+ * short-lived user JWT that the issuer signs. The JWTs follow the format of `nsc`: `ed25519-nkey`, claims version 2.
  */
 final readonly class NatsCredentials
 {
     private const int PrefixSeed = 18 << 3;
 
-    public const int PrefixOperator = 14 << 3;
-
     public const int PrefixAccount = 0;
 
     public const int PrefixUser = 20 << 3;
 
-    /** A new random seed of the given kind: an operator, an account or a user. */
-    public static function newSeed(int $prefix): string
+    /** A new random account seed: the callout issuer. */
+    public static function newSeed(): string
     {
-        return self::seed($prefix, random_bytes(SODIUM_CRYPTO_SIGN_SEEDBYTES));
+        return self::seed(self::PrefixAccount, random_bytes(SODIUM_CRYPTO_SIGN_SEEDBYTES));
     }
 
     /** The seed of a user derived from the account seed: the same name always gives the same key. */
@@ -48,52 +43,49 @@ final readonly class NatsCredentials
         return SecretKey::fromSeed($seed)->getPublicKey();
     }
 
-    /** The operator's self-signed JWT, naming the system account. */
-    public static function operatorJwt(#[SensitiveParameter] string $operatorSeed, string $systemAccount): string
-    {
-        $operator = self::publicKey($operatorSeed);
-
-        return self::jwt($operatorSeed, $operator, 'orbit', ['type' => 'operator', 'version' => 2, 'system_account' => $systemAccount]);
-    }
-
-    /** An account JWT signed by the operator. `$jetstream` gives the account unlimited JetStream storage on this server. */
-    public static function accountJwt(#[SensitiveParameter] string $operatorSeed, #[SensitiveParameter] string $accountSeed, string $name, bool $jetstream): string
-    {
-        $limits = ['subs' => -1, 'data' => -1, 'payload' => -1, 'imports' => -1, 'exports' => -1, 'wildcards' => true, 'conn' => -1, 'leaf' => -1,
-            ...($jetstream ? ['mem_storage' => -1, 'disk_storage' => -1, 'streams' => -1, 'consumer' => -1] : [])];
-
-        return self::jwt($operatorSeed, self::publicKey($accountSeed), $name, ['type' => 'account', 'version' => 2, 'limits' => $limits]);
-    }
-
     /**
-     * A user JWT signed by the account, with exactly these permissions.
+     * A user JWT for the connection whose server-made key is `$userKey`, in account `$account`, with exactly these permissions
+     * until `$expires`. The server disconnects the user then, and the client's reconnect asks the callout again.
      *
      * @param  list<string>  $publish
      * @param  list<string>  $subscribe
      */
-    public static function userJwt(#[SensitiveParameter] string $accountSeed, string $userPublicKey, string $name, array $publish, array $subscribe): string
+    public static function userJwt(#[SensitiveParameter] string $issuerSeed, string $userKey, string $name, string $account, array $publish,
+        array $subscribe, int $now, int $expires): string
     {
-        return self::jwt($accountSeed, $userPublicKey, $name, ['type' => 'user', 'version' => 2,
-            'pub' => ['allow' => $publish], 'sub' => ['allow' => $subscribe], 'subs' => -1, 'data' => -1, 'payload' => -1]);
+        return self::jwt($issuerSeed, ['iat' => $now, 'exp' => $expires, 'name' => $name, 'sub' => $userKey, 'aud' => $account,
+            'nats' => ['type' => 'user', 'version' => 2, 'pub' => ['allow' => $publish], 'sub' => ['allow' => $subscribe],
+                'subs' => -1, 'data' => -1, 'payload' => -1]]);
     }
 
-    /** A `.creds` file: the user JWT and its seed, in the form every NATS client reads. */
-    public static function creds(string $jwt, #[SensitiveParameter] string $seed): string
+    /** The callout's answer to server `$server` about the connection `$userKey`: a user JWT, or the reason it is refused. */
+    public static function authorizationResponse(#[SensitiveParameter] string $issuerSeed, string $userKey, string $server, int $now,
+        ?string $userJwt, ?string $error = null): string
     {
-        return "-----BEGIN NATS USER JWT-----\n{$jwt}\n------END NATS USER JWT------\n\n"
-            ."************************* IMPORTANT *************************\nNKEY Seed printed below can be used to sign and prove identity.\n"
-            ."NKEYs are sensitive and should be treated as secrets.\n\n-----BEGIN USER NKEY SEED-----\n{$seed}\n------END USER NKEY SEED------\n";
+        return self::jwt($issuerSeed, ['iat' => $now, 'sub' => $userKey, 'aud' => $server,
+            'nats' => ['type' => 'authorization_response', 'version' => 2, ...($userJwt === null ? [] : ['jwt' => $userJwt]),
+                ...($error === null ? [] : ['error' => $error])]]);
     }
 
     /**
-     * Signs claims as `$issuerSeed`. `iat` is fixed, so the same inputs give the same JWT and a converge changes nothing.
+     * The claims of a JWT, unverified. The callout reads its request this way: only the server publishes on the request subject.
      *
-     * @param  array<string, mixed>  $nats
+     * @return array<string, mixed>|null
      */
-    private static function jwt(#[SensitiveParameter] string $issuerSeed, string $subject, string $name, array $nats): string
+    public static function claims(string $jwt): ?array
+    {
+        $parts = explode('.', $jwt);
+        $json = count($parts) === 3 ? base64_decode(strtr($parts[1], '-_', '+/'), true) : false;
+        $claims = is_string($json) ? json_decode($json, true) : null;
+
+        return is_array($claims) && ! array_is_list($claims) ? $claims : null;
+    }
+
+    /** @param array<string, mixed> $claims */
+    private static function jwt(#[SensitiveParameter] string $issuerSeed, array $claims): string
     {
         $issuer = SecretKey::fromSeed($issuerSeed);
-        $claims = ['jti' => '', 'iat' => 1_767_225_600, 'iss' => $issuer->getPublicKey(), 'name' => $name, 'sub' => $subject, 'nats' => $nats];
+        $claims = ['jti' => '', ...$claims, 'iss' => $issuer->getPublicKey()];
         $claims['jti'] = rtrim((new Base32)->encode(hash('sha256', self::json($claims), true)), '=');
         $signing = self::base64url(self::json(['typ' => 'JWT', 'alg' => 'ed25519-nkey'])).'.'.self::base64url(self::json($claims));
 
@@ -107,7 +99,7 @@ final readonly class NatsCredentials
 
     private static function seed(int $prefix, #[SensitiveParameter] string $raw): string
     {
-        if (! in_array($prefix, [self::PrefixOperator, self::PrefixAccount, self::PrefixUser], true) || strlen($raw) !== SODIUM_CRYPTO_SIGN_SEEDBYTES) {
+        if (! in_array($prefix, [self::PrefixAccount, self::PrefixUser], true) || strlen($raw) !== SODIUM_CRYPTO_SIGN_SEEDBYTES) {
             throw new InvalidArgumentException('An nkey seed needs a known prefix and 32 bytes.');
         }
         $bytes = chr(self::PrefixSeed | ($prefix >> 5)).chr(($prefix & 31) << 3).$raw;

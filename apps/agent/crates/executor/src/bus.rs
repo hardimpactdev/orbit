@@ -17,7 +17,7 @@ use orbit_executor_core::server::{self, Log, Settings};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 
-/// The bus's settings, written by the converge (root only). Without the file the executor serves its socket alone.
+/// The bus's settings, written by the converge. Without the file the executor serves its socket alone.
 pub const CONFIG_PATH: &str = "/etc/orbit/executor/nats.json";
 /// Content read from the `CONTENT` bucket, by SHA-256. Root only: content may hold a secret, such as an env file.
 pub const BLOBS_PATH: &str = "/var/lib/orbit/executor/blobs";
@@ -28,19 +28,13 @@ const CONSUMER_WAIT: Duration = Duration::from_secs(5);
 /// stopped executor stops receiving kinds.
 const REPORT_EVERY: Duration = Duration::from_secs(60);
 
-#[derive(Deserialize)]
+/// The Node holds no bus credential: the Gateway's auth callout admits the connection by its `WireGuard` address and gives
+/// it a short-lived user with only this Node's subjects.
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Config {
     /// `nats://<gateway>:4222`, over `WireGuard`.
     url: String,
-    /// The Node's `.creds`: a user JWT the Gateway signed, with only this Node's subjects, and its nkey seed.
-    credentials: String,
-}
-
-impl std::fmt::Debug for Config {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Config").field("url", &self.url).finish_non_exhaustive()
-    }
 }
 
 /// Orders running at once: two per CPU, between 2 and 8. In an Incus container the CPU quota sits on the host side and the
@@ -91,7 +85,7 @@ async fn consume<R: Run + 'static>(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let node = settings.node.as_str().to_owned();
     // The Node's NATS user may subscribe only to its own inbox prefix, so it never sees another Node's replies.
-    let client = async_nats::ConnectOptions::with_credentials(&config.credentials)?
+    let client = async_nats::ConnectOptions::new()
         .custom_inbox_prefix(format!("_INBOX.node-{node}"))
         .connect(config.url.as_str())
         .await?;

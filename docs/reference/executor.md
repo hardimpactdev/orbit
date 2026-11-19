@@ -26,7 +26,7 @@ The converge writes:
 | `/etc/orbit/executor/gateway.pub` | One or two Gateway Ed25519 public keys, base64, one per line. The Gateway setting `ORBIT_EXECUTOR_PUBLIC_KEYS` names them |
 | `/etc/orbit/executor/node` | The Node id |
 | `/etc/orbit/executor/enabled` | The enabled families, one per line |
-| `/etc/orbit/executor/nats.json` | The [machine bus](#the-machine-bus) URL and this Node's NATS credentials, mode 0600. Only when the Gateway runs the bus |
+| `/etc/orbit/executor/nats.json` | The [machine bus](#the-machine-bus) URL. Only when the Gateway runs the bus |
 | `/etc/orbit/executor/restore-threads` | The [restore pool](#rust-wake)'s size, 32; the executor refuses fewer than 16 |
 | `/etc/systemd/system/orbit-executor.service` | A plain service that runs `orbit-executor serve`, with `Restart=always` |
 | `/etc/sudoers.d/orbit-executor-relay` | The Node user may run exactly `orbit-executor relay` as `orbit-executor-relay` |
@@ -105,7 +105,7 @@ With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus
 
 When it joins, the executor:
 
-1. connects as `node-<id>` with the credentials the converge wrote, with its own inbox prefix `_INBOX.node-<id>`;
+1. connects with no credential, with its own inbox prefix `_INBOX.node-<id>`; the Gateway admits it as `node-<id>` by its WireGuard address;
 2. reports its primitives and version to key `n<id>` of the `NODES` bucket, every minute; the Gateway routes a kind by this report;
 3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
 

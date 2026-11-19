@@ -188,7 +188,7 @@ it('opens the machine bus port on the Gateway over WireGuard only once the Gatew
         $catalog->forRole(new Node(['wireguard_ip' => '10.44.0.1']), RoleName::Gateway));
     expect($comments())->toBe(['orbit:gateway-https']);
 
-    config(['orbit.engine.nats.operator_seed' => 'SO-test', 'orbit.engine.nats.account_seed' => 'SA-test', 'orbit.engine.nats.system_seed' => 'SA-sys']);
+    config(['orbit.engine.nats.seed' => 'SA-test']);
     $nats = array_values(array_filter($catalog->forRole(new Node(['wireguard_ip' => '10.44.0.1']), RoleName::Gateway),
         static fn ($rule): bool => $rule->shape->comment === 'orbit:gateway-nats'));
     expect($comments())->toBe(['orbit:gateway-https', 'orbit:gateway-nats'])

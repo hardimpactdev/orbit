@@ -1,6 +1,6 @@
 ---
 title: "Gateway engine"
-description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, its credentials and its install."
+description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, how Nodes join it and its install."
 covers:
   - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
@@ -105,19 +105,26 @@ Publishes wait for JetStream's acknowledgement. An order uses its nonce as `Nats
 
 The PHP client answers the server's pings only while it reads. A request connection that sits unused in a long-running process can therefore be closed by the server. `EngineBus::client()` pings a connection that was unused for 10 seconds and replaces it when the ping fails.
 
-## Credentials
+## Authentication
 
-The bus uses NATS decentralized authentication. The Gateway environment holds three nkey seeds:
+A Node holds no bus credential. The bus admits a Node by its WireGuard address, the same rule the Gateway API applies to a Node's requests.
 
-| Variable | Use |
-| --- | --- |
-| `ORBIT_NATS_OPERATOR_SEED` | signs the account JWTs |
-| `ORBIT_NATS_ACCOUNT_SEED` | the `ORBIT` account; signs every user JWT |
-| `ORBIT_NATS_SYSTEM_SEED` | the server's system account |
+The Gateway environment holds one nkey account seed, `ORBIT_NATS_SEED`. `orbit:engine-keys` prints a new one as an environment line. A Gateway without it runs no `nats-server`, opens no port 4222 and gives no Node a bus address.
 
-`orbit:engine-keys` prints three new seeds as environment lines. A Gateway without all three runs no `nats-server`, opens no port 4222 and gives no Node a bus configuration.
+`nats.conf` holds only public keys:
 
-`nats.conf` holds only public JWTs, so the server's configuration does not change when Nodes come and go. A user's key derives from the account seed and the user's name (`gateway` or `node-<id>`). The JWTs have a fixed issue time, so the same inputs give the same files and a converge changes nothing. Replacing the account seed revokes every user at once.
+- the Gateway's own nkey user, derived from the seed, which may use every subject;
+- the auth callout's issuer, the seed's public key.
+
+Every other connection goes to the auth callout. `nats-server` sends an authorization request to `$SYS.REQ.USER.AUTH`, and the consumer process answers it:
+
+1. It reads the connection's address from the request.
+2. It looks for the active Node with that WireGuard address. When there is none, it refuses the connection with `peer.identity_unknown`.
+3. Otherwise it answers with a user JWT that the issuer signs. The user is named `node-<id>`, lasts one hour and may use only that Node's subjects.
+
+WireGuard binds each address to one peer key, so a Node cannot connect with another Node's address. When the user expires, the server closes the connection, and the client reconnects and asks again. A removed Node therefore loses the bus within an hour, and at once when its WireGuard peer goes. Replacing the seed changes nothing on the Nodes.
+
+The callout runs in the consumer process. While that process is down, new Node connections fail and retry; connected Nodes keep their users until they expire.
 
 A Node's user may publish only:
 
@@ -128,15 +135,13 @@ A Node's user may publish only:
 
 It may subscribe only to its own inbox prefix, `_INBOX.node-<id>.>`, so it never sees another Node's replies or content. The order signature stays the boundary: a NATS server or another Node cannot forge an order.
 
-A Node's user JWT has no expiry, and the account lists no revocations yet. A removed Node keeps its bus access until the account seed is replaced.
-
 ### Delivery to a Node
 
-The Node converge writes `/etc/orbit/executor/nats.json` (root, mode 0600) with the bus URL and the Node's `.creds`. The credentials travel as the converge's private copy `executor_bus` in the Swamp vault, never in the intent or the Operation input. Without the engine's keys the converge removes the file, and the executor serves its socket alone.
+The Node converge writes `/etc/orbit/executor/nats.json` with the bus URL only, from the executor intent. Without the engine's key the converge removes the file, and the executor serves its socket alone.
 
 ## Install
 
-The Gateway role converge installs the bus when the Gateway holds the keys:
+The Gateway role converge installs the bus when the Gateway holds the key:
 
 - `gateway-nats.yml` makes the `nats` user and installs the pinned `nats-server` release, checked by SHA-256;
 - `GatewayRuntimeFiles` writes `/etc/nats/nats.conf`, `nats-server.service` and `orbit-gateway-engine.service`;
@@ -145,11 +150,11 @@ The Gateway role converge installs the bus when the Gateway holds the keys:
 To turn the engine on for a fleet:
 
 1. Pin an agent delivery of 0.16.0 or newer.
-2. Add the keys from `orbit:engine-keys` to the Gateway environment.
+2. Add the seed from `orbit:engine-keys` to the Gateway environment.
 3. Converge the Gateway role, then the Nodes.
 4. List the kinds in `ORBIT_ENGINE_KINDS`.
 
-To turn it off, empty `ORBIT_ENGINE_KINDS` first. Removing the keys stops new bus files, but the converge does not stop the running units: stop and disable `orbit-gateway-engine.service` and `nats-server.service` by hand.
+To turn it off, empty `ORBIT_ENGINE_KINDS` first. Removing the seed stops new bus files, but the converge does not stop the running units: stop and disable `orbit-gateway-engine.service` and `nats-server.service` by hand.
 
 ## Proof
 

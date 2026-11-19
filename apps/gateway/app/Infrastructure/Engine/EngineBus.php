@@ -28,6 +28,8 @@ final class EngineBus implements MachineBus
 
     public const string EventsDeliver = 'orbit.gw.engine';
 
+    public const string AuthRequests = '$SYS.REQ.USER.AUTH';
+
     public const string Ack = '+ACK';
 
     public const string Nak = '-NAK {"delay": 1000000000}';
@@ -76,15 +78,12 @@ final class EngineBus implements MachineBus
         $nats = config('orbit.engine.nats');
         $host = is_array($nats) ? ($nats['host'] ?? null) : null;
         $port = is_array($nats) ? ($nats['port'] ?? null) : null;
-        $account = is_array($nats) ? ($nats['account_seed'] ?? null) : null;
-        if (! is_string($host) || ! is_int($port) || ! is_string($account) || $account === '') {
+        if (! is_string($host) || ! is_int($port) || ! GatewayBus::enabled()) {
             throw new RuntimeException('engine.bus_unconfigured');
         }
-        // The Gateway's own user may use every subject of the account.
-        $seed = NatsCredentials::userSeed($account, 'gateway');
 
-        return new Client(new Configuration(host: $host, port: $port, jwt: NatsCredentials::userJwt($account, NatsCredentials::publicKey($seed),
-            'gateway', ['>'], ['>']), nkey: $seed, timeout: 2));
+        // The Gateway's own nkey user skips the auth callout and may use every subject of the account.
+        return new Client(new Configuration(host: $host, port: $port, nkey: GatewayBus::gatewaySeed(), timeout: 2));
     }
 
     /** The streams; idempotent. Work queues keep nothing once acknowledged, and every stream ages out. */
@@ -179,12 +178,14 @@ final class EngineBus implements MachineBus
 
     /**
      * Delivers receipts and engine events to the handlers until the process stops. A handler that throws gets its message
-     * redelivered after a second; a handler that returns acknowledges it.
+     * redelivered after a second; a handler that returns acknowledges it. It also answers the server's auth callout requests
+     * with `$authorize`; one that throws refuses the connection, and the client tries again.
      *
      * @param  Closure(array<string, mixed>): void  $receipt
      * @param  Closure(string, array<string, mixed>): void  $event
+     * @param  Closure(string): string  $authorize
      */
-    public function consume(Closure $receipt, Closure $event): never
+    public function consume(Closure $receipt, Closure $event, Closure $authorize): never
     {
         $this->consumer('RECEIPTS', 'gateway-receipts', ['filter_subject' => 'orbit.receipts.*', 'deliver_subject' => self::ReceiptsDeliver,
             'ack_policy' => 'explicit', 'ack_wait' => 30 * self::Second, 'max_deliver' => -1]);
@@ -194,6 +195,16 @@ final class EngineBus implements MachineBus
         $subscriber = self::connect();
         $subscriber->subscribe(self::ReceiptsDeliver, self::settle(static fn (Payload $payload) => $receipt(self::receipt($payload))));
         $subscriber->subscribe(self::EventsDeliver, self::settle(static fn (Payload $payload) => $event((string) $payload->subject, self::decode($payload))));
+        // The auth callout: `nats-server` asks here about every Node connection, and the reply is the answer.
+        $subscriber->subscribe(self::AuthRequests, static function (Payload $payload) use ($authorize): string {
+            try {
+                return $authorize((string) $payload->body);
+            } catch (Throwable $exception) {
+                report($exception);
+
+                return '';
+            }
+        });
         while (true) {
             $subscriber->process(1);
         }
