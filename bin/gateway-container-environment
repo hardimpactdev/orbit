@@ -16,12 +16,13 @@ PROJECTION = SHARED / ".gateway-release-environment"
 INVENTORY = Path("/home/orbit/.orbit/gateway-containers.json")
 INCUS = ["incus", "--force-local", "--project", "orbit-releases"]
 # The fleet rules write these on a nested-fleet Gateway host only (InstanceFleetGateway). The guest reads its copies.
-FLEET = {"instance-fleet": Path("/etc/orbit/instance-fleet"), "instance-fleet-environment": Path("/etc/environment")}
+# Publish the environment before the marker and remove the marker first, so a reader never sees the marker without its proxy.
+FLEET = {"instance-fleet-environment": Path("/etc/environment"), "instance-fleet": Path("/etc/orbit/instance-fleet")}
 
 
 def publish_fleet(fd, fleet):
     nested = fleet["instance-fleet"].is_file()
-    for name, host in fleet.items():
+    for name, host in (fleet.items() if nested else reversed(fleet.items())):
         if not nested:
             try:
                 os.unlink(name, dir_fd=fd)

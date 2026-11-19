@@ -270,7 +270,7 @@ class BootstrapTest(unittest.TestCase):
             source.chmod(0o600)
             marker, hosts = shared / "instance-fleet", shared / "environment"
             hosts.write_text('PATH="/usr/bin"\nHTTPS_PROXY="http://10.253.0.1:3128"\n')
-            fleet = {"instance-fleet": marker, "instance-fleet-environment": hosts}
+            fleet = {"instance-fleet-environment": hosts, "instance-fleet": marker}
             environment.publish(projection, source, fleet)
             self.assertEqual([p.name for p in projection.iterdir()], ["gateway.env"])
             marker.write_text("")
@@ -282,8 +282,18 @@ class BootstrapTest(unittest.TestCase):
             hosts.write_text('HTTPS_PROXY="http://10.253.4.1:3128"\n')
             environment.publish(projection, source, fleet)
             self.assertEqual((projection / "instance-fleet-environment").read_text(), hosts.read_text())
+            # The environment lands before the marker, and the marker leaves first.
+            order = []
+            real = environment.os.replace
+            with patch.object(environment.os, "replace", side_effect=lambda a, b, **kw: (order.append(b), real(a, b, **kw))):
+                environment.publish(projection, source, fleet)
+            self.assertEqual(order, ["gateway.env", "instance-fleet-environment", "instance-fleet"])
+            removed = []
+            real_unlink = environment.os.unlink
             marker.unlink()
-            environment.publish(projection, source, fleet)
+            with patch.object(environment.os, "unlink", side_effect=lambda a, **kw: (removed.append(a), real_unlink(a, **kw))):
+                environment.publish(projection, source, fleet)
+            self.assertEqual([name for name in removed if name in fleet], ["instance-fleet", "instance-fleet-environment"])
             self.assertEqual([p.name for p in projection.iterdir()], ["gateway.env"])
 
 

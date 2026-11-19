@@ -133,7 +133,9 @@ The installed phase dispatcher accepts commits that carry recovery protocol 4 or
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
-The same refresh carries the host's nested-fleet files into the container. On the nested Gateway of an Instance fleet, the fleet rules write `/etc/orbit/instance-fleet` and the egress proxy in `/etc/environment` on the host, not in the container. Each refresh copies both into the read-only environment mount as `instance-fleet` and `instance-fleet-environment`, and removes them when the host has no marker. Preparation, every candidate and the reactivated old share that mount, so a release or a rollback never loses them. A release container, marked by `ORBIT_GATEWAY_CONTAINER=1`, reads only these copies. See [Instance host in the fleet](/reference/development-containers#instance-host-in-the-fleet).
+The same refresh carries the host's nested-fleet files into the container. On the nested Gateway of an Instance fleet, the fleet rules write `/etc/orbit/instance-fleet` and the egress proxy in `/etc/environment` on the host, not in the container. Each refresh copies both into the read-only environment mount as `instance-fleet-environment` and then `instance-fleet`, and removes the marker first when the host has none. After the fleet rules change either file on the host, run `sudo /usr/local/libexec/orbit-gateway-environment refresh`; no restart is needed, because the Gateway reads the copies on each use.
+
+Preparation, every candidate and the reactivated old share that mount, so a release or a rollback never loses them. A release container, marked by `ORBIT_GATEWAY_CONTAINER=1`, reads only these copies. See [Instance host in the fleet](/reference/development-containers#instance-host-in-the-fleet).
 
 An established Gateway has three containers: a stopped preparation container, a serving container and a stopped old container with `boot.autostart=false`. A release never adds a fourth.
 
