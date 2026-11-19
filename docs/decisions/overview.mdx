@@ -10,7 +10,7 @@ Records lists the decisions in progress. Retired decisions lists every retired n
 
 ## Decision lifecycle
 
-The docs-first subtask writes an ADR when a feature needs an architectural decision, alongside the documentation that describes the intended behavior. A new ADR says `In progress.` in its Status section and names the [mission principle](/mission#principles) it serves. If the decision needs an exception to a principle, its Principle line names that principle and explains the exception and its reason. The ADR and documentation are the contract for implementation.
+An ADR is written before the code when a feature needs an architectural decision, alongside the documentation that describes the intended behavior. A new ADR says `In progress.` in its Status section and names the [mission principle](/mission#principles) it serves. If the decision needs an exception to a principle, its Principle line names that principle and explains the exception and its reason. The ADR and documentation are the contract for implementation.
 
 The pull request that completes a decision writes its behavior into the owning page and its lasting reasons and rejected alternatives into that page's "Why it works this way" section. It deletes the ADR, removes it from Records, redirects the exact ADR path to the absorbing section, adds a Retired decisions row, and updates inbound links. A decision completed in one pull request never leaves an ADR on main; a record stays only while a decision spans multiple pull requests. Numbers are never reused. The retired table and redirects resolve old numbers and links, including those in code comments.
 

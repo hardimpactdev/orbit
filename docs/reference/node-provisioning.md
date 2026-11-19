@@ -792,7 +792,7 @@ Every managed Linux Node gets the same update policy ([ADR 0253](/decisions/0253
 | File | Content |
 | --- | --- |
 | `/etc/apt/apt.conf.d/20auto-upgrades` | Update the package lists and run `unattended-upgrades` every day |
-| `/etc/apt/apt.conf.d/52orbit-unattended-upgrades` | Only the `${distro_id}:${distro_codename}-security` origin; `Automatic-Reboot "false"`; remove unused kernels |
+| `/etc/apt/apt.conf.d/52orbit-unattended-upgrades` | Only the `${distro_id}:${distro_codename}-security` origin; `Automatic-Reboot "false"`; remove unused kernels; every apt run waits up to 300 seconds for the dpkg lock (`DPkg::Lock::Timeout`), so a fresh Node's first upgrade does not fail a package install |
 | `/etc/needrestart/conf.d/50-orbit.conf` | Restart services automatically, except the protected units |
 | `/etc/apt/apt.conf.d/53orbit-reboot-due` | Run the hook after each `dpkg` run |
 | `/usr/local/lib/orbit/reboot-due` | The hook: a protected unit on an old library writes `/var/run/reboot-required` and adds the unit to `/var/run/reboot-required.pkgs` |

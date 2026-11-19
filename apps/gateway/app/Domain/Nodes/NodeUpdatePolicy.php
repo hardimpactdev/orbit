@@ -40,7 +40,8 @@ final readonly class NodeUpdatePolicy
                     'content' => "// Managed by Orbit (ADR 0253): security updates only, and never a reboot; Orbit reboots the Node, drained.\n"
                         ."#clear Unattended-Upgrade::Allowed-Origins;\n#clear Unattended-Upgrade::Origins-Pattern;\n"
                         ."Unattended-Upgrade::Allowed-Origins { \"\${distro_id}:\${distro_codename}-security\"; };\n"
-                        ."Unattended-Upgrade::Automatic-Reboot \"false\";\nUnattended-Upgrade::Remove-Unused-Kernel-Packages \"true\";\n"],
+                        ."Unattended-Upgrade::Automatic-Reboot \"false\";\nUnattended-Upgrade::Remove-Unused-Kernel-Packages \"true\";\n"
+                        ."// Another apt run waits for the lock of an upgrade in progress instead of failing at once.\nDPkg::Lock::Timeout \"300\";\n"],
                 ['path' => '/etc/needrestart/conf.d/50-orbit.conf', 'mode' => '0644', 'content' => self::needrestart()],
                 ['path' => '/etc/apt/apt.conf.d/53orbit-reboot-due', 'mode' => '0644',
                     'content' => "// Managed by Orbit (ADR 0253): a protected unit on an old library makes the Node due for its reboot.\n"

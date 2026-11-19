@@ -15,7 +15,7 @@ Read the [mission](/mission) and the affected documentation pages first. Every A
 
 ## Write and review
 
-The docs-first subtask of a task writes the ADR, when one is needed, together with the documentation change. The ADR and the changed pages are the contract for the later subtasks. The [contributor guide](/contributor-guide) describes the docs-first subtask and the docs-impact check.
+The ADR, when one is needed, is written before the code, together with the documentation change. The ADR and the changed pages are the contract for the implementation. The [contributor guide](/contributor-guide) describes the documentation step and the docs-impact check.
 
 A new ADR has the status `In progress.` Add a row for it to the Records table in the [overview](/decisions/overview), and add its page to the Records group of the navigation in `docs/docs.json`. The maintainer reviews it together with the feature. A change to a decision that is still in progress edits that ADR. A change to built behavior edits the documentation directly, and needs a new ADR only when it is itself a significant decision.
 
