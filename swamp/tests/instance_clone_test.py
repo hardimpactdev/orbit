@@ -372,6 +372,7 @@ class CloneTest(unittest.TestCase):
             files = container.setdefault("fixture_files", {})
             templates = {"/etc/hosts": ["create", "copy"]} if container.get("fixture_hosts_template", True) else {}
             copied = []
+            incus = {"down": container.get("fixture_incus_down", False)}
 
             def command(argv, **kwargs):
                 nonlocal read
@@ -424,8 +425,20 @@ class CloneTest(unittest.TestCase):
                     headers = {"type": "file", "uid": "0", "gid": "0", "mode": "0644", **held}
                     return subprocess.CompletedProcess(argv, 0, held["content"], "200 {type} {uid} {gid} {mode}".format(**headers))
                 if argv[0] == "curl" and "--retry" in argv:
-                    # The seed wait: curl's exit only, which the copy does not read.
-                    return subprocess.CompletedProcess(argv, 0, "", "")
+                    # The wait for Incus or the seed: curl's exit only, which the copy does not read. `fixture_wait_stalls`: curl
+                    # outlives its bound. A wait for the API brings a restarted Incus back, unless it stays down past the bound.
+                    if container.get("fixture_wait_stalls"):
+                        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+                    if argv[-1] == "http://incus/1.0" and incus["down"] != "stays":
+                        incus["down"] = False
+                    return subprocess.CompletedProcess(argv, 22 if incus["down"] else 0, "", "")
+                if argv[0] == "curl" and argv[-1] == "http://incus/1.0":
+                    # Whether the Node's Incus API answers at all.
+                    return subprocess.CompletedProcess(argv, 7 if incus["down"] else 0, "", "")
+                if argv[0] == "incus" and incus["down"]:
+                    # `fixture_incus_down`: a restart of Incus; its socket refuses every command until a wait brings it back.
+                    return subprocess.CompletedProcess(argv, 1, "", 'Error: Get "http://unix.socket/1.0": dial unix /var/lib/incus/unix.socket: '
+                                                                    "connect: connection refused")
                 if argv[0] == "curl":
                     # The files API's type header, read from the copy's real root file system; a link is never followed.
                     local = root / urllib.parse.unquote(argv[-1].split("&path=", 1)[1]).lstrip("/")
@@ -683,8 +696,16 @@ class CloneTest(unittest.TestCase):
         self.assertFalse(any("copy" in call for call in calls))
 
     SEED_WAIT = ["curl", "--unix-socket", "/var/lib/incus/unix.socket", "--fail", "--silent", "--show-error", "--output", "/dev/null",
-                 "--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120",
+                 "--max-time", "5", "--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120",
                  "http://incus/1.0/instances/instance-1/snapshots/seed-abc?project=orbit-instances"]
+
+    def waits(self, calls):
+        """Each wait of the copy, with its bound: the seconds left of the one 120 s bound, here within a second of it."""
+        held = [list(call) for call in calls if "--retry" in call]
+        for call in held:
+            self.assertIn(int(call[call.index("--retry-max-time") + 1]), (119, 120))
+            call[call.index("--retry-max-time") + 1] = "120"
+        return held
 
     def test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved(self):
         # The wait's bound passed between the retake's delete and its rename: the admitted seed's `next-` is still there.
@@ -694,14 +715,48 @@ class CloneTest(unittest.TestCase):
             self.assertFalse(any("copy" in call for call in calls))
             self.assertIsNone(self.seed_commit)
             # It waited once by curl's own retry, every 2 s for at most 120 s, read the snapshots again, then refused.
-            self.assertEqual([call for call in calls if "--retry" in call], [self.SEED_WAIT])
+            self.assertEqual(self.waits(calls), [self.SEED_WAIT])
             self.assertEqual(sum(call[:2] == ["incus", "query"] and "/snapshots?" in call[2] for call in calls), 2)
         # A retake that ends within the wait: `seed-abc` is gone, and after the wait its `next-abc` has the name again.
         calls, _, error = self.clone(overrides={"fixture_snapshot_reads": [[{"name": "next-abc"}], [{"name": "seed-abc"}]]})
         self.assertEqual(error, "")
-        self.assertEqual([call for call in calls if "--retry" in call], [self.SEED_WAIT])
+        self.assertEqual(self.waits(calls), [self.SEED_WAIT])
         self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
         self.assertIsNone(self.seed_commit)
+
+    def test_a_seed_wait_that_outlives_its_bound_still_reads_the_snapshots_and_decides_each_case(self):
+        # curl stalls on an API that accepts and never answers, and the copy stops it at the bound: the final read still decides.
+        for reads, copied, code, commit in (
+            ([[{"name": "next-abc"}], [{"name": "seed-abc"}]], "instance-1/seed-abc", "", None),
+            ([[{"name": "next-abc"}], [{"name": "seed-def", "created_at": "2026-11-17T03:10:00Z"}]], "instance-1/seed-def", "", "def\n"),
+            ([[{"name": "next-abc"}], [{"name": "next-abc"}, {"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"}]], None,
+             "instance.default_seed_moved", None),
+            ([[{"name": "next-abc"}], [{"name": "other"}]], None, "instance.default_seed_missing", None),
+        ):
+            with self.subTest(reads=reads[-1]):
+                calls, _, error = self.clone(overrides={"fixture_snapshot_reads": reads, "fixture_wait_stalls": True})
+                self.assertEqual(sum(call[:2] == ["incus", "query"] and "/snapshots?" in call[2] for call in calls), 2)
+                self.assertEqual([call[4] for call in calls if call[3:4] == ["copy"]], [copied] if copied else [])
+                self.assertIn(code, error) if code else self.assertEqual(error, "")
+                self.assertEqual(self.seed_commit, commit)
+
+    def test_a_restart_of_incus_before_the_copy_waits_for_the_api_within_the_bound(self):
+        # The local API is down at the first read: the copy waits for it by curl's retry, reads again, and clones as before.
+        calls, _, error = self.clone(overrides={"fixture_incus_down": True})
+        self.assertEqual(error, "")
+        self.assertEqual(self.waits(calls), [self.SEED_WAIT[:-1] + ["http://incus/1.0"]])
+        copy = next(i for i, call in enumerate(calls) if call[3:4] == ["copy"])
+        reads = [call for call in calls[:copy] if call[:2] == ["incus", "query"] and call[2] == "/1.0/instances/instance-7?project=orbit-instances"]
+        self.assertEqual(len(reads), 2)
+        self.assertEqual([call[4] for call in calls if call[3:4] == ["copy"]], ["instance-1/seed-abc"])
+        # Incus still down at the bound: the unreadable ACL refuses before the copy and is never taken for a missing one.
+        calls, _, error = self.clone(overrides={"fixture_incus_down": "stays"})
+        self.assertTrue(error.startswith("instance.container_container_failed: command incus exited 1 (incus query /1.0/network-acls/"), error)
+        self.assertFalse(any(call[3:4] == ["copy"] or call[:3] == ["incus", "network", "acl"] for call in calls))
+        # A healthy copy and a refusal by an answering Incus wait not at all.
+        for overrides in ({}, {"fixture_acl": "error"}):
+            calls, _, _ = self.clone(overrides=overrides)
+            self.assertFalse(any("--retry" in call for call in calls))
 
     def test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit(self):
         # The retake took a seed at another commit and deleted the admitted one: the copy takes the new seed and records its commit.

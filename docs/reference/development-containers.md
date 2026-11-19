@@ -1176,7 +1176,9 @@ Every older `base-` pair goes first, so the default keeps at most one base. With
 
 A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the copy step, `clone-container`, reads the default's snapshots, and while the admitted seed is missing and its `next-` snapshot is there, it reads them again every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first read and waits not at all; no step of its own stands before the copy.
 
-Then the copy decides from its last read. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
+The same 120 seconds also cover a restart of the Node's Incus. When a read before the copy fails or stalls and the local Incus API does not answer, the step waits for the API, again every 2 seconds, and reads once more. An answer of Incus, such as an unreadable ACL, is never retried and is never taken for a missing ACL. Each request of a wait ends after 5 seconds, so an API that accepts and never replies cannot hold the wait past its bound. The step's budget is 420 seconds: the 120-second wait, then the copy's 300 seconds of work.
+
+Then, however the wait ended, the copy decides from one more read. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
 
 #### The seed hold
 

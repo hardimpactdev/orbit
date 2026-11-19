@@ -189,6 +189,10 @@ Deno.test("a clone's create delivers a nested clone's Club key and has no fleet 
   // no step of its own stands before it.
   assertEquals(step("clone-container").dependsOn,
     [{ step: "clone-ci-hold", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
+  // Its budget keeps the copy's 300 s of work after the copy's one 120 s wait for Incus or the seed, and SSH outlasts it.
+  const copyInputs = step("clone-container").task.inputs as unknown as { argv: string; timeoutSec: number };
+  assert(copyInputs.argv.startsWith('${{ ["timeout", "420", "python3", "-c",'));
+  assertEquals(copyInputs.timeoutSec, 430);
   const held = { already_active: false, container: { name: "instance-8", clone: { source: "instance-7", ci_hold: { places: 5 } } } };
   const holds = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-ci-hold").guard), { inputs: { intent } });
   const holdArgv = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-ci-hold").task.inputs.argv), { inputs: { intent } });

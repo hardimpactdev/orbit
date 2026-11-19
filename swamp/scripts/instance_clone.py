@@ -687,21 +687,52 @@ def main():
             with timed("t3_files_seconds"):
                 t3_start_files(model)
 
+        # The copy's one wait bound: 120 s, the bound of a deployment's `seed` phase, shared by a restart of the Node's Incus before the
+        # copy and a retake of the default's seed. The workflow gives the step 300 s of work after it.
+        wait_until = time.monotonic() + 120
+
+        def wait_for(url):
+            """Waits until the Node's Incus API answers `url`, by curl's own retry every 2 s, within the wait bound. A request that
+            stalls ends after 5 s and is retried; a curl that outlives the bound is stopped. Either way the caller reads again."""
+            left = int(wait_until - time.monotonic())
+            if left <= 0:
+                return
+            try:
+                run(["curl", "--unix-socket", INCUS_SOCKET, "--fail", "--silent", "--show-error", "--output", "/dev/null", "--max-time", "5",
+                     "--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", str(left), "http://incus" + url],
+                    check=False, timeout=left + 10)
+            except subprocess.TimeoutExpired:
+                pass
+
+        def query(url, check=True):
+            """`incus query` before the copy. A failed or stalled read whose cause is an Incus API that does not answer (a restart of
+            Incus) waits for the API within the wait bound and reads once more; any other answer, such as a 404, is the result."""
+            argv = ["incus", "query", url]
+            try:
+                result = run(argv, check=False)
+            except subprocess.TimeoutExpired:
+                result = None
+            if result is None or result.returncode:
+                try:
+                    answers = run(["curl", "--unix-socket", INCUS_SOCKET, "--fail", "--silent", "--output", "/dev/null", "--max-time", "5",
+                                   "http://incus/1.0"], check=False, timeout=10).returncode == 0
+                except subprocess.TimeoutExpired:
+                    answers = False
+                if result is None or not answers:
+                    wait_for("/1.0")
+                    result = run(argv, check=False)
+            if check and result.returncode:
+                raise failure("instance.container_" + phase + "_failed: command incus exited " + str(result.returncode), argv, result)
+            return result
+
         try:
-            current = run(
-                [
-                    "incus",
-                    "query",
-                    f"/1.0/instances/{name}?project={container['project']}",
-                ],
-                check=False,
-            )
+            current = query(f"/1.0/instances/{name}?project={container['project']}", check=False)
             read = json.loads(current.stdout) if current.returncode == 0 else None
             # The copy's own ACL by its name; the list of every ACL on the Node took about a second.
             acl_timer = timed("acl")
             acl_timer.__enter__()
             acl_query = ["incus", "query", f"/1.0/network-acls/{urllib.parse.quote(container['acl'])}?project=default"]
-            held = run(acl_query, check=False)
+            held = query(acl_query[2], check=False)
             # Incus answers a missing ACL with 404 "Network ACL not found"; anything else refuses before the copy.
             if held.returncode and "network acl not found" not in held.stderr.lower():
                 raise failure("instance.container_" + phase + "_failed: command incus exited " + str(held.returncode), acl_query, held)
@@ -742,18 +773,16 @@ def main():
                 clone = container["clone"]
                 snapshot = clone["snapshot"]
                 snapshots_url = f"/1.0/instances/{clone['source']}/snapshots?project={container['project']}&recursion=1"
-                snapshots = json.loads(run(["incus", "query", snapshots_url]).stdout)
+                snapshots = json.loads(query(snapshots_url).stdout)
                 names = [row["name"] for row in snapshots]
                 # A retake at the admitted commit has a moment between the delete of `seed-<commit>` and the rename of its `next-`
-                # (docs/reference/development-containers.md#a-retake-keeps-the-seed). Only a copy that meets that moment waits, by
-                # curl's own retry on the Node's Incus API: every 2 s, for at most 120 s, the bound of a deployment's `seed` phase. It
-                # then reads the snapshots once more. A normal copy finds its seed at the first read and waits not at all.
+                # (docs/reference/development-containers.md#a-retake-keeps-the-seed). Only a copy that meets that moment waits for the
+                # admitted seed, within the wait bound, and then reads the snapshots once more, however the wait ended. A normal copy
+                # finds its seed at the first read and waits not at all.
                 if snapshot not in names and "next-" + snapshot[len("seed-"):] in names:
-                    run(["curl", "--unix-socket", INCUS_SOCKET, "--fail", "--silent", "--show-error", "--output", "/dev/null", "--retry", "60",
-                         "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120",
-                         f"http://incus/1.0/instances/{urllib.parse.quote(clone['source'])}/snapshots/{urllib.parse.quote(snapshot)}"
-                         f"?project={urllib.parse.quote(container['project'])}"], check=False, timeout=130)
-                    snapshots = json.loads(run(["incus", "query", snapshots_url]).stdout)
+                    wait_for(f"/1.0/instances/{urllib.parse.quote(clone['source'])}/snapshots/{urllib.parse.quote(snapshot)}"
+                             f"?project={urllib.parse.quote(container['project'])}")
+                    snapshots = json.loads(query(snapshots_url).stdout)
                     names = [row["name"] for row in snapshots]
                 # A default with no seed at all refuses by its own code; the admitted seed's `next-` still there is a retake that did
                 # not end within the wait; a seed that a deployment replaced by a newer one is copied.
