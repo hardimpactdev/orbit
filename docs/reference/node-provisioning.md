@@ -737,7 +737,7 @@ The network phase uses it for the WireGuard files. `tasks/managed-files-check.ym
 
 Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
 
-The same rule covers an install that a converge would otherwise redo. On an Instance container host, one `dpkg-query` read of Squid's status replaces apt's cache refresh and package check. Squid has no pinned version, because the host's updates upgrade it. Only a read that succeeds and prints `installed` skips apt. A failed read runs apt. Config files left after a removal count as not installed.
+The same rule covers an install that a converge would otherwise redo. An archive install, such as Squid on an Instance container host, follows [Package sources](#package-sources).
 
 On a `websocket` Node, one read verifies the Reverb release folder, which is named by its repository and ref. The checkout must be at the wanted ref with no tracked change. `vendor/composer/installed.json` must hold each package of `composer.lock` at its locked version, without dev packages. PHP must load `vendor/autoload.php` and find Reverb's service provider. A release that verifies skips Git and Composer. In any other state, a PHP error included, the converge checks out the ref again, discards tracked changes and installs again. The install then reports a change, even when Composer only rewrites the autoloader. A new checkout still restarts Reverb.
 
@@ -914,6 +914,10 @@ Not every role can be added the same way.
 ## Package sources
 
 A role installs its packages from the Ubuntu archive, except PHP and Caddy.
+
+An archive install reads the package index (`apt update`) only when one of its packages is missing. Before the install, one `dpkg-query` reads every package it names (`swamp/ansible/tasks/apt-missing.yml`). A package counts as there when dpkg has it installed, held or not, at its version when the task pins one. Config files left after a removal count as missing. When every package is there, the install task is skipped and reports no change. A read that fails names every package, so apt runs and reports the real error.
+
+Otherwise it runs as before: index read, install, same lock timeout. This covers the base packages of `node:add`, the role prerequisites, the update tools, Squid of the Instance egress and `btrfs-progs` on an Instance fleet Node. It never upgrades a package; the [update policy](#update-policy) does that. The index read goes through the Node's proxies, so with old lists it took 134 s for an installed Squid on a nested `app-prod` Node in one refresh.
 
 | Package | Source | Files Orbit owns |
 | --- | --- | --- |

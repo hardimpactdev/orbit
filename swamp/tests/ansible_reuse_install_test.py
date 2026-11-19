@@ -1,6 +1,6 @@
-"""Converge reuses a verified install (docs/reference/node-provisioning.md#check-many-files-in-one-read): Squid's apt task runs only
-when the package is not installed, and Reverb's Git checkout and Composer install run only when its release does not verify at the
-wanted ref. The production tasks run with real Git and PHP; apt and Composer are replaced by a logged call."""
+"""Converge reuses a verified install (docs/reference/node-provisioning.md#check-many-files-in-one-read): Reverb's Git checkout and
+Composer install run only when its release does not verify at the wanted ref. The production tasks run with real Git and PHP; Composer
+is replaced by a logged call. ansible_apt_missing_test.py covers Squid's apt install."""
 import json
 import os
 import shutil
@@ -43,47 +43,18 @@ def loaded(task_file, names, replace):
 
 @unittest.skipUnless(Path(COMMAND).exists() and shutil.which('php') and shutil.which('git'), 'needs ansible-playbook, PHP and Git')
 class ReuseInstallTest(unittest.TestCase):
-    def play(self, folder, tasks, variables, status=None, code=0):
-        (folder / 'bin').mkdir(exist_ok=True)
-        stub = folder / 'bin/dpkg-query'
-        # dpkg prints the status word of a known package; an unknown one exits 1 with nothing on stdout.
-        stub.write_text('#!/bin/sh\n' + (f'printf %s {status}\n' if status else 'echo "no packages found" >&2\n') + f'exit {code}\n')
-        stub.chmod(0o755)
+    def play(self, folder, tasks, variables):
         (folder / 'play.yml').write_text(json.dumps([{'hosts': 'node', 'gather_facts': False, 'tasks': tasks}]))
         (folder / 'inventory.yml').write_text(json.dumps({'all': {'hosts': {'node': {
             'ansible_connection': 'local', 'ansible_python_interpreter': sys.executable}}}}))
         (folder / 'calls.log').write_text('')
         result = subprocess.run([COMMAND, '-i', str(folder / 'inventory.yml'), '-e', json.dumps(variables), str(folder / 'play.yml')],
                                 check=False, capture_output=True, text=True, timeout=120, env={
-                                    **os.environ, 'PATH': f"{folder / 'bin'}:{os.environ['PATH']}", 'STUB_DIR': str(folder),
+                                    **os.environ, 'STUB_DIR': str(folder),
                                     'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg'), 'ANSIBLE_FORCE_COLOR': '0'})
         output = result.stdout + result.stderr
         self.assertEqual(result.returncode, 0, output)
         return output, (folder / 'calls.log').read_text().split()
-
-    def squid(self, status, code=0):
-        with tempfile.TemporaryDirectory() as folder:
-            tasks = loaded('instance-egress.yml', ('Read the installed Squid package', 'Install Squid'), ['ansible.builtin.apt'])
-            return self.play(Path(folder), tasks, {}, status, code)
-
-    def test_an_installed_squid_skips_apt(self):
-        output, calls = self.squid('installed')
-        self.assertEqual(calls, [])
-        self.assertIn('changed=0', output)
-
-    def test_squid_removed_with_its_config_files_left_installs_again(self):
-        _, calls = self.squid('config-files')
-        self.assertEqual(calls, ['ansible.builtin.apt'])
-
-    def test_an_unknown_squid_package_installs(self):
-        _, calls = self.squid(None, 1)
-        self.assertEqual(calls, ['ansible.builtin.apt'])
-
-    def test_a_failed_squid_read_runs_apt(self):
-        # Any failed read runs apt, even one that printed `installed`.
-        for status, code in ((None, 2), ('installed', 2)):
-            _, calls = self.squid(status, code)
-            self.assertEqual(calls, ['ansible.builtin.apt'], (status, code))
 
     def reverb(self, change=None, clone=True):
         """Converge a release folder: absent when `clone` is false, else installed at the wanted ref and then changed by `change`.
