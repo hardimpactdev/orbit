@@ -95,7 +95,7 @@ Hot is ready when all of these hold:
 - All build steps passed and hot carries the exact admitted commit and artifact digest.
 - `orbit-frankenphp.service` is active in hot.
 - The Instance's health path answers `200` three times in a row. It is `/up` for a Laravel app and `/` otherwise.
-- A Laravel app whose `storage` is a shared path has its [public storage link](#storage) into the shared volume.
+- A Laravel app whose `storage` is a shared path has no [public storage link](#storage) that leads nowhere. Rollback skips this check: the retained release already served.
 - Each request has 5 seconds, and all three have 60 seconds.
 - Hot's PHP loads neither PCOV nor PHP Data Bridge.
 
@@ -213,7 +213,7 @@ The storage volume holds what must outlive a release: the shared paths, `storage
 
 The first preparation on the app-prod Node provisions the per-Instance volume. Deploys and rollbacks keep it.
 
-A Laravel app whose `storage` is a shared path gets the link that `php artisan storage:link` makes on a host: preparation links `public/storage` to `../storage/app/public`, so `/storage/...` URLs serve the files in `/srv/shared/storage/app/public`. The Project needs no deploy step for it. A link that a build step already made stays. The [readiness check](#ready) refuses a candidate whose link is missing or points outside the shared volume, with `deployment.not_ready`.
+A Laravel app whose `storage` is a shared path gets the link that `php artisan storage:link` makes on a host: when the checkout has no `public/storage`, preparation links it to `../storage/app/public`, so `/storage/...` URLs serve the files in `/srv/shared/storage/app/public`. The Project needs no deploy step for it. A real `public/storage` directory or a link that the checkout or a build step made stays as it is. The [readiness check](#ready) refuses a candidate whose `public/storage` link does not resolve, such as one to a host path, with `deployment.not_ready`.
 
 Build steps run in the preparation container while live serves. Both can reach the shared volume. A build must keep release-specific compiled views and caches off that volume. Run Laravel `optimize` and `view:cache` only at a phase and path that preserve live’s views. The [fixture proof](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#live-proof-on-a-fixture-production-project) checks shared-storage behavior across releases.
 
@@ -244,10 +244,11 @@ A release container has no host install folders. A Process command, a Process en
 | Host path | Container path |
 | --- | --- |
 | `/usr/bin/php` and `/usr/bin/php<version>` | The runtime folder's PHP of that version |
-| `/opt/orbit/vite-plus/bin/<tool>` and `/opt/orbit/vite-plus/js_runtime/node/<version>/bin/node`, `npm` or `npx` | `/opt/orbit-runtime/current/bin/<tool>`, when the runtime ships the tool |
+| `/opt/orbit/vite-plus/bin/<tool>` | `/opt/orbit-runtime/current/bin/<tool>`, when the runtime ships the tool |
+| `/opt/orbit/vite-plus/js_runtime/node/<version>/bin/node`, `npm` or `npx` | `/opt/orbit-runtime/current/bin/<tool>`, when `<version>` is the runtime folder's Node release in the recipe |
 | The Instance's checkout, or `/home/orbit-app-<project>/current` | `/srv/workspace/current` |
 
-Any other path under `/opt/orbit/`, `/home/orbit-app-<project>` or `/usr/bin/php` refuses the deploy with `deployment.host_path_unsupported`. The message names the Process and argument, or the environment key, and the path. Change the record to a container path or a command on `PATH`, then deploy again.
+Admission finds a host path anywhere in a value: as an argument, after `--option=` or `VAR=`, inside quotes, and after a shell operator such as `;`, `&&`, `||`, `|`, `(`, a backtick or `$(` in a shell command string. Any other path under `/opt/orbit/`, `/home/orbit-app-<project>` or `/usr/bin/php`, and a Node path of another version, refuses the deploy with `deployment.host_path_unsupported`. The message names the Process and argument, or the environment key, and the path. For a Node path it also names both Node versions. Change the record to a container path or a command on `PATH`, then deploy again.
 
 ## PHP runtime
 
@@ -281,7 +282,7 @@ The Node then checks that recovery completed this move:
 - Its inventory names this commit live with no old release, and the live link selects it.
 - The Schedule marker belongs to this Instance.
 
-It then adopts that release instead of moving again. The deploy builds nothing and copies no data. The handover checks the release through its Routes and runs the `after_activation` steps that the failed deploy did not reach. The receipt records live, old and artifact on the Gateway. Rollback, Process controls and later deploys then work as usual. Any other Node state refuses the deploy, as before.
+It then adopts that release instead of moving again. The deploy builds nothing and copies no data. The handover checks the release through its Routes and runs only the `after_activation` steps that the journal does not record as done. A step that ran in the failed deploy does not run twice. The receipt records live, old and artifact on the Gateway. Rollback, Process controls and later deploys then work as usual. Any other Node state refuses the deploy, as before.
 
 The next successful container deploy creates a retained rollback that uses the same shared volume.
 

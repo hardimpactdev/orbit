@@ -737,7 +737,7 @@ class ProductionReleaseTest(unittest.TestCase):
                     self.r.park()
                 primitive.assert_called_once_with(action, 300)
 
-    def test_a_laravel_release_with_shared_storage_links_public_storage_and_the_candidate_check_needs_it(self):
+    def storage_app(self):
         workspace, shared = self.r.root / "workspace", self.r.root / "shared"
         app = workspace / "current"
         (app / "public").mkdir(parents=True)
@@ -746,21 +746,38 @@ class ProductionReleaseTest(unittest.TestCase):
         (shared / "storage/app/public/og.png").write_text("image")
         (app / "storage").symlink_to(shared / "storage", target_is_directory=True)
         plan = {"routes": [{"web_root": "public"}], "application_suffix": "", "shared_paths": ["storage"]}
+        return workspace, shared, app, plan
+
+    def test_a_laravel_release_with_shared_storage_gets_the_public_storage_link_only_where_it_is_absent(self):
+        workspace, shared, app, plan = self.storage_app()
         with patch.object(guest, "WORK", workspace), patch.object(guest, "SHARED", shared):
-            with self.assertRaisesRegex(ValueError, "public storage link"):
-                guest.links(plan)
+            guest.links(plan)  # Absent by design, as on a host that never ran storage:link: admitted.
             guest.link_public_storage(plan)
             self.assertEqual(os.readlink(app / "public/storage"), "../storage/app/public")
             self.assertEqual((app / "public/storage/og.png").read_text(), "image")
             guest.links(plan)
+            # A link the checkout has is kept, even one to another place that resolves.
             (app / "public/storage").unlink()
+            (app / "elsewhere").mkdir()
             (app / "public/storage").symlink_to(app / "elsewhere")
-            with self.assertRaisesRegex(ValueError, "public storage link"):
-                guest.links(plan)
-            # A release without shared storage, or without Laravel, has no link to keep.
-            (app / "artisan").unlink()
+            guest.link_public_storage(plan)
+            self.assertEqual(os.readlink(app / "public/storage"), str(app / "elsewhere"))
             guest.links(plan)
-        self.r.state.update(routes=plan["routes"], shared_paths=["storage"], artifact="sha256:" + "a" * 64)
+            # A real directory is kept and admitted.
+            (app / "public/storage").unlink()
+            (app / "public/storage").mkdir()
+            (app / "public/storage/robots.txt").write_text("kept")
+            guest.link_public_storage(plan)
+            self.assertFalse((app / "public/storage").is_symlink())
+            guest.links(plan)
+            # A link that resolves nowhere, such as a host path, is refused.
+            shutil.rmtree(app / "public/storage")
+            (app / "public/storage").symlink_to("/home/orbit-app-7/storage/app/public")
+            with self.assertRaisesRegex(ValueError, "does not resolve"):
+                guest.links(plan)
+
+    def test_the_candidate_check_refuses_a_broken_public_storage_link_before_it_starts_the_web_server(self):
+        self.r.state.update(action="deploy", routes=self.plan["routes"], shared_paths=["storage"], artifact="sha256:" + "a" * 64)
         record = {"config": {"user.orbit.release.artifact": self.r.state["artifact"]}}
         with patch.object(self.r, "identity", return_value=record), patch.object(self.r, "sql"), \
                 patch.object(self.r, "user", return_value=CompletedProcess([], 0, stdout=NEXT)), \
@@ -768,6 +785,17 @@ class ProductionReleaseTest(unittest.TestCase):
                 patch.object(self.r, "guest") as started, self.assertRaisesRegex(phase.Refusal, "deployment.not_ready: .*public storage"):
             self.r.ready()
         started.assert_not_called()
+
+    def test_rollback_to_a_retained_release_skips_the_public_storage_check(self):
+        self.r.state.update(action="rollback", routes=self.plan["routes"], shared_paths=["storage"], artifact="sha256:" + "a" * 64)
+        record = {"config": {"user.orbit.release.artifact": self.r.state["artifact"]}}
+        with patch.object(self.r, "identity", return_value=record), patch.object(self.r, "sql"), \
+                patch.object(self.r, "user", return_value=CompletedProcess([], 0, stdout=NEXT)), \
+                patch.object(self.r, "guest_action") as guest_action, patch.object(self.r, "guest"), \
+                patch.object(self.r, "primitive", return_value="10.0.0.9"), patch.object(self.r, "probe"):
+            self.r.ready()
+        guest_action.assert_not_called()
+        self.assertTrue(phase.read(self.r.operation_file)["ready"])
 
     def recovered_first_move(self):
         """The Node after `recover` completed a first move whose Operation 290 failed after the migration commit."""
@@ -805,6 +833,38 @@ class ProductionReleaseTest(unittest.TestCase):
         self.assertEqual([step["name"] for step in phase.read(self.r.private / "after.json")], ["warm"])
         with self.assertRaisesRegex(phase.Refusal, "changed on retry"):
             self.r.build({**plan, "steps": []})
+
+    def test_adoption_keeps_the_after_steps_the_failed_first_move_already_ran(self):
+        plan = self.recovered_first_move()
+        second = {"name": "notify", "phase": "after_activation", "command": "true", "timeout_seconds": 60}
+        plan["steps"].append(second)
+        self.r.settled.update(completed_steps=["before-0", "after-0"], step_outcomes=[
+            {"name": "build", "phase": "before_activation", "required": True, "exit_code": 0},
+            {"name": "warm", "phase": "after_activation", "required": True, "exit_code": 0}])
+        record = {"config": {"user.orbit.release.artifact": "sha256:" + "a" * 64}}
+        ran = []
+        with patch.object(self.r, "identity", return_value=record), patch.object(self.r, "primitive"), \
+                patch.object(self.r, "user", side_effect=lambda *a, **k: ran.append(k["data"]) or CompletedProcess([], 0)):
+            self.r.build(plan)
+            state = phase.read(self.r.operation_file)
+            self.assertEqual(state["completed_steps"], ["after-0"])
+            self.r.state["verified"] = True
+            self.r.after()
+        self.assertEqual(len(ran), 1)  # Only `notify`; `warm` already ran in the failed first move.
+        state = phase.read(self.r.operation_file)
+        self.assertEqual(state["completed_steps"], ["after-0", "after-1"])
+        self.assertEqual([row["name"] for row in state["step_outcomes"]], ["warm", "notify"])
+
+    def test_adoption_keeps_an_interrupted_required_after_step_interrupted(self):
+        plan = self.recovered_first_move()
+        self.r.settled.update(completed_steps=[], step_outcomes=[], executing="after-0")
+        with patch.object(self.r, "identity", return_value={"config": {"user.orbit.release.artifact": "sha256:" + "a" * 64}}), \
+                patch.object(self.r, "user") as user:
+            self.r.build(plan)
+            self.r.state["verified"] = True
+            with self.assertRaisesRegex(phase.Refusal, "interrupted application step"):
+                self.r.after()
+        user.assert_not_called()
 
     def test_only_a_matching_forward_recovery_is_adopted(self):
         for change in ({"inventory": {"live": NEXT, "old": OLD}}, {"settled": {"verified": False}},

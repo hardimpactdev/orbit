@@ -233,7 +233,9 @@ def checkout(plan):
 
 
 def link_public_storage(plan):
-    """The host layout's `storage:link`: a Laravel release serves its public uploads from the shared volume."""
+    """The host layout's `storage:link`: a Laravel release serves its public uploads from the shared volume.
+
+    The link is made only where `public/storage` is absent. A real directory or a link the checkout has is kept."""
     for application in public_storage(plan):
         link = application / "public/storage"
         if not link.exists() and not link.is_symlink():
@@ -259,11 +261,11 @@ def public_storage(plan):
 
 
 def links(plan):
+    """A candidate never serves a `public/storage` link that leads nowhere, such as a host path the container lacks."""
     for application in public_storage(plan):
         link = application / "public/storage"
-        target = (application / "storage/app/public").resolve()
-        if not link.is_dir() or link.resolve() != target or not target.is_relative_to(SHARED):
-            raise ValueError("the release has no public storage link into the shared volume")
+        if link.is_symlink() and not link.exists():
+            raise ValueError("the release has a public storage link that does not resolve")
 
 
 def environment(plan):

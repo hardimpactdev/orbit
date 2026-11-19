@@ -8,7 +8,9 @@ use App\Actions\Instances\StartInstanceEnvironmentImportAction;
 use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
 use App\Actions\Instances\StartInstanceRollbackAction;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\Instances\ContainerProcessCommands;
 use App\Domain\Instances\Deployment\AutomaticDeployFailure;
+use App\Domain\Instances\Deployment\ContainerHostPaths;
 use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Instances\Deployment\SharedPaths;
@@ -358,6 +360,48 @@ describe('production container deployments', function (): void {
             }
             expect(Operation::query()->where('target_id', $instance->id)->where('kind', 'instance.deploy')->exists())->toBeFalse()
                 ->and($instance->refresh()->production_release_started_at)->toBeNull();
+        }
+    });
+
+    it('maps a Vite+ Node path only at the runtime folder Node version and refuses another version with both versions', function (): void {
+        $paths = app(ContainerHostPaths::class);
+        $instance = appProdReleasePlacement($this->prod, 'host-node-version', str_repeat('c', 40));
+        $runtime = app(ContainerProcessCommands::class)->version('node');
+        expect($runtime)->toMatch('/\A[0-9]+[.][0-9]+[.][0-9]+\z/');
+        foreach (['node', 'npm', 'npx'] as $tool) {
+            expect($paths->map("/opt/orbit/vite-plus/js_runtime/node/{$runtime}/bin/{$tool}", $instance, '8.5', 'Process [1:ssr] argument'))
+                ->toBe("/opt/orbit-runtime/current/bin/{$tool}");
+            expect(fn () => $paths->map("--runtime=/opt/orbit/vite-plus/js_runtime/node/22.11.0/bin/{$tool}", $instance, '8.5', 'Process [1:ssr] argument [--runtime]'))
+                ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.host_path_unsupported')
+                    ->and($error->getMessage())->toContain('Process [1:ssr] argument [--runtime]', 'Node [22.11.0]', "Node [{$runtime}]"));
+        }
+    });
+
+    it('finds host paths after shell operators, assignments and quotes in a shell command string', function (): void {
+        $paths = app(ContainerHostPaths::class);
+        $instance = appProdReleasePlacement($this->prod, 'host-shell', str_repeat('c', 40));
+        $php = '/opt/orbit-runtime/current/php/8.5/bin/php';
+        foreach ([
+            'test -s input&&/usr/bin/php8.5 artisan queue:work' => "test -s input&&{$php} artisan queue:work",
+            'true;/usr/bin/php8.5 artisan a' => "true;{$php} artisan a",
+            'false||/usr/bin/php8.5 a' => "false||{$php} a",
+            'echo x|/usr/bin/php8.5 a' => "echo x|{$php} a",
+            '(/usr/bin/php8.5 a)' => "({$php} a)",
+            'v=`/usr/bin/php8.5 -v`' => "v=`{$php} -v`",
+            'v=$(/usr/bin/php8.5 -v)' => "v=\$({$php} -v)",
+            'PHP_BIN=/usr/bin/php8.5 exec run' => "PHP_BIN={$php} exec run",
+            'exec "/usr/bin/php8.5" a' => "exec \"{$php}\" a",
+            "exec '/usr/bin/php8.5' a" => "exec '{$php}' a",
+            '/srv/opt/orbit/x /tmp/usr/bin/php8.5' => '/srv/opt/orbit/x /tmp/usr/bin/php8.5',
+        ] as $command => $mapped) {
+            expect($paths->map($command, $instance, '8.5', 'Process [2:work] argument'))->toBe($mapped);
+        }
+        foreach (['a;/opt/orbit/chrome/chrome', 'a&&/opt/orbit/chrome/chrome', 'a||/opt/orbit/chrome/chrome', 'a|/opt/orbit/chrome/chrome',
+            '(/opt/orbit/chrome/chrome)', 'x=`/opt/orbit/chrome/chrome`', 'x=$(/opt/orbit/chrome/chrome)', 'CHROME=/opt/orbit/chrome/chrome run',
+            'run "/opt/orbit/chrome/chrome"', "run '/opt/orbit/chrome/chrome'", 'run --chrome=/opt/orbit/chrome/chrome'] as $command) {
+            expect(fn () => $paths->map($command, $instance, '8.5', 'Process [2:work] argument'))
+                ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.host_path_unsupported')
+                    ->and($error->getMessage())->toContain('Process [2:work] argument', '[/opt/orbit/chrome/chrome]'));
         }
     });
 

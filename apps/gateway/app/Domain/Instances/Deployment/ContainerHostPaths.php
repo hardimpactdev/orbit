@@ -18,8 +18,11 @@ final readonly class ContainerHostPaths
 {
     public const string Checkout = '/srv/workspace/current';
 
-    /** A host-only path starts a value or follows a separator, as in `--runtime=/opt/orbit/...` or `A:/usr/bin/php8.5`. */
-    private const string HostPath = '~(?<=^|[\s=:\'",])(?:/opt/orbit/|/home/orbit-app-[0-9]+(?=/|$)|/usr/bin/php)[^\s:\'",;]*~';
+    /**
+     * A host-only path anywhere in a value that does not continue a longer path: at its start, after a separator such
+     * as `--runtime=` or `VAR=`, after a shell operator (`;`, `&&`, `||`, `|`, `(`, a backtick, `$(`) or inside quotes.
+     */
+    private const string HostPath = '~(?<![A-Za-z0-9_.\~/])(?:/opt/orbit/|/home/orbit-app-[0-9]+(?![A-Za-z0-9_.-])|/usr/bin/php)[^\s:\'"`,;&|()<>$\\\\]*~';
 
     public function __construct(private ContainerProcessCommands $commands) {}
 
@@ -33,9 +36,15 @@ final readonly class ContainerHostPaths
         if (preg_match('~\A/usr/bin/php(?:[0-9]+[.][0-9]+)?\z~D', $path) === 1) {
             return $this->commands->resolve([$path], $php, $label, hostPaths: true)[0];
         }
-        if (preg_match('~\A/opt/orbit/vite-plus/(?:bin/(?<tool>[a-z][a-z0-9-]*)|js_runtime/node/[0-9][0-9.]*/bin/(?<node>node|npm|npx))\z~D', $path, $match) === 1) {
+        if (preg_match('~\A/opt/orbit/vite-plus/(?:bin/(?<tool>[a-z][a-z0-9-]*)|js_runtime/node/(?<version>[^/]+)/bin/(?<node>node|npm|npx))\z~D', $path, $match) === 1) {
             $name = ($match['node'] ?? '') !== '' ? $match['node'] : $match['tool'];
             if ($this->commands->supportsName($name)) {
+                $runtime = $this->commands->version($name);
+                if (($match['node'] ?? '') !== '' && $match['version'] !== $runtime) {
+                    throw new ResourceOperationException('deployment.host_path_unsupported',
+                        "{$label} names the host-only path [{$path}], which runs Node [{$match['version']}]. The container runtime ships Node [{$runtime}] at [".InstanceHostIntent::RuntimeFolder."/current/bin/{$name}]. Change it to `{$name}` on PATH or that path before deploying.", 409);
+                }
+
                 return InstanceHostIntent::RuntimeFolder.'/current/bin/'.$name;
             }
         }

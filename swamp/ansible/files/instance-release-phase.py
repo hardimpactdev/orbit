@@ -365,12 +365,34 @@ class Release:
         if self.identity(self.sha)["config"][self.ctl["PREFIX"] + "artifact"] != metadata["artifact"]:
             raise Refusal("deployment.selection_invalid: the recovered release differs from its record")
         safe = {key: plan[key] for key in ("action", "routes", "health_path", "php_version", "application_suffix")}
-        save(self.private / "after.json", [step for step in plan["steps"] if step["phase"] == "after_activation"])
+        after = [step for step in plan["steps"] if step["phase"] == "after_activation"]
+        save(self.private / "after.json", after)
+        completed, outcomes, executing = self.settled_after(after)
         self.persist(**safe, operation=self.operation, sha=self.sha, plan_digest=fingerprint, previous=None, previous_old=None,
-                     legacy=None, shared_paths=plan["shared_paths"], units=metadata["units"], completed_steps=[], step_outcomes=[],
+                     legacy=None, shared_paths=plan["shared_paths"], units=metadata["units"], completed_steps=completed,
+                     step_outcomes=outcomes, executing=executing,
                      artifact=metadata["artifact"], build_bytes=metadata.get("build_bytes", 0), adopted=True, built=True,
                      cloned=True, ready=True, switch_started=True, switched=True)
         return True
+
+    def settled_after(self, after):
+        """The failed first move's after steps that ran, so the adopting Operation never runs one twice.
+
+        The settled journal records `after-<index>` keys and, in order, one outcome per after step it started. A key
+        carries over when the step at that index still has the same name; an interrupted one stays interrupted."""
+        ran = [row for row in self.settled.get("step_outcomes", []) if row.get("phase") == "after_activation"]
+        completed, outcomes = [], []
+        for index, row in enumerate(ran):
+            key = f"after-{index}"
+            if index >= len(after) or after[index]["name"] != row["name"] or key not in self.settled.get("completed_steps", []):
+                break
+            completed.append(key)
+            outcomes.append(row)
+        executing = self.settled.get("executing")
+        index = len(completed)
+        if executing != f"after-{index}" or index >= len(after) or len(ran) > index and ran[index]["name"] != after[index]["name"]:
+            executing = None
+        return completed, outcomes, executing
 
     def build(self, plan):
         self.parse_plan(plan)
@@ -619,10 +641,11 @@ class Release:
         head = self.user(self.name, "git", "--no-replace-objects", "rev-parse", "HEAD").stdout.strip()
         if head != self.sha:
             raise Refusal("deployment.selection_invalid: different revision in candidate")
-        try:
-            self.guest_action(self.name, "links", {key: self.state[key] for key in ("routes", "application_suffix", "shared_paths")})
-        except Refusal as error:
-            raise Refusal("deployment.not_ready: the candidate has no public storage link into the shared volume") from error
+        if self.state["action"] != "rollback":  # A retained release already served with its own public/storage.
+            try:
+                self.guest_action(self.name, "links", {key: self.state[key] for key in ("routes", "application_suffix", "shared_paths")})
+            except Refusal as error:
+                raise Refusal("deployment.not_ready: the candidate has a public storage link that does not resolve") from error
         self.guest(self.name, "systemctl", "start", "orbit-frankenphp.service")
         self.guest(self.name, "systemctl", "is-active", "--quiet", "orbit-frankenphp.service")
         self.user(self.name, "php", "-r", "exit(extension_loaded('pcov') || extension_loaded('php_data_bridge') ? 1 : 0);")
