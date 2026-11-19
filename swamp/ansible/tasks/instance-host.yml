@@ -1,5 +1,4 @@
 ---
-# probe: a file the app-dev role converge loads (roles phase).
 # The container branch of the app-dev role on a Node of the build list (docs/reference/compute-drivers.md#prepare-an-instance-container-host),
 # and of the ci-runner role on a CI Node that hosts proof copies (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node). The
 # Gateway sends `instances` only for such a Node, so every other Node runs none of this. A CI Node runs no Caddy: its intent has no
