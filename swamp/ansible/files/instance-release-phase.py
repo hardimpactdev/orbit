@@ -249,26 +249,28 @@ class Release:
                 served = (0, 0, 0)
             if prepared[0] == 0 and not measured and plan.get("memory_limit_bytes"):
                 prepared = (positive(plan["memory_limit_bytes"]), 0, 0)
-            # The clone of the observed release footprint grows the pool. A fresh cold build
-            # obtains its first measured size before cloning.
+            # The clone grows the pool by the release. Take the largest known size: a fresh cold
+            # build obtains its first measured size before cloning, and an unbuilt preparer never
+            # hides a larger build or legacy checkout that this operation is still going to write.
             current = read(self.record(live), {}) if live else {}
-            disk = max(int(current.get("build_bytes", 0)), int(self.state.get("build_bytes", 0)))
+            sizes = [int(current.get("build_bytes", 0)), int(self.state.get("build_bytes", 0))]
             if prep:
                 root = (((prep.get("state") or {}).get("disk") or {}).get("root") or {})
-                disk = max(disk, int(root.get("usage", 0)))
+                sizes.append(int(root.get("usage", 0)))
             legacy = plan.get("legacy")
-            if not disk and (legacy or {}).get("commit"):
-                size = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--",
-                            "du", "-sxb", "--", legacy["home"] + "/current/"]).stdout
-                disk = int(size.split()[0])
-            if legacy and not self.state.get("checkout_ready"):
-                # The first move copies the shared directories into the volume once, while preparing.
+            if (legacy or {}).get("commit"):
+                sizes.append(self.legacy_usage(legacy, [legacy["home"] + "/current/"]))
+            copy = 0
+            if legacy and not self.state.get("shared_copied"):
+                # The first move copies the shared directories and a backup of the SQLite
+                # database, with its committed WAL pages, into the volume once, while preparing.
                 paths = [legacy["home"] + "/" + localpath(path) for path in plan["shared_paths"]]
                 paths = [path for path in paths if os.path.isdir(path)]
+                paths += [path for path in (legacy["home"] + "/database.sqlite" + suffix for suffix in ("", "-wal"))
+                          if os.path.isfile(path)]
                 if paths:
-                    usage = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--",
-                                 "du", "-scxb", "--", *paths]).stdout
-                    disk += int(usage.splitlines()[-1].split()[0])
+                    copy = self.legacy_usage(legacy, paths)
+            disk = max(sizes) + copy
             try:
                 result = self.ctl["capacity_estimate"](prepared, served, self.node["pool"], release=disk)
             except (ValueError, OSError, subprocess.SubprocessError) as error:
@@ -281,7 +283,21 @@ class Release:
                     raise Refusal(f"deployment.node_capacity: {key} needs {needed[key]} bytes, {left} unreserved")
             # These watermarks belong to the Node only once.
             save(filename, {"operation_id": self.operation, "ram": needed["ram"] - 1024**3,
-                            "swap": needed["swap"], "pool": disk})
+                            "swap": needed["swap"], "pool": disk, "copy": copy})
+
+    def legacy_usage(self, legacy, paths):
+        usage = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--", "du", "-scxb", "--", *paths]).stdout
+        return int(usage.splitlines()[-1].split()[0])
+
+    def copied_shared(self):
+        # The pool now counts the first-move copy. Drop it from this operation's reservation at
+        # once, so a parallel deploy does not subtract it a second time.
+        filename = BASE / ".capacity" / (self.owner + ".json")
+        with lock(filename.parent / "lock"):
+            self.persist(shared_copied=True)
+            held = read(filename, {}) or {}
+            if held.get("operation_id") == self.operation:
+                save(filename, {**held, "pool": held["pool"] - held["copy"], "copy": 0})
 
     def free_capacity(self):
         filename = BASE / ".capacity" / (self.owner + ".json")
@@ -375,6 +391,8 @@ class Release:
             self.sql(self.prep, sql)
             self.reserve(plan, measured=True)
             self.route_files("prepare")
+            if plan.get("legacy"):
+                self.copied_shared()
             dependency_receipt = self.converge_checkout(plan)
             vp = self.prepare_vp(plan)
             self.write_service(plan)

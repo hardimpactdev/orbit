@@ -12,7 +12,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import MagicMock, patch
@@ -630,25 +630,54 @@ class ProductionReleaseTest(unittest.TestCase):
             with patch.object(other, "identity"):
                 other.reserve(self.plan)
 
-    def test_the_pool_reservation_is_the_release_footprint_and_the_first_move_storage_copy(self):
-        self.r.ctl["instance"] = MagicMock(return_value=None)
+    def first_move(self, prep=None):
+        self.r.ctl["instance"] = MagicMock(return_value=prep)
+        self.r.ctl["owned"] = MagicMock()
         self.r.ctl["memory_use"] = MagicMock(return_value=(10, 10, 0))
         self.r.ctl["capacity_estimate"] = MagicMock(return_value={
             "available_bytes": {"ram": 3 * 1024**3, "swap": 0, "pool": 2000}, "required_bytes": {"ram": 2 * 1024**3, "swap": 0, "pool": 1500}})
         self.r.inventory = {"live": None, "old": None}
-        legacy = {"project_id": 2, "home": "/home/orbit-app-2", "units": [], "commit": NEXT}
-        sizes = {"/home/orbit-app-2/current/": "700\t/home/orbit-app-2/current/\n",
-                 "/home/orbit-app-2/storage": "300\t/home/orbit-app-2/storage\n300\ttotal\n"}
-        real = phase.run
-        du = lambda argv, **kwargs: CompletedProcess(argv, 0, stdout=sizes[argv[-1]]) if "du" in argv else real(argv, **kwargs)
-        with patch.object(phase, "run", side_effect=du), patch("os.path.isdir", return_value=True):
-            self.r.reserve({**self.plan, "legacy": legacy})
-            self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1000)
-            self.assertEqual(phase.read(phase.BASE / ".capacity" / "instance-21.json")["pool"], 1000)
-            # Once preparation holds the copy, the pool already counts it.
-            self.r.state.update(checkout_ready=True, build_bytes=800)
-            self.r.reserve({**self.plan, "legacy": legacy})
-            self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 800)
+        home = "/home/orbit-app-2"
+        sizes = {home + "/current/": 700, home + "/storage": 300, home + "/database.sqlite": 40, home + "/database.sqlite-wal": 10}
+        du = lambda argv, **kwargs: CompletedProcess(argv, 0, stdout=f"{sum(sizes[path] for path in argv[argv.index('--', 4) + 1:])}\ttotal\n"
+                                                     if "du" in argv else "")
+        self.stack.enter_context(patch.object(phase, "run", side_effect=du))
+        self.stack.enter_context(patch("os.path.isdir", return_value=True))
+        self.stack.enter_context(patch("os.path.isfile", return_value=True))
+        return {**self.plan, "legacy": {"project_id": 2, "home": home, "units": [], "commit": NEXT}}
+
+    def test_the_first_move_reserves_the_checkout_and_the_storage_and_sqlite_copy(self):
+        plan = self.first_move()
+        self.r.reserve(plan)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1050)
+        self.assertEqual(phase.read(phase.BASE / ".capacity" / "instance-21.json")["pool"], 1050)
+
+    def test_an_unbuilt_preparer_never_lowers_the_known_release_size(self):
+        plan = self.first_move({"config": {}, "state": {"disk": {"root": {"usage": 100}}}})
+        self.r.reserve(plan, measured=True)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1050)
+        self.r.state["build_bytes"] = 900
+        self.r.reserve(plan, measured=True)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1250)
+
+    def test_the_copied_storage_leaves_the_reservation_at_once(self):
+        plan = self.first_move()
+        self.r.reserve(plan)
+        self.r.copied_shared()
+        self.assertEqual(phase.read(phase.BASE / ".capacity" / "instance-21.json")["pool"], 700)
+        self.assertTrue(phase.read(self.r.operation_file)["shared_copied"])
+        # A parallel deploy no longer subtracts the copy that the pool already counts.
+        self.r.reserve(plan, measured=True)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 700)
+        with patch.object(self.r, "route_files"), patch.object(self.r, "copied_shared") as copied, \
+                patch.object(self.r, "reserve"), patch.object(self.r, "primitive"), patch.object(self.r, "sql"), \
+                patch.object(self.r, "converge_checkout", side_effect=phase.Refusal("stop")), \
+                patch.object(self.r, "legacy_commit", return_value=NEXT), patch.object(self.r, "check_selection"), \
+                patch.object(phase, "legacy_schedule_lock", return_value=nullcontext(Path("/nonexistent"))), self.assertRaisesRegex(phase.Refusal, "stop"):
+            self.r.state = {}
+            self.r.inventory = {"live": None, "old": None}
+            self.r.build({**plan, "expected_live": None})
+        copied.assert_called_once_with()
 
     def test_a_node_without_swap_stops_preparation_instead_of_freezing_it(self):
         self.r.state["preparer_awake"] = True
