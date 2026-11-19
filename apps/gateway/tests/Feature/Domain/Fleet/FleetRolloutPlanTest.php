@@ -341,7 +341,7 @@ function copyRolloutHostTree(string $path): void
     $recipe = '/apps/gateway/resources/machine-software/recipe.json';
     File::ensureDirectoryExists(dirname($path.$recipe));
     File::copy($root.$recipe, $path.$recipe);
-    foreach (['/apps/gateway/app/Domain/Nodes', '/swamp/ansible/tasks'] as $folder) {
+    foreach (['/apps/gateway/app/Domain/Nodes', '/apps/gateway/app/Infrastructure/Engine', '/swamp/ansible/tasks'] as $folder) {
         File::copyDirectory($root.$folder, $path.$folder);
     }
 }
