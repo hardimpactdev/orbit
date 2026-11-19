@@ -1,0 +1,34 @@
+---
+# One stage of ci.yml's reads: `ci_read_commands` maps a name to an `incus` read, run in one call by check-read.yml. The
+# results join `ci_read`, and the CI facts take each read the stage made in its registered shape.
+- name: Read the CI state in one call
+  ansible.builtin.import_tasks: check-read.yml
+  vars: { check_read_commands: "{{ ci_read_commands }}" }
+- name: Require every CI read
+  ansible.builtin.assert:
+    that: item.value.rc == 0
+    fail_msg: "{{ item.key }} could not be read (exit {{ item.value.rc }}): {{ item.value.stderr | trim }}"
+    quiet: true
+  loop: "{{ check_read.commands | dict2items }}"
+  loop_control: { label: "{{ item.key }}" }
+- name: Keep the CI reads
+  vars:
+    read: "{{ ci_read | default({}) | combine(check_read.commands) }}"
+  ansible.builtin.set_fact:
+    ci_read: "{{ read }}"
+    ci_collections:
+      results: >-
+        {%- set out = [] -%}
+        {%- for item in ci_collection_plan if ('collection ' ~ item.collection) in read -%}
+        {%- set _ = out.append({'item': item, 'stdout': read['collection ' ~ item.collection].stdout}) -%}
+        {%- endfor -%}
+        {{ out }}
+    ci_settings:
+      results: >-
+        {%- set out = [] -%}
+        {%- for item in ci_setting_plan if (item.scope ~ ' ' ~ item.name ~ ' ' ~ item.key) in read -%}
+        {%- set _ = out.append({'item': item, 'stdout': read[item.scope ~ ' ' ~ item.name ~ ' ' ~ item.key].stdout}) -%}
+        {%- endfor -%}
+        {{ out }}
+    ci_profile: "{{ read.profile | default({}) }}"
+    ci_acl: "{{ read.acl | default({}) }}"

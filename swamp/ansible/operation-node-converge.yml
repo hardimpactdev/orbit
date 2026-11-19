@@ -35,6 +35,7 @@
     orbit_user: "{{ converge_intent.user }}"
     orbit_home: "{{ '/root' if converge_intent.user == 'root' else '/home/' ~ converge_intent.user }}"
     vp_home: /opt/orbit/vite-plus
+    vp_runtime_package: "{{ vp_home }}/recipe/vp-runtime-{{ recipe.tools.vp.lock_sha256 }}/node_modules/vite-plus/package.json"
     apt_directory: /var/tmp/orbit-converge-apt
     apt_retries: 4
     apt_delay: 30
@@ -162,29 +163,33 @@
       loop: "{{ intent.roles }}"
       loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
       tags: [check]
-    - name: Check the managed agent files without changing the Node
-      ansible.builtin.stat: { path: /usr/local/bin/orbit-agent, checksum_algorithm: sha256 }
-      register: agent_check
+    # The selected CLI is read through its link in the same call.
+    - name: Check the managed agent file and service and the selected CLI without changing the Node
+      ansible.builtin.import_tasks: tasks/check-read.yml
+      vars:
+        check_read_paths: [/usr/local/bin/orbit-agent]
+        check_read_units: [orbit-agent.service]
+        check_read_followed: "{{ [] if cli_skip else ['/usr/local/bin/orbit'] }}"
+        cli_skip: "{{ intent.cli == None or intent.release_roles_only | default(false) or intent.automatic | default(false) }}"
       tags: [check]
     - name: Require the recorded agent pin
       ansible.builtin.assert:
-        that: [agent_check.stat.checksum | default('') == intent.agent.sha256]
+        that: "check_read.paths['/usr/local/bin/orbit-agent'].checksum | default('') == intent.agent.sha256"
         quiet: true
       tags: [check]
-    - name: Check the agent service without changing it
-      ansible.builtin.command: { argv: [systemctl, is-active, orbit-agent.service] }
-      changed_when: false
+    - name: Require the active agent service
+      ansible.builtin.assert:
+        that: check_read.units['orbit-agent.service'].rc == 0
+        fail_msg: "orbit-agent.service is {{ check_read.units['orbit-agent.service'].state }}, not active."
+        quiet: true
       tags: [check]
     - name: Check the recorded CLI artifact
       when: intent.cli != None and not (intent.release_roles_only | default(false) or intent.automatic | default(false))
       tags: [check]
       block:
-        - name: Read the selected CLI checksum
-          ansible.builtin.stat: { path: /usr/local/bin/orbit, follow: true, checksum_algorithm: sha256 }
-          register: cli_check
         - name: Require the selected CLI pin
           ansible.builtin.assert:
-            that: cli_check.stat.checksum | default('') == intent.cli.release.sha256
+            that: check_read.followed['/usr/local/bin/orbit'].checksum | default('') == intent.cli.release.sha256
             quiet: true
     - name: Check the retired CLI files without changing the Node
       when: intent.cli == None and not (intent.release_roles_only | default(false) or intent.automatic | default(false))

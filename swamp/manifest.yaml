@@ -193,6 +193,7 @@ additionalFiles:
   - ansible/tasks/metrics.yml
   - ansible/tasks/websocket.yml
   - ansible/tasks/check-files.yml
+  - ansible/tasks/check-read.yml
   - ansible/tasks/check-runtime.yml
   - ansible/tasks/gateway-dns.yml
   - ansible/tasks/private-dns-listener.yml
@@ -202,6 +203,7 @@ additionalFiles:
   - ansible/tasks/gateway-retire.yml
   - ansible/tasks/firewall-port.yml
   - ansible/tasks/firewall.yml
+  - ansible/tasks/ci-read.yml
   - ansible/tasks/ci.yml
   - ansible/files/ci-host-pool.py
   - ansible/task-host-firewall-remove.yml
