@@ -630,6 +630,38 @@ class ProductionReleaseTest(unittest.TestCase):
             with patch.object(other, "identity"):
                 other.reserve(self.plan)
 
+    def test_the_pool_reservation_is_the_release_footprint_and_the_first_move_storage_copy(self):
+        self.r.ctl["instance"] = MagicMock(return_value=None)
+        self.r.ctl["memory_use"] = MagicMock(return_value=(10, 10, 0))
+        self.r.ctl["capacity_estimate"] = MagicMock(return_value={
+            "available_bytes": {"ram": 3 * 1024**3, "swap": 0, "pool": 2000}, "required_bytes": {"ram": 2 * 1024**3, "swap": 0, "pool": 1500}})
+        self.r.inventory = {"live": None, "old": None}
+        legacy = {"project_id": 2, "home": "/home/orbit-app-2", "units": [], "commit": NEXT}
+        sizes = {"/home/orbit-app-2/current/": "700\t/home/orbit-app-2/current/\n",
+                 "/home/orbit-app-2/storage": "300\t/home/orbit-app-2/storage\n300\ttotal\n"}
+        real = phase.run
+        du = lambda argv, **kwargs: CompletedProcess(argv, 0, stdout=sizes[argv[-1]]) if "du" in argv else real(argv, **kwargs)
+        with patch.object(phase, "run", side_effect=du), patch("os.path.isdir", return_value=True):
+            self.r.reserve({**self.plan, "legacy": legacy})
+            self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1000)
+            self.assertEqual(phase.read(phase.BASE / ".capacity" / "instance-21.json")["pool"], 1000)
+            # Once preparation holds the copy, the pool already counts it.
+            self.r.state.update(checkout_ready=True, build_bytes=800)
+            self.r.reserve({**self.plan, "legacy": legacy})
+            self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 800)
+
+    def test_a_node_without_swap_stops_preparation_instead_of_freezing_it(self):
+        self.r.state["preparer_awake"] = True
+        prep = {"config": {"user.orbit.release.operation": "300"}}
+        for swap, action in ((True, "sleep"), (False, "rest")):
+            with self.subTest(swap=swap):
+                (self.r.private / "parked.json").unlink(missing_ok=True)
+                self.r.ctl["instance"] = MagicMock(return_value=prep)
+                self.r.ctl["has_swap"] = MagicMock(return_value=swap)
+                with patch.object(self.r, "primitive") as primitive:
+                    self.r.park()
+                primitive.assert_called_once_with(action, 300)
+
     def test_untrusted_checkout_paths_cannot_traverse_the_persistent_volume(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

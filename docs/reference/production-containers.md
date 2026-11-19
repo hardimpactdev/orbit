@@ -31,7 +31,7 @@ Each release container has one release state.
 | `live` | The release that serves | FrankenPHP for every Route of the Instance, the Processes, the container timers and the Schedule fires |
 | `old` | The previous live release, stopped after drain with `boot.autostart=false` | No work and no memory. A rollback starts it from its filesystem |
 
-The permanent preparation container has no release state and receives no traffic. After two successful deploys, the Instance retains three containers between deploys: preparation sleeps in swap, old is stopped, and live serves. A deploy temporarily adds hot, for four containers until retire removes the earlier old. The first deploy has no previous live.
+The permanent preparation container has no release state and receives no traffic. After two successful deploys, the Instance retains three containers between deploys: preparation sleeps in swap, or is stopped on a Node without swap, old is stopped, and live serves. A deploy temporarily adds hot, for four containers until retire removes the earlier old. The first deploy has no previous live.
 
 ## Records
 
@@ -65,7 +65,7 @@ Orbit holds the deploy for this Instance. Other production Instances on the Node
 4. **Deploy.** Render the environment. Run the `before_activation` steps as the application user, with their [Vite+ prerequisites](/reference/deployments#vite-store-prerequisite). Install application units and timers disabled.
 5. **Seal.** Verify the full commit and finished artifact digest. Snapshot the completed build. A partial build has no release snapshot.
 6. **Clone.** Start hot from the sealed snapshot with a unique address and autostart disabled. Only the owning Operation can reuse this candidate.
-7. **Sleep.** Freeze preparation and reclaim its memory to swap. The candidate starts its own FrankenPHP processes and passes private readiness.
+7. **Sleep.** Freeze preparation and reclaim its memory to swap. A Node without swap stops preparation, and the next deploy starts it cold. The candidate starts its own FrankenPHP processes and passes private readiness.
 
 The preparer fetches the Git objects it needs. It uses a separate account for the fetch and updates the existing checkout in place. A change of repository or branch starts a fresh object store. Each release clone retains its own Git objects. The preparer removes stale build output and old environment files. It can retain installed `vendor` and `node_modules` trees from its last completed build when the build context, package inputs and sealed contents still match. Interrupted installs and changed inputs start with empty dependency trees. The admitted build steps run on every deploy.
 
@@ -221,7 +221,12 @@ A release has no default memory limit. Each preparation and release container re
 Before changing the preparation container, a deploy or [migration](#a-checkout-production-instance) checks the available memory, swap and pool space. A refusal is `deployment.node_capacity`.
 
 - Available memory covers the build and candidate overlap, a live wake and 1 GiB of headroom.
-- The pool has at least 10 GiB free, and the Node’s free swap covers the working set it will reclaim from preparation. The drained release is stopped and needs no swap.
+- The pool has room for this deploy’s release plus headroom.
+- On a Node with swap, the free swap covers the working set it will reclaim from preparation. A Node without swap needs none.
+
+The release size is the last measured build. On a first move it is the checkout’s size plus the shared directories that the move copies into the volume. The headroom is a tenth of the pool, and at least 1 GiB, so the pool never runs near full. Each other deploy on the Node reserves its own release size.
+
+A Node without swap stops preparation after the clone instead of freezing it. The memory check already covers preparation and hot together, so nothing overcommits. The drained release is stopped and needs no swap.
 
 Estimate each container’s need using its configured limit or the measured working set of the current release. Include the previous live’s working set while the handover drains it. During a migration include the serving checkout’s PHP-FPM pool and Processes.
 

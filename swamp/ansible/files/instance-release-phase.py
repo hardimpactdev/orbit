@@ -249,24 +249,31 @@ class Release:
                 served = (0, 0, 0)
             if prepared[0] == 0 and not measured and plan.get("memory_limit_bytes"):
                 prepared = (positive(plan["memory_limit_bytes"]), 0, 0)
-            try:
-                result = self.ctl["capacity_estimate"](prepared, served, self.node["pool"])
-            except (ValueError, OSError, subprocess.SubprocessError) as error:
-                raise Refusal(f"deployment.node_capacity: {error}") from error
-            available, needed = result["available_bytes"], result["required_bytes"]
-            # Reserve the observed release footprint in addition to the common free-space floor.
-            # A fresh cold build obtains its first measured size before cloning.
+            # The clone of the observed release footprint grows the pool. A fresh cold build
+            # obtains its first measured size before cloning.
             current = read(self.record(live), {}) if live else {}
             disk = max(int(current.get("build_bytes", 0)), int(self.state.get("build_bytes", 0)))
             if prep:
                 root = (((prep.get("state") or {}).get("disk") or {}).get("root") or {})
                 disk = max(disk, int(root.get("usage", 0)))
-            if not disk and (plan.get("legacy") or {}).get("commit"):
-                legacy = plan["legacy"]
+            legacy = plan.get("legacy")
+            if not disk and (legacy or {}).get("commit"):
                 size = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--",
                             "du", "-sxb", "--", legacy["home"] + "/current/"]).stdout
                 disk = int(size.split()[0])
-            needed["pool"] += disk
+            if legacy and not self.state.get("checkout_ready"):
+                # The first move copies the shared directories into the volume once, while preparing.
+                paths = [legacy["home"] + "/" + localpath(path) for path in plan["shared_paths"]]
+                paths = [path for path in paths if os.path.isdir(path)]
+                if paths:
+                    usage = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--",
+                                 "du", "-scxb", "--", *paths]).stdout
+                    disk += int(usage.splitlines()[-1].split()[0])
+            try:
+                result = self.ctl["capacity_estimate"](prepared, served, self.node["pool"], release=disk)
+            except (ValueError, OSError, subprocess.SubprocessError) as error:
+                raise Refusal(f"deployment.node_capacity: {error}") from error
+            available, needed = result["available_bytes"], result["required_bytes"]
             reservations = [read(path) for path in directory.glob("instance-*.json") if path != filename]
             for key in needed:
                 left = available[key] - sum(item[key] for item in reservations)
@@ -505,7 +512,8 @@ class Release:
             if self.state.get("preparer_awake") and read(marker) != self.operation:
                 prep = self.ctl["instance"](self.prep)
                 if prep and prep["config"].get("user.orbit.release.operation") == str(self.operation):
-                    self.primitive("sleep", self.operation)
+                    # Without swap, preparation stops and the next deploy wakes it cold. The capacity check demands no swap then.
+                    self.primitive("sleep" if self.ctl["has_swap"]() else "rest", self.operation)
                 save(marker, self.operation)
 
     def probe(self, address=None, *, routes=None, health=None, verify_token=None):
