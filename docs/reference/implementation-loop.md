@@ -161,7 +161,7 @@ Each attempt uses private source and index files, a three-second connection time
 
 The Valkey install keeps the packages it downloaded in the Actions cache, keyed by the runner image, and the job on main that warms the Gateway test caches saves that cache. A later run on the same image installs those packages with `dpkg` and needs no mirror: a mirror that times out then leaves the real-client job unaffected.
 
-When the cached packages fail to install, the helper uses the two mirrors and saves an empty entry: `dpkg` may have installed a part of the set, so that download is incomplete. The next clean runner downloads the whole set and saves it under its digest.
+The cache holds one entry for each runner image, and only a whole set: the download of one install that no failed attempt preceded. After a failed attempt, cached or from a mirror, a part may be installed, and the next download holds only the rest. A run whose cached packages fail to install uses the two mirrors and leaves the entry alone. Raising the number at the end of the cache key drops an entry.
 
 Apt suspends `needrestart` on the disposable runner so unrelated service scans and restarts do not consume the install deadline. At the deadline, the helper identifies the timed-out operation and kills its process group. It verifies the installed commands and fails if neither attempt supplies them. Gateway static analysis keeps its two-minute job limit; the real-client job has four minutes.
 

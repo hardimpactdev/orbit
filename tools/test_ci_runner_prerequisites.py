@@ -197,7 +197,7 @@ for name in ('valkey-server', 'valkey-cli'):
                          [['--install', str(archives / 'valkey-server_9.deb'), str(archives / 'valkey-tools_9.deb')]])
         self.assertIn('from the cached packages', result.stdout)
 
-    def test_cached_packages_that_do_not_install_use_the_mirror_and_leave_a_reset_for_the_next_clean_runner(self):
+    def test_cached_packages_that_do_not_install_use_the_mirror_and_stay_as_they_are(self):
         archives = self.cached('fail')
         archives.mkdir()
         (archives / 'stale_1.deb').write_text('stale')
@@ -206,16 +206,17 @@ for name in ('valkey-server', 'valkey-cli'):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Could not supply valkey-server from the cached packages', result.stderr)
         self.assertEqual([(call['mirror'], call['operation']) for call in self.apt], [('primary', 'update'), ('primary', 'install')])
-        # dpkg may have installed a part of the set, so this mirror install is not a whole set: none of it is kept.
-        self.assertEqual([path.name for path in archives.iterdir()], ['reset'])
-        # The next clean runner restores the marker alone, downloads the whole set and keeps it.
-        for name in ('valkey-server', 'valkey-cli'):
-            (self.bin / name).unlink()
-        self.log.unlink()
-        result = self.run_helper('valkey-server')
+        # dpkg may have installed a part of the set, so this download is not a whole set: the folder is left alone.
+        self.assertEqual([path.name for path in archives.iterdir()], ['stale_1.deb'])
+
+    def test_a_download_after_a_failed_mirror_attempt_is_not_kept(self):
+        # The first mirror may have installed a part before it failed; the fallback then downloads only the rest.
+        archives = self.cached()
+        self.fresh_packages()
+        result = self.run_helper('valkey-server', primary='install-fail')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(any('dpkg' in call for call in self.calls))
-        self.assertEqual(sorted(path.name for path in archives.iterdir()), ['valkey-server_9.deb', 'valkey-tools_9.deb'])
+        self.assertEqual([(call['mirror'], call['operation']) for call in self.apt][-1], ('fallback', 'install'))
+        self.assertFalse(archives.exists())
 
     def test_a_first_install_saves_what_it_downloaded_and_nothing_is_saved_without_the_folder(self):
         archives = self.cached()
@@ -251,26 +252,14 @@ if operation == 'install':
         for job in ('gateway-real-clients', 'gateway-test-caches'):
             self.assertEqual(1, sum(step.get('uses') == './.github/actions/valkey-server' for step in workflow[job]['steps']), job)
             self.assertNotIn('ci-runner-prerequisites', json.dumps(workflow[job]))
-        prefix = 'ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-'
-        restore = next(step for step in action if step.get('uses', '').startswith('actions/cache/restore@'))
-        save = next(step for step in action if step.get('uses', '').startswith('actions/cache/save@'))
-        # The key holds the runner image: its packages are the dependencies that image lacks. The restore key never
-        # matches exactly, so the newest set of the image is read; a set is saved under its own digest, so a replaced
-        # set reaches the next runner.
-        self.assertEqual((restore['with']['key'], restore['with']['restore-keys']), (prefix + 'none', prefix))
-        self.assertEqual(save['with']['key'], prefix + '${{ steps.install.outputs.set }}')
-        self.assertEqual(save['with']['path'], restore['with']['path'])
-        self.assertEqual(save['if'], "steps.install.outputs.set != '' && !endsWith(steps.restore.outputs.cache-matched-key, "
-                                     "format('-{0}', steps.install.outputs.set))")
-        self.assertFalse(any(step.get('uses', '').startswith('actions/cache@') for step in action))
-        install = next(step for step in action if step.get('id') == 'install')
-        run = install['run']
-        self.assertLess(action.index(restore), action.index(install))
-        self.assertLess(action.index(install), action.index(save))
-        self.assertIn('archives="$HOME/' + restore['with']['path'].removeprefix('~/') + '"', run)
-        self.assertIn('ORBIT_CI_APT_ARCHIVES="$archives" bin/ci-runner-prerequisites valkey-server', run)
-        self.assertIn('sha256sum -- *.deb | sha256sum', run)
-        self.assertLess(run.index('reset-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT'), run.index('sha256sum'))
+        cache = next(step for step in action if step.get('uses', '').startswith('actions/cache@'))
+        # One entry for each runner image: its packages are the dependencies that image lacks. The stock action saves
+        # only when the key missed, so an entry is written once; the last number drops it when raised.
+        self.assertEqual(cache['with']['key'], 'ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-1')
+        self.assertNotIn('restore-keys', cache['with'])
+        run = action[-1]['run']
+        self.assertLess(action.index(cache), len(action) - 1)
+        self.assertIn('ORBIT_CI_APT_ARCHIVES="$HOME/' + cache['with']['path'].removeprefix('~/') + '" bin/ci-runner-prerequisites valkey-server', run)
         for tool in ('valkey-server', 'valkey-cli'):
             self.assertIn(f'command -v {tool}', run)
 

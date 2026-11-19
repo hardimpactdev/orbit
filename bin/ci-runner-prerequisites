@@ -22,11 +22,10 @@ if have_tools; then
 fi
 
 # ORBIT_CI_APT_ARCHIVES names a folder of packages that an earlier install on this runner image downloaded. With them
-# the install needs no mirror. When the set fails to install, dpkg may have installed a part of it, so the mirror then
-# downloads only the rest: this run saves no packages and leaves the marker `reset` instead. The next clean runner
-# finds no packages, downloads the whole set and saves it.
+# the install needs no mirror. Only a whole set is kept: the download of one install that nothing preceded. After a
+# failed attempt, cached or from a mirror, a part may be installed, and the next download holds only the rest.
 archives=${ORBIT_CI_APT_ARCHIVES:-}
-reset=
+whole=1
 if [[ -n "$archives" ]] && compgen -G "$archives/*.deb" >/dev/null; then
     echo "Installing $package from the cached packages in $archives"
     if sudo -n dpkg --install "$archives"/*.deb && have_tools; then
@@ -34,9 +33,7 @@ if [[ -n "$archives" ]] && compgen -G "$archives/*.deb" >/dev/null; then
         exit 0
     fi
     echo "Could not supply $package from the cached packages" >&2
-    rm -f -- "$archives"/*.deb
-    : > "$archives/reset"
-    reset=1
+    whole=
 fi
 
 scratch=$(mktemp -d -t orbit-ci-apt.XXXXXXXX)
@@ -97,18 +94,18 @@ PYTHON
     then
         if ! have_tools; then
             echo "Installed $package did not supply working prerequisites" >&2
+            whole=
             continue
         fi
         echo "Verified $package prerequisites: ${tools[*]}"
-        if [[ -n "$archives" && -z "$reset" ]] && compgen -G "$attempt/archives/*.deb" >/dev/null; then
-            # On a clean runner the packages this install downloaded are the whole set a later run needs.
+        if [[ -n "$archives" && -n "$whole" ]] && compgen -G "$attempt/archives/*.deb" >/dev/null; then
             mkdir -p "$archives"
-            rm -f -- "$archives"/*.deb "$archives/reset"
             cp -- "$attempt"/archives/*.deb "$archives"/
         fi
         exit 0
     fi
     echo "Could not supply $package from $mirror" >&2
+    whole=
 done
 
 echo "Missing $package prerequisites after both Ubuntu mirrors" >&2
