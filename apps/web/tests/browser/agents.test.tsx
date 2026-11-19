@@ -39,6 +39,7 @@ it("shows a recorded transcript after the task Node is deleted", async () => {
         project_id: 999,
         taskable_type: null,
         tasks: [],
+        work: null,
     };
     const session = {
         id: 2,
@@ -99,6 +100,7 @@ it("shows only that subtask's reviewer and implementer, streams updates, and clo
         project_id: 999,
         app: "test",
         taskable_type: null,
+        work: null,
         subtasks: [{ id: 9, title: "First subtask", brief: "Read progress", status: "running" }],
     };
     const sessions = [
@@ -288,6 +290,7 @@ it("shows each thread's polled state in its tab, whatever the selected thread's 
         project_id: 999,
         app: "test",
         taskable_type: null,
+        work: null,
         subtasks: [{ id: 50, title: "Only subtask", brief: "Write receipts", status: "running" }],
     };
     const thread = (id: number, role: string, state: string) => ({
@@ -367,6 +370,7 @@ it("pauses a hidden tab's stream and resumes it after the last cursor", async ()
             project_id: 999,
             app: "test",
             taskable_type: null,
+            work: null,
             subtasks: [{ id: 52, title: "Only subtask", brief: "Stream", status: "running" }],
         };
         const session = {

@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
@@ -15,6 +18,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -245,6 +249,54 @@ describe('conn:task:show', function (): void {
         expect($conn($this->phone))->toBeNull();
         Instance::query()->whereKey($group->taskable_id)->delete();
         expect($conn($this->phone))->toBeNull();
+    });
+
+    it('reads a task with no subtask with its work in place of subtasks, and the work\'s call for help as the task\'s', function (): void {
+        $group = panelTask('Alone', 'alone', ['tokens' => 120, 'started_at' => now()->subMinutes(4)]);
+        $work = CreateTaskGroupAction::openWork($group, [['id' => 'tests', 'type' => 'command', 'description' => 'The tests pass', 'command' => 'vendor/bin/pest']]);
+        $work->update(['status' => TaskStatus::Reviewing, 'started_at' => now()->subMinutes(4)]);
+        panelEnvironment($group, 'env-alone');
+        $implementer = panelThread($group, $work, 'implementer', 'orbit:alone-1', ['model' => 'claude-opus-5-5', 'state' => 'done']);
+        $reviewer = panelThread($group, $work, 'reviewer', 'orbit:alone-review', ['model' => 'claude-opus-5-5', 'state' => 'working']);
+        $work->update(['implementer_agent_thread_id' => $implementer->id]);
+        $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
+        $check = TaskCheck::query()->create(['task_id' => $work->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1,
+            'process_started' => 'x', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('2', 40), 'exit_code' => 0, 'output' => 'ok',
+            'started_at' => now()->subMinute(), 'finished_at' => now()]);
+
+        $row = panelCall($this->phone, 'tasks')->assertOk()->json('data.0');
+        $task = panelCall($this->phone, 'tasks/'.$group->id)->assertOk()->json('data');
+
+        expect($row['subtask_counts'])->toBe(['total' => 0, 'todo' => 0, 'running' => 0, 'completed' => 0, 'failed' => 0, 'cancelled' => 0])
+            ->and($row['work_status'])->toBe('reviewing')
+            ->and($row['attention'])->toBeNull()
+            ->and($task['execution'])->toBe(['implementer_mode' => 'task'])
+            ->and($task['subtasks'])->toBe([])
+            ->and($task['work'])->toBe([
+                'status' => 'reviewing',
+                'deliverables' => [['id' => 'tests', 'type' => 'command', 'description' => 'The tests pass']],
+                'current_implementer_agent_id' => $implementer->id,
+                'check' => ['id' => $check->id, 'kind' => 'handoff', 'status' => 'passed', 'started_at' => '2026-11-17T11:59:00+00:00',
+                    'finished_at' => '2026-11-17T12:00:00+00:00', 'exit_code' => 0, 'failed_step' => null],
+            ])
+            ->and(array_map(static fn (array $agent): array => [$agent['id'], $agent['role'], $agent['subtask_ids'], $agent['current'], $agent['attempt']], $task['agents']))
+            ->toBe([[$implementer->id, 'implementer', [], true, 1], [$reviewer->id, 'reviewer', [], true, 1]]);
+
+        TaskAssistance::apply($work->refresh(), AssistanceKind::Failure, null, 'The handoff check failed twice.');
+        expect(panelCall($this->phone, 'tasks')->json('data.0.attention'))->toBe(['kind' => 'failure', 'question' => null, 'reason' => 'The handoff check failed twice.'])
+            ->and(panelCall($this->phone, 'tasks/'.$work->id)->assertNotFound()->json('error.code'))->toBe('http.404');
+    });
+
+    it('keeps the panel of a task with subtasks free of the work fields', function (): void {
+        $group = panelTask('Split', 'split');
+        $group->tasks()->create(['position' => 1, 'title' => 'A', 'brief' => 'A']);
+        $group->tasks()->create(['position' => 2, 'title' => 'B', 'brief' => 'B']);
+
+        $task = panelCall($this->phone, 'tasks/'.$group->id)->assertOk()->json('data');
+
+        expect($task)->not->toHaveKey('work')->not->toHaveKey('work_status')
+            ->and($task['execution'])->toBe(['implementer_mode' => 'per_subtask'])
+            ->and(panelCall($this->phone, 'tasks')->json('data.0'))->not->toHaveKey('work_status');
     });
 
     it('answers 404 for a subtask or an unknown task, and refuses while the tasks extension is off', function (): void {

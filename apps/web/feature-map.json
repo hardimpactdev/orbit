@@ -75,7 +75,7 @@
     },
     {
         "path": "/tasks/$id",
-        "purpose": "One task group, its Swamp runs, subtasks, and agent threads.",
+        "purpose": "One task group, its Swamp runs, subtasks or its own deliverables, and agent threads.",
         "reach": "Open Tasks in the main nav, then choose a group.",
         "controls": [
             {
@@ -89,6 +89,10 @@
             {
                 "testid": "subtask-card",
                 "purpose": "Opens one subtask."
+            },
+            {
+                "testid": "task-deliverables",
+                "purpose": "The deliverables of a task with no subtask."
             },
             {
                 "testid": "agent-sessions",

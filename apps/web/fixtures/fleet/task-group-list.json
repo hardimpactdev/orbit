@@ -5,6 +5,125 @@
     "body": {
         "data": [
             {
+                "id": 14,
+                "project_id": 3,
+                "project": "charlie-shop",
+                "project_code": "CHS",
+                "title": "Show the order history",
+                "brief": "Let a signed-in customer see their past orders, newest first, with each order's total and status.",
+                "status": "reviewing",
+                "taskable_type": null,
+                "taskable_id": null,
+                "reviewer_agent_thread_id": 41,
+                "pr_url": null,
+                "assistance_requested": false,
+                "assistance_kind": null,
+                "assistance_question": null,
+                "assistance_reason": null,
+                "questions": 0,
+                "escalations": 0,
+                "implementer_provider": null,
+                "implementer_model": "claude-sonnet-5-5",
+                "implementer_effort": null,
+                "reviewer_provider": null,
+                "reviewer_model": null,
+                "reviewer_effort": null,
+                "resolved_agents": {
+                    "implementer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-sonnet-5-5",
+                            "source": "group"
+                        },
+                        "effort": {
+                            "value": "medium",
+                            "source": "gateway"
+                        }
+                    },
+                    "reviewer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "high",
+                            "source": "gateway"
+                        }
+                    }
+                },
+                "tokens": 96400,
+                "line_diff": 58,
+                "lines_added": 71,
+                "lines_deleted": 13,
+                "duration_ms": 1380000,
+                "parent_id": null,
+                "subtasks": [],
+                "work": {
+                    "id": 40,
+                    "position": 1,
+                    "title": "Show the order history",
+                    "assistance_requested": false,
+                    "assistance_kind": null,
+                    "assistance_question": null,
+                    "assistance_reason": null,
+                    "questions": 0,
+                    "escalations": 0,
+                    "brief": "Let a signed-in customer see their past orders, newest first, with each order's total and status.",
+                    "status": "reviewing",
+                    "implementer_agent_thread_id": 42,
+                    "tokens": 96400,
+                    "line_diff": 58,
+                    "lines_added": 71,
+                    "lines_deleted": 13,
+                    "duration_ms": 1380000,
+                    "type": "work",
+                    "completion_summary": null,
+                    "check": {
+                        "id": 9,
+                        "kind": "handoff",
+                        "status": "passed",
+                        "started_at": "2026-09-23T10:12:00+00:00",
+                        "finished_at": "2026-09-23T10:13:24+00:00",
+                        "exit_code": 0,
+                        "changed_paths": [
+                            "resources/views/orders/index.blade.php",
+                            "tests/Feature/OrderHistoryTest.php"
+                        ],
+                        "failed_step": null,
+                        "output": "Tests:  4 passed"
+                    },
+                    "parent_id": 14,
+                    "deliverables": [
+                        {
+                            "id": "history-page",
+                            "type": "file",
+                            "description": "The order history page",
+                            "path": "resources/views/orders/index.blade.php",
+                            "change": "created"
+                        },
+                        {
+                            "id": "history-tests",
+                            "type": "command",
+                            "description": "The order history tests pass",
+                            "command": "vendor/bin/pest tests/Feature/OrderHistoryTest.php",
+                            "directory": "."
+                        },
+                        {
+                            "id": "empty-state",
+                            "type": "review",
+                            "description": "A customer with no orders sees a friendly empty state"
+                        }
+                    ]
+                }
+            },
+            {
                 "id": 12,
                 "project_id": 3,
                 "project": "charlie-shop",
@@ -121,7 +240,8 @@
                         "check": null,
                         "parent_id": 12
                     }
-                ]
+                ],
+                "work": null
             },
             {
                 "id": 13,
@@ -183,7 +303,8 @@
                 "lines_deleted": 6,
                 "duration_ms": 600000,
                 "parent_id": null,
-                "subtasks": []
+                "subtasks": [],
+                "work": null
             }
         ],
         "meta": {

@@ -1,6 +1,7 @@
 import { SwampRuns } from "../tasks/SwampRuns";
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
+import { TaskDeliverables } from "../tasks/TaskDeliverables";
 import { TaskInsightsStrip } from "../tasks/TaskInsights";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type CSSProperties } from "react";
@@ -139,6 +140,10 @@ function taskProperties(
             title: `${taskColumn(detail.status)} · ${taskStatusLabels[detail.status]}`,
             warn: taskColumn(detail.status) === "In progress",
         },
+        // A task with no subtask does its own work: its status shows the review state.
+        ...(detail === group && group.work !== null
+            ? [{ name: "Work", value: taskStatusLabels[group.work.status] }]
+            : []),
         {
             name: "Project",
             value: projectName,
@@ -483,7 +488,10 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             </p>
                         </Frame>
                     </div>
-                    {subtaskId === undefined && (
+                    {subtaskId === undefined && task.work !== null && (
+                        <TaskDeliverables work={task.work} />
+                    )}
+                    {subtaskId === undefined && task.work === null && (
                         <section
                             aria-label="Subtasks"
                             className="min-h-[400px] shrink-0 lg:flex lg:flex-1 lg:basis-0 lg:flex-col"
@@ -543,9 +551,16 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             <AgentSessions
                                 groupId={task.id}
                                 subtaskId={subtaskId}
+                                workId={task.work?.id}
                                 projectCode={task.project_code}
                             />
-                            <TaskComments groupId={task.id} task={detail} />
+                            <TaskComments
+                                groupId={task.id}
+                                taskId={detail.id}
+                                check={
+                                    "check" in detail ? detail.check : (task.work?.check ?? null)
+                                }
+                            />
                         </div>
                     )}
                 </>

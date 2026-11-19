@@ -65,6 +65,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         duration_ms: null,
         questions: 0,
         escalations: 0,
+        work: null,
         subtasks: [
             {
                 id: 1,
@@ -516,6 +517,91 @@ it("opens a subtask with its own detail and returns to the parent board", async 
         .click();
     await expect.element(pane("Subtasks")).toBeVisible();
     expect(app.url()).toBe("/tasks/1");
+});
+
+it("shows a task with no subtask with its deliverables, check, agents and review state", async () => {
+    const base = group(1, "reviewing");
+    const work = {
+        ...base.subtasks[0]!,
+        id: 7,
+        type: "work" as const,
+        title: base.title,
+        brief: base.brief,
+        status: "reviewing" as const,
+        implementer_agent_thread_id: 70,
+        deliverables: [
+            {
+                id: "tests",
+                type: "command",
+                description: "The feature tests pass",
+                command: "vendor/bin/pest",
+                directory: ".",
+            },
+        ] as unknown as (typeof base.subtasks)[0]["deliverables"],
+        check: {
+            id: 3,
+            kind: "handoff" as const,
+            status: "passed" as const,
+            started_at: "2026-09-23T09:41:05+00:00",
+            finished_at: "2026-09-23T09:42:17+00:00",
+            exit_code: 0,
+            changed_paths: [],
+            failed_step: null,
+            output: "Tests: 4 passed",
+        },
+    };
+    const task: TaskGroup = { ...base, subtasks: [], work };
+    const comments: string[] = [];
+    const app = await openApp("/tasks", {
+        wrapTransport: (inner) => (method, path, body) => {
+            if (path.endsWith("/comments")) comments.push(path);
+            return path.endsWith("/agents")
+                ? Promise.resolve({
+                      status: 200,
+                      payload: {
+                          data: [
+                              {
+                                  id: 70,
+                                  task_group_id: 1,
+                                  task_id: 7,
+                                  role: "implementer",
+                                  model: "claude-opus-5-5",
+                                  state: "done",
+                              },
+                              {
+                                  id: 71,
+                                  task_group_id: 1,
+                                  task_id: 7,
+                                  role: "reviewer",
+                                  model: "claude-opus-5-5",
+                                  state: "working",
+                              },
+                          ],
+                      },
+                  })
+                : path.endsWith("/comments")
+                  ? Promise.resolve({ status: 200, payload: { data: [] } })
+                  : path.startsWith("/api/v1/tasks")
+                    ? Promise.resolve({
+                          status: 200,
+                          payload: { data: path === "/api/v1/tasks?limit=100" ? [task] : task },
+                      })
+                    : inner(method, path, body);
+        },
+    });
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+
+    await expect.element(pane("Deliverables")).toMatchTextContent("The feature tests pass");
+    await expect.element(pane("Deliverables")).toMatchTextContent("vendor/bin/pest in .");
+    await expect.element(pane("Task")).toMatchTextContent("Work");
+    await expect.element(pane("Task")).toMatchTextContent("In review");
+    await expect.element(pane("Comments")).toMatchTextContent("Passed");
+    await expect.element(pane("Agents")).toMatchTextContent("Reviewer");
+    await expect.element(pane("Agents")).toMatchTextContent("Implementer");
+    await expect.element(pane("Agents")).toMatchTextContent("EXA-1");
+    await expect.element(pane("Agents")).not.toMatchTextContent("EXA-7");
+    expect(document.querySelector('[aria-label="Subtasks"]')).toBeNull();
+    expect(comments).toContain("/api/v1/tasks/1/comments");
 });
 
 it("links the group's pull request in the task properties", async () => {

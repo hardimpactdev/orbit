@@ -569,7 +569,7 @@ The sleep switch does not matter: the index's switch does. A failed read keeps t
 
 ## Tasks panel
 
-Conn shows the tasks of a Project or of one workspace, and opens one task with its brief, its subtasks in order, its agents and its metrics. From an agent, a device opens that agent's thread on the workspace's T3 server. The panel only reads: it controls no task, adds no realtime event, and shows no view across every Project beyond the one `task:list` already shows. Both routes need the `tasks` extension as well as `conn`, and node access to some Node, like the [task list](/reference/tasks#list-tasks). Neither records command activity.
+Conn shows the tasks of a Project or of one workspace, and opens one task with its brief, its subtasks in order or its own work, its agents and its metrics. From an agent, a device opens that agent's thread on the workspace's T3 server. The panel only reads: it controls no task, adds no realtime event, and shows no view across every Project beyond the one `task:list` already shows. Both routes need the `tasks` extension as well as `conn`, and node access to some Node, like the [task list](/reference/tasks#list-tasks). Neither records command activity.
 
 ### The task list
 
@@ -595,7 +595,8 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 | `workspace` | The task copy, or null when the task has none or its Instance row is gone: `{instance_id, name, status, power_state, node: {id, name}, branch, conn_environment_id}`. `status` is the Instance status, `power_state` the container's power state or null, `branch` the Instance's branch. |
 | `workspace.conn_environment_id` | The T3 server of the workspace, only when the caller reaches it by the rule of the [thread index](#a-row): node access to the server's Node. Otherwise null. |
 | `pull_request` | `{number, url, state}`, or null. The watched pull request first; else the published `pr_url`, with its number read from the URL and `state` null. |
-| `subtask_counts` | `{total, todo, running, completed, failed, cancelled}`. `reserved` and `reviewing` count as `running`. |
+| `subtask_counts` | `{total, todo, running, completed, failed, cancelled}`. `reserved` and `reviewing` count as `running`. A task with no subtask counts 0 in each. |
+| `work_status` | Only on a [task with no subtask](/reference/tasks#a-task-with-no-subtask): the raw status of its work, such as `running` or `reviewing`. A task with subtasks has no such field. |
 | `created_at`, `updated_at` | The task row's times. |
 | `last_activity_at` | When the task last did something: [Last activity](/reference/tasks#last-activity). |
 | `pr_opened_at` | When GitHub opened the task's pull request: [`pr_opened_at`](/reference/tasks#lifecycle-times). Null when Orbit has not read it. |
@@ -603,10 +604,11 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 
 `attention` is `{kind, question, reason}`. Its `kind` is one of these, in this order:
 
-- `question`: a current agent thread of the task holds questions. A current thread is a subtask's implementer or the task's reviewer. `question` is the first question's text, and `reason` is null.
+- `question`: a current agent thread of the task holds questions. `question` is the first question's text, and `reason` is null.
 - The task's assistance kind: `direction`, `failure`, `removal_failure` or `observation`. `question` and `reason` are the task's own.
+- On a task with no subtask, its work's assistance kind, with the work's `question` and `reason`. The work asks as the task.
 
-`attention` is null when neither applies.
+`attention` is null when none applies. A current thread is a subtask's implementer, the implementer of a task with no subtask, or the task's reviewer.
 
 ### One task
 
@@ -615,12 +617,15 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 | Field | Meaning |
 | --- | --- |
 | `brief` | The task's brief. |
-| `execution` | `{implementer_mode: "per_subtask"}`: each subtask has its own implementer thread. |
+| `execution` | `{implementer_mode}`: `per_subtask` when each subtask has its own implementer thread, `task` for a task with no subtask, whose own work has the implementer thread. |
 | `metrics` | `{duration_ms, tokens, lines_added, lines_deleted}` of the task. |
 | `subtasks` | In position order: `{id, position, title, brief, deliverables, status, attention, current_implementer_agent_id, metrics}`. |
 | `agents` | Every started agent thread of the task, oldest first. |
+| `work` | Only when `implementer_mode` is `task`: `{status, deliverables, current_implementer_agent_id, check}`. A task with subtasks has no such field. |
 
 A subtask's `deliverables` are `{id, type, description}`. Its `status` is the raw subtask status. Its `attention` has the same rule as the task's, for the subtask's own implementer thread and its own call for help. `current_implementer_agent_id` is the id of its current implementer in `agents`, or null. Its `metrics` are `{duration_ms, tokens, lines_added, lines_deleted}`.
+
+A task with no subtask has `subtasks: []` and shows its work in `work`. Its `status` is the work's raw status: `reviewing` while the reviewer reviews a passed handoff check, `completed` once the reviewer approved. Its `deliverables` and `current_implementer_agent_id` read as a subtask's. `check` is the work's latest check, `{id, kind, status, started_at, finished_at, exit_code, failed_step}`, or null before the first: `kind` is `baseline` or `handoff`, and `status` is `running`, `passed`, `failed`, `changed`, `lost` or `cancelled`. The work's ID is no route member, so `work` names none. The task's `metrics` cover its work.
 
 Each agent:
 
@@ -628,9 +633,9 @@ Each agent:
 | --- | --- |
 | `id` | Orbit's id of the agent thread. It is never a T3 thread id. |
 | `role` | `implementer` or `reviewer`. |
-| `subtask_ids` | The subtask it worked on, `[id]`, or `[]` when it has none. |
-| `current` | True when it is its subtask's implementer or the task's reviewer now. |
-| `attempt` | 1 for the first started thread of its role on its subtask, 2 for the one that replaced it, and so on. |
+| `subtask_ids` | The subtask it worked on, `[id]`, or `[]` when it has none. A thread of a task with no subtask has `[]`. |
+| `current` | True when it is its subtask's implementer, the implementer of a task with no subtask, or the task's reviewer now. |
+| `attempt` | 1 for the first started thread of its role on its subtask, or on the task with no subtask, 2 for the one that replaced it, and so on. |
 | `provider` | `claude` or `codex`: from the T3 provider instance it started on, else from its model's name (`claude-`, `gpt-`). Null when neither says. |
 | `model`, `effort` | As the thread started. |
 | `state` | `idle`, `working`, `asking_for_input`, `done`, `failed`, or null before its first observation. |

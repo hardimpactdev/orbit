@@ -15,6 +15,8 @@ The New Node form check includes its approved host-key fingerprint and the enrol
 
 For the task group panel, open `/tasks/12` and inspect `[data-testid=task-swamp-runs]` on phone and desktop. The demo has a running workflow with succeeded, running, and pending steps. Expand Step output and Run log, check text wrapping, and confirm the panel starts above task properties. Browser tests cover stale, unavailable, empty, failed, and recovered reads. [Swamp run output](/reference/tasks#swamp-run-output) owns the live contract.
 
+For a task with no subtask, open `/tasks/14` on phone and desktop. Click `[data-testid=task-deliverables]` and `[data-testid=agent-sessions]` to bring each panel into the picture, and screenshot after each click. Check that the deliverables, the Work status, both agents and the passed check show, and that no subtask board shows. Compare `/tasks/12`, a task with two subtasks.
+
 This page is for an agent that changes the Orbit web app, and for the reviewer who judges that change. `bin/web-verify` runs `apps/web` in demo mode and drives it with Playwright. It needs no Gateway. The installed iPhone layout is on the [web app](/reference/web-app) page.
 
 Run every command from the repository root. Stdout is one JSON object and nothing else. Logs stay on stderr, and the demo server log is `.orbit-artifacts/web/server.log`.
@@ -132,7 +134,7 @@ A pattern such as `/$section` is one entry. It is not one entry per section name
 
 The map stores patterns. `routes` prints them. `open`, `screenshot`, and `console-errors` do not accept a pattern. Replace each `$param` with one segment that is not empty and contains no slash. `/tasks/12` matches `/tasks/$id`, not `/$section/$id`, because `tasks` is static. An exact static path such as `/tasks` matches that map entry. Two still-tied patterns are `ambiguous-route`.
 
-`/tasks` opens with the insights strip closed, and `task-insights-toggle` opens it. The demo fleet includes task 12 and its subtask 31, activity 150, node 1, and deployment 1 on instance 1. `/tasks/12`, `/tasks/12/subtasks/31`, `/activity/150`, `/nodes/1`, and `/instances/1/deployments/1` open those records. An id the fleet does not contain still loads the route, and the page shows its missing-record state.
+`/tasks` opens with the insights strip closed, and `task-insights-toggle` opens it. The demo fleet includes task 12 and its subtask 31, task 14 with no subtask, activity 150, node 1, and deployment 1 on instance 1. `/tasks/12`, `/tasks/12/subtasks/31`, `/tasks/14`, `/activity/150`, `/nodes/1`, and `/instances/1/deployments/1` open those records. An id the fleet does not contain still loads the route, and the page shows its missing-record state.
 
 ```json
 {

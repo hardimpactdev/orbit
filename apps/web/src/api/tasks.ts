@@ -7,12 +7,24 @@ type LineChanges = { lines_added?: number | null; lines_deleted?: number | null 
 export type Task = Omit<Required<components["schemas"]["Task"]>, keyof LineChanges> & LineChanges;
 export type TaskGroup = Omit<
     Required<components["schemas"]["TaskGroup"]>,
-    "subtasks" | "project_code" | keyof LineChanges
+    "subtasks" | "work" | "project_code" | keyof LineChanges
 > &
     LineChanges & {
         subtasks: Task[];
+        /** The work of a task with no subtask: its deliverables, latest check and implementer. Null for a task with subtasks. */
+        work: Task | null;
         project_code?: string;
     };
+/** One deliverable, as `task:create` takes it: a file change, a command that passes, or an item the reviewer confirms. */
+export type TaskDeliverable = {
+    id: string;
+    type: "file" | "command" | "review";
+    description: string;
+    path?: string;
+    change?: string;
+    command?: string;
+    directory?: string;
+};
 export type TaskColumn = "Backlog" | "Todo" | "In progress" | "Done";
 export type TaskCheck = components["schemas"]["TaskCheck"];
 export type TaskComment = Required<components["schemas"]["TaskComment"]>;

@@ -147,6 +147,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 The task group page shows a Swamp panel above its properties and subtasks, including groups without agent threads. It polls only the Gateway every five seconds. Runs and steps show their state, and expandable output uses plain text. Truncated output has a label. Running steps explain that worker output may arrive on completion. Stale and unavailable reads stay visible without hiding the task. [Swamp run output](/reference/tasks#swamp-run-output) defines the read, bounds, credentials, and failure states.
 
+A [task with no subtask](/reference/tasks#a-task-with-no-subtask) shows its work in place of the subtask board. Its properties add `Work`, the work's status, which reads `In review` while the reviewer reviews. A Deliverables panel lists each deliverable with what Orbit checks for it. Below them, Agents lists every implementer and reviewer thread under the task's own ID, and Comments shows the work's latest check above the task's comments. The page shows no subtask list and no subtask link.
+
 The generated task types expose only `baseline` and `handoff` check kinds, and `orbit_push` and `pull_request_review` reviewed-commit sources. [Final review](/reference/tasks#execution-ownership) publishes the reviewed head; CI on the merge ref checks integration.
 
 The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries the unattached workspace the task owns. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
