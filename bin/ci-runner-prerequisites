@@ -22,8 +22,11 @@ if have_tools; then
 fi
 
 # ORBIT_CI_APT_ARCHIVES names a folder of packages that an earlier install on this runner image downloaded. With them
-# the install needs no mirror. A package set that no longer installs falls through to the mirrors.
+# the install needs no mirror. When the set fails to install, dpkg may have installed a part of it, so the mirror then
+# downloads only the rest: this run saves no packages and leaves the marker `reset` instead. The next clean runner
+# finds no packages, downloads the whole set and saves it.
 archives=${ORBIT_CI_APT_ARCHIVES:-}
+reset=
 if [[ -n "$archives" ]] && compgen -G "$archives/*.deb" >/dev/null; then
     echo "Installing $package from the cached packages in $archives"
     if sudo -n dpkg --install "$archives"/*.deb && have_tools; then
@@ -31,6 +34,9 @@ if [[ -n "$archives" ]] && compgen -G "$archives/*.deb" >/dev/null; then
         exit 0
     fi
     echo "Could not supply $package from the cached packages" >&2
+    rm -f -- "$archives"/*.deb
+    : > "$archives/reset"
+    reset=1
 fi
 
 scratch=$(mktemp -d -t orbit-ci-apt.XXXXXXXX)
@@ -94,10 +100,10 @@ PYTHON
             continue
         fi
         echo "Verified $package prerequisites: ${tools[*]}"
-        if [[ -n "$archives" ]] && compgen -G "$attempt/archives/*.deb" >/dev/null; then
-            # The packages this install downloaded are the whole set a later run on this image needs.
+        if [[ -n "$archives" && -z "$reset" ]] && compgen -G "$attempt/archives/*.deb" >/dev/null; then
+            # On a clean runner the packages this install downloaded are the whole set a later run needs.
             mkdir -p "$archives"
-            rm -f -- "$archives"/*.deb
+            rm -f -- "$archives"/*.deb "$archives/reset"
             cp -- "$attempt"/archives/*.deb "$archives"/
         fi
         exit 0

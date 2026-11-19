@@ -197,7 +197,7 @@ for name in ('valkey-server', 'valkey-cli'):
                          [['--install', str(archives / 'valkey-server_9.deb'), str(archives / 'valkey-tools_9.deb')]])
         self.assertIn('from the cached packages', result.stdout)
 
-    def test_cached_packages_that_do_not_install_fall_through_to_the_mirror_and_are_replaced(self):
+    def test_cached_packages_that_do_not_install_use_the_mirror_and_leave_a_reset_for_the_next_clean_runner(self):
         archives = self.cached('fail')
         archives.mkdir()
         (archives / 'stale_1.deb').write_text('stale')
@@ -206,6 +206,15 @@ for name in ('valkey-server', 'valkey-cli'):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Could not supply valkey-server from the cached packages', result.stderr)
         self.assertEqual([(call['mirror'], call['operation']) for call in self.apt], [('primary', 'update'), ('primary', 'install')])
+        # dpkg may have installed a part of the set, so this mirror install is not a whole set: none of it is kept.
+        self.assertEqual([path.name for path in archives.iterdir()], ['reset'])
+        # The next clean runner restores the marker alone, downloads the whole set and keeps it.
+        for name in ('valkey-server', 'valkey-cli'):
+            (self.bin / name).unlink()
+        self.log.unlink()
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any('dpkg' in call for call in self.calls))
         self.assertEqual(sorted(path.name for path in archives.iterdir()), ['valkey-server_9.deb', 'valkey-tools_9.deb'])
 
     def test_a_first_install_saves_what_it_downloaded_and_nothing_is_saved_without_the_folder(self):
@@ -261,6 +270,7 @@ if operation == 'install':
         self.assertIn('archives="$HOME/' + restore['with']['path'].removeprefix('~/') + '"', run)
         self.assertIn('ORBIT_CI_APT_ARCHIVES="$archives" bin/ci-runner-prerequisites valkey-server', run)
         self.assertIn('sha256sum -- *.deb | sha256sum', run)
+        self.assertLess(run.index('reset-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT'), run.index('sha256sum'))
         for tool in ('valkey-server', 'valkey-cli'):
             self.assertIn(f'command -v {tool}', run)
 

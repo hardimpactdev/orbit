@@ -10,8 +10,8 @@ runs:
       id: image
       shell: bash
       run: echo "version=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
-    # The newest package set of this image is restored. A set is saved under its own digest, so a set that the
-    # install had to replace reaches the next runner.
+    # The newest entry of this image is restored. A set is saved under its own digest. A set that failed to install
+    # is replaced by an empty entry, and the next clean runner saves a whole set again.
     - name: Restore the Valkey packages
       id: restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -27,7 +27,10 @@ runs:
         ORBIT_CI_APT_ARCHIVES="$archives" bin/ci-runner-prerequisites valkey-server
         command -v valkey-server
         command -v valkey-cli
-        if compgen -G "$archives/*.deb" >/dev/null; then
+        if [[ -e "$archives/reset" ]]; then
+          # The cached set failed to install. Save the empty folder as the newest entry, so the next runner starts clean.
+          echo "set=reset-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        elif compgen -G "$archives/*.deb" >/dev/null; then
           echo "set=$(cd "$archives" && sha256sum -- *.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
         fi
     - name: Save the Valkey packages
