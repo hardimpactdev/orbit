@@ -168,7 +168,7 @@
       tags: [check]
     - name: Require the recorded agent pin
       ansible.builtin.assert:
-        that: [check_read.paths['/usr/local/bin/orbit-agent'].checksum | default('') == intent.agent.sha256]
+        that: "check_read.paths['/usr/local/bin/orbit-agent'].checksum | default('') == intent.agent.sha256"
         quiet: true
       tags: [check]
     - name: Require the active agent service

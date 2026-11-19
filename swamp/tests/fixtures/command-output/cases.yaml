@@ -1,5 +1,15 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # dpkg-query lists each package as `<status> <name> <version>`; only installed packages count. A package of two
+  # architectures keeps both versions, as package_facts did; a removed package that keeps its configuration counts as not installed.
+  software-installed:
+    software_installed:
+      stdout_lines:
+      - installed base-files 14ubuntu1
+      - installed libc6 2.42-0ubuntu3
+      - installed libc6 2.42-0ubuntu2
+      - config-files php8.3-fpm 8.3.6-0ubuntu0.24.04.1
+      - not-installed git
   # The managed file check prints the JSON list of drifted indexes ("[]" when clean, as the private DNS check does).
   # A failed check or any other text repairs every file.
   managed-files-check-clean:
@@ -3091,6 +3101,13 @@ cases:
   - /etc/wireguard/orbit.conf
   - /etc/wireguard/orbit-peers.d/3.conf
   - /etc/sysctl.d/99-orbit-forwarding.conf
+- file: tasks/node-converge-software-check.yml
+  task: Keep the installed package versions
+  field: ansible.builtin.set_fact.software_versions
+  context: software-installed
+  expected:
+    base-files: [14ubuntu1]
+    libc6: [2.42-0ubuntu3, 2.42-0ubuntu2]
 non_command_output:
 - file: tasks/node-role-runtime.yml
   task: Refresh the system roots
