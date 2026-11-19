@@ -76,7 +76,7 @@ The engine mirrors its steps into `state.native_progress`, so `operation:show` s
 
 Each step is one signed order. Its `operation` is `<id>:<step>`, so each step has its own journal record on the Node. Its `target` is the real resource the primitive changes. For `ufw.ensure_rule` that is the Node, so firewall changes on one Node run one at a time.
 
-An engine order expires 8 seconds after signing. The executor refuses an expiry more than 10 seconds ahead. A receipt with `refused` and `expired` puts the step back to pending, and the next transition sends a new order. A `replayed_nonce` receipt counts with the first order's result it carries; without one it changes nothing.
+An engine order expires 8 seconds after signing. The executor refuses an expiry more than 10 seconds ahead. A receipt with `refused` and `expired` puts the step back to pending, and the next transition sends a new order. So does a `failed` receipt with `executor.order_expired`: the order expired while it waited for the executor's lock, so it never acted. A `replayed_nonce` receipt counts with the first order's result it carries; without one it changes nothing.
 
 The engine takes a receipt's Node from its subject, `orbit.receipts.<node>`, never from its body, and applies it only to a step on that Node. A receipt it cannot read is terminated, so it never comes back.
 
