@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Laravel\Boost\Mcp\Tools\LastError;
 
+// AGENTS.md is hand-written and holds every CLI rule. Boost serves only its MCP server, and records no rule files.
 return [
     'mcp' => [
         'tools' => [
@@ -13,25 +14,6 @@ return [
         ],
     ],
     'rules' => [
-        'enabled' => true,
-        'scoped_guidelines' => true,
-    ],
-    'guidelines' => [
-        'exclude' => [
-            'deployments',
-            'foundation',
-            'laravel/core',
-            'pest/core',
-            'spatie/guidelines-skills/core',
-        ],
-    ],
-    'skills' => [
-        'exclude' => [
-            'infer-conventions',
-            'spatie-javascript',
-            'spatie-version-control',
-            'spatie-security',
-            'spatie-laravel-php',
-        ],
+        'enabled' => false,
     ],
 ];

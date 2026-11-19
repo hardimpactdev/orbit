@@ -3,15 +3,10 @@
         "codex"
     ],
     "cloud": false,
-    "guidelines": true,
+    "guidelines": false,
     "mcp": true,
     "nightwatch": false,
-    "packages": [
-        "spatie/guidelines-skills"
-    ],
+    "packages": [],
     "sail": false,
-    "skills": [
-        "laravel-best-practices",
-        "testing-best-practices"
-    ]
+    "skills": []
 }
