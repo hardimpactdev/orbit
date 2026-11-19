@@ -52,18 +52,19 @@ class ProjectConfigParityTest(unittest.TestCase):
             with self.subTest(side='spec', key=key):
                 self.assertNotEqual(agent_config(agent), spec_config(line.sub('', spec, count=1)))
 
-    def test_policy_runs_without_blocking_selection_and_both_gates_require_it(self):
+    def test_policy_runs_without_blocking_selection_and_the_gate_requires_it(self):
         jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
         policy = jobs['ci-policy']
         self.assertNotIn('needs', policy)
-        self.assertNotIn('if', policy)
+        # Main runs no check again: the merge queue run required the policy on the same commit.
+        self.assertEqual(policy['if'], "github.ref != 'refs/heads/main'")
         self.assertNotIn('ci-policy', jobs['changes'].get('needs', []))
         command = next(step for step in policy['steps'] if step.get('name') == 'Check CI scope and import fixtures')
         self.assertNotIn('if', command)
         self.assertIn("python3 -m unittest discover -s tools -p 'test_ci_*.py'", command['run'])
         self.assertFalse(any('test_ci_' in step.get('run', '') for step in jobs['changes']['steps']))
-        for gate in ('required', 'delivery'):
-            self.assertIn('ci-policy', jobs[gate]['needs'])
+        self.assertIn('ci-policy', jobs['required']['needs'])
+        self.assertNotIn('ci-policy', jobs['delivery']['needs'])
 
 
 

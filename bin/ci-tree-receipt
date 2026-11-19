@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reuse only a green PR's actual tested tree and digest-bound web build on main."""
+"""Deliver on main only a commit that its merge queue run tested, with that run's digest-bound web build."""
 import argparse
 import hashlib
 import io
@@ -14,6 +14,7 @@ import time
 import zipfile
 
 WORKFLOW = '.github/workflows/ci.yml'
+QUEUE_BRANCH = 'gh-readonly-queue/main/'
 LIMIT = 128 * 1024 * 1024
 
 
@@ -59,38 +60,55 @@ class GitHub:
         raise ValueError('Too many CI evidence records')
 
 
-def delivery_baseline(api, parents):
-    """The newest first-parent ancestor with exact successful main delivery."""
+def trusted_queue_run(run, repository, workflow_id, sha):
+    return (run.get('event') == 'merge_group' and run.get('head_sha') == sha
+            and (run.get('head_branch') or '').startswith(QUEUE_BRANCH)
+            and (run.get('repository') or {}).get('full_name') == repository
+            and (run.get('head_repository') or {}).get('full_name') == repository
+            and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
+
+
+def queue_run(api, workflow_id, sha):
+    """The newest merge queue run of this workflow on the exact commit."""
+    runs = [run for run in api.rows(f'actions/workflows/ci.yml/runs?event=merge_group&head_sha={sha}', 'workflow_runs')
+            if trusted_queue_run(run, api.repository, workflow_id, sha)]
+    return max(runs, key=lambda run: run['id']) if runs else None
+
+
+def delivered(api, workflow_id, sha):
+    """A main run of this workflow passed Main delivery checks on the exact commit."""
+    trusted_run = runpy.run_path(str(Path(__file__).with_name('ci-delivery')))['trusted_run']
+    runs = [run for run in api.rows(f'actions/workflows/ci.yml/runs?branch=main&head_sha={sha}', 'workflow_runs')
+            if trusted_run(run, api.repository, sha, workflow_id)]
+    if not runs:
+        return False
+    run = max(runs, key=lambda run: run['id'])
+    job = latest_jobs(api.rows(f"actions/runs/{run['id']}/jobs?filter=all", 'jobs')).get('Main delivery checks', {})
+    return job.get('head_sha') == sha and job.get('status') == 'completed' and job.get('conclusion') == 'success'
+
+
+def queue_baseline(api, history):
+    """The newest commit of the group's first-parent base history that the queue tests or main delivered.
+
+    The queue merges a group only when every group ahead of it is green, so a base whose run has not ended counts.
+    A commit that reached main without the queue has neither proof: the plan then also covers its changes.
+    """
     workflow = api.one('actions/workflows/ci.yml')
     require(workflow['path'] == WORKFLOW, 'Wrong workflow identity')
-    trusted_run = runpy.run_path(str(Path(__file__).with_name('ci-delivery')))['trusted_run']
-    for sha in parents:
-        runs = api.rows(f'actions/workflows/ci.yml/runs?branch=main&head_sha={sha}', 'workflow_runs')
-        trusted = [run for run in runs if trusted_run(run, api.repository, sha, workflow['id'])]
-        if trusted:
-            run = max(trusted, key=lambda run: run['id'])
-            jobs = latest_jobs(api.rows(f"actions/runs/{run['id']}/jobs?filter=all", 'jobs'))
-            job = jobs.get('Main delivery checks', {})
-            if job.get('head_sha') == sha and job.get('status') == 'completed' and job.get('conclusion') == 'success':
-                return sha
-    raise ValueError('No verified main delivery found on the PR base history')
+    for sha in history:
+        run = queue_run(api, workflow['id'], sha)
+        if run is not None and (run.get('status') != 'completed' or run.get('conclusion') == 'success'):
+            return sha
+        if delivered(api, workflow['id'], sha):
+            return sha
+    raise ValueError('No verified commit found on the merge group base history')
 
 
 def baseline():
-    parent = git('HEAD^1')
-    base = delivery_baseline(GitHub(os.environ['GITHUB_REPOSITORY']), subprocess.check_output(
-        ['git', 'rev-list', '--first-parent', '--max-count=20', parent], text=True, timeout=5).splitlines())
-    if base != parent:
-        head = git('HEAD^2')
-        require(subprocess.run(['git', 'merge-base', '--is-ancestor', parent, head], timeout=5, check=False).returncode == 0,
-                'Update the PR branch to include the undelivered main changes and rerun CI')
-    print(base)
-
-
-def checkout_sha(log):
-    hits = re.findall(r'git log -1 --format=%H\r?\n[^\n]*?Z ([0-9a-f]{40})\s*\n', log)
-    require(len(hits) == 1, 'Missing or ambiguous actual checkout SHA')
-    return hits[0]
+    base = os.environ['QUEUE_BASE']
+    require(re.fullmatch('[0-9a-f]{40}', base), 'Missing merge group base')
+    print(queue_baseline(GitHub(os.environ['GITHUB_REPOSITORY']), subprocess.check_output(
+        ['git', 'rev-list', '--first-parent', '--max-count=20', base], text=True, timeout=5).splitlines()))
 
 
 def artifact_bytes(api, artifact, run_id):
@@ -128,110 +146,38 @@ def latest_jobs(rows):
     return latest
 
 
-def trusted_pr_run(run, repository, workflow_id, head):
-    return (run.get('event') == 'pull_request' and run.get('head_sha') == head
-            and (run.get('repository') or {}).get('full_name') == repository
-            and (run.get('head_repository') or {}).get('full_name') == repository
-            and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
-
-
-def verify(api, merged_sha, merged_tree):
+def verify(api, sha, tree):
+    """The merge queue tested this exact commit: its run's gate and web build are green on it."""
     workflow = api.one('actions/workflows/ci.yml')
     require(workflow['path'] == WORKFLOW, 'Wrong workflow identity')
-    prs = [p for p in api.rows(f'commits/{merged_sha}/pulls')
-           if p.get('merged_at') and p.get('merge_commit_sha') == merged_sha
-           and p.get('base', {}).get('ref') == 'main'
-           and (p.get('base', {}).get('repo') or {}).get('full_name') == api.repository
-           and (p.get('head', {}).get('repo') or {}).get('full_name') == api.repository]
-    require(len(prs) == 1, 'No unique same-repository merged PR')
-    pr = api.one(f"pulls/{prs[0]['number']}")
-    head = pr['head']['sha']
-    require(pr.get('merged_at') and pr['merge_commit_sha'] == merged_sha, 'PR merge changed')
-    runs = [r for r in api.rows(f'actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}', 'workflow_runs')
-            if trusted_pr_run(r, api.repository, workflow['id'], head)]
-    require(bool(runs), 'No trusted PR CI run')
-    run = max(runs, key=lambda r: r['id'])
-    require(run['created_at'] <= pr['merged_at'], 'PR run started after merge')
-    # A queued or running rerun must not inherit the green jobs and receipt of an earlier attempt.
-    require(run.get('status') == 'completed', 'The newest PR CI run is not complete')
+    run = queue_run(api, workflow['id'], sha)
+    require(run is not None, 'No merge queue CI run tested this commit')
     jobs = latest_jobs(api.rows(f"actions/runs/{run['id']}/jobs?filter=all", 'jobs'))
-    for name in ('Required checks', 'Select build inputs', 'Docs build', 'Web build'):
+    for name in ('Required checks', 'Select build inputs', 'Web build'):
         job = jobs.get(name, {})
-        require(job.get('status') == 'completed' and job.get('conclusion') == 'success'
-                and job.get('head_sha') == head and job.get('completed_at', '') <= pr['merged_at'],
-                f'{name} is not green before merge on the final PR head')
-    gate = jobs['Required checks']
-    require(gate['run_attempt'] == run.get('run_attempt'), 'Required checks did not run in the current attempt')
-    artifacts = api.rows(f"actions/runs/{run['id']}/artifacts", 'artifacts')
-    name = f"ci-tree-{run['id']}-{gate['run_attempt']}"
-    receipts = [a for a in artifacts if a['name'] == name]
-    require(len(receipts) == 1, 'No unique receipt for the latest Required attempt')
-    require(gate['started_at'] <= receipts[0]['created_at'] <= gate['completed_at'], 'Receipt not published by this Required execution')
-    receipt_files = dict(files(artifact_bytes(api, receipts[0], run['id'])))
-    require(set(receipt_files) == {'receipt.json'}, 'Unexpected receipt files')
-    receipt = json.loads(receipt_files['receipt.json'])
-    require(receipt['repository'] == api.repository and receipt['pr'] == pr['number']
-            and receipt['head'] == head and receipt['run'] == run['id']
-            and receipt['attempt'] == gate['run_attempt'], 'Receipt identity mismatch')
-    require(receipt['body_sha256'] == sha256((pr['body'] or '').encode()), 'PR body changed since Docs passed')
-    # The immutable job checkout log, not a claim in the PR or artifact, decides the tree.
-    logs = {name: api.raw(f"actions/jobs/{jobs[name]['id']}/logs").decode()
-            for name in ('Select build inputs', 'Docs build', 'Web build', 'Required checks')}
-    tested = checkout_sha(logs['Select build inputs'])
-    require(all(checkout_sha(log) == tested for log in logs.values()), 'Jobs tested different checkouts')
-    targets = re.findall(r'Z PR delivery target: ([^\r\n]+)\r?$', logs['Select build inputs'], re.M)
-    require(targets == ['main'] and receipt.get('base_ref') == 'main', 'The CI run must originally target main')
-    selected = re.findall(r'Z PR delivery baseline: ([0-9a-f]{40})\r?$', logs['Select build inputs'], re.M)
-    require(selected == [receipt.get('delivery_base')], 'No matching verified PR delivery baseline')
-    commit = api.one(f'git/commits/{tested}')
-    require(len(commit['parents']) == 2 and commit['parents'][1]['sha'] == head, 'Not the final PR merge checkout')
-    base = selected[0]
-    parent = commit['parents'][0]['sha']
-    for _ in range(20):
-        if parent == base:
-            break
-        older = api.one(f'git/commits/{parent}')['parents']
-        if not older:
-            break
-        parent = older[0]['sha']
-    require(parent == base, 'Delivery baseline is outside the tested first-parent history')
-    delivery_baseline(api, [base])
-    require(commit['tree']['sha'] == merged_tree and receipt['tree'] == merged_tree
-            and receipt['tested_commit'] == tested, 'Tested tree differs from merged tree')
-    require(re.findall(r'Z Docs body SHA256: ([0-9a-f]{64})\r?$', logs['Docs build'], re.M)
-            == [receipt['body_sha256']], 'Docs body evidence does not match receipt')
-    web = api.one(f"actions/artifacts/{int(receipt['web_id'])}")
-    require(web['name'] == f"web-pr-{run['id']}-{receipt['web_attempt']}"
-            and web['digest'] == 'sha256:' + receipt['web_digest'], 'Web artifact identity or digest changed')
-    require(jobs['Web build']['started_at'] <= web['created_at'] <= jobs['Web build']['completed_at'],
-            'Web artifact not published by the green Web execution')
-    archive = artifact_bytes(api, web, run['id'])
-    web_files = dict(files(archive))
+        require(job.get('status') == 'completed' and job.get('conclusion') == 'success' and job.get('head_sha') == sha,
+                f'{name} is not green on this commit in its merge queue run')
+    # The queue merges when the gate reports, before GitHub closes the run. A rerun must not inherit an earlier gate.
+    require(jobs['Required checks']['run_attempt'] == run.get('run_attempt'),
+            'Required checks did not run in the current attempt')
+    # A rerun of failed jobs copies a green Web build to the new attempt with its first times and no new artifact,
+    # so the execution's own time window names its build, not the attempt number of the job record.
+    build = jobs['Web build']
+    webs = [a for a in api.rows(f"actions/runs/{run['id']}/artifacts", 'artifacts')
+            if re.fullmatch(f"web-queue-{run['id']}-[0-9]+", a['name'])
+            and build['started_at'] <= a['created_at'] <= build['completed_at']]
+    require(len(webs) == 1, 'No unique web build published by the green Web execution')
+    web = webs[0]
+    web_files = dict(files(artifact_bytes(api, web, run['id'])))
     require(bool(web_files.get('index.html')) and bool(web_files.get('version.json')), 'Incomplete web build')
-    return receipt | {'merged_commit': merged_sha, 'source_url': run['html_url'],
-                      'source_artifact_digest': web['digest']}, web_files
-
-
-def record(path):
-    require(os.environ['GITHUB_EVENT_NAME'] == 'pull_request', 'Only PR Required records test evidence')
-    event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    body_hash = os.environ['DOCS_BODY_SHA256']
-    digest = os.environ['WEB_DIGEST']
-    delivery_base = os.environ['DELIVERY_BASE']
-    require(re.fullmatch('[0-9a-f]{40}', delivery_base), 'Missing delivery baseline')
-    require(re.fullmatch('[0-9a-f]{64}', body_hash) and re.fullmatch('[0-9a-f]{64}', digest), 'Missing job evidence')
-    receipt = dict(repository=os.environ['GITHUB_REPOSITORY'], pr=event['number'],
-                   head=event['pull_request']['head']['sha'], base_ref=event['pull_request']['base']['ref'], run=int(os.environ['GITHUB_RUN_ID']),
-                   attempt=int(os.environ['GITHUB_RUN_ATTEMPT']), tested_commit=git('HEAD'), tree=git('HEAD^{tree}'),
-                   body_sha256=body_hash, delivery_base=delivery_base, web_id=int(os.environ['WEB_ID']), web_digest=digest,
-                   web_attempt=int(os.environ['WEB_ATTEMPT']))
-    path.write_text(json.dumps(receipt, sort_keys=True) + '\n')
+    return dict(repository=api.repository, tested_commit=sha, tree=tree, run=run['id'], attempt=run['run_attempt'],
+                source_url=run['html_url'], web_id=web['id'], source_artifact_digest=web['digest']), web_files
 
 
 def attempt(destination):
     started = time.monotonic()
     require(os.environ['GITHUB_EVENT_NAME'] in ('push', 'workflow_dispatch')
-            and os.environ['GITHUB_REF'] == 'refs/heads/main', 'Reuse runs only from main CI')
+            and os.environ['GITHUB_REF'] == 'refs/heads/main', 'Delivery runs only from main CI')
     try:
         require(git('HEAD') == os.environ['GITHUB_SHA'], 'Main checkout does not match this run')
         receipt, web = verify(GitHub(os.environ['GITHUB_REPOSITORY']), os.environ['GITHUB_SHA'], git('HEAD^{tree}'))
@@ -248,7 +194,7 @@ def attempt(destination):
     Path(os.environ['RUNNER_TEMP'], 'main-tree-receipt.json').write_text(json.dumps(receipt, sort_keys=True) + '\n')
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
         summary.write(f"Receipt verification and extraction: {time.monotonic() - started:.2f}s. "
-                      f"Reused PR #{receipt['pr']} [CI]({receipt['source_url']}), tested commit `{receipt['tested_commit']}`, "
+                      f"Merge queue [CI]({receipt['source_url']}) tested commit `{receipt['tested_commit']}`, "
                       f"tree `{receipt['tree']}`, artifact `{receipt['web_id']}` digest `{receipt['source_artifact_digest']}`.\n")
     with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
         output.write('reuse=true\n')
@@ -256,14 +202,12 @@ def attempt(destination):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['baseline', 'record', 'attempt'])
+    parser.add_argument('command', choices=['baseline', 'attempt'])
     parser.add_argument('path', nargs='?', type=Path)
     args = parser.parse_args()
     if args.command == 'baseline':
         baseline()
     elif args.path is None:
-        parser.error('record and attempt require an output path')
-    elif args.command == 'record':
-        record(args.path)
+        parser.error('attempt requires an output path')
     else:
         attempt(args.path)

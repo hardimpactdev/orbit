@@ -52,14 +52,17 @@ class FixturePoolTest(unittest.TestCase):
         self.assertEqual(['swamp/gap.py'], plan['not_run'][0]['units'])
         self.assertEqual({'swamp/a.py', 'swamp/b.py'}, set(units.planned_units(plan)))
 
-    def test_both_nodes_use_shared_labels_and_forks_use_hosted(self):
+    def test_both_nodes_use_shared_labels_and_no_job_installs_hosted_tools(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
         job = workflow['jobs']['fixtures']
-        # Pin the whole condition: a fork cannot choose labels from its own payload.
-        self.assertEqual("${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"hardimpact\",\"orbit-shard\"]') }}", job['runs-on'])
+        # Fixed labels: no event payload chooses a runner, and no pull request starts a shard.
+        self.assertEqual(['self-hosted', 'hardimpact', 'orbit-shard'], job['runs-on'])
+        outputs = workflow['jobs']['changes']['outputs']
+        for name in ('fixture_shards', 'self_hosted_shards'):
+            self.assertIn("github.event_name == 'pull_request') && '[]'", outputs[name])
         for step in job['steps']:
-            if step.get('id') == 'python' or step.get('name') == 'Cache pinned fixture tools and collections' or step.get('uses', '').startswith('denoland/setup-deno@'):
-                self.assertEqual("runner.environment != 'self-hosted'", step['if'])
+            self.assertNotIn('runner.environment', step.get('if', ''))
+            self.assertNotRegex(step.get('uses', ''), r'^(denoland/setup-deno|actions/setup-python|actions/cache)@')
         self.assertEqual(4, job['timeout-minutes'])
         self.assertNotIn('max-parallel', job['strategy'])
         self.assertTrue(any(step.get('run', '').startswith('bin/ci-units run ') for step in job['steps']))

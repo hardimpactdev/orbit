@@ -31,11 +31,12 @@ class DocsImpactPolicyTest(unittest.TestCase):
     def test_body_is_data_and_the_actual_shell_step_propagates_gate_failure(self):
         steps = CI['jobs']['docs']['steps']
         step = next(step for step in steps if 'bin/docs-impact --gate' in step.get('run', ''))
-        self.assertEqual(step['if'], "github.event_name == 'pull_request'")
+        self.assertEqual(step['if'], "github.event_name == 'pull_request' || github.event_name == 'merge_group'")
         self.assertEqual(CI['jobs']['docs']['permissions'], {'contents': 'read', 'pull-requests': 'read'})
         self.assertEqual(step['env']['GH_TOKEN'], '${{ github.token }}')
         self.assertEqual(step['env']['PR_HEAD'], '${{ github.event.pull_request.head.sha }}')
         self.assertEqual(step['env']['DOCS_IMPACT_BASE'], "${{ needs.changes.outputs.delivery_base || 'HEAD^1' }}")
+        self.assertEqual(step['env']['QUEUE_REF'], '${{ github.event.merge_group.head_ref }}')
         self.assertLess(next(i for i, s in enumerate(steps) if 'bin/build-api' in s.get('run', '')), steps.index(step))
         for body, code, api_failure, moved in ((None, 0, False, False), ('Docs-unaffected: docs/a.md: $(touch injected); `touch injected`', 1, False, False), ('valid', 1, True, False), ('valid', 1, False, True)):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as directory:
@@ -67,6 +68,43 @@ class DocsImpactPolicyTest(unittest.TestCase):
                 self.assertEqual(json.loads((root / 'args.json').read_text()),
                                  ['--gate', '--base', 'b' * 40, '--pr-body-file', str(root / 'docs-impact-pr-body.txt')])
                 self.assertFalse((root / 'injected').exists())
+
+    def test_the_merge_queue_run_reads_the_body_of_the_queued_pull_request_again(self):
+        # A waiver removed after the pull request's own green run must not merge: the queue run reads the live body.
+        step = next(step for step in CI['jobs']['docs']['steps'] if 'bin/docs-impact --gate' in step.get('run', ''))
+        queue = 'refs/heads/gh-readonly-queue/main/pr-123-' + 'a' * 40
+        for ref, body, code, reads in ((queue, 'Docs-unaffected: docs/a.md: reason', 0, True), (queue, '', 1, True),
+                                       ('refs/heads/gh-readonly-queue/release/pr-123-' + 'a' * 40, 'valid', 1, False),
+                                       ('refs/heads/main', 'valid', 1, False), ('', 'valid', 1, False)):
+            with self.subTest(ref=ref, body=body), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / 'bin').mkdir()
+                # The live head differs from the event: a merge group has no pull request head to compare.
+                (root / 'live.json').write_text(json.dumps({'body': body, 'head': {'sha': 'queued-head'}}))
+                gh = root / 'bin/gh'
+                gh.write_text('#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n'
+                              'Path("api-args.json").write_text(json.dumps(sys.argv[1:]))\n'
+                              'print(Path("live.json").read_text())\n')
+                gh.chmod(0o755)
+                command = root / 'bin/docs-impact'
+                command.write_text('#!/usr/bin/env python3\nimport sys\nfrom pathlib import Path\n'
+                                   'body = Path(sys.argv[sys.argv.index("--pr-body-file") + 1]).read_text()\n'
+                                   'Path("gate-body.txt").write_text(body)\n'
+                                   'sys.exit(0 if body else 1)\n')
+                command.chmod(0o755)
+                result = subprocess.run(['bash', '-e', '-c', step['run']], cwd=root,
+                                        env=os.environ | {'RUNNER_TEMP': directory, 'GH_REPO': 'owner/repo', 'PR_NUMBER': '', 'PR_HEAD': '',
+                                                          'QUEUE_REF': ref, 'DOCS_IMPACT_BASE': 'b' * 40,
+                                                          'PATH': str(root / 'bin') + os.pathsep + os.environ['PATH']},
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual((root / 'api-args.json').exists(), reads)
+                if reads:
+                    self.assertEqual(json.loads((root / 'api-args.json').read_text()), ['api', 'repos/owner/repo/pulls/123'])
+                    self.assertEqual((root / 'gate-body.txt').read_text(), body)
+                else:
+                    self.assertIn('names no pull request', result.stderr)
+        self.assertTrue(plan.select(['tools/no-covered-path.txt'], merge_group=True)['jobs']['docs'])
 
     def test_uncovered_pr_still_blocks_required_when_docs_fails_or_is_skipped(self):
         self.assertTrue(plan.select(['tools/no-covered-path.txt'], pull_request=True)['jobs']['docs'])
