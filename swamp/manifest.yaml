@@ -247,6 +247,7 @@ additionalFiles:
   - ansible/instance_folder_same.py
   - ansible/instance_container_files.py
   - ansible/tasks/instance-container-files.yml
+  - ansible/tasks/instance-container-names.yml
   - ansible/instance_nested_club_key.sh
   - ansible/tasks/instance-bridge-refresh.yml
   - ansible/tasks/instance-image.yml

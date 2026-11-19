@@ -19,7 +19,6 @@
     },
     "require-dev": {
         "larastan/larastan": "^3.11",
-        "laravel/boost": "^2.5",
         "laravel/pao": "^1.1",
         "laravel/pint": "^1.32",
         "laravel/vet": "^0.2.1",
@@ -27,8 +26,8 @@
         "pestphp/pest": "^5.3",
         "phpunit/phpunit": "^13.0",
         "rector/rector": "^2.3",
-        "spatie/guidelines-skills": "^1.1",
-        "spaze/phpstan-disallowed-calls": "^4.14"
+        "spaze/phpstan-disallowed-calls": "^4.14",
+        "symfony/yaml": "^8.1"
     },
     "autoload": {
         "psr-4": {
@@ -61,7 +60,6 @@
             "@analyse"
         ],
         "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
-        "guidance:update": "@php orbit boost:update --no-discover --no-interaction",
         "rector": "vendor/bin/rector process --no-progress-bar",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never"
     },

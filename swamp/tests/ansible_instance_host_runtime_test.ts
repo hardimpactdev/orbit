@@ -95,8 +95,8 @@ Deno.test({
             const install = async (frankenphp: string[]) => {
                 const name = `static-php-${frankenphp.length}.tar.gz`;
                 const sha = await program(f.folder, name, {
-                    "bin/php": probe("8.5.12", ["Core", "pdo_pgsql"]),
-                    "bin/frankenphp": probe("8.5.12", frankenphp),
+                    "bin/php": probe("8.5.13", ["Core", "pdo_pgsql"]),
+                    "bin/frankenphp": probe("8.5.13", frankenphp),
                 });
                 f.write({
                     ...f.instances,
@@ -107,14 +107,14 @@ Deno.test({
                             version: `44444444444${frankenphp.length}`,
                             parts: [...f.instances.folders.runtime.parts, {
                                 name: "php/8.5",
-                                version: "8.5.12",
+                                version: "8.5.13",
                                 url: `https://example.test/download/${name}`,
                                 archive: "tar",
                                 sha256: sha,
                                 // The Gateway encodes an empty program list as a JSON list.
                                 bin: [],
                                 static_php: {
-                                    php_version: "8.5.12",
+                                    php_version: "8.5.13",
                                     extensions: ["core", "pdo_pgsql"],
                                     cli_extensions: [],
                                 },

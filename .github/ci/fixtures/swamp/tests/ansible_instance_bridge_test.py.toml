@@ -20,6 +20,7 @@ cases = [
   "test_nat_and_incus_timeouts_release_the_lock_and_record_named_failure",
   "test_reconcile_compacts_old_records_deduplicates_and_never_deletes_newer_records",
   "test_attach_replaces_older_records_of_its_host_and_port_and_keeps_other_keys",
+  "test_a_converge_that_only_stamps_a_new_admission_reports_no_change",
   "test_refresh_drops_records_an_older_helper_left",
   "test_older_attach_run_after_a_newer_one_keeps_the_newest_record",
   "test_unconfirmed_acl_write_keeps_the_older_record",

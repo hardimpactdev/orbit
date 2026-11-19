@@ -98,6 +98,16 @@
     owner: root
     group: root
     mode: "0644"
+- name: Write the Node identity and pinned runtime for new preparations
+  ansible.builtin.copy:
+    dest: /etc/orbit/production-release.json
+    content: >-
+      {{ {'node_id': production.node_id, 'pool': 'orbit-releases', 'network': 'orbitinst0',
+          'proxy': production.egress.origin, 'runtime': production.folder.path ~ '/' ~ production.folder.version,
+          'browser_files': production.browser_files} | to_json }}
+    owner: root
+    group: root
+    mode: "0644"
 - name: Install the production release controller
   ansible.builtin.copy:
     src: "{{ item.src }}"
@@ -121,12 +131,3 @@
     - {src: files/instance-release-routes.py, name: orbit-instance-release-routes}
 - name: Install the swap-backed release power service
   ansible.builtin.include_tasks: instance-power-helper.yml
-- name: Write the Node identity and pinned runtime for new preparations
-  ansible.builtin.copy:
-    dest: /etc/orbit/production-release.json
-    content: >-
-      {{ {'node_id': production.node_id, 'pool': 'orbit-releases', 'network': 'orbitinst0',
-          'proxy': production.egress.origin, 'runtime': production.folder.path ~ '/' ~ production.folder.version} | to_json }}
-    owner: root
-    group: root
-    mode: "0644"

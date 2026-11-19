@@ -603,7 +603,9 @@ With no scope flag, the attempt includes Orbit's base and every recorded role. `
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
-Node convergence, role addition, convergence or removal, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent unless their converges share a VPN hub. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
+Node convergence, role addition, convergence or removal, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
+
+Converges of two peers of one VPN hub are independent too. Each network phase writes the hub's recorded peer set with atomic file copies, one `wg syncconf` and UFW's own lock. A converge of the hub Node itself still refuses beside any other converge, unless both are base converges.
 
 The native Swamp workflow runs these phases in order. Input preparation writes private inventory, variables and pinned SSH known hosts. Each machine phase invokes one tagged Ansible playbook, within the admitted scope.
 
@@ -615,7 +617,7 @@ The native Swamp workflow runs these phases in order. Input preparation writes p
 | `roles` | Repair the selected roles' configuration without changing an Instance or assignment. |
 | `tools` | Run the Tool helper once to prove that it works. Then apply recorded Tools within scope, recording each Tool's own result and continuing after an individual Tool failure. |
 | `network` | Apply the recorded hub before the Node and wait for the handshake. A target hub is applied once; without peers it needs no handshake. |
-| `check` | Read back selected software, units, role configuration and recorded tunnel state. |
+| `check` | Write each Instance container's presented [machine name](/reference/development-containers#the-machine-name) where it differs. Read back selected software, units, role configuration and recorded tunnel state. |
 
 No recorded network in scope means no network mutation. DNS routing domains stay literal, including a domain such as `~orbit` that also names a local account. Every new attempt starts at input and runs `input` and `check`. Each other phase runs or skips by the [phase digest rule](#skip-a-phase-whose-input-did-not-change). A phase that runs with matching intent reports zero target changes, and the attempt must complete within 120 seconds; hub changes are excluded from that target count. A repeat is admitted as a new Operation; admission never skips it. Reusing an idempotency key follows the [keyed-start contract](/reference/operations#retry-a-start-with-a-key), rather than starting a second attempt.
 
@@ -645,7 +647,7 @@ For Node converge, preparation stages the shipped Ansible files and Tool helper 
 
 Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle.
 
-The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
+The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. That converge also writes the [browser files](/reference/production-containers#host-paths) that each preparation installs for the runtime's headless Chrome. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
 
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 
@@ -657,6 +659,16 @@ A few inputs belong to one `node.converge` phase only, and the other phases leav
 | --- | --- |
 | `agent` | the agent, executor and CLI pins |
 | `roles` | the role plans of the intent and each role's variables |
+
+The roles phase reads an Instance host's per-Instance lists (the `app-dev` or `ci-runner` role's `instances`) without the Instances themselves, because Instances come and go between any two converges:
+
+- `machine_names`, each container's presented name, is left out. The `check` tag of every converge writes the names where they differ.
+- So a renamed Project's running containers get their new names without the roles phase.
+- `t3_files` counts as its distinct entries without their container. Every container that runs the same server gets the same drop-ins.
+- So a new or removed Instance does not move the roles digest. A changed drop-in still moves it.
+- The first container with a server program moves it, and so does the last one to go.
+
+The roles phase still gets both lists whole when it runs.
 
 The `input` and `check` tags also read them, but those tags never skip. A release moves the agent, executor and CLI pins, so after a release only the agent phase runs again, unless something else changed. A test proves the table against the shipped Ansible files: no other skippable phase can load a task or template that reads one of these inputs.
 
@@ -776,7 +788,7 @@ Earlier Gateways published the annotator server in `/opt/orbit/annotator` and ke
 
 ### Executor at a converge
 
-The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed.
+The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed. The relay's sudo rule serves the Swamp start, deploy and boot phases on the Node. The Gateway sends signed sleep and wake only over the WebSocket, with no SSH relay ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor)).
 
 ### Kernel policy
 

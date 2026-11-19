@@ -232,29 +232,43 @@ it('admits two base converges of different Nodes at once, and a base hold of the
     Queue::assertPushed(StartAdmittedSwampRun::class, 2);
 });
 
-it('refuses a base converge beside a converge with roles of another Node, in both orders, and the hub waits for it', function (bool $baseFirst): void {
+it('admits converges of two peers of the hub side by side, whatever their scope, in both orders', function (bool $baseFirst): void {
     $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
     $other = otherConvergeNode($this->node, $this->control);
     $other->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     $roles = '/api/v1/nodes/'.$other->id.'/converge';
     $this->postJson($baseFirst ? $this->url : $roles, $baseFirst ? ['base' => true] : ['roles' => ['app-prod']])->assertAccepted();
 
-    $this->postJson($baseFirst ? $roles : $this->url, $baseFirst ? ['roles' => ['app-prod']] : ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
-    expect(Operation::query()->count())->toBe(1);
-    if (! $baseFirst) {
-        // A converge with roles holds the hub as before: a base converge of the hub itself waits too.
+    $this->postJson($baseFirst ? $roles : $this->url, $baseFirst ? ['roles' => ['app-prod']] : ['base' => true])->assertAccepted();
+    expect(Operation::query()->count())->toBe(2);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+})->with(['base first' => true, 'roles first' => false]);
+
+it('refuses a converge of the hub beside a peer converge with roles, and a peer converge with roles beside the hub\'s base converge', function (bool $hubFirst): void {
+    $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    if ($hubFirst) {
+        // A base converge of the hub Node itself.
+        $this->postJson($this->url, ['base' => true])->assertAccepted();
+        Operation::query()->sole()->forceFill(['node_id' => $this->control->id, 'target_id' => $this->control->id])->save();
+        $other = otherConvergeNode($this->node, $this->control);
+        $other->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        $this->postJson('/api/v1/nodes/'.$other->id.'/converge', ['roles' => ['app-prod']])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    } else {
+        $other = otherConvergeNode($this->node, $this->control);
+        $other->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        $this->postJson('/api/v1/nodes/'.$other->id.'/converge', ['roles' => ['app-prod']])->assertAccepted();
         expect(fn () => app(NodeNetworkReservation::class)->hold($this->control, true, fn () => null))->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
     }
-})->with(['base first' => true, 'roles first' => false]);
+    expect(Operation::query()->count())->toBe(1);
+})->with(['hub first' => true, 'peer first' => false]);
 
 it('treats an open converge without the base mark as one with roles', function (): void {
     $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
-    $other = otherConvergeNode($this->node, $this->control);
-    $this->postJson('/api/v1/nodes/'.$other->id.'/converge', ['base' => true])->assertAccepted();
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
     $open = Operation::query()->sole();
     $open->forceFill(['input' => [...$open->input, '_converge' => [...$open->input['_converge'], 'network' => ['hub_id' => $this->control->id]]]])->save();
 
-    $this->postJson($this->url, ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(fn () => app(NodeNetworkReservation::class)->hold($this->control, true, fn () => null))->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
 });
 
 it('builds a base intent without a network for the hub Node and for a Node it serves, so base converges never touch the hub', function (): void {
@@ -992,3 +1006,23 @@ it('admits a host converge by the automatic converge rules: task work never bloc
     expect($fleet->execute($release))->toBe(10)
         ->and(Operation::query()->where('kind', 'node.converge')->sole()->input['_converge']['intent']['automatic'])->toBeTrue();
 });
+
+it('never refuses or holds power work for an automatic role converge, waiting or running', function (string $kind): void {
+    prepareReleaseTarget();
+    $admit = fn (string $kind, int $instance): Operation => app(OperationStore::class)->create($kind, 'instance', $instance, $this->node->id, [], 'test', null);
+    $holder = $admit('instance.deploy', 99);
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    // The converge waits for the deploy; a visitor's wake or an idle sleep goes on beside that wait.
+    expect($fleet->execute($release))->toBe(15)
+        ->and($admit($kind, 100)->status)->toBe(OperationStatus::Queued);
+    $holder->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+
+    // The open power Operation does not hold the converge back, and a power Operation goes on beside the running converge.
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($converge->state['admitted_beside'] ?? [])->toBe([])
+        ->and($admit($kind, 101)->status)->toBe(OperationStatus::Queued)
+        ->and(fn () => $admit('instance.deploy', 102))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+})->with(['instance.wake', 'instance.sleep', 'instance.start']);

@@ -479,11 +479,14 @@ def phase_main(phase, raw):
         write(NODE_RUNTIME, c["node_runtime"], 0, 0, "0755")
         php_settings = len(changes)
         if c["php"] is not None:
-            # The same two settings as the container phase: the shared limit, and PHP Data Bridge from the runtime folder.
+            # The same settings as the container phase: the shared limit, PHP Data Bridge from the runtime folder, and the two
+            # security settings.
             write(
                 "/etc/orbit/php/conf.d/99-orbit-runtime.ini",
                 "memory_limit = 1G\n"
-                "auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n",
+                "auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n"
+                "zend.exception_ignore_args = 1\n"
+                "session.upload_progress.enabled = 0\n",
             )
         # The same CLI-only file as the container phase, such as PCOV for the Project's PHP: `php` and `frankenphp php-cli` (SAPI
         # name `cli`) read php-cli.ini, the FrankenPHP server (SAPI name `frankenphp`) never does. A Project without it has none.

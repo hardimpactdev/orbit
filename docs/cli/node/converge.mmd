@@ -69,7 +69,7 @@ sequenceDiagram
     %%> - the phase digests the Node records; admission clears the record, and `--full` or a recorded failed agent pin sends none (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change)
     %%> - target, scope, recorded roles, Tools, network and vault key names; playbooks read release pins
     %%> - the Gateway includes a CLI plan only for a Node with a recorded `ci-runner` assignment that is not being removed; scope flags do not change that decision
-    %%> - reserve the Node and its recorded hub until the Operation settles; two base converges of different Nodes pass each other, the hub's own included (a base intent has no network)
+    %%> - reserve the Node and its recorded hub until the Operation settles; two converges of different peers of the hub pass each other, whatever their scope (each writes the same recorded peer set to the hub); beside a converge of the hub Node itself, only two base converges pass (a base intent has no network)
     %%> - automatic release role work waits for Instance and task Operations that participate on its target Node
     %%> - the seven Ansible plays lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`), so converges of different Nodes run side by side
     GW-->>CLI: 202 Accepted<br/>Operation ID
@@ -114,7 +114,7 @@ sequenceDiagram
       %%> What it does:
       %%> - applies the recorded hub side before the peer; matching configuration is unchanged
       %%> - prunes only the peer files of Nodes that are gone or being removed, decided when the prune runs: it keeps every Node of the snapshot and every file above the snapshot's newest Node id, so a task VM that joins while the run waits keeps its peer
-      %%> - removes the task VM hub filter that the removed `task_vm.hub_converge` left: stops and disables `orbit-task-vms-hub.service`, deletes its unit file and `/etc/orbit/task-vms/hub.nft`, and deletes the nft table `inet orbit_task_vms`; deletes every UFW rule whose comment starts with `orbit:task-vm-`, highest number first, and no other rule; a hub without the filter or those rules changes nothing
+      %%> - removes the task VM hub filter that the removed `task_vm.hub_converge` left: stops and disables `orbit-task-vms-hub.service`, deletes its unit file and `/etc/orbit/task-vms/hub.nft`, and deletes the nft table `inet orbit_task_vms`; deletes every UFW rule whose comment starts with `orbit:task-vm-` by its spec from `ufw show added`, never by number, and no other rule, so two peer converges that run it together cannot delete a live rule; a hub without the filter or those rules changes nothing
       %%> - on the hub: carries the mark in `wg syncconf`, opens SSH on its LAN address to its /24, adds the routed rule `orbit:vpn-peer-forwarding` (in and out on `orbit`, from the VPN subnet to the VPN subnet; UFW skips the same rule added by hand), writes the source unit (`orbit-hub-source.service`), restarts it on change or drift, and checks that a marked packet to a public address leaves from the public endpoint address; an IPv4 endpoint the hub does not hold fails the phase with the assertion `vpn.endpoint_not_local`
       SW->>N: Apply peer, wait<br/>Ansible phase: network
       %%> What it does:

@@ -2387,6 +2387,9 @@ Deno.test({
       };
       assertEquals(setting("memory_limit"), "1G");
       assertEquals(setting("auto_prepend_file"), bridge);
+      // The security settings of docs/reference/php-runtime.md#production-safe-settings.
+      assertEquals(setting("zend.exception_ignore_args"), "1");
+      assertEquals(setting("session.upload_progress.enabled"), "0");
       assertEquals(f.state().files["/etc/orbit/php/conf.d/99-orbit-runtime.ini"], { uid: "0", gid: "0", mode: "0644" });
 
       // The CLI-only file holds the intent's PCOV line: the Node's runtime folder holds the module.
