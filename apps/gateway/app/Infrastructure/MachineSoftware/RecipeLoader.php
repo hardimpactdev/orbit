@@ -341,7 +341,7 @@ final readonly class RecipeLoader
             sort($packages, SORT_STRING);
             foreach ($packages as $name) {
                 $pinned = $tools[$name]->version;
-                $this->require(str_contains($pinned, '+ubuntu'.$release), "{$field}: [{$name}] version [{$pinned}] is not built for Ubuntu {$release}.");
+                $this->require(str_contains($pinned, '+ubuntu'.$release) || str_contains($pinned, '+debsuryorg'.$release.'.'), "{$field}: [{$name}] version [{$pinned}] is not built for Ubuntu {$release}.");
             }
             $builds[$version] = new PhpBuild($version, $upstream, $packages, $set['extensions']);
         }

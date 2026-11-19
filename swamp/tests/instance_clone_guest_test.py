@@ -1506,7 +1506,9 @@ class CloneGuestTest(unittest.TestCase):
             self.assertEqual(
                 written,
                 "memory_limit = 1G\n"
-                "auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n",
+                "auto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n"
+                "zend.exception_ignore_args = 1\n"
+                "session.upload_progress.enabled = 0\n",
             )
             # The container phase writes the same file for a default and a deployment: both writers hold one content.
             phase = (

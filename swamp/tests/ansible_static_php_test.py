@@ -22,7 +22,7 @@ class StaticPhpCheckTest(unittest.TestCase):
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
 
-    def binary(self, name, version='8.5.12', extensions=('Core', 'pdo_pgsql', 'redis'), zend=('Zend OPcache',), code=0, expect=None,
+    def binary(self, name, version='8.5.13', extensions=('Core', 'pdo_pgsql', 'redis'), zend=('Zend OPcache',), code=0, expect=None,
                ini='', modules=None, module_startup=''):
         """A stand-in that checks its arguments, runs the probe script it is given, and prints what PHP prints for it.
 
@@ -49,7 +49,7 @@ exit {code}
 
     def check(self, php=None, frankenphp=None):
         return static_php.check(php or self.php(), frankenphp or self.binary('frankenphp', expect='php-cli'),
-                                '8.5.12', EXTENSIONS, MODULES, ['pcov'])
+                                '8.5.13', EXTENSIONS, MODULES, ['pcov'])
 
     def test_matching_build_passes(self):
         self.assertEqual(self.check(), [])
@@ -68,7 +68,7 @@ exit {code}
 
     def test_no_cli_only_extension_needs_no_third_run(self):
         php = self.binary('php', expect='-n')
-        self.assertEqual(static_php.check(php, self.binary('frankenphp', expect='php-cli'), '8.5.12', EXTENSIONS, MODULES, []), [])
+        self.assertEqual(static_php.check(php, self.binary('frankenphp', expect='php-cli'), '8.5.13', EXTENSIONS, MODULES, []), [])
 
     def test_frankenphp_must_read_no_configuration(self):
         # `frankenphp php-cli` takes the SAPI name `cli`, so in a container it reads php-cli.ini and loads PCOV; it has no `-n`.
@@ -81,7 +81,7 @@ exit {code}
         frankenphp = Path(self.folder.name) / 'frankenphp-cwd'
         frankenphp.write_text(f'''#!/bin/sh
 [ "$(ls -A)" = "probe.php" ] || exit 66
-printf '%s\\n' "{static_php.MARKER}" 8.5.12 "" Core pdo_pgsql redis "Zend OPcache"
+printf '%s\\n' "{static_php.MARKER}" 8.5.13 "" Core pdo_pgsql redis "Zend OPcache"
 ''')
         frankenphp.chmod(frankenphp.stat().st_mode | stat.S_IEXEC)
         self.assertEqual(self.check(frankenphp=str(frankenphp)), [])
@@ -106,8 +106,8 @@ printf '%s\\n' "{static_php.MARKER}" 8.5.12 "" Core pdo_pgsql redis "Zend OPcach
         self.assertEqual(self.check(php=php), ['php also loads frankenphp-cli.', f'php with {MODULES}/pcov.so also loads frankenphp-cli.'])
 
     def test_another_php_version_fails(self):
-        php = self.php(version='8.5.11')
-        self.assertEqual(self.check(php=php), ['php reports PHP 8.5.11, expected 8.5.12.', f'php with {MODULES}/pcov.so reports PHP 8.5.11, expected 8.5.12.'])
+        php = self.php(version='8.5.12')
+        self.assertEqual(self.check(php=php), ['php reports PHP 8.5.12, expected 8.5.13.', f'php with {MODULES}/pcov.so reports PHP 8.5.12, expected 8.5.13.'])
 
     def test_a_binary_that_fails_stops_the_check(self):
         with self.assertRaisesRegex(static_php.StaticPhpError, 'exited 3'):

@@ -3,7 +3,7 @@
 
   bin/static-php-build definition [--github-output FILE]  # each version's build id, release tag, asset and URL, as JSON
   bin/static-php-build verify-pins                         # exit 1 when a recorded build id is not the definition's
-  bin/static-php-build build --version X.Y --output DIR    # one static-php-cli build of both binaries and the CLI-only extensions, packed with SHA256SUMS
+  bin/static-php-build build --version X.Y --output DIR    # one static-php-cli build of both binaries, the CLI-only extensions and php.ini-production, packed with SHA256SUMS
   bin/static-php-build check --version X.Y --bin DIR       # exit 1 unless both binaries, and the CLI with modules/, load exactly the recipe's extensions
 
 The recipe's instances.php section names the PHP release, FrankenPHP, the static-php-cli commit, the extensions left out and
@@ -121,6 +121,8 @@ def build(version, output):
     (stage / 'modules').mkdir()
     for name in item['cli_extensions']:
         shutil.copy2(work / 'buildroot/modules' / f'{name}.so', stage / 'modules' / f'{name}.so')
+    # PHP's own production settings, which a release container installs as its php.ini (docs/reference/php-runtime.md#production-safe-settings).
+    shutil.copy2(work / 'source/php-src/php.ini-production', stage / 'php.ini-production')
     manifest = {key: item[key] for key in ('version', 'php_version', 'frankenphp', 'static_php_cli', 'extensions', 'cli_extensions', 'build', 'tag')}
     (stage / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n')
     # static-php-cli's record of each source it fetched: the version, file or Git commit, and its hash.

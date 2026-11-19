@@ -2,6 +2,7 @@
 import importlib.util
 import os
 import runpy
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -40,6 +41,29 @@ class ProductionReleaseHostTest(unittest.TestCase):
             self.assertEqual(calls, [])
             self.assertIs(helper("prepare-instance-4", "instance-4", "b" * 64, original), updated)
             self.assertEqual(calls, [("rebuild", "b" * 64, "prepare-instance-4", "--force")])
+
+    @unittest.skipUnless(shutil.which("php"), "needs php")
+    def test_release_php_ini_is_the_builds_production_ini_with_the_security_settings(self):
+        script = runpy.run_path(str(ROOT / "ansible/files/instance-release-prepare.py"))["PHP_INI"]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            folder = root / "runtime/php/8.5"
+            folder.mkdir(parents=True)
+            # php.ini-production's own values, which the Orbit lines must override or keep.
+            (folder / "php.ini-production").write_text("zend.exception_ignore_args = On\nexpose_php = On\n"
+                                                         "session.upload_progress.enabled = On\ndisplay_errors = Off\n")
+            local = script.replace("/opt/orbit-runtime/current", str(root / "runtime")).replace("/etc/orbit/php", str(root / "php"))
+            subprocess.run(["sh", "-ec", local, "sh", "8.5"], check=True)
+            ini = root / "php/php.ini"
+            self.assertEqual(oct(ini.stat().st_mode & 0o777), "0o644")
+            code = 'foreach (["zend.exception_ignore_args", "session.upload_progress.enabled", "display_errors", "expose_php"] as $n) echo ini_get($n), ",";'
+            read = subprocess.run(["php", "-n", "-c", str(ini), "-r", code], capture_output=True, text=True, check=True)
+            self.assertEqual(read.stdout, "1,0,0,0,")
+            # A runtime without the build's php.ini-production fails the preparation and leaves no php.ini.
+            ini.unlink()
+            with self.assertRaises(subprocess.CalledProcessError):
+                subprocess.run(["sh", "-ec", local, "sh", "8.4"], check=True, capture_output=True)
+            self.assertFalse(ini.exists())
 
     def test_public_and_private_routes_bind_to_the_same_approved_instance(self):
         private = site("app-prod", "app-instance-19", "https://one.test", "/home/orbit-app-2")

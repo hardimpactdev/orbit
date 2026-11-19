@@ -171,7 +171,7 @@ A profile names a PHP set as `php:<version>`. The set is the shared pins, the ve
 Extensions with their own release, such as `igbinary`, `imagick`, `opentelemetry`, `pcov`, and `redis`, keep their own versions. The loader also rejects a recipe in which:
 
 - the PHP core pins of a version have different versions. A core pin has a version that starts with `<version>.`, and it must equal `php<version>-common`;
-- a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`;
+- a Sury pin is built for another Ubuntu release: its version must contain `+ubuntu<ubuntu.release>`, or Sury's `+debsuryorg<ubuntu.release>.` as in `libgd3` and `php-common`;
 - `php.ci` names an undeclared version;
 - `artifact_mirror` is not an HTTPS URL.
 
@@ -197,7 +197,18 @@ A settings-only change validates every active PHP-FPM master, including dedicate
 
 Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
 
-The recipe pins PHP 8.4.27 and 8.5.12, which fix CVE-2026-109618 and CVE-2026-109619. The drop-in stays as defence in depth. Disabling upload progress is not a complete mitigation; installing the fixed builds is required. See the [PHP security release notice](https://www.php.net/archive/2026.php#2026-10-21-5).
+The recipe pins PHP 8.4.27 and 8.5.13. Both fix CVE-2026-109618 and CVE-2026-109619. PHP 8.5.13 fixes 18 further CVEs. Four of them allow remote code execution:
+
+| CVE | Advisory | Flaw |
+| --- | --- | --- |
+| CVE-2026-129474 | `GHSA-8mjj-2r7p-4hg2` | A use after free in `__call` and `__callStatic` backtraces |
+| CVE-2026-129182 | `GHSA-2fjv-p558-g82m` | A use after free in `fatal_error_backtraces` at shutdown |
+| CVE-2026-115560 | `GHSA-658j-r8rw-q6mx` | Session upload progress |
+| CVE-2026-126714 | `GHSA-fm2m-fjf5-v3cp` | The file session handler |
+
+Sury's `php.ini` sets `zend.exception_ignore_args = On`. The static container PHP gets the [production-safe settings](/reference/php-runtime#production-safe-settings).
+
+The drop-in stays as defence in depth. Disabling upload progress is not a complete mitigation; installing the fixed builds is required. See the [PHP security release notice](https://www.php.net/archive/2026.php#2026-10-21-5).
 
 Before it changes anything, the installer checks the machine:
 
@@ -329,7 +340,7 @@ The recipe's `instances.php` section defines the builds:
 | `frankenphp` | The exact FrankenPHP release, such as `1.13.5` |
 | `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` |
 | `cli_extensions` | Extensions of the PHP build that the build makes shared, for the PHP CLI only: `pcov` |
-| `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.12`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
+| `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.13`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
 | `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the static and CLI-only extension lists, `tools/static-php/craft.yml` and `bin/static-php-build` |
 | `versions.<X.Y>.url` | The release asset `static-php-<php_version>-<build id prefix>-linux-x86_64.tar.gz` under the `static-php-<php_version>-<build id prefix>` release |
 | `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until the build is published |
@@ -348,7 +359,7 @@ static-php-cli builds `pcov` only as a shared extension, so it is a CLI-only ext
 | --- | --- |
 | `definition` | Prints each version's build id, release tag, asset and URL |
 | `verify-pins` | Fails when a recorded `build` or `url` is not the definition's |
-| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `modules/pcov.so` (one `modules/<name>.so` for each of the `cli_extensions`), `build.json` and `sources.json` with a `SHA256SUMS` file |
+| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `modules/pcov.so` (one `modules/<name>.so` for each of the `cli_extensions`), `php.ini-production` from the PHP source, `build.json` and `sources.json` with a `SHA256SUMS` file |
 | `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's static extensions, and the CLI, given the `cli_extensions`, loads exactly the static extensions and those |
 
 The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin` and `php/<version>/modules`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder.
