@@ -2037,7 +2037,7 @@ What is built:
 - Conn shows a server whose container is stopped as asleep. It does not wake it yet; this remains in [ADR 0250's acceptance](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance).
 - The desktop app starts these threads. The phone does not yet.
 
-The agents use their own subagents only. MCP servers come from the project's own files: `.mcp.json` for Claude Code and the project's Codex configuration.
+The agents use their own subagents only. MCP servers come from the project's own files: `.mcp.json` for Claude Code and the project's Codex configuration. In the Orbit repository, the root `.mcp.json` and `.codex/config.toml` each start one server, the Gateway's Laravel Boost (`php apps/gateway/artisan boost:mcp`). It runs in any Gateway environment, so it starts in a task copy whose Gateway is production, and offers only the documentation search, the database tools, the log entries and the last error, with no prompts. Requests, Horizon and the scheduler never load Boost.
 
 ## Tasks in an Instance container
 
