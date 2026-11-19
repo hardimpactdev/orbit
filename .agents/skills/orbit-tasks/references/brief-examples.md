@@ -232,8 +232,8 @@ All expected outcomes of the group. Read first: `apps/cli/boost.json`,
 ```json
 [
   {"id": "no-generated-block", "type": "command",
-   "description": "After the guidance command runs, neither AGENTS.md holds a generated block",
-   "command": "(cd apps/cli && composer guidance:update) && (cd apps/gateway && composer guidance:update) && ! grep -l '<laravel-boost-guidelines>' apps/cli/AGENTS.md apps/gateway/AGENTS.md",
+   "description": "Neither AGENTS.md holds a generated block, and no boost.json names guidelines, on or off",
+   "command": "! grep -l '<laravel-boost-guidelines>' apps/cli/AGENTS.md apps/gateway/AGENTS.md && ! grep -ls '\"guidelines\"' apps/cli/boost.json apps/gateway/boost.json",
    "directory": "."},
   {"id": "cli-guidance", "type": "file", "change": "modified",
    "description": "The generated block is gone", "path": "apps/cli/AGENTS.md"},
@@ -246,7 +246,7 @@ What to notice:
 
 - The outcomes state what exists afterwards. They ask for the writer of the block to go, not for a flag that turns it off.
 - The first brief said: "after the project's own guidance command runs, each `AGENTS.md` is unchanged." Its implementer committed a test in each project and set `guidelines` to `false`. The owner rejected both: such a test guards against nothing that the structure allows.
-- The one-time check is a `command` deliverable. The handoff check runs it, and nothing is committed for it.
+- The one-time check is a `command` deliverable. The handoff check runs it, and nothing is committed for it. It reads the result: the files and the writer's setting. It runs no guidance command, so the removal may take that command out too.
 - Outcome 3 is a keep-working outcome about what stays, not about the absence of the block.
 
 ## An accepted limit for a model's output
