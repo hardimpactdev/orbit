@@ -78,36 +78,6 @@
   failed_when: false
   when: phase in ['container', 'clone', 'stop', 'start']
 
-# The root device that create, clone, the grow and the start guard write and admit: instance_root_disk.py, run on the Node, is its one
-# rule (no `size` on a btrfs pool; docs/reference/development-containers.md#the-root-disk).
-- name: Read the root disk device
-  tags: [container, clone, start]
-  when: phase in ['container', 'clone', 'start']
-  block:
-    - name: Read the root pool
-      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools/{{ container.root_disk_pool | urlencode }}"] }
-      register: root_pool_read
-      changed_when: false
-    - name: Render the root disk device
-      ansible.builtin.command:
-        argv:
-          - python3
-          - -c
-          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_root_disk.py') }}"
-          - "{{ {'type': 'disk', 'path': '/', 'pool': container.root_disk_pool, 'size': container.root_disk_size} | to_json }}"
-          - "{{ (root_pool_read.stdout | from_json).driver }}"
-      register: root_disk_read
-      changed_when: false
-
-- name: Name the root disk arguments
-  tags: [container, clone, start]
-  when: phase in ['container', 'clone', 'start']
-  ansible.builtin.set_fact:
-    root_device: "{{ root_disk_read.stdout | from_json }}"
-    resource_args: >-
-      {{ config_args + (['--device'] | product((root_disk_read.stdout | from_json).items() | map('join', '=') | map('regex_replace', '^', 'root,'))
-                        | list | flatten) }}
-
 # A wake (only its intent names the asleep marker) finds one of four states (docs/reference/development-containers.md#sleep-and-wake):
 # Frozen, the sleep's state: the power helper resumes it and closes swap again, then the phase waits a short time for the web
 # unit; a silent one gets a stop and the boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
@@ -312,6 +282,36 @@
     that: not nested_image_failure.stat.exists
     fail_msg: instance.nested_fleet_image_unavailable
     quiet: true
+
+# The root device that create, clone, the grow and the start guard write and admit: instance_root_disk.py, run on the Node, is its one
+# rule (no `size` on a btrfs pool; docs/reference/development-containers.md#the-root-disk).
+- name: Read the root disk device
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start']
+  block:
+    - name: Read the root pool
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools/{{ container.root_disk_pool | urlencode }}"] }
+      register: root_pool_read
+      changed_when: false
+    - name: Render the root disk device
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_root_disk.py') }}"
+          - "{{ {'type': 'disk', 'path': '/', 'pool': container.root_disk_pool, 'size': container.root_disk_size} | to_json }}"
+          - "{{ (root_pool_read.stdout | from_json).driver }}"
+      register: root_disk_read
+      changed_when: false
+
+- name: Name the root disk arguments
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start']
+  ansible.builtin.set_fact:
+    root_device: "{{ root_disk_read.stdout | from_json }}"
+    resource_args: >-
+      {{ config_args + (['--device'] | product((root_disk_read.stdout | from_json).items() | map('join', '=') | map('regex_replace', '^', 'root,'))
+                        | list | flatten) }}
 
 # A new nested-fleet default holds its inner fleet on its own btrfs volume (a copy's intent has `inner_volume` too, but a copy runs the
 # native clone, never this phase)
