@@ -207,20 +207,17 @@ impl Job {
             Err(refused) => (with_unverified_identity(refused, &wire), format!("refused-{}", short_digest(&wire))),
             Ok(verified) => {
                 let dedup = verified.nonce().to_string();
-                match self.fetch_blobs(verified.input()).await {
-                    Err(code) => {
-                        log(&format!("content of {} unavailable: {code}", verified.operation()));
-                        let line = serde_json::json!({"status": "failed", "code": code, "operation": verified.operation(),
-                            "action": verified.action(), "target": verified.target(), "node_clock_ms": now});
-                        (line, dedup)
-                    }
-                    Ok(()) => {
-                        let line = self.run(&message, executor, verified, now, log).await;
-                        // Only the order's own result uses the nonce as its message id. A refusal, such as the replay of a
-                        // redelivered order, must never take that id, or JetStream would drop the real result as a duplicate.
-                        let dedup = if line["status"] == "refused" { format!("refused-{dedup}") } else { dedup };
-                        (line, dedup)
-                    }
+                if let Err(code) = self.fetch_blobs(verified.input()).await {
+                    log(&format!("content of {} unavailable: {code}", verified.operation()));
+                    let line = serde_json::json!({"status": "failed", "code": code, "operation": verified.operation(),
+                        "action": verified.action(), "target": verified.target(), "node_clock_ms": now});
+                    (line, dedup)
+                } else {
+                    let line = self.run(&message, executor, verified, now, log).await;
+                    // Only the order's own result uses the nonce as its message id. A refusal, such as the replay of a
+                    // redelivered order, must never take that id, or JetStream would drop the real result as a duplicate.
+                    let dedup = if line["status"] == "refused" { format!("refused-{dedup}") } else { dedup };
+                    (line, dedup)
                 }
             }
         };
