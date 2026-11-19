@@ -836,6 +836,10 @@ def run(units, budget, fixtures, times, tools=None):
                         row['status'] = 'CENSORED'
                         row['seconds'] = round((time.time_ns() // 1_000_000 - row['started_at_ms']) / 1000, 3)
                 results[index].update(result)
+                # A unit that its limit cut, with no failed assertion, is marked at once: the mark holds when the run is
+                # cancelled later, as when the check of a task copy runs out of its own time.
+                if results[index]['status'] == 'OVER BUDGET' and cut_units([results[index]]):
+                    results[index]['cut'] = True
                 times.write_text(json.dumps(results, indent=2) + '\n')
         results.sort(key=lambda result: units.index(result['unit']))
     times.write_text(json.dumps(results, indent=2) + '\n')
@@ -843,9 +847,9 @@ def run(units, budget, fixtures, times, tools=None):
         f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} | {r.get('startup_seconds', '—')} |" for r in results)
     print(table)
     summary(table)
-    # Only a run that reached its units and was not cancelled has cut units. The mark goes into the times file,
-    # which the Required job reads; the rows of a failed tool setup or a cancelled run carry none.
-    cut = [] if CANCELLED.is_set() else cut_units(results)
+    # The mark goes into the times file, which the Required job and the task check read. A unit that never started is
+    # cut only when the shard deadline kept it from starting: after a cancelled run, or a failed tool setup, it is not.
+    cut = [row for row in cut_units(results) if row.get('cut') or not CANCELLED.is_set()]
     for row in cut:
         row['cut'] = True
     times.write_text(json.dumps(results, indent=2) + '\n')

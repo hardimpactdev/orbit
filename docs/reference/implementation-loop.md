@@ -406,7 +406,7 @@ A slow check never gates. A unit that the ceiling or the deadline cut, and in wh
 
 The shard prints a warning for each cut unit. `Required checks` reads the times of every shard with `bin/ci-units cuts`, writes the cut units to its summary and posts them as one comment on the pull request. A unit that is named in every run hangs or is too slow: split it or make it faster.
 
-The check in a task copy follows the same rule: the `fixtures` part names a cut unit as `over budget, not run to the end (warning)` and does not fail on it. A unit that was cut after a failed assertion fails the part.
+The check in a task copy follows the same rule: the `fixtures` part names a cut unit as `over budget, not run to the end (warning)` and does not fail on it. A unit that was cut after a failed assertion fails the part. With a cut unit the check ends as `PASSED with incomplete coverage`, as with a deferral: CI runs the unit again.
 
 A fixture’s metadata records its measured registrations in order. Population edits select only fixtures whose records differ between the merge base and PR head, including added or removed records for sources that still exist. Formatting alone selects no fixture bodies. The loader reads the old combined files only when comparing commits from before and after the move; the current checkout has one source for each record.
 
