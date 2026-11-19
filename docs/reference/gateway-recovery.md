@@ -237,7 +237,7 @@ The scheduler restart pauses each release cleanup, such as Documents cleanup, un
 
 The release switch reloads the Gateway application. The [gateway role convergence](/cli/node/role-add) owns the PHP-FPM pool, the hibernator and agent-view units and the host retention files. The fleet pass applies changed workload role inputs after verification.
 
-The Gateway records the run's terminal result. For a host PHP-FPM release, the record includes the snapshot path. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A step before Migrate fails the record, and the old release stays live.
+The Gateway records the run's terminal result. For a host PHP-FPM release, the record includes the snapshot path. A succeeded run is `verified`, with `phases.verify.version` set, so the [fleet rollout](#fleet-rollout) follows. A verified release that is not a rollback also stamps the [deploy times](/reference/tasks#deploy-times) of the merged tasks it carries. A step before Migrate fails the record, and the old release stays live.
 
 A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and records the failed step, including a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
