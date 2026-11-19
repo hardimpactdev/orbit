@@ -156,7 +156,7 @@ it('refuses a Node whose Incus list failed, rather than passing it unread', func
 /** An activation proxy as the nested `app-dev` Node's Caddy loads it for Instance 2, with the address its upstream resolves to. */
 function parityProxy(array $change = [], ?string $without = null): string
 {
-    $proxy = array_replace_recursive(['site' => 'proofapp.nested-dev', 'instance' => 2, 'handler' => 'reverse_proxy', 'headers' => ['request' => ['set' => ['Host' => ['gateway.orbit'],
+    $proxy = array_replace_recursive(['site' => 'proofapp.nested-dev on srv0 route 0', 'instance' => 2, 'handler' => 'reverse_proxy', 'headers' => ['request' => ['set' => ['Host' => ['gateway.orbit'],
         'X-Forwarded-Method' => ['{http.request.method}'], 'X-Forwarded-Uri' => ['{http.request.uri}']]]], 'resolved' => ['10.45.0.1'],
         'rewrite' => ['method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/2'], 'transport' => ['protocol' => 'http',
             'tls' => ['root_ca_pem_files' => ['/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'], 'server_name' => 'gateway.orbit']],
@@ -174,28 +174,28 @@ it('passes an activation proxy that reaches this Gateway as the route renderer d
 
     $this->reports['10.45.0.2'] = $report(parityProxy(['rewrite' => ['method' => 'POST']]));
     $this->artisan('orbit:executor-parity')
-        ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): caddy.activation_proxy_wrong (Instance 2 at proofapp.nested-dev: method \"POST\"). Keep")
+        ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): caddy.activation_proxy_wrong (Instance 2 at proofapp.nested-dev on srv0 route 0: method \"POST\"). Keep")
         ->assertFailed();
 
     // Another Gateway: a literal upstream, or the right name resolving elsewhere on the Node.
     $this->reports['10.45.0.2'] = $report(parityProxy(['upstreams' => [['dial' => '10.45.0.9:443']], 'resolved' => ['10.45.0.9']]));
     $this->artisan('orbit:executor-parity')
-        ->expectsOutputToContain('(Instance 2 at proofapp.nested-dev: resolves to ["10.45.0.9"]; Instance 2 at proofapp.nested-dev: upstream ["10.45.0.9:443"])')
+        ->expectsOutputToContain('(Instance 2 at proofapp.nested-dev on srv0 route 0: resolves to ["10.45.0.9"]; Instance 2 at proofapp.nested-dev on srv0 route 0: upstream ["10.45.0.9:443"])')
         ->assertFailed();
     // Any address but this Gateway's, even beside it, refuses.
     $this->reports['10.45.0.2'] = $report(parityProxy(['resolved' => ['10.45.0.1', '10.45.0.9']]));
-    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2 at proofapp.nested-dev: resolves to ["10.45.0.1","10.45.0.9"])')->assertFailed();
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2 at proofapp.nested-dev on srv0 route 0: resolves to ["10.45.0.1","10.45.0.9"])')->assertFailed();
 
     // The asleep-marker route finds the proxy, so a removed or wrong rewrite refuses too.
     $this->reports['10.45.0.2'] = $report(parityProxy(without: 'rewrite'));
-    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2 at proofapp.nested-dev: URI null; Instance 2 at proofapp.nested-dev: method null)')->assertFailed();
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2 at proofapp.nested-dev on srv0 route 0: URI null; Instance 2 at proofapp.nested-dev on srv0 route 0: method null)')->assertFailed();
     $this->reports['10.45.0.2'] = $report(parityProxy(['rewrite' => ['uri' => '/api/v1/runtime-activations/app-instance/3']]));
-    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2 at proofapp.nested-dev: URI "/api/v1/runtime-activations/app-instance/3")')->assertFailed();
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2 at proofapp.nested-dev on srv0 route 0: URI "/api/v1/runtime-activations/app-instance/3")')->assertFailed();
 
     // Each site of an Instance counts: a right first site does not cover a broken second one.
-    $this->reports['10.45.0.2'] = $report(parityProxy(), parityProxy(['site' => 'second.nested-dev'], 'rewrite'));
+    $this->reports['10.45.0.2'] = $report(parityProxy(), parityProxy(['site' => 'proofapp.nested-dev on srv1 route 0'], 'rewrite'));
     $this->artisan('orbit:executor-parity')
-        ->expectsOutputToContain('(Instance 2 at second.nested-dev: URI null; Instance 2 at second.nested-dev: method null)')
+        ->expectsOutputToContain('(Instance 2 at proofapp.nested-dev on srv1 route 0: URI null; Instance 2 at proofapp.nested-dev on srv1 route 0: method null)')
         ->assertFailed();
 });
 
@@ -216,14 +216,19 @@ it('finds the activation proxy of every site on the Node by its asleep-marker ro
         ['handle' => [['handler' => 'subroute', 'routes' => [['match' => $asleep($id), 'handle' => [$handler]]]]]],
         ['handle' => [['handler' => 'reverse_proxy', 'rewrite' => ['uri' => '/api/v1/runtime-activations/app-instance/9'], 'upstreams' => [['dial' => 'unix//run/php.sock']]]]],
     ]]], 'terminal' => true];
-    // Two sites of one Instance: the second one's proxy lost its rewrite, and is read on its own.
+    // One Instance on three sites: a second host, and the same host on a second listener (bridge and WireGuard). Each is read on
+    // its own, so a right first site covers neither one whose proxy lost its rewrite.
     $unrewritten = ['handler' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:443']]];
-    $config = ['apps' => ['http' => ['servers' => ['srv0' => ['routes' => [$site('b.test', 2, $unrewritten), $site('a.test', 2, $proxy)]]]]]];
+    $config = ['apps' => ['http' => ['servers' => ['srv0' => ['routes' => [$site('b.test', 2, $unrewritten), $site('a.test', 2, $proxy)]],
+        'srv1' => ['routes' => [$site('a.test', 2, $unrewritten)]]]]]];
     $process = new Process(['python3', '-I', '-c', (new ReflectionClassConstant(ExecutorParity::class, 'Proxies'))->getValue()]);
     $process->setInput(json_encode($config, JSON_THROW_ON_ERROR))->mustRun();
 
     unset($proxy['handle_response']);
     expect(array_map(static fn (string $line): mixed => json_decode($line, true), explode("\n", trim($process->getOutput()))))
-        ->toEqual([[...$proxy, 'site' => 'a.test', 'instance' => 2, 'resolved' => ['127.0.0.1']],
-            [...$unrewritten, 'site' => 'b.test', 'instance' => 2, 'resolved' => ['127.0.0.1']]]);
+        ->toEqual([[...$proxy, 'site' => 'a.test on srv0 route 1', 'instance' => 2, 'resolved' => ['127.0.0.1']],
+            [...$unrewritten, 'site' => 'a.test on srv1 route 0', 'instance' => 2, 'resolved' => ['127.0.0.1']],
+            [...$unrewritten, 'site' => 'b.test on srv0 route 0', 'instance' => 2, 'resolved' => ['127.0.0.1']]]);
+    // The read passes the script inside single quotes to `sh -c`.
+    expect((new ReflectionClassConstant(ExecutorParity::class, 'Proxies'))->getValue())->not->toContain("'");
 });

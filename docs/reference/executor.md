@@ -102,7 +102,7 @@ A visit to a sleeping Instance reaches the Gateway through its site's activation
 
 So the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
 
-The check reads every site on its own, one top-level route of a Caddy server named by its host. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. It resolves that proxy's upstream host there to every address, with `getaddrinfo`. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
+The check reads every site on its own. A site is one top-level route of one Caddy server, named by its host, server and index, so a private clone's host on the bridge and on the WireGuard listener is two sites. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. It resolves that proxy's upstream host there to every address, with `getaddrinfo`. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
 
 | Field | Expected today |
 | --- | --- |
@@ -112,9 +112,11 @@ The check reads every site on its own, one top-level route of a Caddy server nam
 | `Host` header and TLS server name | `gateway.orbit` |
 | Addresses the upstream resolves to on the Node | Only this Gateway's WireGuard address: the active Node with the active `gateway` role. Any other address fails, even beside it |
 
-Each difference fails the Node with `caddy.activation_proxy_wrong`, for example `Instance 2 at proofapp.nested-dev: method "POST"` or `Instance 2 at proofapp.nested-dev: resolves to ["10.45.0.9"]`. A Node with no sleep-capable site has no activation proxy and passes this part.
+Each difference fails the Node with `caddy.activation_proxy_wrong`, for example `Instance 2 at proofapp.nested-dev on srv0 route 0: method "POST"` or `Instance 2 at proofapp.nested-dev on srv0 route 0: resolves to ["10.45.0.9"]`. A Node with no sleep-capable site has no activation proxy and passes this part.
 
-Subtask 5912 proved it on the nested fleet, against the loaded config of container default Instance 2's route on `nested-app-dev`. The check passed. With the route's activation method changed to POST through Caddy's admin API, it failed with `caddy.activation_proxy_wrong (Instance 2: method "POST")`. With the upstream changed to the app-prod Node's address, it failed with `Instance 2: resolves to ["10.45.0.3"]; Instance 2: upstream ["10.45.0.3:443"]`. With the rewrite removed from the proxy, it failed with `Instance 2: URI null; Instance 2: method null`. With the original config loaded again, byte for byte, it passed each time. With a second site for Instance 2 loaded, the check passed; with only that site's rewrite removed, it failed with `Instance 2 at second.nested-dev: URI null; Instance 2 at second.nested-dev: method null`; restored, it passed.
+Subtask 5912 proved it on the nested fleet, against the loaded config of container default Instance 2's route on `nested-app-dev`. The check passed. With the route's activation method changed to POST through Caddy's admin API, it failed with `caddy.activation_proxy_wrong (Instance 2: method "POST")`. With the upstream changed to the app-prod Node's address, it failed with `Instance 2: resolves to ["10.45.0.3"]; Instance 2: upstream ["10.45.0.3:443"]`. With the rewrite removed from the proxy, it failed with `Instance 2: URI null; Instance 2: method null`. With the original config loaded again, byte for byte, it passed each time.
+
+With a second site for Instance 2 loaded, the check passed; with only that site's rewrite removed, it failed with `Instance 2 at second.nested-dev: URI null; Instance 2 at second.nested-dev: method null`; restored, it passed. With the same host also on a second server, `bridge` on the Instance bridge, only the WireGuard server's rewrite removed failed with `Instance 2 at proofapp.nested-dev on srv0 route 0: URI null`; restored, it passed.
 
 systemd only starts the executor at boot and restarts it after a crash. No systemd call, script, path unit or socket unit sits on an action's path.
 

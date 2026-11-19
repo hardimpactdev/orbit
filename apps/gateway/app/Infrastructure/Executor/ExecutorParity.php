@@ -53,7 +53,7 @@ final readonly class ExecutorParity
     /**
      * Finds each Instance's activation proxy the way the executor's Caddy guard does: by the route renderer's asleep-marker matcher
      * (`file` with `try_files /app-instance-<id>.asleep`), not by the rewrite. A site is one top-level route of a Caddy server,
-     * named by its host matcher. For each site and Instance it prints one JSON line: the first handler other than `vars` that a
+     * named by its host, server and index: the same host on two listeners is two sites. For each site and Instance it prints one JSON line: the first handler other than `vars` that a
      * marked visit to that site reaches, without its response routes, with `site`, `instance` and `resolved`, every address its
      * upstreams' hosts resolve to on the Node (null when one does not resolve).
      */
@@ -82,7 +82,7 @@ final readonly class ExecutorParity
         for server, config in sorted(servers.items()):
             for index, route in enumerate(config.get("routes") or []):
                 hosts = [host for matcher in route.get("match") or [] for host in matcher.get("host") or []]
-                walk(",".join(hosts) or f"{server} route {index}", route)
+                walk((",".join(hosts) or "no host") + f" on {server} route {index}", route)
         for (site, instance), found in sorted(handlers.items()):
             handler = next((h for h in found if isinstance(h, dict) and h.get("handler") != "vars"), None) or {}
             proxy = {key: handler[key] for key in handler if key != "handle_response"}
