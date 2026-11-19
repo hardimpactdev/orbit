@@ -30,10 +30,10 @@ final readonly class ContainerHostPaths
     private const string Literal = '~\A[A-Za-z0-9._/+@%=-]+\z~D';
 
     /**
-     * A Node's managed headless Chrome (swamp/ansible/tasks/node-converge-browser.yml): its sha256 release folder, or a
-     * version folder that an older host kept. Chrome is not version-pinned like Node: any of them maps to the runtime folder's one.
+     * A Node's managed headless Chrome (swamp/ansible/tasks/node-converge-browser.yml): its `releases/<sha256>` folder, or
+     * a Chrome version folder that an older host kept. Chrome is not version-pinned like Node: either maps to the runtime folder's one.
      */
-    private const string HostChrome = '~\A/opt/orbit/chrome-headless-shell/(?:releases/)?[A-Za-z0-9._-]+/chrome-headless-shell-linux64/chrome-headless-shell\z~D';
+    private const string HostChrome = '~\A/opt/orbit/chrome-headless-shell/(?:releases/[0-9a-f]{64}|[0-9]+(?:[.][0-9]+)*)/chrome-headless-shell-linux64/chrome-headless-shell\z~D';
 
     public function __construct(private ContainerProcessCommands $commands, private CurrentRecipe $recipes) {}
 
@@ -71,7 +71,7 @@ final readonly class ContainerHostPaths
         }
         if (preg_match('~\A/opt/orbit/vite-plus/(?:bin/(?<tool>[a-z][a-z0-9-]*)|js_runtime/node/(?<version>[^/]+)/bin/(?<node>node|npm|npx))\z~D', $path, $match) === 1) {
             $name = ($match['node'] ?? '') !== '' ? $match['node'] : $match['tool'];
-            if ($this->commands->supportsName($name)) {
+            if ($name !== 'chrome-headless-shell' && $this->commands->supportsName($name)) {
                 $runtime = $this->commands->version($name);
                 if (($match['node'] ?? '') !== '' && $match['version'] !== $runtime) {
                     throw new ResourceOperationException('deployment.host_path_unsupported',

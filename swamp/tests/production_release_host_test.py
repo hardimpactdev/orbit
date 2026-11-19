@@ -48,12 +48,21 @@ class ProductionReleaseHostTest(unittest.TestCase):
         install.__globals__["guest"] = lambda name, *args, **kwargs: calls.append((name, args, kwargs.get("stdin")))
         files = [{"path": "/etc/ld.so.conf.d/zz-orbit-browser.conf", "content": "/opt/orbit-runtime/current/lib\n"},
                  {"path": "/etc/fonts/fonts.conf", "content": "<fontconfig/>\n"}]
-        install("prepare-instance-4", files)
+        install("prepare-instance-4", {"runtime": "/opt/orbit-runtime/a", "browser_files": files})
         self.assertEqual([(call[1][-1], call[2]) for call in calls[:2]], [(item["path"], item["content"]) for item in files])
         self.assertEqual(calls[-1], ("prepare-instance-4", ("ldconfig",), None))
         calls.clear()
         with self.assertRaises(ValueError):
-            install("prepare-instance-4", [{"path": "/etc/sudoers.d/x", "content": "x"}])
+            install("prepare-instance-4", {"browser_files": [{"path": "/etc/sudoers.d/x", "content": "x"}]})
+        self.assertEqual(calls, [])
+
+    def test_preparer_installs_no_browser_files_from_a_config_an_earlier_converge_wrote(self):
+        module = runpy.run_path(str(ROOT / "ansible/files/instance-release-prepare.py"))
+        install = module["install_browser_files"]
+        calls = []
+        install.__globals__["guest"] = lambda name, *args, **kwargs: calls.append((name, args))
+        install("prepare-instance-4", {"node_id": 4, "pool": "orbit-releases", "network": "orbitinst0",
+                                       "proxy": "http://10.0.0.1:3128", "runtime": "/opt/orbit-runtime/a"})
         self.assertEqual(calls, [])
 
     def test_public_and_private_routes_bind_to_the_same_approved_instance(self):
