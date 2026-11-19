@@ -6,4 +6,4 @@ The [pipeline](../docs/reference/command-development-pipeline.mdx) owns delivery
 
 No local documentation grants authority for credentials, DNS, production data moves or deleting production resources. Follow the current execution plan for ownership and approval.
 
-For the Swamp CLI reference, read [Swamp's upstream guidance](../.agents/swamp-upstream/README.md). It is generic, not Orbit policy, and loads only on request. `swamp repo upgrade` writes its block and skills into this folder and `.agents/skills`; move them back as [Refresh the bundled Swamp skills](../docs/contributor-guide.md#refresh-the-bundled-swamp-skills) says.
+For the Swamp CLI reference, read [Swamp's upstream guidance](../.agents/swamp-upstream/README.md). It is generic, not Orbit policy, and loads only on request. Do not run `swamp repo upgrade` in place: it writes its block into this file and its skills into your home's skill folders, where every session loads them. Refresh as [Refresh the bundled Swamp skills](../docs/contributor-guide.md#refresh-the-bundled-swamp-skills) says.

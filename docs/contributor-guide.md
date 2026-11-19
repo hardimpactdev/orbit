@@ -351,12 +351,24 @@ Swamp's upstream guidance lives in [`.agents/swamp-upstream`](https://github.com
 The original import (`916ef2ac5e93f7caeb0041b6322c09b08ca28b9e`) ran `swamp repo upgrade --tool claude --tool codex`, then committed the installed user skills. Upstream's `SkillAssets.copySkillsTo` copies the files listed in `BUNDLED_SKILLS` byte-for-byte from `.claude/skills`; it excludes eval fixtures. A refresh ends in the same layout:
 
 1. Clone `https://github.com/swamp-club/swamp.git` into `.amp/in/orb-backup/swamp-upstream` and check out the full commit matching the runtime pin. Verify its full SHA before continuing.
-2. From `swamp/`, run `swamp repo upgrade --tool claude --tool codex` with the pinned binary. It writes the managed block at the top of `swamp/AGENTS.md`.
-3. From the Orbit root, run this Python code. It moves the block to `.agents/swamp-upstream/managed-section.md`, replaces both skill folders from upstream and records their hashes.
+2. From the Orbit root, run the upgrade with the pinned binary in a disposable repository and user home. The upgrade installs both skills into the user's `~/.claude/skills` and `~/.agents/skills`, writes `.claude/settings.local.json` and prepends the managed block to `AGENTS.md`. Run in place, it would make the skills load again in every session.
+
+```sh
+export SWAMP_SCRATCH="$(mktemp -d)"
+mkdir "$SWAMP_SCRATCH/home" "$SWAMP_SCRATCH/repo"
+cp swamp/.swamp.yaml swamp/AGENTS.md "$SWAMP_SCRATCH/repo/"
+ln -s AGENTS.md "$SWAMP_SCRATCH/repo/CLAUDE.md"
+(cd "$SWAMP_SCRATCH/repo" && env HOME="$SWAMP_SCRATCH/home" XDG_CONFIG_HOME="$SWAMP_SCRATCH/home/.config" \
+  XDG_DATA_HOME="$SWAMP_SCRATCH/home/.local/share" XDG_CACHE_HOME="$SWAMP_SCRATCH/home/.cache" \
+  swamp repo upgrade --tool claude --tool codex)
+```
+
+3. From the same shell, run this Python code. It copies the block to `.agents/swamp-upstream/managed-section.md`, replaces both skill folders from upstream and records their hashes.
 
 ```python
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -367,11 +379,10 @@ commit = subprocess.check_output(['git', '-C', str(upstream), 'rev-parse', 'HEAD
 version = re.search(r'^swampVersion: (\S+)$', Path('swamp/.swamp.yaml').read_text(), re.M)[1]
 assert commit.startswith(version.split('-sha.')[1])
 home = Path('.agents/swamp-upstream')
-rules = Path('swamp/AGENTS.md')
+generated = Path(os.environ['SWAMP_SCRATCH'], 'repo/AGENTS.md').read_text()
 end = '<!-- END swamp managed section -->\n'
-before, block, after = re.split(r'(<!-- BEGIN swamp managed section - DO NOT EDIT -->\n.*?' + re.escape(end) + ')', rules.read_text(), flags=re.S)
+block = re.search(r'<!-- BEGIN swamp managed section - DO NOT EDIT -->\n.*?' + re.escape(end), generated, re.S)[0]
 (home / 'managed-section.md').write_text(block)
-rules.write_text((before + after).lstrip('\n'))
 source = upstream / 'src/infrastructure/assets/skill_assets.ts'
 bundled = source.read_text().split('const BUNDLED_SKILLS:', 1)[1].split('\n];', 1)[0]
 paths = sorted(re.findall(r'relativePath:\s*"([^"]+)"', bundled))
@@ -396,7 +407,7 @@ manifest = {
 (home / 'swamp-source.json').write_text(json.dumps(manifest, indent=2) + '\n')
 ```
 
-4. Run `git status`. Delete any other file the upgrade wrote into the repository, such as a skill folder under `.agents/skills` or a `.claude/rules/swamp.md`. Restore unrelated changes to repository metadata.
+4. Remove the disposable copy with `rm -rf "$SWAMP_SCRATCH"`. `git status` shows changes only under `.agents/swamp-upstream`; `swamp/AGENTS.md` and your own home are untouched.
 5. Review the upstream diff of `.agents/swamp-upstream`, including scripts and any MCP configuration, and confirm every imported file matches that commit. Run `python3 -m unittest discover -s tools -p test_ci_swamp_skills.py`.
 
 CI runs this read-only drift check of the skill files in its existing CI policy suite, without a Swamp account, network access or an upstream checkout. It rejects content changes, missing or extra files, and a runtime pin that differs from the manifest. The manifest is a reviewed snapshot, not an independent upstream lookup. A runtime update requires a fresh import and manifest in the same change.
