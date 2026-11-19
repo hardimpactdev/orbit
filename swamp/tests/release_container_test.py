@@ -503,6 +503,48 @@ class ReleaseTest(unittest.TestCase):
         with patch.object(Path, "read_text", return_value=meminfo), patch("subprocess.check_output", return_value=pool):
             self.assertEqual(release.capacity_estimate((0, 0, 0), (2 * gib, gib, 0), "pool", reclaim=False)["required_bytes"]["swap"], 0)
 
+    def node(self, *, swap, pool_total, pool_used=0, ram=6):
+        """A Node whose files say how much memory and swap it has, and a pool of the given size."""
+        gib = 1024**3
+        files = {"/proc/meminfo": f"MemAvailable: {ram * gib // 1024} kB\nSwapFree: {swap // 1024} kB",
+                 "/proc/swaps": "Filename\tType\tSize\tUsed\tPriority\n" + ("/swap.img\tfile\t1\t0\t-2\n" if swap else "")}
+        # Incus omits a zero used count, as for an empty pool.
+        pool = json.dumps({"space": {"total": pool_total, **({"used": pool_used} if pool_used else {})}})
+        stack = __import__("contextlib").ExitStack()
+        stack.enter_context(patch.object(Path, "read_text", autospec=True, side_effect=lambda path: files[str(path)]))
+        stack.enter_context(patch("subprocess.check_output", return_value=pool))
+        return stack
+
+    def test_a_small_release_fits_a_small_pool_on_a_node_without_swap(self):
+        gib, mib = 1024**3, 1024**2
+        # A 10 GiB file pool with 9.5 GiB usable and 0.5 GiB used, and a 700 MiB release.
+        with self.node(swap=0, pool_total=19 * gib // 2, pool_used=gib // 2):
+            result = release.capacity_estimate((gib, 0, 0), (gib, gib, 0), "pool", release=700 * mib)
+        self.assertEqual(result["required_bytes"], {"ram": 3 * gib, "swap": 0, "pool": 700 * mib + gib})
+
+    def test_an_empty_pool_counts_as_unused(self):
+        gib = 1024**3
+        with self.node(swap=0, pool_total=10 * gib):
+            available = release.capacity_estimate((gib, 0, 0), (gib, gib, 0), "pool", release=gib)["available_bytes"]
+        self.assertEqual(available["pool"], 10 * gib)
+
+    def test_a_release_that_does_not_fit_the_pool_is_refused(self):
+        gib = 1024**3
+        with self.node(swap=0, pool_total=19 * gib // 2, pool_used=gib // 2), \
+                self.assertRaisesRegex(ValueError, "pool needs"):
+            release.capacity_estimate((gib, 0, 0), (gib, gib, 0), "pool", release=17 * gib // 2)
+
+    def test_the_pool_keeps_a_tenth_free_on_a_large_pool(self):
+        gib = 1024**3
+        with self.node(swap=8 * gib, pool_total=100 * gib):
+            required = release.capacity_estimate((gib, 0, 0), (gib, gib, 0), "pool", release=gib)["required_bytes"]
+        self.assertEqual((required["pool"], required["swap"]), (11 * gib, gib))
+
+    def test_a_node_with_swap_still_needs_swap_for_the_parked_preparation(self):
+        gib = 1024**3
+        with self.node(swap=gib // 2, pool_total=20 * gib), self.assertRaisesRegex(ValueError, "swap needs"):
+            release.capacity_estimate((gib, 0, 0), (gib, gib, 0), "pool", release=gib)
+
     def test_delayed_wake_cannot_claim_the_preparer_from_a_newer_build(self):
         with patch.object(release, "instance", return_value=record("prepare-instance-8", "prepare")), patch.object(release, "power") as power_call:
             with self.assertRaisesRegex(ValueError, "preparation_changed"):
