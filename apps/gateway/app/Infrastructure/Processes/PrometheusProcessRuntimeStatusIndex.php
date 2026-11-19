@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Domain\AgentView\AgentProcessView;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Infrastructure\Metrics\GrafanaPrometheusClient;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
+use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -118,8 +120,19 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
     {
         $owners = $processes->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type))->pluck('owner_id')->unique()->all();
         $runtimes = InstanceRuntime::query()->whereIn('instance_id', $owners)->with('instance.node')->get()->keyBy('instance_id');
+        $releases = Instance::query()->whereIn('id', $owners)->where(fn ($query) => $query->whereNotNull('production_release_started_at')->orWhereNotNull('production_release'))->with('node')->get()->keyBy('id');
         $pairs = [];
         foreach ($processes as $process) {
+            if (Instance::isMorphType($process->owner_type) && ($instance = $releases->get($process->owner_id)) instanceof Instance) {
+                $pairs[] = ['instance' => $instance, 'process' => $process];
+
+                continue;
+            }
+            if (GatewayReleaseHost::hasProcess($process) && $process->owner instanceof Node && GatewayReleaseHost::target($process->owner) !== null) {
+                $pairs[] = ['instance' => $process->owner, 'process' => $process];
+
+                continue;
+            }
             if (Instance::isMorphType($process->owner_type) && ($runtime = $runtimes->get($process->owner_id)) !== null) {
                 $runtime->instance->setRelation('runtime', $runtime);
                 $pairs[] = ['instance' => $runtime->instance, 'process' => $process];

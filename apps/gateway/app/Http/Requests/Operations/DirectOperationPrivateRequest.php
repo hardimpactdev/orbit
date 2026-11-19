@@ -18,7 +18,7 @@ final class DirectOperationPrivateRequest extends DirectOperationRequest
         $operation = $this->route('operation');
         if ($operation instanceof Operation) {
             app(DirectOperationPrivateBindings::class)->assertParticipant($operation, $peer);
-            $definition = app(DirectOperation::class)->definition($operation->kind);
+            $definition = app(DirectOperation::class)->definition($operation);
             $transport = $this->isMethod('GET') ? 'private_material' : 'secret_outputs';
             if ($operation->node_id !== $peer && ($definition[$transport] ?? []) === []) {
                 throw new ResourceOperationException('operation.executor_forbidden', 'This Node has no declared private transport.', 403);

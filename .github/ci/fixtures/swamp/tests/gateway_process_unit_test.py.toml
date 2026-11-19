@@ -1,0 +1,11 @@
+file = "swamp/tests/gateway_process_unit_test.py"
+cost = 1
+inputs = [
+  "swamp/ansible/files/gateway-web/orbit-gateway-unit",
+]
+cases = [
+  "test_failure_to_match_revision_or_acquire_lock_never_controls_a_unit",
+  "test_changes_replay_off_traffic_without_starting_background_work",
+  "test_drain_and_reads_do_not_change_the_next_release",
+  "test_another_unit_or_environment_path_is_refused",
+]

@@ -358,6 +358,11 @@ final readonly class GatewayReleaseRecorder
     {
         $path = $this->pauseMarkerPath();
 
+        if ($release->trigger === 'reconcile') {
+            // Recovering the serving definitions neither changes the schema nor releases a pre-migration backup.
+            return;
+        }
+
         if ($release->outcome !== 'paused') {
             // Only a verified release clears a pause: `resumed` checked serving, not the schema the pause is about.
             if ($release->outcome === 'verified' && is_file($path)) {
@@ -405,7 +410,7 @@ final readonly class GatewayReleaseRecorder
     /** @param array<string, mixed> $properties */
     private function activity(string $trigger, string $outcome, int $durationMs, ?string $errorCode, array $properties): void
     {
-        $succeeded = $outcome === 'verified';
+        $succeeded = in_array($outcome, ['verified', 'reconciled'], true);
 
         try {
             Activity::query()->create([

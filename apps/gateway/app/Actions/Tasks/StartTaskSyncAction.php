@@ -6,10 +6,10 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
-use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskSyncIntent;
+use App\Domain\Tasks\TaskTurn;
 use App\Models\Operation;
 use App\Models\Task;
 
@@ -27,7 +27,7 @@ final readonly class StartTaskSyncAction
         // `tasks.no_workspace` from the capture.
         $copy = TaskInstanceWorkspace::forGroup($group) !== null;
         $validate = $copy ? static function (Task $group): void {
-            TaskCopyTurn::refuseUnended($group);
+            TaskTurn::refuseUnended($group);
         } : static function (): void {};
 
         return $this->operations->start($group, OperationKinds::TasksSync, [], $validate, $triggeredBy, $requestId, $this->intent->capture(...));

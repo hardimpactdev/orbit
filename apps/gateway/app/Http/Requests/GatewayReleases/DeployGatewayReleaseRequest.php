@@ -15,6 +15,7 @@ final class DeployGatewayReleaseRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'reconcile' => ['sometimes', 'boolean:strict'],
             'commit' => ['required', 'string', 'regex:/\A[0-9a-f]{40}\z/D'],
         ];
     }
@@ -23,7 +24,7 @@ final class DeployGatewayReleaseRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['commit']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['commit', 'reconcile']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }

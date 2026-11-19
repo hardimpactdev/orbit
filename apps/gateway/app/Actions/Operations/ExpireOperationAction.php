@@ -111,6 +111,16 @@ final readonly class ExpireOperationAction
             && is_array($timeout) && ! isset($timeout['native_terminal_status']);
     }
 
+    /** A timed-out native run may still finish after its target hold was released. */
+    public static function needsTerminalReceipt(Operation $operation): bool
+    {
+        $timeout = $operation->state['native_timeout'] ?? null;
+
+        return self::awaitsSettlement($operation) || ($operation->status === OperationStatus::Failed
+            && $operation->error_code === 'operation.timed_out' && is_array($timeout)
+            && ! isset($timeout['no_run_verified_at']) && in_array($timeout['native_terminal_status'] ?? null, [null, 'unproven'], true));
+    }
+
     public static function awaitsSettlement(Operation $operation): bool
     {
         return $operation->status === OperationStatus::Failed && $operation->error_code === 'operation.timed_out' && $operation->lock_key !== null;
@@ -156,7 +166,7 @@ final readonly class ExpireOperationAction
 
         return DB::transaction(function () use ($operation, $runId, $status): Operation {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            if (! self::awaitsSettlement($current)) {
+            if (! self::needsTerminalReceipt($current)) {
                 return $current;
             }
             app(DirectOperation::class)->assertRun($current, $runId);

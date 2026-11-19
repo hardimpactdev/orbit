@@ -308,7 +308,8 @@ class _Lock:
     """An exclusive lock on one of the Node's publication lock files, taken by util-linux `flock` on an inherited descriptor: the lock
     belongs to the open file description, so it outlives the `flock` process until this context closes the descriptor."""
 
-    def __init__(self, path, run, seconds, busy):
+    def __init__(self, path, run, seconds, busy, *, shared=False):
+        self.shared = shared
         self.path, self.run, self.seconds, self.busy, self.stream = path, run, seconds, busy, None
 
     def __enter__(self):
@@ -324,7 +325,7 @@ class _Lock:
             raise WithdrawFailure("route.publish_lock_invalid", "The lock must be a regular file of the publisher that no group or other may write.")
         # Another writer may have created it with its default umask: from now on only the publisher may open it.
         os.fchmod(self.stream.fileno(), 0o600)
-        rc, _, stderr = self.run(["flock", "--exclusive", "--timeout", f"{max(self.seconds, 0.1):.1f}", "--conflict-exit-code", "75",
+        rc, _, stderr = self.run(["flock", "--shared" if self.shared else "--exclusive", "--timeout", f"{max(self.seconds, 0.1):.1f}", "--conflict-exit-code", "75",
                                   str(self.stream.fileno())], pass_fds=(self.stream.fileno(),))
         if rc != 0:
             self.stream.close()
@@ -335,6 +336,16 @@ class _Lock:
 
     def __exit__(self, *_):
         self.stream.close()
+
+
+def release_resource_lock(path, run, *, shared=False, seconds=60):
+    """Serialize release state with the same inode checks and FD lifetime as the Caddy publisher."""
+    return _Lock(path, run, seconds, "deployment.resource_busy", shared=shared)
+
+
+def caddy_publication_lock(run, seconds=60, *, path=Path("/etc/caddy/.orbit-publish.lock")):
+    """Share Caddy's inode-checked publication transaction with native release controllers."""
+    return _Lock(path, run, seconds, "caddy.publish_busy")
 
 
 class _File:
@@ -660,7 +671,7 @@ def publish(plan, run, *, root="/", wait=30, caddy_gid=None):
     previous = at("/var/lib/orbit/route-previous")
     previous.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(previous, 0o700)
-    with _Lock(at("/etc/caddy/.orbit-publish.lock"), run, wait, "caddy.publish_busy"):
+    with caddy_publication_lock(run, wait, path=at("/etc/caddy/.orbit-publish.lock")):
         caddy = _File(at("/etc/caddy/Caddyfile"), previous / "Caddyfile", (os.geteuid(), caddy_gid or os.getegid()), 0o640)
         current = caddy.text()
         composed, owned = compose_publication(plan, current)

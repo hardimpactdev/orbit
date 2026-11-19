@@ -48,9 +48,7 @@ final readonly class NodeRoleRuntimeInput
     {
         $this->assignment($node, $assignment);
         // The role whose converge runs the Instance container branch allocates the Node's bridge.
-        if (app(InstanceHostIntent::class)->role($node) === $assignment->role) {
-            app(InstanceHostIntent::class)->prepare($node);
-        }
+        app(InstanceHostIntent::class)->prepare($node, [$assignment->role->value]);
         if ($assignment->role === RoleName::Metrics) {
             $this->metricsSecrets->passwordForConvergence($node);
         } elseif ($assignment->role === RoleName::WebSocket) {

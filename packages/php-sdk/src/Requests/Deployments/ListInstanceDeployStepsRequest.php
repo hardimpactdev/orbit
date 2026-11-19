@@ -35,6 +35,7 @@ final class ListInstanceDeployStepsRequest extends GatewayRequest
                 is_string($step['phase'] ?? null) ? $step['phase'] : '',
                 is_string($step['command'] ?? null) ? $step['command'] : '',
                 is_int($step['timeout_seconds'] ?? null) ? $step['timeout_seconds'] : 0,
+                required: ($step['required'] ?? true) !== false,
             );
         }
 

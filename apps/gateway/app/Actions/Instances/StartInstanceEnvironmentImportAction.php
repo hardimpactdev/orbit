@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Operations\OperationIdempotency;
@@ -26,9 +27,14 @@ final readonly class StartInstanceEnvironmentImportAction
         InstanceContainer::assertCheckout($instance);
 
         return DB::transaction(function () use ($instance, $replace, $caller, $requestId): Operation {
-            $context = $this->contexts->resolve($instance->refresh(), true);
+            $target = ProductionContainerRelease::target($instance->refresh());
+            $context = $this->contexts->resolve($instance, true, productionContainer: $target !== null);
             $input = ['instance_id' => $instance->id, 'replace' => $replace,
                 'direct_import' => ['node_id' => $context->nodeId, 'base' => $context->path, 'user' => $context->executionUser]];
+
+            if ($target !== null) {
+                $input['production_control'] = $target;
+            }
 
             return $this->operations->execute('instance.env_import', 'instance', $instance->id, $instance->node_id,
                 $input, $caller, $requestId);

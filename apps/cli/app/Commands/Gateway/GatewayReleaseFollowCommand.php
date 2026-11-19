@@ -296,6 +296,7 @@ abstract class GatewayReleaseFollowCommand extends GatewayCommand
 
         return match ($record->outcome) {
             'verified' => $record->trigger === 'rollback' ? "Rolled back to release {$release}." : "Release {$release} is live.",
+            'reconciled' => "Reconciled the serving release {$release}.",
             'switched_back' => "Release {$release} failed and was switched back.",
             'paused' => "Release {$release} failed after migrations. Automatic releases are paused.",
             'interrupted' => "Release {$release} was interrupted.",

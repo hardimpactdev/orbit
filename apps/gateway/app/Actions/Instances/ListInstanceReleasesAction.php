@@ -17,6 +17,13 @@ final readonly class ListInstanceReleasesAction
     {
         $instance->refresh();
 
+        if ($instance->production_release !== null && $instance->placedOnAppProd()) {
+            $state = $instance->production_release;
+            $names = array_map(static fn (string $sha): string => substr($sha, 0, 12), array_values(array_filter([$state['live'], $state['old']])));
+
+            return new DeploymentReleaseState($names, substr($state['live'], 0, 12));
+        }
+
         // A development default deploys in its checkout and has no releases.
         if ($instance->placedOnAppDev() && $instance->name === 'default') {
             return new DeploymentReleaseState([], null);

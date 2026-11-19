@@ -22,12 +22,11 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
-use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Infrastructure\GatewayReleases\SwampGrantRenderer;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Process;
 use Illuminate\Support\Facades\Config;
 use Throwable;
 
@@ -50,12 +49,21 @@ final readonly class AdmitSwampGatewayReleaseAction
     ) {}
 
     /**
-     * A rollback is a forced release of a retained release's commit: the build reuses the sealed release, and the
-     * load brings back that commit's workflows. Migrations are expand and contract, so it runs on the current schema.
+     * A containerized Gateway returns to its stopped old release; the unmoved host releases a retained worktree.
      */
     public function rollback(string $release): GatewayRelease
     {
         $id = GatewayReleaseCommit::assertId($release);
+        if ($this->layout->usesContainers()) {
+            $inventory = $this->layout->observe();
+            if ($inventory->current === $id) {
+                throw new GatewayReleaseException('rollback', 'gateway.release_already_current', "Release [{$id}] is already current.", 422);
+            }
+            $old = $inventory->commits[$id] ?? throw new GatewayReleaseException('rollback', 'gateway.release_not_prepared',
+                "Release [{$id}] is not the stopped old release of this Gateway.", 422);
+
+            return $this->execute($old, force: true, trigger: 'rollback');
+        }
         $sha = $this->layout->preparedCommit($id)
             ?? throw new GatewayReleaseException('rollback', 'gateway.release_not_prepared', "Release [{$id}] is not a retained release.", 422);
         if ($this->layout->currentReleaseId() === $id) {
@@ -74,7 +82,18 @@ final readonly class AdmitSwampGatewayReleaseAction
         if (FleetReboot::open() instanceof Operation) {
             throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'A fleet reboot pass is running.', 409);
         }
-        $previous = $this->layout->isAdopted() ? $this->layout->currentReleaseId() : null;
+        $inventory = $this->layout->observe();
+        $previous = $inventory->current;
+        $container = $this->layout->usesContainers();
+        // A container rollback selects only the stopped old release. Any other older commit is a forward-only deploy.
+        $rollback = $container && $trigger === 'rollback';
+        if ($rollback && ($previous === GatewayReleaseCommit::id($commit) || ! in_array($commit, $inventory->commits, true))) {
+            throw new GatewayReleaseException('rollback', 'gateway.release_not_prepared', 'Only the stopped old release of this Gateway can be restored.', 422);
+        }
+        if ($container && ! $rollback && ($force ||
+            ($trigger !== 'reconcile' && in_array($commit, $inventory->commits, true) && $previous !== GatewayReleaseCommit::id($commit)))) {
+            throw $this->forwardOnly();
+        }
         if ($previous === null) {
             throw new GatewayReleaseException('deploy', 'gateway.release_not_adopted', 'The Gateway is not running from a release. Run gateway:release:adopt first.');
         }
@@ -82,24 +101,56 @@ final readonly class AdmitSwampGatewayReleaseAction
             throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The automatic release candidate already serves.');
         }
         $gateway = GatewayCommandNode::find() ?? throw new GatewayReleaseException('deploy', 'gateway.release_gateway_node_missing', 'No active Gateway Node exists.', 500);
-        $delivery = $this->agent->fetch($commit, $gateway);
-        $web = $this->web->select($commit);
-        $horizon = GatewayHorizon::find($gateway);
+        $reconcile = $trigger === 'reconcile';
+        if ($reconcile && (! $container || ($inventory->commits[$previous] ?? null) !== $commit)) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_reconcile_not_live', 'Reconciliation requires the full commit of the serving Gateway container.', 409);
+        }
+        if (! $reconcile && $container && $previous === GatewayReleaseCommit::id($commit)) {
+            throw new GatewayReleaseException('deploy', 'gateway.release_already_current', 'This release already serves traffic.', 409);
+        }
+
+        if ($rollback) {
+            // Old keeps its sealed build, web assets and agent manifest. Nothing is fetched or published.
+            $publication = ['retained' => true];
+        } elseif ($reconcile) {
+            $checkout = $this->layout->currentPath();
+            if (trim((string) @file_get_contents($checkout.'/REVISION')) !== $commit) {
+                throw new GatewayReleaseException('deploy', 'gateway.release_reconcile_not_live', 'This Gateway process is running another commit.', 409);
+            }
+            $publication = ['reconcile' => true, 'grants' => app(SwampGrantRenderer::class)->render($checkout.'/swamp')];
+        } else {
+            $delivery = $this->agent->fetch($commit, $gateway);
+            $web = $this->web->select($commit);
+            $publication = [
+                'manifest' => $delivery['manifest'],
+                'repository' => $web['repository'],
+                'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
+            ];
+        }
+        $horizon = GatewayHorizon::releaseUnit($gateway, $this->layout->usesContainers());
 
         // The lock keeps the release unit and a second admission out until the run owns its record.
-        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $delivery, $web, $horizon, $gateway, $expectedServingSha): GatewayRelease {
+        return $this->lock->run(function () use ($commit, $force, $trigger, $previous, $publication, $horizon, $gateway, $container, $expectedServingSha): GatewayRelease {
+            // An automatic record that waits for its commit's publication is superseded by begin().
             if ($trigger === 'auto') {
                 $this->assertAutomaticState($expectedServingSha, $commit);
             } else {
                 $this->assertReleaseIdle();
             }
-            // A release that went live during the checks above is the one a failed check switches back to.
-            if ($this->layout->currentReleaseId() !== $previous) {
+            // Admission must still have the same serving release after external publication checks.
+            if ($this->layout->usesContainers() !== $container || $this->layout->currentReleaseId() !== $previous || ($trigger === 'reconcile'
+                && (! $this->layout->usesContainers() || $this->layout->preparedCommit($previous) !== $commit))
+                || ($container && $trigger === 'rollback' && $this->layout->preparedCommit(GatewayReleaseCommit::id($commit)) !== $commit)) {
                 throw new GatewayReleaseException('deploy', 'gateway.release_in_progress', 'The current release changed during admission.', 409);
             }
 
-            return $this->admit($commit, $force, $trigger, $previous, $delivery['manifest'], $web, $horizon, $gateway);
+            return $this->admit($commit, $force, $trigger, $previous, $publication, $horizon, $gateway);
         });
+    }
+
+    private function forwardOnly(): GatewayReleaseException
+    {
+        return new GatewayReleaseException('deploy', 'gateway.release_downgrade', 'The containerized Gateway deploys newer commits only. Roll back to the stopped old release, deploy a corrective commit, or reconcile the serving revision.', 409);
     }
 
     /** Call under the release lock, before storing either an admission or its preflight refusal. */
@@ -128,13 +179,13 @@ final readonly class AdmitSwampGatewayReleaseAction
     }
 
     /**
-     * @param  array{repository: string, artifact_id: int, size: int, digest: string}  $web
+     * @param  array{repository?: string, reconcile?: true, retained?: true, grants?: array<string, string>, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
-    private function admit(string $commit, bool $force, string $trigger, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): GatewayRelease
+    private function admit(string $commit, bool $force, string $trigger, string $previous, array $publication, string $horizon, Node $gateway): GatewayRelease
     {
         $record = $this->recorder->begin($trigger, $commit, null, $force) ?? throw new GatewayReleaseException('deploy', 'gateway.release_record_failed', 'The release record cannot be written.', 500);
         try {
-            $operation = $this->start($record, $commit, $force, $previous, $manifest, $web, $horizon, $gateway);
+            $operation = $this->start($record, $commit, $force, $previous, $publication, $horizon, $gateway);
         } catch (Throwable $exception) {
             // Swamp may run a start it did not confirm: the record stays running under its Operation, which the shared
             // observer settles.
@@ -160,19 +211,18 @@ final readonly class AdmitSwampGatewayReleaseAction
     }
 
     /**
-     * @param  array{repository: string, artifact_id: int, size: int, digest: string}  $web
+     * @param  array{repository?: string, reconcile?: true, retained?: true, grants?: array<string, string>, manifest?: string, web?: array{artifact_id: int, size: int, digest: string}}  $publication
      */
-    private function start(GatewayRelease $record, string $commit, bool $force, string $previous, string $manifest, array $web, ?Process $horizon, Node $gateway): Operation
+    private function start(GatewayRelease $record, string $commit, bool $force, string $previous, array $publication, string $horizon, Node $gateway): Operation
     {
         return $this->operations->execute('gateway.release', 'gateway_release', $record->id, SwampNode::id(), [
             'sha' => $commit,
+            ...($this->layout->usesContainers() ? ['target' => 'gateway'] : []),
             'id' => GatewayReleaseCommit::id($commit),
             'force' => $force,
             'previous' => $previous,
-            'repository' => $web['repository'],
-            'manifest' => $manifest,
-            'web' => ['artifact_id' => $web['artifact_id'], 'size' => $web['size'], 'digest' => $web['digest']],
-            'horizon_unit' => $horizon === null ? '' : new SystemdProcessRenderer()->unitName($horizon),
+            ...$publication,
+            'horizon_unit' => $horizon,
             'horizon_drain_seconds' => GatewayHorizon::drainSeconds(),
             'keep' => max(2, Config::integer('orbit.gateway_releases.keep')),
             'ssh' => $this->ssh->forNode($gateway),

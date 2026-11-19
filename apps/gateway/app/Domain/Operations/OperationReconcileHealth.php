@@ -171,7 +171,7 @@ final class OperationReconcileHealth
                 ->orWhere(fn ($query) => $query->whereNull('started_at')->where('created_at', '<', $before)));
         foreach ($rows->lazyById() as $operation) {
             // Fleet's selector-less roots are also read by the reconciler's generic failure reader.
-            if (! isset($direct->definition($operation->kind)['terminal_result']) || $direct->usesNativeTerminal($operation)) {
+            if (! isset($direct->definition($operation)['terminal_result']) || $direct->usesNativeTerminal($operation)) {
                 return true;
             }
         }

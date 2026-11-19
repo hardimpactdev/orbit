@@ -2,16 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\SwampRoleUnits;
 use App\Domain\Operations\OperationBudgetTable;
 use App\Infrastructure\Shared\ShutdownFastStop;
 
-it('caps a run in serve at the longest fixed budget, so the cap is in git and survives a trigger publish', function (): void {
+it('lets serve complete both fixed operations and the longest admitted production release', function (): void {
     $serve = SwampRoleUnits::for('orbit', 209)['serve'];
 
     expect(OperationBudgetTable::longestFixedSeconds())->toBeGreaterThanOrEqual(10800)
-        ->and($serve)->toContain(' --max-run-duration '.OperationBudgetTable::longestFixedSeconds().' ');
+        ->and($serve)->toContain(' --max-run-duration '.max(OperationBudgetTable::longestFixedSeconds(),
+            2 * ProductionContainerRelease::MaximumPhaseSeconds + ProductionContainerRelease::HandoverBudgetSeconds).' ');
 });
 
 it('lets a SIGTERM drain a cold refresh dispatch before systemd kills the worker', function (): void {

@@ -39,7 +39,7 @@ machinery_canary = [
   "swamp/tests/ansible_instance_migrate_source_test.ts",
   "swamp/tests/ansible_gateway_swamp_pin_test.ts",
 ]
-# ADR 0262 step 2 names each file here: it cannot fit the self-hosted shards when selected. Units that fit run;
+# ADR 0262 step 2 names each file here: it cannot always fit the shards when selected. Units that fit run;
 # the rest are named "not run" in the plan and do not block the merge. Overflow of any other file fails Required.
 capacity_gap = [
   "swamp/tests/ansible_instance_migrate_preflight_test.ts",
@@ -48,6 +48,11 @@ capacity_gap = [
   # A case above the 150-second lane on the self-hosted pool; ADR 0262 names each case.
   "swamp/tests/ansible_instance_host_test.ts",
   "swamp/tests/ansible_wireguard_hub_lan_rules_test.py",
+  # The two largest hosted files: 70 units and 2,462 of the 4,160 declared seconds that 16 hosted shards hold.
+  # With other selected work, as in a plan that also carries undelivered main revisions, they pass runner_shards.
+  # A hosted gap applies only when other changes select the file; a change to the file itself runs all its units.
+  "swamp/tests/ansible_task_copy_turn_test.ts",
+  "swamp/tests/ansible_instance_host_image_test.ts",
 ]
 
 [runner-pool]
@@ -121,8 +126,10 @@ inputs = [
   "!swamp/**/*.mdx",
   "!swamp/**/*.mmd",
 ]
-cost = 92
-ceiling = 240
+# Hosted runs 44412013872 and 44413193830: a shard job takes 54 to 80 seconds, about 35 of them setup.
+# The ceiling keeps a run with cold dependency caches inside its limit.
+cost = 80
+ceiling = 180
 
 [check.gateway-real-clients]
 inputs = [

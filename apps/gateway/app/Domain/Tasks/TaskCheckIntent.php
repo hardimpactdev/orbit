@@ -67,7 +67,7 @@ final readonly class TaskCheckIntent
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
         $ci = $input->phase === TaskCheckKind::Handoff ? $group->project->handoffCheckName() : null;
         $container->requireReady();
-        TaskCopyTurn::refuseUnended($group);
+        TaskTurn::refuseUnended($group);
         TaskInstanceWorkspace::refuseUnavailable($ci);
         $workspace = $container->intent();
         if ($ci !== null && $repository === null) {

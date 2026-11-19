@@ -236,6 +236,8 @@ An Instance on `app-prod` with no selected release accepts a stopped Process. A 
 
 ## Operate a Process
 
+On a container Gateway, commands for the Node’s Horizon and scheduler Processes operate on the serving release. Their definitions and requested state survive a release switch. A command naming a superseded release refuses the change.
+
 The Gateway exposes these Process endpoints.
 
 Without a target, the list returns only Processes on Nodes the caller may reach, including their Instance-owned Processes. [Gateway authority](/cli/node#authority) permits the fleet-wide list.

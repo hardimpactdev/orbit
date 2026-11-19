@@ -23,6 +23,10 @@ final readonly class FilesystemGatewayReleaseObserver implements GatewayReleaseO
             throw $this->failed();
         }
 
+        if ($layout->usesContainers()) {
+            return $this->containers($layout, $runningApplication);
+        }
+
         $currentPath = $layout->currentPath();
         $current = $this->owned($currentPath);
         $superseded = false;
@@ -64,6 +68,72 @@ final readonly class FilesystemGatewayReleaseObserver implements GatewayReleaseO
         }
 
         return new GatewayReleaseInventory($currentId, $state, $superseded, $commits, $incomplete, array_map(strval(...), array_keys($modified)));
+    }
+
+    private function containers(GatewayReleaseLayout $layout, ?string $runningApplication): GatewayReleaseInventory
+    {
+        $path = $layout->containerInventoryPath();
+        $status = $this->owned($path);
+        if ($status === null || ($status['mode'] & 0170000) !== 0100000 || $status['size'] > 4096) {
+            throw $this->failed();
+        }
+
+        $contents = file_get_contents($path, length: 4097);
+        $record = is_string($contents) ? json_decode($contents, true) : null;
+        if (! is_array($record) || ! in_array($record['version'] ?? null, [1, 2], true) || ! array_key_exists('old', $record)) {
+            throw $this->failed();
+        }
+
+        $commits = [];
+        foreach (['live', 'old'] as $key) {
+            $sha = $record[$key] ?? null;
+            if ($key === 'old' && $sha === null) {
+                continue;
+            }
+
+            if (! is_string($sha) || ! GatewayReleaseCommit::isSha($sha) || isset($commits[GatewayReleaseCommit::id($sha)])) {
+                throw $this->failed();
+            }
+            $commits[GatewayReleaseCommit::id($sha)] = $sha;
+        }
+
+        $superseded = false;
+        if ($runningApplication !== null) {
+            $revision = @file_get_contents(dirname($runningApplication, 2).'/REVISION', length: 42);
+            if (! is_string($revision) || ! GatewayReleaseCommit::isSha(trim($revision))) {
+                throw $this->failed();
+            }
+            $superseded = trim($revision) !== $record['live'];
+        }
+
+        $ids = array_map(strval(...), array_keys($commits));
+
+        $hostRetired = $record['host_retired'] ?? false;
+        if (! is_bool($hostRetired) || ($record['version'] === 1 && $hostRetired && count($ids) !== 2)) {
+            throw $this->failed();
+        }
+
+        // Every stopped release a rollback can start: old, and the earlier one kept while live is unverified. An
+        // inventory written before the rename names that one pending.
+        $parked = array_values(array_slice($commits, 1));
+        foreach (['earlier', 'pending'] as $key) {
+            $stopped = $record[$key] ?? null;
+            if ($stopped === null) {
+                continue;
+            }
+            if (! is_string($stopped) || ! GatewayReleaseCommit::isSha($stopped) || in_array($stopped, $commits, true) || in_array($stopped, $parked, true)) {
+                throw $this->failed();
+            }
+            $parked[] = $stopped;
+        }
+        // Only an inventory from before verification was recorded, without the field, trusts the releases it holds.
+        $verified = array_key_exists('verified', $record) ? $record['verified'] : array_values($commits);
+        if (! is_array($verified) || ! array_is_list($verified)
+            || array_filter($verified, static fn (mixed $sha): bool => ! is_string($sha) || ! GatewayReleaseCommit::isSha($sha)) !== []) {
+            throw $this->failed();
+        }
+
+        return new GatewayReleaseInventory($ids[0], 'adopted', $superseded, $commits, [], $ids, $hostRetired, $parked, $verified);
     }
 
     /** The release the current path links to, or null for an in-place checkout or a link to anything else. */

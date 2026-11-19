@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""Check or provision the release container host. Does not admit a release or switch traffic."""
+import argparse
+import fcntl
+import hashlib
+import ipaddress
+import json
+import os
+import platform
+import pwd
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+from contextlib import contextmanager
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+ANSIBLE = ROOT / "swamp/ansible"
+SERVICE_HOME = Path("/home/orbit")
+JOURNAL = Path("/var/lib/orbit/gateway-release-switch")
+NETWORK = "orbitgw0"
+PRIVATE_SUBNETS = tuple(map(ipaddress.IPv4Network, ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")))
+
+
+def run(*args):
+    return subprocess.run(list(args), text=True, capture_output=True, check=True, timeout=120).stdout.strip()
+
+
+def network_plan(bridge, wireguard, uplink, routes, addresses):
+    interface = ipaddress.IPv4Interface(bridge)
+    subnet = interface.network
+    if (not any(subnet.subnet_of(private) for private in PRIVATE_SUBNETS) or interface.ip != subnet.network_address + 1
+            or not 16 <= subnet.prefixlen <= 28):
+        raise ValueError("choose the first address in an unused private IPv4 /16 to /28 subnet")
+    interfaces = {link["ifname"]: link for link in addresses}
+    if wireguard == uplink or NETWORK in (wireguard, uplink) or uplink not in interfaces or wireguard not in interfaces:
+        raise ValueError("specify the Gateway's distinct WireGuard and uplink interfaces")
+    for route in routes:
+        dst = route.get("dst", "default")
+        if dst != "default" and route.get("dev") != NETWORK and subnet.overlaps(ipaddress.ip_network(dst)):
+            raise ValueError(f"release subnet overlaps existing route {dst}")
+    wg = [v["local"] for v in interfaces[wireguard]["addr_info"] if v["family"] == "inet" and v["scope"] == "global"]
+    if len(wg) != 1 or not any(ipaddress.IPv4Address(wg[0]) in private for private in PRIVATE_SUBNETS):
+        raise ValueError("WireGuard must have one private IPv4 address")
+    return {"bridge": str(interface), "subnet": str(subnet), "wireguard": wireguard, "wg_address": wg[0], "uplink": uplink}
+
+
+def runtime_plan(recipe):
+    incus = []
+    for name in ("incus-base", "incus-client", "incus"):
+        pin = recipe["tools"][name]["artifacts"]["amd64"]
+        digest = pin["sha256"]
+        urls = [pin["url"]]
+        if recipe["artifact_mirror"]:
+            urls.insert(0, recipe["artifact_mirror"] + "/" + name + "_" + digest + ".deb")
+        incus.append({"name": name, "version": pin["version"], "sha256": digest, "urls": urls})
+    php = recipe["instances"]["php"]["versions"]["8.5"]
+    composer = recipe["instances"]["runtime"]["composer"]["artifacts"]["amd64"]
+    runtime_id = hashlib.sha256((php["sha256"] + composer["sha256"]).encode()).hexdigest()[:16]
+    return {"incus": {"line": ".".join(recipe["tools"]["incus"]["version"].split(".")[:2]), "packages": incus},
+            "php": php, "composer": composer, "runtime_dir": "/opt/orbit-gateway-runtime/" + runtime_id}
+
+
+def validate_storage(dataset, available, swaps, release_bytes):
+    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*(?:/[A-Za-z0-9][A-Za-z0-9_.:-]*)*", dataset)
+            or any(part in (".", "..") for part in dataset.split("/"))):
+        raise ValueError("invalid parent ZFS dataset")
+    if int(available) < release_bytes:
+        raise ValueError(f"parent ZFS dataset has {available} bytes free, below the current release size of {release_bytes} bytes")
+    if not any(int(row.split()[2]) > int(row.split()[3]) for row in swaps.splitlines()[1:]):
+        raise ValueError("provision active swap with free space before preparing the Gateway")
+    return dataset + "/orbit-gateway-releases"
+
+
+def verify_archive(path, expected):
+    if not re.fullmatch("[a-f0-9]{64}", expected) or not path.is_file():
+        raise ValueError("supply the trusted stock-image archive and its full SHA-256 fingerprint")
+    with path.open("rb") as image:
+        if hashlib.file_digest(image, "sha256").hexdigest() != expected:
+            raise ValueError("stock image does not match its supplied fingerprint")
+
+
+GATEWAY_WORKLOADS = r"""
+require $argv[1].'/vendor/autoload.php';
+$app = require $argv[1].'/bootstrap/app.php';
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$problem = App\Domain\GatewayReleases\GatewayReleaseHost::initialWorkloadProblem();
+if ($problem !== null) { echo json_encode(['problem' => $problem], JSON_THROW_ON_ERROR); return; }
+$host = null;
+if (config('queue.connections.gateway.driver') === 'redis') {
+    App\Infrastructure\Gateway\GatewayQueueRedis::configure();
+    $host = config('database.redis.gateway.host');
+}
+echo json_encode(['queue' => $host], JSON_THROW_ON_ERROR);
+"""
+
+
+def verify_queue(host):
+    if not host:
+        return
+    addresses = {result[4][0] for result in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)}
+    if not addresses or any(ipaddress.ip_address(a).is_loopback or ipaddress.ip_address(a).is_unspecified for a in addresses):
+        raise ValueError("the Gateway queue resolves to host loopback; select its reachable private Valkey Database connection before the move")
+
+
+def preflight(args):
+    if sys.platform != "linux" or os.uname().machine != "x86_64" or os.geteuid() != 0:
+        raise ValueError("run this on the x86_64 Linux Gateway as root")
+    os_release = platform.freedesktop_os_release()
+    if (os_release["ID"], os_release["VERSION_ID"]) != ("ubuntu", "26.04"):
+        raise ValueError("the pinned Gateway release packages require Ubuntu 26.04")
+    if not re.fullmatch(r"[a-zA-Z0-9_.-]{1,15}", args.wireguard) or not re.fullmatch(r"[a-zA-Z0-9_.-]{1,15}", args.uplink):
+        raise ValueError("invalid interface name")
+    checks = (("zfs", "provision the approved ZFS parent dataset and install zfsutils-linux on this Node"),
+              ("wg", "install the WireGuard Node role"), ("nft", "the release bridge requires nftables"),
+              ("ufw", "the release bridge requires UFW"), ("ip", "install iproute2"))
+    for program, reason in checks:
+        if not shutil.which(program):
+            raise ValueError(reason)
+    if args.wireguard not in run("wg", "show", "interfaces").split():
+        raise ValueError("specified interface is not a WireGuard interface")
+    net = network_plan(args.bridge, args.wireguard, args.uplink, json.loads(run("ip", "-4", "-j", "route")),
+                       json.loads(run("ip", "-j", "addr")))
+    release_bytes = int(run("du", "-sb", "--", str((SERVICE_HOME / "orbit").resolve(strict=True))).split()[0])
+    available = int(run("zfs", "get", "-Hp", "-o", "value", "available", args.dataset))
+    dataset = validate_storage(args.dataset, available, Path("/proc/swaps").read_text(), release_bytes)
+    print(f"Selected ZFS dataset has {available} bytes available; the current release tree uses {release_bytes} bytes.", flush=True)
+    verify_archive(args.stock_image, args.stock_sha256)
+    account = pwd.getpwnam("orbit")
+    if account.pw_dir != str(SERVICE_HOME) or account.pw_uid == 0 or account.pw_gid == 0:
+        raise ValueError("unexpected Gateway service account")
+    for path in (SERVICE_HOME / ".orbit", SERVICE_HOME / "shared/gateway.env", SERVICE_HOME / "shared/gateway-storage"):
+        if path.is_symlink() or path.stat().st_uid != account.pw_uid:
+            raise ValueError(f"unexpected Gateway state ownership: {path}")
+    if (SERVICE_HOME / "shared/gateway.env").stat().st_mode & 0o077:
+        raise ValueError("gateway.env must be private to the Gateway account")
+    if not (SERVICE_HOME / ".orbit/gateway.sqlite").is_file() or not Path("/etc/orbit/agent/ca.pem").is_file():
+        raise ValueError("missing managed Gateway database or root CA")
+    if (SERVICE_HOME / ".orbit/gateway-containers.json").exists():
+        raise ValueError("the Gateway already serves from containers; use release deployment for an active Gateway")
+    workload = json.loads(run("runuser", "-u", "orbit", "--", "php8.5", "-r", GATEWAY_WORKLOADS, str(SERVICE_HOME / "orbit/apps/gateway")))
+    if "problem" in workload:
+        raise ValueError(workload["problem"])
+    verify_queue(workload["queue"])
+    info = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/recipe.json").read_text()))
+    return {**net, **info, "dataset": dataset, "stock_image": str(args.stock_image.resolve()), "stock_sha256": args.stock_sha256,
+            "uid": account.pw_uid, "gid": account.pw_gid, "source": str(ROOT)}
+
+
+@contextmanager
+def admission_lock():
+    state = SERVICE_HOME / ".orbit"
+    lock = state / "gateway-release.lock"
+    if not lock.exists():
+        run("runuser", "-u", "orbit", "--", "touch", lock)
+    with os.fdopen(os.open(lock, os.O_RDWR | os.O_NOFOLLOW), "r+") as opened:
+        try:
+            fcntl.flock(opened, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError("another Gateway release or configuration is active") from error
+        if (JOURNAL / "operation").exists():
+            raise ValueError("recover the interrupted Gateway switch with --recover before replacing its helpers")
+        if (state / "gateway-containers.json").exists():
+            raise ValueError("the Gateway has already moved to release containers")
+        yield
+
+
+def apply_playbook(name, plan):
+    playbook = "/opt/orbit/ansible/venv/bin/ansible-playbook"
+    if not Path(playbook).is_file():
+        raise ValueError("install the managed Orbit Ansible runtime first")
+    with tempfile.NamedTemporaryFile("w", prefix="orbit-gateway-release-", dir="/run") as variables:
+        json.dump({"release_host": plan}, variables)
+        variables.flush()
+        env = {**os.environ, "ANSIBLE_CONFIG": str(ANSIBLE / "ansible.cfg")}
+        subprocess.run([playbook, "-i", "localhost,", "-c", "local", "-e", "@" + variables.name,
+                        str(ANSIBLE / name)], cwd=ANSIBLE, env=env, check=True, stdout=sys.stderr)
+
+
+def release_runtime():
+    plan = runtime_plan(json.loads((ROOT / "apps/gateway/resources/machine-software/recipe.json").read_text()))
+    path = Path(plan["runtime_dir"])
+    if not path.exists():
+        apply_playbook("gateway-container-runtime.yml", plan)
+    if not all(os.access(path / tool, os.X_OK) for tool in ("php/8.5/bin/php", "php/8.5/bin/frankenphp", "bin/composer")):
+        raise ValueError("selected immutable Gateway runtime is incomplete")
+    print(path)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument("--apply", action="store_true")
+    parser.add_argument("--dataset", required=True, help="approved parent ZFS dataset; a dedicated child holds the release pool")
+    parser.add_argument("--bridge", required=True, help="private gateway address with prefix, e.g. 10.254.10.1/24")
+    parser.add_argument("--wireguard", required=True)
+    parser.add_argument("--uplink", required=True)
+    parser.add_argument("--stock-image", required=True, type=Path, help="verified Orbit Ubuntu 26.04 stock image archive")
+    parser.add_argument("--stock-sha256", required=True)
+    args = parser.parse_args()
+    plan = preflight(args)
+    if args.check:
+        print("Gateway storage, swap, image, queue endpoint and network passed preflight.")
+        return
+    with admission_lock():
+        apply_playbook("gateway-container-prepare.yml", plan)
+
+
+if __name__ == "__main__":
+    try:
+        if sys.argv[1:] == ["--release-runtime"]:
+            release_runtime()
+        else:
+            main()
+    except subprocess.CalledProcessError as error:
+        sys.exit(f"Gateway preparation failed at {error.cmd[0]} (exit {error.returncode}).")
+    except (OSError, KeyError, ValueError) as error:
+        sys.exit(str(error))

@@ -6,7 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyAgent;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -62,8 +62,8 @@ final readonly class UpdateTaskGroupAction
                 $locked->pr_mode = $data->prMode;
             }
             if ($data->agents !== []) {
-                TaskCopyAgent::assertChangeable($locked, $data->agents);
-                $locked->fill(TaskCopyAgent::groupColumns($data->agents));
+                TaskAgent::assertChangeable($locked, $data->agents);
+                $locked->fill(TaskAgent::groupColumns($data->agents));
             }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;

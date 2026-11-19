@@ -1,0 +1,21 @@
+command: gateway:release:deploy
+chart: gateway/release-deploy
+target: gateway
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "Release two commits from the same preparation checkout with active Operations. Observe at most three Gateway containers at every step: preparation promoted to the candidate, live and the stopped old with autostart off. Verify private readiness, public traffic and new jobs on the selected release, and that the second release deletes the earlier old only after its public check, then recreates preparation from the new live. After the first verification, check that no cleanup Task exists while the stopped old can still serve. After the second release deletes it, check that its cleanup step filed one cleanup Task for each eligible retained version."
+  retry: "Interrupt preparation before sealing. Retry and verify that partial web assets cannot enter the release."
+  recovery: "Hold a request and a Horizon job across cutover. Keep the outgoing container until both finish, then stop it as old. Fail private readiness before switch and public verification after switch. Roll back to the stopped old through native Swamp and with Swamp down through orbit-gateway-rollback. Interrupt a release and a rollback after the journal commit and before the drain ends, and finish each with --recover."
+cases:
+  - id: invalid-commit
+    batch: fresh-fleet
+    covers: []
+    summary: Reject an incomplete commit locally before admitting a release.
+    act:
+      - cli:
+          run: [gateway:release:deploy, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: gateway.release_commit_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

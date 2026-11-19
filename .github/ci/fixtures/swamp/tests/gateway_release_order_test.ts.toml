@@ -1,13 +1,26 @@
 order = 770
 cases = [
   "no release step admits a task VM image refresh: the VM refresh triggers are gone",
+  "container rollback checks the retained Git object before workflow load",
   "Swamp load requires the bounded DB busy guard, including forced releases",
   "the Gateway check reads the root CA under the private certificate folder as root",
   "the nested-fleet refresh is admitted after successful verify and the new Horizon start, best effort, once per release",
+  "the sealed web build precedes clone; sleep can start in parallel with candidate preparation",
+  "only host PHP-FPM drains Horizon before the switch",
+  "only a verified public switch retires the former live container; pruning follows the handover",
+  "failure cleanup runs after every handover outcome",
+  "failed web installation cannot migrate even when its clone is skipped",
+  "cleanup resumes only after scheduler handover or switch-back has ended",
+  "serving reconciliation brackets the retained workflow load with read-only checks",
+  "Gateway and AppProd share the clone, handover, compensation and readback boundaries",
+  "a Gateway rollback starts the stopped old without fetch, web, clone or migration and still checks it",
 ]
 file = "swamp/tests/gateway_release_order_test.ts"
 cost = 1
 inputs = [
+  "swamp/workflows/workflow-production-release.yaml",
+  "swamp/workflows/workflow-production-release-activate.yaml",
+  "swamp/workflows/workflow-gateway-operation-cleanup.yaml",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -15,4 +28,5 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/workflows/workflow-gateway-release-activate.yaml",
   "swamp/workflows/workflow-operation-gateway-release.yaml",
+  "swamp/workflows/workflow-operation-gateway-reconcile.yaml",
 ]

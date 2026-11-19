@@ -1,0 +1,11 @@
+#!/bin/bash
+# Stable Node entry point for the Swamp production-release workflow.
+set -euo pipefail
+target=$1 phase=$2 sha=$3 operation=$4
+shift 4
+[[ $sha =~ ^[a-f0-9]{40}$ && $operation =~ ^[1-9][0-9]*$ ]] || exit 64
+if [[ $target == gateway ]]; then
+  exec /usr/local/libexec/orbit-gateway-release-phase "$phase" "$sha" "$operation" "$@"
+fi
+[[ $target =~ ^instance-([1-9][0-9]*)$ && $# == 0 ]] || exit 64
+exec /usr/local/libexec/orbit-instance-release-phase "$phase" "${BASH_REMATCH[1]}" "$sha" "$operation"

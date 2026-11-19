@@ -70,6 +70,7 @@ final class InstanceDeployStepsController extends Controller
                     $request->hasCommand(),
                     $request->hasPhase(),
                     $request->hasTimeout(),
+                    $request->has('required') ? $request->boolean('required') : null,
                 ),
             )->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],

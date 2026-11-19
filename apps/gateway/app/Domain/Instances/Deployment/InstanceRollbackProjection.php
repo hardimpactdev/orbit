@@ -6,7 +6,10 @@ namespace App\Domain\Instances\Deployment;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\DirectOperationWorkflowChoice;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
@@ -18,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  * The full rollback intent for the native run, and its outcome from Swamp's own run data (docs/cli/instance/rollback.mmd).
  * The rollback row records the result; its commit and the commits it moved away from come from admission and history.
  */
-final readonly class InstanceRollbackProjection implements DirectOperationProjection, DirectOperationTimeout
+final readonly class InstanceRollbackProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
 {
     /** Each chart step and the error code its failure records. */
     private const array Codes = [
@@ -36,8 +39,27 @@ final readonly class InstanceRollbackProjection implements DirectOperationProjec
         private SwampSshExecutionInput $ssh,
     ) {}
 
+    public function workflow(Operation $operation): string
+    {
+        return isset($operation->input['production_release']) ? ProductionContainerRelease::Workflow : 'operation-instance-rollback';
+    }
+
+    public function workflowInput(Operation $operation): array
+    {
+        return isset($operation->input['production_release']) ? app(ProductionContainerRelease::class)->workflowInput($operation) : $this->input($operation);
+    }
+
+    public function refused(Operation $operation): void
+    {
+        $this->timedOut($operation);
+    }
+
     public function input(Operation $operation): array
     {
+        if (isset($operation->input['production_release'])) {
+            return ['intent' => $operation->input['production_release']];
+        }
+
         $release = ValidatedData::string($operation->input['release']);
         $deployment = ValidatedData::object($operation->input['deployment']);
         $home = ValidatedData::string($deployment['home']);
@@ -65,6 +87,10 @@ final readonly class InstanceRollbackProjection implements DirectOperationProjec
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if (isset($operation->input['production_release'])) {
+            return app(ProductionContainerRelease::class)->apply($operation, $data);
+        }
+
         return DB::transaction(function () use ($operation, $data): Operation {
             $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $wasTerminal = $locked->status->terminal();

@@ -39,6 +39,8 @@ Enable and disable the extension with `orbit extension:enable tasks` and `orbit 
 
 ## Model
 
+A verified Gateway release can file a backlog Task in its source Project for an Operation version that has stopped accepting new work and finished its last run. The brief identifies the retained handlers and workflows to review. Repeated releases keep the same Task. See [Operation versions across a Gateway release](/reference/operations#operation-versions-across-a-gateway-release).
+
 A task is one row in the `tasks` table. A row with no `parent_id` is a top-level task: the Tasks board shows it, and it is one feature or bug fix delivered as one pull request. A row with `parent_id` is a subtask of that parent. A subtask has no children.
 
 A top-level task holds the task workspace, the branch, the reviewed pull request, the watched pull request, the current reviewer thread, and the settle metrics. A subtask holds its position, its deliverables, its implementer thread, its task checks, and its turn receipts. Both levels store a title, a brief, a status, assistance, comments, and metrics. The Gateway rejects a value in a column that the level does not use.
@@ -914,7 +916,7 @@ Every subtask shares the group's task copy, with name and branch `task-{id}` and
 
 A new task requires an active container default with a ready seed, including for a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) enabled. Its workspace is a task copy: a clone named and branched `task-{id}`, which the task owns from its create. There is no VM fallback. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
-The copy clones the seed of the Node it is placed on (`TaskCopyStart::seed`). Today that is always the default's Node, so it clones the default's seed. On a CI Node it would clone that Node's [seed holder](/reference/development-containers#the-seed-on-each-ci-node), and a Node whose seed is not the default's current seed refuses with `tasks.copy_source_unavailable`.
+The copy clones the seed of the Node it is placed on (`TaskStart::seed`). Today that is always the default's Node, so it clones the default's seed. On a CI Node it would clone that Node's [seed holder](/reference/development-containers#the-seed-on-each-ci-node), and a Node whose seed is not the default's current seed refuses with `tasks.copy_source_unavailable`.
 
 The copy's agents follow the Project's own [agent instructions](/reference/development-containers#agent-instructions) from its Documents. `task:start` reads them before its admission transaction, so a copy keeps the version of its start.
 

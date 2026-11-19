@@ -31,7 +31,7 @@ final readonly class AgentWatchListAction
     {
         $services = [];
         foreach ($node->roles()->get() as $role) {
-            foreach ($this->services->forRole($role->role) as $service) {
+            foreach ($this->services->forRole($role->role, $node) as $service) {
                 $services[$service.'.service'] = true;
             }
         }
