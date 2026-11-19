@@ -508,7 +508,8 @@ class ReleaseTest(unittest.TestCase):
         gib = 1024**3
         files = {"/proc/meminfo": f"MemAvailable: {ram * gib // 1024} kB\nSwapFree: {swap // 1024} kB",
                  "/proc/swaps": "Filename\tType\tSize\tUsed\tPriority\n" + ("/swap.img\tfile\t1\t0\t-2\n" if swap else "")}
-        pool = json.dumps({"space": {"total": pool_total, "used": pool_used}})
+        # Incus omits a zero used count, as for an empty pool.
+        pool = json.dumps({"space": {"total": pool_total, **({"used": pool_used} if pool_used else {})}})
         stack = __import__("contextlib").ExitStack()
         stack.enter_context(patch.object(Path, "read_text", autospec=True, side_effect=lambda path: files[str(path)]))
         stack.enter_context(patch("subprocess.check_output", return_value=pool))
@@ -520,6 +521,12 @@ class ReleaseTest(unittest.TestCase):
         with self.node(swap=0, pool_total=19 * gib // 2, pool_used=gib // 2):
             result = release.capacity_estimate((gib, 0, 0), (gib, gib, 0), "pool", release=700 * mib)
         self.assertEqual(result["required_bytes"], {"ram": 3 * gib, "swap": 0, "pool": 700 * mib + gib})
+
+    def test_an_empty_pool_counts_as_unused(self):
+        gib = 1024**3
+        with self.node(swap=0, pool_total=10 * gib):
+            available = release.capacity_estimate((gib, 0, 0), (gib, gib, 0), "pool", release=gib)["available_bytes"]
+        self.assertEqual(available["pool"], 10 * gib)
 
     def test_a_release_that_does_not_fit_the_pool_is_refused(self):
         gib = 1024**3

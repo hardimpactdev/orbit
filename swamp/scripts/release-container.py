@@ -139,7 +139,7 @@ def capacity_estimate(preparation, served, pool, reclaim=True, release=None):
         ["incus", "--force-local", "query", f"/1.0/storage-pools/{pool}/resources"], text=True, timeout=30,
     )
     space = json.loads(pool_info)["space"]
-    available = {"ram": meminfo["MemAvailable"], "swap": meminfo["SwapFree"], "pool": space["total"] - space["used"]}
+    available = {"ram": meminfo["MemAvailable"], "swap": meminfo["SwapFree"], "pool": space["total"] - space.get("used", 0)}
     if release is None:
         # The Gateway admission measures no release, so it keeps a fixed floor.
         disk = 10 * 1024**3
