@@ -3514,13 +3514,13 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 | No proof places on an old seed | While a Node's seed is not the default's current seed, the Node offers no proof places. So one proof never mixes the fleets of two seeds. Earlier copies keep running |
 | A failed target | The step fails with `instance.seed_copy_failed`, and the result names the failed command and its error output for that Node. The Node keeps its recorded seed |
 | An unreachable Node | The phase that could not reach the Node fails that target, and the result holds the SSH error. Later phases do nothing for the target |
-| A Node that goes away during the certificate or the copy phase | The phase leaves no product and no result. The next phase fails the target as `The certificate phase ended without a result`, or `The copy phase …`, and does nothing else for it. So a check never passes on a seed of the same name that an earlier copy left |
+| A Node that goes away during the certificate or the copy phase | The next phase fails the target as `The certificate phase ended without a result`, or `The copy phase …`, and does nothing else for it |
 | One copy at a time | An open seed copy holds the default's [seed hold](#the-seed-hold). A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
 | No copy during a retake | While a deployment of the default holds the seed, the admission refuses with `instance.seed_held`; the deployment's end admits the copy again |
 | No listener yet | A CI Node whose converge has not added the listener and the trust fails its target. A `ci-runner` converge of the Node adds them, and its end admits the next copy |
 | ID ranges on a CI Node | The holder and the snapshot it receives need a free range of the default's size. The [CI Node's demand](/reference/node-settings#a-ci-node) counts them. Without one, that target fails |
 | A failure shows | Nothing waits for the copy. So each failed target also writes the Activity row `instance.seed_copy_failed` with the Node, the Operation and the detail, as a failed refresh writes `instance.refresh_failed` |
-| A rerun is safe | The next seed, or the Node's own `ci-runner` converge, copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
+| A rerun is safe | The next seed, or a passed converge of a CI Node, copies again. `--refresh` makes the holder equal to the default, whatever an earlier run left |
 | One base at a time | The default keeps at most one older seed pair, `base-<commit>`. It keeps it only while a ready CI Node needs it |
 
 ### A clone starts its fleet
