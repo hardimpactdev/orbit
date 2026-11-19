@@ -568,7 +568,9 @@
         network_name: "{{ container.network }}"
         network_failure: instance.container_network_unsafe
         expected_network_device: eth0
-        network_allowed_devices: "{{ container.allowed_devices | combine({'root': root_device}) if container.allowed_devices is defined else {} }}"
+        # An empty `allowed_devices` keeps the plain guard: only a non-empty list selects the nested one, which admits the rule's root.
+        network_allowed_devices: >-
+          {{ container.allowed_devices | combine({'root': root_device}) if container.allowed_devices | default({}) | length > 0 else {} }}
         network_allowed_config: "{{ container.config }}"
         # The only volume besides the root that the guard admits, with exactly these keys.
         network_allowed_volumes: >-
