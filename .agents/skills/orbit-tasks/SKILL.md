@@ -72,10 +72,12 @@ A brief states the problem and the outcome the group must reach. The implementer
 
 ### Group brief
 
-The title states the outcome. Problem, Expected outcome and Guardrails are always there. Open question is there only when the cause is not known. Proof is there only when tests cannot show the outcome.
+The title states the outcome. Problem, Expected outcome and Guardrails are always there. Proof is there only when tests cannot show the outcome.
 
 ```markdown
 **Problem:** What is wrong or missing, and why it matters now.
+- A fact.
+  - A detail of that fact.
 
 **Expected outcome:**
 1. A rule that holds in every case.
@@ -86,11 +88,12 @@ The title states the outcome. Problem, Expected outcome and Guardrails are alway
 - Accepted limits: what the reviewer must not block on, and why.
 - Out of scope: what the group must not touch.
 
-**Open question:** what is not known yet, and what the handoff note must name.
-
-**Proof:** the entry point, the starting state, the final observation, the
-cases that would expose a wrong answer, what must be real, what may be a
-stand-in, and the subtask that owns the full proof.
+**Proof:**
+- The entry point and the starting state.
+- The final observation.
+- The cases that would expose a wrong answer.
+- What must be real, and what may be a stand-in.
+- The subtask that owns the full proof.
 ```
 
 Guardrails holds only those four kinds of line.
@@ -125,9 +128,11 @@ subtask, <what works>.
 7. Put everything the implementer needs inline or in the repository. Name no path on another machine or in another repository.
 8. Accepted limits say what the reviewer must not block on, with the reason.
 9. Leave out a section that has nothing to say, slice Guardrails included.
-10. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now.
+10. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now. No such question is left in the brief when the task leaves Backlog: rule 14 says what the owner does with it.
 11. For a removal, state what exists afterwards. Ask for the source of the removed thing to go, not for a switch that turns it off. Ask for no committed test, check or flag whose only job is to catch it coming back. To check the result once, add a `command` deliverable: the handoff check runs it, and nothing is committed.
 12. When the proof rests on a model's output, such as a brief that a new session writes, add an accepted limit that names the slips that do not block. Without it, each rerun finds a new slip.
+13. Write every criterion, outcome, guardrail and fact as its own bullet or numbered item. A sub-point is a nested bullet. No paragraph packs several criteria into one sentence. A fact together with its source or its number is one point. The operator reads briefs in the Conn task view on a phone.
+14. A brief has no open question. Before the task starts, the owner finds the answer and writes it as a fact, or asks the operator and writes the answer in. A thing the implementer must find out, such as the cause of a bug, is an expected outcome with a `review` deliverable that names what the handoff note must show.
 
 Name implementation paths only where the contract fixes them.
 
