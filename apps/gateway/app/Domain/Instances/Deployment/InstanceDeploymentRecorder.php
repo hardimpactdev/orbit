@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Data\Instances\InstanceDeploymentData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Jobs\Tasks\StampDeployedTasks;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Support\ValidatedData;
@@ -101,6 +102,13 @@ final readonly class InstanceDeploymentRecorder
                 $state->block($commit);
             }
             $state->save($instance);
+            if ($deployment->status === 'succeeded' && $deployment->kind === 'deploy') {
+                $id = $deployment->id;
+                // After the record commits; a failed dispatch is reported and never fails the deploy.
+                DB::afterCommit(static fn () => rescue(static function () use ($id): void {
+                    StampDeployedTasks::dispatch($id);
+                }));
+            }
         }
         $this->prune($deployment->instance_id);
         $this->broadcast(RecordEventType::DeploymentUpdated, $deployment);

@@ -115,12 +115,15 @@ describe('conn:task:list', function (): void {
             'pull_request' => ['number' => 3990, 'url' => 'https://github.com/hardimpactdev/orbit/pull/3990', 'state' => null],
             'subtask_counts' => ['total' => 4, 'todo' => 1, 'running' => 2, 'completed' => 1, 'failed' => 0, 'cancelled' => 0],
             'created_at' => '2026-11-17T12:00:00+00:00', 'updated_at' => '2026-11-17T12:00:00+00:00', 'last_activity_at' => null,
+            'deployed_at' => null,
         ]);
 
         $group->update(['watched_pr_number' => 4000, 'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/4000', 'watched_pr_state' => 'open']);
         Operation::query()->forceCreate(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => 'succeeded',
             'input' => [], 'state' => [], 'started_at' => '2026-11-17 12:05:00', 'finished_at' => '2026-11-17 12:09:00']);
+        $group->update(['deployed_at' => '2026-11-17 12:30:00']);
         $row = panelCall($this->phone, 'tasks')->json('data.0');
+        expect($row['deployed_at'])->toBe('2026-11-17T12:30:00+00:00');
         expect($row['pull_request'])->toBe(['number' => 4000, 'url' => 'https://github.com/hardimpactdev/orbit/pull/4000', 'state' => 'open'])
             ->and($row['last_activity_at'])->toBe('2026-11-17T12:09:00+00:00');
     });

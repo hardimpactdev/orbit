@@ -12,11 +12,13 @@ use App\Data\Tasks\TaskInsightsSummaryData;
 use App\Data\Tasks\TaskInsightsWeekData;
 use App\Models\AgentThread;
 use App\Models\GatewayRelease;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use App\Support\Percentile;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
@@ -27,7 +29,7 @@ use Illuminate\Support\Collection;
  * @phpstan-type Row array{
  *     model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
  *     tokens: int, cost: ?float, input: int, cached: int, wasted: int, lines: int,
- *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, first_pass: bool,
+ *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, delivery: ?int, deploy_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
  *     questions: int, causes: array<string, int>
  * }
@@ -35,6 +37,12 @@ use Illuminate\Support\Collection;
 final class TaskInsights
 {
     private const int Weeks = 12;
+
+    /**
+     * The only task columns a report reads. A whole row carries briefs and summaries, and twelve weeks of whole rows
+     * outgrew the Gateway web runtime's 128M memory limit, which failed the request as `gateway.unhandled`.
+     */
+    private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'lines_added', 'lines_deleted'];
 
     /** @param  7|30  $days */
     public function report(int $days, ?int $projectId, CarbonImmutable $now): TaskInsightsData
@@ -85,20 +93,35 @@ final class TaskInsights
      */
     private function rows(CarbonImmutable $since, ?int $projectId, Collection $releases): array
     {
-        $groups = Task::topLevel()->with('project')
+        $codes = Project::query()->pluck('code', 'id')->all();
+        $groups = Task::topLevel()
             ->whereIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))
             ->where('ended_at', '>=', $since)
             ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
-            ->orderBy('id')->get();
-        $ids = $groups->modelKeys();
+            ->orderBy('id')->toBase()->get(self::GroupColumns)
+            ->map(static fn (object $group): array => [
+                'id' => self::number($group->id), 'project' => (string) ($codes[self::number($group->project_id)] ?? ''),
+                'lines' => self::number($group->lines_added) + self::number($group->lines_deleted),
+                ...array_map(self::time(...), ['ready_at' => $group->ready_at, 'started_at' => $group->started_at, 'settled_at' => $group->settled_at,
+                    'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at]),
+            ])->all();
+        $ids = array_column($groups, 'id');
         /** Children, threads, first verdicts, and first handoff results, by task. */
         $children = [];
-        foreach (Task::query()->whereIn('parent_id', $ids)->orderBy('id')->get() as $child) {
-            $children[(int) $child->parent_id][] = $child;
+        foreach (Task::query()->whereIn('parent_id', $ids)->orderBy('id')->toBase()->get(['id', 'parent_id', 'fixup_problem']) as $child) {
+            $children[self::number($child->parent_id)][] = ['id' => self::number($child->id), 'fixup' => $child->fixup_problem !== null];
         }
         $threads = [];
-        foreach (AgentThread::query()->whereIn('task_group_id', $ids)->get() as $thread) {
-            $threads[$thread->task_group_id][] = $thread;
+        $threadRows = AgentThread::query()->whereIn('task_group_id', $ids)->orderBy('id')->toBase()
+            ->get(['id', 'task_group_id', 'task_id', 'role', 'model', 'tokens', 'input_tokens', 'cached_input_tokens', 'cost_usd']);
+        foreach ($threadRows as $thread) {
+            $threads[self::number($thread->task_group_id)][] = [
+                'id' => self::number($thread->id), 'task' => self::number($thread->task_id),
+                'role' => ValidatedData::string($thread->role), 'model' => ValidatedData::nullableString($thread->model),
+                'tokens' => self::number($thread->tokens), 'input' => self::number($thread->input_tokens),
+                'cached' => self::number($thread->cached_input_tokens),
+                'cost' => is_numeric($thread->cost_usd) ? (float) $thread->cost_usd : null,
+            ];
         }
         $verdicts = [];
         $verdictRows = TaskComment::query()->whereIn('task_group_id', $ids)
@@ -110,7 +133,7 @@ final class TaskInsights
             $verdicts[$verdict->task_group_id][$subtask]['count']++;
         }
         $handoffs = [];
-        $checkRows = TaskCheck::query()->whereIn('task_id', array_merge([], ...array_map(static fn (array $list): array => array_map(static fn (Task $child): int => $child->id, $list), array_values($children))))
+        $checkRows = TaskCheck::query()->whereIn('task_id', array_merge([], ...array_map(static fn (array $list): array => array_column($list, 'id'), array_values($children))))
             ->where('kind', TaskCheckKind::Handoff->value)
             ->whereIn('status', [TaskCheckStatus::Passed->value, TaskCheckStatus::Failed->value])
             ->orderBy('id')->get(['task_id', 'status']);
@@ -125,19 +148,19 @@ final class TaskInsights
 
         $rows = [];
         foreach ($groups as $group) {
-            $groupChildren = $children[$group->id] ?? [];
-            $groupThreads = $threads[$group->id] ?? [];
-            $groupVerdicts = $verdicts[$group->id] ?? [];
-            $groupCauses = $causes[$group->id] ?? [];
+            $groupChildren = $children[$group['id']] ?? [];
+            $groupThreads = $threads[$group['id']] ?? [];
+            $groupVerdicts = $verdicts[$group['id']] ?? [];
+            $groupCauses = $causes[$group['id']] ?? [];
             $firstHandoffs = array_values(array_filter(
-                array_map(static fn (Task $child): ?bool => $handoffs[$child->id] ?? null, $groupChildren),
+                array_map(static fn (array $child): ?bool => $handoffs[$child['id']] ?? null, $groupChildren),
                 static fn (?bool $passed): bool => $passed !== null,
             ));
             // A subtask's newest implementer thread is its current one; tick and external runs both create a new thread to replace one.
             $newest = [];
             foreach ($groupThreads as $thread) {
-                if ($thread->role === 'implementer') {
-                    $newest[$thread->task_id ?? 0] = max($newest[$thread->task_id ?? 0] ?? 0, $thread->id);
+                if ($thread['role'] === 'implementer') {
+                    $newest[$thread['task']] = max($newest[$thread['task']] ?? 0, $thread['id']);
                 }
             }
             $tokens = 0;
@@ -146,35 +169,38 @@ final class TaskInsights
             $input = 0;
             $cached = 0;
             foreach ($groupThreads as $thread) {
-                $tokens += $thread->tokens ?? 0;
-                $input += $thread->input_tokens ?? 0;
-                $cached += $thread->cached_input_tokens ?? 0;
-                if ($thread->role === 'implementer' && $newest[$thread->task_id ?? 0] !== $thread->id) {
-                    $replaced += $thread->tokens ?? 0;
+                $tokens += $thread['tokens'];
+                $input += $thread['input'];
+                $cached += $thread['cached'];
+                if ($thread['role'] === 'implementer' && $newest[$thread['task']] !== $thread['id']) {
+                    $replaced += $thread['tokens'];
                 }
-                $cost = $cost === null || ($thread->cost_usd === null && ($thread->tokens ?? 0) > 0) ? null : $cost + ($thread->cost_usd ?? 0.0);
+                $cost = $cost === null || ($thread['cost'] === null && $thread['tokens'] > 0) ? null : $cost + ($thread['cost'] ?? 0.0);
             }
-            $merged = $group->pullRequestMerged();
-            $mergedAt = $merged ? $group->merged_at : null;
+            // A task's pull request merged, by Orbit or by a person, when it has a merge time.
+            $mergedAt = $group['merged_at'];
+            $merged = $mergedAt !== null;
 
             $rows[] = [
                 // The model the group's first implementer thread ran; a group with no implementer thread counts as Unknown.
-                'model' => collect($groupThreads)->where('role', 'implementer')->sortBy('id')->first()?->model,
-                'project' => $group->project->code,
-                'release' => $this->releaseAt($releases, $group->started_at),
-                'ended_at' => $group->ended_at ?? throw new \LogicException('The query selects ended tasks only.'),
+                'model' => array_values(array_filter($groupThreads, static fn (array $thread): bool => $thread['role'] === 'implementer'))[0]['model'] ?? null,
+                'project' => $group['project'],
+                'release' => $this->releaseAt($releases, $group['started_at']),
+                'ended_at' => $group['ended_at'] ?? throw new \LogicException('The query selects ended tasks only.'),
                 'merged' => $merged,
                 'tokens' => $tokens,
                 'cost' => $cost,
                 'input' => $input,
                 'cached' => $cached,
                 'wasted' => $merged ? $replaced : $tokens,
-                'lines' => ($group->lines_added ?? 0) + ($group->lines_deleted ?? 0),
-                'lead' => self::span($group->ready_at, $mergedAt),
-                'queue' => $merged ? self::span($group->ready_at, $group->started_at) : null,
-                'work' => $merged ? self::span($group->started_at, $group->settled_at) : null,
-                'merge_wait' => self::span($group->settled_at, $mergedAt),
-                'first_pass' => $merged && array_filter($groupChildren, static fn (Task $child): bool => $child->fixup_problem !== null) === [],
+                'lines' => $group['lines'],
+                'lead' => self::span($group['ready_at'], $mergedAt),
+                'queue' => $merged ? self::span($group['ready_at'], $group['started_at']) : null,
+                'work' => $merged ? self::span($group['started_at'], $group['settled_at']) : null,
+                'merge_wait' => self::span($group['settled_at'], $mergedAt),
+                'delivery' => $merged ? self::span($group['ready_at'], $group['deployed_at']) : null,
+                'deploy_wait' => self::span($mergedAt, $group['deployed_at']),
+                'first_pass' => $merged && array_filter($groupChildren, static fn (array $child): bool => $child['fixup']) === [],
                 'verdict_subtasks' => count($groupVerdicts),
                 'first_approved' => count(array_filter($groupVerdicts, static fn (array $verdict): bool => $verdict['approved'])),
                 'verdicts' => array_sum(array_column($groupVerdicts, 'count')),
@@ -219,6 +245,8 @@ final class TaskInsights
             queueMs: self::median($merged, 'queue'),
             workMs: self::median($merged, 'work'),
             mergeWaitMs: self::median($merged, 'merge_wait'),
+            deliveryTimeMs: self::median($merged, 'delivery'),
+            deployWaitMs: self::median($merged, 'deploy_wait'),
             yield: self::share(count($merged), count($rows)),
             prFirstPass: self::share(count(array_filter($merged, static fn (array $row): bool => $row['first_pass'])), count($merged)),
             wastedShare: self::share(array_sum(array_column($rows, 'wasted')), $tokens),
@@ -292,11 +320,23 @@ final class TaskInsights
 
     /**
      * @param  list<Row>  $rows
-     * @param  'lead'|'queue'|'work'|'merge_wait'  $key
+     * @param  'lead'|'queue'|'work'|'merge_wait'|'delivery'|'deploy_wait'  $key
      */
     private static function median(array $rows, string $key): ?int
     {
         return Percentile::of(array_values(array_filter(array_column($rows, $key), static fn (?int $value): bool => $value !== null)), .5);
+    }
+
+    /** A timestamp column read without model casts, in the zone the model casts use. */
+    private static function time(mixed $value): ?CarbonImmutable
+    {
+        return is_string($value) && $value !== '' ? CarbonImmutable::parse($value) : null;
+    }
+
+    /** An integer column read without model casts; null counts as 0. */
+    private static function number(mixed $value): int
+    {
+        return is_numeric($value) ? (int) $value : 0;
     }
 
     private static function share(int|float $part, int|float $whole): ?float
