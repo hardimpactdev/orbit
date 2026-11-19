@@ -289,7 +289,11 @@ A hosted runner has none of these, so a `self_hosted` file never runs there.
 
 Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Docs impact is a policy check on every pull request; it shares the existing Docs job and its two-minute ceiling. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
 
-The Web job caches the locked Playwright engines and downloaded APT packages, not installed system libraries. Each fresh Ubuntu 26.04 runner still runs the installer: APT refreshes its signed index, resolves current package versions and verifies cached downloads before installing them. A cache hit never skips library installation or either test stage. The cache key includes the runner OS, architecture, Ubuntu image version and installed Playwright version. An older image's downloads may seed the cache for the same OS and Playwright version; APT fetches any changed packages. This removes repeated large downloads without restoring files over the runner's system libraries.
+The Web job caches the locked Playwright engines and the Ubuntu packages of their system libraries, keyed by runner image and Playwright version. On a key miss it starts from the newest entry of another image with the same Playwright version, because a cold download of the whole set took longer than the job may run. A new Playwright version, or an evicted cache, still starts cold.
+
+With the entry of its own runner image, the job installs the libraries with `apt-get install` from those files: APT orders and configures them with `--no-download`, and with no index refresh. Then Playwright installs the browsers alone. So a mirror that fails leaves a run with a matching entry unaffected. A cache hit never skips library installation or either test stage.
+
+With an entry of another image, or when the packages fail to install, the job runs `playwright install --with-deps` as before: APT refreshes its signed index and downloads the difference from the mirror. Another image can lack a library that this one needs, and only APT's index shows that. After either path the job keeps only the files of the installed versions, so a saved entry is exactly what one install on that image uses. The job on main `Warm the web test caches` runs the same steps, `.github/actions/web-browsers`, and saves the cache for pull requests and the merge queue.
 
 The Web job has a four-minute ceiling and a 140-second table cost, including setup, tests, build, upload and cleanup. The planning cost rounds the largest measured cached execution, 134 seconds, up to the next ten seconds. The ceiling also reserves a cold-seed or cache-outage path: the earlier 180-second cancellation is a censored lower bound, and saving a new cache adds up to four seconds. Adding 25% reserve to those 184 seconds and rounding up to whole minutes gives four minutes. Caching removes repeated downloads; the larger ceiling protects executions that cannot reuse them, rather than replacing that fix.
 
@@ -797,16 +801,20 @@ Inside a selected Pest job, it reuses the file-level mapping that the repository
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
-| `ci-policy` | Policy inputs changed | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy tests that CI's "CI policy" job runs on every PR |
+| `ci-policy` | A changed path is one that a policy test reads | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy tests that CI's "CI policy" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
 The `docs-impact` part builds the API outputs first, as CI's Docs job does. The gate checks the ignored OpenAPI document and MCP manifest against the sources, so an earlier build's outputs never read as stale.
 
-Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select expensive checks. The `ci-policy` part still runs before Pest and the fixtures when selected. CI runs its full policy suite on every PR.
+Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select `check-flows` and `docs-lint`. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
 
-Policy inputs also include Swamp's fixtures and proof tooling, the agent, runner resources and machine-software recipes. The `CI_POLICY_INPUTS` table in `bin/task-check` names these source inputs and the files whose presence policy tests check. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
+The `ci-policy` part runs when the change touches `bin/`, `tools/` or `.github/`, which select it whole. Outside them, it runs when the change touches a file or folder in `tools/ci-policy-reads.txt`. That list holds what the policy tests opened in one recorded run of the suite. Its second part names the files a test only checks for existence or for being tracked, each with the test line. A docs page or a `swamp/` file that no policy test reads does not select the part.
+
+A read that the recorded run did not show, such as a test added later, is left to CI, which runs the full policy suite on every PR. The file says how the run was recorded.
+
+A renamed file selects the part by its old name too, since a test that reads the old name breaks. The part's line names the changed path that selected it. The part runs before Pest and the fixtures. CI runs its full policy suite on every PR.
 
 Fixture budget validation and placement run on every change, even with `--only` or no time left. They refuse invalid budgets and units above the declared lane outside named capacity gaps. The population check reuses the fixture table already validated for this candidate.
 
@@ -999,6 +1007,8 @@ The check name remains `Required checks` so branch protection, task handoff CI a
 ### Gateway test time limits
 
 Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="5"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. That file owns the five-second default for plain `composer test`, CI and `bin/task-check`. Tests remain unsized except for reviewed cases that need a real deadline, kernel age or private database initialization.
+
+The same file sets `ORBIT_VISIT_WAKE_WAIT_SECONDS` to 0.3 s. A test of a [held visit to a sleeping Instance](/reference/app-dev-runtime-hibernation#wake) whose wake never ends then reaches the plain `503` well within the five-second limit, instead of waiting the production 30 s.
 
 The CLI suite has the same five-second default in `apps/cli/phpunit.xml.dist`. Its former two seconds cut tests whose cleanup waited on the runner's disk.
 

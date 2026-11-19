@@ -331,6 +331,28 @@ final readonly class DevelopmentDnsConfigRenderer
     }
 
     /**
+     * Earlier releases' requester answers that the catalog no longer gives, as `requester => name => address`.
+     * They never enter the published catalog; publishers only withdraw them from the live one.
+     *
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     * @return array<string, array<string, string>>
+     */
+    public function retired(PrivateDnsAnswerCatalog $catalog, array $nodeOverrides = [], array $clusterOverrides = []): array
+    {
+        $retired = [];
+        foreach ($this->selection->retiredAnswers($nodeOverrides, $clusterOverrides) as $key => $names) {
+            foreach ($names as $name => $address) {
+                if (! isset($catalog->overrides[$key][$name])) {
+                    $retired[$key][$name] = $address;
+                }
+            }
+        }
+
+        return $retired;
+    }
+
+    /**
      * A domain answers with its Router, else its workload. A Router selection that is being
      * published or restored names the Router Node that answers; otherwise a site that serves a
      * second placement or a second Router never answers while the current site exists.

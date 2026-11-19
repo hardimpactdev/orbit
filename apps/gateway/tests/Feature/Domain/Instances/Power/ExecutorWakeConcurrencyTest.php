@@ -75,7 +75,7 @@ it('admits two visits and an independent SQLite writer while the handoff queue i
             $warnings[] = [$event->message, $event->context['exception_type'] ?? 'unknown'];
         }
     });
-    executorWakeVisit($instance)->assertUnauthorized();
+    executorWakeVisit($instance)->assertServiceUnavailable()->assertSee('The Instance is still waking.');
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
     expect($warnings)->toBe([]);
     expect($operation->state)->toHaveKey(ExecutorWake::PublishedAt);
@@ -91,13 +91,13 @@ it('admits two visits and an independent SQLite writer while the handoff queue i
     Bus::partialMock()->shouldReceive('dispatch')->once()->with(Mockery::type($jobType))->andReturnUsing(function ($job) use ($bus, $second, $operation, &$callbackFailure, &$warnings): mixed {
         try {
             independentWakeWriter($operation->id);
-            executorWakeVisit($second, '/one')->assertUnauthorized();
+            executorWakeVisit($second, '/one')->assertServiceUnavailable();
             $joined = Operation::query()->where('kind', InstanceWake::Kind)->where('target_id', $second->id)->sole();
             $this->resultQueue->arriving = fn () => executorWakeReply($joined, ['status' => 'partial']);
             $response = executorWakeVisit($second, '/two');
             expect($warnings)->toBe([]);
             expect($joined->refresh()->executor_result)->not->toBeNull();
-            $response->assertOk();
+            $response->assertStatus(307)->assertHeader('Location', '/two');
         } catch (Throwable $exception) {
             $callbackFailure = $exception;
             throw $exception;
@@ -130,7 +130,7 @@ it('serializes hook workers across a stale lease without holding the SQLite writ
     });
     $response = executorWakeVisit($instance);
     expect($diagnostic)->toBe([]);
-    $response->assertOk();
+    $response->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     $this->publisher->publishing = null;
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
     $wake = app(ExecutorWake::class);
@@ -141,8 +141,8 @@ it('serializes hook workers across a stale lease without holding the SQLite writ
     $contribution = $this->mock(InstanceLifecycleContribution::class);
     $contribution->shouldReceive('projectWake')->once()->andReturnUsing(function () use ($second, $operation, $wake): void {
         independentWakeWriter($operation->id);
-        executorWakeVisit($second, '/one')->assertUnauthorized();
-        executorWakeVisit($second, '/two')->assertUnauthorized();
+        executorWakeVisit($second, '/one')->assertServiceUnavailable();
+        executorWakeVisit($second, '/two')->assertServiceUnavailable();
         $this->travel(ExecutorWake::HandoffLeaseSeconds + 1)->seconds();
         expect($wake->recoverPendingHooks())->toBe(1)->and($wake->recoverPendingHooks())->toBe(0);
         app()->call([Queue::pushed(ProjectExecutorWake::class)->last(), 'handle']);
@@ -159,12 +159,12 @@ it('serializes hook workers across a stale lease without holding the SQLite writ
 
 it('does not inherit the multi-second SQLite busy timeout for a visitor', function (): void {
     $instance = executorWakeInstance();
-    config(['orbit.executor.wait_ms' => 60]);
+    config(['orbit.executor.visit_wait_seconds' => 0.1]);
     $writer = new PDO('sqlite:'.$this->database);
     $writer->exec('BEGIN IMMEDIATE');
     try {
         $started = hrtime(true);
-        executorWakeVisit($instance)->assertUnauthorized()->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
+        executorWakeVisit($instance)->assertServiceUnavailable()->assertSee('The Instance is busy with other work.');
         expect((hrtime(true) - $started) / 1e6)->toBeLessThan(300);
         expect(Operation::query()->where('kind', InstanceWake::Kind)->exists())->toBeFalse();
         expect((int) DB::scalar('PRAGMA busy_timeout'))->toBe(5_000);
@@ -172,8 +172,7 @@ it('does not inherit the multi-second SQLite busy timeout for a visitor', functi
         $writer->exec('ROLLBACK');
     }
 
-    config(['orbit.executor.wait_ms' => 500]);
-    executorWakeVisit($instance)->assertUnauthorized();
+    executorWakeVisit($instance)->assertServiceUnavailable()->assertSee('The Instance is still waking.');
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole())->status->toBe(OperationStatus::Running);
 });
 
@@ -182,12 +181,12 @@ it('keeps the visitor bound for a signed freeze after the signed settings went o
     config(['orbit.executor.power_enabled' => true, 'orbit.executor.wake_enabled' => false]);
     $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
     $sleep->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'result' => ['sleep' => 'frozen']]);
-    config(['orbit.executor.power_enabled' => false, 'orbit.executor.wait_ms' => 50]);
+    config(['orbit.executor.power_enabled' => false, 'orbit.executor.visit_wait_seconds' => 0.1]);
     $writer = new PDO('sqlite:'.$this->database);
     $writer->exec('BEGIN IMMEDIATE');
     try {
         $started = hrtime(true);
-        expect(app(InstanceWake::class)->activate($instance, false, 'node'))->toBeNull();
+        expect(app(InstanceWake::class)->activate($instance, 'node'))->toBe('The Instance is busy with other work. Try again shortly.');
         expect((hrtime(true) - $started) / 1e6)->toBeLessThan(300);
     } finally {
         $writer->exec('ROLLBACK');

@@ -1336,6 +1336,18 @@
                     "vp": "vp"
                 }
             },
+            "chrome-headless-shell": {
+                "version": "157.0.8103.78",
+                "artifacts": {
+                    "amd64": {
+                        "url": "https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.78/linux64/chrome-headless-shell-linux64.zip",
+                        "sha256": "f90329720fb61e5a76da9b6b509b6ad12a484c9c5df0359403e935177c6d153a"
+                    }
+                },
+                "bin": {
+                    "chrome-headless-shell": "chrome-headless-shell-linux64/chrome-headless-shell"
+                }
+            },
             "browser-libnss3": {
                 "version": "2:3.120-1ubuntu2.2",
                 "artifacts": {

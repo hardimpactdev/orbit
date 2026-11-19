@@ -14,6 +14,7 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
@@ -21,6 +22,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -190,7 +192,7 @@ final readonly class InstanceWake extends InstancePower
 
     /**
      * A frozen container's wake is recorded without its run: the Node's resume comes first, after the commit
-     * (resumeOnNode(): within the command's call, or after a visit's answer).
+     * (resumeOnNode(): within the command's call or the held visit).
      *
      * @param  array<string, mixed>  $input
      */
@@ -316,68 +318,67 @@ final readonly class InstanceWake extends InstancePower
     }
 
     /**
-     * The runtime activation endpoint: true permits the original request after an in-bound executor wake, null shows the progress
-     * page, and a string shows the failed wake until a retry. With the executor setting off, a new Node resume runs after the response.
-     * An enabled executor wake never defers work to the request worker after the response.
+     * The runtime activation endpoint holds the visit while its wake runs: null sends the visitor back to the same URI, and a
+     * string is the plain error the visit gets instead. A signed wake ends in about 0.4 s. A container that the old Python path
+     * froze resumes through the Node's resume or its workflow in 14–19 s, so the visit waits up to
+     * `orbit.executor.visit_wait_seconds` (30 s) for either.
      */
-    public function activate(Instance $instance, bool $retry, string $caller): string|true|null
+    public function activate(Instance $instance, string $caller): ?string
     {
-        $budget = new ExecutorWakeBudget;
-        $last = Operation::query()->whereIn('kind', [self::Kind, InstanceStart::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
+        $budget = new ExecutorWakeBudget(max(0.1, Config::float('orbit.executor.visit_wait_seconds', 30.0)));
+        $last = Operation::query()->whereIn('kind', [self::Kind, InstanceStart::Kind])->where('target_type', 'instance')
             ->where('target_id', $instance->id)->orderByDesc('id')->first();
-        if (($failed = self::failure($last, $retry)) !== null) {
-            return $failed;
+        if ($last !== null && $last->status === OperationStatus::Interrupted && $last->lock_key !== null) {
+            // ADR 0266, R2: an unknown order's fence admits no second wake until an operator verifies the Node.
+            return self::failure($last);
         }
-        $runtime = $instance->runtime()->first();
-        try {
-            // The request bound belongs to a wake of a signed freeze too, after the settings went off (R3).
-            $operation = ExecutorWake::enabled() || ($runtime !== null && ExecutorPowerIntent::forInstance($instance, $runtime))
-                ? $budget->write(fn (): Operation => $this->admitWake($instance, $caller, null))
-                : $this->admitWake($instance, $caller, null);
+        $operation = null;
+        while ($operation === null) {
+            try {
+                $operation = $budget->write(fn (): Operation => $this->admitWake($instance, $caller, null));
+            } catch (ResourceOperationException $exception) {
+                // Other lifecycle work, such as a sleep that is still ending, holds the Instance: admit again until the deadline.
+                if (! in_array($exception->errorCode, ['operation.target_busy', 'instance.lifecycle_busy'], true)) {
+                    return $exception->getMessage();
+                }
+            }
             if ($operation === null) {
+                if ($budget->left() < 0.25) {
+                    return 'The Instance is busy with other work. Try again shortly.';
+                }
+                Sleep::usleep(250_000);
+            }
+        }
+        if (ExecutorWake::owns($operation)) {
+            if ($operation->wasRecentlyCreated && ExecutorPowerIntent::managed($operation)) {
+                defer(static fn () => app(ExecutorWake::class)->dispatchDeferred($operation->id), always: true);
+            }
+            if (app(ExecutorWake::class)->request($operation, $budget)) {
                 return null;
             }
-            if (ExecutorWake::owns($operation)) {
-                if ($operation->wasRecentlyCreated && ExecutorPowerIntent::managed($operation)) {
-                    defer(static fn () => app(ExecutorWake::class)->dispatchDeferred($operation->id), always: true);
-                }
-
-                return app(ExecutorWake::class)->request($operation, $budget) ? true : self::failure($operation->refresh(), false);
+            $line = $operation->refresh()->executor_result;
+            if (is_array($line) && ! ExecutorResults::succeeded($line)) {
+                return 'The wake failed ('.ExecutorResults::failureCode($line).'). Reload the page to try again.';
             }
-
-            if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
-                // A 401 page is no success, so the callback must run always. A worker that dies here leaves the safety net's run.
-                defer(function () use ($operation): void {
-                    if (self::awaitsNode($operation->refresh())) {
-                        $this->resumeOnNode($operation);
-                    }
-                }, always: true);
-            }
-
-            return self::failure($operation->refresh(), false);
-        } catch (ResourceOperationException $exception) {
-            // Other lifecycle work holds the Instance: the page polls again, and a later request starts the wake.
-            if (! in_array($exception->errorCode, ['operation.target_busy', 'instance.lifecycle_busy'], true)) {
-                return $exception->getMessage();
-            }
+        } elseif ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
+            $operation = $this->resumeOnNode($operation);
         }
-
-        return null;
-    }
-
-    /**
-     * ADR 0266, R4: the one rule for what a visit shows of a wake that ended, or of a nested clone's start that stands in for it. A
-     * failed or interrupted one shows its failure with a retry. A retry admits a new wake, except under an unknown order's fence (R2),
-     * because no second wake can be admitted beside that order.
-     */
-    private static function failure(?Operation $operation, bool $retry): ?string
-    {
-        if ($operation === null || ! in_array($operation->kind, [self::Kind, InstanceStart::Kind], true)
-            || ! in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
-            || ($retry && ! ($operation->status === OperationStatus::Interrupted && $operation->lock_key !== null))) {
+        while (! $operation->status->terminal() && $budget->left() > 0) {
+            Sleep::usleep((int) (min(0.25, $budget->left()) * 1e6));
+            $operation->refresh();
+        }
+        if ($this->reached($operation)) {
             return null;
         }
 
-        return 'The wake failed ('.($operation->error_code ?? 'instance.wake_failed').'). Try again.';
+        return $operation->status->terminal()
+            ? self::failure($operation)
+            : 'The Instance is still waking. Reload the page in a moment.';
+    }
+
+    /** ADR 0266, R4: the one text a visit shows of a wake that ended without reaching the app, or of the start that stands in for it. */
+    private static function failure(Operation $operation): string
+    {
+        return 'The wake failed ('.($operation->error_code ?? 'instance.wake_failed').'). Reload the page to try again.';
     }
 }

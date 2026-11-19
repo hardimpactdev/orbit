@@ -111,7 +111,7 @@ sequenceDiagram
     %%> Why beside the setup steps:
     %%> - the Route needs the signed certificate and the access the checkout phase gave, not the installed dependencies; the setup steps run at the same time
     %%> Why it marks the Instance awake:
-    %%> - so the first request reaches the app, not the wake page
+    %%> - so the first request reaches the app without a wake
   end
   SW->>N: Run Project setup steps<br/>Ansible · tags setup
   %%> As whom:

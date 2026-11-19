@@ -123,7 +123,7 @@ Conn can also [create a thread clone on a selected branch](/reference/conn#threa
 
 Repair development mail with [`instance:mail:update`](/cli/instance/mail-update).
 
-Put a development container to sleep with [`instance:sleep`](/cli/instance/sleep), and wake it with [`instance:wake`](/cli/instance/wake). A visit to its Route also wakes it.
+Put a development container to sleep with [`instance:sleep`](/cli/instance/sleep), and wake it with [`instance:wake`](/cli/instance/wake). A visit to its Route also wakes it: the Gateway holds the visit while the container wakes and then serves the app's own page. A wake that fails, or does not end within `ORBIT_VISIT_WAKE_WAIT_SECONDS` (30 s by default), answers a plain-text `503`; a reload tries again.
 
 A checkout can record an explicit [Node service target](/cli/instance/node-service-attach) before migration. For a running container, [detach](/cli/instance/node-service-detach) withdraws its scoped loopback access before removing the record. The environment file and Node Process stay unchanged.
 

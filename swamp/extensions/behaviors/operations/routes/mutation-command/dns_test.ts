@@ -102,3 +102,50 @@ Deno.test("a removed Node's requester goes even when a stale id from a reused ad
         "an added Node replaces the stale id on its address",
     );
 });
+
+Deno.test("a retired requester answer that both snapshots omit leaves the live catalog only while it holds the retired address", () => {
+    const state = (overrides: Record<string, Record<string, string>>) => ({
+        records: "# Managed by Orbit.\n",
+        catalog: JSON.stringify({
+            records: {},
+            suffixes: { prod: "10.44.0.4" },
+            overrides,
+            requesters: {},
+        }),
+    });
+    const snapshot = state({ "node:9": { "kept.prod": "192.168.1.4" } });
+    const live = state({
+        "node:9": {
+            "kept.prod": "192.168.1.4",
+            "sync.example.com": "192.168.1.4",
+        },
+        "node:10": { "sync.example.com": "192.168.1.4" },
+    });
+    const retired = {
+        "node:9": { "sync.example.com": "192.168.1.4" },
+        "node:10": { "sync.example.com": "192.168.1.4" },
+    };
+    // Without the retired list the three-way merge keeps the stale answer.
+    assertEquals(
+        JSON.parse(mergeDns(snapshot, snapshot, live).catalog).overrides
+            ["node:9"]["sync.example.com"],
+        "192.168.1.4",
+    );
+    const merged = mergeDns(snapshot, { ...snapshot, retired }, live);
+    assertEquals(JSON.parse(merged.catalog).overrides, {
+        "node:9": { "kept.prod": "192.168.1.4" },
+    });
+    // An answer that changed since, or that the snapshot wants, stays.
+    const moved = state({ "node:9": { "sync.example.com": "192.168.1.99" } });
+    assertEquals(
+        JSON.parse(mergeDns(snapshot, { ...snapshot, retired }, moved).catalog)
+            .overrides["node:9"]["sync.example.com"],
+        "192.168.1.99",
+    );
+    const wanted = state({ "node:9": { "sync.example.com": "192.168.1.4" } });
+    assertEquals(
+        JSON.parse(mergeDns(wanted, { ...wanted, retired }, wanted).catalog)
+            .overrides["node:9"]["sync.example.com"],
+        "192.168.1.4",
+    );
+});

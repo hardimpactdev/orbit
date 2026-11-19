@@ -2,7 +2,7 @@ sequenceDiagram
   %% Target design, ADR 0260 build step 4 (docs/reference/development-containers.md#the-seed-on-each-ci-node): each Node that offers proof places, other than the default's own Node, keeps its own seed of the proof Project's default. One run per seed of the default sends the seed to every CI Node whose seed is behind; each target may fail alone.
   %% Decided by the main orchestrator (2026-11-16): Incus moves the seed, `incus copy --refresh --mode=push` from the default's Node to each CI Node over WireGuard. Push mode needs a listener on the target only, so the default's Node gets a client remote and no daemon change. Each CI Node listens on its WireGuard address and trusts the default Node's client certificate for `orbit-instances-nested` only (docs/reference/node-provisioning.md#the-seed-listener). `--refresh` sends only the snapshots that changed. Rejected: one seed that every copy fetches over the network at its start (ADR 0260), a seed Instance per CI Node that refreshes its own fleet, and a ZFS stream through the Swamp worker with bookmarks of Orbit's own.
   %% status: draft
-  %% command: none · after the proof default records a seed, or a CI Node's ci-runner add or converge passes
+  %% command: none · after the proof default records a seed, or a CI Node's ci-runner add, role converge or node converge passes
   %% kind: instance.seed_copy
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -16,10 +16,10 @@ sequenceDiagram
   Note over GW: Admit the seed copy<br/>CI Nodes behind the seed
   %%> Started by:
   %%> - the proof default records a new seed: the refresh after a release, or an `instance:deploy` of the default
-  %%> - a `ci-runner` add or converge of a Node that offers proof places passes
+  %%> - a `ci-runner` add or role converge of a Node that offers proof places passes, or a `node:converge` of such a Node whose roles phase passed: a Node behind the seed catches up after any passed converge
   %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock, or one that the run's target limit left out)
   %%> Never started by:
-  %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for its own `ci-runner` converge, so lasting failures do not repeat, also not two Nodes for each other
+  %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for a passed converge of a CI Node (that admission takes every Node behind the seed), so lasting failures do not repeat, also not two Nodes for each other
   %%> Requirements:
   %%> - the proof Project's default is active and has a seed; a seed is its commit and the time the default took it
   %%> - targets: every Node that offers proof places (`ci-runner`, CI places, with or without `app-dev`), other than the default's Node, whose recorded seed is not that seed (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node), and whose seed listener is ready: its `nodes.seed_sender_id` names the default's Node; with none, nothing is admitted
@@ -43,6 +43,8 @@ sequenceDiagram
     %%> - reads the Incus server certificate of the CI Node and checks that the Node listens on its WireGuard address
     %%> On failure:
     %%> - no listener: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
+    %%> - the Node is unreachable: this target fails with the SSH error as its detail, in this phase and in each later one; the copy and the check do nothing for a target that failed
+    %%> - the Node goes away in the middle of this phase: the phase leaves no certificate and no result, so the copy step fails the target as `The certificate phase ended without a result` and does nothing else for it; a copy that ends the same way leaves no `copied-ID` mark, so the check step fails the target as `The copy phase ended without a result` and checks no holder, which may hold a seed of the same name from an earlier copy
   end
   loop each CI Node, one at a time
     SW->>N: Copy the seed<br/>Ansible · tags copy
@@ -90,7 +92,7 @@ sequenceDiagram
     %%> Result:
     %%> - the failed Node keeps its recorded seed and offers no proof places until a copy passes; copies made earlier keep running
     %%> - the Activity row `instance.seed_copy_failed` names the Node, the Operation and the detail
-    %%> - the release and the default are unchanged; the next seed or the Node's own `ci-runner` converge copies again, and a rerun is safe
+    %%> - the release and the default are unchanged; the next seed or a passed converge of a CI Node copies again, and a rerun is safe
   end
   opt seed moved, or new targets
     Note over GW: Admit the next copy<br/>Nodes not at the seed
