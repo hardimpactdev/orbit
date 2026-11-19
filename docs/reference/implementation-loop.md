@@ -1048,6 +1048,8 @@ Process fixtures acknowledge readiness from their final executable before a case
 
 Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. Each run starts from a fresh runner. On `main` it uploads the quality exports that the [CI cache refs](#ci-cache-refs) carry. Pint and PHPStan key their caches on paths relative to the project, so their CI caches work in any checkout.
 
+A pull request reads its own caches and those of its base branch, never another pull request's. Main runs no tests, so the main-only job `Warm the Gateway test caches` saves the Gateway Pest caches there: both vendor folders, Deno, its firewall imports and Caddy. It runs the same setup steps as the shards, `.github/actions/gateway-test-dependencies`, so both compute one key for each cache. It gates nothing.
+
 ### Style is fixed, not reported
 
 A formatter finding has one correct answer, so the gate applies it instead of reporting it. Agents never spend a turn on style, and no CI job checks style. Rector and Pint keep their default caches in each project's `vendor/`. On Beast, a cold Gateway Rector run takes about 12 seconds and a warm one about 1.4 seconds.
