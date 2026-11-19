@@ -3,7 +3,7 @@ title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
   - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,clippy.toml,contract/fixtures/executor-order.json}
-  - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**}
+  - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
 ---
@@ -64,6 +64,59 @@ From then on the install is required, and a wrong pin fails the converge:
 - A pin with no release URL fails with `executor.release_invalid`.
 - More than two keys fail with `executor.keys_invalid`.
 - A binary whose SHA-256 differs from the pin is never installed.
+
+A new executor build reaches the Nodes only this way: a reviewed commit copies the newer release's `manifest.json` into `apps/gateway/resources/agent/frozen-manifest.json` ([Node agent: Delivery](/reference/node-agent#delivery)). The executor's pin is part of each `app-dev` Node's role input, so the next Gateway release's fleet rollout converges every such Node again and installs the new binary. A release that moves only the executor leaves the agent's own digest unchanged.
+
+### Build parity
+
+Every executor Node must run the build that the Gateway pins before `ORBIT_EXECUTOR_WAKE_ENABLED` or `ORBIT_EXECUTOR_POWER_ENABLED` goes on ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#must-clear-before-the-signed-power-flags-go-on)). Check it on the Gateway, as `orbit`:
+
+```bash
+php artisan orbit:executor-parity [--json]
+```
+
+For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`). It also reads the Node's [activation proxies](#activation-proxy) from Caddy's loaded config.
+
+A frozen container is fine when the Gateway records its Instance asleep, with a sleep that owns the freeze. A frozen container without such a record fails the Node with `instance.frozen_unrecorded`, and the check names each such Instance. A failed Python sleep can leave one: Incus holds the container frozen while the Gateway still records it running. No engine owns that freeze, so the settings alone would pick the engine for its wake ([Switching engines](#switching-engines)).
+
+It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active, no unrecorded freeze and only right activation proxies. A Node whose Incus list fails counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
+
+| Problem | Meaning | Fix |
+| --- | --- | --- |
+| `executor.build_differs` | The Node's binary is another build | Finish the fleet rollout, or `orbit node:converge <node> --full` |
+| `executor.missing` | No binary at the path | `orbit node:converge <node> --full` |
+| `executor.inactive` | The service does not run | Read its journal, then converge the Node |
+| `executor.running_build_differs` | The file is the pinned build, but the service still runs another one: the binary changed without a restart | `systemctl restart orbit-executor` on the Node |
+| `executor.node_unreachable` | The SSH read failed | Repair the Node's access |
+| `executor.node_unmanaged` | The Node has no verified SSH management | Finish its enrollment |
+| `instance.frozen_unrecorded` | A container is frozen, but the Gateway does not record its Instance asleep | With the settings still off, `orbit instance:wake <id>` for each listed Instance, then check again |
+| `caddy.config_unreadable` | Caddy's admin API did not answer with its config, or the Node could not read it | Check `caddy.service` on the Node, then `orbit node:converge <node>` |
+| `caddy.activation_proxy_wrong` | An activation proxy does not reach this Gateway as the route renderer draws it. The check names each Instance and the wrong field | `orbit node:converge <node>`, then check again |
+| `executor.release_missing`, `executor.keys_missing`, `executor.release_invalid`, `executor.keys_invalid` | The converge would skip or refuse the install ([Rollout](#rollout)) | Fix the pin or the keys |
+
+The flag switch runs this check first and changes no flag while it fails ([Switching engines](#switching-engines)). A plain converge whose input did not change skips the executor phase, so it does not repair a binary changed by hand; `--full` does.
+
+#### Activation proxy
+
+A visit to a sleeping Instance reaches the Gateway through its site's activation proxy: Caddy's `forward_auth`, a `reverse_proxy` that rewrites the visit to a GET of `/api/v1/runtime-activations/app-instance/<id>` ([The wake inside the request](#the-wake-inside-the-request)). The executor's own Caddy guard checks only that the asleep marker's first handler is that proxy with that URI. It does not check where the proxy goes or with which method.
+
+So the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
+
+The check reads every site on its own. A site is one top-level route of one Caddy server, named by its host, server and index, so a private clone's host on the bridge and on the WireGuard listener is two sites. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. It resolves that proxy's upstream host there to every address, with `getaddrinfo`. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
+
+| Field | Expected today |
+| --- | --- |
+| Handler and rewrite URI | `reverse_proxy` to `/api/v1/runtime-activations/app-instance/<id>`. A removed rewrite fails |
+| Upstream | `gateway.orbit:443`, the host and port of the Gateway origin |
+| Method | `GET`: `forward_auth` sends every activation as a GET |
+| `Host` header and TLS server name | `gateway.orbit` |
+| Addresses the upstream resolves to on the Node | Only this Gateway's WireGuard address: the active Node with the active `gateway` role. Any other address fails, even beside it |
+
+Each difference fails the Node with `caddy.activation_proxy_wrong`, for example `Instance 2 at proofapp.nested-dev on srv0 route 0: method "POST"` or `Instance 2 at proofapp.nested-dev on srv0 route 0: resolves to ["10.45.0.9"]`. A Node with no sleep-capable site has no activation proxy and passes this part.
+
+Subtask 5912 proved it on the nested fleet, against the loaded config of container default Instance 2's route on `nested-app-dev`. The check passed. With the route's activation method changed to POST through Caddy's admin API, it failed with `caddy.activation_proxy_wrong (Instance 2: method "POST")`. With the upstream changed to the app-prod Node's address, it failed with `Instance 2: resolves to ["10.45.0.3"]; Instance 2: upstream ["10.45.0.3:443"]`. With the rewrite removed from the proxy, it failed with `Instance 2: URI null; Instance 2: method null`. With the original config loaded again, byte for byte, it passed each time.
+
+With a second site for Instance 2 loaded, the check passed; with only that site's rewrite removed, it failed with `Instance 2 at second.nested-dev: URI null; Instance 2 at second.nested-dev: method null`; restored, it passed. With the same host also on a second server, `bridge` on the Instance bridge, only the WireGuard server's rewrite removed failed with `Instance 2 at proofapp.nested-dev on srv0 route 0: URI null`; restored, it passed.
 
 systemd only starts the executor at boot and restarts it after a crash. No systemd call, script, path unit or socket unit sits on an action's path.
 
@@ -223,7 +276,37 @@ The handoff to Swamp does not make a delivered action cancellable. Recovery allo
 
 The signed `power_check` is `route` for a sleep with a published Route, `no_web` for a wake with no web unit, or `resume` for the resume of a deploy or start, whose workflow owns readiness and the marker. Any other pairing of check and action refuses with `bad_payload`. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 
-The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission. Before handback, stop admitting signed sleeps, let open signed Operations finish, and wake any frozen signed Instances with the signed engine. Verify that any failed sleep left either a running container or a recovered container before you retire the executor from the Node. Disabling the setting does not transfer a frozen plan between engines. Keep the executor installed and reachable until those plans are drained. Python remains installed until slice 8.
+The Gateway removes neither the container nor its marker on failure. It records the selected engine at admission.
+
+### Switching engines
+
+A frozen Instance belongs to the engine whose sleep froze it ([ADR 0266, R3](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#four-rules-for-every-signed-outcome)). The freezing sleep's `signed_power` input records it, and `ExecutorPowerIntent::forInstance()` and `lifecycle()` read it before the settings. Every wake goes through them: `instance:wake` and its API, the visitor's activation, Conn, and a start or deploy that resumes the freeze. So a recorded freeze needs no drain in either direction.
+
+A freeze with no record has no owner. A failed Python sleep can leave the container frozen while the Gateway records it running. So the switch goes in this order:
+
+1. Run [`orbit:executor-parity`](#build-parity) with the settings off. It is the one check before the switch. It covers build parity, unrecorded freezes and [activation proxies](#activation-proxy).
+2. Wake each Instance it lists as `instance.frozen_unrecorded`. With the settings off, Python wakes it. Fix every other problem by its row in the table.
+3. Run the check again. Turn on `ORBIT_EXECUTOR_WAKE_ENABLED` and `ORBIT_EXECUTOR_POWER_ENABLED` only when it passes.
+
+When the settings go on, Instances that Python froze still wake through Python as they are used. Every sleep after the switch is signed, including the idle sweep's.
+
+Turning both settings off is the one-step rollback. Instances that the executor froze still wake through it, with the visitor's request bound. Every new sleep goes back to Python.
+
+Only before you retire the executor from a Node, wake the Instances that still have a Rust sleep plan, and check that every failed sleep left a running or recovered container. Until then keep the executor installed and reachable. Python stays installed until slice 8.
+
+Subtask 5911 proved both directions on the nested fleet, with container default Instance 2, a Laravel app, in this order:
+
+| Operations | Settings | What happened | Engine |
+| --- | --- | --- | --- |
+| Sleep 204 | Off | Froze | Python |
+| Wake 205, by `instance:wake` | On | Resumed; the app then answered 200 | Python |
+| Sleep 206, then wake 207 by a visit | Off for the sleep, on for the wake | The visit got the progress page; its next request got the app | Python |
+| Sleep 208, wake 209 | On | Both `done` over the WebSocket | Executor |
+| Sleep 210; wake 211, by `instance:wake` | On for the sleep, off for the wake | Both `done` | Executor |
+| Sleep 212; wake 213, by a visit | On for the sleep, off for the wake | The visit got the app's own 200 in 353 ms | Executor |
+| Sleep 214, wake 215 | Off | Froze, resumed | Python |
+
+Then the same Instance was frozen in Incus while the Gateway recorded it running, the state a failed Python sleep (Operation 216) had left. `orbit:executor-parity` failed with `instance.frozen_unrecorded (Instance 2)`. Wake 222, with the settings off, resumed it through Python. The app answered 200 and the check passed. After the recorded Python sleep 223 the check passed with the container frozen, and wake 224 resumed it.
 
 The Valkey host prerequisite is `hz 100`, applied by the orchestrator, as [the hand-off](#the-listener-and-the-hand-off) explains. Even then the server tick can make a timeout run a little late; a late successful reply must not authorize the original request.
 
