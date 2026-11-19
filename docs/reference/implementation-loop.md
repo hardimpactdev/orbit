@@ -1004,6 +1004,8 @@ The check name remains `Required checks` so branch protection, task handoff CI a
 
 Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="5"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. That file owns the five-second default for plain `composer test`, CI and `bin/task-check`. Tests remain unsized except for reviewed cases that need a real deadline, kernel age or private database initialization.
 
+The same file sets `ORBIT_VISIT_WAKE_WAIT_SECONDS` to 0.3 s. A test of a [held visit to a sleeping Instance](/reference/app-dev-runtime-hibernation#wake) whose wake never ends then reaches the plain `503` well within the five-second limit, instead of waiting the production 30 s.
+
 The CLI suite has the same five-second default in `apps/cli/phpunit.xml.dist`. Its former two seconds cut tests whose cleanup waited on the runner's disk.
 
 CI's Gateway suite and privileged cases inherit the project default without a command-line override. The task check reads the same default when CI passes no override. All retain failure and stop-on-risky behavior. Fixtures for large row limits insert batches that fit SQLite's parameter limit while still storing every row up to the production limit.

@@ -1,7 +1,7 @@
 id: 279e920a-da77-4487-8029-e9c989f9112d
 name: operation-instance-sleep
 autoContinue: false
-description: Deliver the admitted sleep through the fixed executor relay, or run the disabled-mode sleep phase.
+description: Run the disabled-mode sleep phase; a signed sleep goes through the WebSocket and has no Swamp run.
 queueTimeout: 10
 labels: {role: swamp}
 inputs:

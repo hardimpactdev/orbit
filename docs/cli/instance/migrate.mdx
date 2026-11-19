@@ -274,7 +274,7 @@ Every moving checkout can carry uncommitted tracked files and staging state. Ext
 
 Orbit prepares the container and probes every attached target before downtime. If a target is unreachable, the checkout keeps serving, its files stay untouched, and its host Processes keep their states.
 
-Nobody works in the checkout during the move. Orbit shows the wake page on the Route, and starts no deployment and no wake of the Instance until the move has ended.
+Nobody works in the checkout during the move. Orbit starts no deployment and no wake of the Instance until the move has ended. A visit to the Route gets a plain `503`: `Instance [<name>] is moving into a container. Try again when the move has ended.`
 
 Orbit maps known host executable locations to the container runtime. These locations are `/usr/bin`, `/usr/local/bin`, `/bin`, a home’s `.vite-plus/bin`, and a home’s `.vite-plus/js_runtime/node/<version>/bin/node`. The runtime recipe supplies command names such as `node`, `npm`, `npx`, `vp`, `bun`, `composer`, `deno` and `rg`. `phpX.Y` uses that PHP version; `php` uses the Project’s PHP version. A version absent from the runtime refuses with `instance.migrate_process_binary_unavailable`. A custom path such as `/opt/custom/vp` keeps its meaning even when its name matches a runtime command.
 

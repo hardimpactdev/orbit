@@ -602,7 +602,9 @@ With no scope flag, the attempt includes Orbit's base and every recorded role. `
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
-Node convergence, role addition, convergence or removal, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent unless their converges share a VPN hub. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
+Node convergence, role addition, convergence or removal, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
+
+Converges of two peers of one VPN hub are independent too. Each network phase writes the hub's recorded peer set with atomic file copies, one `wg syncconf` and UFW's own lock. A converge of the hub Node itself still refuses beside any other converge, unless both are base converges.
 
 The native Swamp workflow runs these phases in order. Input preparation writes private inventory, variables and pinned SSH known hosts. Each machine phase invokes one tagged Ansible playbook, within the admitted scope.
 
@@ -644,7 +646,7 @@ For Node converge, preparation stages the shipped Ansible files and Tool helper 
 
 Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle.
 
-The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
+The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. That converge also writes the [browser files](/reference/production-containers#host-paths) that each preparation installs for the runtime's headless Chrome. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
 
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 
@@ -785,7 +787,7 @@ Earlier Gateways published the annotator server in `/opt/orbit/annotator` and ke
 
 ### Executor at a converge
 
-The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed.
+The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed. The relay's sudo rule serves the Swamp start, deploy and boot phases on the Node. The Gateway sends signed sleep and wake only over the WebSocket, with no SSH relay ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor)).
 
 ### Kernel policy
 

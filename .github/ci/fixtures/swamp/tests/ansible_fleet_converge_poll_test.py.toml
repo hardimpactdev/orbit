@@ -1,0 +1,17 @@
+order = 335
+cases = [
+  "test_a_cut_first_response_is_polled_again",
+  "test_a_failed_node_fails_the_refresh_with_its_reason_and_records_no_phases",
+  "test_a_read_that_never_becomes_whole_fails_with_no_status",
+]
+file = "swamp/tests/ansible_fleet_converge_poll_test.py"
+# ESTIMATE: supervised local run 7.1s for the three cases; confirm the 16s allowance on hosted CI.
+cost = 16
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-fleet-converge-node.yml",
+]
