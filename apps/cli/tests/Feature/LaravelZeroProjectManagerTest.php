@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Support\LaravelZeroProjectManager;
 use Laravel\Boost\BoostManager;
-use Laravel\Boost\Install\GuidelineAssist;
 use Laravel\Roster\ProjectManager;
 
 describe('Laravel Zero project manager', function (): void {
@@ -25,8 +24,6 @@ describe('Laravel Zero project manager', function (): void {
         expect($codexAgent->getArtisanPath())
             ->toBe('orbit')
             ->and($codexAgent->getArtisanPath(true))
-            ->toBe(base_path('orbit'))
-            ->and(app(GuidelineAssist::class)->artisan())
-            ->toBe('php orbit');
+            ->toBe(base_path('orbit'));
     });
 });

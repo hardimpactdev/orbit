@@ -164,7 +164,6 @@
         "Tests\\Feature\\Extensions\\Conn\\ConnThreadIndexTest": 1.4926,
         "Tests\\Feature\\Extensions\\Conn\\ConnThreadStartTest": 16.6301,
         "Tests\\Feature\\Extensions\\Documents\\DocumentsAgentInstructionsTest": 0.4294,
-        "Tests\\Feature\\AgentGuidanceTest": 0.2,
         "Tests\\Feature\\GitHub\\ApprovedWorkGitHubReadsTest": 0.1154,
         "Tests\\Feature\\Http\\AgentOperationChannelTest": 0.024,
         "Tests\\Feature\\Http\\AgentRealtimeDiscoveryTest": 0.0449,
