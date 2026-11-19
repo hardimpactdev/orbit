@@ -367,7 +367,9 @@ The Process must be an active Node-owned Docker Process on an active Linux Node.
 
 The Process must publish exactly one TCP listener on that selected address. A missing or ambiguous listener returns `route.upstream_unresolved` before storing intent. Orbit never rewrites published ports or falls back from a missing LAN listener to WireGuard. Add the LAN publication with `process:update` first. Loopback, wildcard, and UDP listeners are ineligible. A raw `upstream` stays private and loopback-only. Public Process IDs are numeric. Custom proxy Routes cannot change domain, scope, target, or publication after creation.
 
-The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Private DNS answers with the Ingress's WireGuard address, also for a requester on the Router's LAN: the Router serves no site for the hostname, so it never gets the Router LAN answer. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
+The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
+
+Private DNS answers with the Ingress's WireGuard address, also for a requester on the Router's LAN. The Router serves no site for the hostname, so the name never gets the Router LAN answer.
 
 Activation verifies the Process Node's firewall and sends an HTTP HEAD request from the Ingress to the selected listener before publishing. WireGuard uses the existing `orbit:wireguard-members` trust rule. LAN needs an active managed `orbit:` TCP allow rule for the Ingress LAN source and selected port; a rule for another port, source, or network does not qualify. Orbit refuses activation with `route.upstream_firewall_mismatch` when this rule is missing, and `route.upstream_unreachable` when the listener cannot be reached.
 
@@ -545,12 +547,15 @@ The same command removes an Ingress whose convergence failed. A failed step leav
 
 The run follows this order:
 
-1. Admission moves the assignment to the target, so every later build renders the target as the Cluster's Ingress.
-2. The target gets the Ingress role as `node:role:add --converge` gives it: Caddy, the Orbit root, its Caddyfile with every public site (Let's Encrypt, `tls force_automate`), and `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
-3. Private DNS answers with the target in the WireGuard and LAN views.
-4. After the [withdrawal grace period](#withdrawal-grace-period), the source's Caddyfile is rebuilt without the public sites and its two Ingress rules close. When Ingress was the source's last role, public SSH reopens there.
+1. Admission moves the assignment to the target. Every later build renders the target as the Cluster's Ingress.
+2. The target gets the Ingress role as `node:role:add --converge` gives it. It installs Caddy and the Orbit root and builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
+3. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
+4. Private DNS answers with the target in the WireGuard and LAN views.
+5. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
+6. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
+7. When Ingress was the source's last role, public SSH reopens there.
 
-Until step 4 both Nodes serve the public sites, so clients and public resolvers that still name the source keep working. A failure before step 4 leaves the source serving; run the same command with `--from=SOURCE` after you fix the cause. Public DNS is yours: point each public record at the target before the move, or at the latest when it starts. The target obtains its Let's Encrypt certificates once public DNS names it, as [Publish the public edge](#publish-the-public-edge) describes.
+Until step 6 both Nodes serve the public sites, so clients and public resolvers that still name the source keep working. A failure before step 6 leaves the source serving; run the same command with `--from=SOURCE` after you fix the cause. Public DNS is yours: point each public record at the target before the move, or at the latest when it starts. The target obtains its Let's Encrypt certificates once public DNS names it, as [Publish the public edge](#publish-the-public-edge) describes.
 
 ## Change an existing Route
 

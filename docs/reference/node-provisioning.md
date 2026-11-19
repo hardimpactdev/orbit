@@ -1312,7 +1312,10 @@ Every target step is one official `@swamp/ssh exec` argument list with the targe
 - `websocket` builds a new Reverb release as the Node's user. The target needs Git, PHP and Composer.
 - Reverb's `.env` comes from the vault copy on stdin. `ln -sfnT` then points the install path at the release.
 - `gateway` writes the private DNS route drop-in and applies the route to the live link. A failed `Route the private domain` step reports `follow_up`: `orbit node:role:add <target> gateway --converge`.
-- `ingress` runs `operation-node-role-add` against the target with a `node.role_converge` intent, as `node:role:add <target> ingress --converge` builds it, but without the Metrics fleet. It installs Caddy and the Orbit root, publishes the target's Caddyfile with the public sites, opens the Ingress rules and publishes private DNS. The relocation's own certificate, firewall and publication steps then have nothing left to do for `ingress`. The source of an `ingress` move is the active Ingress of the target's Cluster; the target must already be a member. [Ingress relocation](/reference/routes#ingress-relocation) gives the order.
+- `ingress` runs `operation-node-role-add` against the target. The intent is the one `node:role:add <target> ingress --converge` builds, without the Metrics fleet.
+- That child installs Caddy and the Orbit root and publishes the target's Caddyfile with the public sites. It also opens the Ingress rules and publishes private DNS.
+- The relocation's own certificate, firewall and publication steps have nothing left to do for `ingress`.
+- The source of an `ingress` move is the active Ingress of the target's Cluster. The target must already be a member. [Ingress relocation](/reference/routes#ingress-relocation) gives the order.
 
 Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` or `ingress` move waits the private DNS grace. Then `node-role-remove` removes the role from the source, and its own end check proves the removal.
 
