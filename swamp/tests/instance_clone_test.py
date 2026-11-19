@@ -664,7 +664,11 @@ class CloneTest(unittest.TestCase):
                     self.assertEqual(len(chowns), 2)
 
     def test_a_stripped_idmap_on_another_pool_driver_refuses_before_start(self):
-        for driver in ("zfs", "dir"):
+        # A dir root pool refuses before any copy, whatever the idmap.
+        calls, _, error = self.clone(overrides={"fixture_pool_driver": "dir"})
+        self.assertEqual(error, "instance.pool_driver_unsupported\n")
+        self.assertFalse(any("copy" in call for call in calls))
+        for driver in ("zfs",):
             with self.subTest(driver=driver):
                 calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": driver})
                 self.assertEqual(error, "instance.clone_idmap_unshift_unsupported\n")
