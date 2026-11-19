@@ -1,46 +1,57 @@
 ---
 # The converge of the nested Nodes in `fleet_converge_nodes` for the refresh (instance-fleet-refresh.yml), through the nested Gateway's
-# API as the operator. The refresh calls it once per Node, in converge order, so one converge runs at a time: a default converge holds
-# the hub's reservation (NodeNetworkReservation). Every admitted Operation is read every `fleet_ready_delay` seconds, at most
-# `fleet_converge_seconds` (default 900), until it has ended, so no run is still going when a failure fails the refresh and the run
-# restores the old seed. The refresh fails when a Node's converge did not succeed, and names that Node. The task VM refresh does the
-# same with `node:converge <id> --base` (task-vm-fleet-base-node.yml). The count of tasks each converge changed (`result.changed`) adds
-# to `fleet_converge_changed`, and a Node with a change joins `fleet_converge_changed_roles`; a result without a count counts as a
-# change. The caller sets `fleet_converge_body`: `{"base":false}` for the default scope, `{"base":true}` for the base
-# (docs/reference/development-containers.md#instance-host-in-the-fleet).
+# API as the operator. Each row names its Node (`id`, `name`), its request `body` (`{"base":false}` for the default scope,
+# `{"base":true}` for the base, docs/reference/development-containers.md#instance-host-in-the-fleet) and its bound `seconds`. Every
+# Node in the list is admitted first, so their converges run side by side; then one read of all admitted Operations every
+# `fleet_ready_delay` seconds, at most the largest `seconds`, waits until every one has ended, so no run is still going when a failure
+# fails the refresh and the run restores the old seed. The refresh fails when a Node's admission was refused or its converge did not
+# succeed, and names each such Node; a Node that failed records no phases. The task VM refresh does the same with
+# `node:converge <id> --base` (task-vm-fleet-base-node.yml). The count of tasks each converge changed (`result.changed`) adds to
+# `fleet_converge_changed`, and a Node with a change joins `fleet_converge_changed_roles`; a result without a count counts as a change.
 - name: Admit the converge of each due nested Node
   ansible.builtin.command:
     argv: >-
       {{ ['timeout', '90'] + fleet_curl + ['--fail', '-X', 'POST', fleet_api ~ '/nodes/' ~ item.id ~ '/converge',
-          '-H', 'Content-Type: application/json', '-d',
-          fleet_converge_body] }}
+          '-H', 'Content-Type: application/json', '-d', item.body] }}
   loop: "{{ fleet_converge_nodes }}"
   loop_control: { label: "{{ item.name }}" }
   register: fleet_converge
   changed_when: true
   # A refused admission fails the refresh only after the admitted converges have ended (the check below).
   failed_when: false
-- name: Wait for the converge of each due nested Node
+- name: Name the admitted converges
+  ansible.builtin.set_fact:
+    fleet_converge_admitted: >-
+      {{ fleet_converge.results | selectattr('rc', 'eq', 0) | map(attribute='item.name')
+         | zip(fleet_converge.results | selectattr('rc', 'eq', 0) | map(attribute='stdout') | map('from_json') | map(attribute='data.id'))
+         | list }}
+# One read names every admitted Operation; curl prints each body on a line of its own, in the order of the URLs.
+- name: Wait for the converges of the due nested Nodes
+  when: fleet_converge_admitted | length > 0
   ansible.builtin.command:
-    argv: "{{ ['timeout', '90'] + fleet_curl + ['--fail', fleet_api ~ '/operations/' ~ (item.stdout | from_json).data.id] }}"
-  loop: "{{ fleet_converge.results | selectattr('rc', 'eq', 0) | list }}"
-  loop_control: { label: "{{ item.item.name }}" }
+    argv: >-
+      {{ ['timeout', '90'] + fleet_curl + ['--fail', '-w', '\n']
+         + (fleet_converge_admitted | map(attribute='1') | map('regex_replace', '^', fleet_api ~ '/operations/') | list) }}
   register: fleet_converge_wait
   changed_when: false
   failed_when: false
+  vars:
+    fleet_converge_read: "{{ fleet_converge_wait.stdout_lines | default([]) | reject('equalto', '') | map('from_json') | map(attribute='data') | list }}"
   until: >-
-    ((fleet_converge_wait.stdout | default('{}', true) | from_json).data | default({})).status | default('')
-    in ['succeeded', 'failed', 'cancelled', 'interrupted']
-  retries: "{{ ((fleet_converge_seconds | default(900) | int) / 5) | int }}"
+    fleet_converge_wait.rc == 0 and fleet_converge_read | length == fleet_converge_admitted | length
+    and fleet_converge_read | map(attribute='status') | difference(['succeeded', 'failed', 'cancelled', 'interrupted']) | length == 0
+  retries: "{{ ((fleet_converge_nodes | map(attribute='seconds') | map('int') | max) / 5) | int }}"
   delay: "{{ fleet_ready_delay }}"
 - name: Read the converges of the nested Nodes
   ansible.builtin.set_fact:
-    # One row per due Node: its name, its Operation and the Operation as last read.
+    # One row per admitted Node: its name, its Operation and the Operation as last read.
     fleet_converge_ops: >-
+      {%- set read = fleet_converge_wait.stdout_lines | default([]) | reject('equalto', '') | list
+          if fleet_converge_wait.rc | default(1) == 0 else [] -%}
       {%- set rows = [] -%}
-      {%- for wait in fleet_converge_wait.results -%}
-      {%- set _ = rows.append({'name': wait.item.item.name, 'id': (wait.item.stdout | from_json).data.id,
-            'data': (wait.stdout | default('{}', true) | from_json).data | default({})}) -%}
+      {%- for admitted in fleet_converge_admitted -%}
+      {%- set _ = rows.append({'name': admitted[0], 'id': admitted[1],
+            'data': ((read[loop.index0] | from_json).data | default({})) if read | length == fleet_converge_admitted | length else {}}) -%}
       {%- endfor -%}
       {{ rows }}
 - name: Check the converges of the nested Nodes

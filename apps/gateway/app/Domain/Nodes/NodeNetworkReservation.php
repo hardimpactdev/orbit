@@ -15,8 +15,11 @@ use Illuminate\Support\Facades\DB;
 /**
  * Reserves a convergence target and the shared hub until its Operation settles. Every converge records the hub it may change and
  * whether it is a base converge (`node.converge` with `base: true`). A base intent never converges the network, the hub's own
- * included (NodeDesiredConvergeInput::baseIntent), so two base converges of different Nodes never conflict: the nested-fleet refresh
- * starts the inner Nodes' base converges together. Against a converge with roles, Tools or a network, any converge refuses as before.
+ * included (NodeDesiredConvergeInput::baseIntent), so two base converges of different Nodes never conflict. Two converges of
+ * different peers of the hub never conflict either: each network phase writes the hub's recorded peer set, the same for both, with
+ * atomic file copies, one `wg syncconf` and UFW's own lock, and prunes only by the bounds of its snapshot. So the nested-fleet
+ * refresh converges nested-app-dev and nested-app-prod together (docs/reference/development-containers.md). A converge of the hub
+ * Node itself, beside any other converge, still refuses unless both are base converges.
  */
 final readonly class NodeNetworkReservation
 {
@@ -45,10 +48,11 @@ final readonly class NodeNetworkReservation
                         $query->orWhere('input->_converge->network->hub_id', $hub->id);
                     }
                 })->get();
-            // A converge of the same Node always conflicts. Through the hub, only two base converges pass each other; an Operation
-            // without the mark counts as one with roles.
+            // A converge of the same Node always conflicts. Through the hub, two peers pass each other; beside a converge of the hub
+            // Node itself, only two base converges pass. An Operation without the base mark counts as one with roles.
             $busy = $open->contains(static fn (Operation $operation): bool => $operation->node_id === $node->id
-                || ! $base || (ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['network'] ?? [])['base'] ?? false) !== true);
+                || (in_array($hub?->id, [$node->id, $operation->node_id], true)
+                    && (! $base || (ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['network'] ?? [])['base'] ?? false) !== true)));
             if ($busy) {
                 throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the Node or VPN hub.', 409);
             }

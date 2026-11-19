@@ -341,15 +341,20 @@ const remint = "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbi
 const tokenShaped = /[a-z0-9-]+\.[A-Za-z0-9_-]{20,}/;
 /** A call to the nested Gateway's converge API: an admission or a read of its Operation. */
 const convergeApi = (call: string) => call.startsWith(api) && (call.includes("/converge ") || call.includes("/operations/"));
-/** The due Nodes converge one at a time, in the order gateway (1), app-prod (3), app-dev (2): each is admitted and then read. The
- * fake numbers each admitted Operation from 901 in admission order. */
+/** The due nested Gateway (1) converges first: it is admitted and then read. Then app-dev (2) and app-prod (3) are admitted together, and
+ * one call reads both Operations until both have ended. The fake numbers each admitted Operation from 901 in admission order. */
 const convergeAdmit = (node: number, host = true) =>
   `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d ${
     node === 2 && !host ? '{"base":true}' : '{"base":false}'}`;
-const convergeRead = (operation: number) => `${api} --fail https://10.45.0.1/api/v1/operations/${operation}`;
+const convergeRead = (...operations: number[]) =>
+  `${api} --fail -w \\n ${operations.map((operation) => `https://10.45.0.1/api/v1/operations/${operation}`).join(" ")}`;
 /** Each converge has the default scope. With `host` off (an ID map below 2,000,000), nested-app-dev keeps the base scope. */
-const convergeCallsFor = (nodes: number[], host = true) =>
-  [1, 3, 2].filter((node) => nodes.includes(node)).flatMap((node, index) => [convergeAdmit(node, host), convergeRead(901 + index)]);
+const convergeCallsFor = (nodes: number[], host = true) => {
+  const gateway = nodes.includes(1) ? [convergeAdmit(1, host), convergeRead(901)] : [];
+  const apps = [2, 3].filter((node) => nodes.includes(node));
+  const first = 901 + gateway.length / 2;
+  return [...gateway, ...apps.map((node) => convergeAdmit(node, host)), ...(apps.length > 0 ? [convergeRead(...apps.map((_, index) => first + index))] : [])];
+};
 const convergeCalls = convergeCallsFor([1, 2, 3], true);
 /** The record keys of the three nested Nodes' converge digests and last converge times. */
 const convergeKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converge_${role}`);
@@ -701,7 +706,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
+  name: "a refresh applies the checkout, converges the nested Gateway and then the app Nodes side by side, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
   ignore: !hasAnsible,
   fn() {
     // Below 2,000,000: nested-app-dev keeps the base scope. The host's own order is the window's first refresh case.
@@ -784,7 +789,7 @@ Deno.test({
       assertKeyUntouched(calls, refreshed.output);
       assertEquals(f.refreshed()?.base_mode, "stopped");
       const state = f.state();
-      assertEquals(state.operations.map((operation: { node: number }) => operation.node), [1, 3, 2]);
+      assertEquals(state.operations.map((operation: { node: number }) => operation.node), [1, 2, 3]);
       assertEquals(calls.filter((call) => call.includes("/doctor")).length, 1);
       for (const name of names) {
         assertEquals(state.containers[name].status, "Running");
@@ -841,9 +846,9 @@ Deno.test({
       f.change((state) => state.convergeStatus = { 2: "failed" });
       const failed = f.run("refresh");
       assert(!failed.ok);
-      assertStringIncludes(failed.output, "The converge of the nested Node app-dev (Operation 903) ended failed with node.converge_failed");
+      assertStringIncludes(failed.output, "The converge of the nested Node app-dev (Operation 902) ended failed with node.converge_failed");
       const calls = f.calls();
-      // app-dev converges last, so the three are admitted one at a time and each is awaited before the failure fails the refresh.
+      // The nested Gateway converges first; app-prod and app-dev are admitted together and both awaited before the failure fails the refresh.
       assertEquals(calls.filter(convergeApi), convergeCallsFor([1, 2, 3], false));
       assert(!calls.some((call) => !call.includes(" file pull ") && (call.includes("ansible-playbook") || call.includes("orbit-swamp"))), calls.join("\n"));
       assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
@@ -856,7 +861,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh",
+  name: "the nested Gateway converges first, then app-prod and app-dev side by side in one wait; a refused or failed converge fails the refresh with its Node and records nothing",
   ignore: !hasAnsible,
   fn() {
     // Below 2,000,000: nested-app-dev keeps the base scope.
@@ -864,7 +869,7 @@ Deno.test({
     try {
       assert(f.run("start").ok);
       f.calls();
-      // gateway still runs for two reads, then app-prod is refused at its admission.
+      // gateway still runs for two reads, then app-prod is refused at its admission; app-dev is admitted beside it and awaited.
       f.change((state) => {
         state.convergeRunning = { 1: 2 };
         state.convergeRefused = [3];
@@ -873,21 +878,37 @@ Deno.test({
       assert(!refused.ok);
       assertStringIncludes(refused.output, "The nested Gateway did not admit the converge of app-prod");
       let calls = f.calls();
-      // app-prod is admitted only after gateway has ended; app-dev, after the refusal, is never admitted.
-      assertEquals(calls.filter(convergeApi), [convergeAdmit(1, false), convergeRead(901), convergeRead(901), convergeRead(901), convergeAdmit(3, false)]);
+      // The app Nodes are admitted only after gateway has ended, both before the one wait.
+      assertEquals(calls.filter(convergeApi), [convergeAdmit(1, false), convergeRead(901), convergeRead(901), convergeRead(901), convergeAdmit(2, false),
+        convergeAdmit(3, false), convergeRead(902)]);
       assertEquals(f.state().convergeRunning, { 1: 0 });
       assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
       assertEquals(f.state().outer.files[record], undefined);
-      // app-prod is admitted now and fails: app-dev is again never admitted.
+      // A failed nested Gateway admits no app Node.
       f.change((state) => {
         state.convergeRefused = [];
+        state.convergeStatus = { 1: "failed" };
+      });
+      const gateway = f.run("refresh");
+      assert(!gateway.ok);
+      assertStringIncludes(gateway.output, "The converge of the nested Node gateway (Operation 903) ended failed with node.converge_failed");
+      calls = f.calls();
+      assertEquals(calls.filter(convergeApi), [convergeAdmit(1, false), convergeRead(903)]);
+      assertEquals(f.state().outer.files[record], undefined);
+      // app-prod fails at once while app-dev still runs for two reads: the one wait reads both until both have ended, the refresh
+      // fails with app-prod's reason only, and no digest is recorded, app-dev's included.
+      f.change((state) => {
         state.convergeStatus = { 3: "failed" };
+        state.convergeRunning = { 2: 2 };
       });
       const failed = f.run("refresh");
       assert(!failed.ok);
-      assertStringIncludes(failed.output, "The converge of the nested Node app-prod (Operation 903) ended failed with node.converge_failed");
+      assertStringIncludes(failed.output, "The converge of the nested Node app-prod (Operation 906) ended failed with node.converge_failed");
+      assert(!failed.output.includes("nested Node app-dev"), failed.output);
       calls = f.calls();
-      assertEquals(calls.filter(convergeApi), [convergeAdmit(1, false), convergeRead(902), convergeAdmit(3, false), convergeRead(903)]);
+      assertEquals(calls.filter(convergeApi), [convergeAdmit(1, false), convergeRead(904), convergeAdmit(2, false), convergeAdmit(3, false),
+        convergeRead(905, 906), convergeRead(905, 906), convergeRead(905, 906)]);
+      assertEquals(f.state().convergeRunning, { 2: 0 });
       assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
       assertEquals(f.state().outer.files[record], undefined);
     } finally {
@@ -1220,7 +1241,7 @@ Deno.test({
   name: "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base",
   ignore: !hasAnsible,
   fn() {
-    // Below 2,000,000: nested-app-dev keeps the base scope. The converges run one at a time, so the first failure stops them.
+    // Below 2,000,000: nested-app-dev keeps the base scope. A failed nested Gateway admits no app Node.
     const f = fixture(withStatus("Running"), { club: true, base: true, host: false });
     f.change((state) => {
       state.tunnel = structuredClone(tunnelUp);
@@ -1335,7 +1356,7 @@ Deno.test({
         delete state.outer.files[record];
         delete state.outer.files[clubKey];
       });
-      f.scopePhase("refresh", { through: "Converge the due nested Nodes one at a time" });
+      f.scopePhase("refresh", { through: "Converge the due nested Nodes, the nested Gateway first, then the app Nodes side by side" });
       return f;
     };
     const f = due();
@@ -1834,7 +1855,7 @@ Deno.test({
   fn() {
     const f = refreshedOnce();
     try {
-      // Run 1 changes app-dev, then the app-prod converge fails: nothing is recorded and the old record is gone.
+      // Run 1 changes app-dev, and the app-prod converge beside it fails: nothing is recorded and the old record is gone.
       f.change((state) => {
         state.digests = { "apps/gateway": "a1", "swamp/ansible/tasks/node-converge-base.yml": "c9" };
         state.convergeChanged = { 2: 3 };
@@ -1847,6 +1868,9 @@ Deno.test({
       const recovery = persistentState(f.state());
       delete recovery.convergeStatus;
       delete recovery.convergeChanged;
+      // app-dev converged beside the failed app-prod, and its success is not recorded either.
+      assertEquals(recovery.roleConverges, [2, 2]);
+      recovery.roleConverges = [2];
       assertEquals(recovery, failedRefreshBoundary());
     } finally {
       f.cleanup();
@@ -2154,7 +2178,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended",
+  name: "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge after the nested Gateway's ended, beside app-prod's",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -2287,7 +2311,7 @@ Deno.test({
       });
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
-      assertStringIncludes(refreshed.output, "FAILED - RETRYING: [localhost]: Wait for the converge of each due nested Node (360 retries left)");
+      assertStringIncludes(refreshed.output, "FAILED - RETRYING: [localhost]: Wait for the converges of the due nested Nodes (360 retries left)");
       assertEquals(f.calls().filter((call) => call.includes("/converge ")), [convergeAdmit(2, true)]);
       assertEquals([f.refreshed()!.host, f.state().roleConverges, f.state().convergeRunning], ["converged", [2], { 2: 0 }]);
       assertEquals(JSON.parse(f.state().outer.files[record]).host, fixtureHostDigest("5".repeat(64)));

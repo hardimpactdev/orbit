@@ -667,10 +667,10 @@ if (command[0] === "curl") {
     if (!roles && !(command.at(-1) === '{"base":true}' && converge[1] === "2")) fail("A refresh converges the default scope, or app-dev's base");
     state.operations ??= [];
     const node = Number(converge[1]);
-    // NodeNetworkReservation: every converge goes through the hub. A default converge is refused while any other converge is open,
-    // and a base converge while a default one is open. An Operation is open until a read has returned its end.
+    // NodeNetworkReservation: a converge of the same Node is refused; beside a converge of the hub (the nested Gateway, Node 1), only
+    // two base converges pass; two peers of the hub pass each other. An Operation is open until a read has returned its end.
     const open = state.operations.filter((op: { ended?: boolean }) => !op.ended);
-    if (open.some((op: { node: number; roles?: boolean }) => op.node === node || roles || op.roles)) {
+    if (open.some((op: { node: number; roles?: boolean }) => op.node === node || ((node === 1 || op.node === 1) && (roles || op.roles)))) {
       fail("curl: (22) The requested URL returned error: 409", 22);
     }
     if (roles && node === 2) (state.roleConverges ??= []).push(2);
@@ -682,21 +682,35 @@ if (command[0] === "curl") {
     state.operations.push({ node, roles, status: state.convergeStatus?.[node] ?? (egress ? "succeeded" : "failed") });
     done({ data: { id: 900 + state.operations.length, status: "pending" } });
   }
+  // The refresh reads every admitted Operation in one call; curl prints each body and then the `-w` newline.
+  const operationUrls = command.filter((value) => value.startsWith("https://") && /\/api\/v1\/operations\/\d+$/.test(value));
+  if (method === "GET" && operationUrls.length > 1) {
+    Deno.stdout.writeSync(new TextEncoder().encode(operationUrls.map((value) => JSON.stringify(readOperation(Number(value.slice(value.lastIndexOf("/") + 1)))) + "\n").join("")));
+    save();
+    Deno.exit(0);
+  }
   const operation = /^\/operations\/(\d+)$/.exec(path);
   if (method === "GET" && operation) {
-    const found = state.operations[Number(operation[1]) - 901];
-    // `convergeRunning`: the reads in which a Node's converge still runs.
-    if ((state.convergeRunning?.[found.node] ?? 0) > 0) {
-      state.convergeRunning[found.node] -= 1;
-      done({ data: { id: Number(operation[1]), status: "running", error_code: null, result: null } });
-    }
-    found.ended = true;
-    // `convergeChanged`: the tasks each Node's base converge changed, as the Operation's `result.changed`; 0 by default.
-    // `convergeNoCount`: a result without a count. `convergePhases`: each Node's phases and their status, as the Operation's `result.phases`.
-    const phases = state.convergePhases?.[found.node] ? { phases: state.convergePhases[found.node] } : {};
-    done({ data: { id: Number(operation[1]), status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null,
-      result: found.status !== "succeeded" ? null : state.convergeNoCount ? {} : { changed: state.convergeChanged?.[found.node] ?? 0, ...phases } } });
+    Deno.stdout.writeSync(new TextEncoder().encode(JSON.stringify(readOperation(Number(operation[1]))) + (command.includes("-w") ? "\n" : "")));
+    save();
+    Deno.exit(0);
   }
   fail(`Unexpected API call: ${method} ${path}`);
+}
+
+/** One Operation as the nested Gateway returns it, from the fake's converge records. */
+function readOperation(id: number): unknown {
+  const found = state.operations[id - 901];
+  // `convergeRunning`: the reads in which a Node's converge still runs.
+  if ((state.convergeRunning?.[found.node] ?? 0) > 0) {
+    state.convergeRunning[found.node] -= 1;
+    return { data: { id, status: "running", error_code: null, result: null } };
+  }
+  found.ended = true;
+  // `convergeChanged`: the tasks each Node's base converge changed, as the Operation's `result.changed`; 0 by default.
+  // `convergeNoCount`: a result without a count. `convergePhases`: each Node's phases and their status, as the Operation's `result.phases`.
+  const phases = state.convergePhases?.[found.node] ? { phases: state.convergePhases[found.node] } : {};
+  return { data: { id, status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null,
+    result: found.status !== "succeeded" ? null : state.convergeNoCount ? {} : { changed: state.convergeChanged?.[found.node] ?? 0, ...phases } } };
 }
 fail(`Unexpected command in the Instance container: ${command.join(" ")}`);
