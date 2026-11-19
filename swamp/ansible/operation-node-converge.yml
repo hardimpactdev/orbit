@@ -162,18 +162,20 @@
       loop: "{{ intent.roles }}"
       loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
       tags: [check]
-    - name: Check the managed agent files without changing the Node
-      ansible.builtin.stat: { path: /usr/local/bin/orbit-agent, checksum_algorithm: sha256 }
-      register: agent_check
+    - name: Check the managed agent file and service without changing the Node
+      ansible.builtin.import_tasks: tasks/check-read.yml
+      vars: { check_read_paths: [/usr/local/bin/orbit-agent], check_read_units: [orbit-agent.service] }
       tags: [check]
     - name: Require the recorded agent pin
       ansible.builtin.assert:
-        that: [agent_check.stat.checksum | default('') == intent.agent.sha256]
+        that: [check_read.paths['/usr/local/bin/orbit-agent'].checksum | default('') == intent.agent.sha256]
         quiet: true
       tags: [check]
-    - name: Check the agent service without changing it
-      ansible.builtin.command: { argv: [systemctl, is-active, orbit-agent.service] }
-      changed_when: false
+    - name: Require the active agent service
+      ansible.builtin.assert:
+        that: check_read.units['orbit-agent.service'].rc == 0
+        fail_msg: "orbit-agent.service is {{ check_read.units['orbit-agent.service'].state }}, not active."
+        quiet: true
       tags: [check]
     - name: Check the recorded CLI artifact
       when: intent.cli != None and not (intent.release_roles_only | default(false) or intent.automatic | default(false))

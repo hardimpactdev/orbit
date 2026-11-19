@@ -1,9 +1,37 @@
 ---
-- name: Read role file metadata
-  ansible.builtin.stat: { path: "{{ item.path }}", checksum_algorithm: sha256 }
-  loop: "{{ intent.files + intent.runtime.files }}"
-  loop_control: { label: "{{ item.path }}" }
-  register: role_files
+# One read of every role file, folder and private file, and of `check_units` (default none). The stat-shaped results keep
+# the asserts below, their loops and labels, so each failure names the same item as a stat per item did.
+- name: Read role file, folder and private file metadata
+  ansible.builtin.import_tasks: check-read.yml
+  vars:
+    check_read_paths: >-
+      {{ (intent.files + intent.runtime.files + intent.directories + intent.runtime.directories + intent.runtime.secret_files)
+      | map(attribute='path') | list }}
+    check_read_units: "{{ check_units | default([]) | map(attribute='name') | list }}"
+    # The checksums of private files stay out of the run's output, as their stat calls did.
+    check_read_private: "{{ intent.runtime.secret_files | length > 0 }}"
+- name: Check role services
+  ansible.builtin.assert:
+    that: check_read.units[item.name].rc == 0
+    fail_msg: "{{ item.name }} is {{ check_read.units[item.name].state }}, not active."
+    quiet: true
+  loop: "{{ check_units | default([]) }}"
+  loop_control: { label: "{{ item.name }}" }
+- name: Pair role paths with their metadata
+  vars:
+    pair: >-
+      {%- set out = {'files': [], 'folders': [], 'private': []} -%}
+      {%- for group, items in [('files', intent.files + intent.runtime.files),
+                               ('folders', intent.directories + intent.runtime.directories),
+                               ('private', intent.runtime.secret_files)] -%}
+      {%- for item in items -%}{%- set _ = out[group].append({'item': item, 'stat': check_read.paths[item.path]}) -%}{%- endfor -%}
+      {%- endfor -%}
+      {{ out }}
+  ansible.builtin.set_fact:
+    role_files: { results: "{{ pair.files }}" }
+    role_folders: { results: "{{ pair.folders }}" }
+    role_private: { results: "{{ pair.private }}" }
+  no_log: "{{ intent.runtime.secret_files | length > 0 }}"
 - name: Check role files
   ansible.builtin.assert:
     that:
@@ -14,21 +42,12 @@
   loop: "{{ role_files.results }}"
   loop_control: { label: "{{ item.item.path }}" }
   when: kind != 'node.role_converge' or item.item.path != '/etc/orbit/metrics/prometheus.yml'
-- name: Read role folder metadata
-  ansible.builtin.stat: { path: "{{ item.path }}" }
-  loop: "{{ intent.directories + intent.runtime.directories }}"
-  register: role_folders
 - name: Check role folders
   ansible.builtin.assert:
     that: [item.stat.isdir, item.stat.pw_name == item.item.owner, item.stat.gr_name == item.item.group, item.stat.mode == item.item.mode]
     quiet: true
   loop: "{{ role_folders.results }}"
   loop_control: { label: "{{ item.item.path }}" }
-- name: Read private file metadata
-  ansible.builtin.stat: { path: "{{ item.path }}", checksum_algorithm: sha256 }
-  loop: "{{ intent.runtime.secret_files }}"
-  register: role_private
-  no_log: true
 - name: Check private files
   ansible.builtin.assert:
     that:

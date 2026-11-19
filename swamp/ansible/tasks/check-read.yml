@@ -1,0 +1,57 @@
+---
+# One read of a check's paths and units instead of a stat or `systemctl is-active` call per item
+# (docs/reference/node-provisioning.md#check-many-files-in-one-read). `check_read_paths` lists paths, read like
+# ansible.builtin.stat without follow and with a SHA-256 checksum of a regular file; a path listed twice is read once.
+# `check_read_units` lists units. `check_read` keeps each path's stat-shaped result under `paths` and each unit's
+# `systemctl is-active` exit code and state under `units`, so the asserts that follow judge every item as before.
+# A read that fails, or prints anything but its JSON document, fails the check. `check_read_private` keeps both out of the output.
+- name: Read the checked paths and units in one call
+  check_mode: false
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+        import grp, hashlib, json, os, pwd, stat, subprocess, sys
+        request = json.load(sys.stdin)
+        paths = {}
+        for path in request['paths']:
+            if path in paths:
+                continue
+            try:
+                found = os.lstat(path)
+            except FileNotFoundError:
+                paths[path] = {'exists': False}
+                continue
+            mode = found.st_mode
+            entry = {'exists': True, 'isdir': stat.S_ISDIR(mode), 'isreg': stat.S_ISREG(mode), 'islnk': stat.S_ISLNK(mode),
+                     'mode': '%04o' % stat.S_IMODE(mode), 'rusr': bool(mode & stat.S_IRUSR), 'uid': found.st_uid, 'gid': found.st_gid}
+            try:
+                entry['pw_name'] = pwd.getpwuid(found.st_uid).pw_name
+            except KeyError:
+                pass
+            try:
+                entry['gr_name'] = grp.getgrgid(found.st_gid).gr_name
+            except KeyError:
+                pass
+            if stat.S_ISREG(mode) and os.access(path, os.R_OK):
+                digest = hashlib.sha256()
+                with open(path, 'rb') as file:
+                    for block in iter(lambda: file.read(1 << 16), b''):
+                        digest.update(block)
+                entry['checksum'] = digest.hexdigest()
+            paths[path] = entry
+        units = {}
+        for unit in request['units']:
+            done = subprocess.run(['systemctl', 'is-active', '--', unit], capture_output=True, text=True)
+            units[unit] = {'rc': done.returncode, 'state': done.stdout.strip()}
+        print(json.dumps({'paths': paths, 'units': units}))
+    stdin: "{{ {'paths': check_read_paths | default([]), 'units': check_read_units | default([])} | to_json }}"
+  register: check_read_output
+  changed_when: false
+  no_log: "{{ check_read_private | default(false) }}"
+- name: Keep the checked paths and units
+  ansible.builtin.set_fact:
+    check_read: "{{ check_read_output.stdout | from_json }}"
+  no_log: "{{ check_read_private | default(false) }}"

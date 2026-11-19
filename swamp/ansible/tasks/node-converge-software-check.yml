@@ -1,11 +1,24 @@
 ---
 - name: Resolve the admitted software scope for the end check
   ansible.builtin.import_tasks: node-converge-software-plan.yml
+# One dpkg read of the installed versions instead of package_facts, which loads the whole apt cache for the same answer.
 - name: Read the selected package state after all mutations
-  ansible.builtin.package_facts: { manager: apt }
+  ansible.builtin.command: { argv: [dpkg-query, --show, "--showformat=${db:Status-Status} ${Package} ${Version}\\n"] }
+  register: software_installed
+  changed_when: false
+  check_mode: false
+- name: Keep the installed package versions
+  ansible.builtin.set_fact:
+    software_versions: >-
+      {%- set out = {} -%}
+      {%- for line in software_installed.stdout_lines | select('match', '^installed ') -%}
+      {%- set field = line.split(' ') -%}
+      {%- set _ = out.update({field[1]: out.get(field[1], []) + [field[2]]}) -%}
+      {%- endfor -%}
+      {{ out }}
 - name: Require every selected package pin
   ansible.builtin.assert:
-    that: item.version in (ansible_facts.packages[item.package] | default([]) | map(attribute='version') | list)
+    that: item.version in software_versions[item.package] | default([])
     quiet: true
   loop: "{{ ubuntu_tools + deb_tools }}"
   loop_control: { label: "{{ item.name }}" }
