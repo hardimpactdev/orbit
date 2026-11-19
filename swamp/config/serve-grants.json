@@ -9,7 +9,6 @@
     {"subject": "user:orbit-orchestrator-read", "effect": "allow", "actions": ["read"], "resource": "workflow:*"},
     {"subject": "user:nckrtl", "effect": "allow", "actions": ["run", "read"], "resource": "workflow:node-proxy-canary"},
     {"subject": "user:nckrtl", "effect": "allow", "actions": ["run", "read"], "resource": "workflow:node-proxy-preflight"},
-    {"subject": "user:nckrtl", "effect": "allow", "actions": ["run", "read"], "resource": "workflow:node-proxy-workers-setup"},
-    {"subject": "group:orbit-execution-input-node-14", "effect": "allow", "actions": ["read"], "resource": "vault:orbit-control-inputs", "condition": "key == \"bootstrap-identity-node-14\""}
+    {"subject": "user:nckrtl", "effect": "allow", "actions": ["run", "read"], "resource": "workflow:node-proxy-workers-setup"}
   ]
 }

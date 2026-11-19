@@ -9,6 +9,16 @@ This is the entry point for fleet-proof work. Design and run the proofs before o
 
 Run `orbit proof FAMILY:COMMAND --group=ID --json` for the task group whose copy you are proving. It tests the current checkout, committed or not. Follow [`orbit proof`](../../../docs/cli/proof/proof.mdx) for prerequisites, refusals, resets and evidence: it resets the nested fleet before each batch and leaves the last batch's state for inspection, not a clean fleet. Build no second runner.
 
+## The nested fleet of a task copy
+
+`nested-gateway` mounts this checkout, `/srv/workspace`, at `/home/orbit/orbit`. Its PHP-FPM, Horizon and scheduler run `/home/orbit/orbit/apps/gateway` as `orbit`. Its `swamp serve` serves `/home/orbit/orbit/swamp` with `--hot-reload`. Run a command there as `sudo incus exec nested-gateway -- runuser -u orbit -- sh -c 'cd /home/orbit/orbit/apps/gateway && …'`.
+
+- The PHP-FPM pool `orbit-gateway` checks file times on every request (`opcache.validate_timestamps = 1`, `opcache.revalidate_freq = 0`; see `php-fpm8.5 -tt`). Horizon is a long-running process: restart it with `sudo incus exec nested-gateway -- systemctl restart orbit-gateway-horizon`. Swamp's `--hot-reload` reloads extension types and workflow folders on SIGHUP: as `orbit`, run `kill -HUP "$(cat /home/orbit/orbit/swamp/.swamp/serve.pid)"`. `swamp serve reload` needs a Club login that the guest lacks.
+- The nested database is `/home/orbit/.orbit/gateway.sqlite`, on the guest's own disk. After a merge of main, its new migrations are `Pending` there: run `php artisan migrate --force`, then restart Horizon.
+- The nested Gateway has no release layout: `apps/gateway` is the checkout's folder, `/home/orbit/shared` does not exist, and `gateway:release:list` returns no releases. So a release proof covers only what runs before a release: `swamp/proof/gateway/release-deploy.cases.yaml` checks the local refusal `invalid-commit` and lists the release itself as `uncovered`.
+- Each nested container has one snapshot, `base`. Do not restore it by hand: the reset play, `swamp/ansible/tasks/instance-fleet-reset.yml`, also clears network pid files, starts the fleet under its rules, migrates and waits for readiness. The copy's CLI, `apps/cli/orbit`, has no `proof` command.
+- After a proof, remove what you added by hand: probe files in the checkout (the nested Gateway reads them at once), snapshots other than `base`, and nested Instances that no case created. Start what you stopped.
+
 ## The cases file
 
 The cases file `swamp/proof/<family>/<command>.cases.yaml` is part of the spec in the first commit of the command's PR ([preparing-commands](../preparing-commands/SKILL.md)). The [format](../../../docs/reference/verification-cases.mdx) and the batches in `swamp/proof/batches.yaml` are the only places that define a case. The shared runner (`swamp/proof/runner/`) runs it, so write no case program.
