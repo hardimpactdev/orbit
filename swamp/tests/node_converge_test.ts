@@ -4,6 +4,11 @@ import { convergeResult, phases } from "../extensions/behaviors/operations/ansib
 import { codeDigest, convergeInput, phaseCode, phaseDigests, roleDigests, rolePhaseCode, roleSiblings, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
 import { behavior as extension } from "../extensions/behaviors/operations/ansible-input/write.ts";
+import { codeTree } from "./phase_code_fixture.ts";
+
+/** The shipped code of every convergeInput call that does not test code. */
+const shipped = await codeTree();
+globalThis.addEventListener("unload", () => Deno.removeSync(shipped.tree, { recursive: true }));
 
 /** The digest fields a converge intent carries (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
 const digestFixture = { recorded_digests: [] };
@@ -112,7 +117,7 @@ Deno.test("private input is mode-protected, literal and limited to target plus r
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, network: { hub: { hub_id: 2, ssh: { ...ssh, target: { ...ssh.target, host: "10.44.0.2" } } } }, roles: [] }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
         await Deno.writeTextFile(`${folder}/secret-agent_verifier`, secret);
-        await convergeInput(folder, 1, "/unused", "/shipped/helper.ts", []);
+        await convergeInput(folder, 1, "/unused", "/shipped/helper.ts", shipped.code);
         assertEquals(Object.keys(JSON.parse(await Deno.readTextFile(`${folder}/inventory.json`)).all.hosts), ["target", "hub"]);
         assertEquals(await Deno.readTextFile(`${folder}/known_hosts`), "10.44.0.2 ssh-ed25519 pinned\n10.44.0.7 ssh-ed25519 pinned\n");
         const vars = await Deno.readTextFile(`${folder}/vars.yml`);
@@ -528,7 +533,7 @@ Deno.test("the code digest moves with a file's content and name", async () => {
 });
 
 /** Input preparation in a fresh run folder, as one Operation of the given ID; the intent names that Operation, as a role's runtime does. */
-async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: string[]; leaf?: string; admitted?: number } = {}) {
+async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: [string, string, string]; leaf?: string; admitted?: number } = {}) {
     const folder = await Deno.makeTempDir();
     try {
         const operationId = change.operationId ?? 41;
@@ -539,7 +544,7 @@ async function prepared(recorded: Record<string, string>, change: { operationId?
             ...certificates, ...instances, recorded_digests: recorded }));
         await Deno.writeTextFile(`${folder}/plans.json`, change.plans ?? JSON.stringify({ ci: { runner: "one" } }));
         await Deno.writeTextFile(`${folder}/secret-agent_verifier`, change.secret ?? "v");
-        const phases = await convergeInput(folder, operationId, "/unused", "/shipped/helper.ts", change.code ?? []);
+        const phases = await convergeInput(folder, operationId, "/unused", "/shipped/helper.ts", change.code ?? shipped.code);
         return { phases, file: JSON.parse(await Deno.readTextFile(`${folder}/digests.json`)), mode: (await Deno.stat(`${folder}/digests.json`)).mode! & 0o777,
             vars: parse(await Deno.readTextFile(`${folder}/vars.yml`)) as { converge_intent: Record<string, unknown> } };
     } finally { await Deno.remove(folder, { recursive: true }); }
@@ -688,6 +693,35 @@ Deno.test("each skippable role phase is guarded by the role digests; every other
             else assertEquals(step.guard?.includes(skip(phase)), true, step.name);
         }
     }
+});
+
+Deno.test("input preparation with an empty code list writes every phase digest and skips only on an equal record", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const ssh = { identity_file: "/test/identity", target: { host: "10.44.0.7", port: 22, user: "orbit", host_keys: ["ssh-ed25519 pinned"] } };
+        const write = async (recorded: Record<string, string>) => {
+            await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], recorded_digests: recorded }));
+            await Deno.writeTextFile(`${folder}/plans.json`, "{}");
+            for await (const entry of Deno.readDir(folder)) if (!["intent.json", "plans.json"].includes(entry.name)) await Deno.remove(`${folder}/${entry.name}`, { recursive: true });
+            return await convergeInput(folder, 701, "/unused", "/fixture/converge_tool.ts", []);
+        };
+        const first = await write({});
+        assertEquals([Object.keys(first.digests), first.unchanged], [[...skippable], []]);
+        assertEquals((await write(first.digests)).unchanged, [...skippable]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("the result names a phase whose digest always moves because code above the bundle cannot be read", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await reports(folder);
+        const digests = Object.fromEntries(skippable.map((phase) => [phase, "a".repeat(64)]));
+        await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify({ digests, unchanged: [], moving: { roles: "../scripts/release-container.py cannot be read: NotFound" } }));
+        const result = await convergeResult(folder);
+        assertEquals(result.digests_moving, { roles: "../scripts/release-container.py cannot be read: NotFound" });
+        await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify({ digests, unchanged: [] }));
+        assertEquals("digests_moving" in await convergeResult(folder), false);
+    } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
 // Release 2159: the nested app-prod converge failed at "Bundle the shared Vite+ selection rules on the Swamp Node", because the staged

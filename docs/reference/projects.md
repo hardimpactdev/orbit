@@ -47,7 +47,9 @@ Change it alone: a request that sends `nested_fleet` with any other Project sett
 
 ## Container server
 
-`container_server` chooses the server that runs in the Project's Instance containers: `t3`, the T3 server and the default, or `conn`, the Conn Server. Both serve the same client contract and use the same credentials; only the program differs. A container's runtime records the choice when Orbit reserves it, so a change reaches only containers made after it. Existing containers keep their server, because the two servers store threads and pairings differently. To move a container to the other server, destroy it and create it again. [Container server](/reference/development-containers#container-server) describes the program, the unit and the record.
+`container_server` chooses the server that runs in the Project's dev containers, its clones that are not task copies and its checkout Instances moved into containers: `t3`, the T3 server and the default, or `conn`, the Conn Server. A task copy always runs the Conn Server, whatever this field says.
+
+Both serve the same client contract and use the same credentials; only the program differs. A container's runtime records the choice when Orbit reserves it, so a change reaches only containers made after it. Existing containers keep their server, because the two servers store threads and pairings differently. To move a container to the other server, destroy it and create it again. [Container server](/reference/development-containers#container-server) describes the program, the unit and the record.
 
 A choice is refused with `project.container_server_unavailable` (409) while the recipe's agent folder does not pin its program. A refused update changes nothing.
 
@@ -71,7 +73,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
-| `container_server` | `t3` (default) or `conn`: the server that runs in the Project's new Instance containers. See [Container server](#container-server). |
+| `container_server` | `t3` (default) or `conn`: the server that runs in the Project's new dev containers. Task copies always run `conn`. See [Container server](#container-server). |
 | `nested_fleet` | Boolean, default false. It is for the Orbit Project: its Instances are containers with an inner fleet, which only `instance:create` makes. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `default_auto_deploy` | Boolean, default true. Whether each new commit of the default branch deploys the Project's container default by itself. See [Automatic development defaults](/reference/deployments#automatic-development-defaults). |
@@ -202,7 +204,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `task_implementer_*` and `--task-implementer-*` | Set the implementer defaults of the Project's [copy turn agents](/reference/tasks#copy-turn-agents). Send null or `--clear-task-implementer-agent` to clear them. |
 | `task_reviewer_*` and `--task-reviewer-*` | The same for the reviewer. |
 | `task_pr_mode` and `--task-pr-mode` | Set the [mode](/reference/tasks#task-group-modes) of the Project's task copy groups that set none. Send null or `--clear-task-pr-mode` to clear it. Work done before the change waits for a release. |
-| `container_server` and `--container-server=t3\|conn` | Chooses the server of the Project's containers that Orbit reserves after the change. Existing containers keep theirs. See [Container server](#container-server). |
+| `container_server` and `--container-server=t3\|conn` | Chooses the server of the Project's dev containers that Orbit reserves after the change. Existing containers keep theirs; task copies always run `conn`. See [Container server](#container-server). |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 

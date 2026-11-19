@@ -20,6 +20,7 @@ final readonly class NodeSettingsNormalizer
         $normalized = new NodeSettingsData(
             apps: $this->nested($settings->appsPath()),
             nested_fleet: $settings->nested_fleet,
+            instance_host: $settings->instance_host,
             ci: $settings->ci,
         );
 
@@ -38,6 +39,7 @@ final readonly class NodeSettingsNormalizer
         return array_filter([
             'apps' => $normalized->appsPath() === null ? null : ['path' => $normalized->appsPath()],
             'nested_fleet' => $normalized->nested_fleet ? true : null,
+            'instance_host' => $normalized->instance_host ? true : null,
             'ci' => $normalized->ci()?->toArray(),
         ], static fn (array|bool|null $member): bool => $member !== null);
     }
@@ -74,6 +76,10 @@ final readonly class NodeSettingsNormalizer
             $result['nested_fleet'] = true;
         }
 
+        unset($result['instance_host']);
+        if ($normalized?->instance_host) {
+            $result['instance_host'] = true;
+        }
         unset($result['ci']);
         if ($normalized?->ci() !== null) {
             $result['ci'] = $normalized->ci()->toArray();
@@ -91,6 +97,7 @@ final readonly class NodeSettingsNormalizer
         return $this->normalize(new NodeSettingsData(
             apps: $this->nestedFromStored($value['apps'] ?? null),
             nested_fleet: ($value['nested_fleet'] ?? false) === true,
+            instance_host: ($value['instance_host'] ?? false) === true,
             ci: is_array($value['ci'] ?? null) ? NodeCiData::from($value['ci']) : new Optional,
         ));
     }

@@ -22,15 +22,20 @@ type Request = { id: string; kind: string; status: string; responseCapability?: 
 // `vanish` accepts it and the projection then omits the run, which is still active.
 type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck" | "vanish"; vanished?: boolean; respond?: "refuse" | "stuck" | "raced";
     projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[]; launchProjection?: LaunchProjection; dropLaunchReply?: boolean;
-    launchReadFails?: boolean; servedEnvironment?: string; config?: unknown; bounded?: unknown;
-    history?: Record<string, unknown>; historyReads?: string[]; replaceStateInPlace?: boolean };
+    launchReadFails?: boolean; servedEnvironment?: string; programVersion?: string; servedVersion?: string; config?: unknown; bounded?: unknown;
+    history?: Record<string, unknown>; historyReads?: string[]; replaceStateInPlace?: boolean;
+    // Conn Server state: `witness` writes the probe session's witness file; `swapStore` replaces the store with a new inode after the freeze.
+    witness?: boolean; swapStore?: boolean };
 
-/** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
+const stockT3 = "t3 v0.1.7";
+const connServer = "conn-server 0.2.0 (T3 server 0.1.10 contract, contract digest e63f9ed6f727)";
+
+/** Answers T3's ticket and RPC as T3 0.1.7 does (or `servedVersion` with the program's `programVersion`), for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
 function serve(state: Server) {
     return Deno.serve({ port: 0, hostname: "127.0.0.1", onListen: () => {} }, (request) => {
         const url = new URL(request.url);
         if (url.pathname === "/.well-known/t3/environment") {
-            return Response.json({ environmentId: state.servedEnvironment ?? launchEnvironment, serverVersion: "0.1.7" });
+            return Response.json({ environmentId: state.servedEnvironment ?? launchEnvironment, serverVersion: state.servedVersion ?? "0.1.7" });
         }
         if (url.pathname === "/api/auth/websocket-ticket") {
             return request.headers.get("authorization") === `Bearer ${token}` ? Response.json({ ticket: "ticket-1" }) : new Response("no", { status: 401 });
@@ -109,7 +114,8 @@ async function helper(state: Server, args: string[], issue = "json", frozen?: (i
         Deno.mkdirSync(userdata, { recursive: true });
         Deno.writeTextFileSync(`${userdata}/server-runtime.json`, JSON.stringify({ origin: `http://127.0.0.1:${server.addr.port}` }));
         Deno.writeTextFileSync(`${userdata}/environment-id`, `${launchEnvironment}\n`);
-        const statePath = `${userdata}/statev2.sqlite`;
+        const conn = (state.programVersion ?? stockT3).startsWith("conn-server ");
+        const statePath = `${userdata}/${conn ? "engine.sqlite" : "statev2.sqlite"}`;
         const makeState = async (path: string, witness: string) => {
             const created = await new Deno.Command("node", {
                 args: ["--input-type=module", "-e", 'import { DatabaseSync } from "node:sqlite"; const db = new DatabaseSync(process.argv[1]); db.exec("CREATE TABLE auth_sessions (session_id TEXT)"); db.prepare("INSERT INTO auth_sessions VALUES (?)").run(process.argv[2]); db.close();', path, witness],
@@ -118,6 +124,10 @@ async function helper(state: Server, args: string[], issue = "json", frozen?: (i
         };
         if (args[0].includes("launch")) {
             await makeState(statePath, launchWitness);
+            if (conn && state.witness) {
+                Deno.mkdirSync(`${userdata}/orbit-launch-witnesses`, { recursive: true });
+                Deno.writeTextFileSync(`${userdata}/orbit-launch-witnesses/${launchWitness}`, "");
+            }
             if (state.replaceStateInPlace) {
                 const original = Deno.statSync(statePath);
                 await makeState(`${userdata}/replacement.sqlite`, "other-session");
@@ -130,6 +140,7 @@ async function helper(state: Server, args: string[], issue = "json", frozen?: (i
         Deno.writeTextFileSync(`${folder}/t3`, `#!/bin/sh
 if [ "$1 $2 $3" = "auth session issue" ]; then printf '%s' '${issued}'; exit 0; fi
 if [ "$1 $2 $3" = "auth session revoke" ]; then echo "$4" >> "${folder}/revoked"; exit 0; fi
+if [ "$1" = "--version" ]; then echo '${state.programVersion ?? stockT3}'; exit 0; fi
 exit 2
 `);
         Deno.chmodSync(`${folder}/t3`, 0o755);
@@ -140,9 +151,13 @@ exit 2
         if (frozen === undefined) {
             await writer.write(Deno.readFileSync(script));
         } else {
-            const { dev, ino } = Deno.statSync(`${userdata}/statev2.sqlite`);
+            const { dev, ino } = Deno.statSync(statePath);
             const bytes = new TextEncoder().encode(`${launchEnvironment}\0${dev}\0${ino}\0${launchWitness}`);
             const incarnation = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+            if (state.swapStore) {
+                await makeState(`${userdata}/restored.sqlite`, launchWitness);
+                Deno.renameSync(`${userdata}/restored.sqlite`, statePath);
+            }
             await writer.write(new TextEncoder().encode(JSON.stringify(frozen(`${launchWitness}.${incarnation}`))));
         }
         await writer.close();
@@ -334,6 +349,40 @@ Deno.test({ name: "Conn launch uses its frozen first message and recovers a lost
     const recovered = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
     assertEquals([recovered.code, recovered.out, recovered.stderr, state.commands, recovered.revoked],
         [0, { accepted_at: acceptedAt, error_code: null }, "", [launchRequest], ["session-1"]]);
+} });
+
+Deno.test({ name: "Conn launch accepts the T3 server version of the pinned program it runs and refuses any other", ignore: !available, async fn() {
+    const ready = (programVersion: string, servedVersion: string) => ({ ...waiting([], {}), programVersion, servedVersion,
+        projects: [{ id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null }],
+        config: { providers: [], settings: { defaultModelSelection: { instanceId: "codex", model: "gpt-6.2-sol" } } } });
+    for (const [program, version] of [[stockT3, "0.1.7"], [connServer, "0.1.10"]]) {
+        const inspected = await helper(ready(program, version), ["inspect-launch", launchEnvironment]);
+        assertEquals([inspected.code, inspected.out!.error_code, inspected.out!.project_id], [0, null, launchRequest.projectId], program);
+    }
+    for (const [program, version] of [[connServer, "0.1.7"], [stockT3, "0.1.10"], ["t3 v0.1.8", "0.1.7"], ["unknown 0.1.7", "0.1.7"]]) {
+        const refused = await helper(ready(program, version), ["inspect-launch", launchEnvironment]);
+        assertEquals(refused.out, { error_code: "conn.launch_server_changed" }, program);
+    }
+} });
+
+Deno.test({ name: "Conn launch on the Conn Server sends and confirms against its witness and refuses a state without it", ignore: !available, async fn() {
+    const projects = [{ id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null }];
+    const config = { providers: [], settings: { defaultModelSelection: { instanceId: "codex", model: "gpt-6.2-sol" } } };
+    const inspected = await helper({ ...waiting([], {}), programVersion: connServer, servedVersion: "0.1.10", projects, config }, ["inspect-launch", launchEnvironment]);
+    assertEquals([inspected.code, inspected.out!.error_code], [0, null], inspected.stderr);
+    assert(/^session-1\.[0-9a-f]{64}$/.test(String(inspected.out!.incarnation)));
+    const same = { ...waiting([], {}), programVersion: connServer, servedVersion: "0.1.10", witness: true };
+    const sent = await helper(same, ["launch"], "json", freezeLaunch);
+    assertEquals([sent.out, same.commands], [{ accepted_at: acceptedAt, error_code: null }, [launchRequest]]);
+    const confirmed = await helper(same, ["reconcile-launch"], "json", freezeLaunch);
+    assertEquals([confirmed.out, same.commands.length], [{ accepted_at: acceptedAt, error_code: null }, 1]);
+    for (const changed of [{ witness: false }, { witness: true, swapStore: true }]) {
+        const state = { ...waiting([], {}), programVersion: connServer, servedVersion: "0.1.10", ...changed };
+        for (const command of ["launch", "reconcile-launch"]) {
+            const refused = await helper(state, [command], "json", freezeLaunch);
+            assertEquals([refused.out, state.commands], [{ error_code: "conn.launch_server_changed" }, []], JSON.stringify(changed));
+        }
+    }
 } });
 
 Deno.test({ name: "Conn launch fails closed on a replaced server or mismatched first message", ignore: !available, async fn() {

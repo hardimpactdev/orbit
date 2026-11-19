@@ -39,7 +39,7 @@ const privateText = `https://x-access-token:${token}@github.com\n#orbit-model-en
     `ANTHROPIC_AUTH_TOKEN=${modelKey}\nORBIT_MODEL_KEY=${modelKey}\nCLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nDISABLE_TELEMETRY=1\nDISABLE_ERROR_REPORTING=1\n`;
 const stage = { launcher: read("scripts/instance_clone_launch.py"), script: read("scripts/instance_clone.py"), container: { instance_id: 8 },
     guest: read("scripts/instance_clone_guest.py"), network: read("ansible/instance_network.py"), account: "orbit",
-    bundle: { node_services: read("ansible/instance_node_services.py"), machine_name: read("ansible/instance_machine_name.py"),
+    bundle: { node_services: read("ansible/instance_node_services.py"), machine_name: read("ansible/instance_machine_name.py"), root_disk: read("ansible/instance_root_disk.py"),
         mail: read("ansible/instance_mail.py"), bridge: read("ansible/instance_bridge.py"), node: read("ansible/instance_node_runtime.py"),
         workspace_owner: read("ansible/instance_workspace_owner.py") } };
 // What the copy step's stand-in receives: the value resolved by the engine through vault.get, as the SSH stdin would. It checks the

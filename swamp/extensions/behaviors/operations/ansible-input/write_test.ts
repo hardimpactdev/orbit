@@ -373,7 +373,7 @@ async function stagePayload(container: Record<string, unknown>, account: string)
         network: container.allowed_devices ? network.split('if __name__ == "__main__":')[0] + await read("ansible/instance_nested.py") : network,
         account,
         bundle: {
-            node_services: await read("ansible/instance_node_services.py"), machine_name: await read("ansible/instance_machine_name.py"),
+            node_services: await read("ansible/instance_node_services.py"), machine_name: await read("ansible/instance_machine_name.py"), root_disk: await read("ansible/instance_root_disk.py"),
             mail: await read("ansible/instance_mail.py"), bridge: await read("ansible/instance_bridge.py"),
             node: await read("ansible/instance_node_runtime.py"),
             workspace_owner: await read("ansible/instance_workspace_owner.py"),

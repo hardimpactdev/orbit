@@ -45,6 +45,19 @@ function ciPlacesPatch(Node $node, array $body): TestResponse
     return test()->patchJson("/api/v1/nodes/{$node->id}", $body);
 }
 
+it('records the Instance host opt-in of an app-dev Node as a setting, with no run, and clears it', function (): void {
+    $node = ciPlacesNode([RoleName::AppDev->value => LifecycleStatus::Active], ['t3' => ['connection_id' => 'fixture']]);
+
+    ciPlacesPatch($node, ['instance_host' => true])->assertOk()->assertJsonPath('data.settings.instance_host', true);
+    expect($node->refresh()->settings)->toBe(['t3' => ['connection_id' => 'fixture'], 'instance_host' => true]);
+    ciPlacesPatch($node, ['instance_host' => true])->assertOk()->assertJsonPath('meta.skipped', 'node.unchanged');
+    ciPlacesPatch($node, ['instance_host' => 'yes'])->assertStatus(422);
+    ciPlacesPatch($node, ['instance_host' => false])->assertOk();
+
+    expect($node->refresh()->settings)->toBe(['t3' => ['connection_id' => 'fixture']]);
+    $this->assertDatabaseCount('operations', 0);
+});
+
 describe('a Node with an active ci-runner role', function (): void {
     it('stores, shows and patches its CI places as a record', function (): void {
         $node = ciPlacesNode();

@@ -69,7 +69,7 @@ final readonly class ConnLaunchNativeWork
         $runtime = $instance->runtime()->firstOrFail();
         $input = ['launch_operation_id' => $launch->id, 'intent' => [
             ...$intent, 'instance_id' => $instance->id,
-            'runtime' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name],
+            'runtime' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name, 'program' => $runtime->server()->program()],
         ]];
 
         return $this->idempotency->under($kind, $key, hash('sha256', $kind."\0".$key),

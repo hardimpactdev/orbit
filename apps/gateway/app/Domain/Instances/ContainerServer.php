@@ -9,8 +9,8 @@ use App\Infrastructure\MachineSoftware\InstanceFolders;
 
 /**
  * The server that runs in a container with a server (docs/reference/development-containers.md#container-server): the T3 server or the
- * Conn Server. A Project chooses it; the runtime records the choice at its reservation, and every later step reads that
- * record. The unit and credentials stay; Conn also receives its shared preview browser path.
+ * Conn Server. A task copy always runs the Conn Server, and a Project chooses it for its other containers; the runtime records it
+ * at its reservation, and every later step reads that record. The unit and credentials stay; Conn also receives its shared preview browser path.
  */
 enum ContainerServer: string
 {

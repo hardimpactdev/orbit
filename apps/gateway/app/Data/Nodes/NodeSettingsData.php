@@ -12,6 +12,8 @@ final class NodeSettingsData extends Data
     public function __construct(
         public ?NodeStorageAppsData $apps = null,
         public bool $nested_fleet = false,
+        // The operator's statement that the Node provides the Incus pool `orbit-instances` (ContainerNodes).
+        public bool $instance_host = false,
         // Absent on a Node without CI places, so its responses leave the member out.
         public NodeCiData|Optional $ci = new Optional,
     ) {}
@@ -30,6 +32,6 @@ final class NodeSettingsData extends Data
 
     public function isEmpty(): bool
     {
-        return $this->appsPath() === null && ! $this->nested_fleet && $this->ci() === null;
+        return $this->appsPath() === null && ! $this->nested_fleet && ! $this->instance_host && $this->ci() === null;
     }
 }

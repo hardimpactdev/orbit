@@ -817,7 +817,9 @@ A cancelled completion keeps the clone `source_resolved`, its container running 
 
 ## Durable launches (v1)
 
-**Contract v1.1.** One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. The contract supports text only on the Orbit T3 recipe `0.1.7`. This is an additive Gateway API: the existing Conn endpoints and the installed clients' create-then-send path do not change. Conn Rust parity is out of scope.
+**Contract v1.1.** One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. The contract supports text only.
+
+The launch runs on the container's [recorded server](/reference/development-containers#container-server): the recipe's T3 `0.1.7` or its Conn Server, which serves the T3 `0.1.10` contract. The launch checks the version that server's own program states ([Conn launch transport](/reference/development-containers#conn-launch-transport)). This is an additive Gateway API: the existing Conn endpoints and the installed clients' create-then-send path do not change. Conn Rust parity is out of scope.
 
 ### Admit and replay
 
@@ -872,7 +874,7 @@ The same Operation lock commits either `cancel_requested` or `dispatch_committed
 
 Here `projectId` is T3's project ID, `creationSource` is the admitted `source`, and `text` is the exact submitted prompt. This is the same first-turn shape as Conn's `orbitFirstTurnInput` and `startThreadTurn`, not a separate create followed by a second send.
 
-On every attempt, verify the live server against the pinned persisted incarnation independently of its URL. The worker checks the environment and database file identity, plus the presence of the original probe session row in the local stock T3 database. Only that row's presence matters. A normal restart retains the row. An older database restored into the same file lacks it.
+On every attempt, verify the live server against the pinned persisted incarnation independently of its URL. The worker checks the environment and database file identity, plus the presence of the original probe session row in the local stock T3 database. Only that row's presence matters. A normal restart retains the row. An older database restored into the same file lacks it. The Conn Server deletes a revoked session, so on it the worker checks its store `engine.sqlite` and a witness file instead: the inspection writes `userdata/orbit-launch-witnesses/<probe session id>`, empty, owner `agent`, mode 0600, and every later attempt requires it. A restored older state lacks the file.
 
 After an ambiguous reply, ask `orchestration.getThreadProjection` on that incarnation for the exact `threadId`. Verify the exact thread and project, a user message with the exact `messageId`, and the original message text byte for byte. Apply the same identity and text checks to an acknowledged launch.
 

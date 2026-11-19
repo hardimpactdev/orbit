@@ -51,18 +51,27 @@ The container flows keep the existing Instance kinds. Their charts sit one folde
 
 ## Nodes
 
-Container host preparation applies to every `app-dev` Node. Task VMs are removed.
+Container host preparation applies to every `app-dev` Node with the Incus pool `orbit-instances`. Task VMs are removed.
 
-The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
+The Gateway reads no pool, so it counts an `app-dev` Node as an Instance container host when one of these holds:
+
+- The operator set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in), `instance_host`. A new host needs it before its first converge.
+- It is the `app-dev` Node of a nested Instance fleet, whose converge creates a directory pool.
+- It records an Instance runtime.
+- Its agent reports the Instance bridge's health, which only a converged container branch writes.
+
+Any other `app-dev` Node, such as a services Node without Incus, is no container host. Its converge runs its other roles and no container branch. The Node gets no Instance bridge and no `orbit:instances-*` firewall rules, so Doctor expects none. Its admission releases an Instance bridge that no container uses. A bridge that a container uses always stays, and so does the release bridge of an `app-prod` Node.
+
+The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. A copy is a clone, never a file copy: the pool of a real Node is ZFS, and the nested proof Node `nested-app-dev` has a btrfs pool on its btrfs root.
 
 A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets the same container setup through its `ci-runner` role, with nested-fleet hosting on. It never gets the `app-dev` role. It holds no default Instance: it holds a [seed of the proof default](#the-seed-on-each-ci-node), and it takes only proof copies.
 
 ### Prepare a Node
 
-Every `app-dev` role converge runs the container branch. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) owns that placement. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every `app-dev` role converge of an Instance container host runs the container branch. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) owns that placement. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 - **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
-- **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
+- **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or btrfs on the nested proof Node. The converge chooses no disk itself.
 - **Pool of a CI-only Node.** Its `ci-runner` converge creates the pool on a new dataset of the zpool that its ZFS Incus pool uses ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)).
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They may mount host folders and have proxy devices, and cannot be VMs. The profile mounts the two shared folders.
@@ -149,7 +158,7 @@ Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40
 
 Clone phases stage their release's helpers and intent once in a private folder for the run. Later phases run them by path. This keeps scripts off the SSH command and avoids its size limit. The repository credential stays on stdin. Cleanup removes the folder on success or failure, including a failed first launch.
 
-The clone copy supplies a complete root disk device, including its type, path, pool and size. This works when the seed inherits its root disk from a profile or stores it locally.
+The clone copy supplies a complete root disk device, including its type, path, pool and, except on a [btrfs pool](#the-root-disk), its size. This works when the seed inherits its root disk from a profile or stores it locally.
 
 Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users, `agent`'s sudo grant and the firewall.
 
@@ -351,14 +360,14 @@ The OS packages of the image change rarely. The Node's patch run of ADR 0250 upg
 
 ## Container server
 
-A Project chooses the server that runs in its containers, in its [`container_server`](/reference/projects#container-server) field: `t3`, the T3 server and the default, or `conn`, the [Conn Server](https://github.com/nckrtl/conn). The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
+A container with a server runs the T3 server, `t3`, or the [Conn Server](https://github.com/nckrtl/conn), `conn`. Every [task copy](/reference/tasks#task-copy) runs the Conn Server, for every Project. A Project chooses the server of its other containers, its dev clones and [migrated checkouts](#migrate-a-checkout-instance), in its [`container_server`](/reference/projects#container-server) field: `t3`, the default, or `conn`. Dev containers keep the Project's choice because some clients still need methods that only T3 serves. The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
 
 | Choice | Program in the agent folder |
 | --- | --- |
 | `t3` | `/opt/orbit-agent/current/agent/bin/t3` |
 | `conn` | `/opt/orbit-agent/current/agent/bin/conn-server` |
 
-When Orbit reserves the runtime of a container with a server, a clone or a [migrated checkout](#migrate-a-checkout-instance), the runtime records the Project's choice as its own `container_server`. The default's runtime records none: the default runs no server. Every later step reads the runtime's record, never the Project's setting. So a changed setting reaches only containers that Orbit reserves after the change. An existing container keeps its server: the two servers store threads and pairings differently, and nothing converts them.
+When Orbit reserves the runtime of a container with a server, the runtime records its server as its own `container_server`: `conn` for a task copy, and the Project's choice for a dev clone or a [migrated checkout](#migrate-a-checkout-instance). The default's runtime records none: the default runs no server. Every later step reads the runtime's record, never the Project's setting. So a changed setting reaches only dev containers that Orbit reserves after the change, and never a task copy. An existing container keeps its server: the two servers store threads and pairings differently, and nothing converts them.
 
 The record names the program that every call inside the container runs: the create's sessions and `project add`, and a task turn's `thread` commands and its RPC helper. The drop-in `/etc/systemd/system/t3.service.d/20-orbit-server.conf` sets the unit's `ExecStart` to the same program, with the image's arguments: `serve --host=0.0.0.0 --port=3773 --no-browser`. A clone gets it before its first start, with [T3's other files](#t3-starts-with-the-copy). A migrated checkout gets it with the agent's files, and its T3 phase reloads systemd before it starts the unit. The Node's converge keeps it and `10-orbit-boot.conf` current in every existing container: see [T3's unit drop-ins](#t3s-unit-drop-ins).
 
@@ -366,7 +375,7 @@ For Conn, the drop-in also sets `CONN_SERVER_BROWSER_PATH` to `/opt/orbit-agent/
 
 The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
-The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
+The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, a task copy's Conn Server included, before any record. The recipe pins Conn Server 0.2.0 as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, so every agent folder holds both programs. Its releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host.
 
 The part `chrome-headless-shell` pins Chrome 157.0.8103.78 from `nckrtl/conn`'s `apps/conn-server/crates/conn-preview/chrome.json`. Its ZIP unpacks with its `.pak`, `.so` and locale files beside the executable. The runtime folder's [browser libraries](#browser-libraries-and-fonts) supply its system libraries. With this path configured, Conn never downloads Chrome; it refuses preview tools with a typed error if the executable is missing or has the wrong version.
 
@@ -1302,7 +1311,7 @@ When both parts have ended, the step checks the two sessions and the checkout. B
 
 The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`, the drop-in `/etc/systemd/system/t3.service.d/10-orbit-boot.conf`, and the drop-in that names the [container server](#container-server). The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
 
-Before the first start, Orbit checks the stopped copy's on-disk ID map. A restricted Incus project strips that map during a local copy. On Nodes without idmapped mounts, the files still hold the source's shifted IDs. When the copy records an empty map and the source records a shift, Orbit unshifts the copied rootfs on a `dir` pool. Incus can then shift it to the copy's own map at start.
+Before the first start, Orbit checks the stopped copy's on-disk ID map. A restricted Incus project strips that map during a local copy. On Nodes without idmapped mounts, the files still hold the source's shifted IDs. When the copy records an empty map and the source records a shift, Orbit unshifts the copied rootfs on the btrfs pool of `nested-app-dev`, where an idmapped mount fails. Incus can then shift it to the copy's own map at start.
 
 This preserves owners, setuid and setgid modes, named POSIX ACL entries and file capability root IDs. IDs outside the source map stay unchanged. If normalization fails, Orbit deletes the incomplete copy and fails the create with its error code. A retry copies the seed again; it never resumes partially restored metadata. Sources with an empty map, including Nodes using idmapped mounts, need no change. Another pool driver in this state refuses before start with `instance.clone_idmap_unshift_unsupported`.
 
@@ -2039,9 +2048,15 @@ Swamp drives a container's stock T3 through its own CLI and WebSocket RPC, run i
 
 The placed phase reads or hands off only inside the admitted Instance. Run-folder staging allows the full frozen request to reach T3 on stdin. A cancelled preparation waits for any bounded native call and its local service session to settle before teardown.
 
-The [durable Conn launch](/reference/conn#durable-launches-v1) uses stock T3 `0.1.7` through the shared `t3_copy_rpc.mjs` transport. Swamp uses the admitted Node and exact container runtime; it enters the container with `incus exec`, then runs as `agent` with `runuser` in `/srv/workspace`. The worker reads the local runtime origin, issues a one-minute T3 session with `orchestration:read` and `orchestration:operate`, exchanges it for a WebSocket ticket, and uses `/ws?orchestrationProtocol=2`. Close the socket and revoke the session; if the process dies first, the session expires. Never return sessions, tickets, raw RPC frames or projections as evidence. The prompt is private input, not a shell argument or a Swamp artifact.
+The [durable Conn launch](/reference/conn#durable-launches-v1) uses the container's [recorded server](#container-server) through the shared `t3_copy_rpc.mjs` transport.
 
-Discover the active project for `/srv/workspace` from `orchestration.subscribeShell` and read provider settings with `server.getConfig` in the same scopes. The live `/.well-known/t3/environment` descriptor exposes the ID that stock T3 persists as `userdata/environment-id`. Check the live identity against the local state. Bind it to the device and inode of the persisted T3 database file before dispatch. This uses filesystem metadata. Recheck the binding on every attempt, including a read after a lost response. An ordinary restart with the same state keeps that binding. If state was copied, restored or otherwise lost continuity, a matching descriptor alone does not prove the replay window survived.
+The Gateway passes the runtime's program, `bin/t3` or `bin/conn-server`, and the worker runs that program for its session. The live descriptor's `serverVersion` must equal the T3 server version that program states with `--version`: `0.1.7` for `t3 v0.1.7`, and `0.1.10` for `conn-server 0.2.0 (T3 server 0.1.10 contract, …)`. Any other version, or a program that states none, answers `conn.launch_server_changed`, so only the pinned program the runtime records passes. 
+
+Swamp uses the admitted Node and exact container runtime; it enters the container with `incus exec`, then runs as `agent` with `runuser` in `/srv/workspace`. The worker reads the local runtime origin, issues a one-minute T3 session with `orchestration:read` and `orchestration:operate`, exchanges it for a WebSocket ticket, and uses `/ws?orchestrationProtocol=2`. Close the socket and revoke the session; if the process dies first, the session expires. Never return sessions, tickets, raw RPC frames or projections as evidence. The prompt is private input, not a shell argument or a Swamp artifact.
+
+Discover the active project for `/srv/workspace` from `orchestration.subscribeShell` and read provider settings with `server.getConfig` in the same scopes. The live `/.well-known/t3/environment` descriptor exposes the ID that stock T3 persists as `userdata/environment-id`.
+
+Check the live identity against the local state. Bind it to the device and inode of the server's persisted store before dispatch: `statev2.sqlite` for T3, `engine.sqlite` for the Conn Server, with the probe session's witness of [the launch's server check](/reference/conn#durable-launches-v1). This uses filesystem metadata. Recheck the binding on every attempt, including a read after a lost response. An ordinary restart with the same state keeps that binding. If state was copied, restored or otherwise lost continuity, a matching descriptor alone does not prove the replay window survived.
 
 Separate the read-only preparation evidence from permission to dispatch. Only native work admitted under the committed launch fence may send. Mark sending as a native write; recovery checks the pinned server and exact thread projection before any possible replay. Stock T3 writes separate command receipts for thread creation and the initial message, and can schedule the run before returning the launch response. A thread with no matching first message is not an acceptance receipt. Keep projection reads bounded and compare the exact message in the container; return only safe facts for the Gateway to project.
 
@@ -2539,6 +2554,8 @@ Each runtime records its Incus project once. Every step that reaches the contain
 
 The root disk of a nested-fleet default has the size of the Gateway setting [`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`](/reference/gateway-environment), 80 GiB by default. Every other container, a copy of a default among them, keeps 40 GiB.
 
+On a btrfs pool, such as the pool of the nested proof Node `nested-app-dev`, the root disk has no size. Incus would set it with btrfs qgroups, which the unprivileged nested Node refuses, and the copy's own volume already caps that pool. The Node-side rule `instance_root_disk.py` drops the size there for create, clone, the start's grow and the guard alike, and keeps it on every ZFS pool.
+
 Incus sets the size as the ZFS `quota` of the container's dataset. A quota counts the dataset's snapshots. A default's seeds stay on its dataset while a copy made from them lives, as hidden `deleted-*` snapshots, and each one that a `base` retake replaced holds about 1.7 GiB. A copy's quota counts only its own blocks. The inner Doctor wants 2 GiB and 10% of the disk free, and a [refresh](#refresh-after-a-release) checks that room first. At 40 GiB, six living copies on old seeds left too little room on Instance 2454.
 
 The size reaches a container two ways:
@@ -2773,10 +2790,12 @@ What the host needs, measured by hand on a task copy at 1,165,536 on 2026-11-16:
 | AppArmor | The third-level Incus cannot load a profile (`apparmor_parser: Access denied`), so the bridge's dnsmasq fails. The drop-in `INCUS_SECURITY_APPARMOR=false` for `incus.service` turns its AppArmor off; the Incus one level up still confines `nested-app-dev` |
 | ID map | Base 65,536 with 100,000 IDs. See below the table |
 | Isolated maps | The first isolated map starts at the base plus 65,536: 131,072. So at 1,165,536 no isolated 65,536 map fits (`Not enough uid/gid available`). One of 34,464 IDs started at 131,072 |
-| Pool | A directory pool: a copy is a full copy. `btrfs` would clone on `nested-app-dev`'s btrfs root, but the container branch accepts only `zfs` and `dir` |
+| Pool | btrfs on `nested-app-dev`'s btrfs root: a copy is a subvolume snapshot. See below the table |
 | Network | The Node's input rules drop DHCP on `orbitinst0` until the role converge adds `orbit:instances-*` |
 | Egress | One isolated container launched in 10 s and ran `apt-get update`, a `git` install and an HTTPS request through the egress proxy in 11 s |
 | Shared folders | A read-only disk with `shift=true` fails the start; `shift=false` starts. See below the table |
+
+The btrfs pool was measured on a task copy on 2026-11-18. The root of `nested-app-dev` is mounted with `user_subvol_rm_allowed`, so its unprivileged Incus creates, snapshots and deletes subvolumes. A copy of a 644 MB rootfs took 8.5 to 8.8 s on the former directory pool and 0.65 to 1.0 s on btrfs. Retaking `base` of `nested-app-dev` took 7.1 s with its stop and start, and `base` holds the pool's subvolumes.
 
 The shared folders were measured by hand with Incus 6.0.5 on 2026-11-16. A read-only folder disk with `shift=true` failed the start: `idmapping abilities are required but aren't supported on system`. With `shift=false` an isolated container of 34,464 IDs started at once. Its uid 2750 read a file of mode 644 but not a `root:2750` directory of mode 0750. It read the directory once it was open to others.
 
@@ -2788,9 +2807,11 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 
 1. It writes the drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false`. The Incus there cannot load AppArmor profiles; the Incus one level up still confines `nested-app-dev`.
 2. It installs Incus from the recipe's pinned packages.
-3. It creates the directory pool `orbit-instances`.
+3. It installs `btrfs-progs` and creates the btrfs pool `orbit-instances` on the Node's btrfs root.
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
+
+A Node made before the btrfs pool has a directory pool `orbit-instances`. The container branch replaces it only when nothing uses it but the root device of the managed `default` profile in an Instance project. Any Instance, volume, other profile or other device refuses with `instance.host_unavailable` and names it, before anything changes. Otherwise the branch removes that root device, deletes the pool and creates the btrfs pool with `source=/var/lib/incus/storage-pools/orbit-instances`. Step 5 writes the profile's root device again. A rerun after a break goes on from where it stopped. There is no directory fallback.
 
 Fleet start appends the managed user `orbit` to `incus-admin` on every nested Node marked as an Instance host by `/etc/orbit/instance-fleet-node`. The Gateway's direct workspace and runtime reads call Incus as that user, without sudo. The account already has passwordless sudo, so this adds no authority. The fleet builds its own Nodes; their account setup belongs to fleet start. Every copy start repairs missing membership, including a copy of an existing seed, with no converge or seed refresh. Other groups remain unchanged, and a current membership reports no change.
 
@@ -3124,7 +3145,9 @@ Each Node has its own reason in the result, `converge_reasons`. The refresh only
 
 A digest cannot be read when the Node's intent cannot be built, when the read failed, or when the checkout gives no tree ID of the `swamp` files.
 
-`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change). The `swamp/ansible` tree is in every phase digest, so a changed Ansible task file runs every phase.
+`unchanged` is the only reason of a Node that does not converge. For each Node that converged, `phases` names the skippable phases its converge ran. That converge skips each phase whose phase digest did not change, by the [one skip rule](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change).
+
+Each phase digest holds the `swamp/ansible` files that phase can load, the implicit files and the files that nothing reaches. So a changed converge task file runs only the phases that load it, and a file that only another Operation's playbooks reach runs none. A change to `ansible.cfg`, the converge playbooks, `build_vars.py`, an implicit file or a file that nothing reaches runs every phase ([phase code](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change)).
 
 A change only to the five files excluded from the host digest does not make `nested-app-dev` due. It still counts for any part that reads those files, such as the nested Gateway's grants digest when the Club key is present. If no other work changes a nested disk and no other snapshot rule applies, `base` stays as it was.
 
@@ -3351,7 +3374,7 @@ It may also hold `host`: `converged`, `kept` or `skipped_idmap_small` ([Instance
 
 The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
-The first seed of every run, the `seed` phase of "Prepare the container", was always taken with the fleet running. On a nested proof Node with a directory pool, the seed is a file copy and not one point in time; that affects only proofs.
+The first seed of every run, the `seed` phase of "Prepare the container", was always taken with the fleet running. The nested proof Node's Instance pool is btrfs, so the Instances in a seed are subvolumes, and a copy of one there is a snapshot, not a file copy.
 
 After a restore, the run starts the restored fleet and waits for readiness. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
@@ -3703,7 +3726,7 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `incus_project`, `container_name` | The container in Incus on the Instance's Node |
 | `bridge_address` | The container's address on its Node's bridge. It is a guest address: never the network, broadcast or first usable address, which the bridge keeps |
 | `t3_port` | The port of the Node's WireGuard address that publishes T3, from 3800 to 3999. The default Instance has none |
-| `container_server` | The [container server](#container-server) the container runs, `t3` or `conn`, from its Project's setting at the reservation. Null exactly when `t3_port` is null |
+| `container_server` | The [container server](#container-server) the container runs, `t3` or `conn`: `conn` for a task copy, else its Project's setting at the reservation. Null exactly when `t3_port` is null |
 | `runtime_version`, `agent_version` | The versions of the shared folders the container started with |
 | `operation_id` | The migrate Operation that owns this reservation. A new retry takes ownership before its run starts |
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
@@ -3755,7 +3778,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `instance.node_ci_only` | 409 | `instance:create` on a [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node): `ci-runner`, CI places and no `app-dev`. Only a proof copy is made there. Nothing is recorded |
 | `instance.seed_copy_failed` | 502 | A [seed copy](#the-seed-on-each-ci-node) could not copy the seed to a CI Node. That Node keeps its old seed and offers no proof places |
-| `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the Project's [container server](#container-server). Nothing is recorded |
+| `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the [container server](#container-server) it would record. Nothing is recorded |
 | `projects.agent_instructions_too_large` | 422 | `instance:create` or `task:start` of a clone while the Project's [agent instructions](#agent-instructions) hold more than 32 files or 32 KiB. Nothing is recorded |
 | `projects.agent_instructions_invalid` | 422 | `instance:create` or `task:start` of a clone while an agent instruction file breaks a rule of [What counts](#what-counts). Nothing is recorded |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on an app-dev Node |
@@ -3807,7 +3830,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
 | `instance.clone_t3_files_refused` | 502 | A folder or JSON file of [T3's files](#t3-starts-with-the-copy) in a clone's copy is a link or of another type. The create stops before the copy starts |
-| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `dir` driver. The incomplete copy is deleted |
+| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `btrfs` driver. The incomplete copy is deleted |
 | `instance.clone_idmap_unshift_failed` | 502 | Orbit could not read or normalize a stopped copy's ownership, permissions, ACLs or capabilities before its first start. The incomplete copy is deleted so a retry copies the seed again |
 | `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |

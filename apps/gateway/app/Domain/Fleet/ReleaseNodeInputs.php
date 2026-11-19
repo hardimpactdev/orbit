@@ -50,6 +50,7 @@ final readonly class ReleaseNodeInputs
         'swamp/workflows/workflow-operation-node-converge-direct.yaml',
         'swamp/extensions/behaviors/operations/ansible-input/write.ts',
         'swamp/extensions/behaviors/operations/ansible-input/converge_input.ts',
+        'swamp/extensions/behaviors/operations/ansible-input/phase_code.ts',
         'swamp/extensions/behaviors/operations/ansible-input/converge_result.ts',
         'swamp/ansible/build_vars.py',
         'swamp/ansible/operation-node-converge.yml',

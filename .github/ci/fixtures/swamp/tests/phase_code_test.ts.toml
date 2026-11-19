@@ -1,0 +1,35 @@
+cases = [
+  "each phase of the shipped bundle resolves to its own bounded files, and shared files are in every phase",
+  "every bundle file that a reached file names is in that phase's set",
+  "a reference the resolver cannot name makes only its phase read the whole bundle",
+  "unresolved() refuses dynamic file names and accepts literal, playbook and run-folder names",
+  "names follow paths, file names and Python module names, not full-line comments",
+  "a change to one phase's file moves only that phase's code digest; a shared file or the Tool helper's code moves its phases",
+  "an ansible.cfg change moves every phase",
+  "a statically imported file with a task tagged in a list, and a play's handlers, reach the phase",
+  "a caller with no shipped code gets one no-code digest per phase, and a changed input still moves every phase",
+  "a bundle file that no phase names, such as the collection pins, moves every phase digest",
+  "a templated include in an entry playbook makes its phase read the whole bundle",
+  "a changed file inside a copied folder moves the phase that copies it",
+  "each shipped bundle file is in exactly one class, and another Operation's playbooks are in no phase",
+  "a change only in another Operation's playbook and the task file it alone includes moves no converge digest",
+  "a task file that another Operation and a converge phase both include moves that phase",
+  "a new file in filter_plugins moves every phase digest",
+  "a bare fileglob counts every bundle file it can match, so a matched file moves the phase that globs it",
+  "a template's literal include joins its phase, and an include by a variable name makes the phase read the whole bundle",
+  "unresolved() accepts literal Jinja includes, imports and extends and refuses any other name",
+  "a loop item source whose values the task lists literally joins its phase; an unbounded one makes the phase read the whole bundle",
+  "a Python file may read its own source by __file__, but a path beside it makes the phase read the whole bundle",
+  "a release script the roles phase copies from above the bundle moves the roles digest only",
+  "the files the phases name above the shipped bundle are the staged role siblings",
+  "a staged sibling that no phase names moves every phase digest",
+  "a file named above the bundle that cannot be read gives its phase a digest that always moves, and says why",
+]
+file = "swamp/tests/phase_code_test.ts"
+cost = 4
+inputs = [
+  "swamp/ansible/**",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
+  "swamp/tests/phase_code_fixture.ts",
+]

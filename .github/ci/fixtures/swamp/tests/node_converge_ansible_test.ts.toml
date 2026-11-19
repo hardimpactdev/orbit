@@ -61,7 +61,9 @@ inputs = [
   "swamp/ansible/tasks/proof-seed-listener.yml",
   "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
   "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
   "swamp/extensions/behaviors/operations/tools/constraints.ts",
   "swamp/extensions/behaviors/operations/tools/contract.ts",
   "swamp/extensions/behaviors/operations/tools/native.ts",
+  "swamp/tests/phase_code_fixture.ts",
 ]

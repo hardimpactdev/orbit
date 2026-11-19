@@ -151,6 +151,14 @@ def select_branch(container, git, remote_git, run, mirror):
     run(git + ["update-ref", target, commit])
 
 
+def root_device(container, run):
+    """The root device to write and admit: the bundle's instance_root_disk.py, the one rule that create and start also run, given
+    the driver of the root pool."""
+    intent = {"type": "disk", "path": "/", "pool": container["root_disk_pool"], "size": container["root_disk_size"]}
+    pool = json.loads(run(["incus", "query", "/1.0/storage-pools/" + urllib.parse.quote(container["root_disk_pool"], safe="")]).stdout)
+    return json.loads(run(["python3", "-c", json.loads(sys.argv[6])["root_disk"], json.dumps(intent), pool["driver"]]).stdout)
+
+
 def nic_filters(network_check):
     """The address filters of every Instance NIC: `FILTERS` of the shared NIC check, whose source this phase receives."""
     for node in ast.parse(network_check).body:
@@ -185,7 +193,7 @@ def unshift_clone_rootfs(container, read, run):
         pool = json.loads(run(["incus", "query", "/1.0/storage-pools/" + urllib.parse.quote(container["root_disk_pool"], safe="")]).stdout)
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise RuntimeError("instance.clone_idmap_unshift_failed") from error
-    if pool.get("driver") != "dir":
+    if pool.get("driver") != "btrfs":
         raise RuntimeError("instance.clone_idmap_unshift_unsupported")
 
     try:
@@ -777,12 +785,7 @@ def main():
                 ]
                 for key, value in container["config"].items():
                     argv += ["--config", key + "=" + value]
-                for key, value in {
-                    "type": "disk",
-                    "path": "/",
-                    "pool": container["root_disk_pool"],
-                    "size": container["root_disk_size"],
-                }.items():
+                for key, value in root_device(container, run).items():
                     argv += ["--device", "root," + key + "=" + value]
                 argv += [
                     "--device",
@@ -981,7 +984,8 @@ def main():
             ).stdout
             checked = run(
                 ["python3", "-c", network_check, container["network"], "eth0"]
-                + ([json.dumps(container["allowed_devices"]), json.dumps(container["config"])] if "allowed_devices" in container else [])
+                + ([json.dumps({**container["allowed_devices"], "root": root_device(container, run)}), json.dumps(container["config"])]
+                   if "allowed_devices" in container else [])
                 # The one volume besides the root that the guard admits, with exactly its keys, as the Ansible start passes it. A copy
                 # without an inner volume passes no third argument, as before, and the guard admits no volume.
                 + ([json.dumps({container["inner_volume"]["device"]: {**container["inner_volume"]["config"], "size": container["inner_volume"]["size"]}})]

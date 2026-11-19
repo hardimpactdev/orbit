@@ -10,6 +10,7 @@ use App\Domain\Broadcasting\NamedBroadcast;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
@@ -1423,6 +1424,7 @@ describe('launch control and progress', function (): void {
     it('keeps cancelling until the exact timed-out probe settles and its session cannot survive', function (): void {
         InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
             'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$this->instance->id, 'bridge_address' => '10.253.0.2',
+            't3_port' => 3800, 'container_server' => ContainerServer::Conn,
             'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
         $settlement = app(ConnLaunchSettlement::class);
@@ -1453,6 +1455,7 @@ describe('launch control and progress', function (): void {
     it('automatically reconciles the first ambiguous handoff with read-only work', function (): void {
         InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
             'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$this->instance->id, 'bridge_address' => '10.253.0.2',
+            't3_port' => 3800, 'container_server' => ContainerServer::Conn,
             'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()->json('data.id');
         $dispatch = launchFixtureDispatch($id);
@@ -1465,6 +1468,8 @@ describe('launch control and progress', function (): void {
         $settlement->advance($launch);
         $recovery = Operation::query()->findOrFail($launch->refresh()->state['launch_dispatch_operation_id']);
         expect($recovery->id)->not->toBe($dispatch->id)->and($recovery->input['intent']['action'])->toBe('reconcile-launch')
+            // The helper calls the server program the runtime records, which the version it checks belongs to.
+            ->and($recovery->input['intent']['runtime']['program'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
             ->and($recovery->triggered_by)->toBe($dispatch->triggered_by)
             ->and(Operation::query()->where('kind', OperationKinds::ConnLaunchDispatch)->count())->toBe(2);
 
@@ -1540,6 +1545,7 @@ describe('launch control and progress', function (): void {
     it('waits for T3 inspection before marking an existing workspace ready', function (): void {
         InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
             'incus_project' => 'orbit-instances', 'container_name' => 'fixture-clone', 'bridge_address' => '10.253.0.2',
+            't3_port' => 3800, 'container_server' => ContainerServer::Conn,
             'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
         $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $this->body, $this->key)->assertAccepted()
             ->assertJsonPath('data.readiness.workspace_server', null)->json('data.id');
@@ -1794,6 +1800,7 @@ describe('launch control and progress', function (): void {
         expect($launch->child_versions)->toBe(OperationKinds::CoordinatorChildren[OperationKinds::ConnLaunch]);
         InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
             'incus_project' => 'orbit-instances', 'container_name' => 'fixture-clone', 'bridge_address' => '10.253.0.2',
+            't3_port' => 3800, 'container_server' => ContainerServer::Conn,
             'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
         upgradeLaunchChildVersions(OperationKinds::ConnLaunchInspect, OperationKinds::ConnLaunchDispatch);
         $native = app(ConnLaunchNativeWork::class);
@@ -2013,6 +2020,7 @@ describe('launch control and progress', function (): void {
         $this->instance->update(['status' => InstanceState::SourceResolved]);
         InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
             'incus_project' => 'orbit-instances', 'container_name' => 'fixture-clone', 'bridge_address' => '10.253.0.2',
+            't3_port' => 3800, 'container_server' => ContainerServer::Conn,
             'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
         $definition = ProcessDefinition::query()->create(['project_id' => $this->project->id, 'name' => 'fixture-worker',
             'environments' => ['development'], 'spec' => ['runtime' => 'systemd', 'command' => ['/bin/false']]]);
