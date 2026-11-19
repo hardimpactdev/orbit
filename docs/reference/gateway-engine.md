@@ -13,7 +13,7 @@ covers:
 
 The Gateway engine runs an Operation as a state machine in the Gateway. Each step is a typed primitive that the [executor](/reference/executor) runs on its Node. NATS JetStream carries the orders, the receipts and the engine's own events. [ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) records why.
 
-Operation kinds move off Swamp one at a time, per Operation ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N4). Each Operation runs entirely on the engine or entirely on Swamp, never half on each. A kind's Swamp workflows are retired in a separate change, once the switch for the kind is proven.
+Operation kinds move off Swamp one at a time, per Operation ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N4). Each Operation runs entirely on the engine or entirely on Swamp, never half on each. Once the switch for a kind is proven, a separate pull request removes the kind's Swamp workflows.
 
 ## Which kinds run on the engine
 
