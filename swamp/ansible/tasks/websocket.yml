@@ -1,7 +1,8 @@
 ---
 # A release folder is named by its repository and ref, so a release that verifies is the one wanted: its checkout at the ref with no
-# tracked change, and the Composer install of its lock file (each locked package at its locked version, without dev packages). One read
-# replaces Git's checkout check and Composer's install on every converge; any other state checks out and installs again.
+# tracked change, and the Composer install of its lock file (each locked package at its locked version, without dev packages) whose
+# autoloader loads and finds Reverb's service provider. One read replaces Git's checkout check and Composer's install on every converge;
+# any other output, a PHP error included, checks out and installs again.
 - name: Read the Reverb release
   become: true
   become_user: "{{ rt.websocket.user }}"
@@ -11,7 +12,7 @@
       - -c
       - |
         cd "$1" 2>/dev/null && [ "$(git rev-parse HEAD 2>/dev/null)" = "$2" ] && git diff --quiet HEAD -- 2>/dev/null \
-          && [ -f vendor/autoload.php ] && php -r '
+          && php -r '
             $lock = json_decode((string) @file_get_contents("composer.lock"), true);
             $installed = json_decode((string) @file_get_contents("vendor/composer/installed.json"), true);
             if (! is_array($lock) || ! is_array($installed) || ($installed["dev"] ?? true) !== false) { exit(1); }
@@ -19,7 +20,9 @@
             $have = array_column($installed["packages"] ?? [], "version", "name");
             ksort($wanted);
             ksort($have);
-            exit($wanted === $have ? 0 : 1);' && echo verified || echo install
+            if ($wanted !== $have || ! is_file("vendor/autoload.php")) { exit(1); }
+            require "vendor/autoload.php";
+            exit(class_exists("Laravel\\Reverb\\ReverbServiceProvider") ? 0 : 1);' && echo verified || echo install
       - reverb
       - "{{ rt.websocket.release }}"
       - "{{ rt.websocket.ref }}"

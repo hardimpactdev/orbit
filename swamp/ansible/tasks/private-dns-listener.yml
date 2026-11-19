@@ -48,7 +48,7 @@
   register: private_dns_check
   changed_when: false
   failed_when: false
-# A failed or unreadable check repairs every file.
+# A failed or unreadable check, an index outside the list included, repairs every file.
 - name: Write private DNS release files
   ansible.builtin.copy:
     dest: "{{ item.path }}"
@@ -57,8 +57,9 @@
     group: root
     mode: "0644"
   loop: >-
-    {{ private_dns_check.stdout | from_json | map('extract', private_dns.files) | list
+    {{ private_dns_check.stdout | from_json | unique | map('extract', private_dns.files) | list
        if private_dns_check.rc == 0 and private_dns_check.stdout is regex('^\[(\d+(, \d+)*)?\]$')
+          and private_dns_check.stdout | from_json | select('ge', private_dns.files | length) | list | length == 0
        else private_dns.files }}
   loop_control: { label: "{{ item.path }}" }
   register: private_dns_files

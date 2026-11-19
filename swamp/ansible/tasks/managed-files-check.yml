@@ -29,10 +29,11 @@
   register: managed_files_check
   changed_when: false
   failed_when: false
-# A failed check or any other output repairs every file.
+# A failed check or any other output, an index outside the list included, repairs every file.
 - name: Name the managed files that differ
   ansible.builtin.set_fact:
     managed_files_repair: >-
-      {{ (managed_files_check.stdout | from_json | map('extract', managed_files) | list
+      {{ (managed_files_check.stdout | from_json | unique | map('extract', managed_files) | list
           if managed_files_check.rc == 0 and managed_files_check.stdout is regex('^\[(\d+(, \d+)*)?\]$')
+             and managed_files_check.stdout | from_json | select('ge', managed_files | length) | list | length == 0
           else managed_files) | map('first') | list }}

@@ -100,12 +100,13 @@
       register: package_holds_read
       changed_when: false
       failed_when: false
-    # A failed read or any output other than a list of package names sends every package to the module.
+    # A failed read or any output other than a list of the asked package names sends every package to the module.
     - name: Select the packages whose hold needs the module
       ansible.builtin.set_fact:
         package_holds_unheld: >-
           {{ package_holds_read.stdout | from_json
              if package_holds_read.rc == 0 and package_holds_read.stdout is regex('^\[("[a-z0-9][a-z0-9+.:-]*"(, "[a-z0-9][a-z0-9+.:-]*")*)?\]$')
+                and package_holds_read.stdout | from_json | reject('in', package_holds_names) | list | length == 0
              else package_holds_names }}
 - name: Keep the file packages where they are
   ansible.builtin.dpkg_selections: { name: "{{ item.name }}", selection: hold }
