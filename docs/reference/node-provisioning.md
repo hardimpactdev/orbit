@@ -1318,7 +1318,10 @@ The source of an `ingress` move is the active Ingress of the target's Cluster, a
 - An HTTP HEAD request from the target to each public Process listener. Admission already checked that each Process Node's recorded firewall admits the target.
 - `operation-node-role-add` against the target. The intent is the one `node:role:add <target> ingress --converge` builds, without the Metrics fleet, private DNS or the source's Caddyfile.
 - That child installs Caddy and the Orbit root and opens the Ingress rules. It publishes the target's Caddyfile with the public sites, and a separate Router's Caddyfile.
-- `Check the public certificates` asks the target for every public name over HTTPS with the system bundle. curl's own retry waits at most 300 seconds.
+- `Probe the Router hop` sends an HTTPS HEAD request from the target to the Router address its sites use, for each public app Route.
+- `Check the public certificates` asks the target for every public name over HTTPS with the system bundle. curl's own retry waits at most 300 seconds. `Check the certificate answers` then fails the move on an answer of 500 or more.
+
+The move holds every Node of the Cluster against Route writes from admission to its end (`route.publication_held` when a Route write holds one).
 
 The relocation's own certificate and firewall steps have nothing left to do for `ingress`. Its DNS step publishes private DNS after the certificate check.
 
@@ -1329,7 +1332,8 @@ One native assert, `Confirm the move`, ends the run. The Gateway records the res
 - On success the target assignment becomes active. The certificate and serving state follow the move.
 - The Gateway forgets the source's transferred settings.
 - A failed step marks the assignment `failed` with `converge:STEP`, or `remove:Remove from the source`.
-- An `ingress` move whose probe, child, Caddy or certificate step fails before `Publish the role DNS` ran gives the assignment back to the source, `active`, with `source_kept: true` in the result.
+- An `ingress` move whose probe, child, Caddy or certificate step fails before `Publish the role DNS` ran gives the assignment back to the source, `active`, with `source_kept: true` in the result. A `--from` retry never does.
+- An `ingress` move whose source removal fails keeps the target `active` and reports `source_cleanup_failed: true`.
 - A role that was already `active` stays `active` when `node:role:add --converge` fails. The failure stays on the Operation.
 
 Relocation does not reconcile Metrics. When a Metrics role exists and `websocket`, `gateway` or `ingress` moved, `follow_up` names `orbit node:role:add <metrics-node> metrics --converge`.

@@ -545,9 +545,11 @@ The same command removes an Ingress whose convergence failed. A failed step leav
 
 ### Ingress relocation
 
-`node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. It can't be the Router or run a target of a public Route, because its public site would then replace that Route's private hop before Let's Encrypt issues the certificate. Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
+`node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. It can't be the Router or run a target of a public Route, because its public site would then replace that Route's private hop before Let's Encrypt issues the certificate. When the source runs a target of a public Route, the Router must be the source too (reason `source_serves_public_route`). A separate Router would get a hop that trusts only the Orbit certificate, while the source still answers with Let's Encrypt until its removal. Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
 
-Admission checks each live [public Process Route](#public-process-hostnames) as Route activation does. The Process Node's recorded firewall must admit the target, and the Process must publish one listener on the address the target selects. Otherwise the move is refused with `route.upstream_firewall_mismatch` or `route.upstream_unresolved`, and nothing is recorded.
+Admission checks each live [public Process Route](#public-process-hostnames) as Route activation does. The Process Node's recorded firewall must admit the target, and the Process must publish one listener on the address the target selects. Otherwise the move is refused with `route.upstream_firewall_mismatch` or `route.upstream_unresolved`, and nothing is recorded. The listener the target selects must also be the one the Route recorded. `process:update` protects the recorded listener, so a move to another listener is refused with `route.upstream_listener_changed`.
+
+The move takes the [Route publication hold](#coordinate-publication) on every Node of the Cluster at admission and keeps it until it ends. The run writes Caddyfiles that the Gateway rendered at admission, also when it gives the role back. So a Route write started during the move waits, and one that holds a Node already refuses the move with `route.publication_held`.
 
 Until private DNS switches, the run prepares the target:
 
@@ -557,28 +559,33 @@ Until private DNS switches, the run prepares the target:
 4. The target builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
 5. A Router on another Node gets its Caddyfile again. Its site trusts the Ingress by where the Ingress runs.
 6. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
-7. The target must serve a valid public certificate for every public name. It asks itself over HTTPS with the system bundle. It retries for at most 300 seconds.
+7. The target sends an HTTPS HEAD request to the Router address its sites use, for each public app Route, with the system bundle. A refused connection or a bad certificate fails the move.
+8. The target must serve a valid public certificate for every public name. It asks itself over HTTPS with the system bundle. It retries for at most 300 seconds. An answer of 500 or more after the last try fails the move.
 
 Then the run switches and cleans up:
 
-8. Private DNS is published again. A name that only the Ingress serves, such as a public Process hostname, now answers with the target.
-9. A public app Route keeps its Router answer, because its Router serves it privately.
-10. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
-11. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
-12. Public SSH reopens on the source if Ingress was its last role.
+9. Private DNS is published again. A name that only the Ingress serves, such as a public Process hostname, now answers with the target.
+10. A public app Route keeps its Router answer, because its Router serves it privately.
+11. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
+12. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
+13. Public SSH reopens on the source if Ingress was its last role.
 
-Until step 11 both Nodes serve the public sites. The target's sites reach the Router over HTTPS with the system bundle, `/etc/ssl/certs/ca-certificates.crt`, which holds the Orbit root and the public roots. So the hop works while the source still answers with its Let's Encrypt certificate, and after it answers with its Orbit certificate.
+Until step 12 both Nodes serve the public sites. The target's sites reach the Router over HTTPS with the system bundle, `/etc/ssl/certs/ca-certificates.crt`, which holds the Orbit root and the public roots. So the hop works while the source still answers with its Let's Encrypt certificate, and after it answers with its Orbit certificate.
 
-The grace in step 10 covers private DNS only; it does not wait for public DNS. Public DNS is yours:
+The grace in step 11 covers private DNS only; it does not wait for public DNS. Public DNS is yours:
 
 - Lower the TTL of each public record well before the move, or front the hostnames with a proxy that switches its origin at once.
 - Point the records at the target at the start of the run. The target answers on ports 80 and 443 from step 6.
 - Let's Encrypt issues the target's certificates only for names that public DNS points at the target. [Publish the public edge](#publish-the-public-edge) describes issuance.
-- Step 7 fails for a name that still has no valid certificate after 300 seconds.
+- Step 8 fails for a name that still has no valid certificate after 300 seconds.
 - Every public name counts, also one whose DNS points elsewhere on purpose.
-- A client can still hold the source's public answer after step 11. It fails until that answer expires.
+- A client can still hold the source's public answer after step 12. It fails until that answer expires.
 
-A failure in step 2, 3, 4 or 7, before step 8 ran, gives the Ingress back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`. The source never stopped serving, and no private DNS answer names the target. The target keeps the sites it already built. Fix the cause and run the same command again. A failure from step 8 on keeps the target as the Ingress; fix the cause and run the same command with `--from=SOURCE`.
+A failure in step 2, 3, 4, 7 or 8, before step 9 ran, gives the Ingress back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`. The source never stopped serving, and no private DNS answer names the target. The target keeps the sites it already built. Fix the cause and run the same command again. A failure from step 9 on keeps the target as the Ingress; fix the cause and run the same command with `--from=SOURCE`.
+
+A `--from` retry never gives the Ingress back. Its earlier run may already have switched private DNS to the target, so the target stays the Ingress whatever step fails.
+
+A failure in step 12 keeps the target `active`, because it already serves every public site and private DNS names it. The result has `source_cleanup_failed: true`, and the source keeps its public sites and rules until the retry with `--from=SOURCE` removes them.
 
 ## Change an existing Route
 
