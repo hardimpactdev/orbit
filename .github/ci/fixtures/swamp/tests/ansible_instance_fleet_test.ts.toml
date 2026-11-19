@@ -136,6 +136,23 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
 # four-worker local measurements in tools/tests/ci-fleet-cost-evidence.json:
 # ESTIMATE: ceil(seconds * 2.1) + 1; the planner adds 6s startup.
 # Other cases retain their earlier hosted or explicitly marked local estimates.
+# The saved refresh record hashes one checkout ID per converge input: a change to the input list must prove these cases
+# before the rest of this capacity-gap file (ADR 0262).
+[mandatory_cases]
+"swamp/ansible/fleet-converge-inputs.json" = [
+  "the saved refreshed fleet boundary matches a real first refresh and start",
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
+  "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file",
+  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates",
+  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates",
+  "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base",
+  "the next refresh repeats no part: the code without a pending migration migrates and restarts, converges nothing and keeps base",
+  "a changed input runs only its due parts: a swamp file the base converge reads converges",
+  "the next refresh repeats no part: a swamp file the base converge reads converges",
+  "a changed input runs only its due parts: the agent contract migrates and restarts",
+  "the next refresh repeats no part: the agent contract migrates and restarts",
+]
+
 [case_costs]
 "an old-checkout fleet start records unavailable pin sync, then refresh writes pins on the new checkout and repeats unchanged" = 70 # ESTIMATE: local 32 s x 2.1, rounded up
   "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads" = 58 # hosted run 43730633700: 45s x 1.25, rounded up, plus 1s
