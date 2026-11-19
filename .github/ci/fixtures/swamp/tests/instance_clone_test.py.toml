@@ -33,6 +33,8 @@ cases = [
   "test_the_container_phase_prints_the_seconds_of_each_part",
   "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
   "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last",
+  "test_t3_files_go_in_beside_the_boot_files_and_before_the_proxy_drop_ins",
+  "test_the_branch_is_read_on_the_node_beside_the_start",
   "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line",
   "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start",
   "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files",
@@ -204,8 +206,8 @@ inputs = [
   "test_a_copy_without_its_private_text_fails_before_any_command" = 1
   "test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start" = 2
   "test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone" = 2
-  "test_a_copy_without_home_agent_gets_no_nss_store" = 2
-  "test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write" = 2
+  "test_a_copy_without_home_agent_gets_no_nss_store" = 1 # local run 0.15 s (2026-11-19)
+  "test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write" = 1 # local run 0.15 s (2026-11-19)
   "test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create" = 2
   "test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure" = 2
   "test_admits_exactly_the_keys_with_incus_own_and_empty_values" = 1 # estimate: local run on Beast, not a CI measurement
@@ -238,6 +240,8 @@ inputs = [
 "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last" = 1
+"test_t3_files_go_in_beside_the_boot_files_and_before_the_proxy_drop_ins" = 1 # local run 0.15 s (2026-11-19)
+"test_the_branch_is_read_on_the_node_beside_the_start" = 1 # two clone runs, local 0.2 s (2026-11-19)
 "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line" = 1
 "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start" = 1
 "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files" = 1
