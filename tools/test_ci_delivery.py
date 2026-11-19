@@ -56,13 +56,13 @@ class DeliveryGateTest(unittest.TestCase):
         with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
             delivery.validate(needs)
 
-    def test_main_delivery_uses_only_policy_and_promoted_pr_evidence(self):
-        self.assertEqual(set(JOBS['delivery']['needs']), {'ci-policy', 'changes', 'gateway-release'})
+    def test_main_delivery_uses_only_the_promoted_merge_queue_evidence(self):
+        self.assertEqual(JOBS['delivery']['needs'], 'changes')
         self.assertIn('fixtures', JOBS['required']['needs'])
         self.assertIn('self-hosted-fixtures', JOBS['required']['needs'])
         self.assertIn("github.ref == 'refs/heads/main'", JOBS['delivery']['if'])
         self.assertIn('workflow_dispatch', JOBS['delivery']['if'])
-        self.assertEqual(JOBS['cli-release']['needs'], 'delivery')
+        self.assertEqual(JOBS['cli-release']['needs'], 'main-release-inputs')
         self.assertIn('workflow_dispatch', JOBS['cli-release']['if'])
         self.assertEqual(JOBS['main-required']['needs'], 'delivery')
         self.assertIn("always()", JOBS['main-required']['if'])
@@ -156,9 +156,9 @@ class DeliveryGateTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, 'Incomplete build selections'):
             self.run_gate(needs)
 
-    def test_self_hosted_units_require_a_branch_run_and_success(self):
+    def test_self_hosted_units_require_the_merge_queue_run_and_success(self):
         shards = [{'name': '01', 'units': ['swamp/tests/frankenphp_proxy_test.ts']}]
-        for mode in ('fork', 'run', 'none'):
+        for mode in ('fork', 'run', 'none'):  # fork is no mode: a pull request starts no shard
             for selected in ([], shards):
                 for result in ('success', 'skipped', 'failure', 'cancelled', 'pending'):
                     needs = needs_for()
@@ -166,8 +166,8 @@ class DeliveryGateTest(unittest.TestCase):
                     needs['self-hosted-fixtures']['result'] = result
                     with self.subTest(mode=mode, selected=selected, result=result), \
                             patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES=mode):
-                        if mode == 'fork' and selected:
-                            with self.assertRaisesRegex(SystemExit, "run only on Orbit's runners.*frankenphp_proxy_test.ts.*push the branch"):
+                        if mode == 'fork':
+                            with self.assertRaisesRegex(SystemExit, 'Unexpected self-hosted fixture state'):
                                 delivery.validate(needs)
                         elif mode == 'run' and result != 'success' and not (not selected and result == 'skipped'):
                             with self.assertRaisesRegex(SystemExit, 'Required self-hosted fixtures failed'):
@@ -197,7 +197,7 @@ class WorkflowGateTest(unittest.TestCase):
 
 
 class ProofGateTest(unittest.TestCase):
-    def run_required(self, *, proof_required=False, fork=False, results=None, statuses=None, snapshots=None, proof_base=''):
+    def run_required(self, *, proof_required=False, fork=False, results=None, statuses=None, snapshots=None):
         needs = needs_for()
         rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1}
                 for name in ('CI proof', 'CI proof eligibility')}
@@ -215,8 +215,8 @@ class ProofGateTest(unittest.TestCase):
             self.assertIn('--paginate', argv)
             return json.dumps([{'jobs': next(snapshots)}]).encode()
         result = None
-        with patch.dict(os.environ, PROOF_REQUIRED=str(proof_required).lower(), FORK_PROOF=str(fork).lower(), PROOF_BASE=proof_base,
-                        SELF_HOSTED_FIXTURES='fork' if fork else 'run', CI_RUN_ID='123', PROOF_SHA='a' * 40,
+        with patch.dict(os.environ, PROOF_REQUIRED=str(proof_required).lower(), FORK_PROOF=str(fork).lower(),
+                        SELF_HOSTED_FIXTURES='none', CI_RUN_ID='123', PROOF_SHA='a' * 40,
                         GH_REPO=REPO, PROOF_RUN_URL_PREFIX=f'https://github.com/{REPO}/actions/runs/'), \
                 patch.object(delivery.subprocess, 'check_output', side_effect=api) as github, \
                 patch.object(delivery.time, 'sleep') as sleep:
@@ -271,8 +271,6 @@ class ProofGateTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(github.call_count, 1)
         sleep.assert_not_called()
-        error, _, _ = self.run_required(proof_required=True, snapshots=[rows], proof_base='b' * 40)
-        self.assertIn('must run on the selected range', error)
 
     def test_failed_eligibility_and_unexpected_skip_fail_closed_without_waiting(self):
         for result in ('failure', 'cancelled', 'skipped'):
@@ -318,7 +316,7 @@ class EvidenceTest(unittest.TestCase):
         self.assertNotIn('.conclusion', condition)
         self.assertIn("github.ref == 'refs/heads/main'", condition)
         verify = next(step for step in resolve['steps']
-                      if step.get('run') == 'python3 bin/ci-delivery verify --sha "$COMMIT"')
+                      if step.get('run') == 'python3 bin/ci-delivery verify --sha "$COMMIT" --release')
         self.assertEqual(verify['env']['COMMIT'], '${{ steps.release.outputs.commit }}')
         self.assertNotIn('SOURCE_RUN_ID', verify['env'])  # Resolve the latest trusted main CI for this SHA.
         self.assertNotIn('if', verify)  # Delivery evidence is required for automatic and manual dispatches.
@@ -339,6 +337,16 @@ class EvidenceTest(unittest.TestCase):
             jobs = {'Required checks': JOB} if job is None else {delivery.DELIVERY: job}
             with self.subTest(job=job), self.assertRaisesRegex(ValueError, 'old Required checks cannot substitute'):
                 delivery.delivery_evidence(self.github(jobs=jobs), SHA)
+
+    def test_a_release_needs_the_release_inputs_of_the_same_main_run(self):
+        # A later main run that passes delivery and fails Required checks skips the job: an earlier run's green one must not count.
+        delivery.delivery_evidence(self.github(jobs={delivery.DELIVERY: JOB, delivery.RELEASE: JOB}), SHA, release=True)
+        delivery.delivery_evidence(self.github(), SHA)
+        for marker in (None, JOB | dict(conclusion='skipped'), JOB | dict(conclusion='failure'),
+                       JOB | dict(status='in_progress', conclusion=None), JOB | dict(head_sha='b' * 40)):
+            jobs = {delivery.DELIVERY: JOB} | ({} if marker is None else {delivery.RELEASE: marker})
+            with self.subTest(marker=marker), self.assertRaisesRegex(ValueError, 'Gateway release inputs must pass in the newest main CI run'):
+                delivery.delivery_evidence(self.github(jobs=jobs), SHA, release=True)
 
     def test_latest_trusted_run_and_latest_job_attempt_win(self):
         github = self.github(runs=[RUN, RUN | dict(id=44)])

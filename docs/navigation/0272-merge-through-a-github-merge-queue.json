@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 272,
+      "pages": [
+        "decisions/0272-merge-through-a-github-merge-queue"
+      ]
+    }
+  ]
+}

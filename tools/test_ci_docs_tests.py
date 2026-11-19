@@ -44,7 +44,7 @@ class DocsTestsPolicyTest(unittest.TestCase):
         steps = JOB['steps']
         install = next(i for i, step in enumerate(steps)
                        if step.get('run') == 'composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts')
-        gate = next(i for i, step in enumerate(steps) if step.get('id') == 'docs-body')
+        gate = next(i for i, step in enumerate(steps) if 'bin/docs-impact --gate' in step.get('run', ''))
         self.assertLess(install, gate)
         self.assertEqual(steps[gate]['if'], steps[install]['if'])
 
