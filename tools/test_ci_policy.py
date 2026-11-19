@@ -49,14 +49,14 @@ class RequiredGateTest(unittest.TestCase):
         ], cwd=ROOT, text=True, timeout=10).strip('\0')
         self.assertEqual(paths, '', 'ci-unit-times.json: this is a local run output; remove it')
 
-    def test_main_push_dispatches_cli_release_after_delivery_without_a_variable_gate(self):
+    def test_main_push_dispatches_cli_release_after_the_release_inputs_without_a_variable_gate(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
         block = caller.split('  cli-release:\n', 1)[1]
         condition = next(line.strip() for line in block.splitlines() if line.startswith('    if:'))
-        self.assertEqual(condition, "if: always() && needs.delivery.result == 'success' && github.ref == 'refs/heads/main' && "
+        self.assertEqual(condition, "if: always() && needs.main-release-inputs.result == 'success' && github.ref == 'refs/heads/main' && "
                                     "contains(fromJSON('[\"push\", \"workflow_dispatch\"]'), github.event_name)")
-        self.assertIn('    needs: delivery\n', block)
-        # Only delivery's own result gates the dispatch. The implicit success() would also skip it when an unselected test
+        self.assertIn('    needs: main-release-inputs\n', block)
+        # Only that job's own result gates the dispatch. The implicit success() would also skip it when an unselected test
         # job in Required's needs was skipped at job level (main 4e4cf83d, d9d10a93, 02f630f8 dispatched no release).
         skippable = [name for name in ('gateway-tests', 'cli-tests')
                      if "if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['" + name + "']) != 'false' }}" in caller]

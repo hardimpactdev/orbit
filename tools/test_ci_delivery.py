@@ -57,12 +57,12 @@ class DeliveryGateTest(unittest.TestCase):
             delivery.validate(needs)
 
     def test_main_delivery_uses_only_the_promoted_merge_queue_evidence(self):
-        self.assertEqual(set(JOBS['delivery']['needs']), {'changes', 'gateway-release'})
+        self.assertEqual(JOBS['delivery']['needs'], 'changes')
         self.assertIn('fixtures', JOBS['required']['needs'])
         self.assertIn('self-hosted-fixtures', JOBS['required']['needs'])
         self.assertIn("github.ref == 'refs/heads/main'", JOBS['delivery']['if'])
         self.assertIn('workflow_dispatch', JOBS['delivery']['if'])
-        self.assertEqual(JOBS['cli-release']['needs'], 'delivery')
+        self.assertEqual(JOBS['cli-release']['needs'], 'main-release-inputs')
         self.assertIn('workflow_dispatch', JOBS['cli-release']['if'])
         self.assertEqual(JOBS['main-required']['needs'], 'delivery')
         self.assertIn("always()", JOBS['main-required']['if'])

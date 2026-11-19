@@ -331,7 +331,7 @@ class ReceiptTest(unittest.TestCase):
             outputs = dict(line.split('=', 1) for line in Path(tmp, 'output').read_text().splitlines())
         self.assertFalse(any(json.loads(outputs['jobs']).values()))
         guard = JOBS['delivery']['steps'][0]['run']
-        success = dict(CHANGES='success', REUSE='true', RELEASE='success')
+        success = dict(CHANGES='success', REUSE='true')
         for missing in (None, *success):
             failed = {missing: ''} if missing else {}
             with self.subTest(missing=missing):
@@ -340,9 +340,17 @@ class ReceiptTest(unittest.TestCase):
                 self.assertEqual(result.returncode, bool(missing))
         self.assertIn("github.ref == 'refs/heads/main'", next(s for s in JOBS['changes']['steps'] if s.get('id') == 'reuse')['if'])
         self.assertEqual(JOBS['changes']['permissions'], {'contents': 'read', 'actions': 'read', 'pull-requests': 'read'})
-        # The queue run and the main run share a commit; the release reads this name on it, so only main may report it.
-        self.assertEqual(JOBS['gateway-release']['name'],
-                         "${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Release inputs of this change' }}")
+        # The queue run and the main run share a commit, and the release needs every run of this name on it to pass.
+        # So only main reports it, last: after its Required checks, which follows delivery and the promoted web build.
+        self.assertEqual(JOBS['gateway-release']['name'], 'Release inputs of this change')
+        self.assertTrue(JOBS['gateway-release']['if'].startswith("github.ref != 'refs/heads/main' && "))
+        marker = JOBS['main-release-inputs']
+        self.assertEqual(marker['name'], "${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Main release inputs' }}")
+        self.assertEqual(marker['needs'], 'main-required')
+        self.assertEqual(marker['if'], "always() && needs.main-required.result == 'success' && github.ref == 'refs/heads/main' && "
+                                       "contains(fromJSON('[\"push\", \"workflow_dispatch\"]'), github.event_name)")
+        names = [job.get('name') for job in JOBS.values()]
+        self.assertEqual(sum('Gateway release inputs' in str(name) for name in names), 1)
         self.assertEqual(JOBS['ci-policy']['if'], "github.ref != 'refs/heads/main'")
         self.assertIn("'Required checks'", JOBS['main-required']['name'])
         for job in JOBS.values():

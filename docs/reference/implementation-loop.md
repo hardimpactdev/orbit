@@ -87,7 +87,7 @@ A separate remote Node service access fixture covers exact TCP admission, proxy 
 
 The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site.
 
-CI runs fixtures and proof before the merge. The main workflow verifies the PR evidence and promotes the tested web build. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+CI runs fixtures and proof before the merge: the proof on the pull request, the fixtures in the merge queue run. The main workflow verifies that run and promotes its web build. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 Withdrawal fixtures also check that publication stops when the live checksum differs from the base used for composition. The Node helper tests use temporary files, fake Caddy commands and real file locks; they cover contention, holder death and reload failure.
 
@@ -103,7 +103,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Run unit and Chromium/WebKit verification tests, then Chromium app tests; build the web app, and retain it in every merge queue run for main delivery; require `dist/index.html` and `dist/version.json` |
-| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp. Off main the job is named `Release inputs of this change` and skips Swamp-only and docs-only changes |
+| Gateway release inputs | Pass last on every green main commit, because a Gateway release also loads Swamp. Off main, `Release inputs of this change` skips Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. When it runs, it gates Required checks; see [the proof run job](#the-proof-run-job) |
@@ -141,7 +141,7 @@ A pull request run is the pre-check. It runs the selected hosted jobs and plans 
 
 The queue run always builds the web app and runs the Docs job. Its Docs gate reads the body of the queued pull request again, so an acknowledgement removed after the pull request's own run does not merge. An edit after that read is not checked.
 
-The queue run and the main run share one commit, and the release reads check names on that commit. So only main reports `Gateway release inputs`, and main reports it after it has published the web build.
+The queue run and the main run share one commit, and the release reads check names on that commit. So only main reports `Gateway release inputs`. Main reports it last: after it has published the web build and its own `Required checks` has passed. A release then never starts from a main run that can still fail.
 
 ### Deliver the queue's commit on main
 
@@ -414,7 +414,7 @@ Shards publish source hashes, declared costs, unit and startup times, exact case
 
 A case above 150 seconds is split or made faster. The nested-host preparation case of the container fixture is one: two converges of a switched-on host reached the 180-second unit ceiling on a hosted run. The container file runs in self-hosted fixture shards. The fast control job keeps the shape baseline, frozen-base policy, behavior names and frozen agent contract checks.
 
-The CLI release starts after Required checks on main. Measure that chain separately through release publication, including dispatch queues. The Linux and macOS agent jobs use [release build caches](/reference/cli-binaries#agent-build-cache). Measure cold and warm agent deliveries separately; a cache does not by itself prove that publication fits five minutes.
+The CLI release starts after Required checks and Gateway release inputs on main. Measure that chain separately through release publication, including dispatch queues. The Linux and macOS agent jobs use [release build caches](/reference/cli-binaries#agent-build-cache). Measure cold and warm agent deliveries separately; a cache does not by itself prove that publication fits five minutes.
 
 ### The proof run job
 
@@ -497,7 +497,7 @@ Each main SHA has its own concurrency group in both CI and the reusable Swamp wo
 
 Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. On a pull request it also installs the CLI dev dependencies, from the CLI Pest suite's cache, because `bin/cli-contract --changed` in the PR gate runs the CLI tests that replay the changed fixtures. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed.
 
-Every pull request selects this job, including changes with no covered documentation. Other events retain path selection, including `apps/docs/**`, `bin/check-*` and docs chart changes.
+Every pull request and every merge queue run selects this job, including changes with no covered documentation. Other events retain path selection, including `apps/docs/**`, `bin/check-*` and docs chart changes.
 
 After generation, the PR gate compares the checked-out merge commit with its first parent. It reads the live PR body through the API, treats it as data, and checks that the PR head still matches this run. A body edit starts no workflow; `gh run rerun <run-id> --failed` rechecks failed jobs and Required on the same head. Successful jobs keep their existing results. [Documentation acknowledgements](/contributor-guide#2-write-the-documentation) use the same command locally with `--pr-body-file`.
 
@@ -521,7 +521,7 @@ CI uses `pull_request_target` only in the label workflow `proof-outside.yml`, wh
 
 The plan passes three booleans and the resolved comparison base to the Swamp workflow. Each selected subjob starts directly, and Required checks requires the reusable call's result as a static dependency.
 
-On a push or manual CI run on `main`, the `Start the CLI release` job runs after `Main delivery checks` passes and dispatches `Orbit CLI Release` for the commit. This is the only automatic release trigger; the release does not wait for the rest of the run. A manual release dispatch can backfill a missed commit with the same delivery and immutable-asset checks. See [published releases](/reference/cli-binaries#published-releases).
+On a push or manual CI run on `main`, the `Start the CLI release` job runs after `Gateway release inputs` passes and dispatches `Orbit CLI Release` for the commit. This is the only automatic release trigger; the release does not wait for the rest of the run. A manual release dispatch can backfill a missed commit with the same delivery and immutable-asset checks. See [published releases](/reference/cli-binaries#published-releases).
 
 Known documentation, contract-generation and proof tools select only their consumers. The plan job always runs. The plan, PHP syntax, Docs and Swamp shape jobs keep full history for their comparisons. The plan resolves the initial import's retained comparison source before shape checks run current and frozen rules. Gateway releases and desired fleet state use the pinned agent manifest in `apps/gateway/resources/agent/frozen-manifest.json`, independently of Gateway or agent source changes.
 

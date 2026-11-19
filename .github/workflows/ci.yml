@@ -721,7 +721,7 @@ jobs:
           jobs = runpy.run_path('bin/ci-build-plan')['JOBS']
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('jobs=' + json.dumps(dict.fromkeys(jobs, False)) + '\n')
-              output.write('gateway_release=true\nproof_run=false\nswamp_checks={}\n')
+              output.write('proof_run=false\nswamp_checks={}\n')
           PYTHON
             exit 0
           fi
@@ -968,10 +968,11 @@ jobs:
       SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
       SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
-    # The merge queue run and the main run share a commit. The release reads this name on that commit, so only main reports it.
-    name: ${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Release inputs of this change' }}
+    # A pull request or merge queue run. The release reads `Gateway release inputs` on a commit, and the merge queue run
+    # shares its commit with the main run, so this job has another name: main-release-inputs reports that one.
+    name: Release inputs of this change
     needs: changes
-    if: needs.changes.outputs.gateway_release == 'true'
+    if: github.ref != 'refs/heads/main' && needs.changes.outputs.gateway_release == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
@@ -1022,17 +1023,16 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [changes, gateway-release]
+    needs: changes
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
-      - name: Require the merge queue run's evidence and main release inputs
+      - name: Require the merge queue run's evidence
         env:
           CHANGES: ${{ needs.changes.result }}
           REUSE: ${{ needs.changes.outputs.reuse }}
-          RELEASE: ${{ needs.gateway-release.result }}
         run: |
-          if [[ "$CHANGES" != success || "$REUSE" != true || "$RELEASE" != success ]]; then
+          if [[ "$CHANGES" != success || "$REUSE" != true ]]; then
             echo "::error::Main delivery requires the green merge queue run of this commit and its promoted web build."
             exit 1
           fi
@@ -1070,10 +1070,22 @@ jobs:
           SOURCE_RUN_ID: ${{ github.run_id }}
         run: python3 bin/ci-delivery verify --sha "$GITHUB_SHA"
 
+  main-release-inputs:
+    # Every main commit has release inputs: a Gateway release also loads Swamp. The Gateway and the CLI release read this
+    # name on the commit. It reports last, after the web build is published and main is green, so a release never
+    # starts from a main run that can still fail. Off main the job is skipped under another name.
+    name: ${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Main release inputs' }}
+    needs: main-required
+    if: always() && needs.main-required.result == 'success' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - run: echo 'Main delivered this commit. It may release.'
+
   cli-release:
     name: Start the CLI release
-    needs: delivery
-    if: always() && needs.delivery.result == 'success' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    needs: main-release-inputs
+    if: always() && needs.main-release-inputs.result == 'success' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:
