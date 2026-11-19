@@ -1,41 +1,23 @@
 # Orbit PHP SDK
 
-Saloon 4 client for the Orbit gateway API.
+Saloon 4 client for the Orbit Gateway API. This file holds every SDK rule. Read no other instruction file before a change; the root `AGENTS.md` owns the workflow, checks and review.
 
-## Repository bootstrap
+## Boundaries
 
-Read [the repository rule index](.ai/rules/index.md) before you change or
-review package files. Treat a missing index, a missing indexed rule, or missing
-material-path coverage as a repository-bootstrap failure. Restore only the
-affected tracked guidance path from the current branch. If the branch does not
-contain it, replace the incomplete checkout. Do not restore whole trees or
-Composer manifests, and do not silently skip missing guidance.
+- Keep the SDK framework-neutral: no Laravel, Boost, container, facade, framework helper, application config or environment read.
+- Transport only. Each request is a typed Saloon request with the exact HTTP method and endpoint of the Gateway API, and a typed response DTO. Business logic, validation policy, presentation and remote execution belong to the Gateway or the CLI.
+- Model only operations the Gateway API exposes. Change a request together with its Gateway route and CLI command, in one branch.
+- The endpoint's contract decides which fields a request omits and how it parses the response. Most requests omit only `null` and let the shared `GatewayRequest` base parse the envelopes; some omit an empty list or a `false` opt-in flag, and some parse their own success data. Follow the sibling request and its test. Keep bodyless requests bodyless.
+- Expose no raw response body and no generic escape hatch.
 
-The `.ai/rules/` tree contains repository instructions only. It does not imply
-Laravel or Boost support.
+## Security
 
-## Package boundary
+- Preserve the Gateway's error code, safe message, safe details and request ID. Generate and validate `X-Orbit-Request-Id` through `Support\GatewayRequestId`.
+- Redact credentials from URLs, nested payloads, exception text, debug output and serialization. Treat every environment value as sensitive. Mark credential parameters with `#[SensitiveParameter]`.
+- Accept only a safe HTTPS Gateway origin and keep redirects disabled. `verify=false` exists only inside the one-shot `GatewayRootCaClient` bootstrap; a normal connector never lowers TLS verification.
 
-- Use PHP 8.5 with strict types.
-- Follow the Spatie PHP coding guidelines.
-- Keep this SDK framework-neutral. Laravel Boost is deliberately required in
-  `orbit-gateway` and `orbit-cli`, not in this package.
-- Keep the public API typed and small.
-- Model only commands exposed by the simplified gateway.
-- Implement typed Saloon request and DTO transport only. Keep business logic,
-  validation policy, and remote execution outside this repository.
-- Keep ordinary transport, envelopes, exceptions, responses, and test fakes
-  reusable. `GatewayRootCaClient` is deliberately one-shot after each
-  safe-origin fetch attempt. Create a fresh client for a retry.
-- Keep `verify=false` inside that one root-CA bootstrap invocation. A
-  `FetchRootCaCertificateRequest` sent through a normal connector must inherit
-  the connector's configured CA verification.
-- Preserve structured gateway error codes, safe messages, details, and request
-  IDs. Redact credentials from URLs, nested payloads, defaults, exception text,
-  and debug output.
-- Review matching SDK requests, exceptions, correlation behavior, and tests
-  before inventing a transport pattern.
-- Use Pest 5 with `describe()` and `it()`.
-- During development, run the Pest tests that cover the change with a file path or `--filter`. CI runs checks across all projects.
-- Follow the root `AGENTS.md` check policy for task and non-task work. Run
-  `git diff --check -- packages/php-sdk` from the monorepo root before handoff.
+## Code and tests
+
+- Start every PHP file with `declare(strict_types=1)`.
+- From `packages/php-sdk`, run the tests that cover the change: `vendor/bin/pest --compact tests/Unit/...Test.php`, or `--filter=<name>`. `composer test` runs the whole suite.
+- Use Saloon's mock client; contact no live Gateway or Node. Assert the method, URL, query, body, headers, DTO and error envelope. Use unique credential-shaped sentinels and assert their absence from messages, arrays, debug output and serialization.

@@ -10,10 +10,10 @@ cases = [
   "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts",
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words",
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
-  "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
+  "a refresh applies the checkout, converges the nested Gateway and then the app Nodes side by side, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units",
-  "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh",
+  "the nested Gateway converges first, then app-prod and app-dev side by side in one wait; a refused or failed converge fails the refresh with its Node and records nothing",
   "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused",
   "a reset that fails after its stop starts the containers that ran again and fails with the first reason",
   "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command",
@@ -58,7 +58,7 @@ cases = [
   "one Node whose intent cannot be built converges alone and is named unreadable with its error; the others stay unchanged",
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base",
-  "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended",
+  "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge after the nested Gateway's ended, beside app-prod's",
   "the Instance host is due only for code the app-dev converge can load, not for another Operation's playbook, nor converges on an unreadable checkout",
   "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s",
   "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only",
@@ -91,7 +91,7 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3605
+cost = 3612
 slices = 89
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
@@ -147,10 +147,10 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
   "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts" = 12 # ESTIMATE: local 5s x 2.1, rounded up, plus 1s
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
-  "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 58 # ESTIMATE: local 26.669s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
+  "a refresh applies the checkout, converges the nested Gateway and then the app Nodes side by side, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 58 # ESTIMATE: local 26.669s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 15 # ESTIMATE: local 6.625s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 35
-  "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh" = 81 # ESTIMATE: local 38s x 2.1, rounded up, plus 1s (two refreshes)
+  "the nested Gateway converges first, then app-prod and app-dev side by side in one wait; a refused or failed converge fails the refresh with its Node and records nothing" = 88 # ESTIMATE: local 41s x 2.1, rounded up, plus 1s (three refreshes)
   "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused" = 45 # ESTIMATE: the earlier 44 plus 1s for the added Doctor retry at the reset's 1 s delay (local 16s)
   "a reset that fails after its stop starts the containers that ran again and fails with the first reason" = 33 # ESTIMATE: local 15s x 2.1, rounded up, plus 1s
   "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
@@ -193,7 +193,7 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "one Node whose intent cannot be built converges alone and is named unreadable with its error; the others stay unchanged" = 35 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base" = 32 # ESTIMATE: local 14.518s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
+  "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge after the nested Gateway's ended, beside app-prod's" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
   "the Instance host is due only for code the app-dev converge can load, not for another Operation's playbook, nor converges on an unreadable checkout" = 109 # ESTIMATE: local 51s x 2.1, rounded up, plus 1s
   "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s" = 25 # ESTIMATE: short pending sequence, local 11.33s x 2.1, rounded up, plus 1s
   "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only" = 31 # ESTIMATE: local 14s x 2.1, rounded up, plus 1s
