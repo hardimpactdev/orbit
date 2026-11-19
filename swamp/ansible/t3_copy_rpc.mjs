@@ -10,7 +10,8 @@
 // `answered` cancels only stored requests that the stored OWNER run owns. Both stops take one path: T3's `run.interrupt`, then the wait for the run's end. Stock T3's CLI can neither read
 // a question nor stop a run; its server can, for a session that
 // `t3 auth session issue` grants. The session lives only in this process: it is never written, printed or passed as an argument, and it
-// is revoked before the exit. Conn uses the same transport for `inspect-launch ENVIRONMENT [PROVIDER]`, `launch` and `reconcile-launch`.
+// is revoked before the exit. Conn uses the same transport for `inspect-launch ENVIRONMENT [PROVIDER]`, `launch` and `reconcile-launch`,
+// with T3 the runtime's recorded server program: `bin/t3` or `bin/conn-server`.
 // For dispatch and recovery, run the script with `node --input-type=module -e SCRIPT -- orbit-rpc T3 COMMAND` and pass the frozen
 // private JSON on stdin. Only bounded public evidence goes to stdout. Recovery reads the original server and never sends a message.
 import { execFileSync } from "node:child_process";
@@ -184,13 +185,30 @@ async function workspaceProject(rpc) {
     return (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
 }
 
+// The T3 server version the program at T3 serves, as its own `--version` states it: `t3 v0.1.7`, or the Conn Server's
+// `conn-server 0.2.0 (T3 server 0.1.10 contract, ...)`. The answering server must report it, so only that pinned program passes.
+let served;
+function servedVersion() {
+    if (served !== undefined) return served;
+    let text = "";
+    try {
+        text = execFileSync(T3, ["--version"], { encoding: "utf8", timeout: IssueMs, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+        // No version: no server can match it.
+    }
+    served = /^t3 v(\d+\.\d+\.\d+)$/.exec(text)?.[1] ?? /^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b/.exec(text)?.[1] ?? null;
+    return served;
+}
+
 async function launchIdentity(environmentId, witness) {
     if (typeof witness !== "string" || !/^[A-Za-z0-9:_-]{1,128}$/.test(witness)) return null;
+    const version = servedVersion();
+    if (version === null) return null;
     const response = await fetch(`${origin}/.well-known/t3/environment`, { redirect: "error", signal: AbortSignal.timeout(left()) });
     if (!response.ok) return null;
     const descriptor = await response.json();
     const localEnvironmentId = readFileSync(`${userdata}/environment-id`, "utf8").trim();
-    if (!environmentId || descriptor.environmentId !== environmentId || localEnvironmentId !== environmentId || descriptor.serverVersion !== "0.1.7") return null;
+    if (!environmentId || descriptor.environmentId !== environmentId || localEnvironmentId !== environmentId || descriptor.serverVersion !== version) return null;
     const path = `${userdata}/statev2.sqlite`;
     const { dev, ino } = statSync(path, { bigint: true });
 

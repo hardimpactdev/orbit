@@ -22,15 +22,18 @@ type Request = { id: string; kind: string; status: string; responseCapability?: 
 // `vanish` accepts it and the projection then omits the run, which is still active.
 type Server = { requests: Request[]; questions: Record<string, unknown[]>; runStatus: string; commands: Record<string, unknown>[]; interrupt?: "end" | "refuse" | "stuck" | "vanish"; vanished?: boolean; respond?: "refuse" | "stuck" | "raced";
     projects?: { id: string; workspaceRoot: string; archivedAt: string | null }[]; launchProjection?: LaunchProjection; dropLaunchReply?: boolean;
-    launchReadFails?: boolean; servedEnvironment?: string; config?: unknown; bounded?: unknown;
+    launchReadFails?: boolean; servedEnvironment?: string; programVersion?: string; servedVersion?: string; config?: unknown; bounded?: unknown;
     history?: Record<string, unknown>; historyReads?: string[]; replaceStateInPlace?: boolean };
 
-/** Answers T3's ticket and RPC as T3 0.1.7 does, for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
+const stockT3 = "t3 v0.1.7";
+const connServer = "conn-server 0.2.0 (T3 server 0.1.10 contract, contract digest e63f9ed6f727)";
+
+/** Answers T3's ticket and RPC as T3 0.1.7 does (or `servedVersion` with the program's `programVersion`), for one thread whose state the test sets. A stop cancels live requests but leaves message-capability questions pending. */
 function serve(state: Server) {
     return Deno.serve({ port: 0, hostname: "127.0.0.1", onListen: () => {} }, (request) => {
         const url = new URL(request.url);
         if (url.pathname === "/.well-known/t3/environment") {
-            return Response.json({ environmentId: state.servedEnvironment ?? launchEnvironment, serverVersion: "0.1.7" });
+            return Response.json({ environmentId: state.servedEnvironment ?? launchEnvironment, serverVersion: state.servedVersion ?? "0.1.7" });
         }
         if (url.pathname === "/api/auth/websocket-ticket") {
             return request.headers.get("authorization") === `Bearer ${token}` ? Response.json({ ticket: "ticket-1" }) : new Response("no", { status: 401 });
@@ -130,6 +133,7 @@ async function helper(state: Server, args: string[], issue = "json", frozen?: (i
         Deno.writeTextFileSync(`${folder}/t3`, `#!/bin/sh
 if [ "$1 $2 $3" = "auth session issue" ]; then printf '%s' '${issued}'; exit 0; fi
 if [ "$1 $2 $3" = "auth session revoke" ]; then echo "$4" >> "${folder}/revoked"; exit 0; fi
+if [ "$1" = "--version" ]; then echo '${state.programVersion ?? stockT3}'; exit 0; fi
 exit 2
 `);
         Deno.chmodSync(`${folder}/t3`, 0o755);
@@ -334,6 +338,20 @@ Deno.test({ name: "Conn launch uses its frozen first message and recovers a lost
     const recovered = await helper(state, ["reconcile-launch"], "json", freezeLaunch);
     assertEquals([recovered.code, recovered.out, recovered.stderr, state.commands, recovered.revoked],
         [0, { accepted_at: acceptedAt, error_code: null }, "", [launchRequest], ["session-1"]]);
+} });
+
+Deno.test({ name: "Conn launch accepts the T3 server version of the pinned program it runs and refuses any other", ignore: !available, async fn() {
+    const ready = (programVersion: string, servedVersion: string) => ({ ...waiting([], {}), programVersion, servedVersion,
+        projects: [{ id: launchRequest.projectId, workspaceRoot: "/srv/workspace", archivedAt: null }],
+        config: { providers: [], settings: { defaultModelSelection: { instanceId: "codex", model: "gpt-6.2-sol" } } } });
+    for (const [program, version] of [[stockT3, "0.1.7"], [connServer, "0.1.10"]]) {
+        const inspected = await helper(ready(program, version), ["inspect-launch", launchEnvironment]);
+        assertEquals([inspected.code, inspected.out!.error_code, inspected.out!.project_id], [0, null, launchRequest.projectId], program);
+    }
+    for (const [program, version] of [[connServer, "0.1.7"], [stockT3, "0.1.10"], ["t3 v0.1.8", "0.1.7"], ["unknown 0.1.7", "0.1.7"]]) {
+        const refused = await helper(ready(program, version), ["inspect-launch", launchEnvironment]);
+        assertEquals(refused.out, { error_code: "conn.launch_server_changed" }, program);
+    }
 } });
 
 Deno.test({ name: "Conn launch fails closed on a replaced server or mismatched first message", ignore: !available, async fn() {

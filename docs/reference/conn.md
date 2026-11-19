@@ -817,7 +817,9 @@ A cancelled completion keeps the clone `source_resolved`, its container running 
 
 ## Durable launches (v1)
 
-**Contract v1.1.** One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. The contract supports text only on the Orbit T3 recipe `0.1.7`. This is an additive Gateway API: the existing Conn endpoints and the installed clients' create-then-send path do not change. Conn Rust parity is out of scope.
+**Contract v1.1.** One launch prepares an Orbit Instance, sends one first message to its T3 project, and publishes the accepted thread to the Conn profile. The device can disconnect after admission and another device on the same profile can follow the launch. The contract supports text only.
+
+The launch runs on the container's [recorded server](/reference/development-containers#container-server): the recipe's T3 `0.1.7` or its Conn Server, which serves the T3 `0.1.10` contract. The launch checks the version that server's own program states ([Conn launch transport](/reference/development-containers#conn-launch-transport)). This is an additive Gateway API: the existing Conn endpoints and the installed clients' create-then-send path do not change. Conn Rust parity is out of scope.
 
 ### Admit and replay
 

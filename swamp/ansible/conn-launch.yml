@@ -16,7 +16,7 @@
     - name: Address the Node
       ansible.builtin.import_tasks: tasks/address-node.yml
 
-- name: Run the scoped T3 call in the Instance
+- name: Run the scoped call to the Instance's recorded server
   hosts: conn_launch_node
   gather_facts: false
   become: true
@@ -39,6 +39,7 @@
           - intent.action in ['inspect-launch', 'launch', 'reconcile-launch']
           - intent.runtime.project is match('^orbit-instances(?:-nested)?$')
           - intent.runtime.name == 'instance-' ~ intent.instance_id
+          - intent.runtime.program is match('^/opt/orbit-agent/current/agent/bin/(t3|conn-server)$')
           - not inspect or intent.environment_id is match('^[a-zA-Z0-9:_-]{1,255}$')
           - not inspect or intent.requested_provider is not defined or intent.requested_provider is match('^[a-zA-Z0-9._:-]{1,128}$')
         fail_msg: conn.launch_invalid_dispatch
@@ -85,7 +86,7 @@
       ansible.builtin.command:
         argv: >-
           {{ instance_exec + ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
-             '--input-type=module', '-e', rpc, '--', 'orbit-rpc', '/opt/orbit-agent/current/agent/bin/t3', intent.action]
+             '--input-type=module', '-e', rpc, '--', 'orbit-rpc', intent.runtime.program, intent.action]
              + probe_args }}
         stdin: "{{ omit if inspect else launch_material.content | b64decode }}"
         stdin_add_newline: false
