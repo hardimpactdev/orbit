@@ -7,15 +7,16 @@ This file is a map. Each project folder's `AGENTS.md` loads when you read a file
 | Gateway | `apps/gateway` | `vendor/bin/pest <file>` |
 | CLI | `apps/cli` | `vendor/bin/pest <file>` |
 | PHP SDK | `packages/php-sdk` | `vendor/bin/pest <file>` |
-| Web app | `apps/web` | `bun run test:unit <file>` |
-| Node agent | `apps/agent` | `cargo test <name>` |
-| Desktop app | `apps/desktop` | none; `cargo clippy` in `src-tauri` |
-| Docs | `docs/`, tooling `apps/docs`; skill `writing-documentation` | `composer docs-lint` |
+| Web app | `apps/web` | `bun run test:unit <file>`, or `test:browser` for `tests/browser` |
+| Node agent | `apps/agent` | `scripts/check-crates test --locked <name>` |
+| Desktop app | `apps/desktop` | none: Clippy and `bun run dev`, per its `AGENTS.md` |
+| Docs | `docs/`; skill `writing-documentation` | `composer docs-lint` from the root |
+| Docs tooling | `apps/docs` | `vendor/bin/pest <file>` |
 | Swamp workflow | `swamp/`; skill `swamp-flow` | [Swamp tests](.agents/skills/swamp-flow/SKILL.md#swamp-tests) |
 | Ansible phase | `swamp/ansible`; skill `ansible-phase` | as Swamp |
-| Agent instructions | `AGENTS.md`, `.agents/skills` | ask a new `claude -p` session in the checkout |
+| Agent instructions | `AGENTS.md`, `.agents/skills` | ask a new `claude -p` session |
 
-Run Pest, Bun and Cargo from the project folder. A command's flow starts at its chart, `docs/cli/<family>/<command>.mmd`; skill `preparing-commands`. Before you push a change under `swamp/`, run `bin/swamp-shape-gate`. A Gateway extension change follows [Add a plug-in point](docs/reference/extensions.md#add-a-plug-in-point). Check a library API you are unsure of in its installed source under `vendor/` or `node_modules/`.
+Run Pest, Bun and Cargo from the project folder. A command's flow starts at its chart, `docs/cli/<family>/<command>.mmd`; skill `preparing-commands`. Before you push a change under `swamp/`, run `bin/swamp-shape-gate`. A Gateway extension follows [Add a plug-in point](docs/reference/extensions.md#add-a-plug-in-point). Check a library API you are unsure of in its installed source under `vendor/` or `node_modules/`. Keep detailed tool procedures in references, and add a page only when it has lasting value.
 
 ## Build a feature end to end first
 
