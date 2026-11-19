@@ -25,7 +25,7 @@ def provision(nested, cidr):
     pools = {row["name"]: row for row in json.loads(incus("storage", "list", "--format", "json"))}
     if PROJECT not in pools:
         if nested:
-            incus("storage", "create", PROJECT, "dir", OWNER + "=true")
+            raise ValueError("The fleet Node step creates the nested orbit-releases btrfs pool first")
         else:
             source = pools.get("orbit-instances", {})
             dataset = source.get("config", {}).get("source", "")
@@ -40,8 +40,10 @@ def provision(nested, cidr):
             incus("storage", "create", PROJECT, "zfs", "source=" + child, OWNER + "=true")
         changed = True
     pool = json.loads(incus("query", "/1.0/storage-pools/" + PROJECT))
-    if pool["driver"] != "zfs" and not (nested and pool["driver"] == "dir"):
-        raise ValueError("Production releases require a ZFS pool")
+    # A nested Node keeps releases on btrfs (instance-fleet-node.yml), a production Node on ZFS; no layer uses a dir pool.
+    driver = "btrfs" if nested else "zfs"
+    if pool["driver"] != driver:
+        raise ValueError(f"Production releases require a {driver} pool; move the {pool['driver']} pool orbit-releases to {driver}")
     projects = {r["name"]: r for r in json.loads(incus("project", "list", "--format", "json"))}
     if PROJECT not in projects:
         incus("project", "create", PROJECT, "-c", OWNER + "=true", "-c", "features.networks=false",

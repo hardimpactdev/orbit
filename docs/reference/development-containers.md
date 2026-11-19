@@ -56,7 +56,7 @@ Container host preparation applies to every `app-dev` Node with the Incus pool `
 The Gateway reads no pool, so it counts an `app-dev` Node as an Instance container host when one of these holds:
 
 - The operator set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in), `instance_host`. A new host needs it before its first converge.
-- It is the `app-dev` Node of a nested Instance fleet, whose converge creates a directory pool.
+- It is the `app-dev` Node of a nested Instance fleet, whose converge creates a btrfs pool.
 - It records an Instance runtime.
 - Its agent reports the Instance bridge's health, which only a converged container branch writes.
 
@@ -2822,9 +2822,9 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
 
-A Node made before the btrfs pool has a directory pool `orbit-instances`. The container branch replaces it only when nothing uses it but the root device of the managed `default` profile in an Instance project. Any Instance, volume, other profile or other device refuses with `instance.host_unavailable` and names it, before anything changes. Otherwise the branch removes that root device, deletes the pool and creates the btrfs pool with `source=/var/lib/incus/storage-pools/orbit-instances`. Step 5 writes the profile's root device again. A rerun after a break goes on from where it stopped. There is no directory fallback.
+A fleet Node pool is always btrfs; no Incus layer has a `dir` pool. A pool of another driver, such as the directory pool `orbit-instances` of a Node made before the btrfs pool, refuses with `instance.host_unavailable` before anything changes. Its owner moves its containers to a btrfs pool and recreates the pool as btrfs. There is no directory fallback.
 
-The nested proof Node `nested-app-prod` runs the same first part for its release pool `orbit-releases`, which holds its release containers. Its release host names the directory driver for that pool, so the branch creates it as a directory pool when it is missing and never replaces it.
+The nested proof Node `nested-app-prod` runs the same first part for its release pool `orbit-releases`, which holds its release containers. So that pool is btrfs too, and its release root devices carry no `size`. A production Node keeps `orbit-releases` on ZFS ([Production containers](/reference/production-containers)).
 
 Fleet start appends the managed user `orbit` to `incus-admin` on every nested Node marked as an Instance host by `/etc/orbit/instance-fleet-node`. The Gateway's direct workspace and runtime reads call Incus as that user, without sudo. The account already has passwordless sudo, so this adds no authority. The fleet builds its own Nodes; their account setup belongs to fleet start. Every copy start repairs missing membership, including a copy of an existing seed, with no converge or seed refresh. Other groups remain unchanged, and a current membership reports no change.
 

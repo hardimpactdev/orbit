@@ -365,7 +365,7 @@ class ReleaseTest(unittest.TestCase):
         # Only an orphaned deleted-* release snapshot goes: one a clone needs, a recorded one and a foreign one stay.
         self.assertEqual([c for c in calls if c[0] == "destroy"], [["destroy", root + "gateway-" + SHA[:12] + "@deleted-old"]])
 
-    def test_detach_refuses_a_seed_snapshot_that_incus_still_records_and_skips_other_drivers(self):
+    def test_detach_refuses_a_seed_snapshot_that_incus_still_records_skips_btrfs_and_refuses_dir(self):
         live = {"name": "gateway-" + SHA[:12], "expanded_devices": {"root": {"pool": "orbit-releases"}}}
         root = "tank/r/containers/orbit-releases_"
         calls, run = self.zfs_calls({"get": root + "gateway-" + SHA[:12] + "@snapshot-seed-14\n"})
@@ -374,8 +374,13 @@ class ReleaseTest(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, "still_recorded"):
             release.detach(live, "prepare-gateway")
         self.assertNotIn("promote", [c[0] for c in calls])
+        with patch.object(release.subprocess, "run") as run_btrfs, \
+                patch.object(release.subprocess, "check_output", return_value=json.dumps({"driver": "btrfs", "config": {}})):
+            release.detach(live, "prepare-gateway")
+        run_btrfs.assert_not_called()
         with patch.object(release.subprocess, "run") as run_dir, \
-                patch.object(release.subprocess, "check_output", return_value=json.dumps({"driver": "dir", "config": {}})):
+                patch.object(release.subprocess, "check_output", return_value=json.dumps({"driver": "dir", "config": {}})), \
+                self.assertRaisesRegex(ValueError, "pool_driver_unsupported: the release pool uses the dir driver"):
             release.detach(live, "prepare-gateway")
         run_dir.assert_not_called()
 

@@ -1,5 +1,6 @@
 """Verify target ownership and route recovery at the AppProd publishing boundary."""
 import importlib.util
+import json
 import os
 import runpy
 import sqlite3
@@ -40,6 +41,33 @@ class ProductionReleaseHostTest(unittest.TestCase):
             self.assertEqual(calls, [])
             self.assertIs(helper("prepare-instance-4", "instance-4", "b" * 64, original), updated)
             self.assertEqual(calls, [("rebuild", "b" * 64, "prepare-instance-4", "--force")])
+
+    def test_the_release_pool_is_btrfs_on_a_nested_node_and_zfs_on_a_host_and_never_dir(self):
+        host = runpy.run_path(str(ROOT / "ansible/files/production-release-host.py"))
+
+        class Admitted(Exception):
+            pass
+
+        def provision(nested, driver):
+            pools = [] if driver is None else [{"name": "orbit-releases", "driver": driver}]
+
+            def incus(*args):
+                if args[:2] == ("storage", "list"):
+                    return json.dumps(pools)
+                if args[0] == "query":
+                    return json.dumps(pools[0])
+                raise Admitted(args)
+            with patch.dict(host["provision"].__globals__, {"incus": incus}), self.assertRaises((Admitted, ValueError)) as caught:
+                host["provision"](nested, "10.253.2.0/24")
+            return caught.exception
+
+        self.assertIsInstance(provision(True, "btrfs"), Admitted)
+        self.assertIsInstance(provision(False, "zfs"), Admitted)
+        for nested, driver, message in ((True, "dir", "require a btrfs pool; move the dir pool orbit-releases to btrfs"),
+                                        (True, "zfs", "require a btrfs pool"), (False, "dir", "require a zfs pool"),
+                                        (False, "btrfs", "require a zfs pool"), (True, None, "creates the nested orbit-releases btrfs pool")):
+            with self.subTest(nested=nested, driver=driver):
+                self.assertIn(message, str(provision(nested, driver)))
 
     def test_public_and_private_routes_bind_to_the_same_approved_instance(self):
         private = site("app-prod", "app-instance-19", "https://one.test", "/home/orbit-app-2")

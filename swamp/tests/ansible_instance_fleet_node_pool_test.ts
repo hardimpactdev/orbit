@@ -14,23 +14,19 @@ type Pool = { name: string; driver: string; config: Record<string, string>; used
 // The pool tasks only: the rest of the file installs Incus and writes to /etc.
 function poolTasks(): Task[] {
     const tasks = parse(Deno.readTextFileSync(file)) as Task[];
-    const first = tasks.findIndex((task) => task.name === "Name the driver of the fleet Node's pool");
+    const first = tasks.findIndex((task) => task.name === "Read the Incus pools");
     const last = tasks.findIndex((task) => task.name === "Create the pool on the Node's root");
-    return tasks.slice(first, last + 1).filter((task) => !["Find the btrfs tools on the fleet Node", "Install the btrfs tools on the fleet Node"].includes(task.name ?? ""));
+    return tasks.slice(first, last + 1);
 }
 
-async function run(pools: Pool[], profiles: Record<string, unknown> = {}, instances: Record<string, string> = { pool: "orbit-instances", project: "orbit-instances" }) {
+async function run(pools: Pool[], instances: Record<string, string> = { pool: "orbit-instances", project: "orbit-instances" }) {
     const folder = await Deno.makeTempDir();
     try {
         await Deno.mkdir(`${folder}/bin`);
         await Deno.writeTextFile(`${folder}/pools.json`, JSON.stringify(pools));
-        for (const [name, profile] of Object.entries(profiles)) {
-            await Deno.writeTextFile(`${folder}/profile-${name}.json`, JSON.stringify(profile));
-        }
         await Deno.writeTextFile(`${folder}/bin/incus`, `#!/bin/sh
 case "$1 $3" in
   "query /1.0/storage-pools?recursion=1") cat '${folder}/pools.json';;
-  "query /1.0/profiles/"*) name="\${3#/1.0/profiles/}"; cat "${folder}/profile-\${name%%\\?*}.json";;
   *) echo "$*" >> '${folder}/calls';;
 esac
 exit 0
@@ -58,7 +54,7 @@ const create = "storage create orbit-instances btrfs source=/var/lib/incus/stora
 const pool = (driver: string, used_by: string[] = []): Pool => ({ name: "orbit-instances", driver, config: {}, used_by });
 
 Deno.test("a fleet Node without the pool gets a btrfs pool on its root", { ignore: !hasAnsible }, async () => {
-    const { code, calls } = await run([{ name: "default", driver: "dir", config: {}, used_by: [] }]);
+    const { code, calls } = await run([{ name: "default", driver: "zfs", config: {}, used_by: [] }]);
     assertEquals(code, 0);
     assertEquals(calls, [create]);
 });
@@ -69,47 +65,24 @@ Deno.test("a btrfs pool stays as it is", { ignore: !hasAnsible }, async () => {
     assertEquals(calls, []);
 });
 
-const managed = {
-    name: "default",
-    devices: { root: { type: "disk", path: "/", pool: "orbit-instances" }, eth0: { type: "nic", network: "orbitinst0" } },
-};
-
-Deno.test("a directory pool used only by the managed root device is replaced by a btrfs pool", { ignore: !hasAnsible }, async () => {
-    const { code, calls } = await run([pool("dir", ["/1.0/profiles/default?project=orbit-instances"])], { default: managed });
-    assertEquals(code, 0);
-    assertEquals(calls, ["profile device remove default root --project orbit-instances", "storage delete orbit-instances", create]);
+Deno.test("a pool of another driver refuses and stays, even an unused one", { ignore: !hasAnsible }, async () => {
+    for (const driver of ["dir", "zfs"]) {
+        for (const used_by of [[], ["/1.0/profiles/default?project=orbit-instances"]]) {
+            const { code, calls, out } = await run([pool(driver, used_by)]);
+            assertEquals(code === 0, false);
+            assertEquals(calls, []);
+            assertStringIncludes(out, `instance.host_unavailable: the Incus pool orbit-instances uses the ${driver} driver; a fleet Node pool must be btrfs`);
+        }
+    }
 });
 
-Deno.test("a directory pool that another profile device uses refuses and stays", { ignore: !hasAnsible }, async () => {
-    const { code, calls, out } = await run([pool("dir", ["/1.0/profiles/default?project=orbit-instances", "/1.0/profiles/spare"])], {
-        default: { ...managed, devices: { ...managed.devices, data: { type: "disk", path: "/data", pool: "orbit-instances" } } },
-        spare: { name: "spare", devices: { root: { type: "disk", path: "/", pool: "orbit-instances" } } },
-    });
-    assertEquals(code === 0, false);
-    assertEquals(calls, []);
-    assertStringIncludes(out, "the dir driver and holds orbit-instances/default data, default/spare root;");
-});
-
-Deno.test("a rerun after the root device went on deletes the unused pool", { ignore: !hasAnsible }, async () => {
-    const { code, calls } = await run([pool("dir")]);
-    assertEquals(code, 0);
-    assertEquals(calls, ["storage delete orbit-instances", create]);
-});
-
-Deno.test("a directory pool that holds an Instance or a volume refuses and stays", { ignore: !hasAnsible }, async () => {
-    const { code, calls, out } = await run([pool("dir", [
-        "/1.0/profiles/default?project=orbit-instances",
-        "/1.0/instances/instance-7?project=orbit-instances",
-    ])], { default: managed });
-    assertEquals(code === 0, false);
-    assertEquals(calls, []);
-    assertStringIncludes(out, "instance.host_unavailable: the Incus pool orbit-instances uses the dir driver and holds /1.0/instances/instance-7");
-});
-
-Deno.test("the release pool of a nested proof Node keeps its directory driver and the containers it holds", { ignore: !hasAnsible }, async () => {
-    const releases = { name: "orbit-releases", driver: "dir", config: {}, used_by: ["/1.0/instances/release-1?project=orbit-production"] };
-    const held = await run([releases], {}, { pool: "orbit-releases", driver: "dir" });
+Deno.test("the release pool of a nested proof Node is btrfs and keeps the containers it holds", { ignore: !hasAnsible }, async () => {
+    const releases = (driver: string) => ({ name: "orbit-releases", driver, config: {}, used_by: ["/1.0/instances/release-1?project=orbit-releases"] });
+    const held = await run([releases("btrfs")], { pool: "orbit-releases" });
     assertEquals([held.code, held.calls], [0, []]);
-    const missing = await run([], {}, { pool: "orbit-releases", driver: "dir" });
-    assertEquals([missing.code, missing.calls], [0, ["storage create orbit-releases dir"]]);
+    const missing = await run([], { pool: "orbit-releases" });
+    assertEquals([missing.code, missing.calls], [0, ["storage create orbit-releases btrfs source=/var/lib/incus/storage-pools/orbit-releases"]]);
+    const dir = await run([releases("dir")], { pool: "orbit-releases" });
+    assertEquals([dir.code === 0, dir.calls], [false, []]);
+    assertStringIncludes(dir.out, "recreate orbit-releases as btrfs");
 });
