@@ -156,6 +156,9 @@ def root_device(container, run):
     the driver of the root pool."""
     intent = {"type": "disk", "path": "/", "pool": container["root_disk_pool"], "size": container["root_disk_size"]}
     pool = json.loads(run(["incus", "query", "/1.0/storage-pools/" + urllib.parse.quote(container["root_disk_pool"], safe="")]).stdout)
+    # A dir pool copies every file; no Incus layer keeps one.
+    if pool["driver"] not in ("zfs", "btrfs"):
+        raise RuntimeError("instance.pool_driver_unsupported")
     return json.loads(run(["python3", "-c", json.loads(sys.argv[6])["root_disk"], json.dumps(intent), pool["driver"]]).stdout)
 
 
@@ -761,6 +764,8 @@ def main():
                 # A copy of a default with an inner volume copies the volume's snapshot of the same seed name first, then the container
                 # with its disk on the new volume (docs/reference/development-containers.md#the-inner-volume). Every other copy has no
                 # `inner_volume` and runs the container copy alone, as before.
+                # The root pool's driver is read before any copy, so a dir pool refuses before anything is made.
+                root = root_device(container, run)
                 inner = container.get("inner_volume")
                 if inner is not None:
                     volumes = f"/1.0/storage-pools/{inner['pool']}/volumes/custom/"
@@ -785,7 +790,7 @@ def main():
                 ]
                 for key, value in container["config"].items():
                     argv += ["--config", key + "=" + value]
-                for key, value in root_device(container, run).items():
+                for key, value in root.items():
                     argv += ["--device", "root," + key + "=" + value]
                 argv += [
                     "--device",

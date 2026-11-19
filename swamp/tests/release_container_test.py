@@ -204,7 +204,8 @@ class ReleaseTest(unittest.TestCase):
     def test_an_existing_snapshot_must_match_the_entire_commit_and_artifact(self):
         prep = record("prepare-instance-8", "prepare")
         wrong = record("built-13", "prepare", commit=SHA, artifact="sha256:" + "0" * 64)
-        with patch.object(release, "instance", side_effect=[prep, None]), patch.object(release, "incus", return_value=json.dumps([wrong])) as incus:
+        with patch.object(release, "instance", side_effect=[prep, None]), patch.object(release, "datasets", return_value=None), \
+                patch.object(release, "incus", return_value=json.dumps([wrong])) as incus:
             with self.assertRaisesRegex(ValueError, "identity_mismatch"):
                 release.candidate("instance-8", "13", SHA, DIGEST)
             self.assertTrue(all(call.args[0] == "snapshot" and call.args[1] == "list" for call in incus.call_args_list))
@@ -221,7 +222,7 @@ class ReleaseTest(unittest.TestCase):
                     release.candidate("gateway", "13", SHA, DIGEST)
                 incus.assert_called_once_with("snapshot", "list", "prepare-gateway", "--format", "json")
         prep = record("prepare-gateway", "prepare", status="Frozen", **identity)
-        with patch.object(release, "instance", side_effect=[prep, None, clone]), patch.object(
+        with patch.object(release, "instance", side_effect=[prep, None, clone]), patch.object(release, "datasets", return_value=None), patch.object(
             release, "incus", side_effect=["[]", "", json.dumps([snapshot]), "", "", ""]
         ) as incus:
             self.assertEqual(release.candidate("gateway", "13", SHA, DIGEST), clone["name"])
@@ -364,6 +365,15 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn(["promote", root + "prepare-gateway"], calls)
         # Only an orphaned deleted-* release snapshot goes: one a clone needs, a recorded one and a foreign one stay.
         self.assertEqual([c for c in calls if c[0] == "destroy"], [["destroy", root + "gateway-" + SHA[:12] + "@deleted-old"]])
+
+    def test_a_candidate_on_a_dir_release_pool_refuses_before_the_snapshot_and_the_copy(self):
+        prep = {"name": "prepare-instance-4", "status": "Running", "config": {}, "expanded_devices": {"root": {"pool": "orbit-releases"}}}
+        with patch.object(release, "preparer", return_value=prep), patch.object(release, "instance", return_value=None), \
+                patch.object(release, "incus", return_value="[]") as incus, \
+                patch.object(release.subprocess, "check_output", return_value=json.dumps({"driver": "dir", "config": {}})), \
+                self.assertRaisesRegex(ValueError, "pool_driver_unsupported"):
+            release.candidate("instance-4", "op-1", "a" * 40, "b" * 64)
+        self.assertFalse([c for c in incus.call_args_list if c.args[:2] != ("snapshot", "list")])
 
     def test_detach_refuses_a_seed_snapshot_that_incus_still_records_skips_btrfs_and_refuses_dir(self):
         live = {"name": "gateway-" + SHA[:12], "expanded_devices": {"root": {"pool": "orbit-releases"}}}

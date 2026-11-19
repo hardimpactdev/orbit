@@ -42,6 +42,25 @@ class ProductionReleaseHostTest(unittest.TestCase):
             self.assertIs(helper("prepare-instance-4", "instance-4", "b" * 64, original), updated)
             self.assertEqual(calls, [("rebuild", "b" * 64, "prepare-instance-4", "--force")])
 
+    def test_the_preparer_refuses_a_dir_release_pool_before_it_creates_a_volume(self):
+        module = runpy.run_path(str(ROOT / "ansible/files/instance-release-prepare.py"))
+        prepare = module["prepare"]
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = Path(temp).resolve() / "runtime"
+            (runtime / "php/8.5/bin").mkdir(parents=True)
+            (runtime / "php/8.5/bin/frankenphp").write_text("")
+            config = Path(temp) / "production-release.json"
+            config.write_text(json.dumps({"pool": "orbit-releases", "runtime": str(runtime), "network": "orbitinst0",
+                                          "proxy": "http://10.0.0.1:3128"}))
+            calls = []
+            real_path = Path
+            prepare.__globals__.update(
+                ROOT=real_path(temp), Path=lambda value: config if value == "/etc/orbit/production-release.json" else real_path(value),
+                query=lambda path, project=None: {"driver": "dir"}, inc=lambda *args, **kwargs: calls.append(args) or "[]")
+            with self.assertRaisesRegex(ValueError, "release.pool_driver_unsupported: the release pool uses the dir driver"):
+                prepare(4, "8.5")
+            self.assertEqual(calls, [])
+
     def test_the_release_pool_is_btrfs_on_a_nested_node_and_zfs_on_a_host_and_never_dir(self):
         host = runpy.run_path(str(ROOT / "ansible/files/production-release-host.py"))
 

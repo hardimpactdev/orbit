@@ -508,6 +508,8 @@ def candidate(target, operation, commit, artifact):
         if prep["status"] != "Frozen":
             raise ValueError("release.preparation_not_frozen")
     if existing is None:
+        # A dir release pool refuses before the snapshot and the copy.
+        datasets(prep)
         if not sealed:
             if target != "gateway":
                 if prep["status"] != "Running" or prep["config"].get(PREFIX + "operation") != operation:

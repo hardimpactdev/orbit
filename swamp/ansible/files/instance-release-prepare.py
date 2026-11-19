@@ -126,6 +126,9 @@ def prepare(instance, php):
     pool = config["pool"]
     if pool != PROJECT:
         raise ValueError("Unexpected AppProd storage pool")
+    driver = query("/1.0/storage-pools/" + pool)["driver"]
+    if driver not in ("zfs", "btrfs"):
+        raise ValueError(f"release.pool_driver_unsupported: the release pool uses the {driver} driver; move it to zfs, or btrfs on a nested Node")
     network = config["network"]
     if network != "orbitinst0" or not re.fullmatch(r"http://(?:[0-9]{1,3}[.]){3}[0-9]{1,3}:3128", config["proxy"]):
         raise ValueError("Invalid production release network or proxy")
