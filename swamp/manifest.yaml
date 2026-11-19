@@ -192,6 +192,7 @@ additionalFiles:
   - ansible/tasks/metrics.yml
   - ansible/tasks/websocket.yml
   - ansible/tasks/check-files.yml
+  - ansible/tasks/check-read.yml
   - ansible/tasks/check-runtime.yml
   - ansible/tasks/gateway-dns.yml
   - ansible/tasks/private-dns-listener.yml
