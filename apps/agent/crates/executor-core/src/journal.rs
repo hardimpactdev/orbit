@@ -246,6 +246,29 @@ impl Live {
         unfinished
     }
 
+    /// The orders accepted without an open record or a result: a crash ended their wait for the target's lock,
+    /// so they never acted. Start-up ends each one as expired.
+    pub fn abandoned(&self) -> Vec<(Nonce, DoneKey)> {
+        let open_keys: Vec<&DoneKey> = self
+            .open
+            .keys()
+            .filter_map(|nonce| self.nonces.get(nonce).map(|(key, _)| key))
+            .collect();
+        let mut abandoned: Vec<(Nonce, DoneKey)> = self
+            .nonces
+            .iter()
+            .filter(|(nonce, (key, _))| {
+                !self.open.contains_key(*nonce)
+                    && !self.done.contains_key(key)
+                    && !open_keys.contains(&key)
+            })
+            .map(|(nonce, (key, _))| (*nonce, key.clone()))
+            .collect();
+        abandoned.sort_by_key(|(nonce, _)| *nonce);
+        abandoned.dedup_by(|a, b| a.1 == b.1);
+        abandoned
+    }
+
     /// Every seen nonce with its key and expiry.
     pub fn nonces(&self) -> impl Iterator<Item = (Nonce, &DoneKey, u64)> {
         self.nonces
@@ -358,6 +381,21 @@ fn io_error<'path>(
         path: path.to_owned(),
         source,
     }
+}
+
+/// The marker file beside the journal at `path`: the executor that writes it records each order when it accepts it.
+pub fn accept_marker(path: &Path) -> PathBuf {
+    path.with_extension("accepts")
+}
+
+/// Writes the [`accept_marker`] of the journal at `path`.
+///
+/// # Errors
+///
+/// Returns [`JournalError::Io`] when the marker cannot be written.
+pub fn mark_accepts(path: &Path) -> Result<(), JournalError> {
+    let marker = accept_marker(path);
+    fs::write(&marker, b"").map_err(io_error("write", &marker))
 }
 
 /// Reads every complete record of the journal at `path`. A missing file holds no record. A torn or unreadable

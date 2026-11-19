@@ -353,7 +353,7 @@ The Gateway records the listener on the Node, in `nodes.seed_sender_id`: the Nod
 
 The end of a `ci-runner` removal clears it too, passed or failed, because its phase stops the listener. A [seed copy](/reference/development-containers#the-seed-on-each-ci-node) targets only a Node whose record names the default's current Node. A Node without it, or with the Node of a former default, is not a target and is not marked tried. So when the default moves to another Node, the CI Nodes stay untargeted until a `ci-runner` add or converge of each passes again.
 
-The converge makes no seed. When a `ci-runner` add or converge of a Node that offers proof places passes, the Gateway admits a seed copy to the Node if it is not the default's Node and its seed is not the proof default's current seed.
+The converge makes no seed. The Gateway admits a seed copy to a Node that offers proof places when its `ci-runner` add or role converge passes, or the roles phase of its `node:converge`. The Node must not be the default's Node, and its seed must be behind the proof default's current seed. So a Node whose copy failed catches up after any passed converge.
 
 A CI-only Node takes no other Instance. `instance:create` refuses it with `instance.node_ci_only` (409) before any record. Only a proof copy is made there. A proof copy there gets no Route: the Node runs no Caddy and has no TLD.
 
@@ -775,7 +775,7 @@ Earlier Gateways published the annotator server in `/opt/orbit/annotator` and ke
 
 ### Executor at a converge
 
-The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed.
+The base phase installs the [executor](/reference/executor) after the agent, only on a Node whose roles enable an action family: today `app-dev`. It pins the binary's SHA-256 from the agent delivery, writes the keys, Node id, allowlist, restore pool size, service and the relay's sudo rule, and restarts the executor only when one of them changed. The relay's sudo rule serves the Swamp start, deploy and boot phases on the Node. The Gateway sends signed sleep and wake only over the WebSocket, with no SSH relay ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor)).
 
 ### Kernel policy
 
@@ -967,7 +967,9 @@ Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` s
 
 Analytics role effects run in their native parent workflow. The Node PHP baseline refuses Analytics. An unported Analytics kind returns `operation.kind_unavailable`.
 
-The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, and `swamp` install Caddy when they converge. The `swamp` role takes no part in Metrics until the Metrics port (wave 7), so it adds no exporter or scrape target.
+The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, and `swamp` install Caddy when they converge.
+
+The `ingress` role also installs the Orbit root as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` and runs `update-ca-certificates` when the file changed. The Ingress sites reach the Router over HTTPS with the system bundle, `/etc/ssl/certs/ca-certificates.crt`, which then holds the Orbit root, and an Ingress-only Node holds no Orbit CA leaf that would bring the root with it. The `ingress` role add and converge also publish private DNS on every DNS Node, so the public names of the Cluster answer with the Ingress, and the Caddyfile of the Cluster's Router. The `swamp` role takes no part in Metrics until the Metrics port (wave 7), so it adds no exporter or scrape target.
 
 The `swamp` role runs Swamp serve as `orbit-swamp-serve.service`, with at most 4 scheduled runs in flight. The Gateway renders serve's unit and the worker template at admission. Official `@swamp/cfgmgmt/systemd` steps write them over SSH from 209, enable the services and start any that is stopped. Their `check` and a native `assert` prove the end state.
 
@@ -1298,7 +1300,7 @@ A `failed` assignment that holds the fact is removed from the record alone. The 
 
 ### Native role relocation
 
-`node:role:relocate` moves `gateway`, `websocket` or `metrics` in one native run, `operation-node-role-relocate`, on 209. Its [chart](/cli/node/role-relocate#how-it-works) names every step. The Gateway refuses the `swamp` role before it records anything, with `node.role_relocate_swamp_held` (HTTP 422): serve on that Node runs every Swamp run, so a run cannot move it. A live move of the `swamp` role is still open.
+`node:role:relocate` moves `gateway`, `websocket`, `metrics` or a Cluster's `ingress` in one native run, `operation-node-role-relocate`, on 209. Its [chart](/cli/node/role-relocate#how-it-works) names every step. The Gateway refuses the `swamp` role before it records anything, with `node.role_relocate_swamp_held` (HTTP 422): serve on that Node runs every Swamp run, so a run cannot move it. A live move of the `swamp` role is still open.
 
 Admission moves the assignment, then captures the whole intent with `NativeNodeRoleRelocateInput`: the target's runtime, its certificate leaves, firewall arguments and publications, and the source removal that `node:role:remove` builds for the same role. It renders the publications as the run leaves them, with the target's certificate published and the source's withdrawn. Both Nodes need recorded SSH management; neither needs a worker.
 
@@ -1309,16 +1311,31 @@ Every target step is one official `@swamp/ssh exec` argument list with the targe
 - Reverb's `.env` comes from the vault copy on stdin. `ln -sfnT` then points the install path at the release.
 - `gateway` writes the private DNS route drop-in and applies the route to the live link. A failed `Route the private domain` step reports `follow_up`: `orbit node:role:add <target> gateway --converge`.
 
-Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` move waits the private DNS grace. Then `node-role-remove` removes the role from the source, and its own end check proves the removal.
+The source of an `ingress` move is the active Ingress of the target's Cluster, and the target must already be a member. [Ingress relocation](/reference/routes#ingress-relocation) gives the order. Its target steps:
+
+- An HTTP HEAD request from the target to each public Process listener. Admission already checked that each Process Node's recorded firewall admits the target.
+- `operation-node-role-add` against the target. The intent is the one `node:role:add <target> ingress --converge` builds, without the Metrics fleet, private DNS or the source's Caddyfile.
+- That child installs Caddy and the Orbit root and opens the Ingress rules. It publishes the target's Caddyfile with the public sites, and a separate Router's Caddyfile.
+- `Probe the Router hop` sends an HTTPS HEAD request from the target to the Router address its sites use, for each public app Route.
+- `Check the public certificates` asks the target for every public name over HTTPS with the system bundle. curl's own retry waits at most 300 seconds. `Check the certificate answers` then fails the move on an answer of 500 or more.
+
+The move holds every Node of the Cluster against Route writes from admission to its end (`route.publication_held` when a Route write holds one).
+
+The relocation's own certificate and firewall steps have nothing left to do for `ingress`. Its DNS step publishes private DNS after the certificate check.
+
+Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` or `ingress` move waits the private DNS grace. Then `node-role-remove` removes the role from the source, and its own end check proves the removal.
 
 One native assert, `Confirm the move`, ends the run. The Gateway records the result from it:
 
 - On success the target assignment becomes active. The certificate and serving state follow the move.
 - The Gateway forgets the source's transferred settings.
 - A failed step marks the assignment `failed` with `converge:STEP`, or `remove:Remove from the source`.
+- An `ingress` move that fails before `Publish the role DNS` ran gives the assignment back to the source. The result has `source_kept: true`.
+- A `--from` retry of an `ingress` move never gives the assignment back.
+- An `ingress` move whose source removal fails keeps the target `active` and reports `source_cleanup_failed: true`.
 - A role that was already `active` stays `active` when `node:role:add --converge` fails. The failure stays on the Operation.
 
-Relocation does not reconcile Metrics. When a Metrics role exists and `websocket` or `gateway` moved, `follow_up` names `orbit node:role:add <metrics-node> metrics --converge`.
+Relocation does not reconcile Metrics. When a Metrics role exists and `websocket`, `gateway` or `ingress` moved, `follow_up` names `orbit node:role:add <metrics-node> metrics --converge`.
 
 The native removal builder accepts the actual replacement assignment when preparing source cleanup. A Metrics move retains fleet exporter services, their exporter footprints and shared service deny rules. Cleanup still removes the old Metrics containers and source-owned firewall access. Removing Metrics without a replacement withdraws the exporters.
 

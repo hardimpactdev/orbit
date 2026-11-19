@@ -1,7 +1,7 @@
 id: d2be694e-4085-427c-8492-37f72528d97b
 name: operation-node-role-relocate
 autoContinue: false
-description: Move gateway, websocket or metrics to another Node from 209 with pinned SSH argv, the metrics:enable workflow and the node:role:remove workflow; one native end check.
+description: Move gateway, websocket, metrics or a Cluster's ingress to another Node from 209 with pinned SSH argv, the metrics:enable and node:role:add workflows and the node:role:remove workflow; one native end check.
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -27,6 +27,31 @@ jobs:
       type: workflow
       workflowIdOrName: operation-metrics-enable
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.target_node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.metrics }}', execution_secrets: '${{ inputs.execution_secrets }}'}
+    # As at Route activation: an HTTP HEAD request from the target to each public Process upstream. Any HTTP answer passes;
+    # a refused or timed-out connection fails the move before the target serves anything.
+  - name: 'Probe the Process backends'
+    labels: {role: swamp}
+    forEach: {item: probe, in: '${{ has(inputs.intent.process_probes) ? inputs.intent.process_probes : [] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-process-probe-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: &target_ssh
+        name: '${{ "relocate-target-" + string(inputs.intent.target_node_id) }}'
+        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
+        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","20","curl","--silent","--show-error","--output","/dev/null","--max-time","10","--head","--header","Host: " + self.probe.domain,"http://" + self.probe.host + ":" + string(self.probe.port) + "/"] }}'}
+    # The node:role:add --converge workflow without private DNS: Caddy and the Orbit root, the target's public sites and the Ingress rules.
+    # The source keeps serving until 'Remove from the source'; private DNS switches in the dns job, after the certificate check.
+  - name: 'Apply the Ingress role'
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.ingress) || inputs.intent.ingress == null }}'
+    dependsOn: [{step: 'Probe the Process backends', condition: {type: not, condition: {type: failed}}}]
+    task:
+      type: workflow
+      workflowIdOrName: operation-node-role-add
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.target_node_id }}', kind: node.role_converge, intent: '${{ inputs.intent.ingress }}', execution_secrets: {}, parent_run_id: '${{ run.id }}'}
     # The releases folder and the new release, owned by the role's user.
   - name: 'Make the release folder'
     labels: {role: swamp}
@@ -37,10 +62,7 @@ jobs:
       behaviorType: '@swamp/ssh'
       behaviorName: '${{ "relocate-release-folder-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
       methodName: exec
-      globalArgs: &target_ssh
-        name: '${{ "relocate-target-" + string(inputs.intent.target_node_id) }}'
-        transport: {kind: ssh, user: '${{ inputs.intent.ssh.target.user }}', port: '${{ inputs.intent.ssh.target.port }}', identityFile: '${{ inputs.intent.ssh.identity_file }}', hostKeys: '${{ inputs.intent.ssh.target.host_keys }}'}
-        hosts: [{name: target, address: '${{ inputs.intent.ssh.target.host }}'}]
+      globalArgs: *target_ssh
       inputs: {hosts: 'name:target', sudo: true, argv: '${{ ["timeout","60","install","-d","-o",self.ws.user,"-m","0755",self.ws.releases,self.ws.release] }}'}
     # As the role's user, who is the SSH user; the pinned ref is a commit, so the clone checks out nothing yet.
   - name: 'Clone the Reverb release'
@@ -237,8 +259,47 @@ jobs:
       type: workflow
       workflowIdOrName: operation-route-caddy
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.node_id }}', kind: '${{ inputs.kind }}', intent: {caddy_publication: {node_id: '${{ self.publication.node_id }}', user: '${{ self.publication.connection.nodeUser }}', control_node_id: '${{ self.publication.control_node_id }}', host_keys: '${{ self.publication.host_keys }}', connection: '${{ self.publication.connection }}', caddy: '${{ self.publication.after.caddy }}'}}, execution_secrets: {}}
-- name: dns
+- name: edge
   dependsOn: [{job: caddy, condition: {type: succeeded}}]
+  steps:
+    # The hop the target's sites use: an HTTPS HEAD request to the Router address the Ingress renderer picked, per public app
+    # Route, with the system bundle that holds the Orbit root and the public roots. Any HTTP answer passes; a refused
+    # connection or a bad certificate fails the move before private DNS names the target.
+  - name: 'Probe the Router hop'
+    labels: {role: swamp}
+    forEach: {item: probe, in: '${{ has(inputs.intent.router_probes) ? inputs.intent.router_probes : [] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-router-probe-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","20","curl","--silent","--show-error","--output","/dev/null","--max-time","10","--head","--cacert","/etc/ssl/certs/ca-certificates.crt","--resolve",self.probe.domain + ":443:" + self.probe.host,"https://" + self.probe.domain + "/"] }}'}
+    # The target must serve a valid public certificate for every public name before private DNS names it and the source
+    # withdraws. Caddy asks Let's Encrypt only once public DNS points at the target, so curl's own retry waits at most 300 s
+    # (20 tries, 15 s apart); the system roots verify the chain. A failure stops the move with the source still serving.
+  - name: 'Check the public certificates'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Probe the Router hop', condition: {type: not, condition: {type: failed}}}]
+    forEach: {item: name, in: '${{ has(inputs.intent.public_certificates) ? inputs.intent.public_certificates : [] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-public-certificate-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","330","curl","--silent","--show-error","--output","/dev/null","--max-time","10","--retry","20","--retry-delay","15","--retry-max-time","300","--retry-all-errors","--write-out","%{http_code}","--resolve",self.name + ":443:127.0.0.1","https://" + self.name + "/"] }}'}
+    # curl ends 0 on any HTTP answer once its retries are spent; a 5xx means the target cannot reach the site behind it.
+  - name: 'Check the certificate answers'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Check the public certificates', condition: {type: not, condition: {type: failed}}}]
+    task:
+      type: assert
+      severity: high
+      expr: 'steps.filter(k, k.startsWith("Check the public certificates")).all(k, !steps[k].outputs.stdout.startsWith("5"))'
+      message: node.role_relocate_upstream_failed
+- name: dns
+  dependsOn: [{job: edge, condition: {type: succeeded}}]
   steps:
     # Node 12 serves before private DNS names it.
   - name: 'Publish the role DNS'

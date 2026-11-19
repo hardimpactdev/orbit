@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Data\Nodes\NodeSettingsData;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\NodeFootprint as DesiredNodeFootprint;
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\Metrics\MetricsFleetCapture;
@@ -30,6 +31,9 @@ use App\Support\ValidatedData;
 /** Role-owned resources only. Node convergence owns the observer and CLI. */
 final readonly class NativeNodeRoleAddInput
 {
+    /** The Orbit root in the system trust store, where route sites install it beside an Orbit CA leaf. */
+    public const string OrbitRootPath = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt';
+
     /** @param array<string,mixed> $snapshot
      * @param  list<array<string,mixed>>  $before
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>,participant_node_ids:list<int>}
@@ -188,6 +192,13 @@ final readonly class NativeNodeRoleAddInput
             $directories[] = ['path' => '/etc/systemd/system/caddy.service.d', 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
             $files[] = ['path' => '/etc/systemd/system/caddy.service.d/orbit-vpn.conf',
                 'content' => "# Managed by Orbit.\n[Unit]\nAfter=wg-quick@orbit.service\nWants=wg-quick@orbit.service\n",
+                'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
+        }
+
+        if ($role === RoleName::Ingress) {
+            // Ingress sites reach the Router over HTTPS with the system roots, which must hold this root. An Ingress-only Node holds no
+            // Orbit CA leaf, so no route site brings the root; the node phase refreshes the system roots when the file changes.
+            $files[] = ['path' => self::OrbitRootPath, 'content' => app(LeafCertificateSigner::class)->rootCertificate(),
                 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];
         }
 

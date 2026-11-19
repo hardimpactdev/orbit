@@ -223,6 +223,14 @@ No Cluster or Node TLD can equal, contain, or sit below either private zone: `or
 
 Doctor does not report stored TLD overlaps. Operators must inspect existing Cluster and Node TLDs and correct conflicts. This input guard does not remove stored conflicts or change their DNS publication.
 
+### Public Process names
+
+A [public Process hostname](/reference/routes#public-process-hostnames) never gets the Router's LAN address. Only the Ingress serves it, so every requester gets the Ingress's WireGuard address.
+
+Earlier releases gave these names the Router's LAN address too. No snapshot names those answers now, so the three-way merge alone would keep them in the live catalog.
+
+Each private DNS snapshot therefore carries a `retired` list beside the catalog: for each requester, the public Process names with the Router's LAN address. `retired` is never written to the Node. When a publisher merges a snapshot, it removes a live answer for a listed name only while that answer still holds the listed address and the snapshot does not want the name. The first publication after the upgrade withdraws them, and so does an [Ingress relocation](/reference/routes#ingress-relocation).
+
 ### Records a TLD already answers
 
 Private DNS answers by TLD. The Gateway writes no exact record that a TLD rule already answers with the same address for every requester. So a create or destroy of a Route under its Cluster TLD changes no private DNS, and its run has no DNS step.

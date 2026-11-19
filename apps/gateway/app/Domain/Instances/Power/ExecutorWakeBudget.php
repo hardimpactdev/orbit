@@ -15,9 +15,10 @@ final readonly class ExecutorWakeBudget
 
     public int $receiptDeadline;
 
-    public function __construct()
+    /** A command's wake waits the executor's bound; a held visit passes its own longer deadline (InstanceWake::activate()). */
+    public function __construct(?float $seconds = null)
     {
-        $seconds = ExecutorResultWait::boundSeconds();
+        $seconds ??= ExecutorResultWait::boundSeconds();
         $this->deadline = hrtime(true) / 1e9 + $seconds;
         $this->receiptDeadline = (int) now()->format('Uu') + (int) round($seconds * 1e6);
     }

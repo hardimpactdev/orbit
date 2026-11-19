@@ -35,10 +35,14 @@ final readonly class ActivateInstanceRuntimeAction
     {
         $instance->loadMissing('node');
 
-        // An Instance that moves into a container stays behind the wake page until the move has ended, so nothing writes its
-        // checkout or its database meanwhile. The move writes the awake marker itself.
+        // An Instance that moves into a container stays asleep until the move has ended, so nothing writes its checkout or its
+        // database meanwhile. The move writes the awake marker itself.
         if (InstanceMigration::running($instance)) {
-            return;
+            throw new HibernationException(
+                errorCode: 'hibernation.instance_moving',
+                message: "Instance [{$instance->name}] is moving into a container. Try again when the move has ended.",
+                status: 409,
+            );
         }
 
         if (! $this->policy->appliesToInstance($instance)) {

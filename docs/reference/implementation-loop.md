@@ -289,7 +289,11 @@ A hosted runner has none of these, so a `self_hosted` file never runs there.
 
 Pull request CI takes at most five minutes from push to result, including queues and dependencies. Proof CI is the only exception. Run only checks that apply to the changed files, using `bin/ci-build-plan`. Docs impact is a policy check on every pull request; it shares the existing Docs job and its two-minute ceiling. Switch an over-budget check off until it meets the budget; no merge, deploy or review waits on it. Whoever adds or restores a job measures its complete path first.
 
-The Web job caches the locked Playwright engines and downloaded APT packages, not installed system libraries. Each fresh Ubuntu 26.04 runner still runs the installer: APT refreshes its signed index, resolves current package versions and verifies cached downloads before installing them. A cache hit never skips library installation or either test stage. The cache key includes the runner OS, architecture, Ubuntu image version and installed Playwright version. An older image's downloads may seed the cache for the same OS and Playwright version; APT fetches any changed packages. This removes repeated large downloads without restoring files over the runner's system libraries.
+The Web job caches the locked Playwright engines and the Ubuntu packages of their system libraries, keyed by runner image and Playwright version. On a key miss it starts from the newest entry of another image with the same Playwright version, because a cold download of the whole set took longer than the job may run. A new Playwright version, or an evicted cache, still starts cold.
+
+With the entry of its own runner image, the job installs the libraries with `apt-get install` from those files: APT orders and configures them with `--no-download`, and with no index refresh. Then Playwright installs the browsers alone. So a mirror that fails leaves a run with a matching entry unaffected. A cache hit never skips library installation or either test stage.
+
+With an entry of another image, or when the packages fail to install, the job runs `playwright install --with-deps` as before: APT refreshes its signed index and downloads the difference from the mirror. Another image can lack a library that this one needs, and only APT's index shows that. After either path the job keeps only the files of the installed versions, so a saved entry is exactly what one install on that image uses. The job on main `Warm the web test caches` runs the same steps, `.github/actions/web-browsers`, and saves the cache for pull requests and the merge queue.
 
 The Web job has a four-minute ceiling and a 140-second table cost, including setup, tests, build, upload and cleanup. The planning cost rounds the largest measured cached execution, 134 seconds, up to the next ten seconds. The ceiling also reserves a cold-seed or cache-outage path: the earlier 180-second cancellation is a censored lower bound, and saving a new cache adds up to four seconds. Adding 25% reserve to those 184 seconds and rounding up to whole minutes gives four minutes. Caching removes repeated downloads; the larger ceiling protects executions that cannot reuse them, rather than replacing that fix.
 
@@ -1003,6 +1007,8 @@ The check name remains `Required checks` so branch protection, task handoff CI a
 ### Gateway test time limits
 
 Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="5"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. That file owns the five-second default for plain `composer test`, CI and `bin/task-check`. Tests remain unsized except for reviewed cases that need a real deadline, kernel age or private database initialization.
+
+The same file sets `ORBIT_VISIT_WAKE_WAIT_SECONDS` to 0.3 s. A test of a [held visit to a sleeping Instance](/reference/app-dev-runtime-hibernation#wake) whose wake never ends then reaches the plain `503` well within the five-second limit, instead of waiting the production 30 s.
 
 The CLI suite has the same five-second default in `apps/cli/phpunit.xml.dist`. Its former two seconds cut tests whose cleanup waited on the runner's disk.
 
