@@ -151,30 +151,30 @@ class RequiredGateTest(unittest.TestCase):
         setup = next(step for step in steps if step.get('id') == 'browser-downloads')
         self.assertIn('Dir::Cache::archives "/var/cache/orbit-playwright-apt"', setup['run'])
         self.assertIn('APT::Keep-Downloaded-Packages', setup['run'])
-        browsers = next(step for step in steps if step.get('name') == 'Cache browsers')
-        self.assertEqual(browsers['with']['path'], '~/.cache/ms-playwright')
-        self.assertIn('steps.browser-downloads.outputs.playwright', browsers['with']['key'])
-        packages = next(step for step in steps if step.get('name') == 'Cache system library packages')
-        self.assertEqual(packages['with']['path'], '/var/cache/orbit-playwright-apt/*.deb')
-        # One entry for each runner image and Playwright version, with no older set restored into it: the cached files
-        # must be exactly what one install on this image downloaded.
+        cache = next(step for step in steps if step.get('name') == 'Cache browser downloads')
+        self.assertEqual({'~/.cache/ms-playwright', '/var/cache/orbit-playwright-apt/*.deb'}, set(cache['with']['path'].splitlines()))
+        key = cache['with']['key']
         for identity in ('runner.os', 'runner.arch', 'steps.browser-downloads.outputs.playwright', 'steps.browser-downloads.outputs.image'):
-            self.assertIn(identity, packages['with']['key'])
-        self.assertNotIn('restore-keys', packages['with'])
-        self.assertNotIn('restore-keys', browsers['with'])
+            self.assertIn(identity, key)
+        # A miss starts from the newest entry of another image, then from the cache the Web job kept before: the same
+        # paths, so GitHub matches it. A cold download of the whole set does not fit the job.
+        newer, older = cache['with']['restore-keys'].splitlines()
+        self.assertTrue(key.startswith(newer))
+        self.assertEqual(older, newer.replace('web-browsers-v3-', 'web-browsers-v2-'))
         installer = steps[-1]
         self.assertEqual(installer['name'], 'Install test browsers and system libraries')
         self.assertNotIn('if', installer)
         run = installer['run']
-        # Cached packages install with apt from the files, with no index refresh; then the browsers install alone.
-        offline = run.index('apt-get install --yes --no-install-recommends')
-        self.assertIn('--no-download "$archives"/*.deb', run)
-        # With another archive folder apt asked the mirror for packages that the runner's index also names.
-        self.assertNotIn('Dir::Cache::archives=', run)
+        # Cached packages install with apt from the files, with no index refresh and no download; then the browsers
+        # install alone. Otherwise the mirror path of before runs.
+        self.assertIn('apt-get install --yes --no-install-recommends \\\n    --no-download "$archives"/*.deb', run)
         self.assertNotIn('apt-get update', run)
-        self.assertLess(offline, run.index('bunx playwright install --only-shell webkit chromium'))
-        # Without cached packages, or when they do not install, the mirror path of before runs: the last command.
-        self.assertTrue(run.rstrip().endswith('bunx playwright install --with-deps --only-shell webkit chromium'))
+        self.assertNotIn('Dir::Cache::archives=', run)
+        order = [run.index(text) for text in ('if offline; then', 'bunx playwright install --only-shell webkit chromium',
+                                              'bunx playwright install --with-deps --only-shell webkit chromium', 'dpkg-query -W')]
+        self.assertEqual(order, sorted(order))
+        # After either path, only the installed versions stay, so the saved set is what one install on this image uses.
+        self.assertIn('[ "$(dpkg-query -W -f=\'${Version}\' "$name:$arch" 2>/dev/null)" = "$version" ] || rm -f -- "$deb"', run)
         # The Web job and the job on main run the same steps, so main saves each cache under the key the others read.
         for job in ('web', 'web-test-caches'):
             uses = [step for step in workflow[job]['steps'] if step.get('uses') == './.github/actions/web-browsers']
