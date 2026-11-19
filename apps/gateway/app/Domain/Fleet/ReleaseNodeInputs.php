@@ -19,6 +19,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Models\Node;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -118,14 +119,32 @@ final readonly class ReleaseNodeInputs
     /** The host inputs that act on the Node. Without a Node, those of every Node without the `gateway` role. */
     public function host(?string $root = null, ?Node $node = null): string
     {
-        return $this->hostDigest($root, $node !== null && $node->roles()->where('role', RoleName::Gateway)
+        return self::NodeScope.$this->hostDigest($root, $node !== null && $node->roles()->where('role', RoleName::Gateway)
             ->where('status', LifecycleStatus::Active)->exists() ? self::GatewayHostFiles : []);
     }
+
+    /** Marks a host digest classified by Node; a bare digest is an approval recorded before. Drop after one release. */
+    public const string NodeScope = 'node:';
 
     /** The digest before host inputs were classified by Node: every Node counted the Gateway runtime. Drop after one release. */
     public function legacyHost(?string $root = null): string
     {
         return $this->hostDigest($root, self::GatewayHostFiles);
+    }
+
+    /**
+     * Writes a commit's host input files from the Git objects of the repository into an empty folder, so legacyHost() and host()
+     * can read them. It needs no release checkout, so it works in the worktree and in the container release layout alike.
+     */
+    public function extractHostTree(string $repository, string $commit, string $folder): void
+    {
+        $archive = Process::run(['git', '-C', $repository, 'archive', '--format=tar', '-o', $folder.'/host.tar', $commit, '--',
+            self::Recipe, 'apps/gateway/app/Domain/Nodes', 'swamp/ansible/tasks']);
+        $extract = $archive->successful() ? Process::path($folder)->run(['tar', '-xf', 'host.tar']) : null;
+        @unlink($folder.'/host.tar');
+        if ($extract === null || ! $extract->successful()) {
+            throw new RuntimeException('Cannot read the host inputs of a release commit.');
+        }
     }
 
     /** @param list<string> $nodeFiles */

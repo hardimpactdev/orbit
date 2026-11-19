@@ -32,6 +32,8 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /** Advances the serving release's ordered pass by one admission. The existing queue job observes terminal Operations. */
@@ -140,57 +142,64 @@ final readonly class ContinueReleaseFleetAction
             }
             $inputs = app(ReleaseNodeInputs::class);
             try {
-                $legacyHosts = $this->legacyHosts($inputs);
+                $legacy = $this->legacyTrees($release, $inputs, $members);
             } catch (Throwable) {
                 $this->save($release, [...$phase, 'error_code' => 'fleet.inputs_unavailable'], 'failed');
 
                 return null;
             }
-            unset($phase['error_code']);
-            $failed = false;
-            foreach ($members as $node) {
-                $row = &$rows[$node->id];
-                // A Node keeps its outcome for the rest of the pass: drift after `current` waits for the next pass, and a failed
-                // Node never holds back the Nodes after it.
-                if (in_array($row['status'], ['current', 'failed'], true)) {
-                    $failed = $failed || $row['status'] === 'failed';
+            try {
+                unset($phase['error_code']);
+                $failed = false;
+                foreach ($members as $node) {
+                    $row = &$rows[$node->id];
+                    // A Node keeps its outcome for the rest of the pass: drift after `current` waits for the next pass, and a failed
+                    // Node never holds back the Nodes after it.
+                    if (in_array($row['status'], ['current', 'failed'], true)) {
+                        $failed = $failed || $row['status'] === 'failed';
 
-                    continue;
-                }
-                try {
-                    $delay = $this->visit($release, $node, $row, $inputs, $legacyHosts, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
-                    if ($delay !== null) {
-                        $this->save($release, $phase, 'pending');
-
-                        return $delay;
+                        continue;
                     }
-                } catch (ResourceOperationException $failure) {
-                    if (in_array($failure->errorCode, ['operation.target_busy', 'fleet.rollout_busy'], true)) {
-                        $row['status'] = 'pending';
-                        $this->save($release, $phase, 'pending');
+                    try {
+                        $delay = $this->visit($release, $node, $row, $inputs, $legacy, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
+                        if ($delay !== null) {
+                            $this->save($release, $phase, 'pending');
 
-                        return 15;
-                    }
-                    $row['error_code'] = $failure->errorCode;
-                    $row['status'] = 'failed';
-                    $failed = true;
-                    // A failed delivery stops the pass. Any other failure, such as a changed host input, holds only this Node.
-                    if (($row['agent'] ?? null) === 'failed') {
+                            return $delay;
+                        }
+                    } catch (ResourceOperationException $failure) {
+                        if (in_array($failure->errorCode, ['operation.target_busy', 'fleet.rollout_busy'], true)) {
+                            $row['status'] = 'pending';
+                            $this->save($release, $phase, 'pending');
+
+                            return 15;
+                        }
+                        $row['error_code'] = $failure->errorCode;
+                        $row['status'] = 'failed';
+                        $failed = true;
+                        // A failed delivery stops the pass. Any other failure, such as a changed host input, holds only this Node.
+                        if (($row['agent'] ?? null) === 'failed') {
+                            $this->save($release, $phase, 'failed');
+
+                            return null;
+                        }
+                    } catch (Throwable) {
+                        $row['error_code'] = 'fleet.inputs_unavailable';
+                        $row['status'] = 'failed';
                         $this->save($release, $phase, 'failed');
 
                         return null;
                     }
-                } catch (Throwable) {
-                    $row['error_code'] = 'fleet.inputs_unavailable';
-                    $row['status'] = 'failed';
-                    $this->save($release, $phase, 'failed');
+                }
+                $this->save($release, $phase, $failed ? 'failed' : 'current');
 
-                    return null;
+                return null;
+            } finally {
+                // The release trees read from Git for this pass.
+                foreach ($legacy['folders'] as $folder) {
+                    File::deleteDirectory($folder);
                 }
             }
-            $this->save($release, $phase, $failed ? 'failed' : 'current');
-
-            return null;
         });
         if ($delay !== null) {
             return $delay;
@@ -278,42 +287,64 @@ final readonly class ContinueReleaseFleetAction
     }
 
     /**
-     * The digest before host inputs were classified by Node, of this tree and of each release tree on disk, mapped to the tree.
-     * Drop after one release.
+     * For a Node whose host approval predates the classification by Node: the legacy digest of this tree and of each recently
+     * verified release, read from Git objects, mapped to its tree. Drop after one release.
      *
-     * @return array<string, string|null>
+     * @param  list<Node>  $members
+     * @return array{trees: array<string, string|null>, unreadable: bool, folders: list<string>}
      */
-    private function legacyHosts(ReleaseNodeInputs $inputs): array
+    private function legacyTrees(GatewayRelease $release, ReleaseNodeInputs $inputs, array $members): array
     {
-        $trees = [$inputs->legacyHost() => null];
-        try {
-            $releases = glob(GatewayReleaseLayout::fromConfig()->releasesPath().'/*', GLOB_ONLYDIR) ?: [];
-        } catch (Throwable) {
-            $releases = [];
+        $legacy = ['trees' => [], 'unreadable' => false, 'folders' => []];
+        if (! array_any($members, static fn (Node $node): bool => self::legacyApproval($node) !== null)) {
+            return $legacy;
         }
-        foreach ($releases as $root) {
+        $legacy['trees'][$inputs->legacyHost()] = null;
+        $repository = dirname(config()->string('orbit.gateway_checkout'), 2);
+        $commits = GatewayRelease::query()->where('outcome', 'verified')->where('sha', '!=', $release->sha)
+            ->latest('id')->limit(20)->pluck('sha')->unique()->all();
+        foreach (ValidatedData::stringList(array_values($commits)) as $commit) {
+            $folder = sys_get_temp_dir().'/orbit-release-host-'.bin2hex(random_bytes(6));
+            File::ensureDirectoryExists($folder, 0700);
+            $legacy['folders'][] = $folder;
             try {
-                $trees[$inputs->legacyHost($root)] ??= $root;
+                $inputs->extractHostTree($repository, $commit, $folder);
+                $legacy['trees'][$inputs->legacyHost($folder)] ??= $folder;
             } catch (Throwable) {
-                // A tree without readable host inputs approved nothing this pass can recognize.
+                $legacy['unreadable'] = true;
             }
         }
 
-        return $trees;
+        return $legacy;
+    }
+
+    private static function legacyApproval(Node $node): ?string
+    {
+        $host = ($node->release_inputs ?? [])['host'] ?? null;
+
+        return is_string($host) && ! str_starts_with($host, ReleaseNodeInputs::NodeScope) ? $host : null;
     }
 
     /**
      * @param  array<string,mixed>  $row
-     * @param  array<string, string|null>  $legacyHosts
+     * @param  array{trees: array<string, string|null>, unreadable: bool, folders: list<string>}  $legacy
      */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, array $legacyHosts, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, array $legacy, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
     {
         $recorded = $node->release_inputs ?? [];
         $host = $inputs->host(node: $node);
-        $approved = is_string($recorded['host'] ?? null) && array_key_exists($recorded['host'], $legacyHosts) ? $recorded['host'] : null;
-        if ($approved !== null && $approved !== $host && $inputs->host($legacyHosts[$approved], $node) === $host) {
-            // A baseline recorded before host inputs were classified by Node approved a tree whose inputs for this Node are the same
-            // as this release's. Drop after one release.
+        $approved = self::legacyApproval($node);
+        // A baseline recorded before host inputs were classified by Node approved a release tree. It stands when this Node's own
+        // inputs are the same in that tree and in this release. When a release tree cannot be read, nothing can prove a change:
+        // the release record and the log name the Node. Drop after one release.
+        $known = $approved !== null && array_key_exists($approved, $legacy['trees']);
+        $accept = $known ? $inputs->host($legacy['trees'][$approved], $node) === $host : $approved !== null && $legacy['unreadable'];
+        if ($accept) {
+            if (! $known) {
+                $row['host_baseline'] = 'legacy_baseline_unreadable';
+                Log::warning('A Node\'s host approval predates the per-Node classification and its release tree could not be read; '
+                    .'the fleet pass records the current host inputs.', ['node_id' => $node->id, 'release_id' => $release->id]);
+            }
             $locked = Node::query()->whereKey($node->id)->lockForUpdate()->firstOrFail();
             $recorded = [...($locked->release_inputs ?? []), 'host' => $host];
             $locked->forceFill(['release_inputs' => $recorded])->save();

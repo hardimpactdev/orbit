@@ -57,6 +57,7 @@ use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\InstancePool;
@@ -339,27 +340,75 @@ it('holds only the Node whose host inputs changed, before its delivery or role c
         ->and(Operation::query()->count())->toBe(0);
 });
 
-it('recognizes a Node\'s approval of an earlier release tree, and still holds it when its own host inputs changed since', function (string $changed, bool $held): void {
+/**
+ * Commits a previous release's host inputs, this tree's with one file changed, to the Git repository of the Gateway checkout,
+ * and records it as a verified release. No checkout of it exists: a container release keeps only Git objects of earlier commits.
+ */
+function previousReleaseCommit(string $changed): string
+{
+    $repository = dirname(config()->string('orbit.gateway_checkout'), 2);
+    copyRolloutHostTree($repository);
+    file_put_contents($repository.'/'.$changed, "\n# the previous release\n", FILE_APPEND);
+    $git = static fn (string ...$arguments) => Process::path($repository)->run(['git', '-c', 'user.name=test', '-c', 'user.email=test@example.test', ...$arguments])->throw();
+    $git('init', '-q');
+    $git('add', '-A');
+    $git('commit', '-q', '-m', 'previous release');
+    $commit = trim($git('rev-parse', 'HEAD')->output());
+    GatewayRelease::query()->create(['sha' => $commit, 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 0]);
+    // The legacy digest the Node approved, read before the files leave the working tree.
+    $approved = app(ReleaseNodeInputs::class)->legacyHost($repository);
+    foreach (['apps/gateway/resources', 'apps/gateway/app', 'swamp'] as $folder) {
+        File::deleteDirectory($repository.'/'.$folder);
+    }
+
+    return $approved;
+}
+
+it('recognizes a Node\'s approval of an earlier release from its Git commit, and still holds it when its own host inputs changed since', function (string $changed, bool $held): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
-    // The previous release's tree, which differs from this one in one host input.
-    $previous = $this->base.'/releases/bbbbbbbbbbbb';
-    copyRolloutHostTree($previous);
-    file_put_contents($previous.'/'.$changed, "\n# the previous release\n", FILE_APPEND);
+    $approved = previousReleaseCommit($changed);
     $inputs = app(ReleaseNodeInputs::class);
     $dev = Node::query()->findOrFail($this->nodes['dev']);
-    expect($inputs->legacyHost($previous))->not->toBe($inputs->legacyHost());
-    $dev->forceFill(['release_inputs' => ['host' => $inputs->legacyHost($previous)]])->save();
+    expect($approved)->not->toBe($inputs->legacyHost())
+        ->and(glob($this->base.'/releases/*', GLOB_ONLYDIR))->toBe([$this->base.'/releases/'.substr(RolloutCommit, 0, 12)]);
+    $dev->forceFill(['release_inputs' => ['host' => $approved]])->save();
 
     app(ContinueReleaseFleetAction::class)->execute($release);
 
     // Past the host check, the Node stops at its delivery admission: this fixture has no serving Gateway Node.
-    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe($held ? 'fleet.host_inputs_changed' : 'fleet.rollout_not_ready')
-        ->and($dev->refresh()->release_inputs['host'])->toBe($held ? $inputs->legacyHost($previous) : $inputs->host(node: $dev));
+    $row = $release->refresh()->phases['fleet']['nodes'][$dev->id];
+    expect($row['error_code'])->toBe($held ? 'fleet.host_inputs_changed' : 'fleet.rollout_not_ready')
+        ->and($row)->not->toHaveKey('host_baseline')
+        ->and($dev->refresh()->release_inputs['host'])->toBe($held ? $approved : $inputs->host(node: $dev));
 })->with([
     'a Gateway-only change' => ['swamp/ansible/tasks/gateway-runtime.yml', false],
     'a shared host input change' => ['swamp/ansible/tasks/node-kernel-policy.yml', true],
 ]);
+
+it('records the current host inputs, with a visible reason, when the release tree a legacy approval names cannot be read', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    // A verified release whose commit the Gateway's repository does not hold, and an approval of a tree that is not this one.
+    GatewayRelease::query()->create(['sha' => str_repeat('c', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 0]);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    $dev->forceFill(['release_inputs' => ['host' => str_repeat('d', 64)]])->save();
+    $inputs = app(ReleaseNodeInputs::class);
+    Log::spy();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    $row = $release->refresh()->phases['fleet']['nodes'][$dev->id];
+    expect($row['host_baseline'])->toBe('legacy_baseline_unreadable')
+        ->and($row['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($dev->refresh()->release_inputs['host'])->toBe($inputs->host(node: $dev));
+    Log::shouldHaveReceived('warning')->withArgs(static fn (string $message, array $context): bool => $context['node_id'] === $dev->id)->once();
+    // A per-Node digest is never a legacy approval: once recorded, a later change holds the Node as usual.
+    $dev->forceFill(['release_inputs' => ['host' => ReleaseNodeInputs::NodeScope.str_repeat('d', 64)]])->save();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => []]]]);
+    app(ContinueReleaseFleetAction::class)->execute($release);
+    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed');
+});
 
 it('schedules app-prod when any file its production release host reads changes, the staged files beside the Ansible tree included', function (): void {
     $root = $this->base.'/tree';
