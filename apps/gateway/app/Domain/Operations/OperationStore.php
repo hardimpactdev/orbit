@@ -50,7 +50,7 @@ final readonly class OperationStore
         }
         try {
             $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $gatewayJob, $lockKey, $parent): Operation {
-                app(NodeWorkAdmission::class)->check($kind, $nodeId, $input, $parent?->id);
+                $beside = app(NodeWorkAdmission::class)->check($kind, $nodeId, $input, $parent?->id);
                 $direct = app(DirectOperation::class);
                 $version = $parent === null ? OperationVersions::admit($kind) : $this->childVersion($parent, $kind, $input);
                 $definition = $gatewayJob ? [] : ($direct->definition($kind, $version) ?? throw new ResourceOperationException('operation.version_unavailable', 'This Gateway does not have the pinned Operation handler.', 503));
@@ -64,7 +64,7 @@ final readonly class OperationStore
                     'operation_version' => $version, 'child_versions' => $children, 'parent_operation_id' => $parent?->id,
                     'kind' => $kind, 'idempotency_key' => $this->idempotency->key, 'idempotency_fingerprint' => $this->idempotency->fingerprint,
                     'target_type' => $targetType, 'target_id' => $targetId, 'node_id' => $nodeId, 'lock_key' => $lockKey,
-                    'input' => $input, 'state' => [], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
+                    'input' => $input, 'state' => $beside === [] ? [] : ['admitted_beside' => $beside], 'status' => OperationStatus::Queued, 'sequence' => 1, 'attempts' => 0,
                     'triggered_by' => $triggeredBy, 'request_id' => $requestId,
                 ]);
                 // Every Operation under the Node's admission lock may change what a converge phase applied, so the next converge runs every
