@@ -227,20 +227,61 @@ def checkout(plan):
         remove(local)
         local.parent.mkdir(parents=True, exist_ok=True)
         local.symlink_to(persistent, target_is_directory=True)
+    created = link_public_storage(plan)
     environment(plan)
-    return fingerprint
+    return {"inputs": fingerprint, "storage_links": created}
 
 
-def environment(plan):
+def link_public_storage(plan):
+    """The host layout's `storage:link`: a Laravel release serves its public uploads from the shared volume.
+
+    The link is made only where `public/storage` is absent. A real directory or a link the checkout has is kept.
+    Returns the application directories that got the link, which the candidate's readiness then requires."""
+    created = []
+    for application in public_storage(plan):
+        link = application / "public/storage"
+        if not link.exists() and not link.is_symlink():
+            (application / "storage/app/public").mkdir(parents=True, exist_ok=True)
+            link.symlink_to("../storage/app/public", target_is_directory=True)
+            created.append(str(application.relative_to(WORK / "current")))
+    return created
+
+
+def applications(plan):
     root = WORK / "current"
-    suffix = relative(plan["application_suffix"].removeprefix("/"), empty=True)
-    directories = {suffix}
+    directories = {relative(plan["application_suffix"].removeprefix("/"), empty=True)}
     for route in plan["routes"]:
         web = relative(route["web_root"], empty=True)
         if web.name == "public":
             directories.add(web.parent)
-    for directory in directories:
-        application = beneath(root, directory)
+    return [beneath(root, directory) for directory in sorted(directories)]
+
+
+def public_storage(plan):
+    """Laravel application directories whose `storage` is a shared path, which serve `public/storage` from it."""
+    return [application for application in applications(plan)
+            if (application / "artisan").is_file() and (application / "public").is_dir()
+            and (application / "storage").is_symlink() and (application / "storage").resolve().is_relative_to(SHARED)]
+
+
+def links(plan):
+    """A candidate never serves a `public/storage` link that leads nowhere, such as a host path the container lacks.
+
+    Where preparation made the link, the candidate still has it after the build steps, leading to the shared uploads."""
+    for application in public_storage(plan):
+        link = application / "public/storage"
+        if link.is_symlink() and not link.exists():
+            raise ValueError("the release has a public storage link that does not resolve")
+    root = WORK / "current"
+    for directory in plan["storage_links"]:
+        application = beneath(root, relative(directory, empty=True))
+        link = application / "public/storage"
+        if not link.exists() or link.resolve() != (application / "storage/app/public").resolve():
+            raise ValueError("a build step removed or replaced the public storage link that preparation made")
+
+
+def environment(plan):
+    for application in applications(plan):
         if not application.is_dir():
             raise ValueError("selected application directory is missing")
         file_bytes(application / ".env", plan["environment"])
@@ -285,9 +326,11 @@ def main(action):
     if action == "fetch":
         fetch(plan)
     elif action == "checkout":
-        print(checkout(plan))
+        print(json.dumps(checkout(plan)))
     elif action == "environment":
         environment(plan)
+    elif action == "links":
+        links(plan)
     else:
         raise ValueError("unknown build action")
 

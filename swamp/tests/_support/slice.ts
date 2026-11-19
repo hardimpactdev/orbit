@@ -10,14 +10,51 @@ const register = Deno.test;
 // deno-lint-ignore no-explicit-any
 type Callback = (...args: any[]) => any;
 const pending: { register: Callback; args: unknown[]; name: string }[] = [];
-const receipt: { startup_seconds?: number; registered: string[]; cases: { name: string; status: string; seconds: number; started_at_ms?: number }[] } = {
+const receipt: { startup_seconds?: number; registered: string[]; cases: { name: string; status: string; seconds: number; started_at_ms?: number; failed_step?: boolean }[] } = {
   registered: [], cases: [],
 };
 function save() {
   if (file) Deno.writeTextFileSync(file, JSON.stringify(receipt));
 }
+// A failed step does not end its case: the case can go on and hang. The receipt records the failed step at once, so a
+// unit that the runner cuts later still counts as failed. Steps of steps and `parent` are followed too. A context has
+// one wrapper, so `inner.parent === t` holds as it does without the wrapper.
+const wrappers = new WeakMap<object, unknown>();
+function stepped(context: unknown, row: typeof receipt.cases[number]): unknown {
+  if (!context || typeof context !== "object" || typeof (context as { step?: unknown }).step !== "function") return context;
+  const known = wrappers.get(context);
+  if (known) return known;
+  // Deno requires a named step function, so the wrapper keeps the name.
+  const inside = (fn: Callback) => Object.defineProperty((inner: unknown) => fn(stepped(inner, row)), "name", { value: fn.name });
+  const follow = (arg: unknown) => {
+    if (typeof arg === "function") return inside(arg as Callback);
+    if (arg && typeof arg === "object" && "fn" in arg) return { ...arg, fn: inside(arg.fn as Callback) };
+    return arg;
+  };
+  const wrapper = new Proxy(context, {
+    get(target, property) {
+      const value = Reflect.get(target, property);
+      if (property === "parent") return stepped(value, row);
+      if (property !== "step") return typeof value === "function" ? value.bind(target) : value;
+      return async (...args: unknown[]) => {
+        // An ignored step also returns false, and no assertion ran in it. Read the flag as Deno gets it, before the
+        // step runs: the caller may change the definition afterwards.
+        const ignored = args.some((arg) => arg && typeof arg === "object" && "ignore" in arg && arg.ignore);
+        const passed = await (value as Callback).apply(target, args.map(follow));
+        if (!passed && !ignored) {
+          row.failed_step = true;
+          save();
+        }
+        return passed;
+      };
+    },
+  });
+  wrappers.set(context, wrapper);
+  return wrapper;
+}
 function timed(fn: Callback, row: typeof receipt.cases[number]): Callback {
   const wrapped = async (...args: unknown[]) => {
+    args = [stepped(args[0], row), ...args.slice(1)];
     if (receipt.startup_seconds === undefined) {
       receipt.startup_seconds = (Date.now() - Number(Deno.env.get("ORBIT_TEST_STARTED_AT_MS"))) / 1000;
     }
