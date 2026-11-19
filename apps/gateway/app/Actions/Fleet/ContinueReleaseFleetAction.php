@@ -140,7 +140,7 @@ final readonly class ContinueReleaseFleetAction
             }
             $inputs = app(ReleaseNodeInputs::class);
             try {
-                $host = $inputs->host();
+                $legacyHost = $inputs->legacyHost();
             } catch (Throwable) {
                 $this->save($release, [...$phase, 'error_code' => 'fleet.inputs_unavailable'], 'failed');
 
@@ -158,7 +158,7 @@ final readonly class ContinueReleaseFleetAction
                     continue;
                 }
                 try {
-                    $delay = $this->visit($release, $node, $row, $inputs, $host, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
+                    $delay = $this->visit($release, $node, $row, $inputs, $legacyHost, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
                     if ($delay !== null) {
                         $this->save($release, $phase, 'pending');
 
@@ -174,8 +174,8 @@ final readonly class ContinueReleaseFleetAction
                     $row['error_code'] = $failure->errorCode;
                     $row['status'] = 'failed';
                     $failed = true;
-                    // A failed delivery or a refused Node stops the pass; a failed role converge lets the next Node go.
-                    if (! in_array('failed', (array) ($row['roles'] ?? []), true)) {
+                    // A failed delivery stops the pass. Any other failure, such as a changed host input, holds only this Node.
+                    if (($row['agent'] ?? null) === 'failed') {
                         $this->save($release, $phase, 'failed');
 
                         return null;
@@ -253,19 +253,22 @@ final readonly class ContinueReleaseFleetAction
             return;
         }
 
-        try {
-            $inputs = app(ReleaseNodeInputs::class);
-            $baseline = $inputs->host($previousRelease === null ? null : GatewayReleaseLayout::fromConfig()->releasePath($previousRelease));
-        } catch (Throwable) {
-            $baseline = null;
+        $baselines = [];
+        foreach ($missing as $node) {
+            try {
+                $baselines[$node->id] = app(ReleaseNodeInputs::class)->host($previousRelease === null ? null
+                    : GatewayReleaseLayout::fromConfig()->releasePath($previousRelease), $node);
+            } catch (Throwable) {
+                $baselines[$node->id] = null;
+            }
         }
-        DB::transaction(static function () use ($missing, $baseline): void {
+        DB::transaction(static function () use ($missing, $baselines): void {
             $locked = Node::query()->whereKey(array_map(static fn (Node $node): int => $node->id, $missing))
                 ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             foreach ($missing as $member) {
                 $node = $locked->get($member->id);
                 if ($node !== null && ! array_key_exists('host', $node->release_inputs ?? [])) {
-                    $node->forceFill(['release_inputs' => [...($node->release_inputs ?? []), 'host' => $baseline]])->save();
+                    $node->forceFill(['release_inputs' => [...($node->release_inputs ?? []), 'host' => $baselines[$node->id]]])->save();
                 }
                 if ($node !== null) {
                     $member->release_inputs = $node->release_inputs;
@@ -275,11 +278,18 @@ final readonly class ContinueReleaseFleetAction
     }
 
     /** @param array<string,mixed> $row */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $legacyHost, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
     {
         $recorded = $node->release_inputs ?? [];
+        $host = $inputs->host(node: $node);
+        if (($recorded['host'] ?? null) === $legacyHost && $legacyHost !== $host) {
+            // A baseline recorded before host inputs were classified by Node approved this tree. Drop after one release.
+            $locked = Node::query()->whereKey($node->id)->lockForUpdate()->firstOrFail();
+            $recorded = [...($locked->release_inputs ?? []), 'host' => $host];
+            $locked->forceFill(['release_inputs' => $recorded])->save();
+        }
         if (($recorded['host'] ?? null) !== $host) {
-            throw new ResourceOperationException('fleet.host_inputs_changed', 'Host-wide inputs require an explicit Node converge.', 409);
+            throw new ResourceOperationException('fleet.host_inputs_changed', 'The host inputs that act on this Node require an explicit Node converge.', 409);
         }
         if (! CliConvergePlan::required($node)) {
             $cli = null;

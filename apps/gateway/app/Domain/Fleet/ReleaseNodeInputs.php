@@ -34,6 +34,10 @@ final readonly class ReleaseNodeInputs
         'apps/gateway/app/Domain/Nodes/NodeNetworkConvergeInput.php',
         'swamp/ansible/tasks/node-kernel-policy.yml',
         'swamp/ansible/tasks/node-update-policy.yml',
+    ];
+
+    /** The Gateway runtime: node-role-runtime.yml applies it only on a Node with the `gateway` role, so only that Node's host input holds it. */
+    private const array GatewayHostFiles = [
         'apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php',
         'swamp/ansible/tasks/gateway-runtime.yml',
     ];
@@ -94,7 +98,21 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/files/instance-container-power.py',
     ];
 
-    public function host(?string $root = null): string
+    /** The host inputs that act on the Node. Without a Node, those of every Node without the `gateway` role. */
+    public function host(?string $root = null, ?Node $node = null): string
+    {
+        return $this->hostDigest($root, $node !== null && $node->roles()->where('role', RoleName::Gateway)
+            ->where('status', LifecycleStatus::Active)->exists() ? self::GatewayHostFiles : []);
+    }
+
+    /** The digest before host inputs were classified by Node: every Node counted the Gateway runtime. Drop after one release. */
+    public function legacyHost(?string $root = null): string
+    {
+        return $this->hostDigest($root, self::GatewayHostFiles);
+    }
+
+    /** @param list<string> $nodeFiles */
+    private function hostDigest(?string $root, array $nodeFiles): string
     {
         $root ??= dirname(base_path(), 2);
         $recipe = new RecipeLoader()->source($root.'/'.self::Recipe);
@@ -117,7 +135,7 @@ final readonly class ReleaseNodeInputs
         ksort($network);
 
         return self::digest([$raw['ubuntu'], $raw['architectures'], $raw['artifact_mirror'], $raw['git'],
-            $this->pins($recipe, $hostTools), $this->files($root, self::HostFiles), $network]);
+            $this->pins($recipe, $hostTools), $this->files($root, [...self::HostFiles, ...$nodeFiles]), $network]);
     }
 
     /** @param array<string, string> $files */

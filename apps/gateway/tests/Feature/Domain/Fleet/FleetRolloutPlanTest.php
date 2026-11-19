@@ -321,18 +321,57 @@ it('retains the minute retry after partial admission and admits CI callers when 
     expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
 });
 
-it('refuses host-wide input changes before starting a delivery or a role converge', function (): void {
+it('holds only the Node whose host inputs changed, before its delivery or role converge, and goes on to the next Node', function (): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
     Node::query()->findOrFail($this->nodes['dev'])->forceFill(['release_inputs' => ['host' => str_repeat('c', 64)]])->save();
 
     app(ContinueReleaseFleetAction::class)->execute($release);
 
+    // This fixture has no serving Gateway Node, so each later Node gets past its host check and stops at its delivery admission.
     $fleet = $release->refresh()->phases['fleet'];
     expect($fleet['status'])->toBe('failed')
         ->and($fleet['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
-        ->and($fleet['nodes'][$this->nodes['db']]['status'])->toBe('pending')
+        ->and($fleet['nodes'][$this->nodes['dev']])->not->toHaveKey('agent')
+        ->and($fleet['nodes'][$this->nodes['db']]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($fleet['nodes'][$this->nodes['prod']]['error_code'])->toBe('fleet.rollout_not_ready')
         ->and(Operation::query()->count())->toBe(0);
+});
+
+it('counts the Gateway runtime only as a host input of the Gateway Node', function (): void {
+    $root = $this->base.'/tree';
+    copyRolloutHostTree($root);
+    foreach (['apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php', 'swamp/ansible/tasks/gateway-runtime.yml'] as $file) {
+        File::ensureDirectoryExists(dirname($root.'/'.$file));
+        File::copy(dirname(base_path(), 2).'/'.$file, $root.'/'.$file);
+    }
+    $inputs = app(ReleaseNodeInputs::class);
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    [$devHost, $gatewayHost] = [$inputs->host($root, $dev), $inputs->host($root, $gateway)];
+
+    file_put_contents($root.'/swamp/ansible/tasks/gateway-runtime.yml', "\n# changed\n", FILE_APPEND);
+
+    expect($inputs->host($root, $dev))->toBe($devHost)
+        ->and($inputs->host($root, $gateway))->not->toBe($gatewayHost);
+});
+
+it('keeps a Node\'s baseline recorded before host inputs were classified by Node, and records its own digest', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $inputs = app(ReleaseNodeInputs::class);
+    foreach ($this->nodes as $id) {
+        Node::query()->findOrFail($id)->forceFill(['release_inputs' => ['host' => $inputs->legacyHost()]])->save();
+    }
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    // Past the host check, each Node stops at its delivery admission: this fixture has no serving Gateway Node.
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($dev->release_inputs['host'])->toBe($inputs->host(node: $dev))
+        ->and($dev->release_inputs['host'])->not->toBe($inputs->legacyHost());
 });
 
 function copyRolloutHostTree(string $path): void
@@ -499,7 +538,7 @@ it('admits every Node of a verified release at once at midday, then refreshes th
     $inputs = app(ReleaseNodeInputs::class);
     foreach (Node::query()->whereKey([...array_values($this->nodes), $gateway->id])->get() as $node) {
         $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
-            'host' => $inputs->host(), 'agent' => $node->id === $this->nodes['dev'] ? $delivery->pin($node) : 'old-agent',
+            'host' => $inputs->host(node: $node), 'agent' => $node->id === $this->nodes['dev'] ? $delivery->pin($node) : 'old-agent',
             'roles' => array_map(fn (array $role): string => $role['digest'], $inputs->roles($node)),
         ]])->saveQuietly();
     }
