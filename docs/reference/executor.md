@@ -210,7 +210,7 @@ An order that is never acknowledged comes back, and the journal answers it as a 
 | Step | What it does |
 | --- | --- |
 | Caddy access | One `find` or `setfacl` command per row, as `RouteWebRootCommands` renders it. See below. |
-| `APP_URL` | Replaces the last `APP_URL=` line of an existing `.env`, or adds one. The file keeps its owner and mode. |
+| `APP_URL` | Replaces the last `APP_URL=` line of an existing `.env`, or adds one. The file must belong to the Route's account and keeps its owner and mode. |
 | Links | Replaced atomically. |
 | PHP-FPM pools | Named by `version` and an optional production `user`, from which the executor derives the path, the `php-fpm -t` test and the unit. See below. |
 | Leaves | Each leaf's `cert.pem` beside its key, the version's `current` link, and the account's own copy. |
@@ -219,9 +219,7 @@ An order that is never acknowledged comes back, and the journal answers it as a 
 
 Each access row names a kind (`deny_defaults`, `deny`, `passage`, `grant_defaults` or `grant`), a user and paths. The executor builds the command from those fields. It leaves out a missing optional path and never makes one.
 
-A changed pool reloads its running unit, and a stopped unit starts.
-
-Caddy reloads when the Caddyfile or a certificate changed. A failed validation leaves the live Caddyfile as it was.
+Every publication reloads a running pool unit and starts a stopped one. Caddy also reloads on every publication that carries a Caddyfile. A repeat after a crash between a write and its reload still makes the files live. A failed validation leaves the live Caddyfile as it was.
 
 Content comes as blobs. It answers `applied` with the number of changed files and units; ACL commands do not count. Codes: `route.input_invalid`, `route.content_missing`, `route.publish_failed`.
 
