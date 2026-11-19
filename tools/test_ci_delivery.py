@@ -316,7 +316,7 @@ class EvidenceTest(unittest.TestCase):
         self.assertNotIn('.conclusion', condition)
         self.assertIn("github.ref == 'refs/heads/main'", condition)
         verify = next(step for step in resolve['steps']
-                      if step.get('run') == 'python3 bin/ci-delivery verify --sha "$COMMIT"')
+                      if step.get('run') == 'python3 bin/ci-delivery verify --sha "$COMMIT" --release')
         self.assertEqual(verify['env']['COMMIT'], '${{ steps.release.outputs.commit }}')
         self.assertNotIn('SOURCE_RUN_ID', verify['env'])  # Resolve the latest trusted main CI for this SHA.
         self.assertNotIn('if', verify)  # Delivery evidence is required for automatic and manual dispatches.
@@ -337,6 +337,16 @@ class EvidenceTest(unittest.TestCase):
             jobs = {'Required checks': JOB} if job is None else {delivery.DELIVERY: job}
             with self.subTest(job=job), self.assertRaisesRegex(ValueError, 'old Required checks cannot substitute'):
                 delivery.delivery_evidence(self.github(jobs=jobs), SHA)
+
+    def test_a_release_needs_the_release_inputs_of_the_same_main_run(self):
+        # A later main run that passes delivery and fails Required checks skips the job: an earlier run's green one must not count.
+        delivery.delivery_evidence(self.github(jobs={delivery.DELIVERY: JOB, delivery.RELEASE: JOB}), SHA, release=True)
+        delivery.delivery_evidence(self.github(), SHA)
+        for marker in (None, JOB | dict(conclusion='skipped'), JOB | dict(conclusion='failure'),
+                       JOB | dict(status='in_progress', conclusion=None), JOB | dict(head_sha='b' * 40)):
+            jobs = {delivery.DELIVERY: JOB} | ({} if marker is None else {delivery.RELEASE: marker})
+            with self.subTest(marker=marker), self.assertRaisesRegex(ValueError, 'Gateway release inputs must pass in the newest main CI run'):
+                delivery.delivery_evidence(self.github(jobs=jobs), SHA, release=True)
 
     def test_latest_trusted_run_and_latest_job_attempt_win(self):
         github = self.github(runs=[RUN, RUN | dict(id=44)])

@@ -78,7 +78,7 @@ Keep the CI admission switch separate from the Gateway's [execution switch](/cli
 
 Green CI is followed by the Project's review and merge gate on the exact head. Task-copy publication does not automatically merge, and the older [`task:pr-merge`](/cli/task/pr-merge) gate is unavailable for task copies. [Task-group modes](/reference/tasks#task-group-modes) and [copy merge limits](/reference/tasks#no-merge) own those boundaries. Orbit's own pull requests merge through the [merge queue](/reference/implementation-loop#merge-queue), only after the gate. A new head needs affected local checks and proofs, CI and the gate again.
 
-Main verifies that the landed tree matches the tree tested on the PR, then promotes its delivery inputs. The release waits for a matching receipt. A tree without matching evidence can ship as part of a later green PR that tests it.
+Main verifies that the merge queue tested the landed commit, then promotes its delivery inputs. The release waits for that. A commit that reached `main` past the queue can ship as part of a later green pull request that tests it.
 
 <div className="flow-at" data-chart="reference/pipeline/4-pr-and-ci"></div>
 

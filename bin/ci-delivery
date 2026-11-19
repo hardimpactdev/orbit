@@ -109,6 +109,7 @@ def validate(needs):
 
 WORKFLOW = '.github/workflows/ci.yml'
 DELIVERY = 'Main delivery checks'
+RELEASE = 'Gateway release inputs'
 
 
 class GitHub:
@@ -153,7 +154,7 @@ def trusted_run(run, repository, sha, workflow_id):
             and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
 
 
-def delivery_evidence(github, sha, source_run_id=None):
+def delivery_evidence(github, sha, source_run_id=None, release=False):
     workflow = github.one('actions/workflows/ci.yml')
     if workflow.get('path') != WORKFLOW:
         raise ValueError('CI workflow identity is invalid')
@@ -178,6 +179,11 @@ def delivery_evidence(github, sha, source_run_id=None):
     job = jobs.get(DELIVERY)
     if not job or job.get('head_sha') != sha or job.get('status') != 'completed' or job.get('conclusion') != 'success':
         raise ValueError('Main delivery checks must complete successfully on this exact SHA; old Required checks cannot substitute')
+    # A release needs the last main job of this same run: a green one of an earlier run on the commit does not count.
+    marker = jobs.get(RELEASE)
+    if release and (not marker or marker.get('head_sha') != sha or marker.get('status') != 'completed'
+                    or marker.get('conclusion') != 'success'):
+        raise ValueError('Gateway release inputs must pass in the newest main CI run on this exact SHA')
     return run, jobs
 
 
@@ -196,12 +202,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['verify'])
     parser.add_argument('--sha', required=True)
+    parser.add_argument('--release', action='store_true', help='Also require Gateway release inputs of the same run')
     args = parser.parse_args()
     github = GitHub(os.environ['GITHUB_REPOSITORY'])
     try:
         if not re.fullmatch('[0-9a-f]{40}', args.sha):
             raise ValueError('Pass a full commit SHA')
-        run, jobs = delivery_evidence(github, args.sha, os.environ.get('SOURCE_RUN_ID'))
+        run, jobs = delivery_evidence(github, args.sha, os.environ.get('SOURCE_RUN_ID'), args.release)
         write_summary(release_summary(run, jobs))
     except (ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         write_summary(f'CI delivery verification failed: {error}')
