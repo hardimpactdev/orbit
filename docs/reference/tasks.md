@@ -1741,6 +1741,12 @@ The response also holds:
 - A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
 - A task's release is the last verified release that began before its `started_at`.
 
+### Freshness
+
+The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
+
+Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed after its record, then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact. A Project with no stored report yet, such as a new one, gets it computed from the records on its first read. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
+
 ### On the board
 
 The strip shows tokens per merged PR with its cost, lead time, yield, first-pass pull requests, and wasted tokens. Each shows its change against the previous period, green when better and red when worse. Fewer tokens, a shorter lead time, and less waste are better. A higher yield and first-pass share are better. The strip has a 7-day and 30-day switch and a Project filter.

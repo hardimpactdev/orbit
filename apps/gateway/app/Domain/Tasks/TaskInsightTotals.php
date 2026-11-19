@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Models\Project;
 use App\Models\Task;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -52,8 +53,8 @@ final readonly class TaskInsightTotals
             $byProject[$row['project_id']][] = $row;
         }
         $scopes = array_unique([
-            ...Project::query()->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
-            ...DB::table('task_insight_totals')->whereNotNull('project_id')->distinct()->pluck('project_id')->map(static fn (mixed $id): int => (int) $id)->all(),
+            ...Project::query()->pluck('id')->map(ValidatedData::integer(...))->all(),
+            ...DB::table('task_insight_totals')->whereNotNull('project_id')->distinct()->pluck('project_id')->map(ValidatedData::integer(...))->all(),
         ]);
         $this->store(null, array_keys(TaskInsights::Periods), $rows, $now);
         foreach ($scopes as $projectId) {

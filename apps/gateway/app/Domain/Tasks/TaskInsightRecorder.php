@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Task;
+use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -34,7 +35,7 @@ final readonly class TaskInsightRecorder
     /** @param  Builder<Task>  $groups  top-level tasks */
     public function recordAll(Builder $groups): int
     {
-        $ids = $groups->orderBy('tasks.id')->toBase()->pluck('tasks.id')->map(static fn (mixed $id): int => (int) $id)->all();
+        $ids = $groups->orderBy('tasks.id')->toBase()->pluck('tasks.id')->map(ValidatedData::integer(...))->all();
         foreach (array_chunk($ids, self::Chunk) as $chunk) {
             $this->recordChunk($chunk);
         }
@@ -49,11 +50,35 @@ final readonly class TaskInsightRecorder
      */
     public static function row(string $facts): array
     {
-        /** @var Row $row */
-        $row = json_decode($facts, true, flags: JSON_THROW_ON_ERROR);
-        $row['ended_at'] = CarbonImmutable::parse($row['ended_at']);
+        $row = ValidatedData::object(json_decode($facts, true, flags: JSON_THROW_ON_ERROR));
+        $int = static fn (string $key): int => ValidatedData::integer($row[$key] ?? null);
+        $causes = [];
+        foreach (ValidatedData::object($row['causes'] ?? []) as $cause => $count) {
+            $causes[$cause] = ValidatedData::integer($count);
+        }
 
-        return $row;
+        return [
+            'id' => $int('id'), 'project_id' => $int('project_id'),
+            'model' => ValidatedData::nullableString($row['model'] ?? null), 'project' => ValidatedData::string($row['project'] ?? null),
+            'release' => ValidatedData::nullableString($row['release'] ?? null),
+            'ended_at' => CarbonImmutable::parse(ValidatedData::string($row['ended_at'] ?? null)),
+            'merged' => ($row['merged'] ?? null) === true,
+            'tokens' => $int('tokens'), 'cost' => is_float($row['cost'] ?? null) ? $row['cost'] : null,
+            'input' => $int('input'), 'cached' => $int('cached'), 'wasted' => $int('wasted'), 'lines' => $int('lines'),
+            'lead' => self::nullableInteger($row['lead'] ?? null), 'queue' => self::nullableInteger($row['queue'] ?? null),
+            'work' => self::nullableInteger($row['work'] ?? null), 'merge_wait' => self::nullableInteger($row['merge_wait'] ?? null),
+            'pr_merge_wait' => self::nullableInteger($row['pr_merge_wait'] ?? null), 'delivery' => self::nullableInteger($row['delivery'] ?? null),
+            'deploy_wait' => self::nullableInteger($row['deploy_wait'] ?? null),
+            'first_pass' => ($row['first_pass'] ?? null) === true,
+            'verdict_subtasks' => $int('verdict_subtasks'), 'first_approved' => $int('first_approved'), 'verdicts' => $int('verdicts'),
+            'handoff_subtasks' => $int('handoff_subtasks'), 'handoff_passed' => $int('handoff_passed'),
+            'questions' => $int('questions'), 'causes' => $causes,
+        ];
+    }
+
+    private static function nullableInteger(mixed $value): ?int
+    {
+        return $value === null ? null : ValidatedData::integer($value);
     }
 
     /** @param  list<int>  $ids */
