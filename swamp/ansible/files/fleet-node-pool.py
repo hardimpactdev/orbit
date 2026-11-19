@@ -59,13 +59,20 @@ def preflight(pool):
             record = instance(name, project)
             if record.get("ephemeral"):
                 refuse(f"{project}/{name} on the dir pool {pool} is ephemeral and a stop deletes it; delete or recreate it, then converge again")
+            if not record["config"].get(MARK, pool + ":").startswith(pool + ":"):
+                refuse(f"{project}/{name} on the dir pool {pool} carries the marker {MARK}={record['config'][MARK]} of another move; "
+                       "finish or clear that move, then converge again")
             if query(f"/1.0/instances/{urllib.parse.quote(name)}/backups?project={project}"):
                 refuse(f"{project}/{name} on the dir pool {pool} has Incus backups that a move drops; export and delete them, then converge again")
         elif kind == "storage-pools" and parts[4:6] == ["volumes", "custom"]:
             path = f"/1.0/storage-pools/{pool}/volumes/custom/{urllib.parse.quote(name)}"
             if query(f"{path}/backups?project={project}"):
                 refuse(f"the volume {project}/{name} on the dir pool {pool} has Incus backups that a move drops; export and delete them")
-            for user in query(f"{path}?project={project}")["used_by"] or []:
+            volume = query(f"{path}?project={project}")
+            if "size" in volume.get("config", {}):
+                refuse(f"the volume {project}/{name} on the dir pool {pool} has a size, which btrfs applies with a qgroup limit that a "
+                       "nested Node refuses; unset its size, then converge again")
+            for user in volume["used_by"] or []:
                 kind_of, user_name, user_project, _ = target(user)
                 if kind_of != "instances" or (user_name, user_project) not in held:
                     refuse(f"the volume {project}/{name} on the dir pool {pool} is used by {user}, outside the pool's instances; "
@@ -82,6 +89,8 @@ def unsize_root(devices, unset):
 def halt(name, project, owner):
     """Stop an instance for the move and record the state it had, once."""
     record = instance(name, project)
+    if not record["config"].get(MARK, owner + ":").startswith(owner + ":"):
+        refuse(f"{project}/{name} carries the marker {MARK}={record['config'][MARK]} of another move; finish or clear that move first")
     if MARK not in record["config"]:
         incus("config", "set", name, "--project", project, f"{MARK}={owner}:{record['status'].lower()}")
     if record["status"] != "Stopped":
@@ -124,7 +133,8 @@ def marked(pool, spare):
     """The instances this move of `pool` stopped and that sit on `pool` or its own spare."""
     return [record for record in query("/1.0/instances?recursion=1&all-projects=true")
             if record["config"].get(MARK, "").startswith(pool + ":")
-            and record["expanded_devices"].get("root", {}).get("pool") in (pool, spare)]
+            and any(device.get("type") == "disk" and device.get("path") == "/" and device.get("pool") in (pool, spare)
+                    for device in record["expanded_devices"].values())]
 
 
 def resume(records):

@@ -38,7 +38,7 @@ class Incus:
         return devices
 
     def root(self, instance):
-        return self.expanded(instance)["root"]
+        return next(d for d in self.expanded(instance).values() if d.get("path") == "/")
 
     def record(self, instance):
         return {**copy.deepcopy(instance), "project": P, "expanded_devices": self.expanded(instance)}
@@ -59,7 +59,7 @@ class Incus:
                 return json.dumps(self.instances[name].get("backups", []) if path.endswith("/backups") else self.record(self.instances[name]))
             if "/volumes/custom/" in path:
                 volume = self.volumes[path.split("/")[6]]
-                return json.dumps(volume["backups"] if path.endswith("/backups") else {"used_by": volume["used_by"]})
+                return json.dumps(volume["backups"] if path.endswith("/backups") else {"used_by": volume["used_by"], "config": volume.get("config", {})})
             if path.startswith("/1.0/profiles/"):
                 return json.dumps(self.profile)
         if a[:2] == ["storage", "create"]:
@@ -176,6 +176,13 @@ class FleetNodePoolTest(unittest.TestCase):
             self.converge(fake)
         self.assertEqual(writes(fake), [])
 
+    def test_recovery_finds_the_root_disk_by_its_mount_path(self):
+        fake = Incus({P: "btrfs"}, [instance("guest", "Stopped", {"os": {"type": "disk", "path": "/", "pool": P}})])
+        fake.profile["devices"] = {}
+        fake.instances["guest"]["config"][MARK] = P + ":running"
+        self.assertEqual(self.converge(fake), {"changed": True})
+        self.assertEqual((fake.instances["guest"]["status"], fake.instances["guest"]["config"]), ("Running", {}))
+
     def test_every_root_size_goes_before_btrfs_on_instances_and_profiles(self):
         fake = Incus({P: "dir"}, [instance("i1", "Stopped", {"rootfs": {"type": "disk", "path": "/", "pool": P, "size": "20GiB"}}),
                                   instance("i2", "Stopped")])
@@ -193,6 +200,9 @@ class FleetNodePoolTest(unittest.TestCase):
                 lambda f: f.volumes["shared"].update(backups=["b0"]),
             "is used by /1.0/instances/elsewhere": lambda f: f.volumes["shared"].update(used_by=[f"/1.0/instances/elsewhere?project={P}"]),
             "is used by /1.0/profiles/data": lambda f: f.volumes["shared"].update(used_by=[f"/1.0/profiles/data?project={P}"]),
+            "the volume orbit-releases/shared on the dir pool orbit-releases has a size": lambda f: f.volumes["shared"].update(config={"size": "5GiB"}),
+            "orbit-releases/old on the dir pool orbit-releases carries the marker user.orbit.pool-move=other:running of another move":
+                lambda f: f.instances["old"]["config"].update({MARK: "other:running"}),
         }
         for message, change in cases.items():
             with self.subTest(message=message):
