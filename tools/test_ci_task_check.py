@@ -520,7 +520,7 @@ class CiPolicyTest(unittest.TestCase):
 
     def policy(self, commands, seconds=30):
         with patch.dict(check['ci_policy'].__globals__, {'CI_POLICY': commands}):
-            return check['ci_policy'](time.monotonic() + seconds)
+            return check['ci_policy'](time.monotonic() + seconds, '')
 
     def test_the_part_runs_the_commands_of_cis_policy_job(self):
         step = check['ci_job']('ci-policy')
@@ -529,10 +529,10 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(check['CI_POLICY'], commands)
         self.assertEqual(len(commands), 2)
 
-    def test_a_docs_input_runs_policy_tests(self):
+    def test_a_file_that_a_policy_test_reads_runs_policy_tests_and_names_it(self):
         ran = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
-        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['.agents/skills/swamp/SKILL.md']),
                  'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
                  'run': lambda argv, *_args, **_kwargs: ran.append(argv) or (0, '')}
         output = io.StringIO()
@@ -541,18 +541,53 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(ran, check['CI_POLICY'])
         self.assertEqual(code, 0)
         self.assertIn('  passed       ci-policy (', output.getvalue())
+        self.assertIn('selected by .agents/skills/swamp/SKILL.md, read by tools/test_ci_swamp_skills.py', output.getvalue())
 
-    def test_expensive_checks_follow_tooling_docs_and_api_inputs_not_the_pr_docs_job(self):
+    def test_a_docs_page_that_no_policy_test_reads_leaves_the_part_to_ci(self):
+        ran = []
+        jobs = {**JOBS, 'docs': True, 'api-reference': False, 'swamp': False}
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
+                 'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
+                 'run': lambda argv, *_args, **_kwargs: ran.append(argv) or (0, '')}
+        output = io.StringIO()
+        with patch.dict(check['main'].__globals__, stubs), redirect_stdout(output):
+            check['main'](['--only', 'ci-policy'])
+        self.assertEqual(ran, [])
+        self.assertIn('not selected ci-policy (0.0s; no changed path is read by a policy test', output.getvalue())
+
+    def test_each_file_that_a_policy_test_reads_selects_it_and_no_other_does(self):
+        read = {'bin/ci-units': 'tools/test_ci_*.py, tools/ci-runners/test_*.py',
+                'swamp/ansible/tasks/apt-proxy.yml': 'tools/test_ci_*.py, tools/ci-runners/test_*.py',
+                '.agents/skills/swamp-getting-started/references/tracks.md': 'tools/test_ci_swamp_skills.py',
+                'apps/agent/src/commands/ci_runner.rs': 'tools/test_ci_runner_project_config.py',
+                'apps/cli/design/Flows/node-add.json': 'tools/test_ci_cli_flow.py',
+                'apps/docs/composer.json': 'tools/test_ci_docs_tests.py',
+                'docs/reference/compute-drivers.md': 'tools/test_ci_incus_upgrade_runbook.py',
+                'apps/gateway/tests/.pest/shards.json': 'tools/test_ci_gateway_tests.py',
+                'apps/cli/tests/Feature/CommandSurfaceTest.php': 'tools/test_ci_task_check.py',
+                'apps/gateway/ci-unit-times.json': 'tools/test_ci_policy.py',
+                # test_ci_table.py reads every tracked path and each literal input of the CI table.
+                '.node-version': 'tools/test_ci_table.py', 'new-root/file.txt': 'tools/test_ci_table.py'}
+        for path, reader in read.items():
+            with self.subTest(path=path):
+                self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}, read by {reader}')
+        for path in ('docs/reference/tasks.md', 'apps/pi-server/src/main.ts', 'apps/web/src/main.ts',
+                     'apps/gateway/app/Domain/Tasks/TaskTurn.php', '.agents/skills/orbit-tasks/SKILL.md',
+                     'packages/php-sdk/src/Requests/Tasks/CancelTaskRequest.php'):
+            with self.subTest(path=path):
+                self.assertIsNone(check['ci_policy_input']([path]))
+
+    def test_expensive_checks_follow_their_inputs_not_the_pr_docs_job(self):
         cases = [([], []), (['packages/php-sdk/tests/Unit/Requests/Tasks/TaskRequestsTest.php'], []),
                  (['apps/web/src/main.ts'], []),
                  (['bin/task-check'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['tools/test_ci_units.py'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['.github/ci/checks.toml'], ['check-flows', 'docs-lint', 'ci-policy']),
-                 (['docs/reference/tasks.md'], ['check-flows', 'docs-lint', 'ci-policy']),
-                 (['apps/docs/app/Documentation/DocsImpact.php'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['docs/reference/tasks.md'], ['check-flows', 'docs-lint']),
+                 (['apps/docs/app/Documentation/DocsImpact.php'], ['check-flows', 'docs-lint']),
                  (['swamp/workflows/workflow-operation-instance-create.yaml'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['apps/agent/src/commands/ci_runner.rs'], ['ci-policy']),
-                 (['apps/pi-server/src/main.ts'], ['ci-policy']),
+                 (['apps/pi-server/src/main.ts'], []),
                  (['.node-version'], ['ci-policy']),
                  (['apps/gateway/app/Support/ValidatedData.php'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['swamp/extensions/behaviors/operations/node/ci_host_spec.ts'], ['ci-policy']),
@@ -568,7 +603,7 @@ class CiPolicyTest(unittest.TestCase):
                          'candidate_head': lambda _committed: 'HEAD',
                          'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
                          'timed': lambda name, *_args, **_kwargs: ran.append(name) or Part(name, 'passed'),
-                         'ci_policy': lambda _deadline: ran.append('ci-policy') or Part('ci-policy', 'passed')}
+                         'ci_policy': lambda _deadline, _input: ran.append('ci-policy') or Part('ci-policy', 'passed')}
                 with patch.dict(check['main'].__globals__, stubs), redirect_stdout(io.StringIO()):
                     code = check['main'](['--only', 'ci-policy,docs-lint,check-flows'])
                 self.assertEqual(code, 0)
@@ -588,9 +623,9 @@ class CiPolicyTest(unittest.TestCase):
     def test_it_runs_before_pest_and_the_fixtures(self):
         order = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
-        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['docs/reference/tasks.md']),
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['tools/test_ci_units.py']),
                  'candidate_head': lambda _committed: 'HEAD', 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
-                 'ci_policy': lambda _deadline: order.append('ci-policy') or Part('ci-policy', 'passed'),
+                 'ci_policy': lambda _deadline, _input: order.append('ci-policy') or Part('ci-policy', 'passed'),
                  'fixture_population': lambda _plan, _deadline, _table: order.append('fixture-population') or Part('fixture-population', 'passed'),
                  'pest_plan': lambda _jobs, _paths, _base: order.append('pest') or [],
                  'fixtures': lambda _plan, _deadline, _table, _paths: order.append('fixtures') or Part('fixtures', 'passed'),

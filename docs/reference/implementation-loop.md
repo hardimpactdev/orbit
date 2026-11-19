@@ -793,16 +793,16 @@ Inside a selected Pest job, it reuses the file-level mapping that the repository
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
-| `ci-policy` | Policy inputs changed | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy tests that CI's "CI policy" job runs on every PR |
+| `ci-policy` | A changed path is one that a policy test reads | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, then `python3 -m unittest discover -s tools/ci-runners -p 'test_*.py'`: the CI policy tests that CI's "CI policy" job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
 
 The `docs-impact` part builds the API outputs first, as CI's Docs job does. The gate checks the ignored OpenAPI document and MCP manifest against the sources, so an earlier build's outputs never read as stale.
 
-Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select expensive checks. The `ci-policy` part still runs before Pest and the fixtures when selected. CI runs its full policy suite on every PR.
+Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select `check-flows` and `docs-lint`. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
 
-Policy inputs also include Swamp's fixtures and proof tooling, the agent, runner resources and machine-software recipes. The `CI_POLICY_INPUTS` table in `bin/task-check` names these source inputs and the files whose presence policy tests check. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
+The `ci-policy` part runs when the change touches a file that a policy test reads. The `CI_POLICY_READS` table in `bin/task-check` names each reader and the files and trees it reads. The tests read all of `bin/`, `tools/`, `.github/` and `swamp/`, so a change there always selects the part. `tools/test_ci_table.py` also reads every tracked path and the CI table's literal inputs, so a path outside the table's roots or named by the table selects it too. A docs page that no policy test reads does not. The part's line names the changed path that selected it and its reader. A policy test that starts to read a new file adds it to the table. The part runs before Pest and the fixtures. CI runs its full policy suite on every PR.
 
 Fixture budget validation and placement run on every change, even with `--only` or no time left. They refuse invalid budgets and units above the declared lane outside named capacity gaps. The population check reuses the fixture table already validated for this candidate.
 
