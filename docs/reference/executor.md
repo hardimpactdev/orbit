@@ -278,7 +278,9 @@ One writer thread appends. Each connection thread hands it a record and waits un
 
 The journal keeps only its live records: the nonces that have not expired, every order still open without a result, and the done records of the last 24 hours. The writer compacts the journal to these records every 10 minutes, or after 10,000 new records, while the executor runs. The syncer writes and syncs the compacted file. The writer then adds the records appended meanwhile and renames the file into place. Until that rename every record goes to the old journal, so a crash at any point leaves a complete journal.
 
-At start-up the executor reads the journal and ends every order accepted without an `open` record with `executor.order_expired`: a crash ended its wait for the lock, so it never acted. It keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
+At start-up the executor reads the journal and ends every order accepted without an `open` record with `executor.order_expired`: a crash ended its wait for the lock, so it never acted. It keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result.
+
+Those repeats run in the background, each under its target's lock, and the socket opens once that lock is held. A converge restarts the executor while wakes and sleeps go on, and the observer offers each order once: a new order is accepted at once, and one for a target being repeated waits for that repeat. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
 
 ## The relay command
 
@@ -615,7 +617,7 @@ The pool holds at most twice its size in threads. Past that cap a new stall star
 
 **Limits.** It writes back exactly the values of the limits record and removes the record. A record of another incarnation names cgroups that are gone. It is dropped, and nothing is written.
 
-**Readiness.** The executor sends a request from the Node straight to the container's `eth0` address and web port 8080. It retries a refused, reset, silent or 5xx attempt until an answer below 500, within one absolute bound: the order's `input.web.ready_seconds` (the Gateway signs 30), or 30 s when the order has none. Each attempt gets at most 2 s. A container without its address yet is read from Incus again until the bound.
+**Readiness.** The executor sends a request from the Node straight to the container's `eth0` address and web port 8080. It retries a refused, reset or 5xx attempt until an answer below 500, within one absolute bound: the order's `input.web.ready_seconds` (the Gateway signs 30), or 30 s when the order has none. Each connect gets at most 2 s, so a refused or blackholed connect is tried again; an app that accepted the connection may take until the bound to answer. A container without its address yet is read from Incus again until the bound.
 
 Every connect, write and read gets only the time left, so a reply sent byte by byte cannot pass after the bound. Then the asleep marker goes. An unready app fails `instance.web_unready`, and the marker stays. The bound was 1.5 s until 2026-11-19: a wake during a role converge on Beast (Operation 30076) failed in 1 s although FrankenPHP answered soon after.
 

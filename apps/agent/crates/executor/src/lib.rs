@@ -240,18 +240,38 @@ fn serve() -> Result<(), String> {
     let power = orbit_executor_power::Power::new(threads)
         .map_err(|error| format!("{POOL_PATH}: {error}"))?;
     let journal = Path::new(JOURNAL_PATH);
-    let (executor, recovered) = Executor::start(journal, Families(power), server::now_ms, log)
+    let (executor, pending) = Executor::open(journal, Families(power), server::now_ms, log)
         .map_err(|error| error.to_string())?;
-    for done in &recovered {
-        log(&format!(
-            "recovered {} {} {}: {:?}",
-            done.key.operation, done.key.action, done.key.target, done.outcome
-        ));
-    }
+    let executor = Arc::new(executor);
+    // Open orders repeat in the background, under their targets' locks. A converge restarts this service while wakes and
+    // sleeps go on, and the observer offers each order once: a new order must find the socket at once, not after the repeats.
+    let (held, locked) = std::sync::mpsc::channel();
+    let repeating = Arc::clone(&executor);
+    std::thread::spawn(move || {
+        match repeating.recover(pending, || {
+            let _ = held.send(());
+        }) {
+            Ok(recovered) => {
+                for done in &recovered {
+                    log(&format!(
+                        "recovered {} {} {}: {:?}",
+                        done.key.operation, done.key.action, done.key.target, done.outcome
+                    ));
+                }
+            }
+            Err(error) => {
+                // A journal that cannot record a result ends the process.
+                log(&format!("recovery failed: {error}"));
+                std::process::abort();
+            }
+        }
+    });
+    locked
+        .recv()
+        .map_err(|_| "recovery ended before it held its targets".to_owned())?;
     let listener = server::bind(Path::new(SOCKET_PATH), relay_user.map(|(_, gid)| gid))
         .map_err(|error| format!("bind {SOCKET_PATH}: {error}"))?;
     log(&format!("serving {SOCKET_PATH}"));
-    let executor = Arc::new(executor);
     // Orders also arrive over NATS when the converge wrote the bus's settings (ADR 0271).
     bus::start(Arc::clone(&settings), Arc::clone(&executor), log);
     server::serve(&listener, &settings, &executor, log);

@@ -816,6 +816,36 @@ it('ends a failed wake on its visit, so the next visit admits a fresh wake that 
         ->and($wakes->last()->status)->toBe(OperationStatus::Succeeded);
 });
 
+it('keeps a wake that handed its stopped container to a boot open on the visit and its reload', function (): void {
+    $instance = managedPowerFixture();
+    config(['orbit.executor.visit_wait_seconds' => 0.5]);
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use ($instance): void {
+        executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'failed', 'code' => 'instance.container_stopped',
+            'action' => 'wake', 'target' => (string) $instance->id]);
+    };
+
+    $visit = app(InstanceWake::class)->activate($instance, 'node');
+    $reload = app(InstanceWake::class)->activate($instance, 'node');
+
+    // The boot that the receipt hands to is the wake's own continuation: no visit reports it as failed or ends it.
+    expect([$visit, $reload])->toBe(['The Instance is still waking. Reload the page in a moment.', 'The Instance is still waking. Reload the page in a moment.'])
+        ->and(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->terminal())->toBeFalse();
+});
+
+it('ends a failed wake on its visit without relaying its notices there', function (): void {
+    $instance = managedPowerFixture();
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event): void {
+        executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'failed', 'code' => 'instance.web_unready']);
+    };
+
+    expect(app(InstanceWake::class)->activate($instance, 'node'))->toBe('The wake failed (instance.web_unready). Reload the page to try again.');
+
+    // Notice delivery stays with the queued completion, so a notice or queue error never changes the visitor's answer.
+    $wake = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    expect($wake->status)->toBe(OperationStatus::Failed);
+    Queue::assertNotPushed(BroadcastOperationNotice::class);
+});
+
 it('R1: keeps a durable freeze when its bound recovery times out', function (): void {
     $instance = managedPowerFixture();
     $instance->runtime()->update(['power_state' => 'running']);

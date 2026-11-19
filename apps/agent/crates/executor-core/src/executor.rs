@@ -101,6 +101,17 @@ impl<R> std::fmt::Debug for Executor<R> {
     }
 }
 
+/// The orders that were open in the journal without a result at start-up, for [`Executor::recover`].
+#[derive(Debug)]
+pub struct Pending(Vec<crate::journal::Unfinished>);
+
+impl Pending {
+    /// Whether no order waits for its repeat.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 /// An order that was open in the journal without a result, finished at start-up.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recovered {
@@ -151,6 +162,32 @@ impl<R: Run> Executor<R> {
         clock: fn() -> u64,
         log: fn(&str),
     ) -> Result<(Self, Vec<Recovered>), JournalError> {
+        let (executor, pending) = Self::open_with(path, runner, compaction, clock, log)?;
+        let recovered = executor.recover(pending, || {})?;
+        Ok((executor, recovered))
+    }
+
+    /// [`Executor::start`] without running the open orders: the caller runs them with [`Executor::recover`], so it can
+    /// accept new orders while they run.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError`] when the journal cannot be read, compacted or written.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a lock of the new state is poisoned, which cannot happen before it is shared.
+    pub fn open(path: &Path, runner: R, clock: fn() -> u64, log: fn(&str)) -> Result<(Self, Pending), JournalError> {
+        Self::open_with(path, runner, Compaction::default(), clock, log)
+    }
+
+    fn open_with(
+        path: &Path,
+        runner: R,
+        compaction: Compaction,
+        clock: fn() -> u64,
+        log: fn(&str),
+    ) -> Result<(Self, Pending), JournalError> {
         let mut live = Live::from_records(journal::read(path)?);
         let now_ms = clock();
         let expired = Outcome::Failed {
@@ -203,16 +240,59 @@ impl<R: Run> Executor<R> {
             clock,
         };
 
+        Ok((executor, Pending(unfinished)))
+    }
+
+    /// Finishes the open orders that start-up found, each under its target's lock. `held` runs once every such target's
+    /// lock is held and before any order runs: from then on a new order is accepted at once, and one for a target that is
+    /// being repeated waits for that repeat, as it would wait for any order of its target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`JournalError`] when a done record cannot be written.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a lock is poisoned: a thread panicked while it held the state, which is fatal.
+    pub fn recover(&self, pending: Pending, held: impl FnOnce()) -> Result<Vec<Recovered>, JournalError> {
+        let mut targets: Vec<TargetId> = pending.0.iter().map(|open| open.key.target.clone()).collect();
+        targets.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        targets.dedup();
+        let locks: Vec<(TargetId, Arc<Mutex<()>>)> = {
+            let mut map = self.targets.lock().expect("target lock map poisoned");
+            targets
+                .into_iter()
+                .map(|target| {
+                    let lock = Arc::clone(map.entry(target.clone()).or_default());
+                    (target, lock)
+                })
+                .collect()
+        };
+        let mut guards: HashMap<TargetId, std::sync::MutexGuard<'_, ()>> = locks
+            .iter()
+            .map(|(target, lock)| (target.clone(), lock.lock().expect("target lock poisoned")))
+            .collect();
+        held();
+        let mut left: HashMap<TargetId, usize> = HashMap::new();
+        for open in &pending.0 {
+            *left.entry(open.key.target.clone()).or_default() += 1;
+        }
         let mut recovered = Vec::new();
-        for open in unfinished {
+        for open in pending.0 {
             let key = open.key.clone();
-            let order =
-                VerifiedOrder::recovered(open.nonce, &open.key, open.power_check, open.input);
-            let outcome = executor.runner.run(&order);
-            executor.finish(open.nonce, &key, &outcome, clock())?;
+            let order = VerifiedOrder::recovered(open.nonce, &open.key, open.power_check, open.input);
+            let outcome = self.runner.run(&order);
+            self.finish(open.nonce, &key, &outcome, (self.clock)())?;
+            // The target's lock goes with its last repeat, so its new orders run without waiting for other targets.
+            if left.get_mut(&key.target).is_some_and(|count| {
+                *count -= 1;
+                *count == 0
+            }) {
+                guards.remove(&key.target);
+            }
             recovered.push(Recovered { key, outcome });
         }
-        Ok((executor, recovered))
+        Ok(recovered)
     }
 
     /// Checks the nonce and the Operation of a verified order, records that it was accepted, then runs it once
@@ -669,6 +749,55 @@ mod tests {
         assert!(records(&path).iter().any(|record| matches!(record,
             Record::Done { key, outcome: Outcome::Failed { code }, .. }
                 if key.operation.as_str() == "op-2" && code == ORDER_EXPIRED)));
+    }
+
+    #[test]
+    fn a_new_order_is_accepted_while_start_up_repeats_an_open_order_and_waits_for_that_repeat() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("j");
+        let open = order(N1, "op-open");
+        let record = Record::Open {
+            nonce: open.nonce(),
+            key: DoneKey { operation: open.operation().clone(), action: open.action(), target: open.target().clone() },
+            expires_ms: open.expires_ms(),
+            power_check: crate::order::PowerCheck::Default,
+            input: serde_json::Value::Null,
+        };
+        std::fs::write(&path, format!("{}\n", serde_json::to_string(&record).expect("json"))).expect("journal");
+        let runs = Arc::new(AtomicUsize::new(0));
+        let (started, on_start) = std::sync::mpsc::channel();
+        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let runner = Gated { runs: Arc::clone(&runs), started: Mutex::new(started), gate: Arc::clone(&gate) };
+        let (executor, pending) = Executor::open(&path, runner, || NOW, |_| {}).expect("open");
+        assert!(!pending.is_empty());
+        let (held, locked) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let repeat = scope.spawn(|| executor.recover(pending, move || held.send(()).expect("held")));
+            locked.recv().expect("the repeat holds its target");
+            on_start.recv().expect("the open order repeats");
+            // The executor serves now: a new order for the same target is accepted at once and waits for the repeat.
+            let second = scope.spawn(|| executor.handle(&order(N2, "op-2"), NOW));
+            let accepted = |records: &[Record]| {
+                records.iter().any(|record| matches!(record, Record::Seen { key, .. } if key.operation.as_str() == "op-2"))
+            };
+            let mut tries = 0;
+            while !accepted(&records(&path)) {
+                tries += 1;
+                assert!(tries < 500, "the new order has no accept record while the repeat runs");
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            assert_eq!(runs.load(Ordering::SeqCst), 1, "the new order waits for its target's repeat");
+            let (open, opened) = &*gate;
+            *open.lock().expect("gate") = true;
+            opened.notify_all();
+            let recovered = repeat.join().expect("repeat").expect("recovers");
+            assert_eq!(recovered.len(), 1);
+            assert_eq!(recovered[0].outcome, Outcome::Done);
+            let reply = second.join().expect("second").expect("runs");
+            assert!(!reply.repeat);
+            assert_eq!(reply.outcome, Outcome::Done);
+        });
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
     }
 
     #[test]

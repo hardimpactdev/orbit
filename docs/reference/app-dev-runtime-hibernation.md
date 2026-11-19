@@ -95,7 +95,7 @@ A container Instance's site calls the same endpoint behind its asleep marker. Th
 
 | Outcome | Answer |
 | --- | --- |
-| The wake reached the app | `200`; Caddy continues the original request |
+| The wake reached the app | `307` to the same path and query; the browser repeats the request, and the app answers it |
 | The wake failed | `503` `The wake failed (<error_code>). Reload the page to try again.` |
 | The deadline passed during the wake | `503` `The Instance is still waking. Reload the page in a moment.` |
 | Other lifecycle work held the Instance until the deadline | `503` `The Instance is busy with other work. Try again shortly.` |

@@ -1410,29 +1410,63 @@ fn a_stalled_reader_ends_the_wake_partial_and_holds_back_the_next_sleep() {
     });
 }
 
+/// An app that listens only `start` after the call, then reads each full request and answers 200 after `answer`.
+fn late_web(start: Duration, answer: Duration) -> u16 {
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+    let port = probe.local_addr().expect("address").port();
+    let listener = if start.is_zero() {
+        Some(probe)
+    } else {
+        drop(probe);
+        None
+    };
+    std::thread::spawn(move || {
+        let listener = listener.unwrap_or_else(|| {
+            std::thread::sleep(start);
+            std::net::TcpListener::bind(("127.0.0.1", port)).expect("late listener")
+        });
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut request = [0; 256];
+            let mut received = 0;
+            while received < request.len() && !request[..received].ends_with(b"\r\n\r\n") {
+                match std::io::Read::read(&mut stream, &mut request[received..]) {
+                    Ok(0) | Err(_) => break,
+                    Ok(bytes) => received += bytes,
+                }
+            }
+            std::thread::sleep(answer);
+            let _ = write!(stream, "HTTP/1.1 200 X\r\nContent-Length: 0\r\n\r\n");
+        }
+    });
+    port
+}
+
 #[test]
 fn a_slow_web_start_wakes_once_the_app_answers() {
     let (_dir, mut power, api) = asleep(200);
     // FrankenPHP comes up about 2 s after the thaw: the port refuses connections until then.
-    let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
-    let port = probe.local_addr().expect("address").port();
-    drop(probe);
-    power.web_port = port;
-    let server = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(2));
-        let listener = std::net::TcpListener::bind(("127.0.0.1", port)).expect("late listener");
-        let (mut stream, _) = listener.accept().expect("accept");
-        let mut request = [0; 256];
-        let _ = std::io::Read::read(&mut stream, &mut request);
-        let _ = write!(stream, "HTTP/1.1 200 X\r\nContent-Length: 0\r\n\r\n");
-    });
+    power.web_port = late_web(Duration::from_secs(2), Duration::ZERO);
     let started = Instant::now();
     power
         .wake_checked(&api, "2", WebProbe::Required, Some(Duration::from_secs(10)))
         .expect("a slow start wakes");
     assert!(started.elapsed() >= Duration::from_secs(2));
     assert!(!marker(&power).exists());
-    server.join().expect("server");
+}
+
+#[test]
+fn an_app_that_answers_slowly_wakes_within_the_bound() {
+    let (_dir, mut power, api) = asleep(200);
+    // A healthy app that takes about 3 s per answer: longer than one connect attempt's bound.
+    power.web_port = late_web(Duration::ZERO, Duration::from_secs(3));
+    let started = Instant::now();
+    power
+        .wake_checked(&api, "2", WebProbe::Required, Some(Duration::from_secs(10)))
+        .expect("a slow answer wakes");
+    let waited = started.elapsed();
+    assert!(waited >= Duration::from_secs(3) && waited < Duration::from_secs(5), "{waited:?}");
+    assert!(!marker(&power).exists());
 }
 
 #[test]

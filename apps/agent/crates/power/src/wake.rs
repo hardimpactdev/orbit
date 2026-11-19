@@ -21,8 +21,8 @@ const ITEM_PAGES: u64 = 1024;
 /// How long a wake waits for the app when its order names no `web.ready_seconds`. A thaw during a role converge (bridge, ACL and
 /// nftables rewrites, a `FrankenPHP` restart) can take seconds; the Gateway's held visit waits as long.
 pub(crate) const READY_BOUND: Duration = Duration::from_secs(30);
-/// One readiness attempt's own bound, so a connect into a dropped route is tried again before the deadline.
-const ATTEMPT_BOUND: Duration = Duration::from_secs(2);
+/// One connect attempt's own bound, so a connect into a dropped route is tried again before the deadline.
+const CONNECT_BOUND: Duration = Duration::from_secs(2);
 const THAW_BOUND: Duration = Duration::from_secs(5);
 
 /// Measured wake result. It contains counts and timings, never addresses or raw process data.
@@ -249,7 +249,7 @@ fn items(targets: Vec<(Arc<Target>, &[Range])>, reader: Reader) -> Vec<Item> {
 pub(crate) fn ready(address: IpAddr, port: u16, bound: Duration) -> bool {
     ready_until(address, port, Instant::now() + bound)
 }
-/// [`ready`] against one absolute deadline. A refused, reset, silent or 5xx attempt is tried again until the deadline.
+/// [`ready`] against one absolute deadline. A refused, reset or 5xx attempt is tried again until the deadline.
 fn ready_until(address: IpAddr, port: u16, deadline: Instant) -> bool {
     let socket = SocketAddr::new(address, port);
     loop {
@@ -257,7 +257,7 @@ fn ready_until(address: IpAddr, port: u16, deadline: Instant) -> bool {
         if left.is_zero() {
             return false;
         }
-        if let Some(status) = ask(socket, deadline.min(Instant::now() + ATTEMPT_BOUND)) {
+        if let Some(status) = ask(socket, deadline) {
             if status < 500 && Instant::now() < deadline {
                 return true;
             }
@@ -270,8 +270,11 @@ fn ready_until(address: IpAddr, port: u16, deadline: Instant) -> bool {
 fn left(deadline: Instant) -> Option<Duration> {
     Some(deadline.saturating_duration_since(Instant::now())).filter(|left| !left.is_zero())
 }
+/// One request. Only the connect gets [`CONNECT_BOUND`], so a refused or blackholed connect is tried again; an app that accepted
+/// the connection may take until the deadline to answer.
 fn ask(socket: SocketAddr, deadline: Instant) -> Option<u16> {
-    let mut stream = TcpStream::connect_timeout(&socket, left(deadline)?).ok()?;
+    let mut stream =
+        TcpStream::connect_timeout(&socket, left(deadline)?.min(CONNECT_BOUND)).ok()?;
     stream.set_nodelay(true).ok()?;
     stream.set_write_timeout(Some(left(deadline)?)).ok()?;
     write!(
