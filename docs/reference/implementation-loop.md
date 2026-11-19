@@ -275,7 +275,7 @@ A hosted gap file keeps every unit within the 150-second lane; only a `self_host
 
 Each fixture file declares as inputs only the task files its cases run, so a change to one shared task selects only the files that run it. The migration fixture is split by phase into several files to meet this. Each case near the 180-second unit ceiling is split too. A case above the 150-second lane on the pool that cannot split yet makes its file a named capacity gap.
 
-The self-hosted pool has the tools these files need. The [CI runner role](/reference/node-provisioning#ci-runner-role) owns the host boundary, and `tools/ci-runners/setup.sh container NAME` owns what a runner container holds:
+The self-hosted pool has the tools these files need. The [CI runner role](/reference/node-provisioning#ci-runner-role) owns the host boundary, including the runners' ZFS or btrfs `orbit-ci` pool, and `tools/ci-runners/setup.sh container NAME` owns what a runner container holds. `setup.sh move NAME` moves an idle runner from an older pool onto it. A runner container holds:
 
 | Need | Where it comes from on a CI runner |
 | --- | --- |

@@ -2,7 +2,11 @@
 export const project = "orbit-ci";
 export const network = "orbitci0";
 export const acl = "orbit-ci-egress";
-export const pool = "default";
+// The role's own pool, on ZFS or btrfs beside the Node's Instance pool and marked as the role's (ansible/files/ci-host-pool.py and
+// the agent's ci-runner.host keep the same rule). Never `dir`, never the host's `default` pool.
+export const pool = "orbit-ci";
+export const sourcePool = "orbit-instances";
+export const poolOwner = "user.orbit.ci-runner";
 export const projectConfig = {
     "features.images": "true",
     "features.profiles": "true",
