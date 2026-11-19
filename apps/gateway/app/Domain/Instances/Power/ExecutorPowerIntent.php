@@ -92,7 +92,7 @@ final class ExecutorPowerIntent
         };
 
         // A wake that probes the app waits the intent's `web.ready_seconds` for it; an order without it gets the executor's 30 s.
-        $ready = $operation->input['web']['ready_seconds'] ?? null;
+        $ready = data_get($operation->input, 'web.ready_seconds');
         $input = $action === 'wake' && $powerCheck === null && is_int($ready) ? ['web' => ['ready_seconds' => $ready]] : [];
 
         return ExecutorOrderSigner::fromConfig()->sign($operation, $action, (string) $operation->target_id, $powerCheck, $input);
