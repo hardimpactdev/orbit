@@ -1048,7 +1048,7 @@ Each prepared Node runs one proxy for all its containers.
 - **Configuration.** `/etc/squid/orbit-instance-egress.conf`. Squid's AppArmor profile lets it read only `/etc/squid`.
 - **Checked first.** The converge parses a new configuration beside the live one, and only a configuration that parses replaces it.
 - **No stock Squid.** The converge masks the package's own `squid.service` before the package installs. So the stock configuration, which listens on every address, never runs.
-- **Installed once.** The converge reads the package's status with `dpkg-query` and runs apt only when Squid is not installed. The host's updates upgrade it ([one read](/reference/node-provisioning#check-many-files-in-one-read)).
+- **Installed once.** Each converge reads the package's status with `dpkg-query`. Apt runs only for a missing Squid. The host's updates upgrade it ([one read](/reference/node-provisioning#check-many-files-in-one-read)).
 What it serves:
 
 - **Scope.** A forward proxy with `CONNECT`, open to every public host and port.
