@@ -24,7 +24,7 @@ cases = [
   "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record",
 ]
 file = "swamp/tests/instance_fleet_shrink_test.py"
-cost = 19
+cost = 22
 # The file it reads: the shrink of the nested root disks, run as shipped.
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -49,3 +49,6 @@ inputs = [
 "test_a_path_that_starts_with_two_slashes_is_absolute_too" = 1
 "test_a_path_that_cannot_be_linked_is_skipped_and_the_others_are_linked" = 1
 "test_a_leftover_temporary_link_goes_and_its_path_is_linked" = 1
+"test_a_base_retaken_after_a_package_changed_is_not_recorded_as_holding_the_shrink" = 1
+"test_a_record_of_a_stopped_base_without_the_base_key_is_current" = 1
+"test_a_package_that_changes_during_the_run_writes_no_record" = 1
