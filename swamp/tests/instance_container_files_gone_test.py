@@ -21,10 +21,12 @@ PROJECT = "orbit-instances"
 
 class Incus:
     """Answers the Incus calls of the passes from a set of containers. `delete_at` deletes a container at its first per-container call,
-    after the pass listed it, as a destroy admitted beside the converge does. `broken` containers exist but refuse every write."""
+    after the pass listed it, as a destroy admitted beside the converge does; `stop_at` stops it there, as the destroy's stop or an idle
+    sleep does: it still exists and refuses `incus exec`. `broken` containers exist but refuse every write."""
 
-    def __init__(self, names, delete_at=(), broken=()):
+    def __init__(self, names, delete_at=(), broken=(), stop_at=()):
         self.names, self.delete_at, self.broken, self.known = set(names), set(delete_at), set(broken), set(names)
+        self.stop_at, self.stopped = set(stop_at), set()
 
     def missing(self, name):
         return subprocess.CompletedProcess([], 1, "", f'Error: Failed to fetch instance "{name}" in project "{PROJECT}": Instance not found\n')
@@ -41,14 +43,19 @@ class Incus:
                 return self.missing(name)
             if "/files?" in args[1]:
                 return subprocess.CompletedProcess(argv, 1, "", "Error: file does not exist")
-            return subprocess.CompletedProcess(argv, 0, "{}", "")
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"status": "Stopped" if name in self.stopped else "Running"}), "")
         target = next(arg for arg in args[1:] if arg.split("/")[0] in self.known)
         name = target.split("/")[0]
         if name in self.delete_at:
             self.delete_at.discard(name)
             self.names.discard(name)
+        if name in self.stop_at:
+            self.stop_at.discard(name)
+            self.stopped.add(name)
         if name not in self.names:
             return self.missing(name)
+        if name in self.stopped and args[0] == "exec":
+            return subprocess.CompletedProcess(argv, 1, "", "Error: Instance is not running\n")
         if name in self.broken and args[0] in ("file", "exec") and (args[1] in ("push", "create") or args[0] == "exec"):
             return subprocess.CompletedProcess(argv, 1, "", "Error: Failed to write: input/output error")
         if args[0] == "file" and args[1] == "pull":
@@ -129,6 +136,42 @@ class InstanceContainerFilesGoneTest(unittest.TestCase):
         self.assertEqual(code, 0, summary)
         self.assertEqual((summary["gone"], summary["deferred"]), ([{"project": PROJECT, "name": "a"}], []))
         self.assertFalse(state.exists())
+
+    def test_the_shared_files_pass_gives_a_container_stopped_after_the_listing_the_stopped_work(self):
+        code, summary = self.shared(Incus(["a", "b", "c"], stop_at=["b"]))
+        self.assertEqual(code, 0, summary)
+        self.assertEqual((summary["failed"], summary["gone"]), ([], []))
+        self.assertIn(f"{PROJECT}/b/etc/profile.d/orbit.sh", summary["written"])
+        self.assertIn(f"{PROJECT}/b", summary["cache_dropped"])
+        self.assertNotIn(f"{PROJECT}/b", summary["ca_bundle"])
+        self.assertIn({"container": f"{PROJECT}/b", "reason": "not running"}, summary["browser_trust"])
+
+    def test_the_shared_files_pass_still_fails_a_running_container_whose_exec_fails(self):
+        code, summary = self.shared(Incus(["a", "b"], broken=["b"]))
+        self.assertEqual((code, [line.split(":")[0] for line in summary["failed"]]), (1, [f"{PROJECT}/b"]))
+
+    def test_the_t3_pass_gives_a_container_stopped_after_the_listing_the_stopped_work(self):
+        code, summary = self.t3(Incus(["a", "b", "c"], stop_at=["b"]))
+        self.assertEqual(code, 0, summary)
+        self.assertEqual((summary["failed"], summary["gone"]), ([], []))
+        self.assertIn(f"{PROJECT}/b/etc/systemd/system/t3.service.d/orbit.conf", summary["written"])
+        self.assertNotIn({"project": PROJECT, "name": "b"}, summary["reload"])
+        self.assertIn({"project": PROJECT, "name": "a"}, summary["reload"])
+
+    def test_the_t3_restart_keeps_a_stopped_container_on_the_list_without_failing_or_deferring(self):
+        state = self.root / "t3-restart.json"
+        targets = [{"project": PROJECT, "name": name} for name in ("a", "b")]
+        programs = [{"project": PROJECT, "container": "b", "program": "/opt/t3/bin/t3"}]
+        code, summary = self.run_pass(Incus(["a", "b"], stop_at=["a", "b"]), lambda: FILES.t3_restart(targets, programs, str(state)))
+        self.assertEqual(code, 0, summary)
+        self.assertEqual((summary["stopped"], summary["deferred"], summary["failed"]), (targets, [], []))
+        self.assertEqual(json.loads(state.read_text()), targets)
+
+    def test_a_confirmed_state_is_the_status_incus_reports(self):
+        with patch.object(FILES.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, '{"status": "Stopped"}', "")):
+            self.assertEqual(FILES.confirmed_state(PROJECT, "a"), "Stopped")
+        with patch.object(FILES.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "not json", "")):
+            self.assertIsNone(FILES.confirmed_state(PROJECT, "a"))
 
     def test_only_incus_own_not_found_answer_counts_as_gone(self):
         answers = {"Error: Instance not found": True,

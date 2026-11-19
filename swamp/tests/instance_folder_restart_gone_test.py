@@ -22,6 +22,7 @@ FAKE = """#!/usr/bin/env python3
 import os, sys
 args = sys.argv[1:]
 gone, broken = os.environ["FAKE_GONE"].split(","), os.environ["FAKE_BROKEN"].split(",")
+stopped = os.environ.get("FAKE_STOPPED", "").split(",")
 if args[0] == "exec":
     project, name = args[2], args[3]
     if name in gone:
@@ -30,13 +31,16 @@ if args[0] == "exec":
     if name in broken:
         print("Error: Failed to retrieve PID of executing child process", file=sys.stderr)
         sys.exit(1)
+    if name in stopped:
+        print("Error: Instance is not running", file=sys.stderr)
+        sys.exit(1)
     open(os.environ["FAKE_LOG"], "a").write(name + "\\n")
     sys.exit(0)
 name, project = args[2].split("/")[3].split("?project=")
 if name in gone:
     print(f'Error: Failed to fetch instance "{name}" in project "{project}": Instance not found', file=sys.stderr)
     sys.exit(1)
-print("{}")
+print('{"status": "%s"}' % ("Stopped" if name in stopped else "Running"))
 """
 
 
@@ -50,7 +54,7 @@ def restart_tasks():
 
 @unittest.skipUnless(shutil.which("ansible-playbook"), "pinned Ansible required")
 class FolderRestartGoneTest(unittest.TestCase):
-    def run_restart(self, gone="", broken=""):
+    def run_restart(self, gone="", broken="", stopped=""):
         with tempfile.TemporaryDirectory(prefix="orbit-folder-restart-") as temp:
             root = Path(temp)
             (root / "bin").mkdir()
@@ -67,7 +71,7 @@ class FolderRestartGoneTest(unittest.TestCase):
             log = root / "restarted"
             log.write_text("")
             done = subprocess.run(["ansible-playbook", "-i", "localhost,", str(root / "play.json")],
-                                  env=os.environ | {"PATH": f"{root / 'bin'}:{os.environ['PATH']}", "FAKE_GONE": gone, "FAKE_BROKEN": broken,
+                                  env=os.environ | {"PATH": f"{root / 'bin'}:{os.environ['PATH']}", "FAKE_GONE": gone, "FAKE_BROKEN": broken, "FAKE_STOPPED": stopped,
                                                     "FAKE_LOG": str(log), "ANSIBLE_STDOUT_CALLBACK": "default",
                                                     "ANSIBLE_COLLECTIONS_PATH": str(root / "empty")},
                                   capture_output=True, text=True, check=False, timeout=60)
@@ -83,6 +87,18 @@ class FolderRestartGoneTest(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertEqual(restarted, ["instance-4"])
         self.assertIn("instance.host_unavailable: orbit-instances/instance-6: Error: Failed to retrieve PID", done.stdout)
+        self.assertNotIn("orbit-instances/instance-3: Error", done.stdout)
+
+    def test_a_container_stopped_after_the_listing_needs_no_restart_and_the_others_restart(self):
+        done, restarted = self.run_restart(stopped="instance-4", gone="instance-6")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(restarted, ["instance-3"])
+
+    def test_a_failed_restart_of_a_running_container_fails_beside_a_stopped_one(self):
+        done, restarted = self.run_restart(stopped="instance-3", broken="instance-4")
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(restarted, ["instance-6"])
+        self.assertIn("instance.host_unavailable: orbit-instances/instance-4", done.stdout)
         self.assertNotIn("orbit-instances/instance-3: Error", done.stdout)
 
 

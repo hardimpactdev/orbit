@@ -24,13 +24,13 @@ name, project = args[2].split("/")[3].split("?project=")
 if name in os.environ["FAKE_GONE"].split(","):
     print(f'Error: Failed to fetch instance "{name}" in project "{project}": Instance not found', file=sys.stderr)
     sys.exit(1)
-print("{}")
+print('{"status": "%s"}' % os.environ.get("FAKE_STATUS", "Running"))
 """
 
 
 @unittest.skipUnless(shutil.which("ansible-playbook"), "pinned Ansible required")
 class NetworkMoveGoneTest(unittest.TestCase):
-    def run_move(self, gone, error):
+    def run_move(self, gone, error, status="Running"):
         with tempfile.TemporaryDirectory(prefix="orbit-network-move-") as temp:
             root = Path(temp)
             (root / "bin").mkdir()
@@ -44,7 +44,7 @@ class NetworkMoveGoneTest(unittest.TestCase):
                      "tasks": [{"ansible.builtin.include_tasks": str(TASKS)}]}]
             (root / "play.json").write_text(json.dumps(play))
             return subprocess.run(["ansible-playbook", "-i", "localhost,", str(root / "play.json")],
-                                  env=os.environ | {"PATH": f"{root / 'bin'}:{os.environ['PATH']}", "FAKE_GONE": gone, "FAKE_DEVICE_ERROR": error,
+                                  env=os.environ | {"PATH": f"{root / 'bin'}:{os.environ['PATH']}", "FAKE_GONE": gone, "FAKE_DEVICE_ERROR": error, "FAKE_STATUS": status,
                                                     "ANSIBLE_STDOUT_CALLBACK": "default", "ANSIBLE_COLLECTIONS_PATH": str(root / "empty")},
                                   capture_output=True, text=True, check=False, timeout=60)
 
@@ -57,6 +57,12 @@ class NetworkMoveGoneTest(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn("instance.host_unavailable: orbit-instances/instance-7", done.stdout)
         self.assertIn("input/output error", done.stdout)
+
+    def test_a_failed_update_of_a_stopped_container_still_fails(self):
+        """A device update works on a stopped container, so its failure is a real one: the NIC move takes no stopped exception."""
+        done = self.run_move("", "Failed to update device: input/output error", status="Stopped")
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("instance.host_unavailable: orbit-instances/instance-7", done.stdout)
 
 
 if __name__ == "__main__":

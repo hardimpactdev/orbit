@@ -566,9 +566,15 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
 
-A removal runs beside the converge, so a container that the converge listed can be deleted before its turn. When a call on a container fails, the converge asks Incus again. If Incus answers `Instance not found`, the converge lists the container under `gone` and skips it. A container that still exists keeps its failure. The T3 drop-ins, the T3 restarts, the restarts of the runtime folder's Processes and the NIC move of the Instance bridge follow the same rule.
+A removal runs beside the converge, and a removal or an idle sleep stops a container first. So a container that the converge listed as running can be stopped or deleted before its turn. When a call on a container fails, the converge asks Incus again.
 
-A gone container needs no restart, so the folder's restart mark clears; a failed restart of a container that still exists keeps the mark for the next converge. A deleted container also leaves the T3 restart list.
+When Incus answers `Instance not found`, the container is gone. The converge lists it under `gone` and skips it, and it leaves the T3 restart list.
+
+When Incus now reports `Stopped` or `Frozen`, the container gets the work of that state, as if the listing had shown it so. Its shared files and T3 drop-ins are written through the file API. A stopped container loses its linker cache. Nothing runs inside it. A stopped T3 needs no restart now and stays on the restart list. The runtime folder's Processes need no restart either.
+
+A container that still runs keeps its failure. A failed NIC move always fails, because a device update works on a stopped container too.
+
+A container that needs no restart lets the folder's restart mark clear. A failed restart of a running container keeps the mark for the next converge.
 
 #### T3's unit drop-ins
 
