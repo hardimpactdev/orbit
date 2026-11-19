@@ -132,7 +132,7 @@ Leave out the slice Guardrails when the slice has none.
 8. Accepted limits say what the reviewer must not block on, with the reason.
 9. Say what the implementer does with another bug found on the way: report it and commit no fix. If it blocks the proof, ask.
 10. Leave out a section that has nothing to say.
-11. Add no fact, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: wait only for the Instance's Node, or also bound the wait?>`. Never write it as a settled fact, outcome or guardrail.
+11. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now.
 
 Name implementation paths only where the contract fixes them.
 
