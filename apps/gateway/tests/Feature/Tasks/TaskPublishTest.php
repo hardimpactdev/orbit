@@ -327,6 +327,21 @@ it('states the base of a copy publish in its result and publishes, behind or not
     'behind a workflow change of the default branch, merged at publish' => [1, [], str_repeat('c', 40)],
 ]);
 
+it('records when GitHub opened the published pull request, and never moves a time already recorded', function (?string $recorded, string $expected): void {
+    [$group, $operation, $run] = runningCopyPublish();
+    $group->update(['pr_opened_at' => $recorded]);
+
+    app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['pull_receipt' => json_encode(['pull_request_number' => 7,
+            'pull_request_url' => 'https://github.com/example/trial/pull/7', 'pull_request_created_at' => '2026-11-19T10:00:00Z'])]]);
+
+    expect($group->refresh()->pr_opened_at?->toIso8601String())->toBe($expected)
+        ->and($operation->refresh()->result)->not->toHaveKey('pull_request_created_at');
+})->with([
+    'none recorded' => [null, '2026-11-19T10:00:00+00:00'],
+    'one recorded' => ['2026-11-18T09:00:00Z', '2026-11-18T09:00:00+00:00'],
+]);
+
 it('records no base for a run that started on the workflow before the base step', function (): void {
     [$group, $operation, $run] = runningCopyPublish();
 

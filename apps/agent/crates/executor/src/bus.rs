@@ -90,9 +90,37 @@ async fn consume<R: Run + 'static>(
         .connect(config.url.as_str())
         .await?;
     let context = jetstream::new(client.clone());
-    // The report comes first: the Gateway starts a kind on the state machine only for a Node that reported, and makes the
-    // Node's consumer with its first order. Until then the consumer is missing, and the bus waits for it quietly.
+    // The report comes first, and it keeps coming while the bus waits: the Gateway starts a kind on the state machine only
+    // for a Node with a fresh report, and makes the Node's consumer with its first order. Until then the consumer is
+    // missing, and the bus waits for it quietly.
     report_actions(&context, settings, &node).await?;
+    let reporter = tokio::spawn({
+        let (context, settings, node) = (context.clone(), Arc::clone(settings), node.clone());
+        async move {
+            let mut every = tokio::time::interval(REPORT_EVERY);
+            every.tick().await;
+            loop {
+                every.tick().await;
+                if let Err(error) = report_actions(&context, &settings, &node).await {
+                    log(&format!("capability report failed: {error}"));
+                }
+            }
+        }
+    });
+    let result = serve(&context, client, &node, settings, executor, log).await;
+    reporter.abort();
+    result
+}
+
+/// Waits for the Node's consumer, then pulls its orders.
+async fn serve<R: Run + 'static>(
+    context: &jetstream::Context,
+    client: async_nats::Client,
+    node: &str,
+    settings: &Arc<Settings>,
+    executor: &Arc<Executor<R>>,
+    log: Log,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut waited = false;
     let consumer: jetstream::consumer::PullConsumer = loop {
         match context.get_consumer_from_stream(format!("node-{node}"), "ORDERS").await {
@@ -109,23 +137,8 @@ async fn consume<R: Run + 'static>(
     };
     let width = slots();
     log(&format!("nats bus joined as node-{node} with {width} slots"));
-    let reporter = tokio::spawn({
-        let (context, settings, node) = (context.clone(), Arc::clone(settings), node.clone());
-        async move {
-            let mut every = tokio::time::interval(REPORT_EVERY);
-            every.tick().await;
-            loop {
-                every.tick().await;
-                if let Err(error) = report_actions(&context, &settings, &node).await {
-                    log(&format!("capability report failed: {error}"));
-                }
-            }
-        }
-    });
-    let job = Job { client, context, node };
-    let result = pull(&consumer, &job, width, settings, executor, log).await;
-    reporter.abort();
-    result
+    let job = Job { client, context: context.clone(), node: node.to_owned() };
+    pull(&consumer, &job, width, settings, executor, log).await
 }
 
 /// Pulls orders while a slot is free: an order is taken only when it can start, so a busy Node never lets a pulled order

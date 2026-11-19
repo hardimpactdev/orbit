@@ -34,7 +34,7 @@ final class TaskGroupData extends Data
         'merge_reason', 'merged_sha', 'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'capacity_wait_reason',
         'implementer_agent_provider', 'implementer_agent_model', 'implementer_agent_effort', 'reviewer_agent_provider', 'reviewer_agent_model',
         'reviewer_agent_effort', 'pr_mode', 'issue_number', 'tokens', 'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'questions', 'escalations',
-        'started_at', 'settled_at', 'ended_at', 'deployed_at', 'created_at', 'updated_at',
+        'started_at', 'settled_at', 'ended_at', 'deployed_at', 'created_at', 'updated_at', 'pr_opened_at',
     ];
 
     /**
@@ -92,6 +92,8 @@ final class TaskGroupData extends Data
         public ?int $issue = null,
         /** Show only: a list row leaves it out, so its reads never run for a list (docs/reference/tasks.md#publication-state). */
         public Lazy|TaskPublicationData|null $publication = null,
+        /** When GitHub opened the group's pull request; null when Orbit has not read it (docs/reference/tasks.md#task-insights). */
+        public ?string $prOpenedAt = null,
         /** When a production deploy first carried the merge commit; null until then (docs/reference/tasks.md#task-insights). */
         public ?string $deployedAt = null,
     ) {}
@@ -167,6 +169,7 @@ final class TaskGroupData extends Data
             prMode: $mode?->mode,
             prModeSource: $mode?->source,
             issue: $group->issue_number,
+            prOpenedAt: $group->pr_opened_at?->toIso8601String(),
             deployedAt: $group->deployed_at?->toIso8601String(),
             publication: Lazy::create(static fn (): ?TaskPublicationData => TaskPublicationData::fromModel($group))->defaultIncluded(),
 
