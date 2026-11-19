@@ -2,27 +2,34 @@
 - name: Resolve the admitted software scope for the end check
   ansible.builtin.import_tasks: node-converge-software-plan.yml
 # One read of the installed versions, by dpkg instead of package_facts, which loads the whole apt cache for the same answer,
-# and of the selected JavaScript, browser and Deno versions.
+# and of the selected JavaScript, browser and Deno versions. A package is named as apt names it: bare for the native
+# architecture and `all`, `<name>:<arch>` for a foreign one. Every state but `not-installed` and `config-files` has an
+# installed version, as apt's current version does.
 - name: Read the selected package state and tool versions after all mutations
   ansible.builtin.import_tasks: javascript-version.yml
   vars:
     javascript_read: "{{ 'vp' in tool_by_name }}"
     javascript_read_commands: >-
-      {{ {'dpkg': ['dpkg-query', '--show', '--showformat=${db:Status-Status} ${Package} ${Version}\n']}
+      {{ {'dpkg': ['dpkg-query', '--show', '--showformat=${db:Status-Status} ${Architecture} ${Package} ${Version}\n'],
+      'architecture': ['dpkg', '--print-architecture']}
       | combine({'browser': ['/usr/local/bin/chrome-headless-shell', '--version']} if 'chrome-headless-shell' in tool_by_name else {})
       | combine({'deno': ['/usr/local/bin/deno', '--version']} if 'deno' in tool_by_name else {}) }}
 - name: Require the package read
   ansible.builtin.assert:
-    that: check_read.commands.dpkg.rc == 0
-    fail_msg: "dpkg-query exited {{ check_read.commands.dpkg.rc }}."
+    that: [check_read.commands.dpkg.rc == 0, check_read.commands.architecture.rc == 0]
+    fail_msg: >-
+      dpkg-query exited {{ check_read.commands.dpkg.rc }} and dpkg --print-architecture {{ check_read.commands.architecture.rc }}:
+      {{ check_read.commands.dpkg.stderr }}{{ check_read.commands.architecture.stderr }}
     quiet: true
 - name: Keep the installed package versions
   ansible.builtin.set_fact:
     software_versions: >-
       {%- set out = {} -%}
-      {%- for line in check_read.commands.dpkg.stdout.splitlines() | select('match', '^installed ') -%}
+      {%- set native = check_read.commands.architecture.stdout | trim -%}
+      {%- for line in check_read.commands.dpkg.stdout.splitlines() | reject('match', '^(not-installed|config-files) ') -%}
       {%- set field = line.split(' ') -%}
-      {%- set _ = out.update({field[1]: out.get(field[1], []) + [field[2]]}) -%}
+      {%- set name = field[2] if field[1] in [native, 'all'] else field[2] ~ ':' ~ field[1] -%}
+      {%- set _ = out.update({name: out.get(name, []) + [field[3]]}) -%}
       {%- endfor -%}
       {{ out }}
 - name: Require every selected package pin
@@ -34,10 +41,22 @@
 - name: Require the selected JavaScript pins
   when: "'vp' in tool_by_name"
   ansible.builtin.assert: { that: js_current, quiet: true }
+- name: Require the selected browser version read
+  when: "'chrome-headless-shell' in tool_by_name"
+  ansible.builtin.assert:
+    that: check_read.commands.browser.rc == 0
+    fail_msg: "chrome-headless-shell --version exited {{ check_read.commands.browser.rc }}: {{ check_read.commands.browser.stderr }}"
+    quiet: true
 - name: Require the selected browser pin
   when: "'chrome-headless-shell' in tool_by_name"
   ansible.builtin.assert:
     that: recipe.tools['chrome-headless-shell'].version in check_read.commands.browser.stdout
+    quiet: true
+- name: Require the selected Deno version read
+  when: "'deno' in tool_by_name"
+  ansible.builtin.assert:
+    that: check_read.commands.deno.rc == 0
+    fail_msg: "deno --version exited {{ check_read.commands.deno.rc }}: {{ check_read.commands.deno.stderr }}"
     quiet: true
 - name: Require the selected Deno pin
   when: "'deno' in tool_by_name"

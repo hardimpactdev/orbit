@@ -7,17 +7,37 @@ cases = [
   "a file that must be absent fails the check at that file",
   "a folder in place of a file fails the check at that file",
   "a changed folder mode fails the check at that folder",
+  "a file in place of a public path"s folder fails at that path, beside a private file",
   "a changed private file fails the check without printing it",
+  "an apply on an empty CI host creates the project, network and ACL, then sets and checks them",
+  "an apply on a healthy CI host changes nothing",
   "healthy CI state passes the CI check with one read",
   "a missing CI project fails the CI check at that item",
+  "a missing CI network fails the CI check at that item",
+  "a missing CI ACL fails the CI check at that item",
   "a changed CI setting fails the CI check at that item",
   "a changed CI profile fails the CI check at that item",
   "changed CI egress fails the CI check at that item",
-  "a CI setting that cannot be read fails the CI check at that item",
+  "a CI profile that cannot be read fails the CI check at that item",
   "the check read follows a link when asked and runs each command once, a missing program giving 127",
+  "a native package that is installed meets its pin, as apt"s current version did",
+  "a native package that is unpacked meets its pin, as apt"s current version did",
+  "a native package that is half-installed meets its pin, as apt"s current version did",
+  "a native package that is half-configured meets its pin, as apt"s current version did",
+  "a native package that is triggers-awaited meets its pin, as apt"s current version did",
+  "a native package that is triggers-pending meets its pin, as apt"s current version did",
+  "a package with only a foreign architecture misses its pin",
+  "a package with only its configuration files misses its pin",
+  "a package with no package misses its pin",
+  "a package with another version misses its pin",
+  "an Architecture: all package and a foreign pin both meet their pins",
+  "a browser that prints its pin and exits 0 meets it",
+  "a browser that prints its pin but exits 17 fails its read",
+  "a Deno that prints its pin and exits 0 meets it",
+  "a Deno that prints its pin but exits 17 fails its read",
 ]
 file = "swamp/tests/ansible_role_check_read_test.ts"
-cost = 33
+cost = 75
 # Completed Deno case times rounded up by one second.
 requires = ["ansible"]
 inputs = [
@@ -29,8 +49,11 @@ inputs = [
   "swamp/ansible/tasks/check-files.yml",
   "swamp/ansible/tasks/check-read.yml",
   "swamp/ansible/tasks/check-runtime.yml",
+  "swamp/ansible/tasks/ci-read.yml",
   "swamp/ansible/tasks/ci.yml",
+  "swamp/ansible/tasks/javascript-version.yml",
   "swamp/ansible/tasks/node-converge-role-check.yml",
+  "swamp/ansible/tasks/node-converge-software-check.yml",
 ]
 [case_costs]
 "a healthy role passes the batched check with one read, judging every item" = 2
@@ -41,11 +64,31 @@ inputs = [
 "a file that must be absent fails the check at that file" = 2
 "a folder in place of a file fails the check at that file" = 2
 "a changed folder mode fails the check at that folder" = 2
+"a file in place of a public path's folder fails at that path, beside a private file" = 2
 "a changed private file fails the check without printing it" = 2
+"an apply on an empty CI host creates the project, network and ACL, then sets and checks them" = 5
+"an apply on a healthy CI host changes nothing" = 2
 "healthy CI state passes the CI check with one read" = 2
 "a missing CI project fails the CI check at that item" = 2
-"a changed CI setting fails the CI check at that item" = 3
+"a missing CI network fails the CI check at that item" = 2
+"a missing CI ACL fails the CI check at that item" = 2
+"a changed CI setting fails the CI check at that item" = 2
 "a changed CI profile fails the CI check at that item" = 2
 "changed CI egress fails the CI check at that item" = 2
-"a CI setting that cannot be read fails the CI check at that item" = 2
+"a CI profile that cannot be read fails the CI check at that item" = 2
 "the check read follows a link when asked and runs each command once, a missing program giving 127" = 2
+"a native package that is installed meets its pin, as apt's current version did" = 2
+"a native package that is unpacked meets its pin, as apt's current version did" = 2
+"a native package that is half-installed meets its pin, as apt's current version did" = 2
+"a native package that is half-configured meets its pin, as apt's current version did" = 2
+"a native package that is triggers-awaited meets its pin, as apt's current version did" = 2
+"a native package that is triggers-pending meets its pin, as apt's current version did" = 2
+"a package with only a foreign architecture misses its pin" = 2
+"a package with only its configuration files misses its pin" = 2
+"a package with no package misses its pin" = 2
+"a package with another version misses its pin" = 2
+"an Architecture: all package and a foreign pin both meet their pins" = 2
+"a browser that prints its pin and exits 0 meets it" = 2
+"a browser that prints its pin but exits 17 fails its read" = 2
+"a Deno that prints its pin and exits 0 meets it" = 2
+"a Deno that prints its pin but exits 17 fails its read" = 2

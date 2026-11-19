@@ -11,7 +11,7 @@
       + (['/tmp/deno-compile-swamp.cache'] if intent.runtime.swamp is not none else []) }}
     check_read_units: "{{ check_units | default([]) | map(attribute='name') | list }}"
     # The checksums of private files stay out of the run's output, as their stat calls did.
-    check_read_private: "{{ intent.runtime.secret_files | length > 0 }}"
+    check_read_private: "{{ intent.runtime.secret_files | map(attribute='path') | list }}"
 - name: Check role services
   ansible.builtin.assert:
     that: check_read.units[item.name].rc == 0
