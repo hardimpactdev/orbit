@@ -806,7 +806,11 @@ The `docs-impact` part builds the API outputs first, as CI's Docs job does. The 
 
 Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select `check-flows` and `docs-lint`. API inputs select flow checks too, since Gateway operation declarations choose which workflows a chart must match.
 
-The `ci-policy` part runs when the change touches a file that a policy test reads. The `CI_POLICY_READS` table in `bin/task-check` names each reader and the files and trees it reads. `tools/test_ci_units.py` reads all of `swamp/`, so a change there always selects the part. A module that CI's discovery loads always selects it, in any package folder. In `bin/`, `tools/` and `.github/`, a test reads each file that it, or a script it runs, names by path or file name or imports. The line then names the script too. A workflow or data file is read, but the names inside it are not followed. `tools/test_ci_table.py` also reads every tracked path and the CI table's literal inputs, so a path outside the table's roots or named by the table selects it too. A docs page that no policy test reads does not.
+The `ci-policy` part runs when the change touches a file that a policy test reads. The `CI_POLICY_READS` table in `bin/task-check` names each reader and the files and trees it reads. `tools/test_ci_units.py` reads all of `swamp/`, so a change there always selects the part.
+
+A module that CI's discovery loads always selects it, in any package folder. In `bin/`, `tools/` and `.github/`, a test reads each file that it, or a script it runs, names by path or file name or imports. The line then names the script too. A workflow or data file is read, but the names inside it are not followed.
+
+`tools/test_ci_table.py` also reads every tracked path and the CI table's literal inputs, so a path outside the table's roots or named by the table selects it too. A docs page that no policy test reads does not.
 
 A renamed file selects the part by its old name too, since a test that reads the old name breaks. The part's line names the changed path that selected it and its reader. A policy test that starts to read a new file adds it to the table. The part runs before Pest and the fixtures. CI runs its full policy suite on every PR.
 
