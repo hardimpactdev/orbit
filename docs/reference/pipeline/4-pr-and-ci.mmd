@@ -26,6 +26,7 @@ sequenceDiagram
   GH->>CI: Run selected checks<br/>immutable PR merge tree
   %%> What it does:
   %%> - scopes checks by changed inputs; Required checks aggregates every selected required result
+  %%> - the pre-check: it plans the fixture shards and starts none; the merge queue run starts them
   opt CI proof enabled and selected
     Note over CI: Check proof trust<br/>ORBIT_PROOF_ENABLED=true
     %%> When:
@@ -50,14 +51,28 @@ sequenceDiagram
     %%> - task-copy publication does not automatically merge; follow the Project's review and merge policy
     %%> - task:pr-merge is unavailable for task copies; its older gate applies only to groups it supports
     %%> - a new head needs affected local checks and proofs, CI and the gate again
-    Note over GH: Merge only after the gate<br/>squash · no auto-merge
+    AG->>GH: Queue the pull request<br/>gh pr merge --squash --auto
     %%> Requirements:
-    %%> - green CI and the authorized review on the exact head; no merge queue and no GitHub auto-merge
-    %%> - publication or a green result alone does not authorize a merge
-    GH->>CI: Check main delivery<br/>tested tree · release inputs
+    %%> - green CI and the authorized review on the exact head; publication or a green result alone does not authorize a merge
+    %%> - --match-head-commit names the reviewed head, so GitHub refuses a head that moved; no branch update because main moved
+    GH->>CI: Run the merge queue run<br/>the commit main receives
     %%> What it does:
-    %%> - verifies PR evidence against the landed tree; the PR plan covers changes since a verified main delivery
-    %%> - a red main is fixed forward and never released; stages 5 and 6 confirm and refresh the working result
+    %%> - GitHub builds one squash commit on main and any pull request still ahead; this run adds the selected fixture shards
+    %%> - the Docs gate reads the pull request body again
+    %%> - the plan covers changes since the newest commit that the queue tests or main delivered
+    alt the queue run passes
+      CI-->>GH: Required checks<br/>green on the queue commit
+      Note over GH: Fast-forward main<br/>to the tested commit
+      GH->>CI: Check main delivery<br/>queue run · release inputs
+      %%> What it does:
+      %%> - finds the green queue run on the exact main commit and promotes its web build; it compares no trees
+      %%> - a red main is fixed forward and never released; stages 5 and 6 confirm and refresh the working result
+    else the queue run fails
+      CI--xGH: Required checks<br/>red · leaves the queue
+      GH--xAG: Fix and queue again<br/>same branch · same PR
+      %%> Result:
+      %%> - the next queued pull request is tested on main without it
+    end
   else a required check fails
     CI--xGH: Required checks<br/>red · no merge
     GH--xAG: Fix and prove again<br/>same branch · same PR
