@@ -19,13 +19,13 @@ Load the official [swamp skill](../swamp/SKILL.md) for native CLI and workflow m
 
 ## Swamp tests
 
-A test file under `swamp/tests/` may have a record, `.github/ci/fixtures/<file>.toml`, with its `cases`, `cost` and `inputs`. A file without one is one 30 s unit with nothing to register.
+A test file under `swamp/tests/` may have a record, `.github/ci/fixtures/<file>.toml`. A file without one has the default cost, 30 s, and nothing to register.
 
-- Run one file as CI does: commit, run `bin/ci-units plan --base origin/main --head HEAD --plan-json /tmp/plan.json`, then `bin/ci-units run --units "$(jq -c --arg f swamp/tests/<file> '[.units | keys[] | select(split("#")[0] == $f)]' /tmp/plan.json)" --times /tmp/times.json`. The plan holds only files the change selects. This runs each planned slice, `<file>#k/n`; a bare file name runs all cases in one unit. The run exits 0 only when every unit passed; a Deno unit fails on an ignored or unrun case.
-- After you add, remove or rename a case, copy `bin/ci-units collect --file swamp/tests/<file>` into `cases`. A Deno file with a stale list fails its unit run and `fixture-population` in `bin/task-check`. A Python file with `[case_costs]` fails the table load until each case has a cost. A Python file without `case_costs` is not compared.
+- Run one file as CI does: commit, run `bin/ci-units plan --base origin/main --head HEAD --plan-json /tmp/plan.json`, then `bin/ci-units run --units "$(jq -c --arg f swamp/tests/<file> '[.units | keys[] | select(split("#")[0] == $f)]' /tmp/plan.json)" --times /tmp/times.json`. The plan holds only files the change selects. This runs each planned slice, `<file>#k/n`; a bare file name runs all cases in one unit. A cut unit does not fail the run: check that each slice is `passed`: `jq -r '.[] | "\(.unit) \(.status)"' /tmp/times.json`. A Deno unit fails on an ignored or unrun case.
+- After you add, remove or rename a case, copy `bin/ci-units collect --file swamp/tests/<file>` into `cases`. A Deno file with a stale list fails its unit run and `fixture-population` in `bin/task-check`. A Python file with `[case_costs]` fails the load until each case has a cost. A Python file without `case_costs` is not compared.
 - Delete or rename a record with its file. A record without its file, like any table error, fails the load: `bin/task-check` reports `ci-plan` failed.
 - `cost` is the file's declared seconds. A Python file is one unit. A Deno file runs as ceil(`cost` / 60) slices, at least `slices` when set, at most one per case, each plus 6 s startup. With `[case_costs]`, a slice costs the sum of its cases, and `cost` must equal the `case_costs` total. A unit above 150 s fails the load, unless its file is self-hosted and in `capacity_gap`; a running unit is stopped at 180 s.
-- `fixture-capacity` fails when CI cannot place the selected units in its shards; each `CAPACITY:` row names them. Select fewer declared seconds, by touching fewer large files' records or inputs. A file in `capacity_gap` of `.github/ci/checks.toml` (ADR 0262) may overflow, its extra units named "not run", only when it is self-hosted or the change leaves the file and its record alone.
+- `fixture-capacity` fails when CI cannot place the selected units; each `CAPACITY:` row names them. Select fewer declared seconds, by touching fewer large files' records or inputs. A file in `capacity_gap` of `.github/ci/checks.toml` (ADR 0262) may overflow, its extra units named "not run", only when it is self-hosted or the change leaves the file and its record alone.
 
 ## Current hazards
 
