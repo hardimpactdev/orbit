@@ -23,6 +23,7 @@ runs:
     # Web job kept before: most packages are the same, so the mirror path below downloads only the difference. A cold
     # download of the whole set took longer than the job may run.
     - name: Cache browser downloads
+      id: browser-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
@@ -35,9 +36,14 @@ runs:
     - name: Install test browsers and system libraries
       shell: bash
       working-directory: apps/web
+      env:
+        SAME_IMAGE: ${{ steps.browser-cache.outputs.cache-hit }}
       run: |
         archives=/var/cache/orbit-playwright-apt
         offline() {
+          # Only the entry of this image is a whole set. Another image may lack a library that this one does not
+          # ship, and apt would not notice: the mirror path then installs it, reusing the restored downloads.
+          [ "$SAME_IMAGE" = true ] || return 1
           compgen -G "$archives/*.deb" >/dev/null || return 1
           echo "Installing the system libraries from the cached packages in $archives"
           # apt orders the files itself. --no-download: it must not ask a mirror for a package that the runner's own

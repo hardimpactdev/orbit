@@ -170,6 +170,10 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn('apt-get install --yes --no-install-recommends \\\n    --no-download "$archives"/*.deb', run)
         self.assertNotIn('apt-get update', run)
         self.assertNotIn('Dir::Cache::archives=', run)
+        # Only an exact hit installs offline: an entry of another image can lack a library that this image needs.
+        self.assertEqual(cache['id'], 'browser-cache')
+        self.assertEqual(installer['env'], {'SAME_IMAGE': '${{ steps.browser-cache.outputs.cache-hit }}'})
+        self.assertLess(run.index('[ "$SAME_IMAGE" = true ] || return 1'), run.index('apt-get install'))
         order = [run.index(text) for text in ('if offline; then', 'bunx playwright install --only-shell webkit chromium',
                                               'bunx playwright install --with-deps --only-shell webkit chromium', 'dpkg-query -W')]
         self.assertEqual(order, sorted(order))
