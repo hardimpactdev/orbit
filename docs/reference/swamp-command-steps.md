@@ -256,6 +256,10 @@ A terminal event contains metadata, not step outputs. `workflow.history.get` res
 
 The synthetic dev-worker runs `2ebfa2a6-bb7e-4ad2-8a5b-867095984e93` and `2491206d-0531-442a-b5a5-60b988e989f6` proved success and failure through a second authenticated attach connection, then one history request per terminal event on official e459. This is a transport spike, not the live bootstrap canary.
 
+## Kinds on the Gateway engine
+
+`StartSwampRun` admits every Operation the same way. It then starts a kind listed in `ORBIT_ENGINE_KINDS` on the [Gateway engine](/reference/gateway-engine) instead of Swamp, when every Node the kind touches supports its primitives. Such an Operation has no Swamp run. The reconciler ends it when its budget runs out, and nudges it each minute while a start or an order may have been lost.
+
 ## Node execution through official SSH
 
 Node 209 hosts Serve and all Swamp workers. Converted Node effects use official `@swamp/ssh` from those workers; they install no target worker or Swamp binary and mint no worker token. Retained workers remain until their owning workflow placements migrate.

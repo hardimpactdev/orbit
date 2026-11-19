@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Jobs\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Engine\Engine;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
@@ -225,6 +226,18 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         $selector = $alternates[$direct->workflowFor($operation) ?? ''] ?? $definition['terminal_result'] ?? null;
         if ($selector === null || ! $direct->usesNativeTerminal($operation)) {
             return $expire->execute($operation);
+        }
+        // An engine Operation has no Swamp run to read (ADR 0271): the engine ends it. Here its run budget is enforced, and an
+        // Operation whose start or order was lost before its publish gets a nudge.
+        if (Engine::owns($operation)) {
+            $deadline = OperationRunBudgets::deadline($operation);
+            $expired = $deadline !== null && ! $deadline->isFuture();
+            $this->expireAtDeadline($operation, $expired, $expire);
+            if (! $expired) {
+                app(Engine::class)->nudgeIfStalled($operation);
+            }
+
+            return $operation->refresh();
         }
         if (! isset($operation->state['swamp_run_id'])) {
             $operation = $expire->execute($operation)->refresh();

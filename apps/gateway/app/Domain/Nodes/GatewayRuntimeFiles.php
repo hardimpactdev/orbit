@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Gateway\GatewayHorizon;
 use App\Infrastructure\Gateway\GatewayQueueRedis;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -61,6 +62,8 @@ final readonly class GatewayRuntimeFiles
         $log = str_replace(['\\', '"'], ['\\\\', '\\"'], $storage.'/logs/laravel.log');
 
         $directory = static fn (string $path): array => ['path' => $path, 'owner' => 'root', 'group' => 'root', 'mode' => '0755'];
+        // The machine bus (ADR 0271): only a Gateway with the engine's keys runs nats-server and the state machine.
+        $bus = GatewayBus::config();
 
         $files = [
             $file(self::RuntimeTmpfiles, self::RuntimeTmpfilesRule),
@@ -81,7 +84,8 @@ final readonly class GatewayRuntimeFiles
         }
 
         return [
-            'directories' => [$directory('/etc/systemd/journald.conf.d'), $directory('/etc/systemd/system/logrotate.timer.d')],
+            'directories' => [$directory('/etc/systemd/journald.conf.d'), $directory('/etc/systemd/system/logrotate.timer.d'),
+                ...($bus === null ? [] : [$directory(dirname(GatewayBus::ConfigPath))])],
             'files' => [
                 ...$files,
                 $file('/etc/systemd/journald.conf.d/orbit-retention.conf', "# Managed by Orbit.\n[Journal]\nSystemMaxUse=".Config::integer('retention.journal_max_mb')
@@ -94,11 +98,17 @@ final readonly class GatewayRuntimeFiles
                 ...array_map(static fn (string $unit): array => $file('/etc/systemd/system/'.$unit, '', 'absent'), self::ReleaseUnits),
                 $file('/etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf', '', 'absent'),
                 $file('/etc/orbit/php-fpm-start-hooks', '', 'absent'),
+                ...($bus === null ? [] : [$file(GatewayBus::ConfigPath, $bus)]),
             ],
             'units' => $inventory !== null ? [] : [
                 ['name' => 'orbit-agent-view.service', 'unit' => $this->service('Orbit agent view subscriber', 'simple', 'orbit:agent-view',
                     "Restart=always\nRestartSec=2\nMemoryMax=256M\n\n[Install]\nWantedBy=multi-user.target\n")],
                 ...$this->recorder($node),
+                ...($bus === null ? [] : [
+                    ['name' => 'nats-server.service', 'unit' => GatewayBus::serverUnit($bus)],
+                    ['name' => 'orbit-gateway-engine.service', 'unit' => $this->service('Orbit Gateway state machine', 'simple', 'orbit:engine-consume',
+                        "Restart=always\nRestartSec=2\nMemoryMax=256M\n\n[Install]\nWantedBy=multi-user.target\n", 'nats-server.service')],
+                ]),
                 ['name' => 'orbit-runtime-hibernator.timer', 'unit' => "[Unit]\nDescription=Orbit runtime hibernator timer\n\n[Timer]\nOnBootSec=2min\n"
                     .'OnUnitActiveSec='.Config::integer('orbit.hibernation.sweep_seconds')."s\nPersistent=true\nUnit=orbit-runtime-hibernator.service\n\n[Install]\nWantedBy=timers.target\n"],
             ],

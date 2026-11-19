@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Engine\Engine;
+use App\Domain\Engine\EngineKinds;
+use App\Domain\Engine\EngineRun;
 use App\Domain\InstanceMigration\InstanceMigration;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Logs\LogRedactor;
@@ -72,6 +75,14 @@ final readonly class StartSwampRun
         $notAdmitted = null;
         try {
             if (! $this->begin($operation)) {
+                return;
+            }
+            // A kind on the Gateway state machine starts there, not on Swamp (ADR 0271 N4).
+            if (app(EngineKinds::class)->routes($operation)) {
+                $this->bind($operation, EngineRun::runIdOf($operation->id));
+                app(Engine::class)->start($operation->refresh());
+                $outcome = 'started';
+
                 return;
             }
             $endpoint = $this->endpoint();

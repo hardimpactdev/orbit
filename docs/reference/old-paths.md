@@ -16,6 +16,7 @@ Each row names what must replace the path and the evidence that permits its remo
 | Retained path | Replacement | Evidence needed before removal |
 | --- | --- | --- |
 | The `instance-create-stage-`, `instance-create-redact-token-` and `instance-create-redact-model-` execution-copy prefixes in destroy and grants | The one-line launch copy `instance-create-launch-<operation>` | No Instance created on release 2079 or 2084 still owns these copies |
+| The Swamp workflow `operation-firewall-direct` for `firewall.allow`, `firewall.deny` and `firewall.remove` | The [Gateway engine](/reference/gateway-engine) step `ufw.ensure_rule` on the executor | The live Gateway lists the three kinds in `ORBIT_ENGINE_KINDS` and every Linux Node reports `ufw.ensure_rule`, which needs the executor on every Node |
 | [Merge-base proof replay](#the-task-vm-proof-run) and its restore children | Replay in [`proof:run` copies](/cli/proof/run#the-run) | Flagged cases actually replay on the merge base through copies |
 | `GatewayRuntimeFiles::RetiredSettings`: `ORBIT_TASK_VMS_*`, `ORBIT_PI_PORT`, `ORBIT_SWAMP_PROOF_CLUB_API_KEY`, `ORBIT_SWAMP_DIRECT_WRITERS` | Gateway-role convergence removes these keys from `shared/gateway.env` | Key-name inventory shows none on any Gateway; never copy their values into evidence |
 | `swamp/ansible/tasks/node-converge-hub-filter-absent.yml` | Hub convergence removes the task VM filter | No vpn Node holds `orbit-task-vms-hub.service`, `/etc/orbit/task-vms/hub.nft`, nft table `inet orbit_task_vms` or UFW comments beginning `orbit:task-vm-` |
