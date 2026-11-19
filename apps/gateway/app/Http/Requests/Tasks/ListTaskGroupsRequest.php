@@ -27,11 +27,23 @@ final class ListTaskGroupsRequest extends FormRequest
         return [
             'compact' => ['sometimes', 'boolean'],
             'project_id' => ['sometimes', 'integer', 'min:1'],
-            'parent_id' => ['sometimes', 'integer', 'min:1', 'prohibits:limit,cursor', Rule::exists(Task::class, 'id')->whereNull('parent_id')],
+            'parent_id' => ['sometimes', 'integer', 'min:1', 'prohibits:limit,cursor,repository,pull_request', Rule::exists(Task::class, 'id')->whereNull('parent_id')],
             'status' => ['sometimes', 'string', Rule::enum($this->has('parent_id') ? TaskStatus::class : TaskGroupStatus::class)],
             'limit' => ['sometimes', 'integer', 'min:1', 'max:'.ListTaskGroupsAction::MaxLimit],
             'cursor' => ['sometimes', 'string', 'max:20', 'regex:/\A[1-9][0-9]*\z/'],
+            'repository' => ['required_with:pull_request', 'string', ListTaskGroupsAction::RepositoryRule],
+            'pull_request' => ['required_with:repository', 'integer', 'min:1', 'max:9999999999'],
         ];
+    }
+
+    /**
+     * The pull request filter: the groups whose published or watched pull request this is.
+     *
+     * @return array{repository: string, number: int}|null
+     */
+    public function pullRequest(): ?array
+    {
+        return $this->has('pull_request') ? ['repository' => $this->string('repository')->value(), 'number' => $this->integer('pull_request')] : null;
     }
 
     public function projectId(): ?int

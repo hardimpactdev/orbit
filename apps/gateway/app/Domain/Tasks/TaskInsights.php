@@ -29,7 +29,7 @@ use Illuminate\Support\Collection;
  * @phpstan-type Row array{
  *     model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
  *     tokens: int, cost: ?float, input: int, cached: int, wasted: int, lines: int,
- *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, delivery: ?int, deploy_wait: ?int, first_pass: bool,
+ *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, pr_merge_wait: ?int, delivery: ?int, deploy_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
  *     questions: int, causes: array<string, int>
  * }
@@ -42,7 +42,7 @@ final class TaskInsights
      * The only task columns a report reads. A whole row carries briefs and summaries, and twelve weeks of whole rows
      * outgrew the Gateway web runtime's 128M memory limit, which failed the request as `gateway.unhandled`.
      */
-    private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'lines_added', 'lines_deleted'];
+    private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'pr_opened_at', 'lines_added', 'lines_deleted'];
 
     /** @param  7|30  $days */
     public function report(int $days, ?int $projectId, CarbonImmutable $now): TaskInsightsData
@@ -103,7 +103,7 @@ final class TaskInsights
                 'id' => self::number($group->id), 'project' => ValidatedData::nullableString($codes[self::number($group->project_id)] ?? null) ?? '',
                 'lines' => self::number($group->lines_added) + self::number($group->lines_deleted),
                 ...array_map(self::time(...), ['ready_at' => $group->ready_at, 'started_at' => $group->started_at, 'settled_at' => $group->settled_at,
-                    'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at]),
+                    'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at, 'pr_opened_at' => $group->pr_opened_at]),
             ])->all();
         $ids = array_column($groups, 'id');
         /** Children, threads, first verdicts, and first handoff results, by task. */
@@ -198,6 +198,7 @@ final class TaskInsights
                 'queue' => $merged ? self::span($group['ready_at'], $group['started_at']) : null,
                 'work' => $merged ? self::span($group['started_at'], $group['settled_at']) : null,
                 'merge_wait' => self::span($group['settled_at'], $mergedAt),
+                'pr_merge_wait' => self::span($group['pr_opened_at'], $mergedAt),
                 'delivery' => $merged ? self::span($group['ready_at'], $group['deployed_at']) : null,
                 'deploy_wait' => self::span($mergedAt, $group['deployed_at']),
                 'first_pass' => $merged && array_filter($groupChildren, static fn (array $child): bool => $child['fixup']) === [],
@@ -245,6 +246,7 @@ final class TaskInsights
             queueMs: self::median($merged, 'queue'),
             workMs: self::median($merged, 'work'),
             mergeWaitMs: self::median($merged, 'merge_wait'),
+            prMergeWaitMs: self::median($merged, 'pr_merge_wait'),
             deliveryTimeMs: self::median($merged, 'delivery'),
             deployWaitMs: self::median($merged, 'deploy_wait'),
             yield: self::share(count($merged), count($rows)),
@@ -320,7 +322,7 @@ final class TaskInsights
 
     /**
      * @param  list<Row>  $rows
-     * @param  'lead'|'queue'|'work'|'merge_wait'|'delivery'|'deploy_wait'  $key
+     * @param  'lead'|'queue'|'work'|'merge_wait'|'pr_merge_wait'|'delivery'|'deploy_wait'  $key
      */
     private static function median(array $rows, string $key): ?int
     {

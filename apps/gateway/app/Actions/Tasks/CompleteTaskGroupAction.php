@@ -119,7 +119,7 @@ final readonly class CompleteTaskGroupAction
     /**
      * Reads how the watched pull request ended. Null when an earlier completion stored it already.
      *
-     * @return array{url:string,state:string,mergedAt:?string}|null
+     * @return array{url:string,state:string,mergedAt:?string,openedAt:?string}|null
      */
     private function endedPullRequest(Task $group): ?array
     {
@@ -142,21 +142,21 @@ final readonly class CompleteTaskGroupAction
             throw $this->notReady();
         }
 
-        return ['url' => $url, 'state' => $state, 'mergedAt' => $state === 'merged' ? $pullRequest->mergedAt : null];
+        return ['url' => $url, 'state' => $state, 'mergedAt' => $state === 'merged' ? $pullRequest->mergedAt : null, 'openedAt' => $pullRequest->createdAt];
     }
 
     /** Stores authorization separately, so a crash or rollback resumes without another GitHub read. */
-    private function authorizeEndedPullRequest(Task $group, string $url, string $state, ?string $mergedAt): void
+    private function authorizeEndedPullRequest(Task $group, string $url, string $state, ?string $mergedAt, ?string $openedAt): void
     {
-        $this->execution->synchronized($group->id, function () use ($group, $url, $state, $mergedAt): void {
-            DB::transaction(function () use ($group, $url, $state, $mergedAt): void {
+        $this->execution->synchronized($group->id, function () use ($group, $url, $state, $mergedAt, $openedAt): void {
+            DB::transaction(function () use ($group, $url, $state, $mergedAt, $openedAt): void {
                 $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
                 if (! in_array($locked->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
                     || $locked->watched_pr_url !== $url) {
                     throw $this->notReady('status');
                 }
                 if ($locked->watched_pr_completion === null) {
-                    $locked->update(['watched_pr_completion' => $state, 'merged_at' => $locked->merged_at ?? $mergedAt]);
+                    $locked->update(['watched_pr_completion' => $state, 'merged_at' => $locked->merged_at ?? $mergedAt, 'pr_opened_at' => $locked->pr_opened_at ?? $openedAt]);
                 }
             });
         }, wait: false);

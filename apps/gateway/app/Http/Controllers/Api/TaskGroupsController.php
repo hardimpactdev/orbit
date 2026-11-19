@@ -202,7 +202,7 @@ final class TaskGroupsController extends Controller
             $rows = TaskData::fromModels($action->subtasks($parent, $request->subtaskStatus(), $request->projectId()));
             $nextCursor = null;
         } else {
-            $page = $action->execute($request->projectId(), $request->status(), $request->limit(), $request->cursor());
+            $page = $action->execute($request->projectId(), $request->status(), $request->limit(), $request->cursor(), pullRequest: $request->pullRequest());
             $rows = TaskGroupData::fromModels($page['groups']);
             $nextCursor = $page['next_cursor'];
         }
