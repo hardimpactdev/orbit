@@ -310,8 +310,8 @@ def main():
         line = code + " (" + public_text(purpose(argv), values, 400) + ")"
         return PhaseFailure(line, public_text(result.stderr or "", values, DETAIL_BYTES - len(line.encode()) - 2))
 
-    def run(argv, content=None, check=True):
-        remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
+    def run(argv, content=None, check=True, timeout=100):
+        remaining = timeout if workspace_deadline is None else workspace_deadline - time.monotonic()
         if remaining <= 0:
             raise subprocess.TimeoutExpired(argv, 115)
         result = subprocess.run(
@@ -680,21 +680,59 @@ def main():
         credential = folder / "git-credential"
         credential.write_text(line)
         credential.chmod(0o600)
+        files_pool = ThreadPoolExecutor(max_workers=1)
+        t3_files = None
+
+        def timed_t3_files(model):
+            with timed("t3_files_seconds"):
+                t3_start_files(model)
+
+        # The copy's one wait bound: 120 s, the bound of a deployment's `seed` phase, shared by a restart of the Node's Incus before the
+        # copy and a retake of the default's seed. The workflow gives the step 300 s of work after it.
+        wait_until = time.monotonic() + 120
+
+        def wait_for(url):
+            """Waits until the Node's Incus API answers `url`, by curl's own retry every 2 s, within the wait bound. A request that
+            stalls ends after 5 s and is retried; a curl that outlives the bound is stopped. Either way the caller reads again."""
+            left = int(wait_until - time.monotonic())
+            if left <= 0:
+                return
+            try:
+                run(["curl", "--unix-socket", INCUS_SOCKET, "--fail", "--silent", "--show-error", "--output", "/dev/null", "--max-time", "5",
+                     "--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", str(left), "http://incus" + url],
+                    check=False, timeout=left + 10)
+            except subprocess.TimeoutExpired:
+                pass
+
+        def query(url, check=True):
+            """`incus query` before the copy. A failed or stalled read whose cause is an Incus API that does not answer (a restart of
+            Incus) waits for the API within the wait bound and reads once more; any other answer, such as a 404, is the result."""
+            argv = ["incus", "query", url]
+            try:
+                result = run(argv, check=False)
+            except subprocess.TimeoutExpired:
+                result = None
+            if result is None or result.returncode:
+                try:
+                    answers = run(["curl", "--unix-socket", INCUS_SOCKET, "--fail", "--silent", "--output", "/dev/null", "--max-time", "5",
+                                   "http://incus/1.0"], check=False, timeout=10).returncode == 0
+                except subprocess.TimeoutExpired:
+                    answers = False
+                if result is None or not answers:
+                    wait_for("/1.0")
+                    result = run(argv, check=False)
+            if check and result.returncode:
+                raise failure("instance.container_" + phase + "_failed: command incus exited " + str(result.returncode), argv, result)
+            return result
+
         try:
-            current = run(
-                [
-                    "incus",
-                    "query",
-                    f"/1.0/instances/{name}?project={container['project']}",
-                ],
-                check=False,
-            )
+            current = query(f"/1.0/instances/{name}?project={container['project']}", check=False)
             read = json.loads(current.stdout) if current.returncode == 0 else None
             # The copy's own ACL by its name; the list of every ACL on the Node took about a second.
             acl_timer = timed("acl")
             acl_timer.__enter__()
             acl_query = ["incus", "query", f"/1.0/network-acls/{urllib.parse.quote(container['acl'])}?project=default"]
-            held = run(acl_query, check=False)
+            held = query(acl_query[2], check=False)
             # Incus answers a missing ACL with 404 "Network ACL not found"; anything else refuses before the copy.
             if held.returncode and "network acl not found" not in held.stderr.lower():
                 raise failure("instance.container_" + phase + "_failed: command incus exited " + str(held.returncode), acl_query, held)
@@ -733,21 +771,21 @@ def main():
             copy_timer.__enter__()
             if read is None:
                 clone = container["clone"]
-                snapshots = json.loads(
-                    run(
-                        [
-                            "incus",
-                            "query",
-                            f"/1.0/instances/{clone['source']}/snapshots?project={container['project']}&recursion=1",
-                        ]
-                    ).stdout
-                )
-                names = [row["name"] for row in snapshots]
-                # The step before this one waited, by curl's own retry, up to 120 s for the admitted seed: a retake at its commit has a
-                # moment between the delete and the rename (docs/reference/development-containers.md#a-retake-keeps-the-seed). This
-                # reads the snapshots once. A default with no seed at all refuses by its own code; the admitted seed's `next-` still
-                # there is a retake that did not end within the wait; a seed that a deployment replaced by a newer one is copied.
                 snapshot = clone["snapshot"]
+                snapshots_url = f"/1.0/instances/{clone['source']}/snapshots?project={container['project']}&recursion=1"
+                snapshots = json.loads(query(snapshots_url).stdout)
+                names = [row["name"] for row in snapshots]
+                # A retake at the admitted commit has a moment between the delete of `seed-<commit>` and the rename of its `next-`
+                # (docs/reference/development-containers.md#a-retake-keeps-the-seed). Only a copy that meets that moment waits for the
+                # admitted seed, within the wait bound, and then reads the snapshots once more, however the wait ended. A normal copy
+                # finds its seed at the first read and waits not at all.
+                if snapshot not in names and "next-" + snapshot[len("seed-"):] in names:
+                    wait_for(f"/1.0/instances/{urllib.parse.quote(clone['source'])}/snapshots/{urllib.parse.quote(snapshot)}"
+                             f"?project={urllib.parse.quote(container['project'])}")
+                    snapshots = json.loads(query(snapshots_url).stdout)
+                    names = [row["name"] for row in snapshots]
+                # A default with no seed at all refuses by its own code; the admitted seed's `next-` still there is a retake that did
+                # not end within the wait; a seed that a deployment replaced by a newer one is copied.
                 if not any(name.startswith(("seed-", "next-")) for name in names):
                     raise RuntimeError("instance.default_seed_missing")
                 if snapshot not in names:
@@ -898,6 +936,11 @@ def main():
                 if remove:
                     change(project + ["file", "delete", "--force"] + remove)
                 boot_timer.__exit__()
+                # T3's files go in beside the boot files (docs/reference/development-containers.md#t3-starts-with-the-copy): they share
+                # no folder with the machine ID, the trust files or the NSS store, and the proxy drop-ins, which may share T3's unit
+                # folder, go only after T3's files are in. Both end before the start.
+                if model is not None:
+                    t3_files = files_pool.submit(timed_t3_files, model)
                 boot_timer = timed("boot_files")
                 boot_timer.__enter__()
                 change(
@@ -943,13 +986,14 @@ def main():
                         continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
+                if t3_files is not None:
+                    t3_files.result()
                 proxy_drop_ins()
             boot_timer.__exit__()
             # 1 when the copy's boot starts T3: this run carried the model environment and the copy was not running yet.
             timings["t3_files"] = 0
-            if model is not None and read["status"] != "Running":
-                with timed("t3_files_seconds"):
-                    t3_start_files(model)
+            if t3_files is not None:
+                t3_files.result()
                 timings["t3_files"] = 1
             firewall_timer = timed("firewall")
             firewall_timer.__enter__()
@@ -998,6 +1042,83 @@ def main():
             if checked.returncode:
                 raise RuntimeError("instance.container_network_unsafe")
             check_timer.__exit__()
+
+            def fetch_branch():
+                # Git credentials remain on the Node, and leave even when a read/fetch fails. The Node's mirror is made only for a fetch:
+                # a branch the seed holds needs none.
+                mirror = Path(container["mirror"])
+
+                def make_mirror():
+                    mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    if not (mirror / "HEAD").exists():
+                        change(["git", "init", "--quiet", "--bare", str(mirror)])
+
+                branch_timer = timed("branch")
+                branch_timer.__enter__()
+                git = [
+                    "git",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "core.fsmonitor=false",
+                    "-C",
+                    str(mirror),
+                ]
+                remote_git = (
+                    [
+                        "timeout",
+                        "80",
+                        "env",
+                        "GIT_CONFIG_NOSYSTEM=1",
+                        "GIT_CONFIG_GLOBAL=/dev/null",
+                    ]
+                    + git
+                    + [
+                        "-c",
+                        "credential.helper=",
+                        "-c",
+                        "credential.helper=store --file=" + str(credential),
+                        "-c",
+                        "http.followRedirects=false",
+                        "-c",
+                        "url.https://github.com/.insteadOf=git@github.com:",
+                        "-c",
+                        "url.https://github.com/.insteadOf=ssh://git@github.com/",
+                        "-c",
+                        "protocol.allow=never",
+                        "-c",
+                        "protocol." + container["protocols"][0] + ".allow=always",
+                    ]
+                )
+                if "branch_selection" in container:
+                    select_branch(container, git, remote_git, run, make_mirror)
+                else:
+                    # A create by name only: GitHub says whether the origin has the branch. A branch it lacks starts at the seed's commit.
+                    branch = "refs/heads/" + container["branch"]
+                    # `ls-remote` needs no repository: it runs with the same options outside the mirror, which may not exist.
+                    outside = remote_git[: remote_git.index("-C")] + remote_git[remote_git.index("-C") + 2 :]
+                    remote = run(
+                        outside
+                        + ["ls-remote", "--heads", "--", container["repository"], branch]
+                    ).stdout.strip()
+                    if remote:
+                        make_mirror()
+                        run(
+                            remote_git
+                            + [
+                                "fetch",
+                                "--quiet",
+                                "--no-tags",
+                                "--",
+                                container["repository"],
+                                "+" + branch + ":" + branch,
+                            ]
+                        )
+                branch_timer.__exit__()
+
+            # The branch is read and fetched on the Node beside the start: it needs nothing of the copy, and the copy's boot, T3's
+            # start among it, runs meanwhile. The phase waits for it before it reports.
+            branch = files_pool.submit(fetch_branch)
             with timed("idmap"):
                 try:
                     if unshift_clone_rootfs(container, read, run):
@@ -1062,78 +1183,10 @@ def main():
                     mail = {"status": "failed", "reason": "instance.mail_update_failed"}
                 print("orbit-mail=" + mail["status"] + (":" + mail["reason"] if "reason" in mail else ""))
             mail_timer.__exit__()
-            # Git credentials remain on the Node, and leave even when a read/fetch fails. The Node's mirror is made only for a fetch:
-            # a branch the seed holds needs none.
-            mirror = Path(container["mirror"])
-
-            def make_mirror():
-                mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                if not (mirror / "HEAD").exists():
-                    change(["git", "init", "--quiet", "--bare", str(mirror)])
-
-            branch_timer = timed("branch")
-            branch_timer.__enter__()
-            git = [
-                "git",
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "core.fsmonitor=false",
-                "-C",
-                str(mirror),
-            ]
-            remote_git = (
-                [
-                    "timeout",
-                    "80",
-                    "env",
-                    "GIT_CONFIG_NOSYSTEM=1",
-                    "GIT_CONFIG_GLOBAL=/dev/null",
-                ]
-                + git
-                + [
-                    "-c",
-                    "credential.helper=",
-                    "-c",
-                    "credential.helper=store --file=" + str(credential),
-                    "-c",
-                    "http.followRedirects=false",
-                    "-c",
-                    "url.https://github.com/.insteadOf=git@github.com:",
-                    "-c",
-                    "url.https://github.com/.insteadOf=ssh://git@github.com/",
-                    "-c",
-                    "protocol.allow=never",
-                    "-c",
-                    "protocol." + container["protocols"][0] + ".allow=always",
-                ]
-            )
-            if "branch_selection" in container:
-                select_branch(container, git, remote_git, run, make_mirror)
-            else:
-                # A create by name only: GitHub says whether the origin has the branch. A branch it lacks starts at the seed's commit.
-                branch = "refs/heads/" + container["branch"]
-                # `ls-remote` needs no repository: it runs with the same options outside the mirror, which may not exist.
-                outside = remote_git[: remote_git.index("-C")] + remote_git[remote_git.index("-C") + 2 :]
-                remote = run(
-                    outside
-                    + ["ls-remote", "--heads", "--", container["repository"], branch]
-                ).stdout.strip()
-                if remote:
-                    make_mirror()
-                    run(
-                        remote_git
-                        + [
-                            "fetch",
-                            "--quiet",
-                            "--no-tags",
-                            "--",
-                            container["repository"],
-                            "+" + branch + ":" + branch,
-                        ]
-                    )
-            branch_timer.__exit__()
+            branch.result()
         finally:
+            # A failed step leaves no T3 push or branch fetch running behind the phase, and the credential stays until both end.
+            files_pool.shutdown(wait=True)
             credential.unlink(missing_ok=True)
     elif phase == "club-key":
         # The nested Gateway's Club key, from SSH stdin into the copy's /run, a tmpfs that no snapshot holds
