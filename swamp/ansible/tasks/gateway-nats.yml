@@ -1,5 +1,5 @@
 ---
-# The machine bus's server on the Gateway host (ADR 0271; docs/reference/gateway-engine.md#the-server): the pinned nats-server
+# The machine bus's server on the Gateway host (ADR 0271; docs/reference/gateway-engine.md#install): the pinned nats-server
 # binary, from the release tarball whose SHA-256 the Gateway pins. The role's runtime files and units carry its configuration and
 # its service; this phase only puts the binary and its user in place before those units start.
 - name: Ensure the nats user
@@ -9,16 +9,21 @@
 - name: Fetch the pinned nats-server release
   ansible.builtin.include_tasks: artifact-fetch.yml
   vars: { artifact: "{{ rt.gateway.nats }}" }
-- name: Install the nats-server binary
+- name: Unpack the pinned nats-server release into its own folder
   ansible.builtin.unarchive:
     src: "{{ rt.gateway.nats.path }}"
-    dest: /usr/local/bin
+    dest: /usr/local/lib
     remote_src: true
-    include: ["nats-server-v{{ rt.gateway.nats.version }}-linux-amd64/nats-server"]
-    extra_opts: [--strip-components=1]
     owner: root
     group: root
-    mode: "0755"
+    creates: "/usr/local/lib/nats-server-v{{ rt.gateway.nats.version }}-linux-amd64/nats-server"
+# A new version moves the link, which restarts the server.
+- name: Link the nats-server binary to the pinned release
+  ansible.builtin.file:
+    src: "/usr/local/lib/nats-server-v{{ rt.gateway.nats.version }}-linux-amd64/nats-server"
+    dest: "{{ rt.gateway.nats.binary }}"
+    state: link
+    force: true
   register: nats_binary
 - name: Restart nats-server for a new binary # noqa no-handler
   when: nats_binary is changed
