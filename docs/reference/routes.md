@@ -517,6 +517,8 @@ Public TLS terminates on the Ingress with a Let's Encrypt certificate that Caddy
 
 When Ingress shares a Node with the Router, with `app-prod`, or with both, one Caddy service serves the public Route and never proxies to its own public listener. When the Ingress Node runs a target of the Route, its public site serves that target directly and replaces the target's private site for that host. A Router on another Node then accepts the public certificate, because the Node's system roots include the Orbit root. Until Let's Encrypt issues the certificate, that host does not complete TLS on the Node.
 
+An Ingress on its own Node reaches the Router with its system roots too. They hold the Orbit root that the `ingress` role installs, and the public roots, which an [Ingress relocation](#ingress-relocation) needs while the source still serves.
+
 On an Ingress Node, only public sites bind every address. Router and workload sites stay on the WireGuard and LAN addresses, as [listener addresses](/reference/caddy-configuration#listener-addresses) describes. `ingress` and `gateway` never share a Node: `node:role:add` and `node:role:relocate` refuse `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node.
 
 The Ingress firewall opens `orbit:ingress-http` (port 80) and `orbit:ingress-https` (port 443) only while the Cluster has at least one live public Route. When the last one leaves the public edge, the Ingress firewall step closes both rules. A new Ingress Node without a public Route has ports 80 and 443 closed to public traffic: UFW denies incoming traffic by default, and neither `orbit:ingress-http` nor `orbit:ingress-https` is present. Its only managed firewall rule is `orbit:wireguard-members`, which allows private WireGuard traffic.
@@ -545,25 +547,37 @@ The same command removes an Ingress whose convergence failed. A failed step leav
 
 `node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
 
-The run follows this order:
+Admission checks each live [public Process Route](#public-process-hostnames) as Route activation does. The Process Node's recorded firewall must admit the target, and the Process must publish one listener on the address the target selects. Otherwise the move is refused with `route.upstream_firewall_mismatch` or `route.upstream_unresolved`, and nothing is recorded.
+
+Until private DNS switches, the run prepares the target:
 
 1. Admission moves the assignment to the target. Every later build renders the target as the Cluster's Ingress.
-2. The target gets the Ingress role as `node:role:add --converge` gives it. It installs Caddy and the Orbit root and builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
-3. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
-4. Private DNS is published again. A name that only the Ingress serves, such as a public Process hostname, now answers with the target.
-5. A public app Route keeps its Router answer, because its Router serves it privately.
-6. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
-7. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
-8. When Ingress was the source's last role, public SSH reopens there.
+2. The target sends an HTTP HEAD request to each public Process listener. A refused or timed-out connection fails the move.
+3. The target gets the Ingress role as `node:role:add --converge` gives it, without private DNS. It installs Caddy and the Orbit root.
+4. The target builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
+5. A Router on another Node gets its Caddyfile again. Its site trusts the Ingress by where the Ingress runs.
+6. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
+7. The target must serve a valid public certificate for every public name. It asks itself over HTTPS with the system roots. It retries for at most 300 seconds.
 
-Until step 7 both Nodes serve the public sites. The grace in step 6 covers private DNS only; it does not wait for public DNS. Public DNS is yours:
+Then the run switches and cleans up:
+
+8. Private DNS is published again. A name that only the Ingress serves, such as a public Process hostname, now answers with the target.
+9. A public app Route keeps its Router answer, because its Router serves it privately.
+10. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
+11. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
+12. Public SSH reopens on the source if Ingress was its last role.
+
+Until step 11 both Nodes serve the public sites. The target's sites reach the Router over HTTPS with the system roots, which hold the Orbit root and the public roots. So the hop works while the source still answers with its Let's Encrypt certificate, and after it answers with its Orbit certificate.
+
+The grace in step 10 covers private DNS only; it does not wait for public DNS. Public DNS is yours:
 
 - Lower the TTL of each public record well before the move, or front the hostnames with a proxy that switches its origin at once.
-- Point the records at the target at the start of the run. The target answers on ports 80 and 443 from step 3.
+- Point the records at the target at the start of the run. The target answers on ports 80 and 443 from step 6.
 - Let's Encrypt issues the target's certificates only for names that public DNS points at the target. [Publish the public edge](#publish-the-public-edge) describes issuance.
-- A client that still holds the source's public answer after step 7 fails until that answer expires.
+- Step 7 fails when a name still has no valid certificate after 300 seconds.
+- A client can still hold the source's public answer after step 11. It fails until that answer expires.
 
-A failure before step 7 leaves the source's sites and rules in place, but the assignment already names the target. A later build of the source, such as a Route change, drops its public sites. Fix the cause and run the same command with `--from=SOURCE`.
+A failure before step 8 gives the Ingress back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`. The source never stopped serving, and no private DNS answer names the target. The target keeps the sites it already built. Fix the cause and run the same command again. A failure from step 8 on keeps the target as the Ingress; fix the cause and run the same command with `--from=SOURCE`.
 
 ## Change an existing Route
 

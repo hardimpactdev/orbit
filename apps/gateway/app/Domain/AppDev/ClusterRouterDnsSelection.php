@@ -91,7 +91,7 @@ final readonly class ClusterRouterDnsSelection
                 continue;
             }
 
-            $names = $this->selectedNames($projection['cluster_id'], $tld);
+            $names = $this->selectedNames($projection['cluster_id'], $tld)['router'];
 
             foreach ($projection['eligible'] as $requester) {
                 $key = DnsRequester::registered($requester->id, (string) app(RouteRenderContext::class)->wireguardIp($requester))->cacheKey();
@@ -109,6 +109,38 @@ final readonly class ClusterRouterDnsSelection
             'suffixes' => $suffixes,
             'overrides' => $overrides,
         ];
+    }
+
+    /**
+     * The requester answers that earlier releases published and that no current answer replaces: each public Process
+     * name with its Router's LAN address. Publishers withdraw a live answer that still holds this value
+     * (docs/reference/private-dns.md#public-process-names).
+     *
+     * @param  array<int, array{cluster_id?: ?int, lan_ip?: ?string, status?: LifecycleStatus, wireguard_ip?: ?string, wireguard_public_key?: ?string}>  $nodeOverrides
+     * @param  array<int, array{state?: ClusterState, tld?: ?string, router_node_id?: ?int}>  $clusterOverrides
+     * @return array<string, array<string, string>>
+     */
+    public function retiredAnswers(array $nodeOverrides = [], array $clusterOverrides = []): array
+    {
+        $retired = [];
+
+        foreach ($this->projections($nodeOverrides, $clusterOverrides) as $projection) {
+            if ($projection['router_lan'] === null || $projection['router_wireguard'] === null) {
+                continue;
+            }
+
+            $names = $this->selectedNames($projection['cluster_id'], $projection['tld'])['process'];
+
+            foreach ($projection['eligible'] as $requester) {
+                $key = DnsRequester::registered($requester->id, (string) app(RouteRenderContext::class)->wireguardIp($requester))->cacheKey();
+
+                foreach ($names as $name) {
+                    $retired[$key][$name] = $projection['router_lan'];
+                }
+            }
+        }
+
+        return $retired;
     }
 
     /**
@@ -299,11 +331,12 @@ final readonly class ClusterRouterDnsSelection
     }
 
     /**
-     * @return list<string>
+     * @return array{router: list<string>, process: list<string>}
      */
     private function selectedNames(int $clusterId, ?string $tld): array
     {
         $names = [];
+        $process = [];
 
         if ($tld !== null) {
             $names[] = $tld;
@@ -323,6 +356,8 @@ final readonly class ClusterRouterDnsSelection
         foreach ($routes as $route) {
             // A public Process Route is served by the Ingress alone, never by the Router, so its LAN answer is not the Router's.
             if ($route->isCustomProxy()) {
+                $process[] = $this->normalizeName($route->domain);
+
                 continue;
             }
             $names[] = $this->normalizeName($route->domain);
@@ -342,7 +377,10 @@ final readonly class ClusterRouterDnsSelection
             $names[] = $this->normalizeName($route->domain);
         }
 
-        return array_values(array_unique(array_filter($names, static fn (string $name): bool => $name !== '')));
+        $kept = static fn (array $list): array => array_values(array_unique(array_filter($list, static fn (string $name): bool => $name !== '')));
+        $router = $kept($names);
+
+        return ['router' => $router, 'process' => array_values(array_diff($kept($process), $router))];
     }
 
     /** @return Collection<int, Route> */

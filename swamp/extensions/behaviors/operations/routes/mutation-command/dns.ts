@@ -86,12 +86,46 @@ function catalog(
         alternatives.map(map),
     ).get("value");
 }
+/**
+ * Earlier releases published requester answers that no snapshot names any more, so the
+ * three-way merge keeps them. The Gateway lists them as `retired` (requester => name =>
+ * address); a live answer that still holds that address goes, and a desired one stays
+ * (docs/reference/private-dns.md#public-process-names).
+ */
+function withdrawRetired(
+    merged: unknown,
+    desired: unknown,
+    retired: unknown,
+): unknown {
+    if (!object(merged) || !object(retired)) return merged;
+    const overrides = merged.overrides;
+    if (!object(overrides)) return merged;
+    const wanted = object(desired) && object(desired.overrides)
+        ? desired.overrides
+        : {};
+    const result: Record<string, unknown> = { ...overrides };
+    for (const [key, names] of Object.entries(retired)) {
+        const live = result[key];
+        if (!object(names) || !object(live)) continue;
+        const keep = object(wanted[key]) ? wanted[key] : {};
+        const left: Record<string, unknown> = { ...live };
+        for (const [name, address] of Object.entries(names)) {
+            if (name in keep || left[name] !== address) continue;
+            delete left[name];
+        }
+        if (Object.keys(left).length === 0 && !(key in wanted)) {
+            delete result[key];
+        } else result[key] = left;
+    }
+    return { ...merged, overrides: result };
+}
 export function mergeDns(
     before: { records: string; catalog: string },
-    after: { records: string; catalog: string },
+    after: { records: string; catalog: string; retired?: unknown },
     current: { records: string; catalog: string },
     alternatives: { records: string; catalog: string }[] = [],
 ) {
+    const desired = JSON.parse(after.catalog);
     const values = mergeSections(
         records(before.records),
         records(after.records),
@@ -103,12 +137,16 @@ export function mergeDns(
         records: "# Managed by Orbit.\n" +
             [...values.values()].sort().join("\n") + "\n",
         catalog: JSON.stringify(
-            catalog(
-                JSON.parse(before.catalog),
-                JSON.parse(after.catalog),
-                JSON.parse(current.catalog),
-                alternatives.map((value) => JSON.parse(value.catalog)),
-                true,
+            withdrawRetired(
+                catalog(
+                    JSON.parse(before.catalog),
+                    desired,
+                    JSON.parse(current.catalog),
+                    alternatives.map((value) => JSON.parse(value.catalog)),
+                    true,
+                ),
+                desired,
+                after.retired,
             ),
         ) + "\n",
     };

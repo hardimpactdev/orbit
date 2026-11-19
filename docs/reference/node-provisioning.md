@@ -971,7 +971,7 @@ Analytics role effects run in their native parent workflow. The Node PHP baselin
 
 The roles `gateway`, `router`, `ingress`, `app-dev`, `app-prod`, `websocket`, `analytics`, and `swamp` install Caddy when they converge.
 
-The `ingress` role also installs the Orbit root as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` and runs `update-ca-certificates` when the file changed. The Ingress sites reach the Router over Orbit CA HTTPS and name that file in `tls_trusted_ca_certs`, and an Ingress-only Node holds no Orbit CA leaf that would bring the root with it. The `ingress` role add and converge also publish private DNS on every DNS Node, so the public names of the Cluster answer with the Ingress. The `swamp` role takes no part in Metrics until the Metrics port (wave 7), so it adds no exporter or scrape target.
+The `ingress` role also installs the Orbit root as `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` and runs `update-ca-certificates` when the file changed. The Ingress sites reach the Router over HTTPS with the Node's system roots, which then hold the Orbit root, and an Ingress-only Node holds no Orbit CA leaf that would bring the root with it. The `ingress` role add and converge also publish private DNS on every DNS Node, so the public names of the Cluster answer with the Ingress, and the Caddyfile of the Cluster's Router. The `swamp` role takes no part in Metrics until the Metrics port (wave 7), so it adds no exporter or scrape target.
 
 The `swamp` role runs Swamp serve as `orbit-swamp-serve.service`, with at most 4 scheduled runs in flight. The Gateway renders serve's unit and the worker template at admission. Official `@swamp/cfgmgmt/systemd` steps write them over SSH from 209, enable the services and start any that is stopped. Their `check` and a native `assert` prove the end state.
 
@@ -1312,10 +1312,15 @@ Every target step is one official `@swamp/ssh exec` argument list with the targe
 - `websocket` builds a new Reverb release as the Node's user. The target needs Git, PHP and Composer.
 - Reverb's `.env` comes from the vault copy on stdin. `ln -sfnT` then points the install path at the release.
 - `gateway` writes the private DNS route drop-in and applies the route to the live link. A failed `Route the private domain` step reports `follow_up`: `orbit node:role:add <target> gateway --converge`.
-- `ingress` runs `operation-node-role-add` against the target. The intent is the one `node:role:add <target> ingress --converge` builds, without the Metrics fleet.
-- That child installs Caddy and the Orbit root and publishes the target's Caddyfile with the public sites. It also opens the Ingress rules and publishes private DNS.
-- The relocation's own certificate, firewall and publication steps have nothing left to do for `ingress`.
-- The source of an `ingress` move is the active Ingress of the target's Cluster. The target must already be a member. [Ingress relocation](/reference/routes#ingress-relocation) gives the order.
+
+The source of an `ingress` move is the active Ingress of the target's Cluster, and the target must already be a member. [Ingress relocation](/reference/routes#ingress-relocation) gives the order. Its target steps:
+
+- An HTTP HEAD request from the target to each public Process listener. Admission already checked that each Process Node's recorded firewall admits the target.
+- `operation-node-role-add` against the target. The intent is the one `node:role:add <target> ingress --converge` builds, without the Metrics fleet, private DNS or the source's Caddyfile.
+- That child installs Caddy and the Orbit root and opens the Ingress rules. It publishes the target's Caddyfile with the public sites, and a separate Router's Caddyfile.
+- `Check the public certificates` asks the target for every public name over HTTPS with the system roots. curl's own retry waits at most 300 seconds.
+
+The relocation's own certificate and firewall steps have nothing left to do for `ingress`. Its DNS step publishes private DNS after the certificate check.
 
 Then the run publishes. The `node-role-certificate-publish` child signs each certificate. The Caddy sites and private DNS of every publishing Node but the source follow. A `websocket` or `ingress` move waits the private DNS grace. Then `node-role-remove` removes the role from the source, and its own end check proves the removal.
 
@@ -1324,6 +1329,7 @@ One native assert, `Confirm the move`, ends the run. The Gateway records the res
 - On success the target assignment becomes active. The certificate and serving state follow the move.
 - The Gateway forgets the source's transferred settings.
 - A failed step marks the assignment `failed` with `converge:STEP`, or `remove:Remove from the source`.
+- An `ingress` move that fails before `Publish the role DNS` gives the assignment back to the source, `active`, with `source_kept: true` in the result.
 - A role that was already `active` stays `active` when `node:role:add --converge` fails. The failure stays on the Operation.
 
 Relocation does not reconcile Metrics. When a Metrics role exists and `websocket`, `gateway` or `ingress` moved, `follow_up` names `orbit node:role:add <metrics-node> metrics --converge`.

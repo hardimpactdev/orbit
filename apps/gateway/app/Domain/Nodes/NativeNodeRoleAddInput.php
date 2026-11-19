@@ -196,7 +196,7 @@ final readonly class NativeNodeRoleAddInput
         }
 
         if ($role === RoleName::Ingress) {
-            // Ingress sites reach the Router over Orbit CA HTTPS through tls_trusted_ca_certs on this path. An Ingress-only Node holds no
+            // Ingress sites reach the Router over HTTPS with the system roots, which must hold this root. An Ingress-only Node holds no
             // Orbit CA leaf, so no route site brings the root; the node phase refreshes the system roots when the file changes.
             $files[] = ['path' => self::OrbitRootPath, 'content' => app(LeafCertificateSigner::class)->rootCertificate(),
                 'owner' => 'root', 'group' => 'root', 'mode' => '0644'];

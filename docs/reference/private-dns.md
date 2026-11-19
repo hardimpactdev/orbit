@@ -201,8 +201,6 @@ The Gateway answers with the Router's LAN address when all of these hold:
 
 Every other requester gets the Router's WireGuard address. That includes a member without a LAN address, a member of another Cluster, and a source that is not an active registered WireGuard Node. The Gateway identifies the requester by the WireGuard source address that delivered the query. A shared LAN subnet or an identity in the DNS message does not count.
 
-A [public Process hostname](/reference/routes#public-process-hostnames) never gets the Router's LAN address. Only the Ingress serves it, so every requester gets the Ingress's WireGuard address.
-
 A Route change captures the sites that will exist after it, and the Gateway renders these answers from them, as it renders the host records, whatever the status of a Route. A Route that the change removes, or whose create is undone, loses its `overrides` entry in the same Operation that withdraws it, when it has one: a Cluster Route under the Cluster TLD has none ([records a TLD already answers](#records-a-tld-already-answers)).
 
 The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, also a domain outside the Cluster TLD. Other names keep their own answers:
@@ -224,6 +222,14 @@ New Routes and Route domain changes cannot take these reserved platform names. E
 No Cluster or Node TLD can equal, contain, or sit below either private zone: `orbit` and the configured VPN domain. Overlap is checked at DNS label boundaries. For example, a VPN domain of `vpn.corp` or `VPN.CORP.` also reserves `corp`, `vpn.corp`, and `n1.vpn.corp`; `beast.orbit` is always reserved. Unrelated suffixes such as `test`, `orp`, and `notvpn.corp` remain valid. This comparison ignores case and the optional DNS root dot, including in existing configured domains. Relocating the `gateway` role republishes `gateway.orbit`. Renaming a Node does not change it.
 
 Doctor does not report stored TLD overlaps. Operators must inspect existing Cluster and Node TLDs and correct conflicts. This input guard does not remove stored conflicts or change their DNS publication.
+
+### Public Process names
+
+A [public Process hostname](/reference/routes#public-process-hostnames) never gets the Router's LAN address. Only the Ingress serves it, so every requester gets the Ingress's WireGuard address.
+
+Earlier releases gave these names the Router's LAN address too. No snapshot names those answers now, so the three-way merge alone would keep them in the live catalog.
+
+Each private DNS snapshot therefore carries a `retired` list beside the catalog: for each requester, the public Process names with the Router's LAN address. `retired` is never written to the Node. When a publisher merges a snapshot, it removes a live answer for a listed name only while that answer still holds the listed address and the snapshot does not want the name. The first publication after the upgrade withdraws them, and so does an [Ingress relocation](/reference/routes#ingress-relocation).
 
 ### Records a TLD already answers
 

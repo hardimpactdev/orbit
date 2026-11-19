@@ -21,6 +21,7 @@ use App\Infrastructure\Swamp\NativeRunResult;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\WebSocket\WebSocketEnvironmentRenderer;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
+use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Models\WebSocketRuntime;
@@ -35,6 +36,8 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
     public const string SourceStep = 'Remove from the source';
 
     public const string RouteStep = 'Route the private domain';
+
+    public const string DnsStep = 'Publish the role DNS';
 
     /** The role's secrets go to the vault as execution copies; the inputs carry only their names. */
     public function input(Operation $operation): array
@@ -91,10 +94,12 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
             if (is_string($intent['metrics_converge'] ?? null)) {
                 $followUps[] = "Metrics still scrapes the former sites. Run `orbit node:role:add {$intent['metrics_converge']} metrics --converge`.";
             }
+            // An Ingress move that failed before private DNS switched never sent traffic to the target, and the source still serves.
+            $restored = ! $succeeded && $intent['role'] === RoleName::Ingress->value && ! $this->dnsSwitched($raw);
             $result = $succeeded
                 ? ['node_id' => $intent['target_node_id'], 'source_node_id' => $intent['source_node_id'], 'role' => $intent['role'], 'relocated' => true,
                     ...($followUps === [] ? [] : ['follow_up' => implode(' ', $followUps)])]
-                : ['failed_step' => $failedStep, 'error_code' => $errorCode];
+                : ['failed_step' => $failedStep, 'error_code' => $errorCode, ...($restored ? ['source_kept' => true] : [])];
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal) {
                 return $projected;
@@ -105,15 +110,28 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
                 $assignment->markConvergenceActive();
                 $this->recordPublication($intent);
                 NodeRoleRemovalProjection::recordCleanup(['node_id' => $intent['source_node_id'], 'role' => $intent['role']], true);
+            } elseif ($restored) {
+                // The source stays the Cluster's Ingress, so a later Route change renders its public sites where they are served.
+                $assignment->update(['node_id' => ValidatedData::integer($intent['source_node_id'])]);
+                $assignment->markConvergenceActive();
+                $target = ValidatedData::integer($intent['target_node_id']);
+                app(RecordEventBroadcaster::class)->broadcast(RecordEventType::NodeUpdated, $target, NodeData::fromModel(Node::query()->findOrFail($target))->toArray());
             } else {
                 $assignment->update(['status' => LifecycleStatus::Failed,
                     'failed_step' => ($failedStep === self::SourceStep ? 'remove:' : 'converge:').$failedStep, 'error_code' => $errorCode]);
             }
             app(RecordEventBroadcaster::class)->broadcast(RecordEventType::NodeUpdated, $assignment->node_id,
-                NodeData::fromModel($assignment->node->refresh())->toArray());
+                NodeData::fromModel($assignment->node()->firstOrFail())->toArray());
 
             return $projected;
         });
+    }
+
+    /** @param array<string,mixed> $raw */
+    private function dnsSwitched(array $raw): bool
+    {
+        return array_any(ValidatedData::object($raw['steps'] ?? []), fn ($step, $name) => str_starts_with($name, self::DnsStep)
+            && ! in_array(ValidatedData::object($step)['status'] ?? 'skipped', ['skipped', 'pending'], true));
     }
 
     /** @param array<string,mixed> $raw */
