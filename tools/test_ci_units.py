@@ -978,6 +978,15 @@ if __name__ == '__main__':
             file.write_text(suite.format(first='pass').replace('signal.pause()', 'pass'))
             steps['swamp/passes.py'] = units.gate.Step('shape', 'passes', ['python3', str(file)])
             self.assertEqual(0, code(['swamp/passes.py']))
+            # The recorder runs a file as `python3 file` does: `__file__` is absolute and argv keeps the given path.
+            file = folder / 'paths_test.py'
+            file.write_text('import os, sys\nassert os.path.isabs(__file__), __file__\nassert sys.argv[0] == ' + repr('paths_test.py')
+                            + ', sys.argv\nassert __name__ == "__main__"\n')
+            for flags in ([], ['-I']):
+                done = subprocess.run([sys.executable, *flags, str(ROOT / 'tools/ci_unit_failures.py'), 'paths_test.py'],
+                                      cwd=folder, capture_output=True, text=True)
+                self.assertEqual((0, ''), (done.returncode, done.stderr))
+            self.assertIn('tools/ci_unit_failures.py', units.MACHINERY)
             # A failed Deno case or step in the receipt gates, and so does one that Deno printed.
             for case in ({'name': 'outer', 'status': 'CENSORED', 'failed_step': True}, {'name': 'outer', 'status': 'FAILED'}):
                 self.assertEqual([], units.cut_units([{'unit': 'swamp/x.ts', 'status': 'OVER BUDGET', 'seconds': 1, 'cases': [case]}]))
@@ -997,6 +1006,36 @@ if __name__ == '__main__':
                                         capture_output=True, text=True, check=True).stdout
                 self.assertEqual(present, 'swamp/slow.ts#1/2' in output)
                 self.assertEqual(present, bool(output))
+
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_the_step_wrapper_records_a_failed_step_and_leaves_passing_shapes_alone(self):
+        source = '''import { assert, assertEquals } from "jsr:@std/assert@1";
+const loose = { sanitizeOps: false, sanitizeResources: false, sanitizeExit: false };
+Deno.test("shapes pass", async (t) => {
+  assert(await t.step(function namedStep() {}));
+  assertEquals(await t.step({ name: "ignored", ignore: true, fn: () => { throw new Error("never"); } }), false);
+  await t.step("inner", async (inner) => {
+    assert(inner.parent === t);
+    assertEquals(inner.name, "inner");
+    assert(await inner.step("deep", () => {}));
+  });
+});
+Deno.test("a step through parent fails beside a hang", async (t) => {
+  const slow = t.step({ name: "slow", fn: () => new Promise(() => {}), ...loose });
+  await t.step({ name: "via parent", ...loose, fn: async (inner) => {
+    await inner.parent!.step({ name: "fails", fn: () => { throw new Error("x"); }, ...loose });
+  } });
+  await slow;
+});
+'''
+        with tempfile.TemporaryDirectory() as scratch:
+            file, receipt = Path(scratch) / 'steps_test.ts', Path(scratch) / 'receipt.json'
+            file.write_text(source)
+            subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)], capture_output=True, timeout=60,
+                           env={**os.environ, 'ORBIT_TEST_TIMING_FILE': str(receipt), 'ORBIT_TEST_STARTED_AT_MS': '0'})
+            cases = {row['name']: row for row in json.loads(receipt.read_text())['cases']}
+        self.assertEqual(('passed', None), (cases['shapes pass']['status'], cases['shapes pass'].get('failed_step')))
+        self.assertTrue(cases['a step through parent fails beside a hang'].get('failed_step'))
 
     def test_required_names_the_cut_units_without_changing_the_gate(self):
         import yaml

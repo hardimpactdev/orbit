@@ -5,8 +5,8 @@ prints a failure's details only when the whole run ends, so the runner cannot re
 writes a marker file the moment a test, a subtest or a class or module fixture fails.
 """
 import os
-import runpy
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -27,9 +27,13 @@ def record(method):
 for name in ('addFailure', 'addError', 'addUnexpectedSuccess', 'addSubTest'):
     record(name)
 
-file = sys.argv[1]
+# As `python3 file` does: the given path stays in argv, `__file__` is absolute, and the file's folder comes first on the
+# path unless Python runs isolated.
 sys.argv = sys.argv[1:]
-# `python3 file` puts the file's folder first on the path, unless Python runs isolated.
+file = Path(sys.argv[0]).resolve()
 if not sys.flags.isolated:
-    sys.path[0] = str(Path(file).resolve().parent)
-runpy.run_path(file, run_name='__main__')
+    sys.path[0] = str(file.parent)
+main = types.ModuleType('__main__')
+main.__file__ = str(file)
+sys.modules['__main__'] = main
+exec(compile(file.read_bytes(), str(file), 'exec'), main.__dict__)  # noqa: S102 - runs the repository's own fixture file

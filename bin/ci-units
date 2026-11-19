@@ -26,7 +26,7 @@ PRELOAD = 'swamp/tests/_support/slice.ts'
 # lists it as an input. The shape gate lists and launches the fixtures; the Ansible toolchain pins run every Ansible fixture.
 ANSIBLE_TOOLCHAIN = ('swamp/ansible/ansible.cfg', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml',
                      'swamp/ansible/shape-gate-requirements.txt')
-MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD, *ANSIBLE_TOOLCHAIN)
+MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD, 'tools/ci_unit_failures.py', *ANSIBLE_TOOLCHAIN)
 # Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices. The retired
 # after-merge keys, with their reason, also only scheduled a fixture or some of its cases (ADR 0262).
 SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices', 'after_merge', 'after_merge_cases', 'reason')
