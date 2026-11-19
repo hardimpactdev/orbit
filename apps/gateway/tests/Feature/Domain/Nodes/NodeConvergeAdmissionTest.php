@@ -416,6 +416,28 @@ it('allocates every Instance host app-dev Node\'s bridge in the admission, befor
     'the base only' => [['base' => true], null],
 ]);
 
+it('releases an unused Instance bridge of an app-dev Node without the Instance pool in the admission, before the capture', function (): void {
+    // As release 2158 left the live services Node: app-dev beside other roles, no Incus, and a bridge from an earlier admission.
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    Node::query()->whereKey($this->node->id)->update(['instance_bridge' => '10.253.4.0/24']);
+    $seen = new ArrayObject;
+    app()->instance(NodeDesiredConvergeInput::class, new class($seen)
+    {
+        public function __construct(private ArrayObject $seen) {}
+
+        public function capture(Node $node): never
+        {
+            $this->seen['bridge'] = Node::query()->whereKey($node->id)->value('instance_bridge');
+
+            throw new RuntimeException('capture reached');
+        }
+    });
+
+    $this->postJson($this->url, []);
+
+    expect($seen->getArrayCopy())->toHaveKey('bridge')->and($seen['bridge'])->toBeNull();
+});
+
 it('claims local DNS before dispatch and retains cleanup after a later machine failure or crash', function (bool $direct, bool $crash): void {
     Node::withoutEvents(fn () => $this->control->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned',
         'ssh_host_fingerprint' => 'SHA256:pinned', 'agent_secret_hash' => hash('sha256', 'private-control-secret')])->save());
