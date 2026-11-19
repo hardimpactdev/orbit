@@ -159,7 +159,7 @@ Gateway static analysis checks `nft --version` before its two real-kernel cases.
 
 Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for `nftables` on Azure and twenty-five seconds for `valkey-server`, which also configures a service. The fallback has twenty seconds for either package.
 
-The Valkey install keeps the packages it downloaded in the Actions cache, keyed by the runner image, and the job on main that warms the Gateway test caches saves that cache. A later run on the same image installs those packages with `dpkg` and needs no mirror: a mirror that times out then leaves the real-client job unaffected. A package set that no longer installs falls through to the two mirrors and is replaced.
+The Valkey install keeps the packages it downloaded in the Actions cache, keyed by the runner image, and the job on main that warms the Gateway test caches saves that cache. A later run on the same image installs those packages with `dpkg` and needs no mirror: a mirror that times out then leaves the real-client job unaffected. When the cached packages fail to install, the helper uses the two mirrors and replaces the cached set.
 
 Apt suspends `needrestart` on the disposable runner so unrelated service scans and restarts do not consume the install deadline. At the deadline, the helper identifies the timed-out operation and kills its process group. It verifies the installed commands and fails if neither attempt supplies them. Gateway static analysis keeps its two-minute job limit; the real-client job has four minutes.
 
