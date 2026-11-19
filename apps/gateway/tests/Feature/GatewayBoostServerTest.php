@@ -21,18 +21,19 @@ function productionArtisan(array $command, string $input = ''): Process
     return $process;
 }
 
-it('starts the Boost MCP server in a production Gateway with only the tools the Gateway can use', function (): void {
+it('starts the Boost MCP server in a production Gateway with only the tools the Gateway can use and no guidance prompts', function (): void {
     $requests = collect([
         ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => [], 'clientInfo' => ['name' => 'test', 'version' => '1']]],
         ['jsonrpc' => '2.0', 'method' => 'notifications/initialized'],
         ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'],
+        ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'prompts/list'],
     ])->map(fn (array $request): string => json_encode($request, JSON_THROW_ON_ERROR)."\n")->implode('');
 
     $process = productionArtisan(['boost:mcp'], $requests);
 
-    $tools = collect(explode("\n", trim($process->getOutput())))
-        ->map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR))
-        ->firstWhere('id', 2)['result']['tools'];
+    $responses = collect(explode("\n", trim($process->getOutput())))
+        ->map(fn (string $line): array => json_decode($line, true, flags: JSON_THROW_ON_ERROR));
+    $tools = $responses->firstWhere('id', 2)['result']['tools'];
 
     expect(collect($tools)->pluck('name')->sort()->values()->all())->toBe([
         'database-connections',
@@ -41,7 +42,7 @@ it('starts the Boost MCP server in a production Gateway with only the tools the 
         'last-error',
         'read-log-entries',
         'search-docs',
-    ]);
+    ])->and($responses->firstWhere('id', 3)['result']['prompts'])->toBe([]);
 });
 
 it('loads no Boost for any other artisan command', function (): void {
