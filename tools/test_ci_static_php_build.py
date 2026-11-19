@@ -49,7 +49,7 @@ class StaticPhpBuildTest(unittest.TestCase):
     def test_every_input_changes_the_build_id(self):
         shipped = build.definitions(RECIPE)['8.5']['build']
         changes = [
-            lambda r: r['instances']['php']['versions']['8.5'].update(php_version='8.5.13'),
+            lambda r: r['instances']['php']['versions']['8.5'].update(php_version='8.5.14'),
             lambda r: r['instances']['php'].update(frankenphp='1.13.6'),
             lambda r: r['instances']['php'].update(static_php_cli='0' * 40),
             lambda r: r['instances']['php'].update(without=['ffi', 'xsl']),

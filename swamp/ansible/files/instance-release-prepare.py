@@ -186,6 +186,8 @@ def prepare(instance, php):
     # Default installation never enables the unit. Candidate readiness and the first verified switch own its service lifecycle.
     guest(machine, "sh", "-ec", 'cat >/etc/systemd/system/orbit-frankenphp.service && systemctl daemon-reload', stdin=UNIT.replace("@PHP@", php))
     guest(machine, "sh", "-ec", 'test -x /opt/orbit-runtime/current/php/"$1"/bin/frankenphp && install -d -o orbit -g orbit -m 0750 /srv/workspace /srv/shared', "sh", php)
+    # Both binaries read /etc/orbit/php/php.ini: the build's php.ini-production with the security settings, at every deploy.
+    guest(machine, "sh", "-ec", PHP_INI, "sh", php)
     upstream = directory / "upstream.caddy"
     if not upstream.exists():
         with upstream.open("x") as stream:
@@ -206,6 +208,14 @@ if ! id orbit >/dev/null 2>&1; then useradd -m -U -s /bin/bash orbit; fi
 apt-get -qq update
 apt-get -qq install --no-install-recommends -y ca-certificates curl git openssh-client python3 rsync unzip
 install -d -m0755 /etc/orbit
+"""
+# PHP's production settings less upload progress and the PHP header; later lines win (docs/reference/php-runtime.md#production-safe-settings).
+PHP_INI = """install -d -m0755 /etc/orbit/php
+{ cat /opt/orbit-runtime/current/php/"$1"/php.ini-production
+  printf '%s\\n' '' '; Orbit' 'zend.exception_ignore_args = 1' 'session.upload_progress.enabled = 0' 'display_errors = 0' \\
+    'display_startup_errors = 0' 'expose_php = 0'; } >/etc/orbit/php/php.ini.new
+chmod 0644 /etc/orbit/php/php.ini.new
+mv /etc/orbit/php/php.ini.new /etc/orbit/php/php.ini
 """
 UNIT = """[Unit]
 Description=Orbit production Instance web server
