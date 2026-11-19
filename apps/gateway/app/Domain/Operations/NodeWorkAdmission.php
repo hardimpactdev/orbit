@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
@@ -22,9 +23,6 @@ final readonly class NodeWorkAdmission
 
     /** The longest a refused automatic role converge waits for its holders. Then it is admitted beside them, as a hand converge is. */
     public const int WaitLimitSeconds = 300;
-
-    /** Removals free a Node, so a waiting converge never holds them back. */
-    private const array RemovalKinds = ['instance.destroy', 'instance.unregister'];
 
     /**
      * A refused automatic role converge queues: new Instance, Conn and Process work on the Node waits behind it, so it starts once the
@@ -48,7 +46,7 @@ final readonly class NodeWorkAdmission
         $predecessors = array_values(array_filter([$parentId, ...array_values(array_filter($input,
             static fn (mixed $value, int|string $key): bool => str_ends_with((string) $key, '_operation_id') && is_int($value),
             ARRAY_FILTER_USE_BOTH))]));
-        if (! $roles && ! in_array($kind, self::RemovalKinds, true) && array_any($nodes, static fn (int $id): bool => ($wait = self::wait($id)) !== null
+        if (! $roles && ! InstanceDestroyKind::removes($kind) && array_any($nodes, static fn (int $id): bool => ($wait = self::wait($id)) !== null
             && array_intersect($predecessors, $wait['holders']) === [])) {
             throw new ResourceOperationException('operation.target_busy', 'An automatic role converge waits for this Node.', 409);
         }

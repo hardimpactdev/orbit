@@ -12,7 +12,9 @@ use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\RemotePrograms\ProgramResult;
 use App\Domain\RemotePrograms\RemoteProgramRunner;
@@ -122,6 +124,25 @@ describe('a failed destroy', function (): void {
         $second = ($this->reap)();
         expect($second)->toHaveCount(1)->and($second[0]->idempotency_key)->toBe("removal-reaper:{$removal->id}:1")
             ->and($removal->fresh()->retry_count)->toBe(2);
+    });
+
+    it('starts again while an automatic role converge waits for the Node, which holds only new work back', function (): void {
+        $removal = ($this->failed)();
+        $this->travel(5)->minutes();
+        // Other Instance work holds the Node, so the release's role converge is refused and queues.
+        app(OperationStore::class)->create('instance.deploy', 'instance', 999, $this->node->id, [], 'test', null);
+        $converge = ['_converge' => ['intent' => ['release_roles_only' => true]]];
+        expect(fn () => app(NodeWorkAdmission::class)->check('node.converge', $this->node->id, $converge))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'))
+            ->and(fn () => app(NodeWorkAdmission::class)->check('instance.deploy', $this->node->id, []))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->getMessage())->toBe('An automatic role converge waits for this Node.'));
+
+        $started = ($this->reap)();
+
+        expect($started)->toHaveCount(1)
+            ->and($started[0]->kind)->toBe('instance.destroy')
+            ->and($started[0]->input['removal_id'])->toBe($removal->id)
+            ->and($removal->fresh()->start_refusal)->toBeNull();
     });
 
     it('defines the backoff in one place', function (): void {

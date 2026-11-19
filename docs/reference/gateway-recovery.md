@@ -732,7 +732,7 @@ Automatic role convergence and conflicting Instance, Conn and Process work exclu
 
 When open Instance work refuses the automatic converge, the converge queues: new Instance, Conn and Process work on that Node gets `operation.target_busy` (HTTP 409, `An automatic role converge waits for this Node.`) until the converge is admitted, so it starts as soon as the current holders end. The Node's row lists those holders in `waiting_for`.
 
-A removal, `instance.destroy` or `instance.unregister`, frees the Node and is never refused by the wait. Only a holder's own continuation goes on besides: its child Operation, or an Operation whose input names the holder as its predecessor, such as the `instance.complete` that follows an `instance.create`. New work on a holder's target waits like any other new work.
+A removal, `instance.destroy` or `instance.unregister`, frees the Node and is never refused by the wait. This includes a task cancel's destroy of its copy and the removal reaper's retry of a failed destroy. Only a holder's own continuation goes on besides: its child Operation, or an Operation whose input names the holder as its predecessor, such as the `instance.complete` that follows an `instance.create`. New work on a holder's target waits like any other new work.
 
 The wait is bounded. A converge that still waits five minutes after its first refusal is admitted beside its holders, and the wait ends. New work is then refused only while the converge runs. The wait also ends when the release pass stops renewing it for a minute.
 

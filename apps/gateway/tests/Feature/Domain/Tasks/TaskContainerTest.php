@@ -1457,6 +1457,30 @@ describe('a cancel of a group that owns a copy', function (): void {
         expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
     });
 
+    it('answers HTTP 409 operation.target_busy, recorded as such, while an automatic role converge runs on the copy\'s Node', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+        $this->ssh->answer = ['state' => 'clean', 'baseline' => 'recorded', 'head' => 'task-1',
+            'modified' => ['count' => 0, 'names' => []], 'untracked' => ['count' => 0, 'names' => []],
+            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
+        $converge = Operation::query()->create(['operation_version' => 1, 'child_versions' => [], 'kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $copy->node_id,
+            'node_id' => $copy->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true]]], 'state' => [], 'status' => OperationStatus::Running,
+            'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test', 'lock_key' => 'node:'.$copy->node_id]);
+
+        // The refusal of release 2161's first cancel of group 5956: a running release converge holds the copy's Node until it ends.
+        $this->withHeader('Idempotency-Key', 'cancel-converging')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
+            ->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy')
+            ->assertJsonPath('error.message', 'Automatic role convergence and Instance work share a Node.')
+            ->assertJsonPath('error.details.operation_ids', [$converge->id]);
+        $activity = Activity::query()->where('command', 'task:cancel')->sole();
+        expect([$activity->status, $activity->error_code])->toBe(['failed', 'operation.target_busy'])
+            ->and(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse();
+    });
+
     it('admits no destroy when another Operation takes the group lock after the cancel\'s checks', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
