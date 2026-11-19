@@ -419,6 +419,9 @@ class CloneTest(unittest.TestCase):
                     held = held if isinstance(held, dict) else {"content": held}
                     headers = {"type": "file", "uid": "0", "gid": "0", "mode": "0644", **held}
                     return subprocess.CompletedProcess(argv, 0, held["content"], "200 {type} {uid} {gid} {mode}".format(**headers))
+                if argv[0] == "curl" and "--retry" in argv:
+                    # The seed wait: curl's exit only, which the copy does not read.
+                    return subprocess.CompletedProcess(argv, 0, "", "")
                 if argv[0] == "curl":
                     # The files API's type header, read from the copy's real root file system; a link is never followed.
                     local = root / urllib.parse.unquote(argv[-1].split("&path=", 1)[1]).lstrip("/")
@@ -487,7 +490,10 @@ class CloneTest(unittest.TestCase):
                     elif argv[2] == "/1.0/instances/instance-1?project=orbit-instances":
                         output = json.dumps({"config": {"volatile.last_state.idmap": json.dumps(container.get("fixture_source_idmap", []))}})
                     elif "snapshots?" in argv[2]:
-                        output = json.dumps(container.get("fixture_snapshots", [{"name": "seed-abc"}]))
+                        # `fixture_snapshot_reads`: what each read returns in turn, the last one again after the list ends.
+                        reads = container.get("fixture_snapshot_reads")
+                        output = json.dumps(reads.pop(0) if reads and len(reads) > 1 else reads[0] if reads
+                                            else container.get("fixture_snapshots", [{"name": "seed-abc"}]))
                     elif "sockets.target.wants" in argv[2]:
                         output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "orbit-node-service-3308.socket", "project.socket"])
                     elif "timers.target.wants" in argv[2]:
@@ -672,13 +678,26 @@ class CloneTest(unittest.TestCase):
         self.assertIn("instance.default_seed_missing", error)
         self.assertFalse(any("copy" in call for call in calls))
 
+    SEED_WAIT = ["curl", "--unix-socket", "/var/lib/incus/unix.socket", "--fail", "--silent", "--show-error", "--output", "/dev/null",
+                 "--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120",
+                 "http://incus/1.0/instances/instance-1/snapshots/seed-abc?project=orbit-instances"]
+
     def test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved(self):
-        # The wait step's bound passed between the retake's delete and its rename: the admitted seed's `next-` is still there.
+        # The wait's bound passed between the retake's delete and its rename: the admitted seed's `next-` is still there.
         for snapshots in ([{"name": "next-abc"}], [{"name": "next-abc"}, {"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"}]):
             calls, _, error = self.clone(overrides={"fixture_snapshots": snapshots})
             self.assertIn("instance.default_seed_moved", error)
             self.assertFalse(any("copy" in call for call in calls))
             self.assertIsNone(self.seed_commit)
+            # It waited once by curl's own retry, every 2 s for at most 120 s, read the snapshots again, then refused.
+            self.assertEqual([call for call in calls if "--retry" in call], [self.SEED_WAIT])
+            self.assertEqual(sum(call[:2] == ["incus", "query"] and "/snapshots?" in call[2] for call in calls), 2)
+        # A retake that ends within the wait: `seed-abc` is gone, and after the wait its `next-abc` has the name again.
+        calls, _, error = self.clone(overrides={"fixture_snapshot_reads": [[{"name": "next-abc"}], [{"name": "seed-abc"}]]})
+        self.assertEqual(error, "")
+        self.assertEqual([call for call in calls if "--retry" in call], [self.SEED_WAIT])
+        self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
+        self.assertIsNone(self.seed_commit)
 
     def test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit(self):
         # The retake took a seed at another commit and deleted the admitted one: the copy takes the new seed and records its commit.
@@ -693,6 +712,7 @@ class CloneTest(unittest.TestCase):
 
     def test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing(self):
         calls, _, error = self.clone()
+        self.assertFalse(any("--retry" in call for call in calls))
         self.assertEqual(len([call for call in calls if call[:2] == ["incus", "query"] and "/instances/instance-1/snapshots?" in call[2]]), 1)
         self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
         self.assertIsNone(self.seed_commit)

@@ -310,8 +310,8 @@ def main():
         line = code + " (" + public_text(purpose(argv), values, 400) + ")"
         return PhaseFailure(line, public_text(result.stderr or "", values, DETAIL_BYTES - len(line.encode()) - 2))
 
-    def run(argv, content=None, check=True):
-        remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
+    def run(argv, content=None, check=True, timeout=100):
+        remaining = timeout if workspace_deadline is None else workspace_deadline - time.monotonic()
         if remaining <= 0:
             raise subprocess.TimeoutExpired(argv, 115)
         result = subprocess.run(
@@ -733,21 +733,23 @@ def main():
             copy_timer.__enter__()
             if read is None:
                 clone = container["clone"]
-                snapshots = json.loads(
-                    run(
-                        [
-                            "incus",
-                            "query",
-                            f"/1.0/instances/{clone['source']}/snapshots?project={container['project']}&recursion=1",
-                        ]
-                    ).stdout
-                )
-                names = [row["name"] for row in snapshots]
-                # The step before this one waited, by curl's own retry, up to 120 s for the admitted seed: a retake at its commit has a
-                # moment between the delete and the rename (docs/reference/development-containers.md#a-retake-keeps-the-seed). This
-                # reads the snapshots once. A default with no seed at all refuses by its own code; the admitted seed's `next-` still
-                # there is a retake that did not end within the wait; a seed that a deployment replaced by a newer one is copied.
                 snapshot = clone["snapshot"]
+                snapshots_url = f"/1.0/instances/{clone['source']}/snapshots?project={container['project']}&recursion=1"
+                snapshots = json.loads(run(["incus", "query", snapshots_url]).stdout)
+                names = [row["name"] for row in snapshots]
+                # A retake at the admitted commit has a moment between the delete of `seed-<commit>` and the rename of its `next-`
+                # (docs/reference/development-containers.md#a-retake-keeps-the-seed). Only a copy that meets that moment waits, by
+                # curl's own retry on the Node's Incus API: every 2 s, for at most 120 s, the bound of a deployment's `seed` phase. It
+                # then reads the snapshots once more. A normal copy finds its seed at the first read and waits not at all.
+                if snapshot not in names and "next-" + snapshot[len("seed-"):] in names:
+                    run(["curl", "--unix-socket", INCUS_SOCKET, "--fail", "--silent", "--show-error", "--output", "/dev/null", "--retry", "60",
+                         "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120",
+                         f"http://incus/1.0/instances/{urllib.parse.quote(clone['source'])}/snapshots/{urllib.parse.quote(snapshot)}"
+                         f"?project={urllib.parse.quote(container['project'])}"], check=False, timeout=130)
+                    snapshots = json.loads(run(["incus", "query", snapshots_url]).stdout)
+                    names = [row["name"] for row in snapshots]
+                # A default with no seed at all refuses by its own code; the admitted seed's `next-` still there is a retake that did
+                # not end within the wait; a seed that a deployment replaced by a newer one is copied.
                 if not any(name.startswith(("seed-", "next-")) for name in names):
                     raise RuntimeError("instance.default_seed_missing")
                 if snapshot not in names:

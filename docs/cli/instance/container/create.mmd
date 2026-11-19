@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new non-default development Instance is a ZFS clone of the Project's container default on its Node. A proof copy may clone another Node's current seed (docs/reference/development-containers.md#the-seed-on-each-ci-node). Create ends when the thread is usable: checkout, T3 and registration. Its terminal projection admits instance.complete for the database, nested fleet and Processes. Create publishes the address when the Route Nodes are free; otherwise completion publishes it. No build list applies. The kind and step names follow docs/cli/instance/create.mmd; container.clone marks a clone. The first default follows container/create-default.mmd.
-  %% Five Swamp dispatches for a ready clone (2026-11-17: the seed wait before the copy adds one; 2026-11-15): the copy step stages the release scripts from the Gateway's stage copy, so a clone runs no `input` or `clone-input` step; `clone-register` builds the create's result, so a ready clone skips `finish`. Each Swamp behavior step costs about 0.9 s of dispatch, an assert none. The step names `clone-container`, `clone-t3` and `clone-register` stay, in this order: Conn's create card reads them.
+  %% Five Swamp dispatches for a ready clone (2026-11-19: the copy step waits for its seed itself, so no seed-wait step; 2026-11-15): the copy step stages the release scripts from the Gateway's stage copy, so a clone runs no `input` or `clone-input` step; `clone-register` builds the create's result, so a ready clone skips `finish`. Each Swamp behavior step costs about 0.9 s of dispatch, an assert none. The step names `clone-container`, `clone-t3` and `clone-register` stay, in this order: Conn's create card reads them.
   %% Decided by the owner (2026-11-14) and the orchestrator (c3): the address is published during the create, beside the copy, in job `publication` (`clone-route-csr-<i>`, `clone-route`). The admission takes the Route Nodes only when it can and never waits for them: a Caddy-only publication shares them with removals and other such creates (at most eight on a Node), any other takes them alone; the Gateway frees them when `clone-route` ends, not at the create's end. Nodes held by another Route write leave the publication to the completion, as before.
   %% status: draft
   %% command: instance:create
@@ -88,12 +88,6 @@ sequenceDiagram
     %%> On failure:
     %%> - the copy does not start; the copy's destroy releases the hold
   end
-    SW->>N: Wait for the seed<br/>native clone-seed-wait
-    %%> What it does:
-    %%> - `curl` on the Node's Incus API asks for the admitted seed snapshot `seed-<commit>` of the default, with curl's own retry: every 2 s, for at most 120 s, the bound of a deployment's `seed` phase; a normal copy finds it at the first request
-    %%> - a retake at the admitted commit deletes `seed-<commit>` and renames its `next-` to that name a moment later, so the copy waits through that moment (docs/reference/development-containers.md#a-retake-keeps-the-seed)
-    %%> On failure:
-    %%> - at the bound the step fails, not the run (`allowFailure`); the copy step still runs and decides from one read of the snapshots
     SW->>N: Clone default container<br/>native clone-container
     %%> Stage, the step's first part:
     %%> - SSH stdin is the Gateway's launch copy, one vault value on ONE line: `stage` (the clone script, its helpers and the container intent from the admitting Gateway's release) beside `private` (the read token's credential line and the model environment). Swamp turns a vault value with a newline into one regular expression, which a 32 KB line breaks (release 2080)
@@ -104,9 +98,10 @@ sequenceDiagram
     %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
     %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
     %%> Seed (docs/reference/development-containers.md#a-retake-keeps-the-seed):
-    %%> - reads the default's snapshots once, after "Wait for the seed": copies the admitted seed when it is there
+    %%> - reads the default's snapshots and copies the admitted seed when it is there; a normal copy reads them once
+    %%> - a retake at the admitted commit deletes `seed-<commit>` and renames its `next-` to that name a moment later: while the admitted seed is missing and its `next-` is there, the step reads the snapshots again every 2 s, for at most 120 s, the bound of a deployment's `seed` phase
     %%> - when a deployment replaced it by a newer seed and no `next-` of the admitted seed is there, copies the newest `seed-` snapshot and records its commit for the later phases: a branch that the Node's mirror lacks starts at that commit, which the copied seed's repository holds
-    %%> - the admitted seed's `next-` still there after the wait (a retake that did not end within 120 s) fails the create with `instance.default_seed_moved` before any change, as before; a default without any `seed-` or `next-` snapshot refuses with `instance.default_seed_missing`
+    %%> - the admitted seed's `next-` still there at the bound (a retake that did not end within 120 s) fails the create with `instance.default_seed_moved` before any change, as before; a default without any `seed-` or `next-` snapshot refuses with `instance.default_seed_missing`
     %%> Inner volume (a clone whose intent has `inner_volume` only; every other clone makes no volume call and copies the container as before):
     %%> - the default's volume must hold its own snapshot `seed-<commit>`, the other half of the seed, else `instance.default_seed_incomplete` before any change; a deployment of the default takes the pair
     %%> - before the container: `incus storage volume copy` of that snapshot to `inner-<id>`, a ZFS clone; Incus gives the copy a new btrfs fsid (about 4 s in the 2026-11-14 test); a volume of that name without its container, left by a failed copy, is deleted and copied again. The clone inherits `volmode=dev` from the pool's `custom` dataset, which the Node's host converge sets, so its device is made once (docs/reference/development-containers.md#the-inner-volume)

@@ -206,8 +206,7 @@ Deno.test("the workflow's copy step stages the stage copy and launches the conta
     const cleanup = cloneSteps.find((step) => step.name === "clone-private-cleanup")!;
     const clean = render(cleanup.task.inputs.argv!, outputs, intent) as string[];
     // No input step stages before the copy step: it waits only for a proof copy's CI hold, which every other clone skips.
-    assertEquals(first.dependsOn, [{ step: "clone-ci-hold", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } },
-        { step: "clone-seed-wait", condition: { type: "always" } }]);
+    assertEquals(first.dependsOn, [{ step: "clone-ci-hold", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }]);
     const launch = (copy: string) => {
         stageCopy = copy;
         return execute(render(first.task.inputs.argv!, outputs, intent) as string[], render(first.task.inputs.stdin!, outputs, intent) as string,

@@ -1170,9 +1170,9 @@ The proof Project's default can keep one older pair as the base of the next [see
 
 Every older `base-` pair goes first, so the default keeps at most one base. Without `seed_base`, the old pair goes as before. A clone and a restore never read a `base-` pair. A rename keeps the snapshot's creation time, and it needs no free ID range. So a retake still needs only one free range, for a moment.
 
-A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the step before the copy, `clone-seed-wait`, asks the Node's Incus API for the admitted seed with curl's own retry: every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first request.
+A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the copy step, `clone-container`, reads the default's snapshots, and while the admitted seed is missing and its `next-` snapshot is there, it reads them again every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first read and waits not at all; no step of its own stands before the copy.
 
-Then the copy reads the default's snapshots once. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
+Then the copy decides from its last read. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
 
 #### The seed hold
 

@@ -218,7 +218,7 @@ Deno.test({ name: "pinned create: a normal clone ends ready at its registration 
         const done = await execute(f);
         assert(done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
-        for (const name of ["clone-seed-wait", "clone-container", "clone-t3", "clone-session-copy", "clone-register", "clone-private-cleanup", "accepted"]) {
+        for (const name of ["clone-container", "clone-t3", "clone-session-copy", "clone-register", "clone-private-cleanup", "accepted"]) {
             assertEquals(status(steps, name), "succeeded", name);
         }
         // The copy step read the real-size launch copy through vault.get, and the private text arrived whole. Neither secret is in the
@@ -385,51 +385,12 @@ Deno.test({ name: "pinned create: a later clone step that fails after the Route 
     }
 } });
 
-Deno.test("a clone waits for its admitted seed by curl's own retry, at most 120 s, and the copy runs after the wait in every case", async () => {
-    // docs/reference/development-containers.md#a-retake-keeps-the-seed: the step before the copy; the copy reads the snapshots once.
-    type Step = { name: string; guard: string; allowFailure?: boolean; dependsOn: { step: string; condition: unknown }[];
-        task: { inputs: { argv: string } } };
+Deno.test("a clone has no seed-wait step: the copy step waits for its seed itself, only during a retake", () => {
+    // docs/reference/development-containers.md#a-retake-keeps-the-seed: instance_clone.py's container phase reads the snapshots again
+    // while the admitted seed's `next-` stands alone (instance_clone_test.py covers the wait).
     const flow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as
-        { jobs: { name: string; steps: Step[] }[] };
+        { jobs: { name: string; steps: { name: string; dependsOn: { step: string }[] }[] }[] };
     const clone = flow.jobs.find((job) => job.name === "clone")!.steps;
-    const wait = clone.find((step) => step.name === "clone-seed-wait")!;
-    const copy = clone.find((step) => step.name === "clone-container")!;
-    assert(clone.indexOf(wait) < clone.indexOf(copy));
-    // A wait that reaches its bound fails the step, not the run; the copy then refuses a retake that still runs.
-    assertEquals(wait.allowFailure, true);
-    assertEquals(copy.dependsOn.find((edge) => edge.step === "clone-seed-wait")!.condition, { type: "always" });
-    const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
-    const evaluate = (text: string, intent: Record<string, unknown>) => cel.evaluate(text.slice(3, -2).trim(), { inputs: { intent }, steps: {} });
-    // A normal clone, as NativeDevelopmentInstanceInput hands it over.
-    const normal = { already_active: false, container: { project: "orbit-instances", clone: { source: "instance-1", snapshot: "seed-abc" } } };
-    assertEquals(evaluate(wait.guard, normal), false);
-    assertEquals(evaluate(wait.guard, { already_active: false, container: { project: "orbit-instances", clone: null } }), true);
-    const argv = evaluate(wait.task.inputs.argv, normal) as string[];
-    assertEquals(argv.slice(0, 3), ["timeout", "130", "curl"]);
-    assertEquals(argv.slice(argv.indexOf("--retry")), ["--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120",
-        "http://incus/1.0/instances/instance-1/snapshots/seed-abc?project=orbit-instances"]);
-    // The real argv against a local Incus API stand-in: only the socket path differs.
-    const folder = Deno.makeTempDirSync();
-    const socket = `${folder}/incus.socket`;
-    const run = async (missing: number) => {
-        const asked: string[] = [];
-        const server = Deno.serve({ path: socket, onListen: () => {} }, (request) => {
-            asked.push(new URL(request.url).pathname + new URL(request.url).search);
-            return new Response("{}", { status: asked.length > missing ? 200 : 404 });
-        });
-        const local = argv.map((value) => value === "/var/lib/incus/unix.socket" ? socket : value);
-        const done = await new Deno.Command(local[0], { args: local.slice(1), stdout: "null", stderr: "null" }).output();
-        await server.shutdown();
-        return { code: done.code, asked };
-    };
-    try {
-        // A normal clone finds its seed at the first request.
-        const found = await run(0);
-        assertEquals([found.code, found.asked], [0, ["/1.0/instances/instance-1/snapshots/seed-abc?project=orbit-instances"]]);
-        // Between a retake's delete and its rename the seed is missing for a moment: the step asks again and ends when it is back.
-        const retake = await run(1);
-        assertEquals([retake.code, retake.asked.length], [0, 2]);
-    } finally {
-        Deno.removeSync(folder, { recursive: true });
-    }
+    assertEquals(clone.find((step) => step.name === "clone-seed-wait"), undefined);
+    assertEquals(clone.find((step) => step.name === "clone-container")!.dependsOn.map((edge) => edge.step), ["clone-ci-hold"]);
 });

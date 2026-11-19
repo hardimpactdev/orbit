@@ -418,38 +418,6 @@ jobs:
             hosts:
               - name: target
                 address: ${{ inputs.intent.ssh_execution.target.host }}
-      # A retake of the default's seed at the admitted commit deletes `seed-<commit>` and renames its `next-` to that name a moment
-      # later (docs/reference/development-containers.md#a-retake-keeps-the-seed). The copy waits for the admitted seed here, by curl's
-      # own retry on the Node's Incus API: every 2 s, for at most 120 s, the bound of a deployment's `seed` phase. A normal copy finds
-      # its seed at the first request. At the bound the step fails without failing the run: the copy reads the snapshots once, copies
-      # a newer seed that replaced the admitted one, or refuses with instance.default_seed_moved while the retake still runs.
-      - name: clone-seed-wait
-        labels: {role: swamp}
-        writes: true
-        dependsOn: [{step: clone-ci-hold, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
-        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || ("clone-ci-hold" in steps && steps["clone-ci-hold"].status == "succeeded" && steps["clone-ci-hold"].outputs.stdout.split("\n").exists(line, line == "orbit-ci-hold=unavailable")) }}'
-        allowFailure: true
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
-          methodName: exec
-          inputs:
-            hosts: name:target
-            sudo: true
-            argv: '${{ inputs.intent.container != null && inputs.intent.container.clone != null ? ["timeout", "130", "curl", "--unix-socket", "/var/lib/incus/unix.socket", "--fail", "--silent", "--show-error", "--output", "/dev/null", "--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120", "http://incus/1.0/instances/" + inputs.intent.container.clone.source + "/snapshots/" + inputs.intent.container.clone.snapshot + "?project=" + inputs.intent.container.project] : ["true"] }}'
-            timeoutSec: 140
-          globalArgs:
-            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
-            transport:
-              kind: ssh
-              user: ${{ inputs.intent.ssh_execution.target.user }}
-              port: ${{ inputs.intent.ssh_execution.target.port }}
-              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-            hosts:
-              - name: target
-                address: ${{ inputs.intent.ssh_execution.target.host }}
       # One dispatch stages and copies (docs/cli/instance/container/create.mmd): the Gateway's launcher stages the stage copy's public
       # line (the release scripts) into the private folder, then runs the container part with only the copy's private text on stdin.
       # A create that is no clone skips the step; serve resolves its expressions all the same, so stdin names a key every create has
@@ -457,7 +425,7 @@ jobs:
       - name: clone-container
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-ci-hold, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-seed-wait, condition: {type: always}}]
+        dependsOn: [{step: clone-ci-hold, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || ("clone-ci-hold" in steps && steps["clone-ci-hold"].status == "succeeded" && steps["clone-ci-hold"].outputs.stdout.split("\n").exists(line, line == "orbit-ci-hold=unavailable")) }}'
         task:
           type: behavior
