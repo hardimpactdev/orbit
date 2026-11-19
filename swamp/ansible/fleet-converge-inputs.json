@@ -14,6 +14,7 @@
     "swamp/workflows/workflow-operation-node-converge-direct.yaml",
     "swamp/extensions/behaviors/operations/analytics/clickhouse_files.ts",
     "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+    "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
     "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
     "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
     "swamp/extensions/behaviors/operations/ansible-input/write.ts",

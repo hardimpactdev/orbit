@@ -635,8 +635,8 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 
 - the files written for the phases: the converge variables, `plans.json`, the inventory, the known hosts and each role's variables;
 - for a role Operation, its variables: the Operation kind, the role intent and its execution secrets;
-- the Ansible bundle, which also builds each role's variables;
-- the Tool helper and the shipped Tool files that it imports.
+- its code: for a `node.converge` phase, the Ansible files that phase can load (see below); for a role Operation, the whole Ansible bundle;
+- the Tool helper and the shipped Tool files that it imports: for a `node.converge`, in the `tools` and `roles` phases only.
 
 For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder.
 
@@ -646,7 +646,59 @@ The converge variables hold the attempt's intent and the values of its execution
 
 Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, its private run folder, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
-Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
+Every phase reads the same variables, so a change of any recorded input, secret value or plan moves every phase digest. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.
+
+Swamp resolves each phase's files from the staged bundle when it prepares the input. The resolver is `phase_code.ts` beside the input behaviour. It works in these steps:
+
+1. It starts at the tasks that `--tags <phase>` selects in the converge playbooks. These are the tasks and plays tagged with the phase or `always`.
+2. It also starts at each statically imported file that tags a task with the phase or `always`.
+3. The roles phase also starts at the local DNS wrapper playbook, because the roles phase may run that playbook instead.
+4. It follows every bundle file that a reached file names, by path or by file name.
+5. It follows a Python file by its module name. So Ansible modules, `module_utils` files and imported helpers count.
+6. It follows a named folder with every file under it.
+
+A path names a folder when it has two or more parts or ends in `/`. A local `copy`, `template` or `synchronize` source and a fileglob also name a folder.
+
+A glob also names every bundle file that it matches, by its whole path or by its end. So a bare glob such as `incus-network-*.py` counts every folder that Ansible searches for it.
+
+A full-line comment is not read. A file that more than one phase reaches is in each of those phases. `ansible.cfg`, `build_vars.py` and both converge playbooks are in every phase. `build_vars.py` is the role materializer.
+
+Some references cannot be resolved. Each of them makes its phase read the whole bundle, as before:
+
+- an include or import with a templated name;
+- a file or template lookup of a computed path;
+- a local `copy`, `template`, `script` or `synchronize` source with a templated name;
+- a `with_fileglob` with a templated glob;
+- a Jinja `include`, `import`, `from` or `extends` whose template name is not a literal string, in any reached file;
+- `role_path`;
+- a Python file that opens files beside itself.
+
+The tasks that a phase selects in a converge playbook get the same check as the task files.
+
+The resolver does resolve four forms: a playbook-relative path that ends in a literal file name, a run-folder path, a fileglob item, and a loop item. A loop item source such as `{{ item.src }}` resolves when the task's own `loop`, `with_items` or `with_list` writes every value literally. A value may start with `{{ playbook_dir }}/`. A Python file that reads its own source by `__file__` is resolved too.
+
+A phase may name a file above the bundle in three ways. A path from the playbook folder can climb out of it, such as `{{ playbook_dir }}/../scripts/release-container.py`. A local `copy`, `template`, `script`, `unarchive` or `synchronize` source can climb out from its own file. A script can import a module from above the bundle, such as `files/instance-release-vp.ts` from `../../extensions`. That file joins the phase digest by its content, with the modules it imports in turn.
+
+These files are the role siblings that a converge stages beside the bundle, and a test keeps the two lists equal. A staged sibling that no phase names is in every phase digest.
+
+Swamp reads each file above the bundle beside it, from the same tree. When it cannot be read, the phase gets a digest that moves at every converge, so the phase always runs. The converge result then names the file under `digests_moving`. The Gateway does not keep that field.
+
+Each bundle file is in exactly one of four classes. The resolver checks them in this order:
+
+| Class | Which files | In which phase digests |
+| --- | --- | --- |
+| Implicit | `ansible.cfg`, `build_vars.py`, the collection and Python pins (`requirements*.yml`, `requirements*.txt`, `galaxy.yml`), and every file under `library/`, `module_utils/`, a `*_plugins/` folder, `group_vars/`, `host_vars/`, `roles/`, `collections/`, `vars/`, `defaults/` or `meta/` | every phase |
+| Converge | a file that a phase walk reaches | each phase that reaches it |
+| Other Operation | a file that only the walk of another playbook reaches. Another playbook is any bundle YAML file that is a list of plays, other than the converge playbooks | none |
+| Unreached | a file that nothing reaches | every phase |
+
+Ansible may load an implicit file without a name, so it is in every phase. A converge phase loads any other file only by a name that its walk sees. A reference that the walk cannot name makes the phase read the whole bundle. So a file that only another Operation's playbooks reach cannot change a converge, and a change to such a playbook, such as `instance-container-power.yml`, runs no phase again.
+
+Ansible finds a relative `copy` or `template` source in `files/` or `templates/` only by its name, which the walk sees, so those folders are not implicit. Git ignores Python byte code, so it is in no digest.
+
+A test fails when a phase of the shipped bundle falls back to the whole bundle, or when a reached file includes a task file outside its phase's set (`swamp/tests/phase_code_test.ts`). It also fails when a file that nothing reaches, an implicit file, a templated include in a converge playbook, or a file in a copied folder does not move its digests, or when another Operation's playbook moves one. A role Operation's phases still read the whole bundle.
+
+The first converge of each Node after this rule shipped finds every code digest moved and runs every phase once.
 
 Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
 
