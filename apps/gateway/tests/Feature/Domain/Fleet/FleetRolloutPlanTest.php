@@ -323,18 +323,19 @@ it('retains the minute retry after partial admission and admits CI callers when 
     expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
 });
 
-it('holds only the Node whose host inputs changed, before its delivery or role converge, and goes on to the next Node', function (): void {
+it('marks only the Node whose host inputs changed for a host converge, and goes on to the next Node', function (): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
     Node::query()->findOrFail($this->nodes['dev'])->forceFill(['release_inputs' => ['host' => str_repeat('c', 64)]])->save();
 
     app(ContinueReleaseFleetAction::class)->execute($release);
 
-    // This fixture has no serving Gateway Node, so each later Node gets past its host check and stops at its delivery admission.
+    // This fixture has no serving Gateway Node, so each Node stops at its delivery admission, before any converge.
     $fleet = $release->refresh()->phases['fleet'];
     expect($fleet['status'])->toBe('failed')
-        ->and($fleet['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
-        ->and($fleet['nodes'][$this->nodes['dev']])->not->toHaveKey('agent')
+        ->and($fleet['nodes'][$this->nodes['dev']]['host'])->toBe('pending')
+        ->and($fleet['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($fleet['nodes'][$this->nodes['db']]['host'])->toBe('unchanged')
         ->and($fleet['nodes'][$this->nodes['db']]['error_code'])->toBe('fleet.rollout_not_ready')
         ->and($fleet['nodes'][$this->nodes['prod']]['error_code'])->toBe('fleet.rollout_not_ready')
         ->and(Operation::query()->count())->toBe(0);
@@ -364,7 +365,7 @@ function previousReleaseCommit(string $changed): string
     return $approved;
 }
 
-it('recognizes a Node\'s approval of an earlier release from its Git commit, and still holds it when its own host inputs changed since', function (string $changed, bool $held): void {
+it('recognizes a Node\'s approval of an earlier release from its Git commit, and still converges its host when its own host inputs changed since', function (string $changed, bool $held): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
     $approved = previousReleaseCommit($changed);
@@ -376,9 +377,10 @@ it('recognizes a Node\'s approval of an earlier release from its Git commit, and
 
     app(ContinueReleaseFleetAction::class)->execute($release);
 
-    // Past the host check, the Node stops at its delivery admission: this fixture has no serving Gateway Node.
+    // The Node stops at its delivery admission: this fixture has no serving Gateway Node.
     $row = $release->refresh()->phases['fleet']['nodes'][$dev->id];
-    expect($row['error_code'])->toBe($held ? 'fleet.host_inputs_changed' : 'fleet.rollout_not_ready')
+    expect($row['host'])->toBe($held ? 'pending' : 'unchanged')
+        ->and($row['error_code'])->toBe('fleet.rollout_not_ready')
         ->and($row)->not->toHaveKey('host_baseline')
         ->and($dev->refresh()->release_inputs['host'])->toBe($held ? $approved : $inputs->host(node: $dev));
 })->with([
@@ -403,14 +405,14 @@ it('records the current host inputs, with a visible reason, when the release tre
         ->and($row['error_code'])->toBe('fleet.rollout_not_ready')
         ->and($dev->refresh()->release_inputs['host'])->toBe($inputs->host(node: $dev));
     Log::shouldHaveReceived('warning')->withArgs(static fn (string $message, array $context): bool => $context['node_id'] === $dev->id)->once();
-    // A per-Node digest is never a legacy approval: once recorded, a later change holds the Node as usual.
+    // A per-Node digest is never a legacy approval: once recorded, a later change needs a host converge as usual.
     $dev->forceFill(['release_inputs' => ['host' => ReleaseNodeInputs::NodeScope.str_repeat('d', 64)]])->save();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => []]]]);
     app(ContinueReleaseFleetAction::class)->execute($release);
-    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed');
+    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['host'])->toBe('pending');
 });
 
-it('holds a Gateway Node whose own host inputs changed even when the approved release tree cannot be read, and lets the others go on', function (): void {
+it('converges the host of a Gateway Node whose own host inputs changed even when the approved release tree cannot be read', function (): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
     $gateway = SwampNodeFixture::ensure();
@@ -430,13 +432,13 @@ it('holds a Gateway Node whose own host inputs changed even when the approved re
     app(ContinueReleaseFleetAction::class)->execute($release);
 
     $rows = $release->refresh()->phases['fleet']['nodes'];
-    expect($rows[$gateway->id]['error_code'] ?? null)->toBe('fleet.host_inputs_changed')
+    expect($rows[$gateway->id]['host'])->toBe('pending')
         ->and($rows[$gateway->id])->not->toHaveKey('host_baseline')
         ->and($gateway->refresh()->release_inputs['host'])->toBe($approved);
     foreach ($this->nodes as $id) {
-        // The other Nodes go on past their host check; delivery admission refuses next, as this fixture publishes no agent.
+        // The other Nodes record their current host inputs; delivery admission refuses next, as this fixture publishes no agent.
         expect($rows[$id]['host_baseline'])->toBe('legacy_baseline_unreadable')
-            ->and($rows[$id]['error_code'] ?? null)->not->toBe('fleet.host_inputs_changed');
+            ->and($rows[$id]['host'])->toBe('unchanged');
     }
 });
 
@@ -518,7 +520,7 @@ function copyRolloutHostTree(string $path): void
     }
 }
 
-it('requires host approval for a network child task change before fleet work or default refresh', function (?string $child): void {
+it('converges the host for a network child task change before the fleet turns current or the default refresh', function (?string $child): void {
     Queue::fake();
     config(['instances.nested_fleet_refresh' => true]);
     $previous = $this->base.'/releases/'.substr(OtherCommit, 0, 12);
@@ -557,8 +559,10 @@ it('requires host approval for a network child task change before fleet work or 
         expect($release->phases['default_refresh'])->toBe(['status' => 'current', 'defaults' => []])
             ->and($release->phases['seed_publication']['status'])->toBe('not_required');
     } else {
+        // Every role is applied, so only the host converge reaches Node converge admission. This fixture's Nodes hold no agent
+        // verifier, so admission refuses it; its admission rules have their own tests (NodeConvergeAdmissionTest).
         expect($fleet['status'])->toBe('failed')
-            ->and($fleet['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed')
+            ->and($fleet['nodes'][$dev->id])->toMatchArray(['host' => 'pending', 'error_code' => 'node.converge_unsupported'])
             ->and($dev->refresh()->release_inputs['host'])->toBe($inputs->host($previous));
         expect($release->phases)->not->toHaveKey('default_refresh');
     }
@@ -590,7 +594,7 @@ it('preserves every prior host approval before an early halt and across a supers
     $inputs = app(ReleaseNodeInputs::class);
     $old = $inputs->host($previous);
     expect($old)->not->toBe($inputs->host())
-        ->and($release->refresh()->phases['fleet']['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->nodes['dev']]['host'])->toBe('pending')
         ->and(Node::query()->whereKey(array_values($this->nodes))->get()->map(fn (Node $node) => $node->release_inputs['host'])->all())
         ->toBe([$old, $old, $old]);
 
@@ -608,7 +612,7 @@ it('preserves every prior host approval before an early halt and across a supers
         'previous_release_id' => $matching, 'phases' => ['fleet' => ['status' => 'pending', 'nodes' => []]], 'duration_ms' => 0]);
     Node::query()->findOrFail($this->nodes['dev'])->update(['status' => LifecycleStatus::Failed]);
     $action->execute($next);
-    expect($next->refresh()->phases['fleet']['nodes'][$this->nodes['db']]['error_code'])->toBe('fleet.host_inputs_changed')
+    expect($next->refresh()->phases['fleet']['nodes'][$this->nodes['db']]['host'])->toBe('pending')
         ->and(Operation::query()->count())->toBe(0);
 });
 

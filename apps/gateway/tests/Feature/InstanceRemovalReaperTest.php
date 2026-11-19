@@ -131,7 +131,7 @@ describe('a failed destroy', function (): void {
         $this->travel(5)->minutes();
         // Other Instance work holds the Node, so the release's role converge is refused and queues.
         app(OperationStore::class)->create('instance.deploy', 'instance', 999, $this->node->id, [], 'test', null);
-        $converge = ['_converge' => ['intent' => ['release_roles_only' => true]]];
+        $converge = ['_converge' => ['intent' => ['release_roles_only' => true, 'automatic' => true]]];
         expect(fn () => app(NodeWorkAdmission::class)->check('node.converge', $this->node->id, $converge))
             ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'))
             ->and(fn () => app(NodeWorkAdmission::class)->check('instance.deploy', $this->node->id, []))

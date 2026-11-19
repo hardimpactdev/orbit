@@ -403,7 +403,7 @@ it('accepts a Conn destroy at once while an automatic role converge runs on the 
     $instance = connRemovalClone();
     connRemovalResources($instance);
     $converge = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $instance->node_id,
-        'node_id' => $instance->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true]]], 'state' => [],
+        'node_id' => $instance->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true, 'automatic' => true]]], 'state' => [],
         'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test', 'lock_key' => 'node:'.$instance->node_id]);
     $start = count($this->socket->messages);
 

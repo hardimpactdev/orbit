@@ -100,6 +100,6 @@ final readonly class AdmitFleetRolloutAction
     public static function open(): bool
     {
         return Operation::query()->whereNotIn('status', OperationStatus::terminalValues())
-            ->where(fn ($query) => $query->where('kind', 'fleet.rollout')->orWhere('input->_converge->intent->release_roles_only', true))->exists();
+            ->where(fn ($query) => $query->where('kind', 'fleet.rollout')->orWhere('input->_converge->intent->automatic', true))->exists();
     }
 }

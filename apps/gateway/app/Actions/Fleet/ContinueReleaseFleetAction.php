@@ -252,7 +252,7 @@ final readonly class ContinueReleaseFleetAction
 
     /**
      * Seed every missing approval before the verified record can be superseded and before a pass can stop at one Node.
-     * A missing previous tree records an unknown approval that requires an explicit converge.
+     * A missing previous tree records an unknown approval, so the pass converges the Node's host.
      *
      * @param  list<Node>|null  $members
      */
@@ -357,9 +357,6 @@ final readonly class ContinueReleaseFleetAction
             $recorded = [...($locked->release_inputs ?? []), 'host' => $host];
             $locked->forceFill(['release_inputs' => $recorded])->save();
         }
-        if (($recorded['host'] ?? null) !== $host) {
-            throw new ResourceOperationException('fleet.host_inputs_changed', 'The host inputs that act on this Node require an explicit Node converge.', 409);
-        }
         if (! CliConvergePlan::required($node)) {
             $cli = null;
         } elseif ($cli === null) {
@@ -379,6 +376,7 @@ final readonly class ContinueReleaseFleetAction
         $needsDelivery = static fn (array $applied): bool => ($applied['agent'] ?? null) !== $pin || $drifted
             || ($cli !== null && (! $cli->isAvailable() || ($applied['cli'] ?? null) !== $cli->version));
 
+        $row['host'] = ($recorded['host'] ?? null) === $host ? 'unchanged' : 'pending';
         $row['roles'] = array_fill_keys(array_column($desired, 'role'), 'unchanged');
         foreach ($changed as $role) {
             $row['roles'][$role['role']] = 'pending';
@@ -414,11 +412,20 @@ final readonly class ContinueReleaseFleetAction
             }
         }
         if ($roleOperation !== null) {
+            // The full converge started for changed host inputs records the host digest when it succeeds (NodeConvergeProjection).
+            $hostConverge = data_get($roleOperation->input, '_converge.intent.release_roles_only') !== true;
             if ($roleOperation->status !== OperationStatus::Succeeded) {
                 foreach ($changed as $role) {
                     $row['roles'][$role['role']] = 'failed';
                 }
-                throw new ResourceOperationException($roleOperation->error_code ?? 'fleet.role_converge_failed', 'Role converge failed.', 409);
+                if ($hostConverge) {
+                    $row['host'] = 'failed';
+                }
+                throw new ResourceOperationException($roleOperation->error_code ?? ($hostConverge ? 'fleet.host_converge_failed' : 'fleet.role_converge_failed'),
+                    $hostConverge ? 'Host converge failed.' : 'Role converge failed.', 409);
+            }
+            if ($hostConverge && $row['host'] === 'unchanged') {
+                $row['host'] = 'converged';
             }
             if (($roleOperation->result['t3_restart_deferred'] ?? []) !== []) {
                 $row['status'] = 'pending';
@@ -458,9 +465,12 @@ final readonly class ContinueReleaseFleetAction
             return 10;
         }
         $row['agent'] ??= 'unchanged';
-        if ($changed !== []) {
-            // A busy refusal queues the converge ahead of new Instance work on the Node, for a bounded wait (NodeWorkAdmission).
-            $row['role_operation_id'] = app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true)->id;
+        if ($row['host'] === 'pending' || $changed !== []) {
+            // Changed host inputs need the full Node converge an operator runs: the base and every role, and it records the host
+            // digest. A busy refusal queues either converge ahead of new Instance work on the Node, for a bounded wait (NodeWorkAdmission).
+            $row['role_operation_id'] = ($row['host'] === 'pending'
+                ? app(StartNodeConvergeAction::class)->execute($node, automatic: true)
+                : app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true))->id;
             unset($row['waiting_for']);
 
             return 10;

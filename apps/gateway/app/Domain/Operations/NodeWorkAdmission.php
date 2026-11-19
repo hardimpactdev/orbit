@@ -15,7 +15,10 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
-/** Serializes automatic role convergence with Instance, Conn and Process work on the Nodes they share. Task work never conflicts. */
+/**
+ * Serializes automatic convergence, the release pass's role converge and its full converge for changed host inputs, with Instance, Conn
+ * and Process work on the Nodes they share. Task work never conflicts.
+ */
 final readonly class NodeWorkAdmission
 {
     /** A refused automatic role converge holds its place this long; the release pass renews it on each retry. */
@@ -41,7 +44,7 @@ final readonly class NodeWorkAdmission
     public function check(string $kind, int $nodeId, array $input, ?int $parentId = null): array
     {
         $patterns = [...WaitForGatewayReleaseIdleAction::BlockingKindPatterns, 'instance.transfer'];
-        $roles = $kind === 'node.converge' && data_get($input, '_converge.intent.release_roles_only') === true;
+        $roles = $kind === 'node.converge' && data_get($input, '_converge.intent.automatic') === true;
         // A removal is accepted at once and never waits for a converge, waiting or running: its Caddy writes take the Node's publication
         // lock and check the live file before the rename, as a converge admitted beside Instance work relies on too.
         if (! $roles && InstanceDestroyKind::removes($kind)) {
@@ -72,7 +75,7 @@ final readonly class NodeWorkAdmission
                     }
                 });
         } else {
-            $open->whereIn('node_id', $nodes)->where('kind', 'node.converge')->where('input->_converge->intent->release_roles_only', true);
+            $open->whereIn('node_id', $nodes)->where('kind', 'node.converge')->where('input->_converge->intent->automatic', true);
         }
         $cancel = app(NativeRunCancellation::class);
         // A running converge admitted beside a holder lets that holder's continuation finish, as the wait did.

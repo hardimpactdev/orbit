@@ -307,7 +307,7 @@ it('completes a clone launch whose create an automatic role converge was admitte
     $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->json('data.id');
     $create = launchFixtureCreate($id, 'long-clone');
     // The clone outlasts the converge's wait: the converge is refused, renewed every 15 s, and admitted beside the create at the limit.
-    $intent = ['_converge' => ['intent' => ['release_roles_only' => true]]];
+    $intent = ['_converge' => ['intent' => ['release_roles_only' => true, 'automatic' => true]]];
     $admit = fn (): Operation => app(OperationStore::class)->create('node.converge', 'node', $this->host->id, $this->host->id, $intent, 'test', null);
     for ($waited = 0; $waited < NodeWorkAdmission::WaitLimitSeconds; $waited += 15) {
         expect($admit)->toThrow(ResourceOperationException::class, 'Automatic role convergence and Instance work share a Node.');

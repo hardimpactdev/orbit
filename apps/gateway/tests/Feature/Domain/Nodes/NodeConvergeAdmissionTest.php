@@ -13,6 +13,7 @@ use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
+use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
@@ -871,4 +872,123 @@ it('marks a Node whose role converge failed, never retries it within the pass, a
         ->and($release->refresh()->phases['fleet']['nodes'][$next->id]['status'])->toBe('current')
         ->and($release->phases['fleet']['status'])->toBe('failed')
         ->and(Operation::query()->where('kind', 'node.converge')->where('node_id', $this->node->id)->count())->toBe(1);
+});
+
+/** Ends a converge as its projection does when it succeeds: a full converge records the host digest it captured. */
+function succeedConverge(Operation $converge): void
+{
+    $converge->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    $host = $converge->input['_converge']['release_inputs']['host'] ?? null;
+    if ($host !== null) {
+        $node = Node::query()->findOrFail($converge->node_id);
+        $node->forceFill(['release_inputs' => [...$node->release_inputs, 'host' => $host]])->save();
+    }
+}
+
+it('converges each Node whose host inputs changed with the full Node converge, and leaves an unchanged Node alone', function (): void {
+    prepareReleaseTarget();
+    $next = nextReleaseNode();
+    $third = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'third', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned']));
+    $third->forceFill(['ssh_host_fingerprint' => 'SHA256:pinned', 'agent_secret_hash' => hash('sha256', 'private-test-agent-secret')])->save();
+    $third->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $inputs = app(ReleaseNodeInputs::class);
+    // The release changed the host inputs of the first and the third Node; their roles are applied.
+    foreach ([$this->node, $next, $third] as $member) {
+        $member->forceFill(['release_inputs' => ['host' => $member->is($next) ? $inputs->host(node: $next) : ReleaseNodeInputs::NodeScope.str_repeat('d', 64),
+            'agent' => app(AgentDelivery::class)->pin($member), 'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($member))]])->save();
+    }
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    foreach ([$this->node, $third] as $member) {
+        expect($fleet->execute($release))->toBe(10);
+        $converge = Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail();
+        $capture = $converge->input['_converge'];
+        // The converge an operator runs: the base and every assigned role, and it records the host digest on success.
+        expect($converge->node_id)->toBe($member->id)
+            ->and($capture['intent']['release_roles_only'] ?? false)->toBeFalse()
+            ->and($capture['intent']['automatic'])->toBeTrue()
+            ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
+            ->and($capture['release_inputs']['host'])->toBe($inputs->host(node: $member))
+            ->and($release->refresh()->phases['fleet']['nodes'][$member->id]['host'])->toBe('pending');
+        succeedConverge($converge);
+    }
+
+    expect($fleet->execute($release))->toBeNull();
+    $fleetPhase = $release->refresh()->phases['fleet'];
+    expect($fleetPhase['status'])->toBe('current')
+        ->and($fleetPhase['nodes'][$this->node->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
+        ->and($fleetPhase['nodes'][$third->id])->toMatchArray(['status' => 'current', 'host' => 'converged'])
+        ->and($fleetPhase['nodes'][$next->id])->toMatchArray(['status' => 'current', 'host' => 'unchanged'])
+        ->and(json_encode($fleetPhase))->not->toContain('fleet.host_inputs_changed')
+        ->and(Operation::query()->where('kind', 'node.converge')->where('node_id', $next->id)->exists())->toBeFalse()
+        ->and($this->node->refresh()->release_inputs['host'])->toBe($inputs->host(node: $this->node));
+});
+
+it('marks a Node whose host converge failed and still converges the host of the later Nodes', function (): void {
+    prepareReleaseTarget();
+    $next = nextReleaseNode();
+    foreach ([$this->node, $next] as $member) {
+        $member->forceFill(['release_inputs' => [...$member->release_inputs, 'host' => ReleaseNodeInputs::NodeScope.str_repeat('d', 64)]])->save();
+    }
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(10);
+    Operation::query()->where('kind', 'node.converge')->sole()->update(['status' => OperationStatus::Failed, 'lock_key' => null,
+        'finished_at' => now(), 'error_code' => 'node.converge_failed']);
+    expect($fleet->execute($release))->toBe(10);
+    $nextConverge = Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail();
+    expect($nextConverge->node_id)->toBe($next->id)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id])->toMatchArray(['status' => 'failed', 'host' => 'failed', 'error_code' => 'node.converge_failed']);
+    succeedConverge($nextConverge);
+
+    expect($fleet->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet']['nodes'][$next->id]['status'])->toBe('current')
+        ->and($release->phases['fleet']['status'])->toBe('failed')
+        ->and(Operation::query()->where('kind', 'node.converge')->where('node_id', $this->node->id)->count())->toBe(1);
+});
+
+it('converges the serving Gateway Node\'s changed host inputs itself, last', function (): void {
+    prepareReleaseTarget();
+    $this->control->forceFill(['ssh_host_fingerprint' => 'SHA256:control', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned',
+        'agent_secret_hash' => hash('sha256', 'private-test-agent-secret')])->save();
+    app(GatewayServingHost::class)->remember($this->control);
+    $inputs = app(ReleaseNodeInputs::class);
+    $this->control->forceFill(['release_inputs' => ['host' => ReleaseNodeInputs::NodeScope.str_repeat('d', 64),
+        'agent' => app(AgentDelivery::class)->pin($this->control), 'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($this->control))]])->save();
+    $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs,
+        'roles' => array_map(static fn (array $role): string => $role['digest'], $inputs->roles($this->node))]])->save();
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($converge->node_id)->toBe($this->control->id)
+        ->and($converge->input['_converge']['intent']['selected_roles'])->toBe(['swamp', 'gateway'])
+        ->and($converge->input['_converge']['release_inputs']['host'])->toBe($inputs->host(node: $this->control));
+    succeedConverge($converge);
+
+    expect($fleet->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('current')
+        ->and($release->phases['fleet']['nodes'][$this->control->id])->toMatchArray(['status' => 'current', 'host' => 'converged']);
+});
+
+it('admits a host converge by the automatic converge rules: task work never blocks it, Instance work queues it', function (): void {
+    prepareReleaseTarget();
+    $this->node->forceFill(['release_inputs' => [...$this->node->release_inputs, 'host' => ReleaseNodeInputs::NodeScope.str_repeat('d', 64)]])->save();
+    $holder = app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id, [], 'test', null);
+    app(OperationStore::class)->create('tasks.copy_turn', 'task_group', 77, $this->node->id, [], 'test', null);
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$holder->id])
+        ->and(fn () => app(OperationStore::class)->create('instance.deploy', 'instance', 100, $this->node->id, [], 'test', null))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->getMessage())->toBe('An automatic role converge waits for this Node.'));
+    $holder->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+
+    expect($fleet->execute($release))->toBe(10)
+        ->and(Operation::query()->where('kind', 'node.converge')->sole()->input['_converge']['intent']['automatic'])->toBeTrue();
 });

@@ -1447,7 +1447,7 @@ describe('a cancel of a group that owns a copy', function (): void {
             'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
         // Instance work holds the Node, so the release's role converge is refused and queues: new Instance work waits behind it.
         app(OperationStore::class)->create('instance.deploy', 'instance', 99, $copy->node_id, [], 'test', null);
-        $converge = ['_converge' => ['intent' => ['release_roles_only' => true]]];
+        $converge = ['_converge' => ['intent' => ['release_roles_only' => true, 'automatic' => true]]];
         expect(copyRefusal(fn () => app(NodeWorkAdmission::class)->check('node.converge', $copy->node_id, $converge)))->toBe('operation.target_busy 409')
             ->and(copyRefusal(fn () => app(OperationStore::class)->create('instance.deploy', 'instance', 100, $copy->node_id, [], 'test', null)))
             ->toBe('operation.target_busy 409');
@@ -1468,7 +1468,7 @@ describe('a cancel of a group that owns a copy', function (): void {
             'modified' => ['count' => 0, 'names' => []], 'untracked' => ['count' => 0, 'names' => []],
             'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
         $converge = Operation::query()->create(['operation_version' => 1, 'child_versions' => [], 'kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $copy->node_id,
-            'node_id' => $copy->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true]]], 'state' => [], 'status' => OperationStatus::Running,
+            'node_id' => $copy->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true, 'automatic' => true]]], 'state' => [], 'status' => OperationStatus::Running,
             'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test', 'lock_key' => 'node:'.$copy->node_id]);
 
         // A refusal of the cancel answers HTTP 409 with its own code, never gateway.unhandled, and Activity records that code.

@@ -596,7 +596,7 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 On Linux app-dev Nodes, Orbit manages `/etc/tmpfiles.d/orbit.conf`. At boot, systemd creates `/dev/shm/orbit/hibernation` with owner `root:caddy` and mode `0755`. Removing the app-dev role withdraws the file.
 
-A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses changed host inputs, per Node: the Gateway runtime (`gateway-runtime.yml` and its rendered files) counts only for a Node with the `gateway` role, so a change to it holds only that Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
+A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. When a Node's host inputs changed, the release pass runs the full Node converge instead. It decides this per Node. The Gateway runtime (`gateway-runtime.yml` and its rendered files) counts only for a Node with the `gateway` role, so a change to it converges only that Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
 
 [Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
 
