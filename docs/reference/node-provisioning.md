@@ -105,7 +105,7 @@ Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are r
 
 `node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and an execution-copy bootstrap key. It checks no agent, account, package or runtime ownership on the Mac.
 
-Route withdrawal ships a Node module that reads, merges, tests and applies the Route files under a local file lock, and keeps the previous generation of each in `/var/lib/orbit/route-previous/`. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior.
+Route withdrawal ships a Node module that reads, merges, tests and applies the Route files under a local file lock, and keeps the previous generation of each in `/var/lib/orbit/route-previous/`. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior. When the module refuses, the playbook writes the refusal code and message to the run folder, and the destroy Operation records them as its failure's stderr and as `withdrawal_error_code` ([Instance removal](/reference/instance-removal)).
 
 ## Add a Node
 
