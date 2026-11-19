@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Metrics/**
   - apps/gateway/app/Actions/Nodes/ShowNodeMetricsAction.php
   - apps/gateway/app/Domain/Nodes/ManagedNodeEligibility.php
-  - apps/gateway/app/Http/Controllers/Api/{MetricsController,GrafanaAccessAuthorizationController}.php
+  - apps/gateway/app/Http/{Controllers/Api/MetricsController,Controllers/Api/GrafanaAccessAuthorizationController,Controllers/Api/TaskInsightsMetricsController,Middleware/RequireMetricsNode}.php
   - apps/gateway/app/Infrastructure/Processes/PrometheusProcessRuntimeStatusIndex.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/MetricsCaddySiteSource.php
   - swamp/{workflows/workflow-operation-metrics-*.yaml,extensions/behaviors/operations/integrations/metrics_*.ts}
@@ -29,7 +29,7 @@ The role runs two containers on the Metrics Node and two units on each selected 
 | `prometheus-node-exporter` unit | Every selected Node | The Node's WireGuard address, port 9100 |
 | `orbit-cadvisor` unit | Every selected Node | The Node's WireGuard address, port 9102 |
 
-Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes every target every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
+Both containers use pinned official images and host networking. Their logs use `json-file`, with three files of 10 MB each. Prometheus scrapes each node exporter and cAdvisor every 10 seconds and keeps samples for 7 days. It labels each target with the Orbit Node name in `node`, and the dashboards filter on that label. Grafana gets one Prometheus datasource and three dashboards: `Orbit Node Resources`, `Orbit Caddy Traffic`, and `Orbit PHP Capacity`. The last two stay empty until [service metrics](/reference/service-metrics) select a Node.
 
 `metrics:enable` and `metrics:disable` return an accepted native Operation. Node 209 applies captured public files, container specifications and firewall rules through official cfgmgmt models. The Gateway records the role intent and projects the terminal result. It creates the Grafana password once in its encrypted settings and pushes a names-only execution copy; native SSH writes the protected password file through stdin. No CA private key leaves the Gateway. The canonical certificate workflow creates its key on the target and submits a CSR to the existing signing primitive.
 
@@ -127,6 +127,12 @@ cAdvisor collects only CPU and memory. Its flags disable every other metric kind
 ## Service metrics
 
 [Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Explicit role and exporter workflows capture their service catalog and compose the owning native workflows. Gateway provisioning, baseline and Route actions perform no synchronous Metrics fleet mutation. Node parents retain their shared service-metrics lower until their own conversion.
+
+## Task insights scrape
+
+Prometheus also scrapes the Gateway's [task insights exporter](/reference/tasks#prometheus-exporter), job `orbit-task-insights`, every 60 seconds; the stored reports change every five minutes. Like the Node agent, it connects to the active Gateway's WireGuard address on port 443 with `gateway.orbit` as the TLS name, and uses no DNS: the container's resolver may not route Orbit names. It trusts only the Orbit root certificate, which the rendered `prometheus.yml` carries inline.
+
+Without exactly one active Gateway with a WireGuard address, or when the Gateway cannot read the root certificate, the render logs `metrics.task_insights_job_skipped`, leaves this job out and renders every other job. The Gateway admits only the active Metrics Node on that path and refuses any other WireGuard peer with `metrics.scraper_required` (HTTP 403). The Gateway site admits only the VPN subnet. A Metrics role takes the job when its Prometheus configuration is next rendered: by `metrics:enable`, an exporter change, or a Node role converge.
 
 ## Swamp worker state
 

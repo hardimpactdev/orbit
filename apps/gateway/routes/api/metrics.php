@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\MetricsController;
+use App\Http\Controllers\Api\TaskInsightsMetricsController;
 use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
+use App\Http\Middleware\RequireMetricsNode;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
 
@@ -15,6 +17,13 @@ Route::middleware([
 ])->get('metrics/grafana/authorize', [GrafanaAccessAuthorizationController::class, 'show'])
     ->withoutMiddleware(RecordCommandActivity::class)
     ->name('metrics:grafana:authorize');
+
+Route::middleware([
+    RequireActiveWireGuardPeer::class,
+    RequireMetricsNode::class,
+])->get('metrics/task-insights', [TaskInsightsMetricsController::class, 'show'])
+    ->withoutMiddleware(RecordCommandActivity::class)
+    ->name('metrics:task-insights');
 
 Route::middleware([
     RequireActiveWireGuardPeer::class,

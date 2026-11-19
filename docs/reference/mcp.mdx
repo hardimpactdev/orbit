@@ -113,7 +113,7 @@ After a lost context, `operation-list` with an unfinished status finds Operation
 
 `instance-rollback` takes `instance` and `release`. A release the Instance does not retain returns the tool error `rollback.release_not_retained` (status 422), and nothing changes. Its operation is an `instance.rollback`, which cancels a deploy of the Instance that no worker has started ([One operation at a time](/reference/deployments#one-operation-at-a-time)). Each step keeps the last 8 KiB of its output. To read the full output of a deploy or rollback, call `instance-deployment-show` with the `deployment_id` from `result`; it returns the [stored deployment log](/cli/instance/deployment-show).
 
-Machine callbacks and browser pages have no tool: channel signatures, the Node agent endpoints, live log streams, the Grafana access check, the runtime activation check, the Schedule completion report, the task agent stream, and the two GitHub App registration pages. `bin/mcp-tools` lists them.
+Machine callbacks and browser pages have no tool: channel signatures, the Node agent endpoints, live log streams, the Grafana access check, the task insights scrape, the runtime activation check, the Schedule completion report, the task agent stream, and the two GitHub App registration pages. `bin/mcp-tools` lists them.
 
 Conn launch admission, progress, and controls are available over the Conn HTTP API. Clients use the same profile and target Node checks for all three. [Durable launches](/reference/conn#durable-launches-v1)
 

@@ -5,11 +5,11 @@ covers:
   - "apps/gateway/{app/{Data/Tasks/**,Domain/{Tasks,Problems}/**,Infrastructure/Tasks/**,Support/Percentile.php},config/{swamp,task_pull_requests}.php}"
   - "{apps/gateway/app/Actions/Tasks/**,.claude/skills,.agents/swamp-upstream/**}"
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
-  - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,TaskPublishWhenDoneCommand,FileProblemsCommand}.php"
+  - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,TaskPublishWhenDoneCommand,FileProblemsCommand,TaskInsightsBackfillCommand,TaskInsightsRefreshCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
-  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence}.php"
+  - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes,2027_03_07_000000_convert_legacy_problem_evidence,2027_03_12_000000_create_task_insight_records_and_totals}.php"
 ---
 
 # Tasks
@@ -1743,6 +1743,31 @@ The response also holds:
 - A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
 - A task's release is the last verified release that began before its `started_at`.
 
+### Freshness
+
+The endpoint reads stored reports, so it answers at once, and its numbers may be up to five minutes old. Each ended task group has one stored record with the facts its numbers come from. A change to the group, a subtask, a thread's tokens, a review verdict, a handoff check, a question, or a verified release rewrites that record. A failed rewrite never fails the change; the next refresh writes it.
+
+Every five minutes the `task:insights-refresh` tick records each ended group whose source rows changed in or after the second of its record. Those rows are the group, a subtask or its handoff check, a thread, a verdict, a question, and a verified release that began before the group started. A [deploy stamp](#deploy-times) moves the group's `updated_at`, so it reaches the next refresh. The tick then recomputes the report of each period for all Projects and for each Project from the records alone. Medians stay exact.
+
+A record keeps the Project's id, and the report labels it with the Project's current code, so a renamed Project stays one breakdown row.
+
+Until the first refresh has finished, the records may be incomplete, so the endpoint computes the report from the task tables and stores nothing. After it, a Project with no stored report yet, such as a new one, gets it computed from the records on its first read; two such reads store one report. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
+
+### Prometheus exporter
+
+`GET /api/v1/metrics/task-insights` exposes the stored reports in the Prometheus text format. The [Metrics role](/reference/metrics#task-insights-scrape)'s Prometheus scrapes it once a minute. The Gateway admits only the active Metrics Node, by its WireGuard address; any other caller gets `metrics.scraper_required` or `peer.identity_unknown` (HTTP 403). A scrape reads the stored reports and the Project codes, never the task tables or the records. Before the first refresh it answers HTTP 200 with no samples.
+
+Each gauge carries `project`, the Project's code or `all`, and `period`, and takes the value of the period's current summary. A null number has no sample.
+
+| Metric `orbit_task_insights_…` | Field |
+| --- | --- |
+| `computed_timestamp_seconds` | When the report was computed, as a Unix time; it shows a stale report |
+| `tasks`, `merged`, `excluded`, `tokens`, `cost_usd`, `tokens_per_merged_pr`, `review_rounds`, `questions_per_task` | The field of the same name |
+| `cost_per_merged_pr_usd` | `cost_per_merged_pr` |
+| `yield_ratio`, `pr_first_pass_ratio`, `subtask_first_pass_ratio`, `handoff_first_try_ratio`, `cache_hit_ratio` | The share of the same name |
+| `wasted_ratio` | `wasted_share` |
+| `lead_time_median_seconds`, `queue_median_seconds`, `work_median_seconds`, `merge_wait_median_seconds`, `pr_merge_wait_median_seconds`, `delivery_time_median_seconds`, `deploy_wait_median_seconds` | The `_ms` median, in seconds |
+
 ### On the board
 
 The strip shows tokens per merged PR with its cost, lead time, yield, first-pass pull requests, and wasted tokens. Each shows its change against the previous period, green when better and red when worse. Fewer tokens, a shorter lead time, and less waste are better. A higher yield and first-pass share are better. The strip has a 7-day and 30-day switch and a Project filter.
@@ -2003,7 +2028,7 @@ JSON reads and the browser stream return the same stored snapshot and use the sa
 
 ### Insights come from recorded times
 
-The insights are computed on each read from the task rows, their threads, comments, checks, and questions. There is no snapshot table to fill or repair, and a fixed definition applies to old and new tasks alike. A read selects only the columns it counts from. Whole task and thread rows carry briefs, summaries, and errors: twelve weeks of them outgrew the Gateway web runtime's 128 MB memory limit, and the read failed with `gateway.unhandled`.
+Each group's record is computed from the task rows, their threads, comments, checks, and questions, and the stored reports from the records alone ([Freshness](#freshness)). A record is always rebuilt whole from those rows, never patched, so a fixed definition applies to old and new tasks alike, and `task:insights-backfill` rewrites every record from the same rows. Building a record selects only the columns it counts from. Whole task and thread rows carry briefs, summaries, and errors: twelve weeks of them outgrew the Gateway web runtime's 128 MB memory limit, and the read failed with `gateway.unhandled`.
 
 A task stores its own lifecycle times. `updated_at` moves on any write, and the Activity log samples reads and keeps no record of a task whose state changed. Without the times, lead time would be a guess.
 
