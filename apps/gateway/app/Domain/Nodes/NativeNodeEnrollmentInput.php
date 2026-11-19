@@ -42,13 +42,10 @@ final readonly class NativeNodeEnrollmentInput
      */
     public function capture(Node $node, Operation $operation, array $spec, ProvisionNodeData $request): array
     {
+        // Swamp logs in to the bootstrap account with its own key, which the operator authorized on the machine first.
+        // The Gateway's private key never leaves the Gateway; enrollment authorizes only its public key.
         $identity = app(SwampSshExecutionInput::class)->identity();
-        $key = file_get_contents(app(SshKeyProvider::class)->privateKeyPath());
-        if (! is_string($key) || $key === '') {
-            throw new ResourceOperationException('node.bootstrap_identity_unavailable', 'The Gateway bootstrap identity is unavailable.', 503);
-        }
-        $copies = ['bootstrap_identity' => app(SwampCommandStep::class)->executionCopy(
-            'orbit-control-inputs', 'bootstrap-identity-node-'.$node->id, $key)];
+        $copies = [];
         $candidate = ValidatedData::object($spec['candidate']);
         $bootstrapUser = ValidatedData::string($spec['bootstrap_user']);
         $intent = ['platform' => $candidate['platform'], 'expected_architecture' => $spec['requested_architecture'],
@@ -61,7 +58,7 @@ final readonly class NativeNodeEnrollmentInput
             'network' => ['is_hub' => false, 'sync_path' => '', 'private_key_file' => '', 'sync_body' => '', 'interface' => null, 'hub_lan' => null, 'hub_endpoint' => null, 'source' => null, 'source_owner' => null, 'lan_ssh_argv' => [], 'peer_forwarding_argv' => [], 'address' => '', 'retired_address' => null, 'other_public_keys' => [], 'required_public_key' => null,
                 'files' => [], 'hubs' => [], 'hub_files' => [], 'trust_argv' => []],
             'public_ssh_argv' => [], 'roles' => [], 'dns' => [], 'private_dns' => [], 'cli' => null,
-            'authorized_keys' => [$identity['public_key']], 'known_hosts_path' => '/home/orbit/.ssh/known_hosts'];
+            'authorized_keys' => array_values(array_unique([$identity['public_key'], trim(app(SshKeyProvider::class)->publicKey())])), 'known_hosts_path' => '/home/orbit/.ssh/known_hosts'];
         if ($candidate['platform'] === 'macos') {
             return ['intent' => $intent, 'execution_secrets' => $copies, 'role_snapshots' => [],
                 'agent_secret_hash' => null, 'participant_node_ids' => [SwampNode::id(), $node->id]];

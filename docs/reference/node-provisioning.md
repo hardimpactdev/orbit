@@ -103,7 +103,7 @@ After review and fleet agent update, prove each selected Node before announcing 
 
 Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are removed. `node:add` admits its native enrollment Operation through the public API.
 
-`node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and an execution-copy bootstrap key. It checks no agent, account, package or runtime ownership on the Mac.
+`node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and the Swamp control key. It checks no agent, account, package or runtime ownership on the Mac.
 
 Route withdrawal ships a Node module that reads, merges, tests and applies the Route files under a local file lock, and keeps the previous generation of each in `/var/lib/orbit/route-previous/`. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior.
 
@@ -174,9 +174,13 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 
 ### Bootstrap identity
 
-A new Linux machine needs only root SSH access with the Gateway bootstrap key. Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. The `baseline` phase appends the control key to the bootstrap account when it is absent.
+A new Linux machine needs only root SSH access with the Swamp control key: authorize the public key in `ORBIT_SWAMP_SSH_PUBLIC_KEY` for root before `node:add`. The Gateway private key never leaves the Gateway; no execution copy of it goes to Swamp.
 
-The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key for the bootstrap and managed accounts. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
+An older Gateway release still sends a `bootstrap-identity-node-<id>` reference. The workflow schema and the vault grants accept it, and no step reads it, so that Gateway can enroll a Node until its next release.
+
+Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. Every enrollment step, the first host-key read included, logs in with that control key.
+
+The Gateway requires `ORBIT_SWAMP_SSH_PUBLIC_KEY`, the public half of `/etc/orbit/swamp-role-worker/ssh-identity` on the swamp Node. Enrollment authorizes that same captured key and the Gateway public key for the managed account. The swamp role copies the identity from `/etc/orbit/node-proxy/id_ed25519`; after an operator provisions or rotates that key, the operator records its public half in the Gateway environment and applies configuration before enrolling machines. If the public key is missing or invalid, admission fails with `swamp.ssh_identity_unavailable`.
 
 The Gateway records the observer unit's canonical group as `intent.agent.environment_group`. The Gateway release that produces this key must be live before the workflow consumer is released. Swamp loads before the Gateway switches, so a consumer in the producer release would reject enrollment admitted during that window.
 
