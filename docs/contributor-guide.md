@@ -396,7 +396,7 @@ manifest = {
 (home / 'swamp-source.json').write_text(json.dumps(manifest, indent=2) + '\n')
 ```
 
-4. Run `git status`. Delete any other file the upgrade wrote into the repository, such as a skill folder under `.agents/skills` or `.claude/skills`, or a `.claude/rules/swamp.md`, and restore unrelated changes to repository metadata. `swamp/AGENTS.md` keeps only Orbit's rules.
+4. Run `git status`. Delete any other file the upgrade wrote into the repository, such as a skill folder under `.agents/skills` or a `.claude/rules/swamp.md`. Restore unrelated changes to repository metadata.
 5. Review the upstream diff of `.agents/swamp-upstream`, including scripts and any MCP configuration, and confirm every imported file matches that commit. Run `python3 -m unittest discover -s tools -p test_ci_swamp_skills.py`.
 
 CI runs this read-only drift check of the skill files in its existing CI policy suite, without a Swamp account, network access or an upstream checkout. It rejects content changes, missing or extra files, and a runtime pin that differs from the manifest. The manifest is a reviewed snapshot, not an independent upstream lookup. A runtime update requires a fresh import and manifest in the same change.
