@@ -51,10 +51,10 @@ final readonly class ExecutorParity
 
     /**
      * Prints `frozen:` and one line per FROZEN container. A Node where root finds no `incus` command, such as a services Node, has
-     * no containers, so none frozen: it prints `frozen:` alone. When sudo fails, or Incus is installed but its list fails, it prints
-     * nothing, so the read fails closed.
+     * no containers, so none frozen: it prints `frozen:` alone, but only when the root shell itself ran and said so. When sudo refuses
+     * that shell or the list, or Incus is installed but its list fails, it prints nothing, so the read fails closed.
      */
-    private const string Frozen = 'if sudo -n true 2>/dev/null && ! sudo -n sh -c "command -v incus" >/dev/null 2>&1; then echo frozen:; '
+    private const string Frozen = 'if [ "$(sudo -n sh -c "command -v incus >/dev/null || echo absent" 2>/dev/null)" = absent ]; then echo frozen:; '
         .'elif containers=$(sudo -n incus list --all-projects --format csv --columns ns 2>/dev/null); then echo frozen:; '
         .'printf "%s\n" "$containers" | grep ",FROZEN$" | cut -d , -f 1; fi; ';
 

@@ -263,7 +263,9 @@ it('reads a Node without Incus as one with no frozen container, and still fails 
         ->and(parityFrozenRead($sudo, 'printf "orbit-a,RUNNING\norbit-b,FROZEN\n"'))->toBe("frozen:\norbit-b\n")
         // Incus is installed but its list fails, or sudo is refused: no `frozen:` line, so no pass.
         ->and(parityFrozenRead($sudo, 'exit 1'))->toBe('')
-        ->and(parityFrozenRead('exit 1', null))->toBe('');
+        ->and(parityFrozenRead('exit 1', null))->toBe('')
+        // A sudo policy that allows `true` and `sha256sum` but refuses `sh` and `incus` proves nothing about Incus.
+        ->and(parityFrozenRead('[ "$1" = -n ] && shift; case "$1" in true|sha256sum) exec "$@";; esac; echo "sudo: a password is required" >&2; exit 1', 'printf "orbit-b,FROZEN\n"'))->toBe('');
 
     $report = fn (string $frozen): CommandResult => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\n{$frozen}caddy:\n", '', 1, false);
     $this->reports = ['10.45.0.2' => $report(parityFrozenRead($sudo, null)), '10.45.0.4' => $report(parityFrozenRead($sudo, 'true'))];
