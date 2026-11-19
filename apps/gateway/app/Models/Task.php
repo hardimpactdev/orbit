@@ -143,6 +143,7 @@ use LogicException;
  * @property CarbonImmutable|null $ready_at
  * @property CarbonImmutable|null $ended_at
  * @property CarbonImmutable|null $merged_at
+ * @property CarbonImmutable|null $deployed_at when a production deploy first carried the merge commit (docs/reference/tasks.md#task-insights)
  * @property-read Task $parent
  * @property-read Collection<int, Task> $children
  * @property-read Collection<int, Task> $tasks
@@ -194,6 +195,7 @@ final class Task extends Model
         'ready_at',
         'ended_at',
         'merged_at',
+        'deployed_at',
     ];
 
     /** @var list<string> */
@@ -308,6 +310,7 @@ final class Task extends Model
         'merge_reason',
         'merged_sha',
         'merged_at',
+        'deployed_at',
         'preview',
         'current_recipe',
         'review_mode',
@@ -423,12 +426,6 @@ final class Task extends Model
     public function scopeListedSubtasks(Builder $query): void
     {
         $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::Work->value));
-    }
-
-    /** Whether the task's pull request merged, by Orbit or by a person ([Task insights](/reference/tasks#task-insights)). */
-    public function pullRequestMerged(): bool
-    {
-        return $this->merged_at !== null;
     }
 
     /** @param  Builder<Task>  $query */
@@ -678,6 +675,7 @@ final class Task extends Model
             'ready_at' => 'immutable_datetime',
             'ended_at' => 'immutable_datetime',
             'merged_at' => 'immutable_datetime',
+            'deployed_at' => 'immutable_datetime',
             'deliverables' => 'array',
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',
