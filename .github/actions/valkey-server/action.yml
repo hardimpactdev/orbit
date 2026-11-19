@@ -10,14 +10,29 @@ runs:
       id: image
       shell: bash
       run: echo "version=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
-    - name: Cache the Valkey packages
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    # The newest package set of this image is restored. A set is saved under its own digest, so a set that the
+    # install had to replace reaches the next runner.
+    - name: Restore the Valkey packages
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/orbit-ci-apt/valkey-server
-        key: ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}
+        key: ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-none
+        restore-keys: ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-
     - name: Install and verify Valkey
+      id: install
       shell: bash
       run: |
-        ORBIT_CI_APT_ARCHIVES="$HOME/.cache/orbit-ci-apt/valkey-server" bin/ci-runner-prerequisites valkey-server
+        archives="$HOME/.cache/orbit-ci-apt/valkey-server"
+        ORBIT_CI_APT_ARCHIVES="$archives" bin/ci-runner-prerequisites valkey-server
         command -v valkey-server
         command -v valkey-cli
+        if compgen -G "$archives/*.deb" >/dev/null; then
+          echo "set=$(cd "$archives" && sha256sum -- *.deb | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Save the Valkey packages
+      if: steps.install.outputs.set != '' && !endsWith(steps.restore.outputs.cache-matched-key, format('-{0}', steps.install.outputs.set))
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/orbit-ci-apt/valkey-server
+        key: ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-${{ steps.install.outputs.set }}

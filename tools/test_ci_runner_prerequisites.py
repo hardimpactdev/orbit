@@ -242,12 +242,25 @@ if operation == 'install':
         for job in ('gateway-real-clients', 'gateway-test-caches'):
             self.assertEqual(1, sum(step.get('uses') == './.github/actions/valkey-server' for step in workflow[job]['steps']), job)
             self.assertNotIn('ci-runner-prerequisites', json.dumps(workflow[job]))
-        cache = next(step for step in action if step.get('uses', '').startswith('actions/cache@'))
-        # The key holds the runner image: its packages are the dependencies that image lacks.
-        self.assertEqual(cache['with']['key'], 'ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}')
-        self.assertNotIn('restore-keys', cache['with'])
-        run = action[-1]['run']
-        self.assertIn('ORBIT_CI_APT_ARCHIVES="$HOME/' + cache['with']['path'].removeprefix('~/') + '" bin/ci-runner-prerequisites valkey-server', run)
+        prefix = 'ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-'
+        restore = next(step for step in action if step.get('uses', '').startswith('actions/cache/restore@'))
+        save = next(step for step in action if step.get('uses', '').startswith('actions/cache/save@'))
+        # The key holds the runner image: its packages are the dependencies that image lacks. The restore key never
+        # matches exactly, so the newest set of the image is read; a set is saved under its own digest, so a replaced
+        # set reaches the next runner.
+        self.assertEqual((restore['with']['key'], restore['with']['restore-keys']), (prefix + 'none', prefix))
+        self.assertEqual(save['with']['key'], prefix + '${{ steps.install.outputs.set }}')
+        self.assertEqual(save['with']['path'], restore['with']['path'])
+        self.assertEqual(save['if'], "steps.install.outputs.set != '' && !endsWith(steps.restore.outputs.cache-matched-key, "
+                                     "format('-{0}', steps.install.outputs.set))")
+        self.assertFalse(any(step.get('uses', '').startswith('actions/cache@') for step in action))
+        install = next(step for step in action if step.get('id') == 'install')
+        run = install['run']
+        self.assertLess(action.index(restore), action.index(install))
+        self.assertLess(action.index(install), action.index(save))
+        self.assertIn('archives="$HOME/' + restore['with']['path'].removeprefix('~/') + '"', run)
+        self.assertIn('ORBIT_CI_APT_ARCHIVES="$archives" bin/ci-runner-prerequisites valkey-server', run)
+        self.assertIn('sha256sum -- *.deb | sha256sum', run)
         for tool in ('valkey-server', 'valkey-cli'):
             self.assertIn(f'command -v {tool}', run)
 
