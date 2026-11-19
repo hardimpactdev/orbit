@@ -22,11 +22,11 @@ Main delivery released a commit only when its tree equalled the tree that the pu
 
 ## Decision
 
-1. **A merge queue owns the merge.** The ruleset for `main` requires the queue, with squash merges. The author adds a pull request with `gh pr merge <n> -R hardimpactdev/orbit --squash --auto`. GitHub queues it when `Required checks` is green on its head.
-2. **The queue run is the one run on the merged tree.** For each queued pull request GitHub builds a commit on top of the pull requests ahead of it and starts CI with a `merge_group` event. That run plans its checks against the newest verified commit below it and runs every selected check, fixture shards included. A green run fast-forwards `main` to the tested commit.
-3. **Main delivers the tested commit.** `Main delivery checks` finds the queue run on the exact `main` commit, requires its `Required checks`, `Select build inputs` and `Web build` jobs to be green, and promotes its web build. It compares no trees: the commit is the same. A commit that reached `main` past the queue has no such run, and delivery refuses it.
-4. **A pull request run is the pre-check.** It runs the selected builds, static checks, Pest suites, Docs gate and proof, on hosted runners. It plans the fixture shards and starts none. It no longer needs a delivered base, a web build for delivery or a receipt.
-5. **Every group in a batch must be green.** The queue tests two groups at a time and merges one pull request at a time. A pull request whose group fails leaves the queue; GitHub rebuilds the groups behind it.
+1. **A merge queue owns the merge.** The ruleset for `main` requires the queue, with squash merges. The author adds a pull request with `gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>`. GitHub refuses a head other than the reviewed one, and queues the pull request when `Required checks` is green on its head.
+2. **The queue run is the one run on the merged tree.** For each queued pull request GitHub builds a commit on top of `main` and of any pull request still ahead of it, and starts CI with a `merge_group` event. That run plans its checks against the newest verified commit below it and runs every selected check, fixture shards included. Its Docs gate reads the pull request body again. A green run fast-forwards `main` to the tested commit.
+3. **Main delivers the tested commit.** `Main delivery checks` finds the queue run on the exact `main` commit, requires its `Required checks`, `Select build inputs` and `Web build` jobs to be green, and promotes its web build. It compares no trees and runs no check again: the commit is the same. Only the main run reports `Gateway release inputs`, so a release starts after main has published the web build. A commit that reached `main` past the queue has no such run, and delivery refuses it.
+4. **A pull request run is the pre-check.** It runs the selected builds, static checks, Pest suites and Docs gate on hosted runners, and the selected proof on Orbit's proof runner. It plans the fixture shards and starts none. It no longer needs a delivered base, a web build for delivery or a receipt.
+5. **One group at a time, and every group green.** The queue tests one group and merges one pull request at a time, with the `ALLGREEN` grouping. A pull request whose group fails leaves the queue.
 
 The ruleset settings are in [Merge queue](/reference/implementation-loop#merge-queue).
 
@@ -36,11 +36,12 @@ The ruleset settings are in [Merge queue](/reference/implementation-loop#merge-q
 - **Keep fixture shards on pull requests as well.** One run can fill the shared runner pool. A second run of the same shards for each merge makes both runs wait for runners.
 - **Reuse the pull request's result in the queue when the trees match.** It keeps the tree comparison that this decision removes, for a case that a busy `main` rarely meets.
 - **Let the last group stand for the batch.** A failing pull request then merges when the pull request behind it is green.
-- **Test more groups at a time.** The runner pool, not the queue, limits the fixture shards. More groups would add waiting shards and lost work when a group ahead fails.
+- **Test two or more groups at a time.** One run can fill the runner pool. A second run then waits for runners past the five-minute budget, and its work is lost when the group ahead fails. GitHub starts one run for each queued pull request; it cannot test several in one run.
 
 ## Consequences
 
-- A queued pull request waits for one CI run, on the tree that merges. No branch update or second run follows a move of `main`.
+- A queued pull request waits for the runs ahead of it and for one run of its own, on the tree that merges. No branch update or second run follows a move of `main`.
+- Hosted checks run on the pull request and again in the queue run. Fixture shards run once for each merge, not once for each push.
 - A fixture failure shows in the queue run, not on the pull request. The pull request leaves the queue; the author fixes it and queues it again.
 - A fork's code reaches Orbit's runners only after a maintainer queues its pull request.
 - The Gateway commands [`task:pr-merge`](/cli/task/pr-merge) and [`project:pr-merge`](/cli/project/pr-merge) merge directly. They do not serve a repository whose ruleset requires a queue.

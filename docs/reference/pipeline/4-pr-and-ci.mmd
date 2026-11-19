@@ -54,10 +54,11 @@ sequenceDiagram
     AG->>GH: Queue the pull request<br/>gh pr merge --squash --auto
     %%> Requirements:
     %%> - green CI and the authorized review on the exact head; publication or a green result alone does not authorize a merge
-    %%> - no branch update because main moved, and no --match-head-commit
+    %%> - --match-head-commit names the reviewed head, so GitHub refuses a head that moved; no branch update because main moved
     GH->>CI: Run the merge queue run<br/>the commit main receives
     %%> What it does:
-    %%> - GitHub builds one squash commit on top of the pull requests ahead; this run adds the selected fixture shards
+    %%> - GitHub builds one squash commit on main and any pull request still ahead; this run adds the selected fixture shards
+    %%> - the Docs gate reads the pull request body again
     %%> - the plan covers changes since the newest commit that the queue tests or main delivered
     alt the queue run passes
       CI-->>GH: Required checks<br/>green on the queue commit
@@ -70,7 +71,7 @@ sequenceDiagram
       CI--xGH: Required checks<br/>red · leaves the queue
       GH--xAG: Fix and queue again<br/>same branch · same PR
       %%> Result:
-      %%> - GitHub rebuilds the commits of the pull requests behind it and tests them again
+      %%> - the next queued pull request is tested on main without it
     end
   else a required check fails
     CI--xGH: Required checks<br/>red · no merge

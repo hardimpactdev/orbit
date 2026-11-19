@@ -435,30 +435,39 @@ jobs:
           composer docs-build
           composer docs-lint
       - name: Cache CLI test dependencies
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apps/cli/vendor
           key: cli-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.json', 'apps/cli/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
       - name: Install CLI dev dependencies for the contract replay
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      # The merge queue run reads the body again: an acknowledgement removed after the pull request's own run does not merge.
       - name: Require documentation updates or visible PR acknowledgements
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          DOCS_IMPACT_BASE: HEAD^1
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          DOCS_IMPACT_BASE: ${{ needs.changes.outputs.delivery_base || 'HEAD^1' }}
         run: |
           python3 - <<'PYTHON'
-          import json, os, subprocess
+          import json, os, re, subprocess
           from pathlib import Path
+          number = os.environ['PR_NUMBER']
+          if not number:
+              # A merge group holds one pull request, and its branch names it.
+              group = re.fullmatch(r'refs/heads/gh-readonly-queue/main/pr-([0-9]+)-[0-9a-f]{40}', os.environ['QUEUE_REF'])
+              if group is None:
+                  raise SystemExit('The merge group branch names no pull request.')
+              number = group[1]
           pr = json.loads(subprocess.check_output([
-              'gh', 'api', f"repos/{os.environ['GH_REPO']}/pulls/{os.environ['PR_NUMBER']}"
+              'gh', 'api', f"repos/{os.environ['GH_REPO']}/pulls/{number}"
           ], text=True, timeout=30))
-          if pr['head']['sha'] != os.environ['PR_HEAD']:
+          if os.environ['PR_HEAD'] and pr['head']['sha'] != os.environ['PR_HEAD']:
               raise SystemExit('PR head moved; use the CI run of the new head.')
           Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(pr['body'] or '')
           PYTHON
@@ -630,6 +639,8 @@ jobs:
 
   ci-policy:
     name: CI policy
+    # Main runs no check again: the merge queue run required this job on the same commit.
+    if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
@@ -957,7 +968,8 @@ jobs:
       SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
       SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
-    name: Gateway release inputs
+    # The merge queue run and the main run share a commit. The release reads this name on that commit, so only main reports it.
+    name: ${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Release inputs of this change' }}
     needs: changes
     if: needs.changes.outputs.gateway_release == 'true'
     runs-on: ubuntu-26.04
@@ -1010,19 +1022,18 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [ci-policy, changes, gateway-release]
+    needs: [changes, gateway-release]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - name: Require the merge queue run's evidence and main release inputs
         env:
-          POLICY: ${{ needs.ci-policy.result }}
           CHANGES: ${{ needs.changes.result }}
           REUSE: ${{ needs.changes.outputs.reuse }}
           RELEASE: ${{ needs.gateway-release.result }}
         run: |
-          if [[ "$POLICY" != success || "$CHANGES" != success || "$REUSE" != true || "$RELEASE" != success ]]; then
-            echo "::error::Main delivery requires the green merge queue run of this commit, its promoted web build and a passing CI policy."
+          if [[ "$CHANGES" != success || "$REUSE" != true || "$RELEASE" != success ]]; then
+            echo "::error::Main delivery requires the green merge queue run of this commit and its promoted web build."
             exit 1
           fi
 

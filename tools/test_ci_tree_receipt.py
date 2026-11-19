@@ -161,23 +161,35 @@ class ReceiptTest(unittest.TestCase):
                     self.verify(api)
 
     def test_a_failed_only_rerun_keeps_the_first_web_build(self):
-        # Actions copies a successful job to the new attempt with its first attempt number and artifact.
-        api = API()
-        api.run['run_attempt'] = 2
-        api.jobs[0]['run_attempt'] = 2
-        self.assertEqual(self.verify(api)[0]['web_id'], 100)
-        # A rerun Web build publishes under its own attempt: the first attempt's build is not the tested one.
+        # Actions copies a green Web build to the new attempt: new attempt number, first times, no new artifact
+        # (observed on run 44421680598).
         api = API()
         api.run['run_attempt'] = 2
         for job in api.jobs:
             job['run_attempt'] = 2
-        with self.assertRaisesRegex(ValueError, 'No unique web build'):
-            self.verify(api)
-        api.web['name'] = 'web-queue-50-2'
         self.assertEqual(self.verify(api)[0]['web_id'], 100)
 
+    def test_a_rerun_web_build_delivers_its_own_artifact(self):
+        api = API()
+        api.run['run_attempt'] = 2
+        for job in api.jobs:
+            job.update(run_attempt=2, started_at='2026-11-13T22:05:00Z', completed_at='2026-11-13T22:05:40Z')
+        rebuilt = archive({'index.html': '<h1>Rebuilt</h1>', 'version.json': json.dumps({'buildId': MAIN})})
+        second = dict(api.web, id=101, name='web-queue-50-2', digest='sha256:' + receipt.sha256(rebuilt),
+                      size_in_bytes=len(rebuilt), created_at='2026-11-13T22:05:30Z')
+        rows, raw = api.rows, api.raw
+        api.rows = lambda path, key=None: [api.web, second] if path.endswith('/artifacts') else rows(path, key)
+        api.raw = lambda path: rebuilt if path == 'actions/artifacts/101/zip' else raw(path)
+        evidence, files = self.verify(api)
+        self.assertEqual(evidence['web_id'], 101)
+        self.assertEqual(files['index.html'], b'<h1>Rebuilt</h1>')
+        # Two builds inside one execution's window name no single tested build.
+        second['created_at'] = api.web['created_at'] = '2026-11-13T22:05:30Z'
+        with self.assertRaisesRegex(ValueError, 'No unique web build'):
+            self.verify(api)
+
     def test_wrong_artifact_name_digest_metadata_bytes_run_and_timestamp_are_refused(self):
-        mutations = [lambda a: a.web.update(name='web-queue-50-2'),
+        mutations = [lambda a: a.web.update(name='web-pr-50-1'), lambda a: a.web.update(name='web-queue-51-1'),
                      lambda a: a.web.update(digest='sha256:' + '0' * 64),
                      lambda a: setattr(a, 'web_bytes', a.web_bytes + b'tampered'),
                      lambda a: a.web.update(workflow_run={'id': 51}),
@@ -187,7 +199,7 @@ class ReceiptTest(unittest.TestCase):
         for index, mutation in enumerate(mutations):
             api = API()
             mutation(api)
-            if index == 6:
+            if index == 7:
                 api.web.update(digest='sha256:' + receipt.sha256(api.web_bytes), size_in_bytes=len(api.web_bytes))
             with self.subTest(mutation=index), self.assertRaises(ValueError):
                 self.verify(api)
@@ -310,8 +322,8 @@ class ReceiptTest(unittest.TestCase):
 
     def test_real_workflow_reuse_selects_no_tests_and_still_checks_delivery(self):
         from test_ci_build_plan import plan
-        self.assertTrue(plan.select(['docs/a.md'], merge_group=True)['jobs']['web'])
-        self.assertFalse(plan.select(['docs/a.md'], pull_request=True)['jobs']['web'])
+        self.assertTrue(plan.select(['tools/a.py'], merge_group=True)['jobs']['web'])
+        self.assertFalse(plan.select(['tools/a.py'], pull_request=True)['jobs']['web'])
         select = next(s for s in JOBS['changes']['steps'] if s.get('id') == 'plan')
         with tempfile.TemporaryDirectory() as tmp:
             env = os.environ | dict(MAIN='true', GITHUB_OUTPUT=tmp + '/output')
@@ -319,7 +331,7 @@ class ReceiptTest(unittest.TestCase):
             outputs = dict(line.split('=', 1) for line in Path(tmp, 'output').read_text().splitlines())
         self.assertFalse(any(json.loads(outputs['jobs']).values()))
         guard = JOBS['delivery']['steps'][0]['run']
-        success = dict(POLICY='success', CHANGES='success', REUSE='true', RELEASE='success')
+        success = dict(CHANGES='success', REUSE='true', RELEASE='success')
         for missing in (None, *success):
             failed = {missing: ''} if missing else {}
             with self.subTest(missing=missing):
@@ -328,7 +340,10 @@ class ReceiptTest(unittest.TestCase):
                 self.assertEqual(result.returncode, bool(missing))
         self.assertIn("github.ref == 'refs/heads/main'", next(s for s in JOBS['changes']['steps'] if s.get('id') == 'reuse')['if'])
         self.assertEqual(JOBS['changes']['permissions'], {'contents': 'read', 'actions': 'read', 'pull-requests': 'read'})
-        self.assertEqual(JOBS['gateway-release']['name'], 'Gateway release inputs')
+        # The queue run and the main run share a commit; the release reads this name on it, so only main may report it.
+        self.assertEqual(JOBS['gateway-release']['name'],
+                         "${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Release inputs of this change' }}")
+        self.assertEqual(JOBS['ci-policy']['if'], "github.ref != 'refs/heads/main'")
         self.assertIn("'Required checks'", JOBS['main-required']['name'])
         for job in JOBS.values():
             self.assertNotIn('checks', job.get('permissions', {}))

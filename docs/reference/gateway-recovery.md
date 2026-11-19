@@ -421,7 +421,7 @@ The activate child switches `web/current` together with the Gateway code, before
 
 A missing or expired artifact refuses admission with `gateway.release_web_build_missing`. An invalid artifact returns `gateway.release_web_build_invalid`. A deploy or a host rollback needs a valid artifact even when it can reuse a sealed release. A container rollback reuses old's installed web build.
 
-The main `Required checks` and `Gateway release inputs` checks depend on successful promotion of the PR build. Swamp-only changes use the same delivery path because the release also [loads Swamp](#load-swamp).
+The main `Required checks` and `Gateway release inputs` checks depend on successful promotion of the merge queue run's build. Only the main run reports `Gateway release inputs` on a commit. Swamp-only changes use the same delivery path because the release also [loads Swamp](#load-swamp).
 
 ##### Accepted CI runs
 

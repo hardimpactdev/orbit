@@ -242,10 +242,10 @@ Required checks target five minutes for pull requests; the fast checks take abou
 A pull request merges through the [merge queue](/reference/implementation-loop#merge-queue). After the gate, whoever opens the pull request queues it as `nckrtl`:
 
 ```bash
-gh pr merge <n> -R hardimpactdev/orbit --squash --auto
+gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>
 ```
 
-GitHub queues it when `Required checks` is green on the head, tests it on top of the pull requests ahead of it, and merges it when that run is green. Do not update the branch because `main` moved, and do not pass `--match-head-commit`. A pull request whose queue run fails leaves the queue: fix it and run the command again.
+The SHA is the head that passed the gate; GitHub refuses a head that moved. GitHub queues the pull request when `Required checks` is green on the head, tests the commit that `main` will receive, and merges it when that run is green. Do not update the branch because `main` moved. A pull request whose queue run fails leaves the queue: fix it and run the command again.
 
 The gate is Nick's approving review on the exact head in manual mode, or green CI plus a fresh self-review agent in automatic mode. Main delivers the commit the queue tested; a red `main` is fixed forward and never released. The proof runs only on the PR head. A draft can hold back an already-built and proven change; it does not move implementation or proof after PR creation.
 

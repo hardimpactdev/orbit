@@ -165,7 +165,7 @@ The publish step then fails with the error `Release refused for a non-tip commit
 
 ## Pull-request builds
 
-CI calls `Orbit CLI Binary`, `.github/workflows/orbit-cli-binary.yml`, only when the plan selects `cli` from the [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml). Each target has the table's two-minute timeout. These packaging checks are part of `Required checks` on PRs. Main delivery uses the resulting PR evidence. Each PR has one concurrency group, and a newer run cancels its superseded run.
+CI calls `Orbit CLI Binary`, `.github/workflows/orbit-cli-binary.yml`, only when the plan selects `cli` from the [checks table](https://github.com/hardimpactdev/orbit/blob/main/.github/ci/checks.toml). Each target has the table's two-minute timeout. These packaging checks are part of `Required checks` on PRs and in the merge queue run. Main delivery uses the queue run's result. Each PR has one concurrency group, and a newer run cancels its superseded run.
 
 The workflow also runs on `workflow_dispatch`. The release workflow calls the same `workflow_call` entry for its commit and always builds both targets, without a PR concurrency group. PR binary artifacts stay for 7 days; release-transfer and manual-build artifacts stay for 30 days.
 

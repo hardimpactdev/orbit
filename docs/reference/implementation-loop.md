@@ -49,7 +49,7 @@ Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest s
 
 The separate [Git build watch](/reference/compute-drivers#show-and-validate-the-recipe) is an advisory update signal, not a Required check. Each job has a timeout, including time spent on retries and pagination. Only scheduled or manual main runs can publish an update issue.
 
-Pull requests run the selected Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool. Ordinary and [tool-dependent fixture shards](#self-hosted-fixture-shards) both pack and run two workers. Fork pull requests run ordinary shards on GitHub-hosted runners. Self-hosted fixture jobs use the managed Deno and Python installations and persistent local fixture-tools cache; hosted jobs install and cache their tools in Actions.
+Pull requests run the selected Swamp control checks. Selected shape fixtures run as units on the shared Sabre and Shark runner pool, in the [merge queue](#merge-queue) run and on task handoff pushes; a pull request plans them and starts none. Ordinary and [tool-dependent fixture shards](#self-hosted-fixture-shards) both pack and run two workers. Fixture jobs use the managed Deno and Python installations and the persistent local fixture-tools cache.
 
 Route access fixtures share the admitted argv with the Gateway unit test, so hosted Ansible checks need no Gateway Composer installation. The fixture for destroy without a Route evaluates guards with the pinned CEL compiler. It runs source removal against real temporary Git trees. The expression-end fixture reads every workflow file and fails when an expression holds a `}}` before its end, because Swamp ends a `${{ … }}` expression at the first `}}`. Any change under `swamp/workflows` selects it.
 
@@ -103,22 +103,24 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
 | Web build | Run unit and Chromium/WebKit verification tests, then Chromium app tests; build the web app, and retain it in every merge queue run for main delivery; require `dist/index.html` and `dist/version.json` |
-| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
+| Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp. Off main the job is named `Release inputs of this change` and skips Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. When it runs, it gates Required checks; see [the proof run job](#the-proof-run-job) |
 | Required checks | Require selected builds, static checks, Pest suites, fixture capacity and the selected proof; in the merge queue run, the fixture shards too. Untouched jobs and ineligible proofs may skip |
-| Main delivery checks | On main, require the CI policy check, the green merge queue run of the landed commit, and promotion of its web artifact |
+| Main delivery checks | On main, require the green merge queue run of the landed commit and promotion of its web artifact |
 
 ### Merge queue
 
 A pull request reaches `main` through a GitHub merge queue ([ADR 0272](/decisions/0272-merge-through-a-github-merge-queue)). Add it with:
 
 ```bash
-gh pr merge <n> -R hardimpactdev/orbit --squash --auto
+gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>
 ```
 
-GitHub queues the pull request when `Required checks` is green on its head. For each queued pull request it builds one squash commit on top of the pull requests ahead of it, and starts CI on that commit with a `merge_group` event. That run is the one run on the tree that merges. When it is green, GitHub fast-forwards `main` to the tested commit. Nobody updates a branch because `main` moved, and nobody passes `--match-head-commit`.
+The SHA is the pull request head that passed the gate. GitHub refuses the command when the head has moved; push nothing after the gate. Movement of `main` does not change that SHA, and nobody updates a branch because `main` moved.
+
+GitHub queues the pull request when `Required checks` is green on its head. For each queued pull request it builds one squash commit on top of `main` and of any pull request still ahead of it, and starts CI on that commit with a `merge_group` event. That run is the one run on the tree that merges. When it is green, GitHub fast-forwards `main` to the tested commit.
 
 The ruleset `Pull requests pass CI` holds the queue's settings:
 
@@ -126,20 +128,24 @@ The ruleset `Pull requests pass CI` holds the queue's settings:
 | --- | --- | --- |
 | Merge method | Squash | One commit for each pull request |
 | Grouping | `ALLGREEN` | Every queued pull request must pass on its own commit; a green pull request behind a red one does not merge it |
-| Groups tested at a time | 2 | The second pull request starts its run at once. One run can fill the runner pool, so a third would only add waiting shards |
+| Groups tested at a time | 1 | One run can fill the runner pool. A second run at the same time makes both wait for runners, past the five-minute budget |
 | Pull requests merged at a time | 1 | Each `main` commit gets its own push, delivery and release |
 | Smallest group and wait | 1 and 0 minutes | A lone pull request does not wait for company |
 | Check timeout | 20 minutes | A run that never reports leaves the queue |
 
-A pull request whose run fails leaves the queue, and GitHub builds new commits for the pull requests behind it. Fix the failure, wait for the pull request's `Required checks`, and queue it again.
+A queued pull request waits for the runs ahead of it, then for its own. A pull request whose run fails leaves the queue, and the next one is tested on `main` without it. Fix the failure, wait for the pull request's `Required checks`, and queue it again.
 
 The queue run plans its checks against a baseline: the newest commit on its base history that the queue tests or that main delivered. Usually this is the commit below it, so the plan covers the pull request's own changes. A commit that reached `main` past the queue has neither proof, so the next queue run also plans the checks for its changes.
 
-A pull request run is the pre-check. It runs the selected hosted jobs and plans the fixture shards, including the [capacity check](#shared-fixture-capacity), and starts no shard. The fixture shards run in the queue run only, so each merge fills the runner pool once.
+A pull request run is the pre-check. It runs the selected hosted jobs and plans the fixture shards, including the [capacity check](#shared-fixture-capacity), and starts no shard. The fixture shards run in the queue run only, so each merge fills the runner pool once. The selected proof still runs on the pull request head, on Orbit's proof runner.
+
+The queue run always builds the web app and runs the Docs job. Its Docs gate reads the body of the queued pull request again, so an acknowledgement removed after the pull request's own run does not merge. An edit after that read is not checked.
+
+The queue run and the main run share one commit, and the release reads check names on that commit. So only main reports `Gateway release inputs`, and main reports it after it has published the web build.
 
 ### Deliver the queue's commit on main
 
-The push that the queue makes to `main` starts main CI. It runs no product tests, fixtures or proof. `Select build inputs` finds the newest `merge_group` run of this workflow on the exact `main` commit, from a `gh-readonly-queue/main/` branch of this repository. It requires that run's `Required checks`, `Select build inputs` and `Web build` jobs to be green on that commit, with `Required checks` from the run's current attempt. It verifies the run's `web-queue-<run>-<attempt>` ZIP against its digest and publishes it as `web-dist-<main SHA>`.
+The push that the queue makes to `main` starts main CI. It runs no product tests, fixtures or proof. Main runs no CI policy job either: the queue run required it on the same commit. `Select build inputs` finds the newest `merge_group` run of this workflow on the exact `main` commit, from a `gh-readonly-queue/main/` branch of this repository. It requires that run's `Required checks`, `Select build inputs` and `Web build` jobs to be green on that commit, with `Required checks` from the run's current attempt. It takes the one `web-queue-<run>-<attempt>` artifact that the green Web build published, verifies the ZIP against its digest and publishes it as `web-dist-<main SHA>`.
 
 A missing queue run, a red job or an unreadable GitHub response fails delivery. Rerun delivery for a transient error; the same main SHA can be retried. A commit that reached `main` past the queue is never delivered: the next queued pull request tests its changes, and that commit is delivered.
 
@@ -155,7 +161,7 @@ Each attempt uses private source and index files, a three-second connection time
 
 Apt suspends `needrestart` on the disposable runner so unrelated service scans and restarts do not consume the install deadline. At the deadline, the helper identifies the timed-out operation and kills its process group. It verifies the installed commands and fails if neither attempt supplies them. Gateway static analysis keeps its two-minute job limit; the real-client job has four minutes.
 
-The required CI policy job runs alongside input selection and fixture execution, so its tests do not delay fixture startup. Its failure still fails Required and main delivery. The CI policy tests run actionlint on every tracked file under `.github/workflows` to check Actions syntax, types and context availability. The checker defaults to the same tracked files; explicit file arguments limit the check to those files. It downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
+The required CI policy job runs alongside input selection and fixture execution, so its tests do not delay fixture startup. Its failure fails Required checks; main does not run it again. The CI policy tests run actionlint on every tracked file under `.github/workflows` to check Actions syntax, types and context availability. The checker defaults to the same tracked files; explicit file arguments limit the check to those files. It downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
 
 The shared delivery validator has one behavioral truth table in `tools/test_ci_delivery.py`; workflow tests check the PR and main wrappers' wiring. Tests of fixture costs share `tools/test_ci_cost_evidence.py`, while each fixture family keeps its own JSON observations. `bin/pest-plain` launches the test-run owner in `tools/pest_runtime.py`; that helper is not a discoverable test module.
 
@@ -207,11 +213,9 @@ The nested-fleet caller fixture uses the Gateway's per-guest memory limits. Its 
 
 A fixture file whose metadata sets `self_hosted = true` runs only on the self-hosted CI pool. These are the files that came from the after-merge set: the registry kept them out of pull requests before ADR 0262. The planner puts their units in their own shard jobs, `Self-hosted fixtures (N)`. These jobs use only the shared runner labels `self-hosted`, `hardimpact` and `orbit-shard`, as every CI runner does. An ordinary shard never runs such a unit, and a tool-dependent shard runs no other unit. Other quick checks of the public repository stay on GitHub-hosted runners.
 
-Ordinary `Fixtures (N)` jobs use the same shared runner labels on repository branches, handoffs and main; forks keep the hosted image. The pool has five Sabre runners and four Shark runners. Beast has no general runner containers and keeps its two proof-only places.
+Ordinary `Fixtures (N)` jobs use the same shared runner labels in merge queue runs, on handoffs and in manual runs of a branch. The pool has five Sabre runners and four Shark runners. Beast has no general runner containers and keeps its two proof-only places.
 
-The self-hosted shard jobs run only for a pull request whose head repository is the base repository: a branch of `hardimpactdev/orbit`. The job condition states this in full: the event is `pull_request` and `github.event.pull_request.head.repo.full_name == github.repository`. No other event and no fork starts them.
-
-When a fork pull request selects a self-hosted unit, the plan names the unit and `Required checks` fails. The message says that the change selects fixtures that run only on Orbit's runners, and that a maintainer must push the branch to the repository. The fork's code never reaches a self-hosted runner.
+The self-hosted shard jobs run only in a merge queue run: the job condition is the `merge_group` event. No pull request starts them. A fork's code reaches Orbit's runners only after a maintainer queues its pull request for merge.
 
 The units follow the hosted lane budget: each unit costs at most 150 declared seconds with startup, and each shard job has a four-minute limit, so every job ends within five minutes. A self-hosted shard holds two lanes, not four: `self_hosted_workers` in the `[budget]` of `checks.toml`. Four heavy Ansible units at once made the runner reclaim memory until the heaviest units ran past the unit ceiling. The planner packs and the runner runs each shard with the lanes of its pool. A shard holds the units of one pool only.
 

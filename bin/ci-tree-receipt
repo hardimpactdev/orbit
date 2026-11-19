@@ -160,13 +160,14 @@ def verify(api, sha, tree):
     # The queue merges when the gate reports, before GitHub closes the run. A rerun must not inherit an earlier gate.
     require(jobs['Required checks']['run_attempt'] == run.get('run_attempt'),
             'Required checks did not run in the current attempt')
+    # A rerun of failed jobs copies a green Web build to the new attempt with its first times and no new artifact,
+    # so the execution's own time window names its build, not the attempt number of the job record.
     build = jobs['Web build']
-    name = f"web-queue-{run['id']}-{build['run_attempt']}"
-    webs = [a for a in api.rows(f"actions/runs/{run['id']}/artifacts", 'artifacts') if a['name'] == name]
-    require(len(webs) == 1, 'No unique web build of the merge queue run')
+    webs = [a for a in api.rows(f"actions/runs/{run['id']}/artifacts", 'artifacts')
+            if re.fullmatch(f"web-queue-{run['id']}-[0-9]+", a['name'])
+            and build['started_at'] <= a['created_at'] <= build['completed_at']]
+    require(len(webs) == 1, 'No unique web build published by the green Web execution')
     web = webs[0]
-    require(build['started_at'] <= web['created_at'] <= build['completed_at'],
-            'Web artifact not published by the green Web execution')
     web_files = dict(files(artifact_bytes(api, web, run['id'])))
     require(bool(web_files.get('index.html')) and bool(web_files.get('version.json')), 'Incomplete web build')
     return dict(repository=api.repository, tested_commit=sha, tree=tree, run=run['id'], attempt=run['run_attempt'],

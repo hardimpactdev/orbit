@@ -56,8 +56,8 @@ class DeliveryGateTest(unittest.TestCase):
         with patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES='none'):
             delivery.validate(needs)
 
-    def test_main_delivery_uses_only_policy_and_promoted_pr_evidence(self):
-        self.assertEqual(set(JOBS['delivery']['needs']), {'ci-policy', 'changes', 'gateway-release'})
+    def test_main_delivery_uses_only_the_promoted_merge_queue_evidence(self):
+        self.assertEqual(set(JOBS['delivery']['needs']), {'changes', 'gateway-release'})
         self.assertIn('fixtures', JOBS['required']['needs'])
         self.assertIn('self-hosted-fixtures', JOBS['required']['needs'])
         self.assertIn("github.ref == 'refs/heads/main'", JOBS['delivery']['if'])
