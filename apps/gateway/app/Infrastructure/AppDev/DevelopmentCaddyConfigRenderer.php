@@ -403,10 +403,28 @@ final readonly class DevelopmentCaddyConfigRenderer
             CADDY;
     }
 
+    /**
+     * The activation proxy of an Instance's site as Caddy loads it from `activation()`: forward_auth is a reverse_proxy that dials
+     * the Gateway origin's host and port, rewrites every visit to a GET of the activation URI, and sets Host to the origin's host.
+     * `orbit:executor-parity` compares each Node's loaded proxies with it (docs/reference/executor.md#activation-proxy).
+     *
+     * @return array{dial: string, host: string, method: string, uri: string}|null
+     */
+    public function activationTarget(int $instanceId): ?array
+    {
+        $host = parse_url($this->gatewayOrigin, PHP_URL_HOST);
+        if (! is_string($host) || $host === '') {
+            return null;
+        }
+        $port = parse_url($this->gatewayOrigin, PHP_URL_PORT) ?? (parse_url($this->gatewayOrigin, PHP_URL_SCHEME) === 'http' ? 80 : 443);
+
+        return ['dial' => "{$host}:{$port}", 'host' => $host, 'method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/'.$instanceId];
+    }
+
     /** A 2xx activation continues the original request; any other response is returned unchanged to the visitor. */
     private function activation(int $instanceId, string $host, ?string $matcher = null): string
     {
-        $uri = '/api/v1/runtime-activations/app-instance/'.$instanceId;
+        $uri = $this->activationTarget($instanceId)['uri'] ?? '';
         $root = self::ORBIT_ROOT_CA_PATH;
         $forwardAuth = 'forward_auth '.($matcher === null ? '' : $matcher.' ').$this->gatewayOrigin;
 

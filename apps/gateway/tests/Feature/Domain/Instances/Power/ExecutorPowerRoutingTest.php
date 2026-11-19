@@ -443,6 +443,21 @@ it('keeps a recorded Python freeze on Python when the standalone wake flag is on
     expect(ExecutorWake::owns(app(InstanceWake::class)->admitDeferred($instance, 'cli', null)))->toBeFalse();
 });
 
+it('R3: wakes, starts and deploys a Python freeze through Python after both flags go on', function (): void {
+    $instance = managedPowerFixture();
+    config(['orbit.executor.power_enabled' => false, 'orbit.executor.wake_enabled' => false]);
+    $sleep = app(InstanceSleep::class)->start($instance, 'runtime-hibernator', null);
+    expect(ExecutorPowerIntent::managed($sleep))->toBeFalse();
+    $sleep->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'result' => ['sleep' => 'frozen']]);
+
+    config(['orbit.executor.power_enabled' => true, 'orbit.executor.wake_enabled' => true]);
+    $runtime = $instance->runtime()->firstOrFail();
+    expect(ExecutorPowerIntent::lifecycle($instance, $runtime))->toBe([]);
+    $wake = app(InstanceWake::class)->admitDeferred($instance, 'conn', null);
+    expect([ExecutorWake::owns($wake), ExecutorPowerIntent::managed($wake), $wake->state[InstanceWake::ResumeState] ?? null])
+        ->toBe([false, false, 'node']);
+});
+
 it('records a signed freeze that failed after freezing and wakes it with the same engine', function (): void {
     $instance = managedPowerFixture();
     $instance->runtime()->update(['power_state' => 'running']);
