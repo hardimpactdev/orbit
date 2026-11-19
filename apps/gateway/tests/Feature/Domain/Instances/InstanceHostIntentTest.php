@@ -340,6 +340,22 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($host->refresh()->instance_bridge)->toBe($bridge);
     });
 
+    it('makes a new app-dev Node with the instance_host opt-in and no runtime or bridge health a host, with its bridge and input rules', function (): void {
+        $node = instanceHostNode('fresh', '10.44.0.21');
+        NodeFact::query()->where('node_id', $node->id)->delete();
+        expect(app(InstanceHostIntent::class)->role($node))->toBeNull();
+
+        Node::query()->whereKey($node->id)->update(['settings' => ['instance_host' => true]]);
+        $node->refresh();
+        app(InstanceHostIntent::class)->prepare($node, [RoleName::AppDev->value]);
+
+        expect(app(InstanceHostIntent::class)->role($node))->toBe(RoleName::AppDev)
+            ->and($node->refresh()->instance_bridge)->toBe('10.253.0.0/24')
+            ->and(app(InstanceHostIntent::class)->for($node))->toMatchArray(['pool' => 'orbit-instances', 'cidr' => '10.253.0.0/24'])
+            ->and(array_map(static fn ($rule): string => $rule->shape->comment, app(NodeFirewallRuleCatalog::class)->instanceHostInput($node)))
+            ->toBe(NodeFirewallRuleCatalog::InstanceInputComments);
+    });
+
     it('takes an Instance runtime on an app-dev Node as its pool, and never releases a bridge in use', function (): void {
         $node = instanceHostNode();
         app(InstanceHostIntent::class)->prepare($node);

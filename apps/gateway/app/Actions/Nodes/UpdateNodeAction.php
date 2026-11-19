@@ -93,7 +93,7 @@ final readonly class UpdateNodeAction
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
                 'root' => $root->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
-                'settings_patch' => ['apps' => $settings->hasApps, 'nested_fleet' => $settings->hasNestedFleet],
+                'settings_patch' => ['apps' => $settings->hasApps, 'nested_fleet' => $settings->hasNestedFleet, 'instance_host' => $settings->hasInstanceHost],
             ], 'operator', $requestId, expectedWriter: 'direct');
         });
 

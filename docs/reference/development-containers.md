@@ -55,6 +55,7 @@ Container host preparation applies to every `app-dev` Node with the Incus pool `
 
 The Gateway reads no pool, so it counts an `app-dev` Node as an Instance container host when one of these holds:
 
+- The operator set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in), `instance_host`. A new host needs it before its first converge.
 - It is the `app-dev` Node of a nested Instance fleet, whose converge creates a directory pool.
 - It records an Instance runtime.
 - Its agent reports the Instance bridge's health, which only a converged container branch writes.

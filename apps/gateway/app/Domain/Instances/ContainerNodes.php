@@ -6,16 +6,18 @@ namespace App\Domain\Instances;
 
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\NodeFact;
 
 /**
  * The app-dev Nodes that host Instance containers: those with the Incus pool `orbit-instances`
- * (docs/reference/development-containers.md#nodes). The Gateway reads no pool, so it takes the pool as given when the Node is the nested
- * fleet's app-dev Node, whose converge creates a directory pool, holds an Instance runtime, or its agent reports the Instance bridge's
- * health, which only a converged container branch writes. Any other app-dev Node, such as a services Node without Incus, keeps its other
- * roles and gets no container branch. CI-only proof hosts are selected separately by InstanceHostIntent.
+ * (docs/reference/development-containers.md#nodes). The Gateway reads no pool. The operator states it for a new host with the Node
+ * setting `instance_host`, before its first converge. It is taken as given, without the setting, when the Node is the nested fleet's
+ * app-dev Node, whose converge creates a directory pool, holds an Instance runtime, or its agent reports the Instance bridge's health,
+ * which only a converged container branch writes. Any other app-dev Node, such as a services Node without Incus, keeps its other roles
+ * and gets no container branch. CI-only proof hosts are selected separately by InstanceHostIntent.
  */
 final readonly class ContainerNodes
 {
@@ -26,6 +28,7 @@ final readonly class ContainerNodes
         }
 
         return self::fleetNode($node)
+            || app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->instance_host === true
             || InstanceRuntime::query()->where('node_id', $node->id)->exists()
             || self::bridgeHealth($node) !== null;
     }

@@ -33,12 +33,14 @@ final readonly class NodeSettingsOperationCompletion
         $normalized = is_array($settings) ? NodeSettingsData::from($settings) : null;
         $fields = ValidatedData::object($operation->input['settings_patch'] ?? []);
         if (! is_bool($fields['apps'] ?? null)
-            || (array_key_exists('nested_fleet', $fields) && ! is_bool($fields['nested_fleet']))) {
+            || (array_key_exists('nested_fleet', $fields) && ! is_bool($fields['nested_fleet']))
+            || (array_key_exists('instance_host', $fields) && ! is_bool($fields['instance_host']))) {
             throw new ResourceOperationException('operation.completion_unproven', 'The settings patch has no recorded member ownership.', 409);
         }
         $patch = new NodeSettingsPatch(
             hasApps: $fields['apps'], apps: $normalized?->apps,
             hasNestedFleet: $fields['nested_fleet'] ?? false, nestedFleet: $normalized->nested_fleet ?? false,
+            hasInstanceHost: $fields['instance_host'] ?? false, instanceHost: $normalized->instance_host ?? false,
         );
         $node->update(['settings' => $this->normalizer->storedOver($node->settings, $patch->merge($this->normalizer->fromStored($node->settings)))]);
         $this->broadcaster->broadcast(RecordEventType::NodeUpdated, $node->id, NodeData::fromModel($node)->toArray());

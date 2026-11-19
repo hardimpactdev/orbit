@@ -13,6 +13,7 @@ use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
@@ -34,6 +35,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\GatewayRelease;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -415,6 +417,33 @@ it('allocates every Instance host app-dev Node\'s bridge in the admission, befor
     'every role' => [[], '10.253.0.0/24'],
     'the base only' => [['base' => true], null],
 ]);
+
+it('allocates the bridge of a new app-dev Node with the Instance host opt-in and no runtime in its first converge admission', function (): void {
+    // A new Incus host: the operator's opt-in is its only signal, before any runtime or bridge health exists.
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    Node::query()->whereKey($this->node->id)->update(['settings' => ['instance_host' => true]]);
+    $seen = new ArrayObject;
+    app()->instance(NodeDesiredConvergeInput::class, new class($seen)
+    {
+        public function __construct(private ArrayObject $seen) {}
+
+        public function capture(Node $node): never
+        {
+            $this->seen['bridge'] = Node::query()->whereKey($node->id)->value('instance_bridge');
+            $this->seen['intent'] = app(InstanceHostIntent::class)->for($node);
+
+            throw new RuntimeException('capture reached');
+        }
+    });
+
+    $this->postJson($this->url, []);
+
+    expect(InstanceRuntime::query()->where('node_id', $this->node->id)->exists())->toBeFalse()
+        ->and($seen['bridge'])->toBe('10.253.0.0/24')
+        ->and($seen['intent']['cidr'])->toBe('10.253.0.0/24')
+        ->and($seen['intent']['pool'])->toBe('orbit-instances')
+        ->and($seen['intent'])->not->toHaveKey('create_pool');
+});
 
 it('releases an unused Instance bridge of an app-dev Node without the Instance pool in the admission, before the capture', function (): void {
     // As release 2158 left the live services Node: app-dev beside other roles, no Incus, and a bridge from an earlier admission.

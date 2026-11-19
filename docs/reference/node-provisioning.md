@@ -297,7 +297,7 @@ A Node that also has `app-dev`, such as the Node of the proof default, already h
 
 On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent for every CI-only Node and every app-dev Node that is an [Instance container host](/reference/development-containers#nodes). Its `nested` part applies on an app-dev Node with nested-fleet hosting on, or on a CI-only Node. The role runtime runs the branch for either kind. The CI Node gets no `app-dev` role for this.
 
-An app-dev Node without the Incus pool, such as a services Node without Incus, gets no `instances` intent, no Instance bridge and no `orbit:instances-*` firewall rules.
+To add a new real Instance container host, provide its pool and set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in) before its first `app-dev` converge. An app-dev Node without the Incus pool, such as a services Node without Incus, gets no `instances` intent, no Instance bridge and no `orbit:instances-*` firewall rules.
 
 The branch prepares:
 
