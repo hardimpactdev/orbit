@@ -1,5 +1,31 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # The managed file check prints the JSON list of drifted indexes ("[]" when clean, as the private DNS check does).
+  # A failed check or any other text repairs every file.
+  managed-files-check-clean:
+    managed_files_check: {rc: 0, stdout: "[]"}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  managed-files-check-drift:
+    managed_files_check: {rc: 0, stdout: "[1, 2]"}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  managed-files-check-failed:
+    managed_files_check: {rc: 1, stdout: ""}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
+  managed-files-check-other:
+    managed_files_check: {rc: 0, stdout: "Traceback (most recent call last):"}
+    managed_files:
+    - [/etc/wireguard/orbit.conf, a, '0600']
+    - [/etc/wireguard/orbit-peers.d/3.conf, b, '0600']
+    - [/etc/sysctl.d/99-orbit-forwarding.conf, c, '0644']
   # The hold read prints the JSON list of the names that still need the module (nested Gateway, task copy 3734, 2026-11-19:
   # "[]" when every hold is in place, "[\"git\"]" after `apt-mark unhold git`). A failed read or any other text sends every name.
   package-holds-clean:
@@ -2786,6 +2812,34 @@ cases:
   field: ansible.builtin.set_fact.package_holds_unheld
   context: package-holds-other
   expected: [incus, git, php8.4-fpm]
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-clean
+  expected: []
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-drift
+  expected:
+  - /etc/wireguard/orbit-peers.d/3.conf
+  - /etc/sysctl.d/99-orbit-forwarding.conf
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-failed
+  expected:
+  - /etc/wireguard/orbit.conf
+  - /etc/wireguard/orbit-peers.d/3.conf
+  - /etc/sysctl.d/99-orbit-forwarding.conf
+- file: tasks/managed-files-check.yml
+  task: Name the managed files that differ
+  field: ansible.builtin.set_fact.managed_files_repair
+  context: managed-files-check-other
+  expected:
+  - /etc/wireguard/orbit.conf
+  - /etc/wireguard/orbit-peers.d/3.conf
+  - /etc/sysctl.d/99-orbit-forwarding.conf
 non_command_output:
 - file: tasks/production-release-host.yml
   task: Verify the selected production runtime root and digest

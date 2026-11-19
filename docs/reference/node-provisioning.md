@@ -677,6 +677,10 @@ It then passes only the items that differ to the existing repair task. That task
 
 The software phase uses it for package holds. One `dpkg --get-selections` read covers the holds of the file packages and the recipe packages. A package skips the hold module only when dpkg lists it on one line, by exactly its name, as `hold`. A missing hold, a name that dpkg lists with an architecture, and an unknown package still go to the module. So a repair still reports a change, check mode still only reports it, and an unknown package still fails. The installed versions are read and repaired as before.
 
+The network phase uses it for the WireGuard files. `tasks/managed-files-check.yml` is the shared check. It takes a list of path, content and mode. For each file it compares the file type, mode, owner, group and content SHA-256 in one read, and it names the files that differ. Each file group gets one read: the hub's configuration, peer files and forwarding file; the hub's source script, unit and networkd file; and the peer's configuration, peers and DNS marker. A converge of a peer runs the hub's part again on the hub first, so this check runs there too.
+
+Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
+
 ### Role units at a converge
 
 Every converge writes the units that the Node's roles own, the `base` scope included. `NodeRoleUnits` picks them from the Node's role assignments:
