@@ -313,34 +313,80 @@ register() {
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
 }
 
-# The root pool a runner's root disk resolves to, and whether the runner pins it in its own devices.
-root_pool() {
-  incus query "/1.0/instances/$1?project=$PROJECT" |
-    python3 -c 'import json,sys; i=json.load(sys.stdin); print(i["expanded_devices"]["root"]["pool"], "root" in i["devices"])'
+# One exact runner: its root pool, whether it pins that pool in its own devices, its status, and whether `move`
+# stopped it. Any failed read fails the caller.
+runner_state() {
+  local state
+  state=$(incus query "/1.0/instances/$1?project=$PROJECT") || return 1
+  python3 -c 'import json,sys; i=json.loads(sys.argv[1]); print(i["expanded_devices"]["root"]["pool"], "root" in i["devices"],
+    i["status"], i["config"].get("user.orbit.ci-move-running") == "true")' "$state"
+}
+
+# The role's pool must be the marked ZFS or btrfs pool (ci-runner.host); a runner never moves onto another one.
+pool_ready() {
+  local pool
+  pool=$(incus query "/1.0/storage-pools/$POOL") || { echo "the $POOL pool is missing; converge the ci-runner role first" >&2; return 1; }
+  python3 -c 'import json,sys; p=json.loads(sys.argv[1]); sys.exit(0 if p["driver"] in ("zfs", "btrfs")
+    and p["config"].get("user.orbit.ci-runner") == "true" else 1)' "$pool" ||
+    { echo "the $POOL pool is not the CI role's zfs or btrfs pool" >&2; return 1; }
+}
+
+# `idle` only when the container answers that no Runner.Worker runs; a job, an error or no answer is not idle.
+idle() {
+  # shellcheck disable=SC2016
+  [ "$(in_ct "$1" sh -c 'pgrep -f "[R]unner.Worker" >/dev/null; case $? in 0) echo busy ;; 1) echo idle ;; esac' 2>/dev/null)" = idle ]
+}
+
+runner_service() {
+  in_ct "$1" bash -c "cd /home/runner/actions-runner && ./svc.sh $2 >/dev/null"
+}
+
+# Starts a runner that `move` stopped, its listener with it, and clears the mark.
+resume() {
+  local name=$1
+  if [ "$(incus query "/1.0/instances/$name?project=$PROJECT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')" = Running ]; then
+    runner_service "$name" start
+  else
+    incus start "$name" --project "$PROJECT"
+  fi
+  incus config unset "$name" user.orbit.ci-move-running --project "$PROJECT"
 }
 
 # A runner made before the role's pool keeps its old pool through a root device that ci-runner.host pinned. Incus moves
-# a root only while the instance is stopped, so this refuses while the runner runs a job (a Runner.Worker process),
-# stops it, moves the root onto the pool, drops the pin and starts it. The registration in its root moves with it.
+# a root only while the instance is stopped. This checks the pool, then for a running runner stops its listener so it
+# takes no new job, and refuses (75) unless the container answers that no job runs. It marks the runner, stops it,
+# moves the root, drops the pin and starts it. A failed move starts again a runner it stopped; a rerun finds the mark
+# and starts it after the move. A runner that was stopped before stays stopped. The registration moves with the root.
 move() {
-  local name=$1 pool pinned running busy
-  read -r pool pinned < <(root_pool "$name")
+  local name=$1 state pool pinned status marked
+  state=$(runner_state "$name") || { echo "$name: cannot read the runner; move it when idle" >&2; return 75; }
+  read -r pool pinned status marked <<<"$state"
   if [ "$pool" != "$POOL" ]; then
-    running=$(incus list "$name" --project "$PROJECT" -c s -f csv)
-    if [ "$running" = RUNNING ]; then
-      # pgrep answers 1 only when no process matches; any other answer is a job or an unknown state.
-      busy=0
-      in_ct "$name" pgrep -f Runner.Worker >/dev/null || busy=$?
-      [ "$busy" = 1 ] || { echo "$name: runs a job or cannot be read; move it when idle" >&2; return 75; }
-      incus stop "$name" --project "$PROJECT"
+    pool_ready || return 1
+    if [ "$status" = Running ]; then
+      idle "$name" || { echo "$name: runs a job or cannot be read; move it when idle" >&2; return 75; }
+      runner_service "$name" stop || { echo "$name: cannot stop its listener; move it when idle" >&2; return 75; }
+      if ! idle "$name"; then
+        runner_service "$name" start || true
+        echo "$name: took a job; move it when idle" >&2
+        return 75
+      fi
+      incus config set "$name" user.orbit.ci-move-running=true --project "$PROJECT"
+      marked=True
+      incus stop "$name" --project "$PROJECT" || { resume "$name"; return 1; }
     fi
-    incus move "$name" --project "$PROJECT" --storage "$POOL"
-    read -r pool pinned < <(root_pool "$name")
-    [ "$pool" = "$POOL" ] || { echo "$name: still on $pool" >&2; return 1; }
-    [ "$running" != RUNNING ] || incus start "$name" --project "$PROJECT"
+    if ! incus move "$name" --project "$PROJECT" --storage "$POOL"; then
+      [ "$marked" = False ] || resume "$name"
+      echo "$name: the move failed; it stays on $pool" >&2
+      return 1
+    fi
+    state=$(runner_state "$name") || return 1
+    read -r pool pinned status marked <<<"$state"
+    [ "$pool" = "$POOL" ] || { [ "$marked" = False ] || resume "$name"; echo "$name: still on $pool" >&2; return 1; }
   fi
   # The project's default profile gives the same root on the pool.
   [ "$pinned" = False ] || incus config device remove "$name" root --project "$PROJECT" >/dev/null
+  [ "$marked" = False ] || resume "$name"
   echo "$name: on $POOL"
 }
 
