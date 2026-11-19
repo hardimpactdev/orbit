@@ -35,11 +35,14 @@
   become_user: "{{ rt.websocket.user }}"
   ansible.builtin.git: { repo: "{{ rt.websocket.repository }}", dest: "{{ rt.websocket.release }}", version: "{{ rt.websocket.ref }}", force: true }
   register: reverb_checkout
+# It runs only for a release that did not verify, so it always repairs: Composer alone reports no change when it only rewrites the
+# autoloader.
 - name: Install Reverb packages
   when: reverb_release.stdout != 'verified'
   become: true
   become_user: "{{ rt.websocket.user }}"
   community.general.composer: { command: install, working_dir: "{{ rt.websocket.release }}", no_dev: true, optimize_autoloader: true }
+  changed_when: true
 - name: Publish the Reverb release
   ansible.builtin.file:
     src: "{{ rt.websocket.release }}"

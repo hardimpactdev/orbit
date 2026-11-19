@@ -27,7 +27,8 @@ def git(*args, cwd):
 
 
 def loaded(task_file, names, replace):
-    """The named production tasks, become dropped (the test runs as its own user) and each module in `replace` logged instead."""
+    """The named production tasks, become dropped (the test runs as its own user) and each module in `replace` logged instead.
+    A logged module reports no change of its own; the task's own `changed_when` still decides."""
     tasks = [task for task in yaml.safe_load((ANSIBLE / 'tasks' / task_file).read_text()) if task['name'] in names]
     for task in tasks:
         task.pop('become', None)
@@ -36,6 +37,7 @@ def loaded(task_file, names, replace):
             if module in task:
                 del task[module]
                 task['ansible.builtin.shell'] = f'echo {module} >> "$STUB_DIR/calls.log"'
+                task.setdefault('changed_when', False)
     return tasks
 
 
@@ -92,6 +94,8 @@ class ReuseInstallTest(unittest.TestCase):
             source.mkdir()
             (source / 'composer.lock').write_text(json.dumps(LOCK))
             (source / 'artisan').write_text('old\n')
+            # As in the Reverb repository, the installed packages and the release's .env are not tracked.
+            (source / '.gitignore').write_text('/vendor\n.env\n')
             git('init', '-q', '-b', 'main', cwd=source)
             git('add', '.', cwd=source)
             git('commit', '-q', '-m', 'one', cwd=source)
@@ -100,7 +104,7 @@ class ReuseInstallTest(unittest.TestCase):
             ref = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
             release = folder / 'release'
             if clone:
-                git('clone', '-q', str(source), str(release), cwd=folder)
+                git('clone', '-q', source.as_uri(), str(release), cwd=folder)
                 (release / 'vendor/composer').mkdir(parents=True)
                 (release / 'vendor/autoload.php').write_text(AUTOLOAD)
                 (release / 'vendor/composer/autoload_real.php').write_text(AUTOLOAD_REAL)
@@ -109,7 +113,7 @@ class ReuseInstallTest(unittest.TestCase):
                     change(release)
             tasks = loaded('websocket.yml', ('Read the Reverb release', 'Check out Reverb', 'Install Reverb packages'),
                            ['community.general.composer'])
-            websocket = {'repository': str(source), 'ref': ref, 'release': str(release), 'user': os.environ.get('USER', 'root')}
+            websocket = {'repository': source.as_uri(), 'ref': ref, 'release': str(release), 'user': os.environ.get('USER', 'root')}
             output, calls = self.play(folder, tasks, {'rt': {'websocket': websocket}})
             head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=release, check=True, capture_output=True, text=True).stdout.strip()
             self.assertEqual(head, ref)
@@ -140,8 +144,10 @@ class ReuseInstallTest(unittest.TestCase):
         self.assertEqual(calls, ['community.general.composer'])
 
     def test_an_autoloader_that_does_not_load_installs_again(self):
-        _, calls = self.reverb(lambda release: (release / 'vendor/composer/autoload_real.php').unlink())
+        output, calls = self.reverb(lambda release: (release / 'vendor/composer/autoload_real.php').unlink())
         self.assertEqual(calls, ['community.general.composer'])
+        # The checkout is already at the ref; the install reports the repair although Composer installs no package.
+        self.assertIn('changed=1', output)
 
     def test_an_autoloader_without_reverb_installs_again(self):
         _, calls = self.reverb(lambda release: (release / 'vendor/composer/autoload_real.php').write_text('<?php\n'))

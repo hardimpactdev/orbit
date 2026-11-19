@@ -729,7 +729,7 @@ Without a CLI plan, the base phase removes `/usr/local/bin/orbit` when it is a m
 
 A phase that runs should spend its time on drift, not on proving that nothing changed. One Ansible module per item costs about 0.2 to 0.3 seconds over SSH and Incus, even when the item is correct. So a task that manages many items reads the whole expected state in one read-only check on the host.
 
-It then passes only the items that differ to the existing repair task. That task keeps its register, handlers and `changed_when`, so a repaired item still reports a change and triggers what follows it. A check that fails or prints an unexpected result repairs every item. The Gateway's [private DNS release files](/reference/private-dns#release-and-sockets) use this rule.
+It then passes only the items that differ to the existing repair task. That task keeps its register, handlers and `changed_when`, so a repaired item still reports a change and triggers what follows it. A check that fails or prints an unexpected result repairs every item. An index or a name that is not in the expected list counts as unexpected. The Gateway's [private DNS release files](/reference/private-dns#release-and-sockets) use this rule.
 
 The software phase uses it for package holds. One `dpkg --get-selections` read covers the holds of the file packages and the recipe packages. A package skips the hold module only when dpkg lists it on one line, by exactly its name, as `hold`. A missing hold, a name that dpkg lists with an architecture, and an unknown package still go to the module. So a repair still reports a change, check mode still only reports it, and an unknown package still fails. The installed versions are read and repaired as before.
 
@@ -737,9 +737,9 @@ The network phase uses it for the WireGuard files. `tasks/managed-files-check.ym
 
 Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
 
-The same rule covers an install that a converge would otherwise redo. On an Instance container host, one `dpkg-query` read of Squid's status replaces apt's cache refresh and package check. Squid has no pinned version, because the host's updates upgrade it. Apt runs only when the status is not `installed`. Config files left after a removal count as not installed.
+The same rule covers an install that a converge would otherwise redo. On an Instance container host, one `dpkg-query` read of Squid's status replaces apt's cache refresh and package check. Squid has no pinned version, because the host's updates upgrade it. Only a read that succeeds and prints `installed` skips apt. A failed read runs apt. Config files left after a removal count as not installed.
 
-On a `websocket` Node, one read verifies the Reverb release folder, which is named by its repository and ref. The checkout must be at the wanted ref with no tracked change. `vendor/autoload.php` must exist. `vendor/composer/installed.json` must hold each package of `composer.lock` at its locked version, without dev packages. A release that verifies skips Git and Composer. In any other state, the converge checks out the ref again, discards tracked changes and installs again. A new checkout still restarts Reverb.
+On a `websocket` Node, one read verifies the Reverb release folder, which is named by its repository and ref. The checkout must be at the wanted ref with no tracked change. `vendor/composer/installed.json` must hold each package of `composer.lock` at its locked version, without dev packages. PHP must load `vendor/autoload.php` and find Reverb's service provider. A release that verifies skips Git and Composer. In any other state, a PHP error included, the converge checks out the ref again, discards tracked changes and installs again. The install then reports a change, even when Composer only rewrites the autoloader. A new checkout still restarts Reverb.
 
 ### Role units at a converge
 
