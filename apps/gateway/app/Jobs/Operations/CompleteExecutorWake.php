@@ -9,6 +9,7 @@ use App\Domain\Instances\Power\ExecutorWake;
 use App\Models\Operation;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Sleep;
 
 /** Projects a recorded result now, or recovers a missing result when the native deadline passes. */
 final class CompleteExecutorWake implements ShouldQueue
@@ -30,10 +31,17 @@ final class CompleteExecutorWake implements ShouldQueue
         if ($operation === null || ! ExecutorWake::owns($operation)) {
             return;
         }
-        if (! $operation->status->terminal() && $operation->executor_result === null && ExecutorWake::completionDeadline($operation)?->isFuture()) {
-            $this->release(1);
+        $deadline = ExecutorWake::completionDeadline($operation);
+        $left = $deadline === null ? 0 : $deadline->getTimestampMs() - now()->getTimestampMs();
+        if (! $operation->status->terminal() && $operation->executor_result === null && $left > 0) {
+            // The queue delays in whole seconds, so this job can start just before its deadline. It waits out that last second
+            // itself: a released job can come back several seconds late, while a held visitor waits for the answer.
+            if ($left > 1000) {
+                $this->release(1);
 
-            return;
+                return;
+            }
+            Sleep::usleep($left * 1000);
         }
         $wake->completeHandoff($operation);
     }

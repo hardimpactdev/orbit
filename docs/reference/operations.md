@@ -17,7 +17,9 @@ Swamp is the sole executor of task groups. The Gateway stores task state and run
 
 A long operation, such as an [Instance deploy or rollback](/reference/deployments#deploy-through-the-api), is a record in the Gateway database with named steps. Swamp runs it: the Gateway admits the intent, starts one native workflow, and projects the workflow's result into the record ([How an operation runs](#how-an-operation-runs)). The request that starts it answers `202 Accepted` with the record and returns at once. A client then follows the record until it ends. Nothing a client does, such as closing its connection, stops the operation. Only [cancel](#cancel-an-operation) does.
 
-With [signed power routing](/reference/executor#signed-power-delivery) enabled, container sleep and wake keep their usual Operation kinds and target holds. Admission records the engine choice. The Gateway tries the Node's WebSocket and, if needed, the SSH relay. If the result remains unknown, Swamp takes over the same Operation with a fresh signature. The activation request waits only within its own [short budget](/reference/executor#the-wake-inside-the-request); a result that arrives later can still complete the Operation promptly.
+With [signed power routing](/reference/executor#signed-power-delivery) enabled, container sleep and wake keep their usual Operation kinds and target holds. Admission records the engine choice. The Gateway sends the order once, over the Node's WebSocket.
+
+With no result by the deadline, the Gateway reads the Node's executor journal for the order ([Reconcile by the journal](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#reconcile-by-the-journal)). A recorded result decides. No record after expiry fails the Operation with `executor.publish_failed` or `executor.not_accepted` and frees the lock. A Node that cannot be read ends it `interrupted` with `executor.result_unknown`; the lock stays until a later read answers. The activation request waits only within its own [short budget](/reference/executor#the-wake-inside-the-request); a result that arrives later can still complete the Operation promptly.
 
 SQLite records the wake's notices and lifecycle handoff with the change. A background pass sends them to `operations-prompt` without holding the writer. [Wake handoff recovery](/reference/executor#wake-handoff-recovery) covers publication, job loss, retries and hook receipts. No queue failure changes an in-bound success.
 
@@ -265,7 +267,7 @@ The optional `steps` list uses typed `OperationStep` metadata. Start responses c
 
 `operation:show`, `operation:cancel` and `task:cancel` return a summary of `input`: top-level scalars and strings of at most 512 bytes. Nested execution plans, scripts, SSH configuration and vault references stay in the stored Operation. The workflow still receives its full admitted intent. Empty summaries serialize as `[]`. Domain results remain available. `steps` contains only recorded names, jobs, statuses and times, with no nested payload or command output.
 
-The stored column `executor_result` holds the first matching result from the [executor](/reference/executor#the-listener-and-the-hand-off) over WebSocket or the Gateway's SSH relay. The public record does not carry that raw result. For signed power, `executor_accepted_us` stores when the Gateway first saw WebSocket acceptance; it does not prove the action succeeded.
+The stored column `executor_result` holds the first matching result from the [executor](/reference/executor#the-listener-and-the-hand-off) over WebSocket, or from a Swamp phase that called the relay command on the Node. The public record does not carry that raw result. For signed power, `executor_accepted_us` stores when the Gateway first saw WebSocket acceptance; it does not prove the action succeeded.
 
 Every operation has the same fields, whatever its kind.
 
@@ -577,6 +579,8 @@ A refused or failed call does not fail the run; the terminal status frees the No
 The release records `route_withdrawn_at` on the removal. A retry of that removal skips `Withdraw the Route` and takes no hold, so it never waits for another Route write.
 
 `instance.register` and the Cluster Router writes hold the same Nodes for one step only. `tasks.provision`, `tasks.cancel` and `tasks.maintenance_finish` hold none: no Operation of the first starts, and the run of the other two publishes no Route. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
+
+`node.role_relocate` is no Route write, but it publishes Caddyfiles rendered at its admission. Admission holds every Node of the Cluster for the whole run, or refuses with `route.publication_held` when a Route write holds or waits for one of them; nothing waits. The terminal status of the move frees the Nodes.
 
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts.
 

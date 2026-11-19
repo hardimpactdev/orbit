@@ -450,7 +450,10 @@
    "Wait for Analytics": "read-only"
   },
   "operation-node-role-relocate": {
-   "Check Reverb": "read-only"
+   "Check Reverb": "read-only",
+   "Check the public certificates": "read-only",
+   "Probe the Process backends": "read-only",
+   "Probe the Router hop": "read-only"
   },
   "operation-node-ssh-access-converge": {
    "Log in with Swamp identity": "unreviewed"

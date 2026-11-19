@@ -2908,6 +2908,10 @@ cases:
   - /etc/wireguard/orbit-peers.d/3.conf
   - /etc/sysctl.d/99-orbit-forwarding.conf
 non_command_output:
+- file: tasks/node-role-runtime.yml
+  task: Refresh the system roots
+  field: when
+  reason: Matches the paths of role files the copy module changed against the system CA folder; it parses no command output.
 - file: tasks/apt-missing.yml
   task: Read the wanted packages
   field: ansible.builtin.command.argv

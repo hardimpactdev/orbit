@@ -900,6 +900,9 @@ final readonly class DevelopmentSiteRepository
             certificateScope: $artifact->certificateScope,
             publicListener: true,
             preserveForwardedIdentity: true,
+            // The Router answers with its Orbit CA site, or with its public site while an Ingress move has not yet
+            // withdrawn it from the source. The Node's system roots hold the Orbit root and the public roots, so both hold.
+            upstreamSystemRoots: $upstream !== [],
         );
     }
 }

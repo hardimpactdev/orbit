@@ -268,7 +268,7 @@ Node 209 hosts Serve and all Swamp workers. Converted Node effects use official 
 
 The descriptor does not prove that a target currently authorizes the existing key. Lane 21 owns that coverage proof and worker retirement. Do not assume fleet-wide SSH `AcceptEnv` or sudo `env_keep`. Public Process control arguments can use official `exec.argv`; secret values must use a documented official delivery method and stay out of argv.
 
-For [signed power](/reference/executor#signed-power-delivery), the Ansible phase asks the Gateway for a fresh order using the bound run ID and admitted phase. The Gateway checks the Swamp peer and the active Operation before signing the action, Node and target from stored intent. The phase sends the order to the fixed SSH relay on stdin. It does not put the order in run inputs, arguments or output. Swamp holds no signing key.
+For [signed power](/reference/executor#signed-power-delivery), the phase of a start, a deploy, or the boot of a stopped container asks the Gateway for a fresh order using the bound run ID and admitted phase. The Gateway checks the Swamp peer and the active Operation before signing the action, Node and target from stored intent. The phase sends the order on stdin to the fixed relay command on the Node. It does not put the order in run inputs, arguments or output. Swamp holds no signing key.
 
 ### Native failure observation
 

@@ -1,0 +1,66 @@
+name: Provide the web test browsers
+description: Install the locked Playwright browsers and their system libraries, from cached downloads when the cache has them.
+# The libraries are about 190 Ubuntu packages. A mirror that failed during their download failed the job. The packages
+# that the first install on a runner image downloads are cached for that image and Playwright version. A later run
+# installs them with apt from those files: no index refresh and no download. The job on main saves the caches, so pull
+# requests and the merge queue read them. Run after `bun install` in apps/web.
+runs:
+  using: composite
+  steps:
+    - name: Prepare browser download cache
+      id: browser-downloads
+      shell: bash
+      working-directory: apps/web
+      run: |
+        echo "playwright=$(bun --print 'require("playwright/package.json").version')" >> "$GITHUB_OUTPUT"
+        echo "image=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+        sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 /var/cache/orbit-playwright-apt
+        sudo install -d -o _apt -m 0700 /var/cache/orbit-playwright-apt/partial
+        printf 'Dir::Cache::archives "/var/cache/orbit-playwright-apt";\nAPT::Keep-Downloaded-Packages "true";\n' \
+          | sudo tee /etc/apt/apt.conf.d/99-orbit-playwright-cache >/dev/null
+    # The browsers and the packages of this runner image and Playwright version. The stock action saves only after a
+    # miss and a job that passed. On a miss it restores the newest entry of another image, or of the cache that the
+    # Web job kept before: most packages are the same, so the mirror path below downloads only the difference. A cold
+    # download of the whole set took longer than the job may run.
+    - name: Cache browser downloads
+      id: browser-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          /var/cache/orbit-playwright-apt/*.deb
+        key: web-browsers-v3-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-pw${{ steps.browser-downloads.outputs.playwright }}-${{ steps.browser-downloads.outputs.image }}
+        restore-keys: |
+          web-browsers-v3-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-pw${{ steps.browser-downloads.outputs.playwright }}-
+          web-browsers-v2-${{ runner.os }}-${{ runner.arch }}-ubuntu-26.04-pw${{ steps.browser-downloads.outputs.playwright }}-
+    - name: Install test browsers and system libraries
+      shell: bash
+      working-directory: apps/web
+      env:
+        SAME_IMAGE: ${{ steps.browser-cache.outputs.cache-hit }}
+      run: |
+        archives=/var/cache/orbit-playwright-apt
+        offline() {
+          # Only the entry of this image is a whole set. Another image may lack a library that this one does not
+          # ship, and apt would not notice: the mirror path then installs it, reusing the restored downloads.
+          [ "$SAME_IMAGE" = true ] || return 1
+          compgen -G "$archives/*.deb" >/dev/null || return 1
+          echo "Installing the system libraries from the cached packages in $archives"
+          # apt orders the files itself. --no-download: it must not ask a mirror for a package that the runner's own
+          # index also names; a set that lacks something fails here, and the mirror path runs.
+          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install --yes --no-install-recommends \
+            --no-download "$archives"/*.deb
+        }
+        if offline; then
+          bunx playwright install --only-shell webkit chromium
+        else
+          echo "::warning title=Web test libraries::No cached package set installed; using the Ubuntu mirror."
+          bunx playwright install --with-deps --only-shell webkit chromium
+        fi
+        # Keep exactly the installed set: a restored entry of another image can hold other versions, and a set with
+        # two versions of one package is not what one install on this image uses.
+        for deb in "$archives"/*.deb; do
+          [ -e "$deb" ] || continue
+          name=$(dpkg-deb -f "$deb" Package) version=$(dpkg-deb -f "$deb" Version) arch=$(dpkg-deb -f "$deb" Architecture)
+          [ "$(dpkg-query -W -f='${Version}' "$name:$arch" 2>/dev/null)" = "$version" ] || rm -f -- "$deb"
+        done
