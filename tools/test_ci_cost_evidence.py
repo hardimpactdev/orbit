@@ -118,6 +118,35 @@ class FixtureCostEvidenceTest(unittest.TestCase):
                 self.assertEqual(fixture['case_costs'], {name: math.ceil(seconds) for name, seconds in measured['case_seconds'].items()})
                 self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
 
+    def test_fleet_cases_cost_their_largest_time_on_the_shared_pool(self):
+        evidence = json.loads((ROOT / 'tools/tests/ci-fleet-pool-cost-evidence.json').read_text())
+        budget, fixtures, defaults = units.configuration()
+        file = evidence['file']
+        fixture = fixtures[file]
+        self.assertFalse(fixture.get('self_hosted'))
+        self.assertEqual([file], budget['pool_cost'])
+        self.assertIn(file, budget['capacity_gap'])
+        self.assertGreaterEqual(len(evidence['runs']), 5)
+        measured = {name: math.ceil(seconds) for name, seconds in evidence['case_seconds'].items()}
+        # A case with fewer than five pool runs keeps an estimate until the pool measures it.
+        estimates = {name: fixture['case_costs'][name] for name in evidence['estimates']}
+        # Named debt: the case ran above the lane on the pool and cannot split, so it costs the lane's largest unit.
+        lane = budget['shard_seconds'] - budget['slice_startup_seconds']
+        debt = dict.fromkeys(evidence['over_lane'], lane)
+        self.assertEqual(['a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, '
+                          'and resets from the upgraded base'], list(debt))
+        self.assertTrue(all(math.ceil(seconds) > lane for seconds in evidence['over_lane'].values()))
+        self.assertEqual(fixture['case_costs'], {**measured, **estimates, **debt})
+        self.assertEqual(len(fixture['case_costs']), len(measured) + len(estimates) + len(debt))
+        self.assertGreater(len(measured), 4 * len(estimates))
+        # The whole file fits the shards, for its own change and for a change to a task every case runs.
+        for path in (file, '.github/workflows/ci.yml', 'swamp/ansible/tasks/instance-fleet-refresh.yml'):
+            with self.subTest(path=path):
+                planned = units.plan([path], budget, fixtures, defaults)
+                self.assertFalse(planned.get('capacity'))
+                self.assertLessEqual(len(planned['shards']) + len(planned['self_hosted_shards']), budget['runner_shards'])
+                self.assertEqual(len(fixture['cases']), sum(unit.partition('#')[0] == file for unit in units.planned_units(planned)))
+
     def test_host_cold_build_stays_named_debt_while_the_complete_repeat_is_admitted(self):
         file = 'swamp/tests/ansible_instance_host_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-host-cost-evidence.json').read_text())

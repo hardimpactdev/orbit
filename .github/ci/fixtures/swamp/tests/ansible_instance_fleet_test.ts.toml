@@ -44,7 +44,8 @@ cases = [
   "a converge with changed tasks retakes base only for the changed Node and Gateway",
   "a converge without change counts retakes all three bases",
   "a missing base is retaken without another converge",
-  "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current",
+  "a due shrink without duperemove retakes base of all three with the relink between the old base's delete and the new base",
+  "a due shrink with duperemove runs both parts and retakes base of all three; then it is current",
   "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named",
   "a failed refresh that changed a Node removes its old record and writes none",
   "a refresh after a failed run converges every part and retakes all three bases",
@@ -59,7 +60,8 @@ cases = [
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base",
   "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended",
-  "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout",
+  "the Instance host ignores exact housekeeping paths",
+  "the Instance host converges for a new path or an unreadable checkout",
   "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s",
   "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only",
   "a fleet without worker c remints at once and names it incomplete",
@@ -92,8 +94,10 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3625
-slices = 90
+# Costs are this file's largest passed times on the shared pool: tools/tests/ci-fleet-pool-cost-evidence.json.
+pool_cost = true
+cost = 4958
+slices = 92
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
   ".github/workflows/ci.yml",
@@ -132,77 +136,76 @@ inputs = [
 # Ansible loads the tasks. The fixture supplies checkout object IDs through its Incus stand-in.
 parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
 
-# One unit per case. Refreshed-boundary and seeded-record cases use the completed
-# four-worker local measurements in tools/tests/ci-fleet-cost-evidence.json:
-# ESTIMATE: ceil(seconds * 2.1) + 1; the planner adds 6s startup.
-# Other cases retain their earlier hosted or explicitly marked local estimates.
+# One unit per case. A case with five or more runs on the shared pool costs its largest passed time, rounded up:
+# tools/tests/ci-fleet-pool-cost-evidence.json. A newer case keeps a marked estimate. The planner adds 6s startup.
 [case_costs]
-"an old-checkout fleet start records unavailable pin sync, then refresh writes pins on the new checkout and repeats unchanged" = 70 # ESTIMATE: local 32 s x 2.1, rounded up
-  "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads" = 58 # hosted run 43730633700: 45s x 1.25, rounded up, plus 1s
-  "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record" = 10 # hosted run 43730633700: 7s x 1.25, rounded up, plus 1s
-  "a refresh without the Club key reads no Swamp release and installs none" = 19 # hosted run 43730633700: 14s x 1.25, rounded up, plus 1s
-  "a fleet built at the recipe's release only reads; a read that fails runs the install and names no release" = 7 # ESTIMATE: local 2.853s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 50 # ESTIMATE: local 23s x 2.1, rounded up, plus 1s (the Instance host and egress rules)
-  "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
-  "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: prior local x 3, plus 1s
-  "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
-  "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts" = 12 # ESTIMATE: local 5s x 2.1, rounded up, plus 1s
-  "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
-  "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 58 # ESTIMATE: local 26.669s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 15 # ESTIMATE: local 6.625s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 35
-  "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh" = 81 # ESTIMATE: local 38s x 2.1, rounded up, plus 1s (two refreshes)
-  "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused" = 45 # ESTIMATE: the earlier 44 plus 1s for the added Doctor retry at the reset's 1 s delay (local 16s)
-  "a reset that fails after its stop starts the containers that ran again and fails with the first reason" = 33 # ESTIMATE: local 15s x 2.1, rounded up, plus 1s
-  "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
-  "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
-  "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
-  "the nested Gateway's Horizon and PHP-FPM pool get the fleet's egress proxy from files of their own, so a Gateway role converge keeps them" = 39 # ESTIMATE: local 18s x 2.1, rounded up, plus 1s
-  "a fleet built from the rules has the live shape, with boot.autostart true" = 35 # ESTIMATE: local 16s x 2.1, rounded up, plus 1s (the Instance host and egress rules)
-  "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 58 # ESTIMATE: local 26.724s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: prior local x 3, plus 1s
-  "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 76 # ESTIMATE: prior local x 3, plus 1s
-  "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 63 # ESTIMATE: local 29.444s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 36 # ESTIMATE: local 16.573s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 20
-  "the saved refreshed fleet boundary matches a real first refresh and start" = 56 # ESTIMATE: local 25.988s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 25
-  "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file" = 16 # ESTIMATE: local 7s x 2.1, rounded up, plus 1s
-  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates" = 38
-  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates" = 39
-  "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 28
-  "the next refresh repeats no part: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 38
-  "a changed input runs only its due parts: a swamp file the base converge reads converges" = 31
-  "the next refresh repeats no part: a swamp file the base converge reads converges" = 38
-  "a changed input runs only its due parts: the agent contract migrates and restarts" = 25
-  "the next refresh repeats no part: the agent contract migrates and restarts" = 41
-  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 55
-  "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three" = 56 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read" = 15 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "a converge with changed tasks retakes base only for the changed Node and Gateway" = 45
-  "a converge without change counts retakes all three bases" = 54
-  "a missing base is retaken without another converge" = 46
-  "a failed refresh that changed a Node removes its old record and writes none" = 23
-  "a refresh after a failed run converges every part and retakes all three bases" = 58
-  "a deleted record runs every part and never fails the refresh" = 43
-  "a malformed record runs every part and never fails the refresh" = 45
-  "an unreadable record runs every part and never fails the refresh" = 42
-  "a failed digest read runs every part and never fails the refresh" = 31
-  "a moved base intent of one Node converges that Node only, and the result names it and why" = 40
-  "a Node whose converge is older than seven days converges alone although no input changed, and the result names it stale" = 45
-  "an unreadable base intent digest converges, names why, and records no converge digest" = 43
-  "one Node whose intent cannot be built converges alone and is named unreadable with its error; the others stay unchanged" = 35 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base" = 32 # ESTIMATE: local 14.518s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
-  "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout" = 90 # ESTIMATE: local 42s x 2.1 plus startup allowance
-  "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s" = 25 # ESTIMATE: short pending sequence, local 11.33s x 2.1, rounded up, plus 1s
-  "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only" = 31 # ESTIMATE: local 14s x 2.1, rounded up, plus 1s
-  "a fleet without worker c remints at once and names it incomplete" = 22 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 6 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema" = 49
-  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 27
-  "on a btrfs inner pool base is taken of the frozen running fleet after one readiness wait, a reset clears its pid file, and a failed snapshot still thaws it" = 40 # ESTIMATE: local 39s on a runner where the grants unit (27) took 33s, scaled, plus 20%
+  "an old-checkout fleet start records unavailable pin sync, then refresh writes pins on the new checkout and repeats unchanged" = 17
+  "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads" = 61
+  "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record" = 8
+  "a refresh without the Club key reads no Swamp release and installs none" = 4
+  "a fleet built at the recipe's release only reads; a read that fails runs the install and names no release" = 13
+  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 77
+  "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 36
+  "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 46
+  "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 42
+  "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts" = 28
+  "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 30
+  "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 103
+  "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 16
+  "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 33
+  "the due Nodes converge one at a time, gateway, app-prod, then app-dev; a refused or failed converge stops the Nodes after it and fails the refresh" = 93
+  "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused" = 68
+  "a reset that fails after its stop starts the containers that ran again and fails with the first reason" = 24
+  "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command" = 14
+  "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 40
+  "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 24
+  "the nested Gateway's Horizon and PHP-FPM pool get the fleet's egress proxy from files of their own, so a Gateway role converge keeps them" = 57
+  "a fleet built from the rules has the live shape, with boot.autostart true" = 56
+  "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 114
+  "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 48
+  "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 108
+  "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 128
+  "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 59
+  "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 25
+  "the saved refreshed fleet boundary matches a real first refresh and start" = 122
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 28
+  "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file" = 25
+  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates" = 26
+  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates" = 31
+  "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 25
+  "the next refresh repeats no part: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 28
+  "a changed input runs only its due parts: a swamp file the base converge reads converges" = 39
+  "the next refresh repeats no part: a swamp file the base converge reads converges" = 31
+  "a changed input runs only its due parts: the agent contract migrates and restarts" = 28
+  "the next refresh repeats no part: the agent contract migrates and restarts" = 28
+  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 107
+  "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three" = 64
+  "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read" = 6
+  "a converge with changed tasks retakes base only for the changed Node and Gateway" = 104
+  "a converge without change counts retakes all three bases" = 51
+  "a missing base is retaken without another converge" = 60
+  "a failed refresh that changed a Node removes its old record and writes none" = 32
+  "a refresh after a failed run converges every part and retakes all three bases" = 69
+  "a deleted record runs every part and never fails the refresh" = 90
+  "a malformed record runs every part and never fails the refresh" = 95
+  "an unreadable record runs every part and never fails the refresh" = 95
+  "a failed digest read runs every part and never fails the refresh" = 39
+  "a moved base intent of one Node converges that Node only, and the result names it and why" = 44
+  "a Node whose converge is older than seven days converges alone although no input changed, and the result names it stale" = 34
+  "an unreadable base intent digest converges, names why, and records no converge digest" = 39
+  "one Node whose intent cannot be built converges alone and is named unreadable with its error; the others stay unchanged" = 28
+  "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 108
+  "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base" = 51
+  "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended" = 37
+  "the Instance host ignores exact housekeeping paths" = 87 # ESTIMATE: 3 of the 5 playbook runs of the unsplit case, which ran 145 s at most on the pool
+  "the Instance host converges for a new path or an unreadable checkout" = 116 # ESTIMATE: 4 of the 5 playbook runs of the unsplit case, which ran 145 s at most on the pool
+  "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s" = 35
+  "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only" = 41
+  "a fleet without worker c remints at once and names it incomplete" = 64
+  "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 8
+  "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema" = 77
+  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 76
+  "on a btrfs inner pool base is taken of the frozen running fleet after one readiness wait, a reset clears its pid file, and a failed snapshot still thaws it" = 126
   "on a btrfs inner pool a failed hold of the queue writes lets the writes go and takes base with the fleet stopped" = 65 # ESTIMATE: the two-refresh halves ran 98 and 165 s on the pool; one refresh with its own setup, plus the freeze wait
   "on a btrfs inner pool a failed queue save lets the writes go and takes base with the fleet stopped" = 65 # ESTIMATE: the two-refresh halves ran 98 and 165 s on the pool; one refresh with its own setup, plus the freeze wait
   "on a btrfs inner pool a hold without room lets the writes go and takes base with the fleet stopped" = 65 # ESTIMATE: the two-refresh halves ran 98 and 165 s on the pool; one refresh with its own setup, plus the freeze wait
@@ -210,24 +213,25 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "a directory pool takes base with the fleet stopped" = 65 # ESTIMATE: a third of the unsplit case, which ran 106 and 129 s on the pool and twice past the 180 s ceiling
   "an unreadable pool read takes base with the fleet stopped" = 65 # ESTIMATE: a third of the unsplit case, which ran 106 and 129 s on the pool and twice past the 180 s ceiling
   "a due shrink takes base with the fleet stopped" = 65 # ESTIMATE: a third of the unsplit case, which ran 106 and 129 s on the pool and twice past the 180 s ceiling
-  "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three" = 35 # ESTIMATE: local 16s x 2.1, rounded up, plus 1s
-  "a start after base that fails fails the refresh and writes no record" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
-  "every refresh reads the services once and names only the one that is down, among active ones" = 6 # ESTIMATE: local 2s x 2.1, rounded up, plus 1s
-  "a refresh without the Club key records no grants digest, so the grants reload once the key is there" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
-  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 28
-  "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 37 # ESTIMATE: local 12s x 3, plus 1s
-  "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s
-  "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them" = 41 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line" = 60 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
+  "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three" = 68
+  "a start after base that fails fails the refresh and writes no record" = 65
+  "every refresh reads the services once and names only the one that is down, among active ones" = 4
+  "a refresh without the Club key records no grants digest, so the grants reload once the key is there" = 49
+  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 44
+  "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 9
+  "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 6
+  "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them" = 53
+  "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line" = 43
 
 # ESTIMATE: rollout regressions; local upgrade 42s, with slow-runner allowance.
-  "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base" = 67 # ESTIMATE: local 31.411s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps" = 60
-  "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 45
-  "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current" = 84 # ESTIMATE: local 39.196s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
-  "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named" = 22
+  "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base" = 144 # NAMED DEBT: ran 157 s at most on the pool, above the lane; its three parts depend on each other
+  "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps" = 36
+  "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 46
+  "a due shrink without duperemove retakes base of all three with the relink between the old base's delete and the new base" = 84 # ESTIMATE: 2 of the 4 playbook runs of the unsplit case, which ran 168 s at most on the pool
+  "a due shrink with duperemove runs both parts and retakes base of all three; then it is current" = 126 # ESTIMATE: 3 of the 4 playbook runs of the unsplit case, which ran 168 s at most on the pool
+  "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named" = 101
 
-  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired" = 40 # ESTIMATE: local 18 s x 2.1, rounded up plus 1 s
+  "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired" = 9
 
-  "a fleet start appends the managed user to Incus admin on every marked host, preserves other groups and repeats unchanged without a converge" = 40 # ESTIMATE: start twice and a failed group read, including two marked hosts
-  "a fleet start heals a pre-fix nested Instance host, running or just started: it places the heal, removes the empty pid file, and repeats unchanged" = 30 # ESTIMATE: three scoped starts, one marked host
+  "a fleet start appends the managed user to Incus admin on every marked host, preserves other groups and repeats unchanged without a converge" = 15
+  "a fleet start heals a pre-fix nested Instance host, running or just started: it places the heal, removes the empty pid file, and repeats unchanged" = 15

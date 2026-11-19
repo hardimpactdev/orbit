@@ -170,6 +170,27 @@ class PlanningTest(unittest.TestCase):
         self.assertIn('swamp/gap.ts#1/3', units.unplaced_units(result))
         self.assertNotIn('not_run', result)
 
+    def test_pool_costs_share_a_lane_up_to_shard_seconds_and_other_costs_keep_the_slowest_runners_lane(self):
+        # A lane that holds several units is shard_seconds over the slowest runner's factor: 150 / 1.15 = 130.
+        budget = {**BUDGET, 'pr_shards': 9, 'shard_workers': 1, 'lane_seconds': 130, 'slowest_runner_factor': 1.15}
+        rows = [('swamp/a.ts', 74, 0), ('swamp/b.ts', 74, 0)]
+        self.assertEqual(2, len(units.pack(rows, budget)))
+        # A pool cost already holds the slowest runner: two of them share one lane up to 150 real seconds.
+        pooled = {**budget, 'pool_cost': ['swamp/a.ts', 'swamp/b.ts']}
+        self.assertEqual(1, len(units.pack(rows, pooled)))
+        self.assertEqual(2, len(units.pack([('swamp/a.ts', 76, 0), ('swamp/b.ts', 76, 0)], pooled)))
+        # Mixed: only the pool cost is weighed over the factor. 74 / 1.15 + 65 = 129.3 fits; 74 + 65 / 1.15 does not.
+        self.assertEqual(1, len(units.pack([('swamp/a.ts', 74, 0), ('swamp/b.ts', 65, 0)], {**budget, 'pool_cost': ['swamp/a.ts']})))
+        self.assertEqual(2, len(units.pack([('swamp/a.ts', 74, 0), ('swamp/b.ts', 65, 0)], {**budget, 'pool_cost': ['swamp/b.ts']})))
+        # A unit alone may still fill shard_seconds, and no unit joins it.
+        self.assertEqual(2, len(units.pack([('swamp/a.ts', 150, 0), ('swamp/b.ts', 1, 0)], pooled)))
+        original, inventory = units.registry.load(ROOT)
+        config = json.loads(json.dumps(original))
+        config['fixture'][0]['pool_cost'] = 'yes'
+        with patch.object(units.registry, 'load', return_value=(config, inventory)):
+            with self.assertRaisesRegex(ValueError, 'pool_cost must be a boolean'):
+                units.configuration()
+
     def test_a_hosted_capacity_gap_yields_to_other_work_and_runs_before_a_self_hosted_gap(self):
         budget = {**BUDGET, 'pr_shards': 2, 'runner_shards': 2, 'shard_workers': 1, 'self_hosted_workers': 1,
                   'capacity_gap': ['swamp/gap.ts', 'swamp/runner_gap.py']}
@@ -531,7 +552,8 @@ class TableTest(unittest.TestCase):
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
         self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []},
-                         {**BUDGET, 'shard_workers': 2, 'shard_deadline_seconds': 210, 'lane_seconds': 130, 'pr_shards': 20, 'runner_shards': 20, 'self_hosted_shards': 10, 'spread_shards': 16})
+                         {**BUDGET, 'shard_workers': 2, 'shard_deadline_seconds': 210, 'lane_seconds': 130, 'pr_shards': 20, 'runner_shards': 20, 'self_hosted_shards': 10, 'spread_shards': 16,
+                          'slowest_runner_factor': 1.15, 'pool_cost': ['swamp/tests/ansible_instance_fleet_test.ts']})
         self.assertTrue(defaults)
         for f in fixtures.values():
             self.assertTrue((ROOT / f['file']).is_file(), f['file'])
@@ -1050,36 +1072,6 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(result['shards'], [])
         self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'self_hosted': False, 'shards': 7, 'workers': 28},
                                               {'unplaced': sorted(f'swamp/cases.ts#{k}/25' for k in range(25))}])
-
-    def test_fleet_refresh_costs_keep_every_case_and_bound_each_refresh(self):
-        budget, fixtures, defaults = units.configuration()
-        file = 'swamp/tests/ansible_instance_fleet_test.ts'
-        evidence = json.loads((ROOT / 'tools/tests/ci-fleet-cost-evidence.json').read_text())
-        speed = json.loads((ROOT / 'tools/tests/ci-fleet-speed-evidence.json').read_text())
-        self.assertEqual(len(speed['cases']), 10)
-        for row in speed['cases']:
-            self.assertIn(row['name'], fixtures[file]['cases'])
-            self.assertEqual(fixtures[file]['case_costs'][row['name']], math.ceil(row['after_seconds'] * speed['estimate_factor']) + 1)
-            evidence['case_seconds'][row['name']] = row['after_seconds']
-        result = units.plan([file], budget, fixtures, defaults)
-        for name in evidence['single_refresh_cases']:
-            self.assertIn(name, fixtures[file]['cases'])
-            self.assertLessEqual(fixtures[file]['case_costs'][name] + budget['slice_startup_seconds'], 90, name)
-        self.assertFalse(result.get('capacity'))
-        self.assertLessEqual(len(result['shards']), budget['pr_shards'])
-        seen = []
-        for shard in result['shards']:
-            loads = [0.] * budget['shard_workers']
-            for unit in shard['units']:
-                cases = units.case_names(unit, fixtures)
-                self.assertEqual(len(cases), 1, unit)
-                seen.extend(cases)
-                # Later main cases retain their own table estimates; replay measured split cases from evidence.
-                seconds = sum(math.ceil(evidence['case_seconds'][name] * evidence['estimate_factor']) + 1
-                              if name in evidence['case_seconds'] else fixtures[file]['case_costs'][name] for name in cases)
-                heapq.heapreplace(loads, loads[0] + seconds + budget['slice_startup_seconds'])
-            self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
-        self.assertCountEqual(seen, fixtures[file]['cases'])
 
     def test_reboot_slices_cover_every_case_with_measured_headroom(self):
         budget, fixtures, defaults = units.configuration()

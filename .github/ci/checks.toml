@@ -53,6 +53,9 @@ capacity_gap = [
   # A hosted gap applies only when other changes select the file; a change to the file itself runs all its units.
   "swamp/tests/ansible_task_copy_turn_test.ts",
   "swamp/tests/ansible_instance_host_image_test.ts",
+  # The fleet file costs its largest pool times: 92 units that fill 19 of the 20 shards. A change to
+  # instance-fleet.yml also reserves the container file's seed cases, so the fleet units that fit run.
+  "swamp/tests/ansible_instance_fleet_test.ts",
 ]
 
 [runner-pool]

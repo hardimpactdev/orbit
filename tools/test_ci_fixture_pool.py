@@ -106,9 +106,13 @@ class FixturePoolTest(unittest.TestCase):
                 lanes = [[], []]
                 for name in shard['units']:
                     min(lanes, key=lambda lane: sum(costs[unit] for unit in lane)).append(name)
+                # A pool cost already holds the slowest runner: it weighs its cost over the factor in a shared lane.
+                weigh = lambda unit: costs[unit] / (budget['slowest_runner_factor'] if unit.split('#')[0] in budget['pool_cost'] else 1)
                 for lane in lanes:
-                    limit = budget['lane_seconds'] if len(lane) > 1 else budget['shard_seconds']
-                    self.assertLessEqual(sum(costs[unit] for unit in lane), limit, (path, shard['name'], lane))
+                    if len(lane) > 1:
+                        self.assertLessEqual(sum(map(weigh, lane)), budget['lane_seconds'] + 1e-9, (path, shard['name'], lane))
+                    # In real seconds no lane passes shard_seconds, whatever its costs are.
+                    self.assertLessEqual(sum(costs[unit] for unit in lane), budget['shard_seconds'], (path, shard['name'], lane))
                     shared += len(lane) > 1
         self.assertGreater(shared, 20)
 
@@ -133,9 +137,9 @@ class FixturePoolTest(unittest.TestCase):
         self.assertNotIn('capacity', plan)
         selected = units.planned_units(plan)
         expected = [name for name, _ in units.units_for(fixtures[file], budget)]
-        self.assertEqual(90, len(expected))
+        self.assertEqual(92, len(expected))
         self.assertEqual(set(expected), {name for name in selected if name.split('#')[0] == file})
-        self.assertEqual(17, len(plan['shards']) + len(plan['self_hosted_shards']))
+        self.assertEqual(19, len(plan['shards']) + len(plan['self_hosted_shards']))
         costs = {name: cost for fixture in fixtures.values() for name, cost in units.units_for(fixture, budget)}
         for shard in plan['shards'] + plan['self_hosted_shards']:
             self.assertEqual(2, units.shard_workers(shard['units'], budget, fixtures))
@@ -171,7 +175,13 @@ class FixturePoolTest(unittest.TestCase):
         for part in ('-' + phase if phase else '' for phase in phases):
             with self.subTest(part=part):
                 plan = units.plan([f'swamp/ansible/tasks/instance-fleet{part}.yml'], budget, fixtures, defaults)
-                self.assertEqual(90, sum(name.split('#')[0] == fleet for name in units.planned_units(plan)))
+                self.assertNotIn('capacity', plan)
+                placed = sum(name.split('#')[0] == fleet for name in units.planned_units(plan))
+                named = sum(len(row['units']) for row in plan.get('not_run', []) if row['file'] == fleet)
+                self.assertEqual(92, placed + named)
+                # Only instance-fleet.yml also reserves the container file's seed cases; the fleet units that fit run.
+                self.assertEqual(part == '', named > 0)
+                self.assertGreater(placed, 80)
 
     def test_a_host_role_change_with_the_fleet_node_part_and_the_container_fixture_fits_the_shards(self):
         # The changed paths of the btrfs pool change for the nested app-dev Node (17 files, 18 November 2026).

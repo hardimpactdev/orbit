@@ -1750,7 +1750,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current",
+  name: "a due shrink without duperemove retakes base of all three with the relink between the old base's delete and the new base",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -1764,7 +1764,7 @@ Deno.test({
       f.calls();
       const relinked = f.run("refresh");
       assert(relinked.ok, relinked.output);
-      let calls = f.calls();
+      const calls = f.calls();
       assert(!ran(calls, parts.converge), calls.join("\n"));
       const run = calls.indexOf(shrinkCall + "run " + shrinkArgs);
       const deletes = calls.flatMap((call, index) => call.startsWith("incus snapshot delete ") ? [index] : []);
@@ -1773,11 +1773,25 @@ Deno.test({
       assertEquals(takes(calls).length, 3);
       for (const name of names) assertEquals(f.state().containers[name].status, "Running");
       assertEquals(shrunk(f.refreshed()), ["retaken", "relinked", "packages"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
 
-      // Without its dedupe the shrink is due again, and with duperemove both parts run: base of all three again.
-      f.change((state) => delete state.shrinkResult);
+// Its own case: with the relink above, the three refreshes ran past the lane on the pool.
+Deno.test({
+  name: "a due shrink with duperemove runs both parts and retakes base of all three; then it is current",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
+      // A shrink is due, and with duperemove both parts run: base of all three.
+      f.change((state) => state.shrink = { due: true, reason: "packages" });
+      f.calls();
       assert(f.run("refresh").ok);
-      calls = f.calls();
+      let calls = f.calls();
       assertEquals(takes(calls).length, 3);
       assertEquals(shrunk(f.refreshed()), ["retaken", "ran", "packages"]);
 
@@ -2178,48 +2192,63 @@ Deno.test({
   },
 });
 
+// A refreshed fleet whose host checkout is a real repository, calibrated by one converge. Two cases use it: together their
+// refreshes ran past the lane on the pool.
+function hostCheckout() {
+  const f = refreshedOnce();
+  const checkout = Deno.makeTempDirSync();
+  const git = (...args: string[]) => {
+    const result = new Deno.Command("git", { args: ["-C", checkout, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args] }).outputSync();
+    assert(result.success, new TextDecoder().decode(result.stderr));
+  };
+  const commit = (path: string, text: string) => {
+    Deno.mkdirSync(`${checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
+    Deno.writeTextFileSync(`${checkout}/${path}`, text);
+    git("add", "--", path);
+    git("commit", "-qm", "Change a fixture input");
+  };
+  const refresh = (due: boolean, gatewayChanged = false) => {
+    const result = f.run("refresh");
+    assert(result.ok, result.output);
+    const calls = f.calls();
+    assertEquals(calls.filter((call) => call.includes("/converge ")), due ? [convergeAdmit(2, true)] : []);
+    assertEquals(f.refreshed()!.host, due ? "converged" : "kept");
+    if (gatewayChanged) {
+      assert(ran(calls, parts.migrate));
+      assert(ran(calls, parts.restart));
+      assert(ran(calls, "/doctor"));
+    }
+    return JSON.parse(f.state().outer.files[record]);
+  };
+  const cleanup = () => {
+    f.cleanup();
+    Deno.removeSync(checkout, { recursive: true });
+  };
+  const housekeeping = "swamp/ansible/tasks/swamp-housekeeping.yml";
+  try {
+    git("init", "-q");
+    commit(housekeeping, "stock housekeeping");
+    commit("swamp/ansible/tasks/instance-fleet-node.yml", "stock roles");
+    commit("apps/gateway/resources/machine-software/recipe.json", "stock recipe");
+    f.change((state) => {
+      state.hostCheckout = checkout;
+      const previous = JSON.parse(state.outer.files[record]);
+      delete previous.host;
+      state.outer.files[record] = JSON.stringify(previous);
+    });
+    return { f, checkout, commit, refresh, cleanup, housekeeping, calibrated: refresh(true) };
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+}
+
 Deno.test({
-  name: "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout",
+  name: "the Instance host ignores exact housekeeping paths",
   ignore: !hasAnsible,
   fn() {
-    const f = refreshedOnce();
-    const checkout = Deno.makeTempDirSync();
-    const git = (...args: string[]) => {
-      const result = new Deno.Command("git", { args: ["-C", checkout, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args] }).outputSync();
-      assert(result.success, new TextDecoder().decode(result.stderr));
-    };
-    const commit = (path: string, text: string) => {
-      Deno.mkdirSync(`${checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
-      Deno.writeTextFileSync(`${checkout}/${path}`, text);
-      git("add", "--", path);
-      git("commit", "-qm", "Change a fixture input");
-    };
-    const refresh = (due: boolean, gatewayChanged = false) => {
-      const result = f.run("refresh");
-      assert(result.ok, result.output);
-      const calls = f.calls();
-      assertEquals(calls.filter((call) => call.includes("/converge ")), due ? [convergeAdmit(2, true)] : []);
-      assertEquals(f.refreshed()!.host, due ? "converged" : "kept");
-      if (gatewayChanged) {
-        assert(ran(calls, parts.migrate));
-        assert(ran(calls, parts.restart));
-        assert(ran(calls, "/doctor"));
-      }
-      return JSON.parse(f.state().outer.files[record]);
-    };
+    const { f, commit, refresh, cleanup, housekeeping, calibrated } = hostCheckout();
     try {
-      git("init", "-q");
-      const housekeeping = "swamp/ansible/tasks/swamp-housekeeping.yml";
-      commit(housekeeping, "stock housekeeping");
-      commit("swamp/ansible/tasks/instance-fleet-node.yml", "stock roles");
-      commit("apps/gateway/resources/machine-software/recipe.json", "stock recipe");
-      f.change((state) => {
-        state.hostCheckout = checkout;
-        const previous = JSON.parse(state.outer.files[record]);
-        delete previous.host;
-        state.outer.files[record] = JSON.stringify(previous);
-      });
-      const calibrated = refresh(true);
       const bases = Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots]));
       commit("swamp/ansible/conn-launch.yml", "Conn launch controller");
       commit("swamp/ansible/t3_copy_rpc.mjs", "Task-turn RPC stdin");
@@ -2232,6 +2261,18 @@ Deno.test({
       });
       assertEquals(refresh(false, true).host, calibrated.host);
       assertEquals(Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots])), bases);
+    } finally {
+      cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "the Instance host converges for a new path or an unreadable checkout",
+  ignore: !hasAnsible,
+  fn() {
+    const { f, checkout, commit, refresh, cleanup, housekeeping, calibrated } = hostCheckout();
+    try {
       commit(`swamp/ansible/unknown/${housekeeping}`, "a new path with the excluded suffix");
       const changed = refresh(true);
       assert(changed.host && changed.host !== calibrated.host);
@@ -2241,8 +2282,7 @@ Deno.test({
       assertEquals(unreadable.converge_gateway, calibrated.converge_gateway);
       assertEquals(unreadable.converge_app_prod, calibrated.converge_app_prod);
     } finally {
-      f.cleanup();
-      Deno.removeSync(checkout, { recursive: true });
+      cleanup();
     }
   },
 });
