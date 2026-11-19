@@ -1667,23 +1667,27 @@ function copyCandidate(Task $group): TaskCheck
 }
 
 describe('a turn of a group that owns a copy', function (): void {
-    it('runs the turn\'s commands on the Conn Server that every copy records, whatever server its Project chose', function (): void {
+    it('runs a t3 Project\'s copy on the Conn Server through a completed implementer and reviewer turn, while its dev clone runs T3', function (): void {
+        Storage::fake('local');
         $source = copySource();
-        expect($source->project->container_server)->toBe(ContainerServer::T3);
         $group = copyGroup($source->project);
         $copy = finishedCopy($group, startCopy($group));
-        // A clone of the same Project that is no task copy still runs the Project's server.
-        $node = Node::query()->findOrFail($source->node_id);
-        $clone = containerCreate($source->project, $node, 'feature');
-        $source->project->update(['container_server' => ContainerServer::Conn]);
-        $connClone = containerCreate($source->project, $node, 'later');
 
-        $turn = copyTurn($group);
+        $implementer = copyTurn($group);
+        $implemented = copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
+        $reviewer = copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]);
+        $reviewed = copyTurnEnded($reviewer, 'succeeded', copyTurnDone('mcp:2'));
+        // A clone of the same Project that is no task copy runs the Project's server.
+        $clone = containerCreate($source->project, Node::query()->findOrFail($source->node_id), 'feature');
 
-        expect($copy->runtime->container_server)->toBe(ContainerServer::Conn)
-            ->and($turn->input['turn']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
-            ->and(InstanceRuntime::query()->where('instance_id', $clone->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3)
-            ->and(InstanceRuntime::query()->where('instance_id', $connClone->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::Conn);
+        expect($source->project->refresh()->container_server)->toBe(ContainerServer::T3)
+            ->and($copy->runtime->container_server)->toBe(ContainerServer::Conn)
+            ->and([$implementer->input['turn']['t3'], $reviewer->input['turn']['t3']])->toBe(array_fill(0, 2, '/opt/orbit-agent/current/agent/bin/conn-server'))
+            ->and([$implementer->input['role'], $reviewer->input['role']])->toBe(['implementer', 'reviewer'])
+            ->and([$implemented->status, $reviewed->status])->toBe([OperationStatus::Succeeded, OperationStatus::Succeeded])
+            ->and([$implemented->result['state'], $reviewed->result['state']])->toBe(['done', 'done'])
+            ->and(AgentThread::query()->where('task_group_id', $group->id)->pluck('state')->all())->toBe([AgentThreadState::Done, AgentThreadState::Done])
+            ->and(InstanceRuntime::query()->where('instance_id', $clone->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
     });
 
     it('refuses a task copy before any record when the recipe pins no Conn Server', function (): void {

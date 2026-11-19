@@ -111,6 +111,14 @@ Deno.test({ name: "the Conn Ansible phase preserves private stdin and refuses a 
                 await assertNoCall(folder + "/call.json");
             }
         }
+
+        // A child admitted before the Gateway passed the runtime's program has the older runtime shape: it runs T3.
+        await Deno.writeTextFile(folder + "/intent.json", JSON.stringify({
+            action: "inspect-launch", environment_id: "env-17", instance_id: 17, runtime: { project: "orbit-instances", name: "instance-17" },
+        }));
+        const older = await run();
+        assert(older.success, new TextDecoder().decode(older.stdout));
+        assertEquals(JSON.parse(await Deno.readTextFile(folder + "/call.json")), ["/opt/orbit-agent/current/agent/bin/t3", "inspect-launch", "env-17"]);
     } finally {
         await Deno.remove(folder, { recursive: true });
     }

@@ -46,7 +46,7 @@ The agent folder is shared by every container on a Node, so the choice cannot li
 
 ## Consequences
 
-- Every task copy made after this decision runs the Conn Server; a copy made before keeps T3 until its group ends.
+- Every task copy made after this decision runs the Conn Server; a copy made before keeps the server its runtime recorded, `t3` or `conn`, until its group ends.
 - A Project switches to the Conn Server for its new dev containers only. Its existing containers keep T3; to move a container to the other server, a person destroys it and creates it again.
 - An agent folder update restarts both servers the same way, with `systemctl try-restart t3.service`.
 - `conn:environment-restart` treats the Conn Server's SDK host as it treats a provider. The host, the providers under it and what stays in the `claude` session may go, as under T3; any other process under it keeps the container busy ([the rule](/reference/development-containers#existing-instances)).
