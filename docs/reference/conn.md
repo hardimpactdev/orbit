@@ -597,6 +597,7 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 | `subtask_counts` | `{total, todo, running, completed, failed, cancelled}`. `reserved` and `reviewing` count as `running`. |
 | `created_at`, `updated_at` | The task row's times. |
 | `last_activity_at` | When the task last did something: [Last activity](/reference/tasks#last-activity). |
+| `deployed_at` | When the first production deploy that carried the task's merge commit finished, or null: [Deploy times](/reference/tasks#deploy-times). |
 
 `attention` is `{kind, question, reason}`. Its `kind` is one of these, in this order:
 

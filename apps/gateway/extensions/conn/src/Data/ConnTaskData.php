@@ -34,5 +34,6 @@ final class ConnTaskData extends Data
         public ?string $createdAt,
         public ?string $updatedAt,
         public ?string $lastActivityAt,
+        public ?string $deployedAt,
     ) {}
 }
