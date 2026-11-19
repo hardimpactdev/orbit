@@ -64,6 +64,7 @@ cases = [
   "a phase's own intent fields and run folder entries are read by no other skippable phase",
   "the version a capture mints for a certificate leaf does not move a digest; the leaf's domain does",
   "the admission time of the Instance bridge does not move a digest; the bridge does",
+  "an Instance that comes or goes does not move the roles digest; a changed T3 drop-in or other role input does",
   "a changed shipped Tool file that the Tool helper imports moves the tools digest",
   "a record of the other kind's phases never matches and never refuses the run",
   "a role Operation's digests skip every role phase only when its written input, kind and code did not move",

@@ -1296,7 +1296,7 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 #### Parts
 
-[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. Fixture budget and capacity checks are unconditional. Expensive checks run when their inputs change: tooling, documentation and the policy tests' source inputs. API reference inputs also select docs lint and flow checks. Selected policy checks run before Pest and the fixtures.
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. Fixture budget and capacity checks are unconditional. Expensive checks run when their inputs change: tooling and documentation select docs lint and flow checks, and tooling or a file that a policy test reads selects the policy tests. API reference inputs also select docs lint and flow checks. Selected policy checks run before Pest and the fixtures.
 
 The `fixtures` part runs the units of CI's fixture plan that the change touches directly first, then those that fit the budget; it names the rest as deferred to CI. A budget stop or deferral keeps exit zero when nothing failed, but the final result explicitly says coverage is incomplete and CI must finish.
 
