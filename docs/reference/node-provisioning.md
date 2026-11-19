@@ -677,7 +677,11 @@ The tasks that a phase selects in a converge playbook get the same check as the 
 
 The resolver does resolve four forms: a playbook-relative path that ends in a literal file name, a run-folder path, a fileglob item, and a loop item. A loop item source such as `{{ item.src }}` resolves when the task's own `loop`, `with_items` or `with_list` writes every value literally. A value may start with `{{ playbook_dir }}/`. A Python file that reads its own source by `__file__` is resolved too.
 
-A phase may name a file above the bundle: a path from the playbook folder that climbs out of it, such as `{{ playbook_dir }}/../scripts/release-container.py`, or a local `copy`, `template`, `script`, `unarchive` or `synchronize` source that climbs out from its own file. That file joins the phase digest by its content. Swamp reads it beside the bundle, from the same tree. When it cannot be read, the phase gets a digest that moves at every converge, so the phase always runs. The converge result then names the file under `digests_moving`. The Gateway does not keep that field.
+A phase may name a file above the bundle in three ways. A path from the playbook folder can climb out of it, such as `{{ playbook_dir }}/../scripts/release-container.py`. A local `copy`, `template`, `script`, `unarchive` or `synchronize` source can climb out from its own file. A script can import a module from above the bundle, such as `files/instance-release-vp.ts` from `../../extensions`. That file joins the phase digest by its content, with the modules it imports in turn.
+
+These files are the role siblings that a converge stages beside the bundle, and a test keeps the two lists equal. A staged sibling that no phase names is in every phase digest.
+
+Swamp reads each file above the bundle beside it, from the same tree. When it cannot be read, the phase gets a digest that moves at every converge, so the phase always runs. The converge result then names the file under `digests_moving`. The Gateway does not keep that field.
 
 Each bundle file is in exactly one of four classes. The resolver checks them in this order:
 
