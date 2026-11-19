@@ -3000,8 +3000,12 @@ non_command_output:
 - file: conn-launch.yml
   task: Validate the admitted launch target
   field: ansible.builtin.assert.that[3]
-  reason: Validates the admitted Conn environment ID.
+  reason: Validates the admitted runtime's server program.
 - file: conn-launch.yml
   task: Validate the admitted launch target
   field: ansible.builtin.assert.that[4]
+  reason: Validates the admitted Conn environment ID.
+- file: conn-launch.yml
+  task: Validate the admitted launch target
+  field: ansible.builtin.assert.that[5]
   reason: Validates the admitted provider ID.
