@@ -638,7 +638,9 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 
 For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder.
 
-Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle. The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
+Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle.
+
+The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
 
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 
