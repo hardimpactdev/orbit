@@ -13,7 +13,7 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `title` | prompt | Short name of the feature. |
 | `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
 | `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
-| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and leaves it ready for `task:start`. |
+| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs the task's own `--deliverables`, or at least two subtasks, each with deliverables, and leaves it ready for `task:start`. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
 | `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `task.orchestration_invalid`. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
@@ -44,9 +44,9 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `tasks.project_required`, `tasks.title_required`, `tasks.brief_required` | A `--json` or `-n` call omits a required input. |
 | `task.project_invalid`, `task.title_invalid`, `task.brief_invalid`, `task.status_invalid` | A supplied value is outside the accepted form. |
 | `task.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
-| `tasks.no_subtasks` | `--status=todo` without subtasks. |
-| `tasks.one_subtask` | `--status=todo` with exactly one subtask. Fold it into the task: give the task its deliverables. |
-| `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
+| `tasks.no_subtasks` | `--status=todo` without subtasks or deliverables of the task's own. Give the task its own deliverables, or at least two subtasks with deliverables. |
+| `tasks.one_subtask` | `--status=todo` with exactly one subtask, before its deliverables are checked. Fold it into the task: give the task its deliverables and no subtask. |
+| `tasks.subtask_deliverables_missing` | `--status=todo` while one of two or more subtasks has no deliverables, or with an empty list of the task's own. Give the task its own deliverables, or at least two subtasks with deliverables. |
 | `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `task.issue_invalid` | `--issue` is not a number from 1 up. |
 | `task.agent_invalid` | An agent option is empty. |

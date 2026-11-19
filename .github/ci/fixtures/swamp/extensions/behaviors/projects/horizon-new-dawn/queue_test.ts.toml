@@ -3,6 +3,8 @@ cases = [
   "one candidate becomes one ordered backlog task through the Gateway, never a live start",
   "baseline is one task with no subtask and repeated scans create no second baseline",
   "a tag with one candidate is one task with no subtask",
+  "a one-task plan whose brief is at the Gateway limit posts a brief within it",
+  "queued one-task work keeps its identity: a receipt or a group from before tasks with no subtask is adopted",
   "lost create reply is adopted by exact brief and never posted twice",
   "a lost create reply is adopted from a later page of the task list",
   "uncertain absent creates stop for reconciliation; duplicates also stop",

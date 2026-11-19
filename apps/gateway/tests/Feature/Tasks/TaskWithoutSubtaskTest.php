@@ -334,31 +334,97 @@ it('leaves a draft as it was when an edit of its work is refused or fails', func
     expect(Task::query()->where('parent_id', $empty)->pluck('id')->all())->toBe([$work->id]);
 });
 
-// A maintenance task has no subtask: it holds its own deliverables, and project maintenance still moves it to todo and starts it.
-it('admits the maintenance task of a routine run as a task with no subtask, and starts it as a copy', function (): void {
+/** The maintenance Project of a routine run: a solo Project that opted in. */
+function maintenanceSolo(): Project
+{
     $project = soloProject();
     $project->update(['maintenance' => true, 'source_access' => 'github_app']);
+
+    return $project;
+}
+
+/** @return list<array<string, string>> */
+function maintenanceDeliverables(): array
+{
+    return [['id' => 'project-check', 'type' => 'command', 'description' => 'Pass the configured project check in the task checkout.', 'command' => 'bin/task-check', 'directory' => '.'],
+        ['id' => 'maintenance-review', 'type' => 'review', 'description' => 'The update keeps the constraints.']];
+}
+
+/**
+ * Projects a routine run of PROJECT whose result asks for the group of INPUT, the shape fields of its create body.
+ *
+ * @param  array<string, mixed>  $input
+ */
+function maintenanceRoutine(Project $project, array $input): void
+{
     $admitted = ['projectId' => $project->id, 'repository' => $project->repository_url, 'default_branch' => 'main', 'check' => 'bin/task-check'];
     $operation = Operation::query()->create(['kind' => 'project.routine', 'target_type' => 'project', 'target_id' => $project->id, 'node_id' => null,
         'input' => ['project' => $admitted], 'state' => ['swamp_run_id' => 'run-1'], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
-    $deliverables = [['id' => 'project-check', 'type' => 'command', 'description' => 'Pass the configured project check in the task checkout.', 'command' => 'bin/task-check', 'directory' => '.'],
-        ['id' => 'maintenance-review', 'type' => 'review', 'description' => 'The update keeps the constraints.']];
-
     app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => 'run-1', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'status' => 'succeeded', 'result' => ['maintenance' => ['project_id' => $project->id, 'requests' => [[
             'action' => 'create_group', 'project_id' => $project->id, 'key' => $project->id.'-routine-2026-11-16',
             'input' => ['project_id' => $project->id, 'title' => 'Update dependencies within current constraints', 'brief' => 'Update dependencies. Swamp schedule: routine',
-                'status' => 'backlog', 'orchestration' => 'external', 'deliverables' => $deliverables],
+                'status' => 'backlog', 'orchestration' => 'external', ...$input],
             'maintenance' => ['mode' => 'routine', 'project' => $admitted, 'targets' => []],
         ]]]]]);
+}
+
+// A maintenance task has no subtask: it holds its own deliverables, and project maintenance still moves it to todo and starts it.
+it('admits the maintenance task of a routine run as a task with no subtask, and starts it as a copy', function (): void {
+    $project = maintenanceSolo();
+
+    maintenanceRoutine($project, ['deliverables' => maintenanceDeliverables()]);
 
     $group = Task::topLevel()->where('project_id', $project->id)->sole();
     $rows = Task::query()->where('parent_id', $group->id)->get();
     expect($rows)->toHaveCount(1)->and($rows->first()->type)->toBe(TaskType::Work)
-        ->and($rows->first()->deliverables)->toBe($deliverables)
+        ->and($rows->first()->deliverables)->toBe(maintenanceDeliverables())
         ->and($group->assistance_reason)->toBeNull()
         // The provision started: the task holds its copy's create and is reserved for it.
         ->and($group->status->value)->toBe('reserved')
         ->and(Operation::query()->find($group->maintenance['operation_id'] ?? null)?->kind)->toBe('instance.create')
         ->and($group->taskable_id)->not->toBeNull();
+});
+
+// Maintenance moves its task out of backlog by the rule every task meets: a result in the old shape, or a reused draft of one subtask
+// or of no work, stays in backlog, asks for a person and starts nothing.
+it('keeps a maintenance task of one subtask or of no work in backlog, created or reused, and starts nothing', function (Closure $draft, array $input, string $code): void {
+    $project = maintenanceSolo();
+    $draft($project);
+    $creates = Operation::query()->where('kind', 'instance.create')->count();
+
+    maintenanceRoutine($project, $input);
+
+    $group = Task::topLevel()->where('project_id', $project->id)->sole();
+    expect($group->status->value)->toBe('backlog')
+        ->and($group->assistance_requested)->toBeTrue()
+        ->and($group->assistance_reason)->toBe('Maintenance task refused in backlog: '.$code)
+        ->and($group->taskable_id)->toBeNull()
+        ->and(Operation::query()->where('kind', 'instance.create')->count())->toBe($creates);
+})->with([
+    'an in-flight result with one subtask' => [static function (): void {}, ['tasks' => [['title' => 'Update', 'brief' => 'Update.', 'deliverables' => maintenanceDeliverables()]]], 'tasks.one_subtask'],
+    'a reused draft with one subtask' => [static function (Project $project): void {
+        $draft = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Update dependencies within current constraints', 'brief' => 'Update dependencies. Swamp schedule: routine',
+            'status' => 'backlog', 'orchestration' => 'external', 'implementer_model' => 'claude-opus-5-5', 'reviewer_model' => 'claude-opus-5-5']);
+        Task::query()->create(['parent_id' => $draft->id, 'position' => 1, 'title' => 'Update', 'brief' => 'Update.', 'deliverables' => maintenanceDeliverables(), 'status' => TaskStatus::Todo]);
+    }, ['deliverables' => maintenanceDeliverables()], 'tasks.one_subtask'],
+    'a reused empty draft' => [static function (Project $project): void {
+        Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Update dependencies within current constraints', 'brief' => 'Update dependencies. Swamp schedule: routine',
+            'status' => 'backlog', 'orchestration' => 'external', 'implementer_model' => 'claude-opus-5-5', 'reviewer_model' => 'claude-opus-5-5']);
+    }, ['deliverables' => maintenanceDeliverables()], 'tasks.no_subtasks'],
+]);
+
+// The Horizon baseline plan posts a task with no subtask; queue_test.ts pins this body. The Gateway takes it, moves it to todo
+// and starts it.
+it('creates the Horizon baseline task as a task with no subtask, moves it to todo and starts it', function (): void {
+    $project = soloProject();
+    $body = json_decode((string) file_get_contents(dirname(base_path(), 2).'/swamp/extensions/behaviors/projects/horizon-new-dawn/fixtures/baseline-task.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    $id = $this->postJson('/api/v1/tasks', [...$body, 'project_id' => $project->id])->assertCreated()
+        ->assertJsonPath('data.subtasks', [])->assertJsonPath('data.work.deliverables.0.id', 'compatibility')->json('data.id');
+    $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'todo'])->assertOk()->assertJsonPath('data.status', 'todo');
+    $start = $this->withHeader('Idempotency-Key', 'horizon-start')->postJson("/api/v1/tasks/{$id}/start")->assertStatus(202);
+
+    expect($start->json('data.kind'))->toBe('instance.create')
+        ->and(Task::query()->where('parent_id', $id)->sole()->type)->toBe(TaskType::Work);
 });

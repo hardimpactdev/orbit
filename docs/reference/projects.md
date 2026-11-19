@@ -312,7 +312,7 @@ The CLI, or the MCP tools `project-maintenance-inspect` and `project-maintenance
 
 Each run reads only its admitted intent, stamped with its UTC admission time, and GitHub; the Gateway admits any task group from the run's result. Their steps carry the names in [flow charts](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md), so task progress shows names such as `Read the manifest SHAs`. A routine run reads no Swamp history: the Gateway admits one maintenance task per Project at a time and reuses the group whose brief carries the week's key, so a retried routine never opens a second group.
 
-A maintenance task is a [task with no subtask](/reference/tasks#a-task-with-no-subtask): Swamp sends its deliverables on the task itself, and the Gateway moves it to `todo` and starts its copy.
+A maintenance task is a [task with no subtask](/reference/tasks#a-task-with-no-subtask): Swamp sends its deliverables on the task itself, and the Gateway moves it to `todo` and starts its copy. The move follows the rule of [a task that leaves backlog](/reference/tasks#tasks-and-subtasks), also for a task the run reuses: a task with one subtask, or with no work, stays in `backlog` and asks for assistance with the reason `Maintenance task refused in backlog: <error code>`, and nothing starts.
 
 The Gateway keeps each Project's last inspection, so the next one reads again only the sources whose blob SHAs changed and asks the registries at most once a day, from a per-package cache shared across Projects.
 

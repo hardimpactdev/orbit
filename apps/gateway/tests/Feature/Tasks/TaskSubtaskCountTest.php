@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -107,4 +108,38 @@ describe('the move of a task out of backlog', function (): void {
 
         $this->patchJson('/api/v1/tasks/'.$group->id, ['status' => 'reviewing'])->assertOk()->assertJsonPath('data.status', 'reviewing');
     });
+
+    // The shape comes first: a lone subtask is told to fold, whatever its deliverables are, before any repository read.
+    it('refuses a lone subtask with the fold instruction before it checks that subtask\'s deliverables', function (): void {
+        app()->instance(DeliverablePathRepository::class, new class implements DeliverablePathRepository
+        {
+            public function defaultBranchCommit(Project $project): string
+            {
+                throw new RuntimeException('The shape refusal reads no repository.');
+            }
+
+            public function files(Project $project, string $commit): array
+            {
+                throw new RuntimeException('The shape refusal reads no repository.');
+            }
+        });
+        $missing = [['id' => 'note', 'type' => 'file', 'description' => 'The note changes.', 'path' => 'docs/missing.md', 'change' => 'modified']];
+
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => 'todo',
+            'subtasks' => [['title' => 'Only', 'brief' => 'Only.', 'deliverables' => $missing]]])
+            ->assertStatus(422)->assertJsonPath('error.code', 'tasks.one_subtask');
+        $id = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Task', 'brief' => 'Brief', 'subtasks' => [['title' => 'Only', 'brief' => 'Only.']]])
+            ->assertCreated()->json('data.id');
+        $this->patchJson('/api/v1/tasks/'.$id, ['status' => 'todo'])->assertStatus(422)->assertJsonPath('error.code', 'tasks.one_subtask');
+        expect(Task::topLevel()->count())->toBe(1);
+    });
+
+    it('names both valid shapes when a task in todo would have neither', function (array $shape, string $code): void {
+        $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => 'todo', ...$shape])
+            ->assertStatus(422)->assertJsonPath('error.code', $code)
+            ->assertJsonPath('error.message', fn (string $message): bool => str_contains($message, 'deliverable') && str_contains($message, 'at least two subtasks'));
+    })->with([
+        'no subtask and no deliverables' => [[], 'tasks.no_subtasks'],
+        'an empty list of its own deliverables' => [['deliverables' => []], 'tasks.subtask_deliverables_missing'],
+    ]);
 });

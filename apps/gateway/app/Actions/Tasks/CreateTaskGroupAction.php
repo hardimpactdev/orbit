@@ -37,19 +37,8 @@ final readonly class CreateTaskGroupAction
             );
         }
 
-        if ($data->status === TaskGroupStatus::Todo && $data->tasks === [] && $data->deliverables === null) {
-            throw TaskGroupGuard::noSubtasks();
-        }
-        if ($data->status === TaskGroupStatus::Todo && count($data->tasks) === 1) {
-            throw TaskGroupGuard::oneSubtask();
-        }
-        if ($data->status === TaskGroupStatus::Todo && $data->deliverables === []) {
-            throw TaskGroupGuard::deliverablesMissing(['"'.$data->title.'"']);
-        }
-
-        $missing = array_keys(array_filter($data->tasks, static fn (TaskInputData $task): bool => $task->deliverables === []));
-        if ($data->status === TaskGroupStatus::Todo && $missing !== []) {
-            throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
+        if ($data->status === TaskGroupStatus::Todo) {
+            TaskGroupGuard::leavesBacklog($data->deliverables === null ? null : $data->deliverables !== [], self::shape($data->tasks));
         }
 
         $group = Task::topLevel()->make([
@@ -91,6 +80,22 @@ final readonly class CreateTaskGroupAction
         });
 
         return $group->refresh()->load(['project', 'tasks', 'taskable']);
+    }
+
+    /**
+     * Whether each subtask input has deliverables, keyed as an error names it, for the rule of a task that leaves backlog.
+     *
+     * @param  list<TaskInputData>  $tasks
+     * @return array<string, bool>
+     */
+    public static function shape(array $tasks): array
+    {
+        $shape = [];
+        foreach ($tasks as $index => $task) {
+            $shape['position '.($index + 1).' "'.$task->title.'"'] = $task->deliverables !== [];
+        }
+
+        return $shape;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Projects;
 
 use App\Actions\Tasks\CreateTaskGroupAction;
+use App\Actions\Tasks\UpdateTaskGroupAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
@@ -239,8 +240,15 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                     || (ValidatedData::object($maintenance['project'] ?? [])['projectId'] ?? null) !== $project->id) {
                     throw new ResourceOperationException('operation.result_invalid', 'The maintenance intent must name its admitted Project.', 422);
                 }
-                $group->update(['maintenance' => [...$maintenance, 'stage' => 'provision'], 'status' => TaskGroupStatus::Todo]);
-                DB::afterCommit(fn () => $this->startProvision($group));
+                // The task leaves backlog by the rule every task meets, whether this run created it or reuses it. A refused task stays
+                // in backlog and asks for a person (docs/reference/projects.md#maintenance).
+                try {
+                    UpdateTaskGroupAction::leavesBacklog($group->tasks()->get());
+                    $group->update(['maintenance' => [...$maintenance, 'stage' => 'provision'], 'status' => TaskGroupStatus::Todo]);
+                    DB::afterCommit(fn () => $this->startProvision($group));
+                } catch (ResourceOperationException $exception) {
+                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'Maintenance task refused in backlog: '.$exception->errorCode);
+                }
             }
             $admitted[] = $group->id;
             $operation->forceFill(['state' => [...($operation->state ?? []), 'maintenance_group_id' => $group->id]])->save();

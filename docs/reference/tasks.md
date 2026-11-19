@@ -504,11 +504,11 @@ Update changes a task's `title`, `brief`, or `status`. Title and brief change on
 
 For an external group, `task:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but starts no work. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `task:cancel` or `task:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
 
-A task stands alone, or it has at least two subtasks; never one. The Gateway checks this when the task leaves `backlog`. A task moves to `todo`, by create or update, only when it is a task with no subtask that has at least one deliverable, or when it has at least two subtasks and every subtask has at least one deliverable. A task with exactly one subtask is refused with HTTP 422 `tasks.one_subtask`, and nothing changes: fold the subtask into the task, by giving the task its deliverables and no subtask. In `backlog` a task can still hold one subtask while it is prepared.
+A task stands alone, or it has at least two subtasks; never one. The Gateway checks this when the task leaves `backlog`. A task moves to `todo`, by create or update, only when it is a task with no subtask that has at least one deliverable, or when it has at least two subtasks and every subtask has at least one deliverable. A task with exactly one subtask is refused with HTTP 422 `tasks.one_subtask`, and nothing changes: fold the subtask into the task, by giving the task its deliverables and no subtask. The shape is checked first, so a lone subtask gets this refusal before its deliverables or their paths are checked. In `backlog` a task can still hold one subtask while it is prepared.
 
 The rule reads only the move out of `backlog`. A task with one subtask that left `backlog` before the rule keeps working until it ends, and every client still reads it. A [subtask can be cancelled](#cancel-a-subtask) in a running task, also when one subtask is left.
 
-Orbit's own tasks have no subtask: [project maintenance](/reference/projects#maintenance), each copy of a [proof run](/cli/proof/run), each warm proof copy, and a Horizon New Dawn plan with one task, such as its parity baseline.
+Orbit's own tasks have no subtask: [project maintenance](/reference/projects#maintenance), each copy of a [proof run](/cli/proof/run), each warm proof copy, and a Horizon New Dawn plan with one task, such as its parity baseline. Project maintenance moves its task out of `backlog` by this same rule, whether its run created the task or reuses one.
 
 ### A task with no subtask
 
@@ -650,9 +650,9 @@ The task and subtask operations return these errors.
 | --- | --- | --- |
 | `tasks.orchestration_unsupported` | 422 | A subtask would declare a topology |
 | `tasks.status_move_refused` | 422 | An external group or subtask status update attempts a move outside the allowed transitions |
-| `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks or its own deliverables |
-| `tasks.one_subtask` | 422 | A move to `todo`, by create or update, for a task with exactly one subtask. Fold the subtask into the task |
-| `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
+| `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks or its own deliverables. The message names both valid shapes |
+| `tasks.one_subtask` | 422 | A move to `todo`, by create or update, for a task with exactly one subtask, before its deliverables or their paths are checked. Fold the subtask into the task |
+| `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while one of two or more subtasks has no deliverables, and then `details` names each subtask, or for a task whose own deliverables are empty. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
 | `tasks.own_work` | 409 | Subtask create in a started [task with no subtask](#a-task-with-no-subtask), or in one in `backlog` whose work holds deliverables, comments or questions |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |

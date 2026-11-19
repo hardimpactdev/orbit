@@ -46,9 +46,9 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | Error code | Meaning |
 | --- | --- |
 | `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
-| `tasks.no_subtasks` | A move to `todo` for a task without subtasks. |
-| `tasks.one_subtask` | A move to `todo` for a task with exactly one subtask. Fold it into the task: give the task its deliverables. |
-| `tasks.subtask_deliverables_missing` | A move to `todo` while a subtask has no deliverables. The error details name the subtasks. |
+| `tasks.no_subtasks` | A move to `todo` for a task without subtasks or deliverables of its own. Give the task its own deliverables, or at least two subtasks with deliverables. |
+| `tasks.one_subtask` | A move to `todo` for a task with exactly one subtask, before its deliverables are checked. Fold it into the task: give the task its deliverables and no subtask. |
+| `tasks.subtask_deliverables_missing` | A move to `todo` while one of two or more subtasks has no deliverables, and then the error details name them, or for a task whose own deliverables are empty. |
 | `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `tasks.pr_mode_locked` | The group has a pull request, a publish of it runs, or it has ended. |
 | `tasks.already_claimed` | The scheduler claimed the task before the status change. |
