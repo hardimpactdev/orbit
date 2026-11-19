@@ -63,7 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           COMMIT: ${{ steps.release.outputs.commit }}
-        run: python3 bin/ci-delivery verify --sha "$COMMIT"
+        run: python3 bin/ci-delivery verify --sha "$COMMIT" --release
 
       # A release carries an agent delivery when the agent source changed since the previous release, so a change
       # that was not itself released still ships in the next release. The Gateway keeps installing its pin until a
