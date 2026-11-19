@@ -26,7 +26,7 @@ PRELOAD = 'swamp/tests/_support/slice.ts'
 # lists it as an input. The shape gate lists and launches the fixtures; the Ansible toolchain pins run every Ansible fixture.
 ANSIBLE_TOOLCHAIN = ('swamp/ansible/ansible.cfg', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml',
                      'swamp/ansible/shape-gate-requirements.txt')
-MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD, *ANSIBLE_TOOLCHAIN)
+MACHINERY = ('bin/ci-units', 'bin/ci-registry', 'bin/swamp-shape-gate', PRELOAD, 'tools/ci_unit_failures.py', *ANSIBLE_TOOLCHAIN)
 # Fixture metadata keys that only schedule a fixture: where it runs, its declared costs and its slices. The retired
 # after-merge keys, with their reason, also only scheduled a fixture or some of its cases (ADR 0262).
 SCHEDULING = ('self_hosted', 'cost', 'case_costs', 'slices', 'after_merge', 'after_merge_cases', 'reason')
@@ -687,8 +687,9 @@ def supervise(ceiling, receipt, command, shard_deadline=None):
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.wait()
-            outcome = 'CANCELLED' if cancelled else 'OVER BUDGET'
+            code = process.wait()
+            # A unit that failed by itself in the moment before the kill failed: it was not cut.
+            outcome = 'CANCELLED' if cancelled else 'OVER BUDGET' if code in (0, -signal.SIGKILL) else 'FAILED'
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         signal.signal(signal.SIGINT, signal.SIG_IGN)
         # Reap before removing temporary files: Ansible children can detach.
@@ -723,7 +724,13 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
                'ORBIT_TEST_STARTED_AT_MS': str(time.time_ns() // 1_000_000),
                'ORBIT_TEST_TIMING_FILE': str(Path(scratch) / 'startup.json')}
         receipt = Path(scratch) / 'unit-receipt.json'
-        process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *step.argv],
+        failure = Path(scratch) / 'failure'
+        argv = step.argv
+        if argv[0] == 'python3' and argv[-1].endswith('.py'):
+            # A unittest file runs through the recorder, which marks the first failure at once.
+            argv = [*argv[:-1], str(ROOT / 'tools/ci_unit_failures.py'), argv[-1]]
+            env['ORBIT_TEST_FAILURE_FILE'] = str(failure)
+        process = subprocess.Popen([sys.executable, str(ROOT / 'bin/ci-units'), '--supervise', str(ceiling), str(receipt), str(shard_deadline) if shard_deadline is not None else 'none', *argv],
                                    cwd=gate.SWAMP, env=env, stdout=output, stderr=subprocess.STDOUT)
         sent_cancel = False
         while True:
@@ -762,6 +769,13 @@ def run_unit(step, environment, ceiling, shard_deadline=None):
             if not valid:
                 result['status'] = 'FAILED'
                 captured += '\nFixture lacks a valid receipt proving every selected Deno case passed (ignored and unrun cases fail).\n'
+        # A failure before the cut is a failed assertion, and the unit gates. A Deno unit's receipt holds its failed
+        # cases and steps; Deno also prints each one as `... FAILED`. A unittest unit writes a marker at its first
+        # failure, because unittest prints the details only when the whole run ends.
+        if result['status'] == 'OVER BUDGET' and (
+                failure.exists() or step.argv[0] == 'deno' and re.search(r'\.\.\. FAILED\b', captured)
+                or any(row.get('status') == 'FAILED' or row.get('failed_step') for row in result.get('cases') or [])):
+            result['failed_before_cut'] = True
         if re.search(r'Ran 0 tests\b', captured):
             result['status'] = 'FAILED'
             captured += '\nFixture registered zero tests\n'
@@ -822,6 +836,10 @@ def run(units, budget, fixtures, times, tools=None):
                         row['status'] = 'CENSORED'
                         row['seconds'] = round((time.time_ns() // 1_000_000 - row['started_at_ms']) / 1000, 3)
                 results[index].update(result)
+                # A unit that its limit cut, with no failed assertion, is marked at once: the mark holds when the run is
+                # cancelled later, as when the check of a task copy runs out of its own time.
+                if results[index]['status'] == 'OVER BUDGET' and cut_units([results[index]]):
+                    results[index]['cut'] = True
                 times.write_text(json.dumps(results, indent=2) + '\n')
         results.sort(key=lambda result: units.index(result['unit']))
     times.write_text(json.dumps(results, indent=2) + '\n')
@@ -829,7 +847,42 @@ def run(units, budget, fixtures, times, tools=None):
         f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} | {r.get('startup_seconds', '—')} |" for r in results)
     print(table)
     summary(table)
-    return int(not units or CANCELLED.is_set() or any(r['status'] != 'passed' for r in results))
+    # The mark goes into the times file, which the Required job and the task check read. A unit that never started is
+    # cut only when the shard deadline kept it from starting: after a cancelled run, or a failed tool setup, it is not.
+    cut = [row for row in cut_units(results) if row.get('cut') or not CANCELLED.is_set()]
+    for row in cut:
+        row['cut'] = True
+    times.write_text(json.dumps(results, indent=2) + '\n')
+    if cut:
+        # A slow check never gates: a unit that was cut and failed no assertion does not fail the shard. It is named,
+        # so a unit that hangs stays visible in the log, the job summary and the pull request.
+        text = cut_report(cut)
+        print(text, flush=True)
+        summary(text)
+        for row in cut:
+            print(f"::warning title=Fixture unit over budget::{row['unit']} was not run to the end ({row['status']}).", flush=True)
+    return int(not units or CANCELLED.is_set() or any(r['status'] != 'passed' and r not in cut for r in results))
+
+
+def cut_units(results):
+    """The units that the unit ceiling or the shard deadline cut, without a failed case: they do not gate."""
+    return [row for row in results if row['status'] in ('OVER BUDGET', 'NOT RUN') and not row.get('failed_before_cut')
+            and not any(case.get('status') == 'FAILED' or case.get('failed_step') for case in row.get('cases') or [])]
+
+
+def cut_report(cut):
+    """Markdown that names each cut unit with its cases, or an empty string."""
+    if not cut:
+        return ''
+    lines = [f'**Over budget, not run to the end: {len(cut)} fixture units.** They do not fail Required checks. '
+             'A unit that is named here in every run hangs or is too slow: split it or make it faster.', '',
+             '| Unit | Result | Seconds | Declared | Cases |', '| --- | --- | ---: | ---: | --- |']
+    for row in cut:
+        declared = row.get('declared_seconds')
+        lines.append(f"| `{row['unit']}` | {'cut at ' + format(row['seconds'], '.0f') + ' s' if row['status'] == 'OVER BUDGET' else 'not started'} "
+                     f"| {row['seconds']:.1f} | {'—' if declared is None else format(declared, 'g')} "
+                     f"| {'; '.join(case['name'] for case in row.get('cases') or []) or '—'} |")
+    return '\n'.join(lines)
 
 
 def prepare(shard_deadline, tools=None):
@@ -888,9 +941,19 @@ def main():
     runner.add_argument('--times', type=Path, default=Path('ci-unit-times.json'))
     runner.add_argument('--workers', type=int, help="concurrent units (default: the lanes of the units' pool)")
     runner.add_argument('--tools', type=Path, help='pinned tools cache (default: the shape gate cache)')
+    cuts = commands.add_parser('cuts', help='name the units of a run that were cut and did not gate')
+    cuts.add_argument('--times', type=Path, required=True, help='folder with the ci-unit-times files of every shard')
     args = parser.parse_args()
     if args.command == 'collect':
         print(json.dumps(collect(args.file), indent=2))
+        return 0
+    if args.command == 'cuts':
+        # The Required job reads the times of every shard of the run and names the cut units once.
+        results = [row for path in sorted(args.times.rglob('*.json')) for row in json.loads(path.read_text())]
+        text = cut_report([row for row in results if row.get('cut')])
+        if text:
+            print(text)
+            summary(text)
         return 0
     budget, fixtures, defaults = configuration()
     if args.command == 'run':

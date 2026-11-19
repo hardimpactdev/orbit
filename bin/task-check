@@ -105,6 +105,8 @@ FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
 # Orbit stores the last 16 KiB of a check's output. The summary stays within 12 KiB, so it always fits.
 SUMMARY_BYTES = 12 * 1024
+# A fixture unit that its time limit cut, with no failed assertion: named, and CI runs it again.
+OVER_BUDGET = 'over budget, not run to the end (warning)'
 # The most bytes of one output or summary line; a longer line keeps its start and names its size.
 LINE_BYTES = 300
 NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the full Gateway, CLI and docs Pest suites, web app '
@@ -448,16 +450,21 @@ def fixtures(plan, deadline, table, paths):
                            timeout=max(deadline - time.monotonic(), 1))
         results = json.loads(times.read_text()) if times.is_file() else []
     outcomes = {row['unit']: row['status'] for row in results}
-    failed = [unit for unit in admitted if outcomes.get(unit) in ('FAILED', 'OVER BUDGET')]
+    # A slow check never gates, here as in CI: the runner marks a unit that its time limit cut and in which no assertion
+    # failed. Such a unit is named and does not fail the check. A unit that was cut after a failure has no mark.
+    cut = [row['unit'] for row in results if row.get('cut') and row['unit'] in admitted]
+    failed = [unit for unit in admitted if outcomes.get(unit) in ('FAILED', 'OVER BUDGET') and unit not in cut]
     # Only the check's own timeout stops a unit, and CI runs it. A unit that did not run otherwise, such as after a failed
     # tool setup, fails: CI's job fails on it too.
-    unfinished = [unit for unit in admitted if outcomes.get(unit) not in ('passed', 'FAILED', 'OVER BUDGET')]
+    unfinished = [unit for unit in admitted if outcomes.get(unit) not in ('passed', 'FAILED', 'OVER BUDGET') and unit not in cut]
     stopped = [unit for unit in unfinished if code is None or outcomes.get(unit) == 'CANCELLED']
     not_run = [unit for unit in unfinished if unit not in stopped]
     passed = [unit for unit in admitted if outcomes.get(unit) == 'passed']
     detail = f'{len(passed)} of {len(planned)} planned units passed'
     if failed:
         detail += '; failed: ' + ', '.join(failed)
+    if cut:
+        detail += f'; {OVER_BUDGET}: ' + ', '.join(cut)
     if not_run:
         detail += '; not run: ' + ', '.join(not_run)
     if lacks:
@@ -517,7 +524,7 @@ def report(parts, base, seconds):
     lines += [clip(f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})')
               for part in parts]
     incomplete = any('budget:' in part.detail or 'budget skipped:' in part.detail or 'deferred to CI:' in part.detail
-                     for part in parts)
+                     or OVER_BUDGET in part.detail for part in parts)
     result = 'FAILED' if failed else ('PASSED with incomplete coverage (budget exhausted; CI must finish)' if incomplete else 'PASSED')
     end = [NOT_IN_CHECK, f'Task check {result} against {base[:12]} in {seconds:.1f}s']
     shown = [part for part in parts if part.status == 'FAILED' and part.output.strip()]

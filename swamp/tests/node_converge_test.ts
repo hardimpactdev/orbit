@@ -1,10 +1,11 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { convergeResult, phases } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
-import { codeDigest, convergeInput, phaseCode, phaseDigests, roleDigests, rolePhaseCode, roleSiblings, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
+import { codeDigest, convergeInput, phaseCode, phaseDigests, phaseInputs, roleDigests, rolePhaseCode, roleSiblings, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
 import { behavior as extension } from "../extensions/behaviors/operations/ansible-input/write.ts";
 import { codeTree } from "./phase_code_fixture.ts";
+import { entries, resolvePhases, shared as sharedFiles } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
 
 /** The shipped code of every convergeInput call that does not test code. */
 const shipped = await codeTree();
@@ -532,8 +533,18 @@ Deno.test("the code digest moves with a file's content and name", async () => {
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
+/** A stand-in for the role materializer: each role's variables are its intent and its secrets, as build_vars.py writes them. */
+const materializer = await Deno.makeTempFile({ suffix: ".py" });
+await Deno.writeTextFile(materializer, `import pathlib, sys
+folder = pathlib.Path(sys.argv[1])
+secrets = sorted(f"{p.name}={p.read_text()}" for p in folder.glob("secret-*"))
+for p in folder.glob("secret-*"): p.unlink()
+(folder / "vars.yml").write_text((folder / "intent.json").read_text() + "\\n".join(secrets))
+`);
+globalThis.addEventListener("unload", () => Deno.removeSync(materializer));
+
 /** Input preparation in a fresh run folder, as one Operation of the given ID; the intent names that Operation, as a role's runtime does. */
-async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: [string, string, string]; leaf?: string; admitted?: number } = {}) {
+async function prepared(recorded: Record<string, string>, change: { operationId?: number; plans?: string; secret?: string; code?: [string, string, string]; leaf?: string; admitted?: number; intent?: Record<string, unknown> } = {}) {
     const folder = await Deno.makeTempDir();
     try {
         const operationId = change.operationId ?? 41;
@@ -541,10 +552,10 @@ async function prepared(recorded: Record<string, string>, change: { operationId?
         const certificates = change.leaf === undefined ? {} : { certificates: { leaves: [{ node_id: 7, scope: "role-websocket", domain: "reverb.orbit", version: change.leaf }] } };
         const instances = change.admitted === undefined ? {} : { instances: { cidr: "10.46.0.0/24", bridge_admitted_at: change.admitted } };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ node_id: 7, ssh, roles: [], container: `orbit-analytics-operation-${operationId}-createdb`,
-            ...certificates, ...instances, recorded_digests: recorded }));
+            ...certificates, ...instances, ...change.intent, recorded_digests: recorded }));
         await Deno.writeTextFile(`${folder}/plans.json`, change.plans ?? JSON.stringify({ ci: { runner: "one" } }));
         await Deno.writeTextFile(`${folder}/secret-agent_verifier`, change.secret ?? "v");
-        const phases = await convergeInput(folder, operationId, "/unused", "/shipped/helper.ts", change.code ?? shipped.code);
+        const phases = await convergeInput(folder, operationId, materializer, "/shipped/helper.ts", change.code ?? shipped.code);
         return { phases, file: JSON.parse(await Deno.readTextFile(`${folder}/digests.json`)), mode: (await Deno.stat(`${folder}/digests.json`)).mode! & 0o777,
             vars: parse(await Deno.readTextFile(`${folder}/vars.yml`)) as { converge_intent: Record<string, unknown> } };
     } finally { await Deno.remove(folder, { recursive: true }); }
@@ -593,6 +604,65 @@ Deno.test("a changed plan or secret value moves the roles digest, and the Operat
     // plans.json carries the CI host spec and the ClickHouse files, which the roles phase applies.
     assertEquals((await prepared(first.phases.digests, { plans: JSON.stringify({ ci: { runner: "two" } }) })).phases.unchanged.includes("roles"), false);
     assertEquals((await prepared(first.phases.digests, { secret: "w" })).phases.unchanged.includes("roles"), false);
+});
+
+Deno.test("a repeat with another Operation ID and freshly written secrets skips every phase; a moved pin or role moves only its phase", async () => {
+    const role = (domain: string) => ({ roles: [{ assignment_id: 5, role: "app-dev", runtime: {}, domain }], selected_roles: ["app-dev"] });
+    const pins = (sha256: string) => ({ agent: { url: "https://example.test/cli-v0.1.0/orbit-agent", sha256 }, executor: { url: "https://example.test/cli-v0.1.0/orbit-executor", sha256 }, cli: null });
+    const intent = { ...role("one.orbit"), ...pins("a".repeat(64)), recipe: "{}" };
+    const first = await prepared({}, { intent });
+    assertEquals((await prepared(first.phases.digests, { intent, operationId: 42, secret: "v" })).phases.unchanged, [...skippable]);
+    // A release moves the agent and executor pins.
+    assertEquals((await prepared(first.phases.digests, { intent: { ...intent, ...pins("b".repeat(64)) }, operationId: 42 })).phases.unchanged, ["software", "roles", "tools", "network"]);
+    assertEquals((await prepared(first.phases.digests, { intent: { ...intent, ...role("two.orbit") }, operationId: 42 })).phases.unchanged, ["agent", "software", "tools", "network"]);
+    // A field no phase claims, a recipe pin and a secret are read by every phase.
+    assertEquals((await prepared(first.phases.digests, { intent: { ...intent, unclaimed: 1 } })).phases.unchanged, []);
+    assertEquals((await prepared(first.phases.digests, { intent: { ...intent, recipe: "{\"x\":1}" } })).phases.unchanged, []);
+    assertEquals((await prepared(first.phases.digests, { intent, secret: "w" })).phases.unchanged, []);
+});
+
+/** Every reference to the converge intent in a file: its field, or "*" for the whole intent. */
+function intentFields(text: string): string[] {
+    return [...text.matchAll(/(?<![.\w])(?:converge_)?intent\b(?:\.([a-z_]+)|\[['"]([a-z_]+)['"]\]|(?=\s*(?:\||\}\}|\)|,)))/g)].map((match) => match[1] ?? match[2] ?? "*");
+}
+
+Deno.test("a phase's own intent fields and run folder entries are read by no other skippable phase", async () => {
+    const root = new URL("../ansible", import.meta.url).pathname;
+    const resolved = await resolvePhases(root);
+    // Every phase reads the shared files: build_vars.py materializes the role folders, and the playbooks are checked task by task below.
+    const shared = new Set(sharedFiles);
+    const ownTags = (owner: string) => new Set([owner, "input", "check"]);
+    for (const [owner, inputs] of Object.entries(phaseInputs)) {
+        for (const phase of skippable.filter((phase) => phase !== owner)) {
+            const resolution = resolved[phase];
+            assertEquals(resolution.whole, false, `${phase} reads the whole bundle`);
+            // Only a task or a template sees an Ansible variable; no module or plugin of the bundle reads the converge intent from the task's
+            // variables, and a Python file's own `intent` is a module argument.
+            for (const file of resolution.files!.filter((file) => !shared.has(file) && /\.(ya?ml|j2)$/.test(file))) {
+                const text = await Deno.readTextFile(`${root}/${file}`);
+                for (const field of intentFields(text)) assertEquals(field === "*" || inputs!.fields.includes(field), false, `${phase} reads intent.${field} in ${file}`);
+                if (inputs!.entries) assertEquals(/\/role-\{\{/.test(text), false, `${phase} reads a role folder in ${file}`);
+            }
+        }
+        // The converge playbooks: a task reads an owned field only under the owner's tag or a tag that never skips; a play aliases the whole intent.
+        for (const playbook of new Set(Object.values(entries).flat())) {
+            const plays = parse(await Deno.readTextFile(`${root}/${playbook}`)) as Record<string, unknown>[];
+            for (const play of plays) {
+                const { tasks, tags: playTags, ...rest } = play as { tasks?: Record<string, unknown>[]; tags?: string[] };
+                const head = JSON.stringify(rest).replaceAll('"intent":"{{ converge_intent }}"', "");
+                for (const field of intentFields(head)) assertEquals(field === "*" || (inputs!.fields.includes(field) && !(playTags ?? []).every((tag) => ownTags(owner).has(tag))), false, `${playbook} play ${play.name} reads intent.${field}`);
+                for (const task of tasks ?? []) {
+                    const tags = [...(playTags ?? []), ...((task.tags as string[] | undefined) ?? [])];
+                    const text = JSON.stringify(task);
+                    for (const field of intentFields(text)) {
+                        assertEquals(field === "*", false, `${playbook} task ${task.name} reads the whole intent`);
+                        if (inputs!.fields.includes(field)) assertEquals(tags.length > 0 && tags.every((tag) => ownTags(owner).has(tag)), true, `${playbook} task ${task.name} reads intent.${field} under ${tags}`);
+                    }
+                    if (inputs!.entries && /\/role-\{\{/.test(text)) assertEquals(tags.every((tag) => ownTags(owner).has(tag)), true, `${playbook} task ${task.name} reads a role folder`);
+                }
+            }
+        }
+    }
 });
 
 Deno.test("the version a capture mints for a certificate leaf does not move a digest; the leaf's domain does", async () => {

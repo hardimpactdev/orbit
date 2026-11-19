@@ -147,6 +147,7 @@ impl Run for Families {
                     Outcome::Failed { code: failure.code.to_owned() }
                 }
             },
+            Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
         }
     }
 }
@@ -246,6 +247,20 @@ fn serve() -> Result<(), String> {
     bus::start(Arc::clone(&settings), Arc::clone(&executor), log);
     server::serve(&listener, &settings, &executor, log);
     Ok(())
+}
+
+/// The route family (ADR 0271): a leaf's certificate request, or one Node's part of a Route. A failure's code goes to the
+/// Gateway, its detail only to the log.
+fn route(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_route::NodeSystem::new(bus::BLOBS_PATH);
+    let result = match order.action() {
+        Action::TlsEnsureCsr => orbit_executor_route::ensure_csr(&system, order.input()).map(|stdout| Outcome::Output { stdout }),
+        _ => orbit_executor_route::publish_site(&system, order.input()).map(|changes| Outcome::Applied { changes }),
+    };
+    result.unwrap_or_else(|failure| {
+        log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+        Outcome::Failed { code: failure.code.to_owned() }
+    })
 }
 
 #[cfg(test)]

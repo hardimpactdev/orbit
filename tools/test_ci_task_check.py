@@ -187,14 +187,15 @@ class FixtureRunTest(unittest.TestCase):
         return {'shards': [{'units': self.UNITS}], 'self_hosted_shards': [], 'budget': budget,
                 'units': {unit: {'declared_seconds': costs[unit]} for unit in self.UNITS}}
 
-    def fixtures(self, plan, left, code, status, output='', workers=1, paths=()):
+    def fixtures(self, plan, left, code, status, output='', workers=1, paths=(), cut=()):
         calls = []
 
         def run(argv, cwd=None, env=None, timeout=None):
             calls.append(argv)
             units = json.loads(argv[argv.index('--units') + 1])
             statuses = status if isinstance(status, dict) else dict.fromkeys(units, status)
-            Path(argv[argv.index('--times') + 1]).write_text(json.dumps([{'unit': unit, 'status': statuses.get(unit, 'passed')} for unit in units]))
+            Path(argv[argv.index('--times') + 1]).write_text(json.dumps([
+                {'unit': unit, 'status': statuses.get(unit, 'passed'), **({'cut': True} if unit in cut else {})} for unit in units]))
             return code, output
 
         with patch.dict(check['fixtures'].__globals__, {'run': run, 'fixture_workers': lambda: workers}):
@@ -224,6 +225,27 @@ class FixtureRunTest(unittest.TestCase):
         part, _calls = self.fixtures(self.plan(), 110, 1, {'swamp/tests/a_test.ts': 'FAILED'}, 'a failed')
         self.assertEqual((part.status, part.output), ('FAILED', 'a failed'))
         self.assertIn('0 of 3 planned units passed; failed: swamp/tests/a_test.ts; deferred to CI: 2 units, 160s declared', part.detail)
+
+    def test_a_unit_the_runner_cut_without_a_failed_assertion_is_a_warning_and_one_cut_after_a_failure_fails(self):
+        a, b, c = self.UNITS
+        # The runner marks a clean cut: an over-budget unit, and one that the shard deadline kept from starting.
+        part, _calls = self.fixtures(self.plan(10), 200, 0, {a: 'OVER BUDGET', b: 'NOT RUN'}, cut=[a, b])
+        self.assertEqual(part.status, 'passed')
+        self.assertEqual(part.detail, f'1 of 3 planned units passed; over budget, not run to the end (warning): {a}, {b}')
+        # Without the mark an assertion failed before the cut: the unit fails the check, as a failed unit does.
+        part, _calls = self.fixtures(self.plan(10), 200, 1, {a: 'OVER BUDGET', b: 'OVER BUDGET'}, 'a failed', cut=[b])
+        self.assertEqual((part.status, part.output), ('FAILED', 'a failed'))
+        self.assertIn(f'failed: {a}; over budget, not run to the end (warning): {b}', part.detail)
+        # Only cut units: nothing passed, nothing failed, and the result line says that coverage is incomplete.
+        part, _calls = self.fixtures(self.plan(10), 200, 0, 'OVER BUDGET', cut=self.UNITS)
+        self.assertEqual(part.status, 'skipped')
+        self.assertEqual(check['report']([part], 'a' * 40, 1)[-1],
+                         'Task check PASSED with incomplete coverage (budget exhausted; CI must finish) against aaaaaaaaaaaa in 1.0s')
+        # The check's own time ran out while another unit ran: the earlier clean cut keeps its mark and stays a warning.
+        part, _calls = self.fixtures(self.plan(10), 200, None, {a: 'OVER BUDGET', b: 'CANCELLED', c: 'NOT RUN'}, cut=[a])
+        self.assertEqual(part.status, 'skipped')
+        self.assertIn(f'over budget, not run to the end (warning): {a}', part.detail)
+        self.assertIn(f'deferred to CI: 2 units, 20s declared: {b}, {c}', part.detail)
 
     def test_a_failed_tool_setup_fails_and_is_no_deferral(self):
         part, _calls = self.fixtures(self.plan(10), 200, 1, 'NOT RUN', 'Fixture tool setup FAILED; every selected case is NOT RUN')

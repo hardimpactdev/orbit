@@ -17,6 +17,7 @@
     "swamp/ansible/requirements.txt",
     "swamp/ansible/requirements.yml",
     "swamp/ansible/operation-node-converge.yml",
+    "swamp/ansible/tasks/apt-missing.yml",
     "swamp/ansible/tasks/managed-files-check.yml",
     "swamp/ansible/tasks/node-converge-address.yml",
     "swamp/ansible/tasks/node-converge-base.yml",
