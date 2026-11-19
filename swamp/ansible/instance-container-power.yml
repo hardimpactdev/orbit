@@ -1,4 +1,5 @@
 ---
+# probe: an outer Instance-container play only (release 2157 shape).
 # The one phase of a development container's sleep, tag `prepared_sleep` (docs/reference/development-containers.md#sleep-and-wake,
 # docs/reference/prepared-restore.md#sleep): check that Caddy's loaded site of the Instance has the asleep check, write the marker,
 # then let the power helper open swap, pause the container, record its plan and push its memory to swap; stop it instead when swap
