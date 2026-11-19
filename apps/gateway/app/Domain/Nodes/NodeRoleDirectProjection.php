@@ -107,7 +107,7 @@ final readonly class NodeRoleDirectProjection implements DirectOperationProjecti
                 $phases = ValidatedData::object(ValidatedData::object($raw['steps'] ?? [])[self::DigestStep] ?? [])['stdout'] ?? null;
                 if (is_string($phases)) {
                     app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id),
-                        ValidatedData::object(ValidatedData::object(json_decode($phases, true, flags: JSON_THROW_ON_ERROR))['digests'] ?? []));
+                        ValidatedData::object(ValidatedData::object(json_decode($phases, true, flags: JSON_THROW_ON_ERROR))['digests'] ?? []), full: false);
                 }
                 // A Node that offers proof places gets its seed of the proof default now, not at the next release
                 // (docs/reference/development-containers.md#the-seed-on-each-ci-node).

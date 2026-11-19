@@ -66,7 +66,7 @@ sequenceDiagram
     end
     GW->>SW: Start run, full intent<br/>operation-node-converge
     %%> Inputs:
-    %%> - the phase digests the Node records; admission clears the record, and `--full` or a recorded failed agent pin sends none (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change)
+    %%> - the phase digests the Node records; admission clears the record, and `--full` or a recorded failed agent pin sends none; a scoped run holds a record that a full converge wrote for its result (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change)
     %%> - target, scope, recorded roles, Tools, network and vault key names; playbooks read release pins
     %%> - the Gateway includes a CLI plan only for a Node with a recorded `ci-runner` assignment that is not being removed; scope flags do not change that decision
     %%> - reserve the Node and its recorded hub until the Operation settles; two converges of different peers of the hub pass each other, whatever their scope (each writes the same recorded peer set to the hub); beside a converge of the hub Node itself, only two base converges pass (a base intent has no network)
@@ -149,7 +149,7 @@ sequenceDiagram
       %%> - with `ci-runner` in scope, records the seed listener in `nodes.seed_sender_id`: it keeps the sender it names when the intent names the same sender, and clears it otherwise (docs/reference/node-provisioning.md#the-seed-listener)
       %%> - with `ci-runner` in scope, records the hold script in `nodes.ci_hold_digest`: it keeps the digest when it is the digest of the script in the intent, and clears it otherwise; it keeps `nodes.ci_nested_hosting` only when the intent carries the nested branch (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
       %%> - the result lists each Instance container that got no Chromium trust store, with its reason
-      %%> - records each phase digest on the Node, whether the phase ran or was unchanged
+      %%> - a full-scope run records each phase digest on the Node, whether the phase ran or was unchanged; a scoped run keeps the full-converge record it held at admission without the phases it changed, and without `network` when its network phase ran with a hub
       %%> - a repeat is another Operation, not an admission skip; its unchanged phases skip; with `--full`, matching tasks report zero changes
     else a phase fails
       %% path: phase-failed

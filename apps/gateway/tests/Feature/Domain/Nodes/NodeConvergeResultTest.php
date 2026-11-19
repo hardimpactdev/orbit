@@ -7,6 +7,7 @@ use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
+use App\Domain\Nodes\NodeConvergePhaseDigest;
 use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeConvergeResult;
 use App\Domain\Nodes\RoleName;
@@ -373,6 +374,49 @@ it('records the phase digests after a succeeded converge and none after a failed
     'succeeded' => [null, ['agent' => str_repeat('a', 64), 'roles' => str_repeat('b', 64)]],
     'failed' => ['network', null],
 ]);
+
+it('keeps the full-scope digests across a scoped converge and drops each phase it changed', function (int $agentChanges, ?array $network, array $unchanged, array $kept): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: Op 30545 on Beast recorded its partial intent's
+    // digests, and the next unchanged full converge ran every phase.
+    $full = array_combine(NodeConvergeResult::Skippable, array_map(static fn (string $c): string => str_repeat($c, 64), ['a', 'b', 'c', 'd', 'e']));
+    $scoped = array_fill_keys(NodeConvergeResult::Skippable, str_repeat('f', 64));
+    $projection = app(NodeConvergeProjection::class);
+    $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
+    $projection->apply($this->operation, [...$this->native, 'result' => converge_receipt(null, $observations, [], $full)]);
+    expect($this->node->refresh()->converge_digests)->toBe($full)
+        ->and($this->node->converge_digests_full)->toBeTrue();
+
+    // The scoped converge: admission held the record and cleared it; the run reports its own scoped digests.
+    app(NodeConvergePhaseDigest::class)->clear($this->node->id);
+    $scope = $this->operation->replicate(['result', 'finished_at'])->forceFill(['status' => OperationStatus::Running,
+        'input' => ['_converge' => ['intent' => ['tools' => [], 'release_roles_only' => $network === null, 'network' => $network], 'held_digests' => $full]]]);
+    $scope->save();
+    // The receipt counts only the target's changes: a network phase that wrote only the hub reports 0.
+    $receipt = converge_receipt(null, [], $unchanged, $scoped);
+    $receipt['phases'][1]['changed'] = $agentChanges;
+    $receipt['changed'] = $agentChanges;
+    $projection->apply($scope, [...$this->native, 'result' => $receipt]);
+
+    // The next full converge compares with the full-scope record: equal digests skip, a phase the scoped run changed runs.
+    expect($this->node->refresh()->converge_digests)->toBe(array_intersect_key($full, array_flip($kept)))
+        ->and($this->node->converge_digests_full)->toBeTrue()
+        ->and(app(NodeConvergePhaseDigest::class)->recorded($this->node, false))->toBe(array_intersect_key($full, array_flip($kept)));
+})->with([
+    'release, no real change' => [0, null, [], NodeConvergeResult::Skippable],
+    'release, agent pins applied' => [2, null, [], ['software', 'roles', 'tools', 'network']],
+    'vpn role, network ran with the hub' => [0, ['hub' => ['address' => '10.44.0.1']], [], ['agent', 'software', 'roles', 'tools']],
+    'vpn role, network unchanged' => [0, ['hub' => ['address' => '10.44.0.1']], ['network'], NodeConvergeResult::Skippable],
+]);
+
+it('records nothing after a scoped converge that held no full-scope converge record', function (): void {
+    // A role Operation's record is not held at admission (NodeConvergeAdmissionTest), so a scoped converge never restores it.
+    $this->operation->update(['input' => ['_converge' => ['intent' => ['tools' => [], 'release_roles_only' => true, 'network' => null], 'held_digests' => []]]]);
+
+    app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'result' => converge_receipt(null, [], [], ['agent' => str_repeat('f', 64)])]);
+
+    expect($this->node->refresh()->converge_digests)->toBeNull()
+        ->and($this->node->converge_digests_full)->toBeFalse();
+});
 
 it('keeps the seed listener record when the roles phase of a ci-runner converge was unchanged', function (): void {
     $default = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'default', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.9', 'public_ssh_host' => '10.44.0.9', 'user' => 'orbit']));
