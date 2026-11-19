@@ -715,24 +715,77 @@ fn route_checks(response: &[u8], marker: &Path) -> bool {
 }
 
 fn matches_marker(config: &serde_json::Value, root: &str, file: &str, activation: &str) -> bool {
-    // The first handler that a marked visit reaches must be the activation proxy. Only `vars` (Caddy's `log_skip`) passes the
-    // visit on before it; any other first handler (a 503, an ordinary proxy) answers the visitor instead.
     let mut handlers = Vec::new();
     marker_handlers(config, root, file, &mut handlers);
-    handlers
-        .into_iter()
-        .find(|handler| handler.get("handler").and_then(serde_json::Value::as_str) != Some("vars"))
-        .is_some_and(|handler| {
-            handler.get("handler").and_then(serde_json::Value::as_str) == Some("reverse_proxy")
-                && handler
-                    .get("rewrite")
-                    .and_then(|rewrite| rewrite.get("uri"))
+    first_answer(&handlers, root, file).is_some_and(|handler| {
+        let rewrite = handler.get("rewrite");
+        handler.get("handler").and_then(serde_json::Value::as_str) == Some("reverse_proxy")
+            && rewrite
+                .and_then(|r| r.get("uri"))
+                .and_then(serde_json::Value::as_str)
+                == Some(activation)
+            && rewrite
+                .and_then(|r| r.get("method"))
+                .and_then(serde_json::Value::as_str)
+                == Some("GET")
+    })
+}
+
+/// The first handler that answers a marked visit, which must be the activation proxy. The visit passes `vars` (Caddy's
+/// `log_skip`) and enters each `subroute` through its routes without a matcher or with the exact marker matcher; any other
+/// handler (a 503, an ordinary proxy) answers the visitor. Production nests the proxy this way (route 50: a `vars` route,
+/// then a sibling marker route whose `subroute` holds the proxy).
+fn first_answer<'a>(
+    handlers: &[&'a serde_json::Value],
+    root: &str,
+    file: &str,
+) -> Option<&'a serde_json::Value> {
+    handlers.iter().find_map(|handler| {
+        match handler.get("handler").and_then(serde_json::Value::as_str) {
+            Some("vars") => None,
+            Some("subroute") => {
+                let entered: Vec<_> = handler
+                    .get("routes")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter(|route| reached(route, root, file))
+                    .filter_map(|route| route.get("handle").and_then(serde_json::Value::as_array))
+                    .flatten()
+                    .collect();
+                first_answer(&entered, root, file)
+            }
+            _ => Some(*handler),
+        }
+    })
+}
+
+/// Whether a route carries the exact marker matcher.
+fn marked(route: &serde_json::Value, root: &str, file: &str) -> bool {
+    route
+        .get("match")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|matchers| {
+            matchers.iter().any(|matcher| {
+                let files = matcher.get("file");
+                files
+                    .and_then(|f| f.get("root"))
                     .and_then(serde_json::Value::as_str)
-                    == Some(activation)
+                    == Some(root)
+                    && files
+                        .and_then(|f| f.get("try_files"))
+                        .and_then(serde_json::Value::as_array)
+                        .is_some_and(|candidates| {
+                            candidates
+                                .iter()
+                                .any(|candidate| candidate.as_str() == Some(file))
+                        })
+            })
         })
 }
 
-/// The handlers of every route with the exact marker matcher, in the order Caddy runs them.
+/// The handlers that a marked visit reaches, in the order Caddy runs them. In a route list that holds a marker route, every route
+/// without a matcher runs too, so a catch-all ahead of the activation route answers the visit and the guard refuses it.
 fn marker_handlers<'a>(
     config: &'a serde_json::Value,
     root: &str,
@@ -741,27 +794,7 @@ fn marker_handlers<'a>(
 ) {
     match config {
         serde_json::Value::Object(object) => {
-            let exact = object
-                .get("match")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|matchers| {
-                    matchers.iter().any(|matcher| {
-                        let files = matcher.get("file");
-                        files
-                            .and_then(|f| f.get("root"))
-                            .and_then(serde_json::Value::as_str)
-                            == Some(root)
-                            && files
-                                .and_then(|f| f.get("try_files"))
-                                .and_then(serde_json::Value::as_array)
-                                .is_some_and(|candidates| {
-                                    candidates
-                                        .iter()
-                                        .any(|candidate| candidate.as_str() == Some(file))
-                                })
-                    })
-                });
-            if exact {
+            if marked(config, root, file) {
                 if let Some(handle) = object.get("handle").and_then(serde_json::Value::as_array) {
                     handlers.extend(handle);
                 }
@@ -770,6 +803,17 @@ fn marker_handlers<'a>(
                 marker_handlers(value, root, file, handlers);
             }
         }
+        serde_json::Value::Array(routes)
+            if routes.iter().any(|route| marked(route, root, file)) =>
+        {
+            handlers.extend(
+                routes
+                    .iter()
+                    .filter(|route| reached(route, root, file))
+                    .filter_map(|route| route.get("handle").and_then(serde_json::Value::as_array))
+                    .flatten(),
+            );
+        }
         serde_json::Value::Array(values) => {
             for value in values {
                 marker_handlers(value, root, file, handlers);
@@ -777,6 +821,11 @@ fn marker_handlers<'a>(
         }
         _ => {}
     }
+}
+
+/// Whether a marked visit enters this route: it has no matcher or the exact marker matcher.
+fn reached(route: &serde_json::Value, root: &str, file: &str) -> bool {
+    route.get("match").is_none() || marked(route, root, file)
 }
 
 fn valid_id(id: &str) -> bool {

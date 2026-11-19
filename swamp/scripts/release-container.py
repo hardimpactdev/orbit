@@ -113,15 +113,21 @@ def capacity(target, live, host_gateway):
     return capacity_estimate(preparation, served, prep["expanded_devices"]["root"]["pool"], reclaim=target != "gateway")
 
 
-def capacity_estimate(preparation, served, pool, reclaim=True):
+def has_swap():
+    return len(Path("/proc/swaps").read_text().splitlines()) > 1
+
+
+def capacity_estimate(preparation, served, pool, reclaim=True, release=None):
+    """Check the Node for one deploy. release is the pool space its clone and copies add, when it is measured."""
     prep_need, prep_resident, prep_swap = preparation
     live_need, live_resident, _live_swap = served
     working = max(prep_need, live_need)
     # Keep live available while preparation and hot overlap. Existing resident memory and
     # swap slots are already excluded from the Node's free counts. Only preparation is
-    # reclaimed to swap; retire stops the drained live, so it needs none.
+    # reclaimed to swap; retire stops the drained live, so it needs none. A Node without
+    # swap stops preparation instead, so the overlap above is all the memory it needs.
     ram = 2 * working - prep_resident + max(0, live_need - live_resident) + 1024**3
-    swap = working - prep_swap if reclaim else 0
+    swap = working - prep_swap if reclaim and has_swap() else 0
     meminfo = {}
     for line in Path("/proc/meminfo").read_text().splitlines():
         key, values = line.split(":", 1)
@@ -133,8 +139,16 @@ def capacity_estimate(preparation, served, pool, reclaim=True):
         ["incus", "--force-local", "query", f"/1.0/storage-pools/{pool}/resources"], text=True, timeout=30,
     )
     space = json.loads(pool_info)["space"]
-    available = {"ram": meminfo["MemAvailable"], "swap": meminfo["SwapFree"], "pool": space["total"] - space["used"]}
-    required = {"ram": ram, "swap": swap, "pool": 10 * 1024**3}
+    available = {"ram": meminfo["MemAvailable"], "swap": meminfo["SwapFree"], "pool": space["total"] - space.get("used", 0)}
+    if release is None:
+        # The Gateway admission measures no release, so it keeps a fixed floor.
+        disk = 10 * 1024**3
+    else:
+        # ZFS already withholds its slop space from the free count. Keep a further tenth of
+        # the pool, and at least 1 GiB, free for live's writes during the deploy and for
+        # copy-on-write metadata, so the pool never runs near full.
+        disk = release + max(1024**3, space["total"] // 10)
+    required = {"ram": ram, "swap": swap, "pool": disk}
     for resource, need in required.items():
         if available[resource] < need:
             raise ValueError(f"{resource} needs {need} bytes, {available[resource]} available")
@@ -176,7 +190,7 @@ def wake(record, operation):
 def sleep(record, operation):
     if record["config"].get("boot.autostart") != "false":
         raise ValueError("release.container_still_active")
-    if len(Path("/proc/swaps").read_text().splitlines()) < 2:
+    if not has_swap():
         raise ValueError("release.swap_unavailable")
     receipt = power(record["name"], "prepare", operation)
     if receipt["outcome"] not in ("frozen", "already_frozen"):
