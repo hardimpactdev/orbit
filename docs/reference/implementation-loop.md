@@ -45,7 +45,7 @@ Address the blocking findings. Reviewers check the fixes and repeat the affected
 
 ## CI
 
-Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. Main verifies [the tree tested on the PR](#reuse-a-green-pr-tree-on-main) and publishes delivery inputs.
+Orbit CI runs builds, static checks and the full Gateway, CLI and PHP SDK Pest suites when their inputs change. Swamp changes also run the Operation Deno tests. Pull requests, task handoff pushes and manual runs use the same fast checks. A pull request merges through the [merge queue](#merge-queue); its run adds the fixture shards. Main verifies [the commit the queue tested](#deliver-the-queues-commit-on-main) and publishes delivery inputs.
 
 The separate [Git build watch](/reference/compute-drivers#show-and-validate-the-recipe) is an advisory update signal, not a Required check. Each job has a timeout, including time spent on retries and pagination. Only scheduled or manual main runs can publish an update issue.
 
@@ -102,21 +102,46 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | CLI static analysis, PHP SDK static analysis | Run PHPStan for `apps/cli` or `packages/php-sdk` |
 | Docs build | Generate contracts and the Docs index; run strict lint, Docs Pest, `bin/check-flows` and the PR docs-impact gate |
 | Generated contracts | Check Operation kinds, their charts and workflow intent; generate OpenAPI, MCP tools and the web schema; check the recorded fixtures |
-| Web build | Run unit and Chromium/WebKit verification tests, then Chromium app tests; build and retain the web app on every PR for tree reuse; require `dist/index.html` and `dist/version.json` |
+| Web build | Run unit and Chromium/WebKit verification tests, then Chromium app tests; build the web app, and retain it in every merge queue run for main delivery; require `dist/index.html` and `dist/version.json` |
 | Gateway release inputs | Pass on every main commit, because a Gateway release also loads Swamp; on a pull request, skip Swamp-only and docs-only changes |
 | Swamp | `bin/swamp-shape-gate`: validate every workflow when the change selects Swamp and on the three-hour schedule, run the Operation Deno tests, enforce static Swamp-shape controls and reject new per-run or invalid [behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names) |
 | Proof harness | Run the case runner unit tests and lint the proof programs with `ruff` |
 | CI proof | Prove a pull request head with `orbit proof:run` when a changed path selects a command. When it runs, it gates Required checks; see [the proof run job](#the-proof-run-job) |
-| Required checks | On PRs, require selected builds, static checks, Pest suites, fixture shards, including capacity, and the selected proof. Untouched jobs, metadata-ineligible proofs and proofs while proof admission is off may skip |
-| Main delivery checks | On main, require the CI policy check, verification of the landed tree, and promotion of its web artifact |
+| Required checks | Require selected builds, static checks, Pest suites, fixture capacity and the selected proof; in the merge queue run, the fixture shards too. Untouched jobs and ineligible proofs may skip |
+| Main delivery checks | On main, require the CI policy check, the green merge queue run of the landed commit, and promotion of its web artifact |
 
-### Reuse a green PR tree on main
+### Merge queue
 
-Main CI compares the landed Git tree with the merge-ref tree that the PR run checked out. Squash and merge commits can have different commit IDs and still have the same tree. If main moves while a PR waits, update the branch and wait for Required checks again. For outside changes, a maintainer can use a reviewed branch in the repository.
+A pull request reaches `main` through a GitHub merge queue ([ADR 0272](/decisions/0272-merge-through-a-github-merge-queue)). Add it with:
 
-Every PR builds a web artifact and records its digest, tested commit and tree, and the body hash read by the Docs gate. Main verifies the repository, workflow identity, merged PR, final PR head, latest Required job, actual checkout logs, Git tree and current PR body hash. It verifies the downloaded ZIP against its recorded digest before publishing `web-dist-<main SHA>`. A changed PR body needs a successful Docs run with the new body. A failed-only rerun that copies Required without its corresponding receipt cannot authorize publication.
+```bash
+gh pr merge <n> -R hardimpactdev/orbit --squash --auto
+```
 
-A missing receipt, different tree or unreadable GitHub response fails delivery. Rerun delivery for a transient error. If the tree has no matching evidence, update the next PR branch to include that revision and run CI. PR planning compares the tested tree with the latest verified main delivery on its base history. The plan selects checks for carried changes as well as the PR. The same main SHA can be retried by rerunning its delivery job. Main runs no product tests, fixtures or proof.
+GitHub queues the pull request when `Required checks` is green on its head. For each queued pull request it builds one squash commit on top of the pull requests ahead of it, and starts CI on that commit with a `merge_group` event. That run is the one run on the tree that merges. When it is green, GitHub fast-forwards `main` to the tested commit. Nobody updates a branch because `main` moved, and nobody passes `--match-head-commit`.
+
+The ruleset `Pull requests pass CI` holds the queue's settings:
+
+| Setting | Value | Reason |
+| --- | --- | --- |
+| Merge method | Squash | One commit for each pull request |
+| Grouping | `ALLGREEN` | Every queued pull request must pass on its own commit; a green pull request behind a red one does not merge it |
+| Groups tested at a time | 2 | The second pull request starts its run at once. One run can fill the runner pool, so a third would only add waiting shards |
+| Pull requests merged at a time | 1 | Each `main` commit gets its own push, delivery and release |
+| Smallest group and wait | 1 and 0 minutes | A lone pull request does not wait for company |
+| Check timeout | 20 minutes | A run that never reports leaves the queue |
+
+A pull request whose run fails leaves the queue, and GitHub builds new commits for the pull requests behind it. Fix the failure, wait for the pull request's `Required checks`, and queue it again.
+
+The queue run plans its checks against a baseline: the newest commit on its base history that the queue tests or that main delivered. Usually this is the commit below it, so the plan covers the pull request's own changes. A commit that reached `main` past the queue has neither proof, so the next queue run also plans the checks for its changes.
+
+A pull request run is the pre-check. It runs the selected hosted jobs and plans the fixture shards, including the [capacity check](#shared-fixture-capacity), and starts no shard. The fixture shards run in the queue run only, so each merge fills the runner pool once.
+
+### Deliver the queue's commit on main
+
+The push that the queue makes to `main` starts main CI. It runs no product tests, fixtures or proof. `Select build inputs` finds the newest `merge_group` run of this workflow on the exact `main` commit, from a `gh-readonly-queue/main/` branch of this repository. It requires that run's `Required checks`, `Select build inputs` and `Web build` jobs to be green on that commit, with `Required checks` from the run's current attempt. It verifies the run's `web-queue-<run>-<attempt>` ZIP against its digest and publishes it as `web-dist-<main SHA>`.
+
+A missing queue run, a red job or an unreadable GitHub response fails delivery. Rerun delivery for a transient error; the same main SHA can be retried. A commit that reached `main` past the queue is never delivered: the next queued pull request tests its changes, and that commit is delivered.
 
 Main retains `Main delivery checks`, `Required checks` and `Gateway release inputs` on the landed SHA. CLI dispatch and docs publication use that delivery result. The signed release, ancestry and provenance checks remain in force. See [Automatic releases](/reference/gateway-recovery#automatic-releases) for the Gateway poll.
 
@@ -170,9 +195,9 @@ Runner containers are unprivileged. Install or repair their toolchain with `tool
 
 CI has two stages: the checks on the pull request, then the release on main ([ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request)). A check runs only when its inputs change, on the pull request. Apart from main's own CI run on the merged commit, no workflow runs fixtures, proof or a nightly sweep after a merge.
 
-Main runs its selected quick checks again only when the merged tree differs from the tree that the pull request's green run checked out; see [Reuse a green PR tree on main](#reuse-a-green-pr-tree-on-main). Main runs no proof.
+Main runs no checks again: the [merge queue](#merge-queue) run tested the commit that main receives; see [Deliver the queue's commit on main](#deliver-the-queues-commit-on-main). Main runs no proof.
 
-No registry entry keeps a fixture or a case out of pull requests: the metadata keys `after_merge` and `after_merge_cases` are gone. Every registered case is a pull request unit, selected by its inputs. The files that need tools a hosted runner does not have run in [self-hosted fixture shards](#self-hosted-fixture-shards). A fixture that is too slow for its lane is split or made faster; step 3 of the [build order](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) later moves its cases into proof cases.
+No registry entry keeps a fixture or a case out of pull requests: the metadata keys `after_merge` and `after_merge_cases` are gone. Every registered case is a unit of the merge queue run, selected by its inputs. The files that need tools a hosted runner does not have run in [self-hosted fixture shards](#self-hosted-fixture-shards). A fixture that is too slow for its lane is split or made faster; step 3 of the [build order](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) later moves its cases into proof cases.
 
 ### Self-hosted fixture shards
 
@@ -232,7 +257,7 @@ The report includes distinct runners and this run's peak running and queued fixt
 
 `capacity_gap` in the `[budget]` of `checks.toml` lists the files that cannot always fit the shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work, a hosted gap file before a self-hosted one. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
-A listed file must be a registered fixture. Most are `self_hosted` files. The two hosted ones, `ansible_task_copy_turn_test.ts` and `ansible_instance_host_image_test.ts`, are the largest hosted files: 70 units and 2,462 declared seconds, more than half of what 16 hosted shards hold. Each fits a plan of its own, and a change to the file itself runs all of its units: the gap applies only when other changes select the file. With much other selected work they pass `runner_shards`, for example when a pull request [carries main revisions that were not delivered](#reuse-a-green-pr-tree-on-main).
+A listed file must be a registered fixture. Most are `self_hosted` files. The two hosted ones, `ansible_task_copy_turn_test.ts` and `ansible_instance_host_image_test.ts`, are the largest hosted files: 70 units and 2,462 declared seconds, more than half of what 16 hosted shards hold. Each fits a plan of its own, and a change to the file itself runs all of its units: the gap applies only when other changes select the file. With much other selected work they pass `runner_shards`, for example when a queue run [also plans a commit that reached main past the queue](#merge-queue).
 
 A hosted gap file keeps every unit within the 150-second lane; only a `self_hosted` gap file may hold a larger unit. More shards are not the remedy: ten runners already run 20 jobs in two waves, and a third wave ends after the [five-minute budget](#ci-budget).
 
@@ -271,7 +296,7 @@ No switch makes a check report-only. A check that runs is part of its gate.
 
 The plan job reads the checks table once. Selected jobs start after it; unselected jobs are skipped before a runner starts. A docs-only change starts three jobs: Select build inputs, Docs build and Required checks. Reusable workflows receive the plan's selection instead of calculating it again.
 
-Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. For a PR to main, CI uses the latest verified delivery on the tested base history. If main has undelivered changes, the PR head must include them and CI selects checks for them.
+Build, fixture and proof selection compare the candidate with its merge base against the supplied base commit. Selection requires both commits and their common ancestry; the plan job checks out full history. A pull request compares with its base branch. A merge queue run compares with [its baseline](#merge-queue).
 
 A fixture can list individual declared YAML paths in `parsed_yaml_inputs` when it observes only their parsed values. Check subprocesses and helpers as well as direct reads before adding a path. Fixtures that inspect source text, its copies or its digests keep selection. Mandatory inputs, unclassified inputs and unmapped paths also keep selection.
 
@@ -305,7 +330,7 @@ Each shared host has six physical cores with twelve CPU threads and at most five
 
 Four concurrent Ansible units on a shared runner can exceed the unit ceiling even when each case passes alone. The complete fleet fixture names the CI workflow as an input, so workflow changes exercise every fleet case.
 
-Fork shards use the same two-lane plan on GitHub-hosted runners. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
+No pull request starts a shard, so a fork's code reaches the pool only after a maintainer queues it. Other jobs and proof holds can still occupy places; measure queue delay as part of the five-minute push-to-Required limit. A file can declare a larger slice count when its cases need finer slices.
 
 For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per case, so a long refresh cannot share its unit with another refresh. Its host-converge case checks the rendered 360-retry budget and polls through pending to success; it does not spend 200 subprocess calls just to cross the shorter base-converge budget.
 
@@ -507,9 +532,9 @@ Run `bin/check-operation-kinds` to repeat the registry check locally. It uses th
 
 The proof CI reports within the same CI run; [the proof CI](/reference/feature-flow#the-proof-ci) describes its execution. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Rust check.
 
-Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
+Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit; in the merge queue, it is the commit that main receives. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
-Every PR publishes `web-pr-<run>-<attempt>` for 14 days. Main publishes `web-dist-<full commit SHA>` from the Web job or from Select build inputs when it reuses the verified PR artifact. The commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build.
+Every merge queue run publishes `web-queue-<run>-<attempt>` for 14 days. Main publishes `web-dist-<full commit SHA>` from Select build inputs, which promotes the queue run's verified artifact. The commit has its build as soon as `Required checks` passes. It includes hidden files and keeps `index.html` and `version.json` at its root. Automatic Gateway releases install this commit's build.
 
 ### Action pins and token permissions
 

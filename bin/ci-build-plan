@@ -288,7 +288,8 @@ def selected_checks(paths, registry_checks=None):
     return selected, unclaimed
 
 
-def select(paths, main=False, selection=None, registry_checks=None, pull_request=False, population_changed=False):
+def select(paths, main=False, selection=None, registry_checks=None, pull_request=False, population_changed=False,
+           merge_group=False):
     """`selection` is the text of the proof list; omitted, read this checkout's list."""
     paths = [path for path in paths if path]
     check_source_roots(paths)
@@ -296,7 +297,8 @@ def select(paths, main=False, selection=None, registry_checks=None, pull_request
     jobs = {name: name in selected for name in JOBS}
     swamp_checks = {name: 'swamp-' + name in selected or 'swamp' in selected for name in SWAMP_CHECKS}
     jobs['swamp'] = any(swamp_checks.values())
-    jobs['web'] |= main or pull_request
+    # Main delivery promotes the web build of the merge queue run, so that run always builds it.
+    jobs['web'] |= main or merge_group
     jobs['docs'] |= pull_request
     docs_only = selected == {'docs'}
     scope_paths = [path for path in paths if path != TABLE or registry_checks is None or registry_checks]
@@ -345,6 +347,7 @@ def main():
     p.add_argument('--head', default='HEAD')
     p.add_argument('--main', action='store_true')
     p.add_argument('--pull-request', action='store_true', help='Require the Docs impact gate on every PR')
+    p.add_argument('--merge-group', action='store_true', help='Build the web artifact that main delivery promotes')
     p.add_argument('--proof-cases', action='store_true', help='Compare case definitions at the merge base and head')
     p.add_argument('--github-output', type=Path)
     p.add_argument('--proof-selection-output', type=Path)
@@ -364,7 +367,7 @@ def main():
             paths.append(TABLE)
         population_changed = before != after
     result = select(paths, a.main, registry_checks=registry_checks, pull_request=a.pull_request,
-                    population_changed=population_changed)
+                    population_changed=population_changed, merge_group=a.merge_group)
     _, unclaimed = selected_checks(paths, registry_checks)
     if unclaimed:
         import sys

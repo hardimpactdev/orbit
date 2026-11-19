@@ -156,9 +156,9 @@ class DeliveryGateTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, 'Incomplete build selections'):
             self.run_gate(needs)
 
-    def test_self_hosted_units_require_a_branch_run_and_success(self):
+    def test_self_hosted_units_require_the_merge_queue_run_and_success(self):
         shards = [{'name': '01', 'units': ['swamp/tests/frankenphp_proxy_test.ts']}]
-        for mode in ('fork', 'run', 'none'):
+        for mode in ('fork', 'run', 'none'):  # fork is no mode: a pull request starts no shard
             for selected in ([], shards):
                 for result in ('success', 'skipped', 'failure', 'cancelled', 'pending'):
                     needs = needs_for()
@@ -166,8 +166,8 @@ class DeliveryGateTest(unittest.TestCase):
                     needs['self-hosted-fixtures']['result'] = result
                     with self.subTest(mode=mode, selected=selected, result=result), \
                             patch.dict(os.environ, PROOF_REQUIRED='false', SELF_HOSTED_FIXTURES=mode):
-                        if mode == 'fork' and selected:
-                            with self.assertRaisesRegex(SystemExit, "run only on Orbit's runners.*frankenphp_proxy_test.ts.*push the branch"):
+                        if mode == 'fork':
+                            with self.assertRaisesRegex(SystemExit, 'Unexpected self-hosted fixture state'):
                                 delivery.validate(needs)
                         elif mode == 'run' and result != 'success' and not (not selected and result == 'skipped'):
                             with self.assertRaisesRegex(SystemExit, 'Required self-hosted fixtures failed'):
@@ -197,7 +197,7 @@ class WorkflowGateTest(unittest.TestCase):
 
 
 class ProofGateTest(unittest.TestCase):
-    def run_required(self, *, proof_required=False, fork=False, results=None, statuses=None, snapshots=None, proof_base=''):
+    def run_required(self, *, proof_required=False, fork=False, results=None, statuses=None, snapshots=None):
         needs = needs_for()
         rows = {name: {'name': name, 'status': 'completed', 'conclusion': 'success', 'id': 1, 'run_attempt': 1}
                 for name in ('CI proof', 'CI proof eligibility')}
@@ -215,8 +215,8 @@ class ProofGateTest(unittest.TestCase):
             self.assertIn('--paginate', argv)
             return json.dumps([{'jobs': next(snapshots)}]).encode()
         result = None
-        with patch.dict(os.environ, PROOF_REQUIRED=str(proof_required).lower(), FORK_PROOF=str(fork).lower(), PROOF_BASE=proof_base,
-                        SELF_HOSTED_FIXTURES='fork' if fork else 'run', CI_RUN_ID='123', PROOF_SHA='a' * 40,
+        with patch.dict(os.environ, PROOF_REQUIRED=str(proof_required).lower(), FORK_PROOF=str(fork).lower(),
+                        SELF_HOSTED_FIXTURES='none', CI_RUN_ID='123', PROOF_SHA='a' * 40,
                         GH_REPO=REPO, PROOF_RUN_URL_PREFIX=f'https://github.com/{REPO}/actions/runs/'), \
                 patch.object(delivery.subprocess, 'check_output', side_effect=api) as github, \
                 patch.object(delivery.time, 'sleep') as sleep:
@@ -271,8 +271,6 @@ class ProofGateTest(unittest.TestCase):
         self.assertIsNone(error)
         self.assertEqual(github.call_count, 1)
         sleep.assert_not_called()
-        error, _, _ = self.run_required(proof_required=True, snapshots=[rows], proof_base='b' * 40)
-        self.assertIn('must run on the selected range', error)
 
     def test_failed_eligibility_and_unexpected_skip_fail_closed_without_waiting(self):
         for result in ('failure', 'cancelled', 'skipped'):

@@ -35,7 +35,7 @@ class DocsImpactPolicyTest(unittest.TestCase):
         self.assertEqual(CI['jobs']['docs']['permissions'], {'contents': 'read', 'pull-requests': 'read'})
         self.assertEqual(step['env']['GH_TOKEN'], '${{ github.token }}')
         self.assertEqual(step['env']['PR_HEAD'], '${{ github.event.pull_request.head.sha }}')
-        self.assertEqual(step['env']['DOCS_IMPACT_BASE'], "${{ needs.changes.outputs.delivery_base || 'HEAD^1' }}")
+        self.assertEqual(step['env']['DOCS_IMPACT_BASE'], 'HEAD^1')
         self.assertLess(next(i for i, s in enumerate(steps) if 'bin/build-api' in s.get('run', '')), steps.index(step))
         for body, code, api_failure, moved in ((None, 0, False, False), ('Docs-unaffected: docs/a.md: $(touch injected); `touch injected`', 1, False, False), ('valid', 1, True, False), ('valid', 1, False, True)):
             with self.subTest(body=body), tempfile.TemporaryDirectory() as directory:

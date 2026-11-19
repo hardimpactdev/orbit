@@ -89,20 +89,32 @@ class RequiredGateTest(unittest.TestCase):
                 incompatible = render(primary, **changed)
                 self.assertFalse(any(incompatible.startswith(prefix) for prefix in restore))
 
-    def test_there_is_no_merge_queue_trigger_or_handling(self):
-        # PRs merge straight into main after their gate (2026-11-05); no workflow, action or job reads a queue event.
+    def test_the_merge_queue_run_is_the_one_run_on_the_tree_that_reaches_main(self):
+        import yaml
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
+        workflow = yaml.safe_load(caller)
+        # PyYAML reads the key `on` as True.
+        self.assertIn('merge_group', workflow[True])
         self.assertIn("    if: always() && github.ref != 'refs/heads/main'", caller)
+        plan = next(step for step in workflow['jobs']['changes']['steps'] if step.get('id') == 'plan')
+        self.assertEqual('${{ github.event.merge_group.base_sha }}', plan['env']['QUEUE_BASE'])
+        self.assertIn('elif [ "$GITHUB_EVENT_NAME" = merge_group ]; then', plan['run'])
+        self.assertIn('BASE="$(python3 bin/ci-tree-receipt baseline)"', plan['run'])
+        self.assertIn('args+=(--merge-group)', plan['run'])
+        # A pull request no longer waits for main: its plan needs no delivered base and writes no delivery evidence.
+        self.assertNotIn('PR delivery baseline', caller)
+        self.assertNotIn('ci-tree-receipt record', caller)
+        for name in ('SWAMP_API_KEY', 'SWAMP_SIGNIN_TOKEN'):
+            self.assertIn("github.event_name == 'merge_group'", workflow['jobs']['swamp']['secrets'][name])
         for source in [caller, SOURCE]:
-            self.assertNotIn('merge_group', source)
             self.assertIn('github.event.pull_request.base.sha || github.event.before', source)
 
-    def test_main_promotes_the_verified_web_artifact_from_the_pr(self):
+    def test_main_promotes_the_verified_web_artifact_from_the_merge_queue_run(self):
         import yaml
         caller = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
         publish = next(step for step in caller['web']['steps'] if step.get('id') == 'web-artifact')
-        self.assertEqual(publish['if'], "github.event_name == 'pull_request'")
-        self.assertEqual(publish['with']['name'], 'web-pr-${{ github.run_id }}-${{ github.run_attempt }}')
+        self.assertEqual(publish['if'], "github.event_name == 'merge_group'")
+        self.assertEqual(publish['with']['name'], 'web-queue-${{ github.run_id }}-${{ github.run_attempt }}')
         promote = next(step for step in caller['changes']['steps'] if step.get('name') == 'Publish the verified web build for main')
         self.assertEqual(promote['if'], "steps.reuse.outputs.reuse == 'true'")
         self.assertEqual(promote['with']['name'], 'web-dist-${{ github.sha }}')

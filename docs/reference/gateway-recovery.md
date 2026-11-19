@@ -413,7 +413,7 @@ The attest action is pinned by commit SHA, so its bundle format changes only whe
 
 #### Web build
 
-CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main delivery run verifies and republishes the artifact from a green PR run with the same tested Git tree; see [CI tree reuse](/reference/implementation-loop#reuse-a-green-pr-tree-on-main). PR artifacts alone cannot authorize release.
+CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main delivery run verifies and republishes the artifact of the green merge queue run on the same commit; see [main delivery](/reference/implementation-loop#deliver-the-queues-commit-on-main). A pull request or queue artifact alone cannot authorize release.
 
 The Swamp step downloads the artifact with the run's GitHub token, checks its digest and extracts it into a private staging directory. It accepts only regular files and directories with safe relative names. It refuses links, special files, absolute paths, `..`, more than 20,000 entries or more than 512 MiB of files. The build must have `index.html` at its root. The step gives Caddy access and moves the build into `web/releases/<id>` with one rename. A complete build is reused.
 
@@ -425,7 +425,7 @@ The main `Required checks` and `Gateway release inputs` checks depend on success
 
 ##### Accepted CI runs
 
-The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`. There is no merge queue, so a red `main` commit is never released; `main` is fixed forward. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
+The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`. A red `main` commit is never released; `main` is fixed forward. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
 
 ### Migrations and the snapshot
 

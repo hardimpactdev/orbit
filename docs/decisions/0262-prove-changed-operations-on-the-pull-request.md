@@ -47,7 +47,7 @@ There are no after-merge consumers and no nightly sweep. Main builds and release
 
 ### Main checks a merged tree that differs
 
-When the merged tree differs from the tree that the pull request's green run checked out, main runs its selected quick checks again on the merged tree, as the CLI release already requires ([Reuse a green PR tree on main](/reference/implementation-loop#reuse-a-green-pr-tree-on-main)). When the trees match, main reuses the pull request's result. Main runs no proof: a green pull request merges without a second proof run.
+[ADR 0272](/decisions/0272-merge-through-a-github-merge-queue) replaces this section: the merge queue run tests the commit that main receives, so the trees cannot differ ([main delivery](/reference/implementation-loop#deliver-the-queues-commit-on-main)). Main runs no proof: a green pull request merges without a second proof run.
 
 ### Proof is the test of an operation
 

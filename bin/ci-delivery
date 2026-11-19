@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selected PR checks and exact main delivery evidence."""
+"""Selected checks of a pull request or merge queue run, and exact main delivery evidence."""
 import argparse
 import json
 import os
@@ -26,12 +26,9 @@ def validate(needs):
     self_hosted = [unit for shard in json.loads(needs['changes']['outputs']['self_hosted_shards']) for unit in shard['units']]
     self_hosted_result = needs.pop('self-hosted-fixtures')['result']
     mode = os.environ['SELF_HOSTED_FIXTURES']
-    if mode == 'fork' and self_hosted:
-        sys.exit("This change selects fixtures that run only on Orbit's runners, and a fork's code never reaches them: "
-                 f"{', '.join(self_hosted)}. A maintainer must push the branch to the repository.")
     if mode == 'run' and self_hosted_result != 'success' and not (self_hosted == [] and self_hosted_result == 'skipped'):
         sys.exit(f'Required self-hosted fixtures failed: {self_hosted_result}')
-    if mode not in ('run', 'fork', 'none') or mode != 'run' and self_hosted_result != 'skipped':
+    if mode not in ('run', 'none') or mode != 'run' and self_hosted_result != 'skipped':
         sys.exit(f'Unexpected self-hosted fixture state: {mode}, {self_hosted_result}')
     selected = json.loads(needs['changes']['outputs']['jobs'])
     selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
@@ -64,8 +61,6 @@ def validate(needs):
         if eligibility and eligibility['status'] == 'completed' and eligibility['conclusion'] != 'success':
             sys.exit(f"Proof eligibility failed: {eligibility['conclusion']}")
         if proof and proof['status'] == 'completed' and proof['conclusion'] == 'skipped':
-            if os.environ.get('PROOF_BASE'):
-                sys.exit('A carried-change proof must run on the selected range.')
             # A selected proof may skip only with explicit, successful metadata evidence.
             if eligibility and eligibility['status'] == 'completed':
                 if eligibility['run_attempt'] != proof['run_attempt']:
@@ -95,8 +90,6 @@ def validate(needs):
             print(f'Waiting for required jobs: {list(pending)}', flush=True)
             time.sleep(15)
     if selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
-        if os.environ.get('PROOF_BASE'):
-            sys.exit('A maintainer must push a repository branch to prove changes carried from undelivered main.')
         pages = json.loads(subprocess.check_output([
             'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
             f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",
