@@ -215,6 +215,11 @@ class PlanningTest(unittest.TestCase):
         # Without the name the same change fails Required.
         unnamed = {**budget, 'capacity_gap': [file for file in budget['capacity_gap'] if file != fleet]}
         self.assertIn('capacity', units.plan(paths, unnamed, fixtures, defaults))
+        # The fleet file keeps its place before the hosted gaps listed after it: where it fitted before, it still fits.
+        beside = units.plan(['swamp/ansible/fleet-converge-inputs.json', 'swamp/ansible/files/instance-container-power.py'],
+                            budget, fixtures, defaults)
+        self.assertEqual((count, 0), (placed(beside), named(beside)))
+        self.assertNotIn('capacity', beside)
         # A change to the fleet file itself runs every unit of it.
         self.assertEqual((count, 0), tuple(f(units.plan([fleet, *paths], budget, fixtures, defaults)) for f in (placed, named)))
 
@@ -229,12 +234,12 @@ class PlanningTest(unittest.TestCase):
                     units.configuration()
         budget, fixtures, _ = units.configuration()
         hosted = [file for file in budget['capacity_gap'] if not fixtures[file].get('self_hosted')]
-        self.assertEqual(hosted, ['swamp/tests/ansible_task_copy_turn_test.ts',
-                                  'swamp/tests/ansible_instance_host_image_test.ts',
-                                  'swamp/tests/ansible_instance_fleet_test.ts'])
+        self.assertEqual(hosted, ['swamp/tests/ansible_instance_fleet_test.ts',
+                                  'swamp/tests/ansible_task_copy_turn_test.ts',
+                                  'swamp/tests/ansible_instance_host_image_test.ts'])
         # Only a self-hosted gap may hold a unit above the lane.
         config = json.loads(json.dumps(original))
-        row = next(f for f in config['fixture'] if f['file'] == hosted[0])
+        row = next(f for f in config['fixture'] if f['file'] == hosted[1])
         row['case_costs'] = {**row['case_costs'], next(iter(row['case_costs'])): config['budget']['shard_seconds'] + 1}
         row['cost'] = sum(row['case_costs'].values())
         with patch.object(units.registry, 'load', return_value=(config, inventory)):
