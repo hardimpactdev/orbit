@@ -298,6 +298,14 @@ class CapacityPreflightTest(unittest.TestCase):
         budget = {**budget, 'runner_shards': 0}
         # Keep the real host_updates registry entry; unrelated mandatory reservations are tested by the pool suite.
         table = {name: fixture for name, fixture in table.items() if name.endswith('/ansible_instance_host_updates_test.ts')}
+        # Temporary (ADR 0262): checks.toml names host_updates a capacity gap, so the real plan names its overflow
+        # "not run" and does not refuse (test_named_gap_is_not_an_unplaceable_required_selection covers that row).
+        # This test drops the gap to keep proving that overflow of a file outside the gap refuses. The next CI slice
+        # re-costs host_updates, removes the gap and these lines.
+        gap = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, table, defaults)
+        self.assertNotIn('capacity', gap)
+        self.assertEqual(['swamp/tests/ansible_instance_host_updates_test.ts'], [row['file'] for row in gap['not_run']])
+        budget = {**budget, 'capacity_gap': [file for file in budget['capacity_gap'] if file not in table]}
         plan = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, table, defaults)
         unplaced = units.unplaced_units(plan)
         self.assertTrue(any('ansible_instance_host_updates_test.ts' in unit for unit in unplaced))

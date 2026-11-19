@@ -1,0 +1,14 @@
+order = 1530
+cases = [
+  "test_a_btrfs_pool_gets_no_root_size",
+  "test_a_zfs_pool_keeps_the_intents_root_size",
+]
+file = "swamp/tests/instance_root_disk_test.py"
+cost = 2
+# The one rule of the root device.
+inputs = [
+  "swamp/ansible/instance_root_disk.py",
+]
+[case_costs]
+"test_a_btrfs_pool_gets_no_root_size" = 1
+"test_a_zfs_pool_keeps_the_intents_root_size" = 1

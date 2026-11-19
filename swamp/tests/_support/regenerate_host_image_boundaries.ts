@@ -5,13 +5,13 @@ import { type Boundary, capture, restore, type Stage, stages } from "./host_imag
 
 const destination = new URL("../fixtures/host-image-boundaries.json", import.meta.url);
 const parents: Record<string, string | null> = {
-    "dir-system": null,
-    "dir-prepare": "dir-system",
-    "dir-finish": "dir-prepare",
-    "zfs-system": "dir-system",
+    "btrfs-system": null,
+    "btrfs-prepare": "btrfs-system",
+    "btrfs-finish": "btrfs-prepare",
+    "zfs-system": "btrfs-system",
     "zfs-prepare": "zfs-system",
     "zfs-finish": "zfs-prepare",
-    "nested-system": "dir-system",
+    "nested-system": "btrfs-system",
     "nested-prepare": "nested-system",
     "nested-normal": "nested-prepare",
     "nested-finish": "nested-normal",
@@ -19,8 +19,8 @@ const parents: Record<string, string | null> = {
     "zfs-remote-replaced": "zfs-finish",
 };
 const phases: Stage[] = ["system", "prepare", "normal", "nested", "finish"];
-type Kind = "dir" | "zfs" | "nested";
-const options = (kind: Kind) => ({ pool: kind === "zfs" ? "zfs" : "dir", nested: kind === "nested" });
+type Kind = "btrfs" | "zfs" | "nested";
+const options = (kind: Kind) => ({ pool: kind === "zfs" ? "zfs" : "btrfs", nested: kind === "nested" });
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 async function run(runStage: ReturnType<typeof stages>, phase: Stage, label: string) {
@@ -86,7 +86,7 @@ if (Deno.args.length !== 1 || !["--check", "--write"].includes(Deno.args[0])) {
 }
 assert(hasAnsible, "Put the pinned Ansible tools on PATH before capturing image boundaries");
 // Three independent scratch fixtures; settle all of them so every cleanup runs on failure.
-const results = await Promise.allSettled((["dir", "zfs", "nested"] as const).map(captureKind));
+const results = await Promise.allSettled((["btrfs", "zfs", "nested"] as const).map(captureKind));
 const captured: Record<string, Boundary> = {};
 for (const result of results) {
     if (result.status === "rejected") throw result.reason;

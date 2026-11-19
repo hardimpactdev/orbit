@@ -20,6 +20,7 @@ inputs = [
   "swamp/scripts/instance_clone_launch.py",
   "swamp/scripts/instance_clone_guest.py",
   "swamp/scripts/instance_clone.py",
+  "swamp/ansible/instance_root_disk.py",
   "swamp/tests/_support/native_auth.ts",
   "swamp/extensions/behaviors/node-worker/config.ts",
   "swamp/workflows/workflow-operation-instance-create.yaml",

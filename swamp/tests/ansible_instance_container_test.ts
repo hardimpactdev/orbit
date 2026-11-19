@@ -80,7 +80,9 @@ function fixture() {
     Deno.writeTextFileSync(`${folder}/tasks/${shared}`, stringify((parse(Deno.readTextFileSync(new URL(`tasks/${shared}`, root))) as Task[]).map(transform)).replaceAll("/usr/local/libexec", `${folder}/libexec`).replaceAll("/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`));
   }
   Deno.mkdirSync(`${folder}/home`);
-  Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
+  // A real Node's ZFS pool, whose root device keeps its size (instance_root_disk.py).
+  Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}],
+    pool: {name: "orbit-instances", driver: "zfs", config: {}}}));
   Deno.writeTextFileSync(
     `${folder}/bin/incus`,
     `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${
@@ -95,7 +97,7 @@ function fixture() {
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`).replaceAll("/sys/fs/cgroup/", `${folder}/cgroup/`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
-    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
+    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py", "instance_root_disk.py",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
@@ -2814,16 +2816,18 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
 /**
  * The root disk of a nested-fleet default (docs/reference/development-containers.md#the-root-disk), on the clean nested container of
  * the start gate: a start grows a smaller `<n>GiB` to the intent's size before the guard, keeps a larger one, and the guard refuses
- * any other form. The shapes share that case's container: the file's slices are full.
+ * any other form. On a btrfs pool the root device has no size (instance_root_disk.py): no start grows it, and the guard admits it.
+ * The shapes share that case's container: the file's slices are full.
  */
 function rootSizeShapes(f: ReturnType<typeof fixture>) {
   const devices = (f.container as unknown as {allowed_devices: Record<string, Record<string, string>>}).allowed_devices;
   for (const [shape, has, intent] of [["grows", "40GiB", "80GiB"], ["keeps-larger", "80GiB", "40GiB"], ["same", "40GiB", "40GiB"],
-    ["odd-form", "50GB", "40GiB"]] as const) {
+    ["odd-form", "50GB", "40GiB"], ["btrfs", "", "40GiB"]] as const) {
     const state = f.state();
     const row = state.containers["instance-7"];
     row.status = "Stopped";
-    row.devices = row.devices.map((value: string) => value.startsWith("root,size=") ? `root,size=${has}` : value);
+    row.devices = row.devices.filter((value: string) => !value.startsWith("root,size=")).concat(has ? [`root,size=${has}`] : []);
+    state.pool = {name: "orbit-instances", driver: shape === "btrfs" ? "btrfs" : "zfs", config: {}};
     Object.assign(f.container, {root_disk_size: intent, allowed_devices: {...devices, root: {...devices.root, size: intent}}});
     Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
     Deno.writeTextFileSync(`${f.folder}/calls`, "");
@@ -2840,7 +2844,7 @@ function rootSizeShapes(f: ReturnType<typeof fixture>) {
     }
     assert(result.ok, `${shape}: ${result.output}`);
     assertEquals([shape, f.state().containers["instance-7"].status, grew, size],
-      [shape, "Running", shape === "grows" ? 1 : 0, [`root,size=${shape === "keeps-larger" ? "80GiB" : intent}`]]);
+      [shape, "Running", shape === "grows" ? 1 : 0, shape === "btrfs" ? [] : [`root,size=${shape === "keeps-larger" ? "80GiB" : intent}`]]);
   }
 }
 
@@ -3221,7 +3225,7 @@ Deno.test({
     : "a changed shared folder restarts running normal and nested runtimes before clearing its marker",
   ignore: !hasAnsible,
   async fn() {
-    const f = await hostFixture({pool: "dir"});
+    const f = await hostFixture({pool: "btrfs"});
     try {
       const state = f.state();
       state.instances = [
