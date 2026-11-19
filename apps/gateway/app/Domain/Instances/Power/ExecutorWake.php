@@ -52,6 +52,12 @@ final readonly class ExecutorWake
 
     private const int JournalRereadSeconds = 10;
 
+    /** While a running order is open on its Node, its journal is read again this soon, so a held visitor sees a late result. */
+    private const int OpenRereadSeconds = 1;
+
+    /** After this long since publication, an order still open on its Node is read at the slower reconcile cadence. */
+    private const int PromptRereadWindowSeconds = 30;
+
     private const string NativeStart = 'executor_native_swamp_start';
 
     private const string RecoveryQueued = 'executor_recovery_queued_at';
@@ -258,7 +264,8 @@ final readonly class ExecutorWake
     {
         return DB::transaction(function () use ($operation, $expire): bool {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
-            if (! self::owns($operation) || $operation->status !== OperationStatus::Running || isset($operation->state[self::Recovery])) {
+            // A receipt that the journal read found after the Operation ended under its fence completes here too, exactly as on time.
+            if (! self::owns($operation) || ! ($operation->status === OperationStatus::Running || self::endedUnknown($operation)) || isset($operation->state[self::Recovery])) {
                 return $operation->status === OperationStatus::Succeeded;
             }
             $line = $operation->executor_result;
@@ -317,7 +324,7 @@ final readonly class ExecutorWake
     /**
      * R1/R2 for a signed order with no result by its deadline: the Node's journal decides (ADR 0266, "Reconcile by the journal"). A done
      * record is the result. No record after the order expired on the Node proves it never acted, so the fence lifts. While the order is
-     * still open there, the Operation keeps running and the next completion pass reads again. A Node that cannot be read ends the
+     * still open there, the Operation keeps running and its journal is read again within a second. A Node that cannot be read ends the
      * Operation interrupted under its fence (`executor.result_unknown`); the reconcile pass reads again until the journal answers.
      * False keeps the Operation as it is.
      */
@@ -326,7 +333,7 @@ final readonly class ExecutorWake
         $operation->refresh();
         $published = $operation->state[self::PublishedAt] ?? null;
         if (! ExecutorPowerIntent::managed($operation) || $operation->executor_result !== null || isset($operation->state[self::Recovery])
-            || ! is_int($published) || ! ($operation->status === OperationStatus::Running || self::unknown($operation))) {
+            || ! is_int($published) || ! ($operation->status === OperationStatus::Running || self::endedUnknown($operation))) {
             return true;
         }
         try {
@@ -340,6 +347,10 @@ final readonly class ExecutorWake
             return false;
         }
         if ($found === ExecutorJournalLookup::Open) {
+            if ($operation->status === OperationStatus::Running) {
+                $this->rereadSoon($operation, $published);
+            }
+
             return false;
         }
         if ($found === ExecutorJournalLookup::Absent) {
@@ -349,7 +360,7 @@ final readonly class ExecutorWake
                     return;
                 }
                 $operation->forceFill(['state' => [...($operation->state ?? []), ExecutorFence::Absent => true]])->save();
-                if (self::unknown($operation)) {
+                if (self::endedUnknown($operation)) {
                     $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
                         'error_code' => self::unacceptedCode($operation), 'lock_key' => null]);
                 }
@@ -366,8 +377,22 @@ final readonly class ExecutorWake
         return $operation->executor_result !== null;
     }
 
+    /** A read that answered `open` is no missing worker: the completion job runs again soon, and its lease moves past that run. */
+    private function rereadSoon(Operation $operation, int $publishedAtMs): void
+    {
+        $delay = now()->getTimestampMs() - $publishedAtMs < self::PromptRereadWindowSeconds * 1000 ? self::OpenRereadSeconds : self::JournalRereadSeconds;
+        DB::transaction(static function () use ($operation, $delay): void {
+            $operation->refresh();
+            if ($operation->status === OperationStatus::Running) {
+                $operation->forceFill(['state' => [...($operation->state ?? []), self::CompletionState => 'queued',
+                    self::CompletionState.'_until' => now()->getTimestamp() + $delay + self::HandoffLeaseSeconds]])->save();
+            }
+        });
+        Bus::dispatch((new CompleteExecutorWake($operation->id))->delay($delay));
+    }
+
     /** An Operation that ended under its fence because no result was known (ExecutorFence::settle). */
-    private static function unknown(Operation $operation): bool
+    public static function endedUnknown(Operation $operation): bool
     {
         return $operation->status === OperationStatus::Interrupted && $operation->lock_key !== null && $operation->error_code === 'executor.result_unknown';
     }
@@ -382,7 +407,7 @@ final readonly class ExecutorWake
     {
         return Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
             ->where('state->'.self::State, true)->where('status', OperationStatus::Interrupted)->where('error_code', 'executor.result_unknown')
-            ->whereNotNull('lock_key')->whereNull('executor_result')->whereNotNull('state->'.self::PublishedAt)
+            ->whereNotNull('lock_key')->whereNotNull('state->'.self::PublishedAt)
             ->where(fn ($query) => $query->whereNull('state->'.self::JournalReadAt)
                 ->orWhere('state->'.self::JournalReadAt, '<=', now()->getTimestamp() - self::JournalRereadSeconds));
     }
@@ -394,8 +419,10 @@ final readonly class ExecutorWake
             return false;
         }
         $operation->forceFill(['state' => [...($operation->state ?? []), self::JournalReadAt => now()->getTimestamp()]])->save();
+        // Each read runs in its own job, so one unreachable Node cannot hold up other Operations or the wake hooks of this pass.
+        Bus::dispatch(new CompleteExecutorWake($operationId));
 
-        return $this->reconcile($operation);
+        return true;
     }
 
     private function recoverInSwamp(Operation $operation): void

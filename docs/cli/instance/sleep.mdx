@@ -68,4 +68,5 @@ The command uses [signed power routing](/reference/executor#signed-power-deliver
 | `executor.sign_failed` | The Gateway could not sign an order. Nothing was sent. |
 | `executor.publish_failed` | The Gateway could not send the signed order, and the Node's journal shows it never arrived. Nothing changed, and the Instance is free. |
 | `executor.not_accepted` | The Node's journal has no record of the signed order after it expired. The Node never acted, and the Instance is free. |
-| `executor.result_unknown` | No result arrived within 6 seconds, and the Gateway could not read the Node's journal. The Operation ends `interrupted`. The Instance stays locked, and the Gateway reads the journal again every 10 seconds until it settles the Operation. |
+| `executor.order_expired` | The signed order expired on the Node while it waited for another order on the same Instance. The Node never acted, and the Instance is free. |
+| `executor.result_unknown` | No result arrived within 6 seconds, and the Gateway could not read the Node's journal, or the journal cannot prove the order never arrived (an older executor, or an order older than 24 hours). The Operation ends `interrupted`. The Instance stays locked, and the Gateway reads the journal again every 10 seconds until it settles the Operation. |

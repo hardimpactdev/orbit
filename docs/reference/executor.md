@@ -262,13 +262,13 @@ Each order runs in its own task outside the observer's supervised tasks, because
 
 ## Journal and recovery
 
-The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. Before an action the executor writes an `open` record, and after it a `done` record. A repeat writes a `seen` record for its nonce.
+The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. When the executor accepts an order, before the order waits for its target lock, it writes a `seen` record for its nonce. Before the action it writes an `open` record, and after it a `done` record. An order that expired while it waited for the lock gets a `done` record with `executor.order_expired` and does not act. At start the executor creates the marker `journal.accepts` beside the journal; the Gateway reads it to know that a missing record proves the order never arrived.
 
 One writer thread appends. Each connection thread hands it a record and waits until the record is written, so the `open` record is on file before the action runs. No record waits for a disk sync: a separate syncer thread syncs the file once a second. The page cache survives an executor crash, and a Node reboot expires every order.
 
 The journal keeps only its live records: the nonces that have not expired, every order still open without a result, and the done records of the last 24 hours. The writer compacts the journal to these records every 10 minutes, or after 10,000 new records, while the executor runs. The syncer writes and syncs the compacted file. The writer then adds the records appended meanwhile and renames the file into place. Until that rename every record goes to the old journal, so a crash at any point leaves a complete journal.
 
-At start-up the executor reads the journal, keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
+At start-up the executor reads the journal and ends every order accepted without an `open` record with `executor.order_expired`: a crash ended its wait for the lock, so it never acted. It keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
 
 ## The relay command
 
@@ -359,10 +359,12 @@ Operation notices are saved with the change and relayed to `operations-prompt` a
 
 The deadline case covers a publish that threw, an order with no `accepted` line and a lost result. None of them proves what the Node did, so the Gateway reads the Node's executor journal for the order over SSH. The read is read-only and sends no order ([Reconcile by the journal](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#reconcile-by-the-journal)):
 
-- A `done` record decides like a receipt.
+- A `done` record decides like a receipt, through the same completion as a result on time, also after the Operation ended `interrupted`.
 - No record after the order expired on the Node fails the Operation with `executor.publish_failed` or `executor.not_accepted` and frees its lock.
-- An open record waits for the next pass.
-- A Node that cannot be read ends the Operation `interrupted` with `executor.result_unknown`. It keeps its lock, and the Gateway reads again every 10 s.
+- A `seen` or `open` record is read again after 1 s, and every 10 s after the first 30 s.
+- A Node that cannot be read ends the Operation `interrupted` with `executor.result_unknown`. It keeps its lock, and the Gateway queues a new read every 10 s.
+- A journal that cannot prove absence ends the same way. Its executor has no `journal.accepts` marker, or the order is older than 24 hours.
+- Each read is its own job with a 2 s connect timeout, so one unreachable Node delays no other Instance.
 
 A visitor's held request sees a failed Operation and gets the plain `503`.
 

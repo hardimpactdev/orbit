@@ -26,6 +26,7 @@ use App\Infrastructure\Executor\ExecutorReply;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\Operations\BroadcastOperationNotice;
@@ -61,23 +62,25 @@ function powerLine(ExecutorOrderBroadcast $event, array $line): void
 }
 
 /**
- * The Node's answer to the read-only journal lookup: its clock, then the journal lines for the order. Each call takes the next answer;
- * a null answer is an unreachable Node. Collects every remote command so a test can show that no order was sent.
+ * The Node's answer to the read-only journal lookup: its clock, whether its executor records an order when it accepts it, then the
+ * journal lines for the order. Each call takes the next answer; a null answer is an unreachable Node. Collects every remote command so
+ * a test can show that no order was sent.
  *
  * @param  list<list<array<string, mixed>>|null>  $answers
  * @return ArrayObject<int, list<string>>
  */
-function journalAnswers(array $answers, int $aheadMs = 60_000): ArrayObject
+function journalAnswers(array $answers, int $aheadMs = 60_000, bool $accepts = true): ArrayObject
 {
     $commands = new ArrayObject;
-    test()->mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function ($connection, RemoteCommand $command) use (&$answers, $commands, $aheadMs): CommandResult {
+    test()->mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use (&$answers, $commands, $aheadMs, $accepts): CommandResult {
+        expect($connection->connectTimeout)->toBeLessThanOrEqual(2);
         $commands->append($command->arguments);
         $records = array_shift($answers);
         if ($records === null) {
             return new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: No route to host', 3, false);
         }
 
-        return new CommandResult(0, implode("\n", [(string) (now()->getTimestampMs() + $aheadMs),
+        return new CommandResult(0, implode("\n", [(string) (now()->getTimestampMs() + $aheadMs), $accepts ? 'accepts' : 'legacy',
             ...array_map(static fn (array $record): string => json_encode($record, JSON_THROW_ON_ERROR), $records)])."\n", '', 3, false);
     });
 
@@ -92,6 +95,24 @@ function journalRecord(Operation $operation, string $action, string $record, ?ar
 {
     return ['record' => $record, 'nonce' => str_repeat('a', 32), 'operation' => (string) $operation->id, 'action' => $action,
         'target' => (string) $operation->target_id, ...($outcome === null ? ['expires_ms' => 1] : ['outcome' => $outcome, 'at_ms' => 1])];
+}
+
+/** Runs the journal read that the reconcile pass queued for the Operation, as its own job. */
+function runQueuedJournalRead(Operation $operation): void
+{
+    $job = Queue::pushed(CompleteExecutorWake::class, fn (CompleteExecutorWake $job): bool => $job->operationId === $operation->id && $job->delay === null)->last();
+    expect($job)->not->toBeNull();
+    $job->handle(app(ExecutorWake::class));
+}
+
+/** An Operation that ended under its fence when its Node could not be read, with a fresh Node clock for the next read. */
+function interruptedByUnreachableNode(Operation $operation): void
+{
+    test()->travel(7)->seconds();
+    journalAnswers([null]);
+    app(ExecutorWake::class)->completeHandoff($operation);
+    expect($operation->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->not->toBeNull();
+    test()->travel(10)->seconds();
 }
 
 /** @param ArrayObject<int, list<string>> $commands */
@@ -474,6 +495,7 @@ it('interrupts an accepted sleep under its fence while the Node is unreachable, 
 
     $this->travel(10)->seconds();
     expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+    runQueuedJournalRead($sleep);
     expect($sleep->refresh())->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull();
     expect($sleep->result)->toMatchArray(['sleep' => 'frozen', 'power_state' => 'stopped']);
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
@@ -495,6 +517,7 @@ it('frees an interrupted wake once the reachable journal shows the Node never ac
     expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(0);
     $this->travel(10)->seconds();
     app(ExecutorWake::class)->recoverPendingCompletions();
+    runQueuedJournalRead($wake);
     expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.not_accepted')->lock_key->toBeNull();
     expect($commands)->toHaveCount(2);
     onlyJournalReads($commands);
@@ -802,4 +825,137 @@ it('R1: takes a failed resume receipt code when the deploy wrapper failed too', 
     $file = ['executor' => ['status' => 'failed', 'code' => 'instance.container_frozen_unmanaged', 'action' => 'wake', 'target' => (string) $instance->id, 'operation' => (string) $deploy->id]];
     app(InstanceDeployProjection::class)->apply($deploy, runEnded($run, ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]]]));
     expect([$deploy->refresh()->executor_result['code'], $deploy->error_code])->toBe(['instance.container_frozen_unmanaged', 'instance.container_frozen_unmanaged']);
+});
+
+it('completes a receipt that the journal finds after an interruption exactly as an on-time receipt', function (string $action, array $outcome, OperationStatus $status, ?string $code, InstanceRuntimePowerState $power, bool $boot): void {
+    $instance = managedPowerFixture();
+    $instance->runtime()->update(['power_state' => $action === 'sleep' ? InstanceRuntimePowerState::Running : InstanceRuntimePowerState::Stopped]);
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => powerLine($event, ['status' => 'accepted']);
+    $operation = $action === 'sleep' ? app(InstanceSleep::class)->start($instance, 'cli', null) : app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+    interruptedByUnreachableNode($operation);
+
+    journalAnswers([[journalRecord($operation, $action, 'open'), journalRecord($operation, $action, 'done', $outcome)]]);
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+    runQueuedJournalRead($operation);
+
+    expect($operation->refresh())->status->toBe($status)->error_code->toBe($code)->lock_key->toBe($boot ? $operation->lock_key : null);
+    expect($operation->executor_result)->toMatchArray(['delivery' => 'journal']);
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe($power);
+    $boot ? Queue::assertPushed(StartAdmittedSwampRun::class) : Queue::assertNotPushed(StartAdmittedSwampRun::class);
+    expect($operation->state[ExecutorWake::Recovery] ?? false)->toBe($boot);
+})->with([
+    'a stopped container goes to the ordinary boot' => ['wake', ['status' => 'failed', 'code' => 'instance.container_stopped'],
+        OperationStatus::Queued, 'executor.result_unknown', InstanceRuntimePowerState::Stopped, true],
+    'an incomplete freeze unlocks and reports the container stopped' => ['sleep', ['status' => 'failed', 'code' => InstanceSleep::IncompleteFreeze],
+        OperationStatus::Failed, InstanceSleep::IncompleteFreeze, InstanceRuntimePowerState::Stopped, false],
+    'a wake whose web check failed fails' => ['wake', ['status' => 'failed', 'code' => 'instance.web_unready'],
+        OperationStatus::Failed, 'instance.web_unready', InstanceRuntimePowerState::Stopped, false],
+    'a wake that finished succeeds' => ['wake', ['status' => 'done'], OperationStatus::Succeeded, null, InstanceRuntimePowerState::Running, false],
+]);
+
+it('completes a late WebSocket receipt after an interruption through the same completion', function (): void {
+    $instance = managedPowerFixture();
+    $published = null;
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use (&$published): void {
+        $published = $event;
+        powerLine($event, ['status' => 'accepted']);
+    };
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+    interruptedByUnreachableNode($wake);
+
+    powerLine($published, ['status' => 'failed', 'code' => 'instance.web_unready', 'action' => 'wake', 'target' => (string) $instance->id,
+        'operation' => (string) $wake->id]);
+    expect($wake->refresh())->status->toBe(OperationStatus::Interrupted);
+    runQueuedJournalRead($wake);
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('instance.web_unready')->lock_key->toBeNull();
+});
+
+it('reads an open order again within a second instead of waiting out the handoff lease', function (): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    $this->travel(6)->seconds();
+    $commands = journalAnswers([[journalRecord($wake, 'wake', 'open')], [journalRecord($wake, 'wake', 'done', ['status' => 'done'])]]);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
+    expect($wake->refresh())->status->toBe(OperationStatus::Running);
+    $reread = Queue::pushed(CompleteExecutorWake::class, fn (CompleteExecutorWake $job): bool => $job->delay === 1)->sole();
+    expect($wake->state[ExecutorWake::CompletionState.'_until'])->toBe(now()->getTimestamp() + 1 + ExecutorWake::HandoffLeaseSeconds);
+
+    $this->travel(1)->seconds();
+    $reread->handle(app(ExecutorWake::class));
+    expect($wake->refresh())->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull();
+    expect($commands)->toHaveCount(2);
+});
+
+it('keeps an order fenced that was accepted and still waits on its Node past its expiry', function (): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    $this->travel(6)->seconds();
+    journalAnswers([[journalRecord($wake, 'wake', 'seen')]]);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Running)->lock_key->not->toBeNull();
+});
+
+it('fails an order that expired on its Node while it waited for the target, without acting', function (): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    $this->travel(6)->seconds();
+    journalAnswers([[journalRecord($wake, 'wake', 'seen'), journalRecord($wake, 'wake', 'done', ['status' => 'failed', 'code' => 'executor.order_expired'])]]);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.order_expired')->lock_key->toBeNull();
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+    Queue::assertNotPushed(StartAdmittedSwampRun::class);
+});
+
+it('keeps the fence when the journal cannot prove absence', function (bool $accepts, int $ageSeconds): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    $this->travel($ageSeconds)->seconds();
+    journalAnswers([[]], accepts: $accepts);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->not->toBeNull();
+})->with([
+    'an executor that does not record accepted orders' => [false, 6],
+    'an order older than the journal keeps its done records' => [true, 86_400],
+]);
+
+it('queues each journal read on its own, so an unreachable Node holds up no other recovery', function (): void {
+    $instance = managedPowerFixture();
+    $other = Instance::query()->create(['node_id' => $instance->node_id, 'project_id' => $instance->project_id, 'name' => 'other',
+        'checkout_path' => '/workspace/other', 'root' => 'public', 'status' => 'active', 'first_setup_pending' => false]);
+    app(InstanceContainer::class)->reserve($other, $instance->node)->update(['power_state' => 'stopped']);
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => powerLine($event, ['status' => 'accepted']);
+    $first = app(InstanceWake::class)->start($instance, 'cli', null);
+    $second = app(InstanceWake::class)->start($other, 'cli', null);
+    foreach (Queue::pushed(DispatchExecutorWake::class) as $job) {
+        $job->handle(app(ExecutorWake::class));
+    }
+    interruptedByUnreachableNode($first);
+    journalAnswers([null]);
+    app(ExecutorWake::class)->completeHandoff($second);
+    expect($second->refresh())->status->toBe(OperationStatus::Interrupted);
+    $this->travel(10)->seconds();
+
+    $commands = journalAnswers([]);
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(2);
+    expect($commands)->toHaveCount(0);
+    expect(Queue::pushed(CompleteExecutorWake::class, fn (CompleteExecutorWake $job): bool => $job->delay === null)->pluck('operationId')->unique()->sort()->values()->all())
+        ->toBe([$first->id, $second->id]);
 });

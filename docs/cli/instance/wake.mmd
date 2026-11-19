@@ -97,9 +97,11 @@ sequenceDiagram
       GW->>N: Read journal<br/>SSH · read-only · this order
       %%> - covers a publish that threw, no `accepted` line and a lost result; none proves what the Node did, so the lock never goes on silence
       %%> - the command prints the Node's clock and the journal lines for this Operation, action and target; it sends no order and cannot act
+      %%> - the executor records an order when it accepts it, before the target lock; an order that expired waiting ends `executor.order_expired` and never acts
+      %%> - a `seen` or `open` record without `done` reads again after 1 s; each read is its own job, so an unreachable Node delays no other Instance
       alt a done record
         Note over GW: Project it as the receipt<br/>delivery journal
-        %%> - R1: the record is the wake's outcome, success or failure, and the lock goes with it
+        %%> - R1: the record is the wake's outcome, success or failure, completed by the same code as an on-time receipt, also after an interruption (a stopped container still goes to the boot); the lock goes with it
       else no record, order expired on the Node
         %% path: not-accepted
         Note over GW: Fail, free the lock<br/>executor.not_accepted
