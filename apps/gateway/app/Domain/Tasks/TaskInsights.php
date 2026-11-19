@@ -100,7 +100,7 @@ final class TaskInsights
             ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
             ->orderBy('id')->toBase()->get(self::GroupColumns)
             ->map(static fn (object $group): array => [
-                'id' => self::number($group->id), 'project' => (string) ($codes[self::number($group->project_id)] ?? ''),
+                'id' => self::number($group->id), 'project' => ValidatedData::nullableString($codes[self::number($group->project_id)] ?? null) ?? '',
                 'lines' => self::number($group->lines_added) + self::number($group->lines_deleted),
                 ...array_map(self::time(...), ['ready_at' => $group->ready_at, 'started_at' => $group->started_at, 'settled_at' => $group->settled_at,
                     'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at]),
