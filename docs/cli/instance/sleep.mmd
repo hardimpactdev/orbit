@@ -62,7 +62,7 @@ sequenceDiagram
       %%> - More than 32 MiB of anonymous RAM after reclaim takes the same stop rule as Python for a plain container. Report `sleep: stopped`, `prepared_restore: skipped`, reason `stopped` and the residual counters. The CLI says the next wake boots without restoring memory.
     else no result by 6 s
       %% path: journal
-      GW->>N: Read the order's journal record<br/>SSH · read-only
+      GW->>N: Read journal<br/>SSH · read-only · this order
       %%> - covers a publish that threw, no `accepted` line and a lost result; none proves what the Node did, so the lock never goes on silence
       %%> - the command prints the Node's clock and the journal lines for this Operation, action and target; it sends no order and cannot act
       alt a done record

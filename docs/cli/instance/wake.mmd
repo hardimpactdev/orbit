@@ -94,7 +94,7 @@ sequenceDiagram
       end
     else no result by 6 s
       %% path: journal
-      GW->>N: Read the order's journal record<br/>SSH · read-only
+      GW->>N: Read journal<br/>SSH · read-only · this order
       %%> - covers a publish that threw, no `accepted` line and a lost result; none proves what the Node did, so the lock never goes on silence
       %%> - the command prints the Node's clock and the journal lines for this Operation, action and target; it sends no order and cannot act
       alt a done record
