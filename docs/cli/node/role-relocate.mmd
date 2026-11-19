@@ -88,7 +88,7 @@ sequenceDiagram
   %%> Order:
   %%> - the target serves before anything leaves the source; the source's sites are not published again
   opt role is ingress
-    SW->>N: Check the public certificates<br/>ssh exec: curl https
+    SW->>N: Check public certs<br/>ssh exec: curl https
     %%> What it does:
     %%> - the target asks itself for every public name over HTTPS and verifies the certificate with the system roots
     %%> Bounds:
