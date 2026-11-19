@@ -15,6 +15,7 @@ OLD = SUPPORT["OLD"]
 WRONG = SUPPORT["WRONG"]
 RIGHT = SUPPORT["RIGHT"]
 peer_block = SUPPORT["peer_block"]
+peer_task = SUPPORT["peer_task"]
 
 
 class WireGuardHubLanRulesTest(SUPPORT["HubLanHarness"]):
@@ -137,7 +138,13 @@ class NetworkPhaseWiringTest(unittest.TestCase):
                                                 'Move the tunnel to the new hub endpoint',
                                                 'Reconcile live peer state without copying its private key')]
         self.assertEqual(order, sorted(order))
-        self.assertIn('.next', block[names.index('Reconcile recorded peer files')]['ansible.builtin.copy']['dest'])
+        # The copy writes only the files that the one-read check names, from the same staged list.
+        staged = peer_task()['vars']
+        self.assertEqual(staged['peer_staged'], "{{ '.next' if hub_switch | bool else '' }}")
+        self.assertEqual([path for path, _, _ in staged['peer_files_wanted']],
+                         ['/etc/wireguard/orbit.conf{{ peer_staged }}', '/etc/wireguard/orbit.peers{{ peer_staged }}', '/etc/wireguard/orbit.dns-link'])
+        self.assertIn('peer_files_wanted', block[names.index('Reconcile recorded peer files')]['loop'])
+        self.assertLess(names.index('Check the recorded peer files'), names.index('Reconcile recorded peer files'))
         self.assertNotIn('slurp', yaml.safe_dump(block))
         self.assertEqual(block[names.index('Reconcile live peer state without copying its private key')]['when'], 'not hub_switch | bool')
         tasks = yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub-move.yml').read_text())

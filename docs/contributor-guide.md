@@ -209,7 +209,9 @@ Cover the SDK retry's default clock with one short test that uses real time. Inj
 
 The composition proof uses the real renderer at 50 ms with at least seven outer ticks, three inner phases, off-tick admission and resume, and proportionally scaled cadence bounds. A separate fast test pins the production interval to 300 ms. Terminal recordings keep the production interval. The proof for printing lines still observes five frames at 300 ms in each frame order.
 
-CLI and Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. Unsized Gateway tests have a two-second local limit and a five-second CI limit. The retained CI test tooling supports PHPUnit's standard `--default-time-limit=5` through Pest for a shared runner. An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
+Docs tests have a stock PHPUnit limit of two seconds per test, for every test size and without exceptions. CLI tests have five seconds, for every test size: on a hosted runner, two seconds cut tests whose cleanup waited on the disk. The limit exists to catch a test that hangs, not to measure speed. Unsized Gateway tests have a five-second limit. The retained CI test tooling supports PHPUnit's standard `--default-time-limit=5` through Pest for a shared runner.
+
+An over-limit test fails the suite. Investigate failures at the applicable limit rather than adding retries, sleeps, skips, or per-test budgets. There is no whole-suite or CI-step duration gate.
 
 A task check in a copy also runs on a shared host. So `bin/task-check` passes each Pest run the limit of its project's CI job, which it reads from `.github/workflows/ci.yml`.
 
@@ -239,9 +241,15 @@ GitHub CI runs Composer validation, changed-PHP syntax checks, selected Gateway 
 
 Required checks target five minutes for pull requests; the fast checks take about 2 minutes. Project checks are removed from CI for now; Gateway Pest is required when selected, and other changed behavior is tested locally. Keep Orbit TypeScript coverage in fast unit tests; do not add native workflow suites. Nick decides which checks return. Keep the remaining fast gates.
 
-The target: after the gate, Swamp merges the PR straight into `main` with a squash merge, using a Gateway-minted App token. The gate is Nick's approving review on the exact head in manual mode, or green CI plus a fresh self-review agent in automatic mode. There is no merge queue and no GitHub auto-merge. CI then runs on `main`; a red `main` is fixed forward and never released. The proof runs only on the PR head. Two PRs for the same command normally conflict, and the second rebases, which reruns CI and the proof.
+A pull request merges through the [merge queue](/reference/implementation-loop#merge-queue). After the gate, whoever opens the pull request queues it as `nckrtl`:
 
-The interim, until Swamp's merge step is built: whoever opens a pull request squash-merges it as `nckrtl`, with `gh pr merge <n> -R hardimpactdev/orbit --squash`, once CI is green on the head. A draft can hold back an already-built and proven change; it does not move implementation or proof after PR creation.
+```bash
+gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>
+```
+
+The SHA is the head that passed the gate; GitHub refuses a head that moved. GitHub queues the pull request when `Required checks` is green on the head, tests the commit that `main` will receive, and merges it when that run is green. Do not update the branch because `main` moved. A pull request whose queue run fails leaves the queue: fix it and run the command again.
+
+The gate is Nick's approving review on the exact head in manual mode, or green CI plus a fresh self-review agent in automatic mode. Main delivers the commit the queue tested; a red `main` is fixed forward and never released. The proof runs only on the PR head. A draft can hold back an already-built and proven change; it does not move implementation or proof after PR creation.
 
 Root `composer check` builds OpenAPI and the documentation outputs before running `bin/review-check`, so a task checkout checks artifacts from its current sources.
 

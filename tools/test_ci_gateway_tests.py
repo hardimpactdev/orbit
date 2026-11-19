@@ -13,7 +13,13 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / '.github/workflows/ci.yml').read_text()
-JOB = SOURCE.split('  gateway-tests:\n', 1)[1].split('\n  cli:\n', 1)[0]
+USES = '      - uses: ./.github/actions/gateway-test-dependencies\n'
+# The shards and the cache job on main share the setup steps of one action. The tests read a shard job with those
+# steps in place, at the indentation of a job step.
+ACTION = (ROOT / '.github/actions/gateway-test-dependencies/action.yml').read_text().split('  steps:\n', 1)[1]
+SHARD = SOURCE.split('  gateway-tests:\n', 1)[1].split('\n  gateway-test-caches:\n', 1)[0]
+JOB = SHARD.replace(USES, ''.join(f'  {line}' if line.strip() else line for line in ACTION.splitlines(keepends=True)))
+CACHES = SOURCE.split('  gateway-test-caches:\n', 1)[1].split('\n  cli:\n', 1)[0]
 
 
 class GatewayTestsPolicyTest(unittest.TestCase):
@@ -44,6 +50,20 @@ class GatewayTestsPolicyTest(unittest.TestCase):
         self.assertIn('if: always()\n        uses: actions/upload-artifact@', JOB)
         self.assertIn('name: gateway-tests-junit-${{ matrix.shard }}', JOB)
         self.assertIn('if-no-files-found: error', JOB)
+
+    def test_main_saves_the_caches_a_pull_request_reads_and_gates_nothing(self):
+        # A pull request reads the caches of its base branch only. Main runs no tests, so its own job saves them.
+        self.assertEqual(SHARD.count(USES), 1)
+        self.assertEqual(CACHES.count(USES), 1)
+        self.assertIn("    if: github.ref == 'refs/heads/main' && github.event_name == 'push'\n", CACHES)
+        self.assertLess(CACHES.index('uses: ./.github/actions/php'), CACHES.index(USES))
+        for text in ('needs:', 'vendor/bin/pest', 'bin/build-api', 'continue-on-error'):
+            self.assertNotIn(text, CACHES)
+        # Every cache of the suite is in the shared steps, so both jobs compute one key for each.
+        self.assertEqual(ACTION.count('uses: actions/cache@'), 5)
+        self.assertNotIn('actions/cache', SHARD)
+        self.assertNotIn('github.ref', ACTION)
+        self.assertNotIn('gateway-test-caches', SOURCE.split('\n  required:\n', 1)[1])
 
     def test_dev_dependencies_have_separate_input_keyed_caches_and_always_install(self):
         for project in ('gateway', 'cli'):
@@ -210,9 +230,9 @@ class GatewayRealClientsPolicyTest(unittest.TestCase):
         self.assertNotIn('continue-on-error', job)
         steps = job['steps']
         commands = '\n'.join(step.get('run', '') for step in steps)
-        for prerequisite in ('bin/ci-runner-prerequisites valkey-server', 'docker info',
-                             'docker pull postgres:18', 'docker pull mysql:8.4',
-                             'command -v valkey-server', 'command -v valkey-cli'):
+        # Valkey comes from the shared action, which tools/test_ci_runner_prerequisites.py binds.
+        self.assertIn({'uses': './.github/actions/valkey-server'}, steps)
+        for prerequisite in ('docker info', 'docker pull postgres:18', 'docker pull mysql:8.4'):
             self.assertIn(prerequisite, commands)
         install = next(i for i, step in enumerate(steps) if 'composer install ' in step.get('run', ''))
         test = next(step for step in steps if 'vendor/bin/pest ' in step.get('run', ''))

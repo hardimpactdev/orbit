@@ -417,7 +417,7 @@ The attest action is pinned by commit SHA, so its bundle format changes only whe
 
 #### Web build
 
-CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main delivery run verifies and republishes the artifact from a green PR run with the same tested Git tree; see [CI tree reuse](/reference/implementation-loop#reuse-a-green-pr-tree-on-main). PR artifacts alone cannot authorize release.
+CI uploads `apps/web` as `web-dist-<sha>` and keeps it for 14 days. Release admission selects the newest unexpired artifact for the exact commit from an [accepted CI run](#accepted-ci-runs). The artifact must have a SHA-256 digest and be no larger than 128 MiB. The main delivery run verifies and republishes the artifact of the green merge queue run on the same commit; see [main delivery](/reference/implementation-loop#deliver-the-queues-commit-on-main). A pull request or queue artifact alone cannot authorize release.
 
 The Swamp step downloads the artifact with the run's GitHub token, checks its digest and extracts it into a private staging directory. It accepts only regular files and directories with safe relative names. It refuses links, special files, absolute paths, `..`, more than 20,000 entries or more than 512 MiB of files. The build must have `index.html` at its root. The step gives Caddy access and moves the build into `web/releases/<id>` with one rename. A complete build is reused.
 
@@ -425,11 +425,11 @@ The activate child switches `web/current` together with the Gateway code, before
 
 A missing or expired artifact refuses admission with `gateway.release_web_build_missing`. An invalid artifact returns `gateway.release_web_build_invalid`. A deploy or a host rollback needs a valid artifact even when it can reuse a sealed release. A container rollback reuses old's installed web build.
 
-The main `Required checks` and `Gateway release inputs` checks depend on successful promotion of the PR build. Swamp-only changes use the same delivery path because the release also [loads Swamp](#load-swamp).
+The main `Required checks` and `Gateway release inputs` checks depend on successful promotion of the merge queue run's build. Only the main run reports `Gateway release inputs` on a commit. Swamp-only changes use the same delivery path because the release also [loads Swamp](#load-swamp).
 
 ##### Accepted CI runs
 
-The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`. There is no merge queue, so a red `main` commit is never released; `main` is fixed forward. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
+The run must be a run of `.github/workflows/ci.yml` in this repository: a `push` or a `workflow_dispatch` on `main`. A red `main` commit is never released; `main` is fixed forward. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
 
 ### Migrations and the snapshot
 
@@ -718,15 +718,27 @@ The job also runs daily at 03:05 Europe/Amsterdam when either fleet rollout or d
 
 Agent delivery uses `fleet.rollout` and checks the executable of the running service. Any required CLI publication happens through the same Operation. Orbit resolves any required CLI release before reserving the fleet visit and uses that pin for admission. Under the database writer lock, each pass confirms that its release still serves before it records or admits fleet work.
 
-Once delivery succeeds, `node.converge` applies only the roles with changed inputs. The next Node starts after the previous visit finishes. The Operation results show the checks. An unconfirmed delivery or converge reports `fleet.agent_delivery_failed` or `fleet.role_converge_failed` when the Operation supplied no more specific code. A verified release never creates another scheduler.
+A pass starts when the release is verified, or when the daily pass finds the phase settled, and records `started_at`. It visits each Node once, in order. Once delivery succeeds, `node.converge` applies only the roles with changed inputs. When that converge succeeds, the Node turns `current` and the next Node starts. A `current` Node stays `current` for the rest of the pass, even when Instance work changes its role inputs again. The next pass checks it again.
+
+A converge that succeeded after the pass started counts too, including one an operator ran by hand, for each role assignment it captured. A converge from before the pass, or of an assignment that was since recreated, does not count. Instance work can change a role's inputs while the converge waits, so the pass does not wait for the recorded digest to match.
+
+A failed role converge or a Node refused for its host inputs is marked `failed`, and the pass goes on to the next Node. The pass never retries that Node. The phase ends `failed`, and the next pass retries the Node. Only a failed delivery stops the pass. The Operation results show the checks. An unconfirmed delivery or converge reports `fleet.agent_delivery_failed` or `fleet.role_converge_failed` when the Operation supplied no more specific code. A verified release never creates another scheduler.
 
 The automatic converge can write the selected roles' software, files and services. For example, `app-dev` owns its shared Instance folders and the executor for its action families, and `swamp` owns its worker template and the Deno helper pin. A role needs convergence when its rendered inputs, shipped playbooks or their dependencies change. For an Instance host, this includes the shared folders, images, ID ranges and T3 drop-ins. For a CI runner, it includes the proof seed listener and the Node whose Incus certificate the runner trusts.
 
 Public render inputs determine whether a release needs a role converge. Private material is resolved at admission. Per-Operation values such as the Instance bridge admission timestamp do not affect the release digest.
 
-Automatic role convergence and conflicting Instance, Conn, Process and task work exclude one another at admission on a shared Node. An Instance transfer holds both its source and its destination, together with its other recorded participants. A converge receipt lists the T3 restarts deferred for open turns or activity it could not read. The Node stays pending and retries.
+Automatic role convergence and conflicting Instance, Conn, Process and task work exclude one another at admission on a shared Node. When open work refuses the automatic converge, the converge queues: new Instance and task work on that Node gets `operation.target_busy` until the converge is admitted, so it starts as soon as the current holders end. Only a holder's own continuation goes on: its child Operation, or an Operation whose input names the holder as its predecessor, such as the `instance.complete` that follows an `instance.create`. New work on a holder's target waits like any other new work.
 
-Before a verified release starts fleet work, Orbit preserves the previous host baseline for every eligible Node that has no baseline. It keeps that baseline through a deferral or superseding release. Host-wide inputs include the common and base-only recipe pins, kernel policy, and the WireGuard network tasks and their included tasks. A change to any of these inputs fails with `fleet.host_inputs_changed` before Orbit starts work on that Node. The release cannot become fleet current or start its nested-fleet refresh.
+An Instance transfer holds both its source and its destination, together with its other recorded participants. A converge receipt lists the T3 restarts deferred for open turns or activity it could not read. The Node stays pending and retries.
+
+Before a verified release starts fleet work, Orbit preserves the previous host baseline for every eligible Node that has no baseline. It keeps that baseline through a deferral or superseding release.
+
+Host inputs include the common and base-only recipe pins, kernel policy, and the WireGuard network tasks and their included tasks. The Gateway runtime, `gateway-runtime.yml` and `GatewayRuntimeFiles`, is a host input only of a Node with the `gateway` role, because only that Node applies it. A change to a Node's host inputs fails that Node with `fleet.host_inputs_changed` before Orbit starts work on it. The other Nodes go on. The release cannot become fleet current or start its nested-fleet refresh until that Node is converged.
+
+A per-Node host digest starts with `node:`. A bare digest is a baseline recorded before this classification, and it approved one release tree. The pass reads the host inputs of the recently verified releases by their commit from the Git objects of the Gateway checkout, so it needs no release checkout and works in the container release layout too. When the Node's own host inputs are the same in the approved tree and in this release, the pass records the Node's own digest and goes on; otherwise it holds the Node.
+
+A Node with the `gateway` role has the same host inputs the bare digest covered, so the pass compares the two digests directly and holds the Node when they differ. For any other Node, when a release tree cannot be read and no readable tree matches the baseline, nothing can prove a change. The pass then records the Node's current host inputs, goes on, and marks the Node's row `host_baseline: legacy_baseline_unreadable`. The Gateway log names the Node. This upgrade goes after one release.
 
 An approval recorded before the network task dependencies were included needs renewal because it cannot prove which child tasks the Node ran. Apply a reviewed host change or renew its approval with a successful `orbit node:converge <node>` without a base or role filter. The pass retries on the next daily pass or follows a newer verified release. Unreadable desired inputs fail with `fleet.inputs_unavailable`. An invalid assignment scope fails with `fleet.role_scope_invalid`.
 

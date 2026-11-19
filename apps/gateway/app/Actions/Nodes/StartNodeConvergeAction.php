@@ -52,7 +52,7 @@ final readonly class StartNodeConvergeAction
             if ($operation->wasRecentlyCreated) {
                 // The one write before the capture: the role that runs the Instance container branch on the Node, `app-dev` on a
                 // development Node or `ci-runner` on a CI-only Node, and `app-prod` for its release bridge, gets its Instance bridge here,
-                // never in the capture.
+                // never in the capture. A Node with neither releases an unused bridge.
                 app(InstanceHostIntent::class)->prepare($node, $selected);
                 $inputs = app(ReleaseNodeInputs::class);
                 $snapshot = app(NodeDesiredConvergeInput::class)->capture($node, $selected, ! $base && $roles === null, $operation, $release ? null : $hub, $release);
@@ -72,7 +72,7 @@ final readonly class StartNodeConvergeAction
                 }
                 $snapshot['release_inputs'] = [
                     'roles' => array_map(static fn (array $role): string => $role['digest'], $roleInputs),
-                    'host' => ! $release && ! $base && $roles === null ? $inputs->host() : null,
+                    'host' => ! $release && ! $base && $roles === null ? $inputs->host(node: $node) : null,
                 ];
                 $snapshot['intent'] = app(NodeConvergePhaseDigest::class)->stamp($snapshot['intent'], $recorded);
                 // Dispatch is deferred until this reservation transaction commits.

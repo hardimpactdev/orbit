@@ -2195,7 +2195,8 @@ function demandMigrate(Instance $instance): Operation
             'native_timeout_restore' => ['cancel_requested' => false, 'native_failure' => false],
             'native_cancel_confirmed_at' => now()->subHour()->toISOString()]]);
 
-    return $operation;
+    // The stored row: an update can store a later `updated_at` than the model holds.
+    return $operation->refresh();
 }
 
 function demandMigrateHistory(Operation $operation, Closure $read, ?string $stdout = null, ?string $completedAt = null, string $nativeStatus = 'cancelled'): void
@@ -2260,7 +2261,9 @@ it('refuses the legacy input GET for a full-input migrate without any Swamp call
     $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';
     $operation->update(['status' => 'running', 'state' => ['swamp_run_id' => $run]]);
     $socket = migrationTerminalReader($operation, 'running');
-    $before = $operation->getAttributes();
+    // Read the stored row. The update above can store a later `updated_at` than the model holds: when the model's own
+    // clock read equals the old value, the attribute is not dirty and the query builder reads the clock again.
+    $before = $operation->refresh()->getAttributes();
 
     $this->withServerVariables(['REMOTE_ADDR' => $instance->node->wireguard_ip])
         ->getJson("/api/v1/direct-operations/{$operation->id}?run_id={$run}")

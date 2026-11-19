@@ -98,6 +98,7 @@ additionalFiles:
   - ansible/tasks/node-converge-hub-switch.yml
   - ansible/tasks/node-converge-hub-move.yml
   - ansible/tasks/node-hub-source.yml
+  - ansible/tasks/managed-files-check.yml
   - ansible/tasks/node-converge-address.yml
   - ansible/tasks/node-converge-handshake.yml
   - ansible/tasks/node-converge-hub-peers.yml
@@ -110,6 +111,7 @@ additionalFiles:
   - ansible/instance-container-destroy.yml
   - ansible/instance-container.yml
   - ansible/tasks/instance-container-phase.yml
+  - ansible/instance_root_disk.py
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/gateway-container-process.yml

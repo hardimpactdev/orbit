@@ -19,6 +19,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 use App\Infrastructure\MachineSoftware\ToolPin;
 use App\Models\Node;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\Process;
 use RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -34,6 +35,10 @@ final readonly class ReleaseNodeInputs
         'apps/gateway/app/Domain/Nodes/NodeNetworkConvergeInput.php',
         'swamp/ansible/tasks/node-kernel-policy.yml',
         'swamp/ansible/tasks/node-update-policy.yml',
+    ];
+
+    /** The Gateway runtime: node-role-runtime.yml applies it only on a Node with the `gateway` role, so only that Node's host input holds it. */
+    private const array GatewayHostFiles = [
         'apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php',
         'swamp/ansible/tasks/gateway-runtime.yml',
         'apps/gateway/app/Infrastructure/Engine/GatewayBus.php',
@@ -52,6 +57,7 @@ final readonly class ReleaseNodeInputs
         'swamp/workflows/workflow-operation-node-converge-direct.yaml',
         'swamp/extensions/behaviors/operations/ansible-input/write.ts',
         'swamp/extensions/behaviors/operations/ansible-input/converge_input.ts',
+        'swamp/extensions/behaviors/operations/ansible-input/phase_code.ts',
         'swamp/extensions/behaviors/operations/ansible-input/converge_result.ts',
         'swamp/ansible/build_vars.py',
         'swamp/ansible/operation-node-converge.yml',
@@ -65,6 +71,23 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/tasks/artifact-fetch.yml',
         'swamp/ansible/library/orbit_artifact.py',
         'swamp/ansible/transport-exit-codes.json',
+    ];
+
+    /**
+     * production-release-host.yml, the files it installs from the Ansible tree, and the role files beside that tree which a converge
+     * stages: `roleSiblings` in swamp/extensions/behaviors/operations/ansible-input/converge_input.ts.
+     */
+    public const array ProductionReleaseHostFiles = [
+        'swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts',
+        'swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts',
+        'swamp/scripts/production-release-phase',
+        'swamp/scripts/release-container.py',
+        'swamp/ansible/tasks/production-release-host.yml',
+        'swamp/ansible/files/production-release-host.py',
+        'swamp/ansible/files/instance-release-*',
+        'swamp/ansible/files/instance-control-*',
+        'swamp/ansible/files/instance-legacy-schedule.py',
+        'swamp/ansible/module_utils/orbit_route_withdraw.py',
     ];
 
     /** Shipped assets consumed by the shared Instance-host branch on app-dev and CI-only Nodes. */
@@ -96,7 +119,44 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/files/instance-container-power.py',
     ];
 
-    public function host(?string $root = null): string
+    /** The host inputs that act on the Node. Without a Node, those of every Node without the `gateway` role. */
+    public function host(?string $root = null, ?Node $node = null): string
+    {
+        return self::NodeScope.$this->hostDigest($root, $node !== null && $this->coversLegacy($node) ? self::GatewayHostFiles : []);
+    }
+
+    /** Whether the Node's host inputs are the same files the legacy digest covered: then that digest is the Node's own. */
+    public function coversLegacy(Node $node): bool
+    {
+        return $node->roles()->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active)->exists();
+    }
+
+    /** Marks a host digest classified by Node; a bare digest is an approval recorded before. Drop after one release. */
+    public const string NodeScope = 'node:';
+
+    /** The digest before host inputs were classified by Node: every Node counted the Gateway runtime. Drop after one release. */
+    public function legacyHost(?string $root = null): string
+    {
+        return $this->hostDigest($root, self::GatewayHostFiles);
+    }
+
+    /**
+     * Writes a commit's host input files from the Git objects of the repository into an empty folder, so legacyHost() and host()
+     * can read them. It needs no release checkout, so it works in the worktree and in the container release layout alike.
+     */
+    public function extractHostTree(string $repository, string $commit, string $folder): void
+    {
+        $archive = Process::run(['git', '-C', $repository, 'archive', '--format=tar', '-o', $folder.'/host.tar', $commit, '--',
+            self::Recipe, 'apps/gateway/app/Domain/Nodes', 'swamp/ansible/tasks']);
+        $extract = $archive->successful() ? Process::path($folder)->run(['tar', '-xf', 'host.tar']) : null;
+        @unlink($folder.'/host.tar');
+        if ($extract === null || ! $extract->successful()) {
+            throw new RuntimeException('Cannot read the host inputs of a release commit.');
+        }
+    }
+
+    /** @param list<string> $nodeFiles */
+    private function hostDigest(?string $root, array $nodeFiles): string
     {
         $root ??= dirname(base_path(), 2);
         $recipe = new RecipeLoader()->source($root.'/'.self::Recipe);
@@ -119,7 +179,7 @@ final readonly class ReleaseNodeInputs
         ksort($network);
 
         return self::digest([$raw['ubuntu'], $raw['architectures'], $raw['artifact_mirror'], $raw['git'],
-            $this->pins($recipe, $hostTools), $this->files($root, self::HostFiles), $network]);
+            $this->pins($recipe, $hostTools), $this->files($root, [...self::HostFiles, ...$nodeFiles]), $network]);
     }
 
     /** @param array<string, string> $files */
@@ -253,6 +313,7 @@ final readonly class ReleaseNodeInputs
     private function roleFiles(RoleName $role): array
     {
         return match ($role) {
+            RoleName::AppProd => self::ProductionReleaseHostFiles,
             RoleName::Swamp => ['swamp/ansible/tasks/node-converge-deno.yml', 'swamp/ansible/tasks/swamp-start-cache.yml',
                 'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml'],
             RoleName::WebSocket => ['swamp/ansible/tasks/websocket.yml'],
@@ -264,7 +325,7 @@ final readonly class ReleaseNodeInputs
                 'swamp/ansible/tasks/gateway-runtime.yml', 'swamp/ansible/tasks/gateway-nats.yml', 'swamp/ansible/tasks/gateway-dns.yml',
                 'swamp/ansible/tasks/private-dns-listener.yml', 'swamp/ansible/tasks/private-dns-withdraw.yml'],
             // These roles use the common converge play and the branches selected by their rendered resources and software.
-            RoleName::AppDev, RoleName::AppProd, RoleName::Vpn, RoleName::Router, RoleName::Ingress,
+            RoleName::AppDev, RoleName::Vpn, RoleName::Router, RoleName::Ingress,
             RoleName::Database, RoleName::Analytics => [],
         };
     }

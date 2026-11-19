@@ -378,7 +378,7 @@ Deno.test("the refresh hashes the listed inputs and the inner Gateway's base int
   assert(refresh.includes("fleet-converge-inputs.json"), "the refresh reads the list");
   assert(refresh.includes("orbit:node-converge-digest"), "the refresh reads the inner Gateway's base intent digests");
   assert(refresh.includes("fleet_swamp_ids: \"{{ fleet_ids[2:-1] }}\""), "the converge digest takes the listed files' IDs, not the whole of swamp");
-  assert(refresh.includes("'ls-tree', '-r', '-t', '--full-tree', 'HEAD', '--'] + fleet_host_roots"), "the host digest discovers the committed inputs in its own read");
+  assert(refresh.includes("fleet_host_helper: swamp/extensions/behaviors/operations/ansible-input/host_code.ts"), "the host digest runs the phase resolver's host code over the checkout");
   assert(refresh.includes("'converge_' ~ (role | replace('-', '_'))"), "the refresh keeps one converge digest per Node");
 });
 

@@ -27,8 +27,10 @@ export const Result = z.object({
     failed_phase: z.enum(phases).optional(), error_code: z.literal("operation.native_failed").optional(),
     // Each skippable phase's digest; the Gateway records them on the Node after a succeeded converge.
     digests: z.partialRecord(z.enum(skippable), z.string().regex(/^[0-9a-f]{64}$/)),
+    // The phases whose digest always moves because code they name above the Ansible bundle cannot be read, and why.
+    digests_moving: z.partialRecord(z.enum(skippable), z.string().min(1).max(500)).optional(),
 }).strict();
-const Digests = z.object({ digests: Result.shape.digests, unchanged: z.array(z.enum(skippable)) }).strict();
+const Digests = z.object({ digests: Result.shape.digests, unchanged: z.array(z.enum(skippable)), moving: Result.shape.digests_moving }).strict();
 export const ReportInput = z.object({ folder: z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/) }).strict();
 const Stats = z.object({ changed: z.number().int().nonnegative(), failures: z.number().int().nonnegative(), unreachable: z.number().int().nonnegative() });
 const Report = z.object({ stats: z.record(z.string(), Stats), plays: z.array(z.unknown()).min(1) });
@@ -148,6 +150,7 @@ export async function convergeResult(folder: string) {
     return Result.parse({ phases: summaries, changed: summaries.reduce((sum, phase) => sum + phase.changed, 0),
         elapsed_seconds: summaries.reduce((sum, phase) => sum + phase.elapsed_seconds, 0), tools, browser_trust: browserTrust, t3_restart_deferred: deferredRestarts, cleanup_complete: false,
         digests: plan?.digests ?? {},
+        ...(plan?.moving ? { digests_moving: plan.moving } : {}),
         ...(failure ? { failure } : {}),
         ...(failed ? { failed_phase: failed, error_code: "operation.native_failed" } : {}) });
 }

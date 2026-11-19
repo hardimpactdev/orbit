@@ -1,18 +1,31 @@
 ---
 - name: Protect the hub folder
   ansible.builtin.file: { path: /etc/wireguard/orbit-peers.d, state: directory, owner: root, group: root, mode: "0700" }
-- name: Reconcile the recorded hub configuration
-  ansible.builtin.copy: { dest: /etc/wireguard/orbit.conf, content: "{{ hub_plan.config }}", owner: root, group: root, mode: "0600" }
-- name: Reconcile recorded peer files
-  ansible.builtin.copy: { dest: "{{ item.file }}", content: "{{ item.content }}", owner: root, group: root, mode: "0600" }
-  loop: "{{ hub_plan.peers }}"
-  loop_control: { label: "{{ item.node_id }}" }
-- name: Prune only removed peers
-  ansible.builtin.import_tasks: node-converge-hub-prune.yml
-- name: Remove the task VM hub filter
-  ansible.builtin.import_tasks: node-converge-hub-filter-absent.yml
-- name: Ensure persistent hub forwarding
-  ansible.builtin.copy: { dest: /etc/sysctl.d/99-orbit-forwarding.conf, content: "net.ipv4.ip_forward = 1\n", owner: root, group: root, mode: "0644" }
+- name: Reconcile the hub files
+  vars: { hub_forwarding: "net.ipv4.ip_forward = 1\n" }
+  block:
+    # The hub runs twice in a peer's converge, so each file costs one module call only when it differs.
+    - name: Check the hub files
+      ansible.builtin.import_tasks: managed-files-check.yml
+      vars:
+        managed_files: >-
+          {{ [['/etc/wireguard/orbit.conf', hub_plan.config, '0600']]
+             + hub_plan.peers | map(attribute='file') | zip(hub_plan.peers | map(attribute='content'), ['0600'] * (hub_plan.peers | length)) | list
+             + [['/etc/sysctl.d/99-orbit-forwarding.conf', hub_forwarding, '0644']] }}
+    - name: Reconcile the recorded hub configuration
+      when: "'/etc/wireguard/orbit.conf' in managed_files_repair"
+      ansible.builtin.copy: { dest: /etc/wireguard/orbit.conf, content: "{{ hub_plan.config }}", owner: root, group: root, mode: "0600" }
+    - name: Reconcile recorded peer files
+      ansible.builtin.copy: { dest: "{{ item.file }}", content: "{{ item.content }}", owner: root, group: root, mode: "0600" }
+      loop: "{{ hub_plan.peers | selectattr('file', 'in', managed_files_repair) | list }}"
+      loop_control: { label: "{{ item.node_id }}" }
+    - name: Prune only removed peers
+      ansible.builtin.import_tasks: node-converge-hub-prune.yml
+    - name: Remove the task VM hub filter
+      ansible.builtin.import_tasks: node-converge-hub-filter-absent.yml
+    - name: Ensure persistent hub forwarding
+      when: "'/etc/sysctl.d/99-orbit-forwarding.conf' in managed_files_repair"
+      ansible.builtin.copy: { dest: /etc/sysctl.d/99-orbit-forwarding.conf, content: "{{ hub_forwarding }}", owner: root, group: root, mode: "0644" }
 - name: Read live hub forwarding
   ansible.builtin.command: sysctl -n net.ipv4.ip_forward
   register: forwarding

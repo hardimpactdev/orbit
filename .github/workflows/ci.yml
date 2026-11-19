@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  # The merge queue's run is the one run on the tree that reaches main: it runs every selected check, fixtures included.
+  merge_group:
   push:
     branches: [main, 'task-*-handoff']
   workflow_dispatch:
@@ -126,91 +128,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gateway-tests-php"
           echo 'memory_limit=1G' > "$RUNNER_TEMP/gateway-tests-php/memory.ini"
           echo "PHP_INI_SCAN_DIR=${PHP_INI_SCAN_DIR:-}:$RUNNER_TEMP/gateway-tests-php" >> "$GITHUB_ENV"
-      - name: Set the firewall dependency cache directory
-        run: echo "DENO_DIR=$RUNNER_TEMP/gateway-tests-deno" >> "$GITHUB_ENV"
-      - name: Cache Gateway test dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: apps/gateway/vendor
-          key: gateway-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.json', 'apps/gateway/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
-      - name: Cache CLI test dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: apps/cli/vendor
-          key: cli-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.json', 'apps/cli/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
-      - name: Install Gateway and CLI dev dependencies
-        run: |
-          cp apps/gateway/.env.example apps/gateway/.env
-          composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
-          composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      - uses: ./.github/actions/gateway-test-dependencies
       - name: Build the test API contracts
         run: bin/build-api
-      - name: Cache pinned Deno download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/orbit-gateway-tests/deno
-          key: gateway-tests-deno-download-${{ runner.os }}-${{ runner.arch }}-2.9.8-${{ hashFiles('apps/gateway/resources/machine-software/recipe.json') }}
-      - name: Verify and extract the recipe Deno
-        run: |
-          python3 - <<'PYTHON'
-          import hashlib, json, os, subprocess, urllib.request, zipfile
-          from pathlib import Path
-          tool = json.loads(Path('apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['deno']
-          if tool['version'] != '2.9.8':
-              raise SystemExit('Update the Gateway test Deno pin with the recipe')
-          artifact = tool['artifacts']['amd64']
-          archive = Path.home() / '.cache/orbit-gateway-tests/deno/deno_2.9.8_linux_amd64.zip'
-          archive.parent.mkdir(parents=True, exist_ok=True)
-          if not archive.exists():
-              urllib.request.urlretrieve(artifact['url'], archive)
-          if hashlib.sha256(archive.read_bytes()).hexdigest() != artifact['sha256']:
-              raise SystemExit('Deno checksum mismatch')
-          destination = Path(os.environ['RUNNER_TEMP']) / 'gateway-tests-deno-bin'
-          with zipfile.ZipFile(archive) as release:
-              release.extract('deno', destination)
-          binary = destination / 'deno'
-          binary.chmod(0o755)
-          if subprocess.check_output([str(binary), '--version'], text=True).split()[:2] != ['deno', '2.9.8']:
-              raise SystemExit('Deno version mismatch')
-          with open(os.environ['GITHUB_PATH'], 'a') as output:
-              output.write(str(binary.parent) + '\n')
-          PYTHON
-      - name: Cache firewall Deno dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: gateway-tests-deno-${{ runner.os }}-${{ runner.arch }}-2.9.8-${{ hashFiles('swamp/deno.lock', 'swamp/extensions/behaviors/operations/firewall/**', 'swamp/extensions/behaviors/_lib/**') }}
-      - name: Warm firewall imports
-        working-directory: swamp
-        run: deno cache --no-lock extensions/behaviors/operations/firewall/firewall_test.ts
-      - name: Cache pinned Caddy download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/orbit-gateway-tests/caddy
-          key: gateway-tests-caddy-${{ runner.os }}-${{ runner.arch }}-2.11.7-${{ hashFiles('apps/gateway/resources/machine-software/recipe.json') }}
-      - name: Verify and extract the recipe Caddy
-        run: |
-          python3 - <<'PYTHON'
-          import hashlib, json, os, subprocess, urllib.request
-          from pathlib import Path
-          tool = json.loads(Path('apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['caddy']
-          if tool['version'] != '2.11.7':
-              raise SystemExit('Update the Gateway test Caddy pin with the recipe')
-          artifact = tool['artifacts']['amd64']
-          archive = Path.home() / '.cache/orbit-gateway-tests/caddy/caddy_2.11.7_linux_amd64.deb'
-          archive.parent.mkdir(parents=True, exist_ok=True)
-          if not archive.exists():
-              urllib.request.urlretrieve(artifact['url'], archive)
-          if hashlib.sha512(archive.read_bytes()).hexdigest() != artifact['sha512']:
-              raise SystemExit('Caddy checksum mismatch')
-          destination = Path(os.environ['RUNNER_TEMP']) / 'gateway-tests-caddy'
-          subprocess.run(['dpkg-deb', '-x', str(archive), str(destination)], check=True)
-          binary = destination / 'usr/bin/caddy'
-          if subprocess.check_output([str(binary), 'version'], text=True).split()[0] != 'v2.11.7':
-              raise SystemExit('Caddy version mismatch')
-          with open(os.environ['GITHUB_PATH'], 'a') as output:
-              output.write(str(binary.parent) + '\n')
-          PYTHON
       - name: Run one shard of the complete Gateway Pest suite
         working-directory: apps/gateway
         run: |
@@ -225,6 +145,24 @@ jobs:
           path: ${{ runner.temp }}/gateway-tests.xml
           if-no-files-found: error
           retention-days: 7
+
+  gateway-test-caches:
+    # A pull request reads the caches of its base branch. Main runs no tests, so this job saves them there:
+    # without it, every pull request's first run builds each cache again. It gates nothing.
+    name: Warm the Gateway test caches
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - uses: ./.github/actions/gateway-test-dependencies
+      - uses: ./.github/actions/valkey-server
 
   cli:
     name: CLI build
@@ -351,11 +289,9 @@ jobs:
           key: gateway-real-clients-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.json', 'apps/gateway/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
       - name: Install Gateway dev dependencies
         run: composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
+      - uses: ./.github/actions/valkey-server
       - name: Provision real database servers and clients
         run: |
-          bin/ci-runner-prerequisites valkey-server
-          command -v valkey-server
-          command -v valkey-cli
           docker info
           sudo -n docker info
           docker pull postgres:18
@@ -401,8 +337,6 @@ jobs:
 
   docs:
     name: Docs build
-    outputs:
-      body_sha256: ${{ steps.docs-body.outputs.sha256 }}
     permissions:
       contents: read
       pull-requests: read
@@ -435,38 +369,43 @@ jobs:
           composer docs-build
           composer docs-lint
       - name: Cache CLI test dependencies
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: apps/cli/vendor
           key: cli-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.json', 'apps/cli/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
       - name: Install CLI dev dependencies for the contract replay
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      # The merge queue run reads the body again: an acknowledgement removed after the pull request's own run does not merge.
       - name: Require documentation updates or visible PR acknowledgements
-        id: docs-body
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           DOCS_IMPACT_BASE: ${{ needs.changes.outputs.delivery_base || 'HEAD^1' }}
         run: |
           python3 - <<'PYTHON'
-          import json, os, subprocess
+          import json, os, re, subprocess
           from pathlib import Path
+          number = os.environ['PR_NUMBER']
+          if not number:
+              # A merge group holds one pull request, and its branch names it.
+              group = re.fullmatch(r'refs/heads/gh-readonly-queue/main/pr-([0-9]+)-[0-9a-f]{40}', os.environ['QUEUE_REF'])
+              if group is None:
+                  raise SystemExit('The merge group branch names no pull request.')
+              number = group[1]
           pr = json.loads(subprocess.check_output([
-              'gh', 'api', f"repos/{os.environ['GH_REPO']}/pulls/{os.environ['PR_NUMBER']}"
+              'gh', 'api', f"repos/{os.environ['GH_REPO']}/pulls/{number}"
           ], text=True, timeout=30))
-          if pr['head']['sha'] != os.environ['PR_HEAD']:
+          if os.environ['PR_HEAD'] and pr['head']['sha'] != os.environ['PR_HEAD']:
               raise SystemExit('PR head moved; use the CI run of the new head.')
           Path(os.environ['RUNNER_TEMP'], 'docs-impact-pr-body.txt').write_text(pr['body'] or '')
           PYTHON
           bin/docs-impact --gate --base "$DOCS_IMPACT_BASE" --pr-body-file "$RUNNER_TEMP/docs-impact-pr-body.txt"
-          digest=$(sha256sum "$RUNNER_TEMP/docs-impact-pr-body.txt" | cut -d' ' -f1)
-          echo "Docs body SHA256: $digest"
-          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
       - name: Run the complete Docs Pest suite
         working-directory: apps/docs
         env:
@@ -518,10 +457,6 @@ jobs:
 
   web:
     name: Web build
-    outputs:
-      artifact_id: ${{ steps.web-artifact.outputs.artifact-id }}
-      artifact_digest: ${{ steps.web-artifact.outputs.artifact-digest }}
-      artifact_attempt: ${{ steps.web-attempt.outputs.attempt }}
     needs: changes
     if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['web']) != 'false' }}
     runs-on: ubuntu-26.04
@@ -577,15 +512,13 @@ jobs:
         run: bun run test:browser
       - name: Build
         run: bun run build && test -s dist/index.html && test -s dist/version.json
-      - name: Record web build attempt
-        id: web-attempt
-        run: echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      # Main delivery promotes this build: the queue tested the commit that main receives.
       - name: Publish web build
         id: web-artifact
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'merge_group'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: web-pr-${{ github.run_id }}-${{ github.run_attempt }}
+          name: web-queue-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/web/dist
           include-hidden-files: true
           if-no-files-found: error
@@ -640,6 +573,8 @@ jobs:
 
   ci-policy:
     name: CI policy
+    # Main runs no check again: the merge queue run required this job on the same commit.
+    if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
@@ -666,10 +601,10 @@ jobs:
     outputs:
       reuse: ${{ steps.reuse.outputs.reuse }}
       delivery_base: ${{ steps.plan.outputs.delivery_base }}
-      proof_base: ${{ steps.plan.outputs.proof_base }}
-      fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}
+      # A pull request run is the pre-check: it plans the fixtures and starts none. The merge queue run starts them.
+      fixture_shards: ${{ (steps.reuse.outputs.reuse == 'true' || github.event_name == 'pull_request') && '[]' || steps.units.outputs.fixture_shards }}
       fixture_capacity: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_capacity }}
-      self_hosted_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.self_hosted_shards }}
+      self_hosted_shards: ${{ (steps.reuse.outputs.reuse == 'true' || github.event_name == 'pull_request') && '[]' || steps.units.outputs.self_hosted_shards }}
       jobs: ${{ steps.plan.outputs.jobs }}
       swamp_checks: ${{ steps.plan.outputs.swamp_checks }}
       gateway_release: ${{ steps.plan.outputs.gateway_release }}
@@ -681,7 +616,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify a green PR tree for main
+      - name: Verify the merge queue run of this main commit
         id: reuse
         if: github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
         env:
@@ -710,7 +645,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
           MAIN: ${{ github.ref == 'refs/heads/main' }}
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
           GH_TOKEN: ${{ github.token }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
@@ -720,7 +655,7 @@ jobs:
           jobs = runpy.run_path('bin/ci-build-plan')['JOBS']
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('jobs=' + json.dumps(dict.fromkeys(jobs, False)) + '\n')
-              output.write('gateway_release=true\nproof_run=false\nswamp_checks={}\n')
+              output.write('proof_run=false\nswamp_checks={}\n')
           PYTHON
             exit 0
           fi
@@ -728,16 +663,11 @@ jobs:
           args=()
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
             args+=(--pull-request)
-            if [ "$PR_BASE_REF" = main ]; then
-              BASE="$(python3 bin/ci-tree-receipt baseline)"
-              if [ "$BASE" != "$(git rev-parse HEAD^1)" ]; then
-                echo "proof_base=$BASE" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              BASE="$(git rev-parse "$BASE")"
-            fi
-            echo "PR delivery target: $PR_BASE_REF"
-            echo "PR delivery baseline: $BASE"
+          elif [ "$GITHUB_EVENT_NAME" = merge_group ]; then
+            # The group's parent is the group ahead of it, or main. The baseline is the newest verified commit below it.
+            args+=(--merge-group)
+            BASE="$(python3 bin/ci-tree-receipt baseline)"
+            echo "Merge group baseline: $BASE"
             echo "delivery_base=$BASE" >> "$GITHUB_OUTPUT"
           fi
           python3 bin/ci-build-plan --base "$BASE" --head "$HEAD" "${args[@]}" --proof-cases --proof-selection-output proof-selection.json --swamp-base --github-output "$GITHUB_OUTPUT"
@@ -769,8 +699,9 @@ jobs:
     name: Fixtures (${{ matrix.shard.name }})
     needs: changes
     if: ${{ needs.changes.outputs.fixture_shards != '[]' }}
-    # Fork code stays on GitHub-hosted runners. All trusted shards share Sabre and Shark's CPU-bounded pool; both classes pack and run two workers.
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-26.04' || fromJSON('["self-hosted","hardimpact","orbit-shard"]') }}
+    # No pull request starts a shard, so a fork's code reaches the pool only after a maintainer queues it for merge.
+    # All shards share Sabre and Shark's CPU-bounded pool; both classes pack and run two workers.
+    runs-on: [self-hosted, hardimpact, orbit-shard]
     timeout-minutes: 4
     strategy:
       fail-fast: false
@@ -783,15 +714,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
-        if: runner.environment != 'self-hosted'
-        with:
-          deno-version: v2.9.8
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        if: runner.environment != 'self-hosted'
-        id: python
-        with:
-          python-version: '3.13'
       - name: Select fixture tools
         id: tools
         env:
@@ -810,13 +732,6 @@ jobs:
         if: steps.tools.outputs.php == 'true'
         with:
           coverage: none
-      # A venv runs only with the interpreter that built it, so the key covers that interpreter, as the venv name does.
-      - name: Cache pinned fixture tools and collections
-        if: runner.environment != 'self-hosted'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/orbit-shape-gate
-          key: fixture-tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.python.outputs.python-version }}-${{ steps.python.outputs.python-path }}-${{ hashFiles('swamp/ansible/shape-gate-requirements.txt', 'swamp/ansible/requirements.txt', 'swamp/ansible/requirements.yml') }}
       - name: Run fixture units
         env:
           UNITS: ${{ toJSON(matrix.shard.units) }}
@@ -830,11 +745,10 @@ jobs:
           if-no-files-found: error
 
   self-hosted-fixtures:
-    # Files marked self_hosted need tools that a hosted runner lacks. Only a pull request from a branch of this repository
-    # starts these jobs: a fork's code never reaches a self-hosted runner. Required checks names a fork's selection.
+    # Files marked self_hosted need tools that only Orbit's runners have. Only the merge queue run starts these jobs.
     name: Self-hosted fixtures (${{ matrix.shard.name }})
     needs: changes
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.changes.outputs.self_hosted_shards != '[]' }}
+    if: ${{ github.event_name == 'merge_group' && needs.changes.outputs.self_hosted_shards != '[]' }}
     runs-on: [self-hosted, hardimpact, orbit-shard]
     timeout-minutes: 4
     strategy:
@@ -956,7 +870,6 @@ jobs:
         id: report
         env:
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
-          PROOF_BASE: ${{ needs.changes.outputs.proof_base }}
           GH_TOKEN: ${{ github.token }}
           PROOF_CHECK_ELIGIBILITY: 'true'
           PROOF_RECEIPT: ${{ runner.temp }}/proof-receipt.json
@@ -986,12 +899,14 @@ jobs:
       tests: ${{ fromJSON(needs.changes.outputs.swamp_checks).tests }}
       base-ref: ${{ needs.changes.outputs.swamp_base_ref }}
     secrets:
-      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
-      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
+      SWAMP_API_KEY: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_API_KEY || '' }}
+      SWAMP_SIGNIN_TOKEN: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push' && startsWith(github.ref, 'refs/heads/task-') && endsWith(github.ref, '-handoff') && github.actor == 'orbit-nckrtl[bot]') && secrets.SWAMP_SIGNIN_TOKEN || '' }}
   gateway-release:
-    name: Gateway release inputs
+    # A pull request or merge queue run. The release reads `Gateway release inputs` on a commit, and the merge queue run
+    # shares its commit with the main run, so this job has another name: main-release-inputs reports that one.
+    name: Release inputs of this change
     needs: changes
-    if: needs.changes.outputs.gateway_release == 'true'
+    if: github.ref != 'refs/heads/main' && needs.changes.outputs.gateway_release == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
@@ -1018,10 +933,9 @@ jobs:
           # The execution switch selects the proof, as it starts the eligibility and proof jobs: off, no proof gates.
           PROOF_REQUIRED: ${{ vars.ORBIT_PROOF_ENABLED == 'true' && github.event_name == 'pull_request' && needs.changes.outputs.proof_run == 'true' }}
           CI_RUN_ID: ${{ github.run_id }}
-          PROOF_BASE: ${{ needs.changes.outputs.proof_base }}
           FORK_PROOF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-          # run: a branch of this repository runs the self-hosted shards; fork: a selection fails; none: no other event runs them.
-          SELF_HOSTED_FIXTURES: ${{ github.event_name != 'pull_request' && 'none' || github.event.pull_request.head.repo.full_name == github.repository && 'run' || 'fork' }}
+          # run: the merge queue run starts the self-hosted shards; none: no other event starts them.
+          SELF_HOSTED_FIXTURES: ${{ github.event_name == 'merge_group' && 'run' || 'none' }}
           PROOF_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -1040,40 +954,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 bin/ci-queue
 
-      - name: Record tested PR tree and release artifact
-        if: github.event_name == 'pull_request'
-        env:
-          DOCS_BODY_SHA256: ${{ needs.docs.outputs.body_sha256 }}
-          DELIVERY_BASE: ${{ needs.changes.outputs.delivery_base }}
-          WEB_ID: ${{ needs.web.outputs.artifact_id }}
-          WEB_DIGEST: ${{ needs.web.outputs.artifact_digest }}
-          WEB_ATTEMPT: ${{ needs.web.outputs.artifact_attempt }}
-        run: python3 bin/ci-tree-receipt record "$RUNNER_TEMP/receipt.json"
-      - name: Publish tested PR tree evidence
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ci-tree-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/receipt.json
-          if-no-files-found: error
-          retention-days: 14
-
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [ci-policy, changes, gateway-release]
+    needs: changes
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
-      - name: Require promoted PR evidence and main release inputs
+      - name: Require the merge queue run's evidence
         env:
-          POLICY: ${{ needs.ci-policy.result }}
           CHANGES: ${{ needs.changes.result }}
           REUSE: ${{ needs.changes.outputs.reuse }}
-          RELEASE: ${{ needs.gateway-release.result }}
         run: |
-          if [[ "$POLICY" != success || "$CHANGES" != success || "$REUSE" != true || "$RELEASE" != success ]]; then
-            echo "::error::Main delivery requires verified PR evidence, its promoted web build and a passing CI policy."
+          if [[ "$CHANGES" != success || "$REUSE" != true ]]; then
+            echo "::error::Main delivery requires the green merge queue run of this commit and its promoted web build."
             exit 1
           fi
 
@@ -1110,10 +1004,22 @@ jobs:
           SOURCE_RUN_ID: ${{ github.run_id }}
         run: python3 bin/ci-delivery verify --sha "$GITHUB_SHA"
 
+  main-release-inputs:
+    # Every main commit has release inputs: a Gateway release also loads Swamp. The Gateway and the CLI release read this
+    # name on the commit. It reports last, after the web build is published and main is green, so a release never
+    # starts from a main run that can still fail. Off main the job is skipped under another name.
+    name: ${{ github.ref == 'refs/heads/main' && 'Gateway release inputs' || 'Main release inputs' }}
+    needs: main-required
+    if: always() && needs.main-required.result == 'success' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - run: echo 'Main delivered this commit. It may release.'
+
   cli-release:
     name: Start the CLI release
-    needs: delivery
-    if: always() && needs.delivery.result == 'success' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    needs: main-release-inputs
+    if: always() && needs.main-release-inputs.result == 'success' && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:

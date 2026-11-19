@@ -15,6 +15,7 @@ cases = [
   "a roleless recorded VP Tool selects the locked JavaScript manager",
   "the final software check accepts a matching installed package without writes",
   "the final software check rejects a drifted installed package without writes",
+  "package holds: a clean read skips the module, an unheld package is repaired once, check mode only reports, an unknown one fails",
   "repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys",
   "role phases accept generated extra vars without shadowing each role's intent",
   "a node.converge of a CI Node reads the certificate of the default's Node, and its roles phase trusts that certificate",
@@ -36,7 +37,7 @@ cases = [
   "the executor plan check rejects an invalid plan with its error code without writes",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 87 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases
+cost = 102 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases, plus 15s for the package hold case (local 7s x 2.1)
 inputs = [
   "apps/gateway/resources/machine-software/recipe.json",
   "bin/swamp-shape-gate",
@@ -48,8 +49,10 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/swamp-worker-renewal.yml",
+  "swamp/ansible/tasks/node-converge-apt.yml",
   "swamp/ansible/tasks/node-converge-base.yml",
   "swamp/ansible/tasks/node-converge-role.yml",
+  "swamp/ansible/tasks/node-converge-software.yml",
   "swamp/ansible/tasks/node-executor.yml",
   "swamp/ansible/tasks/node-kernel-policy.yml",
   "swamp/ansible/tasks/node-role-runtime.yml",
@@ -58,7 +61,9 @@ inputs = [
   "swamp/ansible/tasks/proof-seed-listener.yml",
   "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
   "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
   "swamp/extensions/behaviors/operations/tools/constraints.ts",
   "swamp/extensions/behaviors/operations/tools/contract.ts",
   "swamp/extensions/behaviors/operations/tools/native.ts",
+  "swamp/tests/phase_code_fixture.ts",
 ]

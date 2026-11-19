@@ -32,6 +32,11 @@
   changed_when: hub_peer_forwarding.stdout is not search('Skipping')
 - name: Send public WireGuard packets from the endpoint address
   when: hub_source is not none
+  vars:
+    hub_source_files_wanted:
+      - ["{{ hub_source.script_path }}", "{{ hub_source.script }}", "0700"]
+      - ["{{ hub_source.unit_path }}", "{{ hub_source.unit }}", "0644"]
+      - ["{{ hub_source.networkd_path }}", "{{ hub_source.networkd }}", "0644"]
   block:
     - name: Read the hub's endpoint address
       ansible.builtin.command: { argv: [ip, "-4", -o, address, show, to, "{{ hub_source.address }}/32"] }
@@ -43,13 +48,13 @@
     - name: Create the source script and networkd folders
       ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
       loop: ["{{ hub_source.script_path | dirname }}", "{{ hub_source.networkd_path | dirname }}"]
+    - name: Check the source script and unit
+      ansible.builtin.import_tasks: managed-files-check.yml
+      vars: { managed_files: "{{ hub_source_files_wanted }}" }
     - name: Write the source script and unit
-      ansible.builtin.copy: { dest: "{{ item.dest }}", content: "{{ item.content }}", owner: root, group: root, mode: "{{ item.mode }}" }
-      loop:
-        - { dest: "{{ hub_source.script_path }}", content: "{{ hub_source.script }}", mode: "0700" }
-        - { dest: "{{ hub_source.unit_path }}", content: "{{ hub_source.unit }}", mode: "0644" }
-        - { dest: "{{ hub_source.networkd_path }}", content: "{{ hub_source.networkd }}", mode: "0644" }
-      loop_control: { label: "{{ item.dest }}" }
+      ansible.builtin.copy: { dest: "{{ item.0 }}", content: "{{ item.1 }}", owner: root, group: root, mode: "{{ item.2 }}" }
+      loop: "{{ hub_source_files_wanted | selectattr(0, 'in', managed_files_repair) | list }}"
+      loop_control: { label: "{{ item.0 }}" }
       register: hub_source_files
     - name: Read the hub's WireGuard rules and source
       ansible.builtin.shell:

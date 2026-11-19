@@ -152,6 +152,10 @@ VPN-only Nodes keep shared PHP-FPM disabled and inactive and preserve an existin
 
 Each release holds a `.manifest` of file digests. Before a publication installs a release, it runs `serve.php --self-test`, which checks `ext-sockets` and `ext-pcntl` and loads every class. When an installed file differs from the manifest, the publication installs the release again and restarts the listener on it.
 
+The Gateway machine's own listener task checks its release files in one read. A short Python check on the machine compares each file with the converge input: a regular file, not a link, with the expected SHA-256, mode `0644`, owner `root` and group `root`. It prints the indexes of the files that differ, and only those files go to the normal copy task.
+
+A clean run copies nothing and reports no change. When the check fails or prints anything other than a list of indexes, every file is copied, as before the check existed. A repaired file still counts as a change, so the listener restarts on it after the self-test, and the DNS answer and catalog checks run. Check mode runs the read and reports the files it would copy.
+
 `orbit-private-dns.socket` binds UDP and TCP port 53 on the VPN DNS address and passes both sockets to `orbit-private-dns.service`. A service restart never closes them. Queries that arrive during a restart wait in the socket for the next listener. On `SIGTERM` the listener finishes the query in hand and exits. The unit gives it 5 seconds.
 
 The listener limits each TCP read or write to two seconds. Its upstream client also limits each socket wait to two seconds. It reads a UDP answer as one datagram without waiting for the upstream socket to close. A missing or truncated UDP answer triggers a TCP attempt. When that attempt fails, the listener can still answer the next catalog query.

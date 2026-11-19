@@ -180,6 +180,12 @@ Moving source on a settings change would be a hidden, risky migration. So each c
 
 An existing apps folder gets the managed user, group and mode 0755, as a new one does, so a rerun repairs drift. A broad `chown` of the wrong path could damage unrelated data. So the Gateway refuses obviously wrong paths at admission, and `@swamp/cfgmgmt/directory` changes only the folder itself, never its contents.
 
+## Instance host opt-in
+
+The API-only boolean `instance_host` states that an `app-dev` Node provides the Incus pool `orbit-instances`, ZFS or `dir`. It defaults to false. Set it on a new Instance container host with `PATCH /api/v1/nodes/{node}` and the body `{"instance_host": true}` before its first converge, then converge the `app-dev` role.
+
+The update only records the setting and starts no run. An omitted member preserves its value. The Gateway also counts a Node as a host without it: the nested fleet's `app-dev` Node, a Node with an Instance runtime, or a Node whose agent reports the Instance bridge's health ([Nodes](/reference/development-containers#nodes)). So existing hosts need nothing. An `app-dev` Node with none of these, such as a services Node without Incus, gets no container branch.
+
 ## Nested fleet Instance hosting
 
 The API-only boolean `nested_fleet` records the Node hosting switch and defaults to false. An omitted member preserves its value, including a captured update that predates the member. A combined apps-path and switch update stores the switch only after storage preparation succeeds. An unrelated update preserves it. The update only records the switch: converge the `app-dev` role afterwards.

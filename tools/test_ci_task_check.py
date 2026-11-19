@@ -627,7 +627,7 @@ class CiLimitTest(unittest.TestCase):
                     ci = ['--default-time-limit=5']
                 elif project == 'apps/cli':
                     self.assertEqual(ci, [])
-                    ci = ['--default-time-limit=2']
+                    ci = ['--default-time-limit=5']
                 self.assertEqual([flag for flag in self.argv(project) if flag.startswith('--default-time-limit=')], ci)
 
     def test_the_limit_is_read_from_the_workflow(self):
@@ -655,7 +655,7 @@ class CiLimitTest(unittest.TestCase):
         for directory in ('packages/php-sdk', '.', 'swamp', 'apps/gateway-other'):
             with self.subTest(directory=directory):
                 self.assertEqual(self.deliverable_limit(directory), 'ci-time-limit: none\n')
-        self.assertEqual(self.deliverable_limit('apps/cli'), 'ci-time-limit: 2\n')
+        self.assertEqual(self.deliverable_limit('apps/cli'), 'ci-time-limit: 5\n')
 
     def test_a_directory_outside_the_checkout_is_refused_not_answered_with_no_limit(self):
         for directory in ('/srv/workspace/apps/gateway', '../apps/gateway', 'apps/../../x'):

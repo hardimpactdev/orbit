@@ -1,6 +1,11 @@
 import { assertEquals, assertMatch } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { fileURLToPath } from "node:url";
+import { codeTree } from "./phase_code_fixture.ts";
+
+/** The shipped code of every convergeInput call that does not test code. */
+const shipped = await codeTree();
+globalThis.addEventListener("unload", () => Deno.removeSync(shipped.tree, { recursive: true }));
 
 /** The digest fields a converge intent carries (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
 const digestFixture = { recorded_digests: [] };
@@ -27,7 +32,7 @@ Deno.test("generated converge vars preserve shell arguments, scalar strings and 
         const ssh = { identity_file: "/unused", target: { host: "localhost", port: 22, user: "unused", host_keys: ["ssh-ed25519 fixture"] } };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, roles: [], fixture }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, 1, "/unused", "/unused", []);
+        await convergeInput(folder, 1, "/unused", "/unused", shipped.code);
         await Deno.writeTextFile(`${folder}/roundtrip.json`, JSON.stringify([{
             hosts: "localhost", connection: "local", gather_facts: false,
             tasks: [{ name: "Read generated literal values", "ansible.builtin.copy": {
@@ -143,6 +148,62 @@ for (const matches of [true, false]) {
     ]));
 }
 
+// The hold tasks of both files run with a dpkg whose selections live in a file; the module and the read are real.
+Deno.test("package holds: a clean read skips the module, an unheld package is repaired once, check mode only reports, an unknown one fails", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const state = `${folder}/selections`;
+        await Deno.writeTextFile(`${folder}/dpkg`, `#!/bin/sh
+set -eu
+if [ "$1" = --set-selections ]; then
+  read -r name selection
+  grep -v "^$name\t" '${state}' > '${state}.new' || true
+  printf '%s\t%s\n' "$name" "$selection" >> '${state}.new'
+  mv '${state}.new' '${state}'
+elif [ "$#" -eq 1 ]; then
+  cat '${state}'
+elif ! grep "^$2\t" '${state}'; then
+  echo "dpkg: no packages found matching $2" >&2
+fi
+`);
+        await Deno.chmod(`${folder}/dpkg`, 0o755);
+        const apt = parse(await Deno.readTextFile(taskPath("node-converge-apt"))) as Array<Record<string, unknown>>;
+        const software = parse(await Deno.readTextFile(taskPath("node-converge-software"))) as Array<Record<string, unknown>>;
+        const holds = [
+            ...apt.filter((task) => ["Read which packages lack their hold", "Keep the file packages where they are"].includes(task.name as string)),
+            software.find((task) => task.name === "Hold every recipe package at its pin")!,
+        ];
+        const vars = { deb_tools: [{ name: "incus" }], ubuntu_tools: [{ name: "git", package: "git" }, { name: "php", package: "php8.4-fpm" }] };
+        const run = (extra: Record<string, unknown> = {}) => [{ name: "Converge the holds", environment: { PATH: `${folder}:${Deno.env.get("PATH")}` }, block: holds, ...extra }];
+        const held = "incus\thold\ngit\thold\nphp8.4-fpm\thold\nother\tinstall\n";
+        const loops = (output: string) => ["Keep the file packages where they are", "Hold every recipe package at its pin"]
+            .map((name) => output.split(`TASK [${name}]`)[1].split("TASK [")[0].match(/\(item=[^)]+\)/g) ?? []);
+
+        await Deno.writeTextFile(state, held);
+        await localPlay(vars, run(), true, (output) => assertEquals(loops(output), [[], []]));
+
+        const unheld = held.replace("git\thold", "git\tinstall");
+        await Deno.writeTextFile(state, unheld);
+        await localPlay(vars, run({ check_mode: true }), false, (output) => {
+            assertMatch(output, /changed: \[localhost\] => \(item=git\)/);
+            assertEquals(loops(output), [[], ["(item=git)"]]);
+        });
+        assertEquals(await Deno.readTextFile(state), unheld);
+        await localPlay(vars, run(), false, (output) => {
+            assertMatch(output, /changed=1\s/);
+            assertEquals(loops(output), [[], ["(item=git)"]]);
+        });
+        assertEquals((await Deno.readTextFile(state)).split("\n").sort(), held.split("\n").sort());
+        await localPlay(vars, run(), true, (output) => assertEquals(loops(output), [[], []]));
+
+        await localPlay({ ...vars, ubuntu_tools: [...vars.ubuntu_tools, { name: "absent", package: "absent" }] }, [
+            { name: "Record no failure yet", "ansible.builtin.set_fact": { failed_task: "" } },
+            { name: "Converge the holds", block: run(), rescue: [{ name: "Record the failed task", "ansible.builtin.set_fact": { failed_task: "{{ ansible_failed_task.name }}" } }] },
+            { name: "Require the unknown package to fail its hold", "ansible.builtin.assert": { that: "failed_task == 'Hold every recipe package at its pin'", quiet: true } },
+        ], false);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
 Deno.test("repository trust requires exactly one primary fingerprint, not a matching subkey or one of several keys", async () => {
     const tasks = parse(await Deno.readTextFile(taskPath("node-converge-tool-repository"))) as Array<Record<string, unknown>>;
     const repair = tasks.find((task) => task.name === "Repair a missing or different repository signing key")!;
@@ -179,7 +240,7 @@ Deno.test("role phases accept generated extra vars without shadowing each role's
         for (const role of roles) role.files[0].group = group;
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, 1, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused", []);
+        await convergeInput(folder, 1, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused", shipped.code);
         const production = await targetPlay();
         const tasks = (production.tasks as Array<Record<string, unknown>>).filter((task) => ["Reconcile selected recorded roles", "Check the selected role runtime"].includes(task.name as string));
         // Run the production includes and play vars through the same -e @vars.yml precedence as Swamp.
@@ -218,7 +279,7 @@ Deno.test("a node.converge of a CI Node reads the certificate of the default's N
             php: [], directories: [], services: [], files: [] };
         await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ ...digestFixture, node_id: 7, ssh, network: null, user: "unused", recipe: "{}", roles: [role] }));
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
-        await convergeInput(folder, 1, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused", []);
+        await convergeInput(folder, 1, fileURLToPath(new URL("../ansible/build_vars.py", import.meta.url)), "/unused", shipped.code);
         const inventory = JSON.parse(await Deno.readTextFile(`${folder}/inventory.json`));
         assertEquals(inventory.all.children, { proof_seed_sender: { hosts: { n9: {} } } });
         assertMatch(await Deno.readTextFile(`${folder}/known_hosts`), /^10\.44\.0\.9 ssh-ed25519 sender$/m);
@@ -417,7 +478,7 @@ Deno.test("the Tool helper runs with the pinned Deno of the Swamp Node, not with
         await Deno.writeTextFile(`${folder}/plans.json`, "{}");
         Deno.execPath = () => swamp;
         const { convergeInput } = await import("../extensions/behaviors/operations/ansible-input/converge_input.ts");
-        await convergeInput(folder, 1, "/unused", toolHelper, []);
+        await convergeInput(folder, 1, "/unused", toolHelper, shipped.code);
         const vars = parse(await Deno.readTextFile(`${folder}/vars.yml`)) as { converge_deno: string; converge_tool_helper: string };
         const install = parse(await Deno.readTextFile(taskPath("node-converge-deno"))) as Array<{ block?: Array<Record<string, unknown>> }>;
         const launcher = install.flatMap((task) => task.block ?? []).find((task) => task.name === "Publish Deno")!["ansible.builtin.file"] as { dest: string };

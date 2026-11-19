@@ -8,6 +8,8 @@
   gather_facts: false
   vars:
     container_host: { incus: "{{ release_host.incus }}" }
+    # The version check below needs all three pinned packages, so a host without the metapackage gets the set.
+    incus_install_package: incus
   tasks:
     - name: Install the pinned Incus packages
       ansible.builtin.include_tasks: tasks/incus-install.yml

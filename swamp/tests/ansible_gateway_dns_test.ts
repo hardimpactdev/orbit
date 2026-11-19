@@ -1,6 +1,7 @@
 /** The live Gateway DNS wrapper, listener and withdrawal run against an isolated service-manager boundary. */
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
+    driftedGatewayDns,
     existingGatewayDns,
     freshGatewayDnsCheck,
     missingGatewayDnsTool,
@@ -61,6 +62,47 @@ Deno.test({
             "TASK [Read Gateway resolver policy]",
         );
         assertStringIncludes(result.second, "skipping: [localhost]");
+    },
+});
+
+Deno.test({
+    name:
+        "drifted release files alone are rewritten, restart the listener and pass the DNS proof",
+    ignore: !hasAnsible,
+    async fn() {
+        const result = await driftedGatewayDns();
+        assertEquals(result.repairStatus, "succeeded", result.repair);
+        const write = result.repair.split(
+            "TASK [Write private DNS release files]",
+        )[1].split("TASK [")[0];
+        assertEquals(
+            write.match(/^changed: /gm)?.length,
+            4,
+            write,
+        );
+        // The copy loops over the drifted files alone; an unchanged item would mean every file was copied again.
+        assertEquals(write.includes("ok: [localhost] => (item="), false, write);
+        for (const path of result.drifted) {
+            assertStringIncludes(write, `(item=${path})`);
+        }
+        assertEquals(result.repaired, [true, true, true, true]);
+        assertEquals(
+            result.repairCalls.some((call) =>
+                call.name === "orbit-private-dns.service" &&
+                call.state === "restarted"
+            ),
+            true,
+        );
+        assertStringIncludes(
+            result.repair,
+            "TASK [Prove the local Gateway DNS answer before routing]",
+        );
+        assertEquals(result.againStatus, "succeeded", result.again);
+        assertStringIncludes(result.again, "changed=0");
+        assertEquals(
+            result.againCalls.some((call) => call.state === "restarted"),
+            false,
+        );
     },
 });
 

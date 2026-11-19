@@ -75,9 +75,42 @@
       retries: "{{ apt_retries }}"
       delay: "{{ apt_delay }}"
       changed_when: true
+# One dpkg read covers the holds of this file and of the software phase. Only a name whose sole selection line is exactly
+# `<name> hold` skips the module; an architecture-qualified, missing or unheld entry still goes to it, so a repair,
+# check mode and an unknown package keep the module's own result.
+- name: Read which packages lack their hold
+  vars:
+    package_holds_names: "{{ (deb_tools | map(attribute='name') | list) + (ubuntu_tools | map(attribute='package') | list) }}"
+  block:
+    - name: Read the package holds
+      check_mode: false
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -I
+          - -c
+          - |
+            import json, subprocess, sys
+            rows = {}
+            for line in subprocess.check_output(['dpkg', '--get-selections'], text=True).splitlines():
+                name, selection = line.split()
+                rows.setdefault(name.split(':')[0], []).append((name, selection))
+            print(json.dumps([name for name in json.load(sys.stdin) if rows.get(name.split(':')[0]) != [(name, 'hold')]]))
+        stdin: "{{ package_holds_names | to_json }}"
+      register: package_holds_read
+      changed_when: false
+      failed_when: false
+    # A failed read or any output other than a list of the asked package names sends every package to the module.
+    - name: Select the packages whose hold needs the module
+      ansible.builtin.set_fact:
+        package_holds_unheld: >-
+          {{ package_holds_read.stdout | from_json
+             if package_holds_read.rc == 0 and package_holds_read.stdout is regex('^\[("[a-z0-9][a-z0-9+.:-]*"(, "[a-z0-9][a-z0-9+.:-]*")*)?\]$')
+                and package_holds_read.stdout | from_json | reject('in', package_holds_names) | list | length == 0
+             else package_holds_names }}
 - name: Keep the file packages where they are
   ansible.builtin.dpkg_selections: { name: "{{ item.name }}", selection: hold }
-  loop: "{{ deb_tools }}"
+  loop: "{{ deb_tools | selectattr('name', 'in', package_holds_unheld) | list }}"
   loop_control: { label: "{{ item.name }}" }
 - name: Enable the services of the tools
   ansible.builtin.systemd: { name: "{{ item.unit }}", enabled: true }

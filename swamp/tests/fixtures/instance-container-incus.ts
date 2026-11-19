@@ -71,8 +71,8 @@ if (args[0] === "query") {
     if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
     console.log(JSON.stringify({ name: parts[4], type: "custom", config: state.volumes[parts[4]].config }));
   } else if (parts[0] === "storage-pools" && parts.length === 2) {
-    // The pool itself: a directory pool unless a test gives it, such as a ZFS pool with its dataset root.
-    console.log(JSON.stringify(state.pool ?? { name: parts[1], driver: "dir", config: {} }));
+    // The pool itself: a btrfs pool unless a test gives it, such as a ZFS pool with its dataset root.
+    console.log(JSON.stringify(state.pool ?? { name: parts[1], driver: "btrfs", config: {} }));
   } else if (parts[0] === "storage-pools") {
     console.log(JSON.stringify([...Object.keys(state.containers).map((name) => ({ name, type: "container" })),
       ...Object.keys(state.volumes ?? {}).map((name) => ({ name, type: "custom" }))]));
