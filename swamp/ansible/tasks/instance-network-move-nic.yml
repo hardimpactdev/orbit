@@ -14,4 +14,14 @@
           'security.acls.default.egress.action=reject', 'security.acls.default.ingress.action=reject'] }}
   loop: "{{ move_container.expanded_devices | dict2items }}"
   loop_control: { label: "{{ move_container.name }}/{{ item.key }}" }
+  register: move_nic
   changed_when: true
+  failed_when: false
+
+# A container listed above may be deleted by a removal before its turn: confirmed gone, it is already removed.
+- name: Fail an update of a container that still exists
+  when: move_failed | length > 0
+  ansible.builtin.include_tasks: instance-containers-gone.yml
+  vars:
+    move_failed: "{{ move_nic.results | default([]) | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list }}"
+    gone_failed: "{{ [{'project': move_container.project, 'name': move_container.name, 'stderr': (move_failed | first).stderr}] }}"

@@ -109,6 +109,8 @@ jobs:
             # The withdrawn Route picks the Node steps' slot (route-withdraw-node), one of 16 per Node. The restore stage lists the Routes
             # the Node served before: the withdrawn ones of a destroy, the prior one of a failed create.
             route_id: '${{ ("restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore && size(inputs.intent.route_mutations.restore.routes) > 0 ? string(inputs.intent.route_mutations.restore.routes[0].route_id) : "none") }}'
+            # Where the Node's refusal goes when its transaction refuses; the `refusal` step reads it into the result.
+            refusal_path: '${{ "/tmp/orbit-route-withdraw-" + run.id + "-" + string(self.part.node_id) + ".json" }}'
           php: '${{ self.part.serves_routes ? {"before": inputs.intent.route_mutations.artifacts.php[inputs.side == "restore" ? self.part.after.php : self.part.before.php], "after": inputs.intent.route_mutations.artifacts.php[inputs.side == "restore" ? self.part.before.php : self.part.after.php]} : {} }}'
           caddy: '${{ self.part.serves_routes ? {"before": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.after.caddy : self.part.before.caddy], "prepared": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.withdrawn.caddy : self.part.prepared.caddy], "withdrawn": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.prepared.caddy : self.part.withdrawn.caddy], "after": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.before.caddy : self.part.after.caddy]} : {} }}'
           dns: '${{ self.part.prepared.dns != null ? {"before": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? (self.part.after.dns != null ? self.part.after.dns : self.part.prepared.dns) : self.part.before.dns], "prepared": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? (self.part.withdrawn.dns != null ? self.part.withdrawn.dns : self.part.prepared.dns) : self.part.prepared.dns], "withdrawn": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? self.part.prepared.dns : (self.part.withdrawn.dns != null ? self.part.withdrawn.dns : self.part.prepared.dns)], "after": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? self.part.before.dns : (self.part.after.dns != null ? self.part.after.dns : self.part.prepared.dns)]} : {} }}'
@@ -191,6 +193,25 @@ jobs:
           withdraw_unsupported: '${{ ("prepare_certificates" in inputs.intent.route_mutations[inputs.side] ? size(inputs.intent.route_mutations[inputs.side].prepare_certificates) : 0) + size(inputs.intent.route_mutations[inputs.side].certificates) + size(inputs.intent.route_mutations[inputs.side].url_writes) }}'
         outcomes: ${{ steps }}
     allowFailure: true
+    # The refusal a Node transaction wrote (route-withdraw-node `failure`), the first one by Node, printed and removed.
+  - name: refusal
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - {step: withdraw_node, condition: {type: always}}
+    guard: ${{ !steps.exists(key, key.startsWith("withdraw_node") && steps[key].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("route-withdraw-refusal-" + ("restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore && size(inputs.intent.route_mutations.restore.routes) > 0 ? string(int(inputs.intent.route_mutations.restore.routes[0].route_id) % 16) : "none")).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: |
+          set -- "$ORBIT_REFUSALS"-*.json
+          if [ -f "$1" ]; then timeout 10 cat -- "$1"; fi
+          rm -f -- "$ORBIT_REFUSALS"-*.json
+        env: {ORBIT_REFUSALS: '${{ "/tmp/orbit-route-withdraw-" + run.id }}'}
+    allowFailure: true
   - name: result
     dependsOn:
     - {step: withdraw_lan, condition: {type: always}}
@@ -199,6 +220,7 @@ jobs:
     - {step: withdraw_retire_lan, condition: {type: always}}
     - {step: withdraw_retire_ingress, condition: {type: always}}
     - {step: forward, condition: {type: always}}
+    - {step: refusal, condition: {type: always}}
     task:
       type: behavior
       behaviorType: '@nckrtl/route-update-result'

@@ -85,7 +85,7 @@ Three cases skip work:
 - An Instance removal waits no DNS grace: the name goes away, so no client has a new target to move to.
 - An Instance removal applies each published Caddyfile and DNS state once: the Route withdrawal composes the captured states in order against what the Node holds and writes the result once.
 
-The Route child allows its own steps to fail, so destroy reads its ready result. A withdrawal that did not hold, such as a PHP pool file that changed on the Node, skips every later step and fails the Operation with `route.withdrawal_failed` at `Withdraw the Route`. The Instance, its source and its record stay; fix the Node and rerun. The end check `Check it is gone` always runs, so a source that stayed for any reason fails the run.
+The Route child allows its own steps to fail, so destroy reads its ready result. A withdrawal that did not hold, such as a PHP pool file that changed on the Node, skips every later step and fails the Operation with `route.withdrawal_failed` at `Withdraw the Route`. The Node transaction's own refusal code is the result's `withdrawal_error_code`, and its code and message are the failure's recorded stderr. The Instance, its source and its record stay; fix the Node and rerun. The end check `Check it is gone` always runs, so a source that stayed for any reason fails the run.
 
 Publication captures include the full site catalogs so unrelated Routes, PHP pools and DNS records remain present. Each native action has its own run and iteration identity. The Gateway does not supply an execution lock or recapture publication intent during the run.
 

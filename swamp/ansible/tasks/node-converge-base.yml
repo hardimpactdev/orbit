@@ -68,13 +68,15 @@
 - name: Load the changed role units # noqa: no-handler -- the agent phase must load its units even when later CLI work fails
   when: role_units_written is changed
   ansible.builtin.systemd: { daemon_reload: true }
+# Fleet delivery owns the CLI of an automatic converge: it keeps a newer or commit build that self-update selected, so the release
+# pass's converges never select or retire the CLI.
 - name: Require a valid recorded CLI release
-  when: [intent.cli != None, *manual_only]
+  when: [intent.cli != None, &cli_owned not (intent.release_roles_only | default(false) or intent.automatic | default(false))]
   ansible.builtin.assert:
     that: [intent.cli.plan_error == None]
     quiet: true
 - name: Reconcile the recorded CLI release
-  when: [intent.cli != None, *manual_only]
+  when: [intent.cli != None, *cli_owned]
   block:
     - name: Install the pinned CLI
       ansible.builtin.import_tasks: node-converge-replace.yml
@@ -98,6 +100,6 @@
         owner: root
         mode: "0600"
 - name: Retire the packaged CLI where it has no caller
-  when: [intent.cli == None, *manual_only]
+  when: [intent.cli == None, *cli_owned]
   ansible.builtin.import_tasks: node-converge-cli-absent.yml
   vars: { cli_remove: true }

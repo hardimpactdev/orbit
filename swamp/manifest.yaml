@@ -217,6 +217,7 @@ additionalFiles:
   - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-network-move.yml
   - ansible/tasks/instance-network-move-nic.yml
+  - ansible/tasks/instance-containers-gone.yml
   - ansible/tasks/instance-mail.yml
   - ansible/tasks/instance-mail-line.yml
   - ansible/instance-mail-update.yml

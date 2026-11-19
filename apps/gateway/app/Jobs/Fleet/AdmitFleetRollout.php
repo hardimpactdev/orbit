@@ -22,8 +22,11 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    /** While Operations run, the job releases itself for another short observation. */
-    public int $tries = 360;
+    /**
+     * While Operations run, the job releases itself for another short observation. A pass of full Node converges can poll for
+     * hours, so the job is bounded by time, not by attempts, until the daily pass takes over.
+     */
+    public const int RetryHours = 23;
 
     public int $timeout = 120;
 
@@ -35,6 +38,11 @@ final class AdmitFleetRollout implements ShouldBeUnique, ShouldQueue
     {
         $this->releaseId = $releaseId;
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
+    }
+
+    public function retryUntil(): \DateTimeInterface
+    {
+        return now()->addHours(self::RetryHours);
     }
 
     public function uniqueId(): string

@@ -634,3 +634,36 @@ for (const planError of [null, "executor.keys_invalid"]) {
         ]);
     });
 }
+
+for (const automatic of [true, false]) {
+    Deno.test(`${automatic ? "an automatic converge leaves a newer selected CLI to fleet delivery" : "a hand converge selects the recorded CLI release"}`, async () => {
+        const folder = await Deno.makeTempDir();
+        try {
+            // A CI caller whose self-update selected a newer release than the converge's recorded pin.
+            await Deno.writeTextFile(`${folder}/orbit-0.2163.0`, "newer\n");
+            await Deno.writeTextFile(`${folder}/orbit-0.2162.0`, "pinned\n");
+            await Deno.symlink(`${folder}/orbit-0.2163.0`, `${folder}/orbit`);
+            const base = parse(await Deno.readTextFile(taskPath("node-converge-base"))) as Array<Record<string, unknown>>;
+            const names = ["Require a valid recorded CLI release", "Reconcile the recorded CLI release", "Retire the packaged CLI where it has no caller"];
+            const tasks = structuredClone(base.filter((task) => names.includes(task.name as string)));
+            assertEquals(tasks.length, names.length);
+            const reconcile = tasks[1];
+            // Only the link selection runs here: the pinned file is already present, and the profile goes to the fixture folder.
+            reconcile.block = [{ name: "Select the pinned CLI release", "ansible.builtin.file": { src: `${folder}/orbit-{{ intent.cli.release.version }}`, dest: `${folder}/orbit`, state: "link", force: true } },
+                { name: "Reconcile the recorded CLI profile", "ansible.builtin.copy": { dest: `${folder}/config.json`, content: "{{ intent.cli.profile }}", mode: "0600" } }];
+            assertEquals((base.find((task) => task.name === "Reconcile the recorded CLI release")!.block as Array<Record<string, unknown>>).map((task) => task.name),
+                ["Install the pinned CLI", "Select the pinned CLI release", "Create the CLI profile folder", "Reconcile the recorded CLI profile"]);
+            const retire = tasks[2];
+            delete retire["ansible.builtin.import_tasks"];
+            delete retire.vars;
+            retire["ansible.builtin.file"] = { path: `${folder}/orbit`, state: "absent" };
+            const target = (await targetPlay()).tasks;
+            const check = JSON.stringify(target).match(/"when":"intent\.cli != None and not \(([^"]+)\)"/g) ?? [];
+            // The input and artifact checks of the target play follow the same ownership.
+            assertEquals(check.length, 2);
+            for (const when of check) assertMatch(when, /intent\.automatic \| default\(false\)/);
+            await localPlay({ intent: { automatic, cli: { plan_error: null, profile: "{}", release: { version: "0.2162.0", url: "https://fixtures.invalid/cli", sha256: "c".repeat(64) } } } }, tasks, automatic);
+            assertEquals(await Deno.realPath(`${folder}/orbit`), await Deno.realPath(`${folder}/orbit-${automatic ? "0.2163.0" : "0.2162.0"}`));
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}
