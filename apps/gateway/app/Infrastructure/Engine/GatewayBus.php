@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Engine;
 
+use App\Domain\Nodes\RoleName;
+use App\Models\Node;
+
 /**
  * The machine bus's server on the Gateway host (ADR 0271; docs/reference/gateway-engine.md#the-machine-bus): `nats-server` with
  * JetStream and one account, `ORBIT`. The Gateway joins as its nkey user. Every other connection goes to the Gateway's auth
- * callout, which admits only an active Node's WireGuard address. The configuration holds only public keys; the seed stays in
- * the Gateway's environment. Only a Gateway with the engine's key runs it.
+ * callout, which admits only an active Node's WireGuard address. The server listens on the Gateway's WireGuard address alone, so
+ * the bus is never reachable from the Internet, whatever the host's firewall. The configuration holds only public keys; the seed
+ * stays in the Gateway's environment. Only a Gateway with the engine's key and a WireGuard address runs it.
  */
 final readonly class GatewayBus
 {
@@ -21,17 +25,17 @@ final readonly class GatewayBus
     /** The release tarball's SHA-256, as nats-io publishes it in the release's SHA256SUMS. */
     public const string Sha256 = '67cb8e10bc6f0c4b47f75a728529a20953dbae2a4f9a4a52ae8517d65ae303ff';
 
-    /** The configuration, or null when the Gateway has no engine key. */
+    /** The configuration, or null when the Gateway has no engine key or no WireGuard address. */
     public static function config(): ?string
     {
-        if (! self::enabled()) {
+        $address = self::address();
+        if ($address === null) {
             return null;
         }
-        $port = config('orbit.engine.nats.port');
         $gateway = self::gatewayKey();
 
         return "# Managed by Orbit: the machine bus (ADR 0271). Public keys only; the seed stays in the Gateway's environment.\n"
-            .'listen: 0.0.0.0:'.(is_int($port) ? $port : 4222)."\nserver_name: orbit-gateway\nmax_payload: 1MB\n"
+            .'listen: '.$address.':'.self::port()."\nserver_name: orbit-gateway\nmax_payload: 1MB\n"
             ."jetstream { store_dir: /var/lib/nats, max_memory_store: 64MB, max_file_store: 4GB }\n"
             ."accounts {\n  ORBIT { jetstream: enabled, users: [ { nkey: {$gateway} } ] }\n}\n"
             ."# Every connection but the Gateway's asks the Gateway, which answers for an active Node's WireGuard address.\n"
@@ -43,6 +47,27 @@ final readonly class GatewayBus
     public static function enabled(): bool
     {
         return self::seed() !== '';
+    }
+
+    /**
+     * The bus's one address, the Gateway's WireGuard address, or null without an engine key or a WireGuard address. The server
+     * listens on it, the Gateway's own client connects to it, and every executor gets it.
+     */
+    public static function address(): ?string
+    {
+        if (! self::enabled()) {
+            return null;
+        }
+        $address = Node::query()->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::Gateway->value))->value('wireguard_ip');
+
+        return is_string($address) && $address !== '' ? $address : null;
+    }
+
+    public static function port(): int
+    {
+        $port = config('orbit.engine.nats.port');
+
+        return is_int($port) ? $port : 4222;
     }
 
     /** The account seed `ORBIT_NATS_SEED`, or '' when it is not set. */
