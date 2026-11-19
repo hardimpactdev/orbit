@@ -12,15 +12,19 @@ final class ShowTaskInsightsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'period' => ['sometimes', 'string', 'in:7d,30d'],
+            'period' => ['sometimes', 'string', 'in:24h,7d,30d'],
             'project_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }
 
-    /** @return 7|30 */
-    public function days(): int
+    /** @return '24h'|'7d'|'30d' */
+    public function period(): string
     {
-        return $this->validated('period') === '7d' ? 7 : 30;
+        return match ($this->validated('period')) {
+            '24h' => '24h',
+            '7d' => '7d',
+            default => '30d',
+        };
     }
 
     public function projectId(): ?int

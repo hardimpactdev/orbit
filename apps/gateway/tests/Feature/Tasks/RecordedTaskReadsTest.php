@@ -205,7 +205,7 @@ it('breaks insights down by the model of each task\'s first implementer thread, 
     $thread($ended('One implementer'), 'implementer', 'claude-sonnet-5-5');
     $ended('No thread');
 
-    $model = app(TaskInsights::class)->report(7, $project->id, CarbonImmutable::now())->breakdowns->model;
+    $model = app(TaskInsights::class)->report('7d', $project->id, CarbonImmutable::now())->breakdowns->model;
 
     // The task VM column never counts; a reviewer thread does not either.
     expect(array_map(static fn ($row): array => [$row->key, $row->label, $row->tasks], $model))

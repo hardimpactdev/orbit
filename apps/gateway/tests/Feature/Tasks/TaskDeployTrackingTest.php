@@ -195,7 +195,7 @@ it('reports delivery time from ready to deploy and the deploy wait from merge to
 
         return $task;
     };
-    $report = static fn () => app(TaskInsights::class)->report(7, $instance->project_id, CarbonImmutable::now());
+    $report = static fn () => app(TaskInsights::class)->report('7d', $instance->project_id, CarbonImmutable::now());
     $group('2026-11-18 08:00:00', '2026-11-18 09:00:00', null);
     expect($report()->current->deliveryTimeMs)->toBeNull()->and($report()->current->deployWaitMs)->toBeNull();
 
@@ -222,7 +222,7 @@ it('reads only the columns a report computes from, so twelve weeks of tasks fit 
         $queries[] = $query->sql;
     });
 
-    app(TaskInsights::class)->report(30, null, CarbonImmutable::now());
+    app(TaskInsights::class)->report('30d', null, CarbonImmutable::now());
 
     // A whole task or thread row carries briefs, summaries and errors; twelve weeks of them exhausted the 128M limit (gateway.unhandled).
     expect(array_values(array_filter($queries, static fn (string $sql): bool => str_contains($sql, '*') && ! str_contains($sql, 'count(*)'))))->toBe([]);

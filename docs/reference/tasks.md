@@ -1684,9 +1684,9 @@ Each card shows the Project code and the task id, such as `ORB-13`, its line cou
 
 ## Task insights
 
-The task board shows an insights strip above its lanes. It answers one question: does a change to the task pipeline make it better or worse? `GET /api/v1/task-insights` returns the numbers, with `period` set to `7d` or `30d` (default `30d`) and an optional `project_id`. Node access is the same as for `task:list`. The web app is the only client, so the route has no CLI command.
+The task board shows an insights strip above its lanes. It answers one question: does a change to the task pipeline make it better or worse? `GET /api/v1/task-insights` returns the numbers, with `period` set to `24h`, `7d` or `30d` (default `30d`) and an optional `project_id`. Node access is the same as for `task:list`. The web app is the only client, so the route has no CLI command.
 
-A period holds the tasks whose `ended_at` falls inside it. The previous period is the same length just before it, so each number has a value to compare with. Tasks without `ended_at` are not counted.
+A period holds the tasks whose `ended_at` falls inside it. `7d` and `30d` count whole UTC days and end at the end of today. `24h` counts whole UTC hours and ends at the end of the current hour, so `to` is the start of the current hour plus one hour and `from` is 24 hours before it. The previous period is the same length just before it, so each number has a value to compare with. Tasks without `ended_at` are not counted.
 
 A task **merged** when it has a `merged_at`. Every merge path writes it, so a pull request that Orbit merged and one that a person merged count the same. Every other ended task did not merge: it failed, was cancelled, or ended with its pull request closed.
 
@@ -1730,7 +1730,8 @@ The merge commit comes from the pull request that set `merged_at`: the watched p
 The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
-- `daily`: merged and not merged tasks for each day of the period.
+- `daily`: merged and not merged tasks for each day of a `7d` or `30d` period. It is empty for `24h`.
+- `hourly`: `hour`, the ISO 8601 start of the hour, with merged and not merged tasks for each of the 24 hours of a `24h` period, oldest first. It is empty for `7d` and `30d`.
 - `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery).
 - A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
 - A task's release is the last verified release that began before its `started_at`.

@@ -8,6 +8,7 @@ use App\Data\Tasks\TaskInsightsBreakdownRowData;
 use App\Data\Tasks\TaskInsightsBreakdownsData;
 use App\Data\Tasks\TaskInsightsData;
 use App\Data\Tasks\TaskInsightsDayData;
+use App\Data\Tasks\TaskInsightsHourData;
 use App\Data\Tasks\TaskInsightsSummaryData;
 use App\Data\Tasks\TaskInsightsWeekData;
 use App\Models\AgentThread;
@@ -44,11 +45,18 @@ final class TaskInsights
      */
     private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'lines_added', 'lines_deleted'];
 
-    /** @param  7|30  $days */
-    public function report(int $days, ?int $projectId, CarbonImmutable $now): TaskInsightsData
+    /** @param  '24h'|'7d'|'30d'  $period */
+    public function report(string $period, ?int $projectId, CarbonImmutable $now): TaskInsightsData
     {
         $tomorrow = $now->utc()->startOfDay()->addDay();
-        $from = $tomorrow->subDays($days);
+        // 24h counts whole UTC hours up to the end of the current one; 7d and 30d count whole UTC days.
+        $back = static fn (CarbonImmutable $end): CarbonImmutable => match ($period) {
+            '24h' => $end->subDay(),
+            '7d' => $end->subDays(7),
+            '30d' => $end->subDays(30),
+        };
+        $to = $period === '24h' ? $now->utc()->startOfHour()->addHour() : $tomorrow;
+        $from = $back($to);
         $trendFrom = $tomorrow->subWeeks(self::Weeks);
         $releases = GatewayRelease::query()->where('outcome', 'verified')->whereNotNull('sha')
             ->orderBy('created_at')->get(['sha', 'created_at']);
@@ -57,26 +65,32 @@ final class TaskInsights
             $rows,
             static fn (array $row): bool => $row['ended_at'] >= $start && $row['ended_at'] < $end,
         ));
-        $current = $in($from, $tomorrow);
+        $current = $in($from, $to);
 
         return new TaskInsightsData(
-            period: $days.'d',
+            period: $period,
             from: $from->toIso8601String(),
-            to: $tomorrow->toIso8601String(),
+            to: $to->toIso8601String(),
             current: $this->summary($current),
-            previous: $this->summary($in($from->subDays($days), $from)),
+            previous: $this->summary($in($back($from), $from)),
             weekly: array_map(function (int $week) use ($trendFrom, $in): TaskInsightsWeekData {
                 $start = $trendFrom->addWeeks($week);
                 $week = $in($start, $start->addWeek());
 
                 return new TaskInsightsWeekData($start->toDateString(), count($week), $this->mergedCount($week), $this->tokensPerMergedPr($week));
             }, range(0, self::Weeks - 1)),
-            daily: array_map(function (int $day) use ($from, $in): TaskInsightsDayData {
+            daily: $period === '24h' ? [] : array_map(function (int $day) use ($from, $in): TaskInsightsDayData {
                 $start = $from->addDays($day);
                 $ended = $in($start, $start->addDay());
 
                 return new TaskInsightsDayData($start->toDateString(), $this->mergedCount($ended), count($ended) - $this->mergedCount($ended));
-            }, range(0, $days - 1)),
+            }, range(0, (int) $from->diffInDays($to) - 1)),
+            hourly: $period === '24h' ? array_map(function (int $hour) use ($from, $in): TaskInsightsHourData {
+                $start = $from->addHours($hour);
+                $ended = $in($start, $start->addHour());
+
+                return new TaskInsightsHourData($start->toIso8601String(), $this->mergedCount($ended), count($ended) - $this->mergedCount($ended));
+            }, range(0, 23)) : [],
             breakdowns: new TaskInsightsBreakdownsData(
                 model: $this->breakdown($current, 'model'),
                 project: $this->breakdown($current, 'project'),

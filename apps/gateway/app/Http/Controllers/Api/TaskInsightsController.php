@@ -18,7 +18,7 @@ final class TaskInsightsController extends Controller
     public function show(ShowTaskInsightsRequest $request, ShowTaskInsightsAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($request->days(), $request->projectId())->toArray(),
+            'data' => $action->execute($request->period(), $request->projectId())->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

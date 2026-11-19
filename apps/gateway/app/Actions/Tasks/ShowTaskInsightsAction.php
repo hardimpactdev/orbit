@@ -12,11 +12,11 @@ final readonly class ShowTaskInsightsAction
 {
     public function __construct(private RequireTasksExtensionAction $requireExtension, private TaskInsights $insights) {}
 
-    /** @param  7|30  $days */
-    public function execute(int $days, ?int $projectId): TaskInsightsData
+    /** @param  '24h'|'7d'|'30d'  $period */
+    public function execute(string $period, ?int $projectId): TaskInsightsData
     {
         $this->requireExtension->execute();
 
-        return $this->insights->report($days, $projectId, CarbonImmutable::now());
+        return $this->insights->report($period, $projectId, CarbonImmutable::now());
     }
 }
