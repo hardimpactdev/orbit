@@ -336,9 +336,15 @@ final readonly class ContinueReleaseFleetAction
         $approved = self::legacyApproval($node);
         // A baseline recorded before host inputs were classified by Node approved a release tree. It stands when this Node's own
         // inputs are the same in that tree and in this release. When a release tree cannot be read, nothing can prove a change:
-        // the release record and the log name the Node. Drop after one release.
-        $known = $approved !== null && array_key_exists($approved, $legacy['trees']);
-        $accept = $known ? $inputs->host($legacy['trees'][$approved], $node) === $host : $approved !== null && $legacy['unreadable'];
+        // the release record and the log name the Node. A Node whose own inputs are all the legacy digest covered needs no tree:
+        // the digests compare directly, and a difference is a change. Drop after one release.
+        $own = $approved !== null && $inputs->coversLegacy($node);
+        $known = $own || ($approved !== null && array_key_exists($approved, $legacy['trees']));
+        $accept = match (true) {
+            $own => ReleaseNodeInputs::NodeScope.$approved === $host,
+            $known => $inputs->host($legacy['trees'][(string) $approved], $node) === $host,
+            default => $approved !== null && $legacy['unreadable'],
+        };
         if ($accept) {
             if (! $known) {
                 $row['host_baseline'] = 'legacy_baseline_unreadable';

@@ -119,8 +119,13 @@ final readonly class ReleaseNodeInputs
     /** The host inputs that act on the Node. Without a Node, those of every Node without the `gateway` role. */
     public function host(?string $root = null, ?Node $node = null): string
     {
-        return self::NodeScope.$this->hostDigest($root, $node !== null && $node->roles()->where('role', RoleName::Gateway)
-            ->where('status', LifecycleStatus::Active)->exists() ? self::GatewayHostFiles : []);
+        return self::NodeScope.$this->hostDigest($root, $node !== null && $this->coversLegacy($node) ? self::GatewayHostFiles : []);
+    }
+
+    /** Whether the Node's host inputs are the same files the legacy digest covered: then that digest is the Node's own. */
+    public function coversLegacy(Node $node): bool
+    {
+        return $node->roles()->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active)->exists();
     }
 
     /** Marks a host digest classified by Node; a bare digest is an approval recorded before. Drop after one release. */

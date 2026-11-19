@@ -410,6 +410,36 @@ it('records the current host inputs, with a visible reason, when the release tre
     expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed');
 });
 
+it('holds a Gateway Node whose own host inputs changed even when the approved release tree cannot be read, and lets the others go on', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $gateway->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned'])->saveQuietly();
+    app(GatewayServingHost::class)->remember($gateway);
+    // Every Node approved the previous release, whose Gateway runtime differs; the repository does not hold its commit.
+    $previous = $this->base.'/previous';
+    copyRolloutHostTree($previous);
+    file_put_contents($previous.'/swamp/ansible/tasks/gateway-runtime.yml', "\n# the previous release\n", FILE_APPEND);
+    $approved = app(ReleaseNodeInputs::class)->legacyHost($previous);
+    GatewayRelease::query()->create(['sha' => str_repeat('c', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 0]);
+    foreach ([...array_values($this->nodes), $gateway->id] as $id) {
+        Node::query()->findOrFail($id)->forceFill(['release_inputs' => ['host' => $approved]])->saveQuietly();
+    }
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    $rows = $release->refresh()->phases['fleet']['nodes'];
+    expect($rows[$gateway->id]['error_code'] ?? null)->toBe('fleet.host_inputs_changed')
+        ->and($rows[$gateway->id])->not->toHaveKey('host_baseline')
+        ->and($gateway->refresh()->release_inputs['host'])->toBe($approved);
+    foreach ($this->nodes as $id) {
+        // The other Nodes go on past their host check; delivery admission refuses next, as this fixture publishes no agent.
+        expect($rows[$id]['host_baseline'])->toBe('legacy_baseline_unreadable')
+            ->and($rows[$id]['error_code'] ?? null)->not->toBe('fleet.host_inputs_changed');
+    }
+});
+
 it('schedules app-prod when any file its production release host reads changes, the staged files beside the Ansible tree included', function (): void {
     $root = $this->base.'/tree';
     $repository = dirname(base_path(), 2);
