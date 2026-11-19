@@ -116,7 +116,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
         $data = match (true) {
             $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
                 'failure' => ['failed_step' => self::chartStep($failed->name), 'stderr_recorded' => false]],
-            $failed === null && $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
+            $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
