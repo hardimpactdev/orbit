@@ -21,6 +21,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\LanAddress;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Models\Node;
@@ -130,6 +131,8 @@ final readonly class NodeFirewallRuleCatalog
         return match ($role) {
             RoleName::Gateway => [
                 $this->rule('orbit:gateway-https', '443', 'any', 'orbit'),
+                // The machine bus: Node executors reach nats-server over WireGuard only, once the Gateway runs it (ADR 0271).
+                ...(GatewayBus::enabled() ? [$this->rule('orbit:gateway-nats', '4222', 'any', 'orbit')] : []),
             ],
             RoleName::CiRunner => [new UfwManagedRule(
                 new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),

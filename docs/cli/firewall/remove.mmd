@@ -1,18 +1,16 @@
 sequenceDiagram
-  %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 + 5 (process.stop shape, shared SSH identity). Same shape as firewall.allow.
-  %% Tightened: flow-tighten 2026-11-03, rule 22 (no script: one ufw argv per change over @swamp/ssh exec; a typed step plans positions, Lab #4334).
-  %% status: reviewed
+  %% Target design: ADR 0244 task, ADR 0241 allowlists, DECISIONS R1-R4 (rules, admission); ADR 0271 and docs/reference/gateway-engine.md (execution). Same shape as firewall.allow.
+  %% Engine flow: the kind runs on the Gateway state machine when ORBIT_ENGINE_KINDS lists it and the target Node's executor reported `ufw.ensure_rule`; otherwise it still runs the Swamp workflow operation-firewall-direct, which goes once every Node reports.
+  %% status: draft
   %% command: firewall:remove
   %% kind: firewall.remove
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GW icon=gateway pill=executes tone=blue
   %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
-  participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>workflow execution
-  participant N as Target Node<br/>reached over ssh
+  participant GW as Gateway<br/>state machine
+  participant N as Target Node<br/>agent executor
   CLI->>GW: firewall:remove PORT<br/>--node=NODE
   %%> Command:
   %%> - `orbit firewall:remove PORT --node=NODE`
@@ -31,90 +29,82 @@ sequenceDiagram
   %%> - exactly one rule on the target matches the port, source and protocol: none is `firewall.rule_not_found`, several is `firewall.rule_ambiguous` and lists each match
   %%> - no other firewall change runs on the target; the Gateway holds one lock per Node
   %%> Works out what to keep:
-  %%> - a ufw line that another rule, or a rule Orbit itself needs, also uses stays on the Node
+  %%> - a ufw line that another rule, or a rule Orbit itself needs, also uses stays on the Node (`retain`)
   %%> - only lines that belong to this rule alone are removed
+  Note over GW: Record step, start event<br/>ensure-0 · orbit.engine.start
   %%> Result:
-  %%> - the rule is recorded as removing
-  %%> - a task is recorded with the full intent
+  %%> - the rule is recorded as removing, with the full intent and the engine step `ensure-0`
+  %%> - the start event goes to JetStream; the state machine takes it from there
   %%> - nothing has happened on the Node yet
-  GW->>SW: Start run, full intent<br/>operation-firewall-direct
-  %%> What it does:
-  %%> - starts one Swamp run
-  %%> Inputs:
-  %%> - the ufw lines to remove, and the lines that must stay
-  %%> - the target's address and SSH host keys; the SSH identity comes from the `swamp` role
-  GW-->>CLI: 202 Accepted<br/>task ID
+  GW-->>CLI: 202 Accepted<br/>Operation ID
   %%> What you get:
-  %%> - the task ID, at once
+  %%> - the Operation ID, at once
   %%> Next:
-  %%> - the CLI follows the task with `operation:show`
-  SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
+  %%> - the CLI follows the Operation with `operation:show`
+  GW->>N: Send the signed order<br/>ufw.ensure_rule · NATS
+  %%> What it does:
+  %%> - signs one order for the target Node: operation `<id>:ensure-0`, target the Node itself, so its firewall changes run one at a time
+  %%> - publishes it to the Node's durable consumer on the ORDERS stream, over NATS on WireGuard
+  %%> Inputs:
+  %%> - `action`, `port`, `protocol`, `source`, `comment`, `ensure: absent`, `retain`
+  %%> Deadline:
+  %%> - a JetStream schedule wakes the step after 10 s; with no receipt by then, a new order goes out; after 120 s the step fails with `engine.step_budget_exceeded`
+  %%> - an order older than its 8 s expiry is refused as `expired`, and the Gateway sends a new one
+  Note over N: Read the rules<br/>ufw status numbered
   %%> How:
-  %%> - a Swamp worker reaches the target over SSH with the official `@swamp/ssh` behavior
+  %%> - the executor checks the order's signature, then reads ufw's numbered rows
   %%> - refuses an inactive firewall (`firewall.backend_inactive`) before any change
-  Note over SW: Plan the changes
+  Note over N: Plan the changes
   %%> What it does:
   %%> - turns the rule into one ufw delete command per protocol and address family
   %%> - skips a line that is already gone and a line that must stay
   %%> - plans no changes when no line is left to delete
-  %%> Why typed, not cfgmgmt:
-  %%> - `@swamp/cfgmgmt/firewall` cannot name a port range
+  %%> How:
+  %%> - the typed primitive `ufw.ensure_rule` in the executor (crate `firewall`, a port of the former Swamp planner)
   alt changes needed
-    SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
+    Note over N: Change the rules<br/>one ufw argv per change
     %%> What it does:
     %%> - deletes each line that belongs to this rule alone; a line that is already gone is skipped
     %%> - a line that a role also needs (`retain`) stays
-    %%> - runs the planned commands one at a time; nothing is copied to the Node
-    SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
+    %%> - runs the planned commands one at a time
+    Note over N: Read the result<br/>ufw status numbered
     %%> Why:
     %%> - the rule only counts as done when ufw shows it after the changes
   else already removed
-    Note over SW: Skipped — already removed<br/>firewall.rule_absent
+    Note over N: Skipped — already removed<br/>firewall.rule_absent
     %%> Result:
     %%> - the plan contains no changes
     %%> - there is no second read of ufw: the check runs on the first read, which nothing has changed since
   end
-  Note over SW: Check the rules
+  Note over N: Check the rules
   %%> What it does:
   %%> - checks every removed line is gone, and retained lines are still there
-  %%> - prints the public result; after changes, a line that ufw changed in between fails the check, and a rerun repairs it
-  %%> Why:
-  %%> - the rule only counts as removed when ufw shows it
+  %%> - after changes, a line that ufw changed in between fails the check, and a rerun repairs it
   alt end state is right
-    N-->>SW: end state confirmed
-    %%> Returns:
-    %%> - the check passed
-    SW-->>GW: Run succeeded<br/>terminal event
+    N-->>GW: Receipt: applied<br/>changes N
     %%> How the Gateway learns it:
-    %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
-    Note over GW: Delete the rule
+    %%> - the receipt goes to the RECEIPTS stream; the order is acknowledged only after JetStream stored it
     %%> Result:
-    %%> - the rule record is deleted from the Gateway
-    %%> - the task succeeds
-    %%> - if no changes were needed, reports `Skipped — already removed (firewall.rule_absent)`
-    %%> - the skip reason is part of the successful result in human and machine output, not an error
+    %%> - the rule record is deleted from the Gateway and the Operation succeeds, through the kind's projection
+    %%> - `changes: 0` reports `Skipped — already removed (firewall.rule_absent)`, part of the successful result, not an error
   else removing or checking fails
-    N--xSW: exit ≠ 0
+    N--xGW: Receipt: failed<br/>error_code
     %%> When:
-    %%> - ufw refuses the change, SSH fails, or the end state is wrong
-    SW--xGW: Run failed<br/>error_code, failed step
-    %%> The Gateway reads:
-    %%> - which step failed and its error code
-    Note over GW: Mark the rule failed
+    %%> - ufw refuses the change, or the end state is wrong (`firewall.verify_failed`)
     %%> Result:
-    %%> - the rule stays, marked failed, so you can see it
-    %%> - the task fails
+    %%> - the rule stays, marked failed with `failed_step: ensure-0`, so you can see it
+    %%> - the Operation fails
     %%> On the Node:
     %%> - lines removed before the failure stay removed; there is no rollback
     %%> - that is safe: the rule stays marked failed, and a rerun skips lines that are already gone
     %%> Retry:
-    %%> - run the same command again after fixing the cause; it is a new task
+    %%> - run the same command again after fixing the cause; it is a new Operation
   end
   loop every 2 s until terminal
-    CLI->>GW: operation:show TASK
+    CLI->>GW: operation:show OPERATION
     %%> What it does:
-    %%> - asks for the task's status every 2 seconds until it has ended
+    %%> - asks for the Operation's status every 2 seconds until it has ended
     GW-->>CLI: status + result
     %%> Returns:
-    %%> - the current status, and the result once the task has ended
+    %%> - the current status, and the result once the Operation has ended
   end
