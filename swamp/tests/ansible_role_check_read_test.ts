@@ -123,7 +123,8 @@ async function ciCheck(change: (state: Record<string, unknown>) => void = () => 
     try {
         const plans = {
             ci: {
-                pool: "orbit-ci", project: "orbit-ci", acl: "orbit-ci-egress", network: "orbit-ci-br",
+                pool: "orbit-ci", sourcePool: "orbit-instances", poolOwner: "user.orbit.ci-runner",
+                project: "orbit-ci", acl: "orbit-ci-egress", network: "orbit-ci-br",
                 projectConfig: { "features.profiles": "true", "features.networks": "false" },
                 networkConfig: { "ipv4.nat": "true" },
                 profile: { config: { "limits.cpu": "2" }, devices: {}, description: "Orbit CI runner" },
@@ -131,7 +132,8 @@ async function ciCheck(change: (state: Record<string, unknown>) => void = () => 
             },
         };
         const state: Record<string, unknown> = {
-            "/1.0/storage-pools": ["/1.0/storage-pools/orbit-ci"], "/1.0/projects": ["/1.0/projects/default", "/1.0/projects/orbit-ci"],
+            "/1.0/storage-pools": ["/1.0/storage-pools/orbit-ci"],
+            "/1.0/storage-pools/orbit-ci": { driver: "zfs", config: { "user.orbit.ci-runner": "true" } }, "/1.0/projects": ["/1.0/projects/default", "/1.0/projects/orbit-ci"],
             "/1.0/network-acls": ["/1.0/network-acls/orbit-ci-egress"], "/1.0/networks": ["/1.0/networks/orbit-ci-br"],
             "/1.0/profiles/default?project=orbit-ci": plans.ci.profile,
             "/1.0/network-acls/orbit-ci-egress": {
@@ -154,6 +156,8 @@ value = state[key]
 print(value if isinstance(value, str) else json.dumps(value))
 `);
         await Deno.chmod(`${folder}/bin/incus`, 0o755);
+        // The CI pool step runs files/ci-host-pool.py, which Ansible finds beside the playbook.
+        await Deno.symlink(fileURLToPath(new URL("../ansible/files", import.meta.url)), `${folder}/files`);
         await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
             hosts: "localhost", connection: "local", gather_facts: false, vars: { plans },
             tasks: [{ name: "Check CI", "ansible.builtin.import_tasks": `${tasks}ci.yml`, vars: { ci_check_only: true } }],
