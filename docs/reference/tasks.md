@@ -459,7 +459,7 @@ C1 is published once. The round publishes it only while no publish of C1 exists.
 
 ### Task lifecycle
 
-A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one subtask and a deliverable on every subtask, or, for a [task with no subtask](#a-task-with-no-subtask), at least one deliverable of its own. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
+A group starts in `backlog` or `todo`. Moving it to `todo` requires at least two subtasks and a deliverable on every subtask, or, for a [task with no subtask](#a-task-with-no-subtask), at least one deliverable of its own. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
 
 One group uses one task copy and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
 
@@ -504,7 +504,11 @@ Update changes a task's `title`, `brief`, or `status`. Title and brief change on
 
 For an external group, `task:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but starts no work. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `task:cancel` or `task:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
 
-A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable, or when it is a task with no subtask that has at least one deliverable.
+A task stands alone, or it has at least two subtasks; never one. The Gateway checks this when the task leaves `backlog`. A task moves to `todo`, by create or update, only when it is a task with no subtask that has at least one deliverable, or when it has at least two subtasks and every subtask has at least one deliverable. A task with exactly one subtask is refused with HTTP 422 `tasks.one_subtask`, and nothing changes: fold the subtask into the task, by giving the task its deliverables and no subtask. In `backlog` a task can still hold one subtask while it is prepared.
+
+The rule reads only the move out of `backlog`. A task with one subtask that left `backlog` before the rule keeps working until it ends, and every client still reads it. A [subtask can be cancelled](#cancel-a-subtask) in a running task, also when one subtask is left.
+
+Orbit's own tasks have no subtask: [project maintenance](/reference/projects#maintenance), each copy of a [proof run](/cli/proof/run), each warm proof copy, and a Horizon New Dawn plan with one task, such as its parity baseline.
 
 ### A task with no subtask
 
@@ -647,6 +651,7 @@ The task and subtask operations return these errors.
 | `tasks.orchestration_unsupported` | 422 | A subtask would declare a topology |
 | `tasks.status_move_refused` | 422 | An external group or subtask status update attempts a move outside the allowed transitions |
 | `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks or its own deliverables |
+| `tasks.one_subtask` | 422 | A move to `todo`, by create or update, for a task with exactly one subtask. Fold the subtask into the task |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
 | `tasks.own_work` | 409 | Subtask create in a started [task with no subtask](#a-task-with-no-subtask), or in one in `backlog` whose work holds deliverables, comments or questions |
@@ -1023,7 +1028,7 @@ A driver reads a turn from its result alone; the whole transcript stays in the a
 
 [`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet.
 
-[`proof:run`](/cli/proof/run#the-run) starts its own copies, one per shard and one in each free CI place. Proof groups own them; each group has one subtask row and no agent thread. Proof copies take CI places, not the copy places of task groups, and every end of a run destroys its copy. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
+[`proof:run`](/cli/proof/run#the-run) starts its own copies, one per shard and one in each free CI place. Proof groups own them; each is a [task with no subtask](#a-task-with-no-subtask), whose work holds the proof's verdict, and has no agent thread. Proof copies take CI places, not the copy places of task groups, and every end of a run destroys its copy. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
 
 The copy's `.env` holds its secrets. Git never takes it: every container create and clone names it in the checkout's own `info/exclude` ([what is built](/reference/development-containers#what-is-built)), so neither the check's commit nor an agent's commit holds it. A copy or container made before that line existed lacks it until its next create or clone: its check can still commit the file. The publish refusal `tasks.publish_secret_path` covers such a copy too: nothing of it is pushed. Cancel it and start the task again.
 

@@ -7,7 +7,11 @@ import {
     projectFindings,
     scheduleReceipt,
 } from "../extensions/behaviors/_lib/project_schedule.ts";
-import { taskInputs, todoError } from "./_support/task_contract.ts";
+import {
+    taskDeliverables,
+    taskInputs,
+    todoError,
+} from "./_support/task_contract.ts";
 
 const fleet: { slug: string; project: { id: number } }[] = JSON.parse(
     await Deno.readTextFile(
@@ -75,39 +79,39 @@ for (
             ),
         ];
         for (const input of desired) {
-            const tasks = taskInputs.parse(input.request.tasks);
-            assertEquals(todoError(tasks), null);
-            for (const task of tasks) {
-                assertEquals(
-                    task.deliverables?.find((d) => d.type === "command"),
-                    input.mode === "detect" ? undefined : {
-                        id: "project-check",
-                        type: "command",
-                        description:
-                            "Pass the configured project check in the task checkout.",
-                        command: project.check,
-                        directory: ".",
-                    },
+            // A task with no subtask: the task holds its own deliverables.
+            assertEquals(input.request.tasks, undefined);
+            assertEquals(todoError(input.request), null);
+            const deliverables = taskDeliverables.parse(
+                input.request.deliverables,
+            );
+            assertEquals(
+                deliverables.find((d) => d.type === "command"),
+                input.mode === "detect" ? undefined : {
+                    id: "project-check",
+                    type: "command",
+                    description:
+                        "Pass the configured project check in the task checkout.",
+                    command: project.check,
+                    directory: ".",
+                },
+            );
+            assert(deliverables.some((d) => d.type === "review"));
+            const files = deliverables.filter((d) => d.type === "file");
+            if (input.mode !== "package") {
+                assertEquals(files, []); // No-change routine and read-only detect remain valid.
+            } else {
+                assertEquals(files.length, 1);
+                assert(
+                    input.targets!.every((t) =>
+                        files[0].path!.includes(
+                            t.manager === "composer"
+                                ? "composer.lock"
+                                : "bun.lock",
+                        )
+                    ),
                 );
-                assert(task.deliverables!.some((d) => d.type === "review"));
-                const files = task.deliverables!.filter((d) =>
-                    d.type === "file"
-                );
-                if (input.mode !== "package") {
-                    assertEquals(files, []); // No-change routine and read-only detect remain valid.
-                } else {
-                    assertEquals(files.length, 1);
-                    assert(
-                        input.targets!.every((t) =>
-                            files[0].path!.includes(
-                                t.manager === "composer"
-                                    ? "composer.lock"
-                                    : "bun.lock",
-                            )
-                        ),
-                    );
-                    assertEquals(files[0].change, "modified");
-                }
+                assertEquals(files[0].change, "modified");
             }
         }
     });

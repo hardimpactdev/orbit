@@ -105,12 +105,30 @@ Deno.test("one candidate becomes one ordered backlog task through the Gateway, n
     await enqueue(plan, 123, project.repository, s.deps);
     assertEquals(s.posts.length, 1);
 });
-Deno.test("baseline is one task and repeated scans create no second baseline", async () => {
+Deno.test("baseline is one task with no subtask and repeated scans create no second baseline", async () => {
     const s = setup(), plan = baselinePlan(project);
     await enqueue(plan, 123, project.repository, s.deps);
     await enqueue(plan, 123, project.repository, s.deps);
     assertEquals(s.posts.length, 1);
-    assertEquals((s.posts[0].subtasks as unknown[]).length, 1);
+    // The Gateway refuses a task with one subtask: the task holds the baseline's brief and deliverables itself.
+    assertEquals(s.posts[0].subtasks, undefined);
+    assertEquals(s.posts[0].deliverables, plan.tasks[0].deliverables);
+    assertEquals(
+        s.posts[0].brief,
+        `Swamp Horizon sync: ${project.repository}:baseline\n\n${
+            plan.tasks[0].brief
+        }`,
+    );
+});
+Deno.test("a tag with one candidate is one task with no subtask", async () => {
+    const s = setup(),
+        plan = taskPlan({
+            ...detection,
+            candidates: detection.candidates.slice(0, 1),
+        }, project);
+    await enqueue(plan, 123, project.repository, s.deps);
+    assertEquals(s.posts[0].subtasks, undefined);
+    assertEquals(s.posts[0].deliverables, plan.tasks[0].deliverables);
 });
 Deno.test("lost create reply is adopted by exact brief and never posted twice", async () => {
     const s = setup(), plan = taskPlan(detection, project);

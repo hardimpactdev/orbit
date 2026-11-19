@@ -61,6 +61,8 @@ it('refuses deeper hierarchy and a contradictory project', function (): void {
 
 it('updates each level without starting work when the parent moves to todo', function (): void {
     $this->patchJson('/api/v1/tasks/'.$this->child->id, ['title' => 'Edited child'])->assertOk()->assertJsonPath('data.title', 'Edited child');
+    // A task leaves backlog with no subtask or at least two.
+    $this->parent->tasks()->create(['position' => 2, 'title' => 'Second', 'brief' => 'Brief', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done']]]);
     $this->patchJson('/api/v1/tasks/'.$this->parent->id, ['status' => 'todo'])->assertOk()->assertJsonPath('data.status', 'todo');
     expect(Operation::query()->count())->toBe(0);
 });

@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskStatusMoves;
+use App\Domain\Tasks\TaskType;
 use App\Models\Task;
 use Closure;
 use Illuminate\Support\Collection;
@@ -43,6 +44,9 @@ final readonly class UpdateTaskGroupAction
 
                 if ($data->status === TaskGroupStatus::Todo && $locked->tasks->isEmpty()) {
                     throw TaskGroupGuard::noSubtasks();
+                }
+                if ($data->status === TaskGroupStatus::Todo && $locked->tasks->reject(static fn (Task $task): bool => $task->type === TaskType::Work)->count() === 1) {
+                    throw TaskGroupGuard::oneSubtask();
                 }
 
                 if ($data->status === TaskGroupStatus::Todo) {

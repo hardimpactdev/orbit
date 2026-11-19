@@ -81,11 +81,11 @@ export async function enqueue(
     }
     const key = plan.baseline ? "baseline" : `${plan.synced_tag}-${plan.tag}`;
     const marker = `Swamp Horizon sync: ${expectedRepo}:${key}`;
-    const brief = `${marker}\n\n${
-        plan.baseline
-            ? "Record the one-time parity baseline before upstream detection."
-            : `Implement every candidate from laravel/horizon ${plan.synced_tag} to ${plan.tag} in order. Only the last task advances synced_tag.`
-    }\n\nPull requests wait for Nick. Never merge.`;
+    // One planned task is a task with no subtask: it carries that task's brief and deliverables itself.
+    const [only] = plan.tasks.length === 1 ? plan.tasks : [];
+    const brief = only
+        ? `${marker}\n\n${only.brief}`
+        : `${marker}\n\nImplement every candidate from laravel/horizon ${plan.synced_tag} to ${plan.tag} in order. Only the last task advances synced_tag.\n\nPull requests wait for Nick. Never merge.`;
     const old = await deps.read(key);
     if (old && (old.projectId !== projectId || old.brief !== brief)) {
         throw new Error(
@@ -139,11 +139,13 @@ export async function enqueue(
         brief,
         status: "backlog",
         orchestration: "external",
-        subtasks: plan.tasks.map(({ title, brief, deliverables }) => ({
-            title,
-            brief,
-            deliverables,
-        })),
+        ...(only ? { deliverables: only.deliverables } : {
+            subtasks: plan.tasks.map(({ title, brief, deliverables }) => ({
+                title,
+                brief,
+                deliverables,
+            })),
+        }),
     });
     const group = result.body?.data as Record<string, unknown> | undefined;
     if (

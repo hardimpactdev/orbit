@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Projects\ProjectMaintenanceProjection;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -331,4 +332,33 @@ it('leaves a draft as it was when an edit of its work is refused or fails', func
     $this->postJson('/api/v1/tasks', ['parent_id' => $empty, 'title' => 'First', 'brief' => 'First part.'])->assertServerError();
 
     expect(Task::query()->where('parent_id', $empty)->pluck('id')->all())->toBe([$work->id]);
+});
+
+// A maintenance task has no subtask: it holds its own deliverables, and project maintenance still moves it to todo and starts it.
+it('admits the maintenance task of a routine run as a task with no subtask, and starts it as a copy', function (): void {
+    $project = soloProject();
+    $project->update(['maintenance' => true, 'source_access' => 'github_app']);
+    $admitted = ['projectId' => $project->id, 'repository' => $project->repository_url, 'default_branch' => 'main', 'check' => 'bin/task-check'];
+    $operation = Operation::query()->create(['kind' => 'project.routine', 'target_type' => 'project', 'target_id' => $project->id, 'node_id' => null,
+        'input' => ['project' => $admitted], 'state' => ['swamp_run_id' => 'run-1'], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
+    $deliverables = [['id' => 'project-check', 'type' => 'command', 'description' => 'Pass the configured project check in the task checkout.', 'command' => 'bin/task-check', 'directory' => '.'],
+        ['id' => 'maintenance-review', 'type' => 'review', 'description' => 'The update keeps the constraints.']];
+
+    app(ProjectMaintenanceProjection::class)->apply($operation, ['run_id' => 'run-1', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'status' => 'succeeded', 'result' => ['maintenance' => ['project_id' => $project->id, 'requests' => [[
+            'action' => 'create_group', 'project_id' => $project->id, 'key' => $project->id.'-routine-2026-11-16',
+            'input' => ['project_id' => $project->id, 'title' => 'Update dependencies within current constraints', 'brief' => 'Update dependencies. Swamp schedule: routine',
+                'status' => 'backlog', 'orchestration' => 'external', 'deliverables' => $deliverables],
+            'maintenance' => ['mode' => 'routine', 'project' => $admitted, 'targets' => []],
+        ]]]]]);
+
+    $group = Task::topLevel()->where('project_id', $project->id)->sole();
+    $rows = Task::query()->where('parent_id', $group->id)->get();
+    expect($rows)->toHaveCount(1)->and($rows->first()->type)->toBe(TaskType::Work)
+        ->and($rows->first()->deliverables)->toBe($deliverables)
+        ->and($group->assistance_reason)->toBeNull()
+        // The provision started: the task holds its copy's create and is reserved for it.
+        ->and($group->status->value)->toBe('reserved')
+        ->and(Operation::query()->find($group->maintenance['operation_id'] ?? null)?->kind)->toBe('instance.create')
+        ->and($group->taskable_id)->not->toBeNull();
 });

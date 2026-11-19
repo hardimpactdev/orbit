@@ -230,6 +230,8 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 projectId: $operation->target_id, title: ValidatedData::string($input['title']), brief: ValidatedData::string($input['brief']),
                 status: TaskGroupStatus::Backlog,
                 tasks: array_values(array_map(TaskInputData::from(...), Arr::array($input, 'tasks', []))),
+                // A maintenance task has no subtask: Swamp sends its own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
+                deliverables: array_key_exists('deliverables', $input) ? array_values(Arr::array($input, 'deliverables')) : null,
             ));
             if ($group->maintenance === null && $group->status === TaskGroupStatus::Backlog && $group->taskable_id === null) {
                 $maintenance = ValidatedData::object($request['maintenance']);

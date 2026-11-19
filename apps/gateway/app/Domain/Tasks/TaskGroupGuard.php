@@ -38,6 +38,19 @@ final class TaskGroupGuard
     }
 
     /**
+     * A task leaves backlog with no subtask or with at least two, never with one (docs/reference/tasks.md#a-task-with-no-subtask).
+     * A task with one subtask that left backlog before this rule keeps working until it ends.
+     */
+    public static function oneSubtask(): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: 'tasks.one_subtask',
+            message: __('A task leaves backlog with no subtask or with at least two. Fold the one subtask into the task: give the task its deliverables and no subtask.'),
+            status: 422,
+        );
+    }
+
+    /**
      * ADR 0133: a group moves to todo only when every subtask has deliverables.
      *
      * @param  list<string>  $subtasks  the subtasks without deliverables

@@ -45,6 +45,7 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `task.project_invalid`, `task.title_invalid`, `task.brief_invalid`, `task.status_invalid` | A supplied value is outside the accepted form. |
 | `task.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
+| `tasks.one_subtask` | `--status=todo` with exactly one subtask. Fold it into the task: give the task its deliverables. |
 | `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
 | `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
 | `task.issue_invalid` | `--issue` is not a number from 1 up. |

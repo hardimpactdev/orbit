@@ -40,6 +40,9 @@ final readonly class CreateTaskGroupAction
         if ($data->status === TaskGroupStatus::Todo && $data->tasks === [] && $data->deliverables === null) {
             throw TaskGroupGuard::noSubtasks();
         }
+        if ($data->status === TaskGroupStatus::Todo && count($data->tasks) === 1) {
+            throw TaskGroupGuard::oneSubtask();
+        }
         if ($data->status === TaskGroupStatus::Todo && $data->deliverables === []) {
             throw TaskGroupGuard::deliverablesMissing(['"'.$data->title.'"']);
         }

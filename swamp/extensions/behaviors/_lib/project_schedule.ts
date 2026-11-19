@@ -110,11 +110,7 @@ export function scheduleReceipt(
             brief,
             status: "backlog",
             orchestration: "external",
-            tasks: [{
-                title,
-                brief,
-                deliverables: taskDeliverables(project, mode),
-            }],
+            deliverables: taskDeliverables(project, mode),
         },
     };
 }
@@ -178,7 +174,7 @@ export async function batchReceipt(
         canonical([findings.projectId, findings.source, findings.targets]),
     )}`;
     const title = "Update all eligible dependency majors and advisory fixes";
-    // The complete immutable selections stay in Swamp; keep Orbit's child brief under 8000 bytes.
+    // The complete immutable selections stay in Swamp; keep Orbit's task brief under 8000 bytes.
     const brief =
         `${title}. Apply the entire admitted Swamp batch in one task copy and one PR. Preserve unrelated constraints and release-age policy. Gateway owns checks, repair and publication.\n\nBatch: ${findings.key}\nTargets: ${findings.targets.length}\nBlocked findings retained: ${findings.blocked.length}\nCheck: ${project.check}\nSwamp schedule: ${key}`;
     return {
@@ -197,15 +193,11 @@ export async function batchReceipt(
             brief,
             status: "backlog",
             orchestration: "external",
-            tasks: [{
-                title,
-                brief,
-                deliverables: taskDeliverables(
-                    project,
-                    "package",
-                    findings.targets,
-                ),
-            }],
+            deliverables: taskDeliverables(
+                project,
+                "package",
+                findings.targets,
+            ),
         },
     };
 }

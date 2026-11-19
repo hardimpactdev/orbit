@@ -23,13 +23,13 @@ Group brief. The title states the outcome.
 **Proof:** only when tests cannot show the outcome
 ```
 
-Subtask brief, with one subtask in the group:
+A task with no subtask has no subtask brief. Its group brief ends with the paths to read first, and the task holds its own deliverables:
 
 ```markdown
-All expected outcomes of the group. Read first: <paths>.
+**Read first:** <paths>
 ```
 
-Subtask brief, with several subtasks:
+Subtask brief, in a task with at least two subtasks:
 
 ```markdown
 **Slice:** Expected outcomes <numbers>. Builds on <subtask>. After this subtask, <what works>.
@@ -39,7 +39,7 @@ Subtask brief, with several subtasks:
 **Guardrails:** <only what is specific to this slice>
 ```
 
-## A bug with an unknown cause, one subtask
+## A bug with an unknown cause, no subtask
 
 From group 5944. The limit in outcome 1 and the margin in outcome 2 are values chosen for this example.
 
@@ -91,16 +91,18 @@ it five times through the normal wake entry point.
 - Must be real: the sleep, the wake Operation and the app's first answer.
 - May be a stand-in: the test app.
 - If the nested fleet cannot take the slow path, say so and ask.
-- Subtask 1 owns the full proof.
+- The task owns the full proof.
 ```
 
-Subtask 1 of 1: **Find the lost time in the ordinary wake and remove it**
+The task has no subtask. Its brief ends with:
 
 ```markdown
-All expected outcomes of the group. Read first: `docs/cli/instance/wake.mdx`,
+**Read first:** `docs/cli/instance/wake.mdx`,
 `docs/reference/prepared-restore.md`,
 `swamp/workflows/workflow-operation-instance-wake.yaml`.
 ```
+
+Its own deliverables:
 
 ```json
 [
@@ -122,9 +124,9 @@ What to notice:
 - The brief names no fix. The original listed fix ideas: "job dispatch, marker or Caddy wait, a sleep or poll interval".
 - The limit has a clock: from the wake request to `ready_at`. The original said "about 1–2 s".
 - Outcome 4 says what must keep working.
-- The proof lists the cases that would pass by mistake, and names the subtask that owns it, also with one subtask.
+- The proof lists the cases that would pass by mistake, and names who owns it, also in a task with no subtask.
 
-## A change with a decided approach, one subtask
+## A change with a decided approach, no subtask
 
 From group 5971.
 
@@ -167,17 +169,18 @@ converge before and after the change.
 - Cases that would expose a wrong answer: the roles phase skipped because its
   digest did not change; apt lists refreshed within the last hour.
 - Must be real: both converge Operations and the age of the apt lists.
-- Subtask 1 owns the full proof.
+- The task owns the full proof.
 ```
 
-Subtask 1 of 1: **Skip the apt cache refresh for installed packages**
+The task has no subtask. Its brief ends with:
 
 ```markdown
-All expected outcomes of the group. Read first:
-`swamp/ansible/tasks/instance-fleet-node.yml`,
+**Read first:** `swamp/ansible/tasks/instance-fleet-node.yml`,
 `swamp/ansible/tasks/instance-egress.yml`,
 `swamp/tests/ansible_reuse_install_test.py`.
 ```
+
+Its own deliverables:
 
 ```json
 [
@@ -197,7 +200,7 @@ What to notice:
 - This is not a bug, so the `command` has no `fails_on_base`.
 - There is no Open question. The section would have nothing to say.
 
-## A removal, one subtask
+## A removal, no subtask
 
 From group 6017, as the owner corrected it. The paths and the generator are real. Outcome 3 is a value chosen for this example.
 
@@ -221,13 +224,15 @@ block on every turn, and the repository's own rules already cover it.
 - Out of scope: the guidance of the other projects.
 ```
 
-Subtask 1 of 1: **Remove the guideline generator from the CLI and the Gateway**
+The task has no subtask. Its brief ends with:
 
 ```markdown
-All expected outcomes of the group. Read first: `apps/cli/boost.json`,
+**Read first:** `apps/cli/boost.json`,
 `apps/gateway/boost.json`, `apps/cli/config/boost.php`,
 `apps/gateway/config/boost.php`.
 ```
+
+Its own deliverables:
 
 ```json
 [

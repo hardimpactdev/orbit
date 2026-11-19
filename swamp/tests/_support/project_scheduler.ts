@@ -67,7 +67,7 @@ export function fixture(token?: Record<string, unknown>) {
                     });
                 }
                 const body = await req.json();
-                if (!taskInputs.safeParse(body.subtasks).success) {
+                if (!taskInputs.safeParse(body.subtasks ?? []).success) {
                     return Response.json({
                         error: { code: "validation.failed" },
                     }, {
@@ -80,7 +80,7 @@ export function fixture(token?: Record<string, unknown>) {
                     id,
                     taskable_id: null,
                     vm_power: null,
-                    subtasks: body.subtasks.map((t: unknown) => ({
+                    subtasks: (body.subtasks ?? []).map((t: unknown) => ({
                         ...(t as object),
                         id: id * 10,
                         status: "todo",
@@ -94,7 +94,12 @@ export function fixture(token?: Record<string, unknown>) {
                 const body = await req.json();
                 const group = groups.get(id)!;
                 const error = body.status === "todo"
-                    ? todoError(group.subtasks)
+                    ? todoError({
+                        tasks: (group.subtasks as unknown[]).length
+                            ? group.subtasks
+                            : undefined,
+                        deliverables: group.deliverables,
+                    })
                     : null;
                 if (error) {
                     return Response.json({ error: { code: error } }, {
