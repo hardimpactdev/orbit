@@ -550,7 +550,7 @@ it('bounds the roles phase of an Instance fleet Node\'s app-dev converge at 1800
 it('sends the recorded phase digests and clears the record', function (bool $full): void {
     // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change
     $recorded = ['agent' => str_repeat('a', 64), 'roles' => str_repeat('b', 64)];
-    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded)]);
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded), 'converge_digests_full' => true]);
 
     $this->postJson($this->url, ['base' => true, 'full' => $full])->assertAccepted();
     $first = Operation::query()->sole();
@@ -565,17 +565,22 @@ it('sends the recorded phase digests and clears the record', function (bool $ful
     expect($second->input['_converge']['intent']['recorded_digests'])->toBe([]);
 })->with(['recorded' => false, 'full' => true]);
 
-it('holds the full-scope record for a scoped converge only', function (array $scope, bool $held): void {
-    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: a full converge records its own digests.
-    $recorded = ['agent' => str_repeat('a', 64)];
-    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded)]);
+it('holds only a full-scope converge record for a scoped converge', function (array $scope, bool $full, bool $held): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: a role Operation's record (prerequisites, tools, node,
+    // firewall) is never restored by a scoped converge, which could skip a phase that switches a service back.
+    $recorded = $full ? ['agent' => str_repeat('a', 64), 'tools' => str_repeat('d', 64)] : ['prerequisites' => str_repeat('a', 64), 'tools' => str_repeat('d', 64)];
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded), 'converge_digests_full' => $full]);
 
     $this->postJson($this->url, $scope)->assertAccepted();
 
     $capture = Operation::query()->sole()->input['_converge'];
-    expect($held ? $capture['held_digests'] : $capture)->toBe($held ? $recorded : $capture)
-        ->and(array_key_exists('held_digests', $capture))->toBe($held);
-})->with(['full scope' => [[], false], 'base' => [['base' => true], true]]);
+    expect($capture['held_digests'] ?? null)->toBe($held ? $recorded : ($scope === [] ? null : []))
+        ->and($this->node->refresh()->converge_digests_full)->toBeFalse();
+})->with([
+    'full scope' => [[], true, false],
+    'base after a full converge' => [['base' => true], true, true],
+    'base after a role Operation' => [['base' => true], false, false],
+]);
 
 it('compares with no recorded digest while the Node records a failed agent pin', function (): void {
     // An agent command records the pin outside any admission lock; the converge that repairs it must run the agent phase.
@@ -620,7 +625,7 @@ it('takes full from the role convergence request', function (): void {
 });
 
 it('limits an automatic converge to active selected roles under the Node lock', function (): void {
-    $this->node->forceFill(['converge_digests' => ['roles' => str_repeat('1', 64)]])->save();
+    $this->node->forceFill(['converge_digests' => ['roles' => str_repeat('1', 64)], 'converge_digests_full' => true])->save();
     $role = $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
     $this->node->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
 

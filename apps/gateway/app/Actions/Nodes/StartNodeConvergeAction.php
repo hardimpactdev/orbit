@@ -52,8 +52,8 @@ final readonly class StartNodeConvergeAction
             // Release admission already compares its public role digest, including the workflow and materializer.
             $fresh = $node->fresh() ?? $node;
             $recorded = app(NodeConvergePhaseDigest::class)->recorded($fresh, $full || $release);
-            // A scoped converge keeps the full-scope record it holds now (NodeConvergePhaseDigest::held()).
-            $held = $base || $roles !== null ? app(NodeConvergePhaseDigest::class)->recorded($fresh, false) : null;
+            // A scoped converge keeps the full-scope converge record it holds now (NodeConvergePhaseDigest::held()).
+            $held = $base || $roles !== null ? app(NodeConvergePhaseDigest::class)->holdable($fresh) : null;
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
                 ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release, 'automatic' => $automatic]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],

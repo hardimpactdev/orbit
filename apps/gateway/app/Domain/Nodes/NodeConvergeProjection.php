@@ -80,14 +80,16 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             $rolesPassed = is_array($phases) && NodeConvergeResult::passed($phases[3]);
             self::recordCiRunner($operation, $intent, $rolesPassed);
             if ($result['outcome'] === 'succeeded') {
+                // A network intent always names the hub; the network play writes it as a host of its own.
                 $digests = array_key_exists('held_digests', $snapshot)
-                    ? app(NodeConvergePhaseDigest::class)->held(array_map(ValidatedData::string(...), ValidatedData::object($snapshot['held_digests'])), array_map(ValidatedData::object(...), is_array($phases) ? $phases : []))
+                    ? app(NodeConvergePhaseDigest::class)->held(array_map(ValidatedData::string(...), ValidatedData::object($snapshot['held_digests'])),
+                        array_map(ValidatedData::object(...), is_array($phases) ? $phases : []), ($intent['network'] ?? null) !== null)
                     : ValidatedData::object($result['digests']);
                 $restartDeferred = ($result['t3_restart_deferred'] ?? []) !== [];
                 if ($restartDeferred) {
                     unset($digests['roles']);
                 }
-                app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id), $digests);
+                app(NodeConvergePhaseDigest::class)->record(ValidatedData::integer($operation->node_id), $digests, full: true);
                 if (! $restartDeferred && isset($snapshot['release_inputs'])) {
                     $node = Node::query()->whereKey($operation->node_id)->lockForUpdate()->firstOrFail();
                     $inputs = ValidatedData::object($snapshot['release_inputs']);
