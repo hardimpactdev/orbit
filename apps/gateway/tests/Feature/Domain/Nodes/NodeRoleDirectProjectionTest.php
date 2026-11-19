@@ -176,5 +176,7 @@ it('records the phase digests of a proven role run and leaves no record after a 
             'Check the role' => ['status' => $terminal]],
             'summary' => ['failed_steps' => $terminal === 'failed' ? ['Check the role'] : []]]]);
 
-    expect($node->refresh()->converge_digests)->toBe($terminal === 'succeeded' ? $digests : null);
+    expect($node->refresh()->converge_digests)->toBe($terminal === 'succeeded' ? $digests : null)
+        // A scoped converge never holds a role Operation's record.
+        ->and($node->converge_digests_full)->toBeFalse();
 })->with(['proven' => ['succeeded'], 'failed check' => ['failed']]);
