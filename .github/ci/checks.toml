@@ -48,12 +48,18 @@ capacity_gap = [
   # A case above the 150-second lane on the self-hosted pool; ADR 0262 names each case.
   "swamp/tests/ansible_instance_host_test.ts",
   "swamp/tests/ansible_wireguard_hub_lan_rules_test.py",
-  # The two largest hosted files: 70 units and 2,462 of the 4,160 declared seconds that 16 hosted shards hold.
+  # The largest hosted file: 90 units that fill 17 of the 20 shards. A change to an input of every case, such as the
+  # converge inputs list, together with a host task leaves no room for both. The split of this file by phase
+  # (narrow inputs per file) removes this line, and its entry in capacity_gap_first.
+  "swamp/tests/ansible_instance_fleet_test.ts",
+  # Two large hosted files: 70 units and 2,462 of the 4,160 declared seconds that 16 hosted shards hold.
   # With other selected work, as in a plan that also carries undelivered main revisions, they pass runner_shards.
   # A hosted gap applies only when other changes select the file; a change to the file itself runs all its units.
   "swamp/tests/ansible_task_copy_turn_test.ts",
   "swamp/tests/ansible_instance_host_image_test.ts",
 ]
+# Hosted gap files that keep their place before the other hosted gaps. Those keep their order by directness.
+capacity_gap_first = ["swamp/tests/ansible_instance_fleet_test.ts"]
 
 [runner-pool]
 # Observed shared pool for pressure reports: ci-sabre-1..5 and ci-shark-1..5, measured in main CI on 2026-11-17.
