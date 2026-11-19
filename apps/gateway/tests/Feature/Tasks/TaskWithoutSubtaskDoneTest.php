@@ -87,7 +87,7 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     $asked = $this->postJson("/api/v1/tasks/{$id}/comments", ['type' => 'assistance_requested', 'body' => 'Which format?', 'author' => 'owner'])->assertCreated();
     expect($asked->json('data.task_id'))->toBe($work->id)
         ->and(TaskQuestion::query()->sole()->only(['task_id', 'subtask_id', 'question']))->toBe(['task_id' => $id, 'subtask_id' => $work->id, 'question' => 'Which format?']);
-    $this->getJson("/api/v1/task-questions")->assertOk()->assertJsonPath('data.0.task_id', $id);
+    $this->getJson('/api/v1/task-questions')->assertOk()->assertJsonPath('data.0.task_id', $id);
     $this->postJson("/api/v1/tasks/{$id}/comments", ['type' => 'resolution', 'body' => 'CSV.', 'author' => 'owner'])->assertCreated();
     expect($work->refresh()->assistance_requested)->toBeFalse()->and($group->refresh()->assistance_requested)->toBeFalse();
     $this->getJson("/api/v1/tasks/{$id}/comments")->assertOk()->assertJsonCount(2, 'data')->assertJsonFragment(['body' => 'CSV.'])->assertJsonFragment(['body' => 'Which format?']);
@@ -111,7 +111,7 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     expect(app(TaskGroupDone::class)->check($group->refresh())?->id)->toBe($world->check->id);
 
     // The release publishes C0, and the publish conflicts with main.
-    $publish = $this->withHeader('Idempotency-Key', 'solo-publish')->postJson("/api/v1/tasks/{$id}/publish", ["check" => $world->check->id])->assertStatus(202)
+    $publish = $this->withHeader('Idempotency-Key', 'solo-publish')->postJson("/api/v1/tasks/{$id}/publish", ['check' => $world->check->id])->assertStatus(202)
         ->assertJsonPath('data.kind', 'tasks.publish')->json('data.id');
     $publish = soloEnd(Operation::query()->findOrFail($publish), OperationStatus::Failed, ['error_code' => RunTaskMergeRoundAction::ConflictCode, 'conflicting_paths' => ['app/Export.php']]);
     expect($publish->input['check'])->toBe($world->check->id);

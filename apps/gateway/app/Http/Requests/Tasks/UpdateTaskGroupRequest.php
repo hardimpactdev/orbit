@@ -84,6 +84,7 @@ final class UpdateTaskGroupRequest extends FormRequest
         if (array_key_exists('deliverables', $body)) {
             return $task->work()->exists() || ! Task::query()->where('parent_id', $task->id)->exists();
         }
+
         return in_array($body['status'] ?? null, [TaskStatus::Completed->value, TaskStatus::Failed->value], true) && $task->work()->exists();
     }
 
