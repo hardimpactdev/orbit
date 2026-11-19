@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -171,6 +172,7 @@ it('also prints the named Node\'s Instance host intent digest as host, empty whi
     $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev'], '--base' => true, '--host' => 'app-dev'])
         ->expectsOutput(json_encode(['app-dev' => $base, 'host' => ''], JSON_THROW_ON_ERROR))->assertSuccessful();
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    InstancePool::give($this->node);
     app(InstanceHostIntent::class)->prepare($this->node);
     $host = app(InstanceHostIntent::class)->digest($this->node->refresh());
     expect($host)->toMatch('/^[0-9a-f]{64}$/');
