@@ -43,18 +43,17 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
     if !system.path(&key).exists() {
         new_key(system, directory, &key).map_err(failed)?;
     }
-    let request = match request(system, &key, &name) {
-        Ok(request) => request,
+    let answer = if let Ok(answer) = request(system, &key, &name) {
+        answer
+    } else {
         // A key that openssl cannot read matches no signed certificate: it is replaced once.
-        Err(_) => {
-            new_key(system, directory, &key).map_err(failed)?;
-            request(system, &key, &name).map_err(failed)?
-        }
+        new_key(system, directory, &key).map_err(failed)?;
+        request(system, &key, &name).map_err(failed)?
     };
-    if !request.contains("-----BEGIN CERTIFICATE REQUEST-----") {
+    if !answer.contains("-----BEGIN CERTIFICATE REQUEST-----") {
         return Err(failed("openssl gave no request".to_owned()));
     }
-    Ok(request)
+    Ok(answer)
 }
 
 /// An RSA 2048 key, written beside its final name and moved in place, so a stopped run never leaves half a key.
