@@ -1,10 +1,11 @@
-import { importNames, phases, resolvePhases } from "./phase_code.ts";
+import { importNames, resolveTags } from "./phase_code.ts";
 import { roleSiblings } from "./converge_input.ts";
 
 /**
  * The code digest of the Instance host on nested-app-dev (docs/reference/development-containers.md#instance-host-in-the-fleet): what its
- * `app-dev` role converge can load. That is every file a node.converge phase can load (phase_code.ts: classes a, b and d), the files the
- * phases name above the bundle and the modules they import, the staged role siblings (roleSiblings), the Tool helper and the Tool folder,
+ * `app-dev` role converge can load. That is every file a tag of node.converge can load: its skippable phases and the `input` and `check`
+ * tags that always run (phase_code.ts resolveTags: classes a, b and d, and the walks of the unskipped tags). It also holds the files the
+ * tags name above the bundle and the modules they import, the staged role siblings (roleSiblings), the Tool helper and the Tool folder,
  * and the machine-software recipe. A file that only another Operation's playbook reaches (class c) is not in it. A phase the resolver
  * cannot bound brings the whole bundle.
  *
@@ -15,11 +16,10 @@ import { roleSiblings } from "./converge_input.ts";
 export async function hostCode(root: string): Promise<string> {
     const ansible = "swamp/ansible";
     const operations = "swamp/extensions/behaviors/operations";
-    const resolved = await resolvePhases(`${root}/${ansible}`);
+    const resolved = await resolveTags(`${root}/${ansible}`);
     const files = new Set<string>();
     const outside = new Set<string>(roleSiblings.map((sibling) => `../${sibling}`));
-    for (const phase of phases) {
-        const resolution = resolved[phase];
+    for (const resolution of Object.values(resolved)) {
         for (const file of resolution.whole ? await tree(`${root}/${ansible}`) : resolution.files) files.add(`${ansible}/${file}`);
         for (const path of resolution.outside) outside.add(path);
     }

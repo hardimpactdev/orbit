@@ -2853,7 +2853,7 @@ Measured by hand on a task copy on 2026-11-17, with Squid 7.7 on `nested-app-dev
 - the machine-software recipe under `apps/gateway/resources/machine-software`;
 - `nested-app-dev`'s host intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, folders and Incus, without the admission time).
 
-The code holds every `swamp/ansible` file that a `node.converge` phase reaches, and the implicit and unreached files. It also holds the files the phases name beside the bundle, the staged role siblings, the Tool helper and the Tool folder.
+The code holds every `swamp/ansible` file that a `node.converge` tag reaches, and the implicit and unreached files. The tags are the five skippable phases and the `input` and `check` tags that every converge runs. So the role check that `check` runs for `app-dev` counts. It also holds the files the phases name beside the bundle, the staged role siblings, the Tool helper and the Tool folder.
 
 A file that only another Operation's playbook reaches is not in the code. Examples are the outer Instance-container plays, the Swamp role and the Conn launch controller. A change to only those files keeps the host, so the refresh runs no converge and does not retake `base`. The refresh reads the code in the outer container: the runtime's Deno runs the checkout's own `host_code.ts` over the files of its `HEAD` commit. The read takes about a second.
 
