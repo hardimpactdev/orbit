@@ -268,7 +268,24 @@ final readonly class Engine
         foreach ($names as $name) {
             $step = $run->steps[$name];
             try {
-                $order = $signer->signStep($operation, $step->node_id, $name, $step->action, $step->target, $definition->input($operation, $name, $run));
+                $input = $definition->input($operation, $name, $run);
+            } catch (Throwable $exception) {
+                report($exception);
+                $invalid[] = $name;
+
+                continue;
+            }
+            try {
+                // Content goes to the Node's own content keys first; the signed order names only its SHA-256.
+                $input = EngineContent::upload($this->bus, $step->node_id, $input);
+            } catch (Throwable $exception) {
+                report($exception);
+                $unsent[] = $name;
+
+                continue;
+            }
+            try {
+                $order = $signer->signStep($operation, $step->node_id, $name, $step->action, $step->target, $input);
             } catch (Throwable $exception) {
                 report($exception);
                 $invalid[] = $name;

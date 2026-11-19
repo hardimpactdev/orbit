@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,crates/firewall/**,clippy.toml,contract/fixtures/executor-order.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,crates/firewall/**,crates/route/**,clippy.toml,contract/fixtures/executor-order.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -16,7 +16,7 @@ covers:
 
 ## Where it runs
 
-The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `firewall`, `power` and `proof` families. A Node with several roles enables the union of their families.
+The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `firewall`, `power`, `proof` and `route` families. A Node with several roles enables the union of their families.
 
 The converge writes:
 
@@ -45,7 +45,7 @@ A converge skips the executor install until the Gateway has both parts it needs.
 - `executor.release_missing`: the Gateway's pinned agent delivery has no `executor-linux-x86_64` artifact.
 - `executor.keys_missing`: `ORBIT_EXECUTOR_PUBLIC_KEYS` is empty.
 
-A family newer than the pinned delivery stays off: `NodeExecutorInput::FamilySince` names the first agent version that knows it, such as `firewall` from 0.16.0. An older executor refuses to start on an unknown family.
+A family newer than the pinned delivery stays off: `NodeExecutorInput::FamilySince` names the first agent version that knows it, such as `firewall` from 0.16.0 and `route` from 0.17.0. An older executor refuses to start on an unknown family.
 
 Roll out in this order:
 
@@ -158,10 +158,14 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 1. The size and the form (`order_too_large`, `order_malformed`).
 2. The signature, with `verify_strict` against each pinned key (`bad_signature`), then the payload's shape (`bad_payload`).
 3. The action is on the allowlist (`unknown_action`) and its family is enabled on this Node (`action_not_enabled`). A valid signature does not enable a family.
-4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop` and `ufw.ensure_rule` is the Node itself. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+4. The Node (`wrong_node`) and the target (`unknown_target`). See [Targets](#targets).
 5. The expiry: past (`expired`), or more than 10 s ahead of the Node's clock (`expiry_too_far`).
 6. The nonce has never been seen, across restarts too (`replayed_nonce`). The refusal carries the first order's result once it exists.
 7. The Operation: a done record with the same Operation, action and target returns the first result, marked `"repeat": true`, and does not act.
+
+### Targets
+
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr` and `route.publish_site`. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -195,11 +199,35 @@ An order that is never acknowledged comes back, and the journal answers it as a 
 
 `ufw.ensure_rule` (family `firewall`, crate `orbit-executor-firewall`) makes one ufw rule present or absent. Its input is `action`, `port`, `protocol`, `source`, `comment`, `ensure` (`present` or `absent`) and `retain`; an unknown field refuses. It reads `ufw status numbered`, plans the changes, runs one `ufw` argv per change, reads the table again and checks every expected line and its position. It answers `applied` with the number of changes, or fails with the firewall code, such as `firewall.backend_inactive` or `firewall.verify_failed`. The planner is a port of the Swamp flow's planner, with its tests. The [firewall commands](/cli/firewall) describe the rules it keeps.
 
+### tls.ensure_csr
+
+`tls.ensure_csr` (family `route`, crate `orbit-executor-route`) takes `directory`, a version folder `/etc/caddy/orbit-certificates/<scope>/versions/<16 hex>`, and `domain`. It makes the folder (root:caddy, 0750) and an RSA 2048 key in it once (root:caddy, 0640), written beside its final name and moved in place. It answers `output` with a certificate request for that key: CN `Orbit` and the one subject name `DNS:<domain>`. A repeat reuses the key. A signed certificate may already match that key, so a second order must not replace it. Codes: `route.input_invalid`, `app-dev.certificate_request_failed`.
+
+### route.publish_site
+
+`route.publish_site` (family `route`) places one Node's part of a Route. Its steps run in this order:
+
+| Step | What it does |
+| --- | --- |
+| Caddy access | One `find` or `setfacl` command per row, as `RouteWebRootCommands` renders it. See below. |
+| `APP_URL` | Replaces the last `APP_URL=` line of an existing `.env`, or adds one. The file must belong to the Route's account and keeps its owner and mode. |
+| Links | Replaced atomically. |
+| PHP-FPM pools | Named by `version` and an optional production `user`, from which the executor derives the path, the `php-fpm -t` test and the unit. See below. |
+| Leaves | Each leaf's `cert.pem` beside its key, the version's `current` link, and the account's own copy. |
+| Trust | The Orbit root in the system trust. `update-ca-certificates` runs only when it changed. |
+| Caddyfile | A candidate, validated as the `caddy` user, replaces the live file only when it differs. See below. |
+
+Each access row names a kind (`deny_defaults`, `deny`, `passage`, `grant_defaults` or `grant`), a user and paths. The executor builds the command from those fields. It leaves out a missing optional path and never makes one.
+
+Every publication reloads a running pool unit and starts a stopped one. Caddy also reloads on every publication that carries a Caddyfile. A repeat after a crash between a write and its reload still makes the files live. A failed validation leaves the live Caddyfile as it was.
+
+Content comes as blobs. It answers `applied` with the number of changed files and units; ACL commands do not count. Codes: `route.input_invalid`, `route.content_missing`, `route.publish_failed`.
+
 ## The Gateway signer and the event
 
 `App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values), then `input` when the order carries one. `signStep` signs one step of an engine Operation: its `operation` is `<id>:<step>`, it names the step's Node and target, and it carries the primitive's input ([Gateway engine](/reference/gateway-engine#orders-and-receipts)).
 
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 

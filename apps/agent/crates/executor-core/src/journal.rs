@@ -74,6 +74,12 @@ pub enum Outcome {
         /// How many changes it made; 0 means the resource was already right.
         changes: u32,
     },
+    /// A primitive answered public text the Gateway reads, such as a certificate request (ADR 0271). Never a secret: the
+    /// journal keeps it for a repeated delivery. A journal holding this outcome needs an executor that has the route family.
+    Output {
+        /// The answer.
+        stdout: String,
+    },
 }
 
 /// An order the journal recorded as open whose key has no result yet: crash recovery finishes it.

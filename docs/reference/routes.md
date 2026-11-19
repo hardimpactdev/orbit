@@ -166,6 +166,8 @@ Each Node's `route-create-site` child is one Ansible phase, `site`, of `swamp/an
 
 The phase updates the system trust store only when it wrote a new Orbit root.
 
+With `route.create` in `ORBIT_ENGINE_KINDS`, the [Gateway engine](/reference/gateway-engine#routecreate) runs a Route that only needs the site steps instead of this workflow. It runs the same steps as typed executor actions: the Node's key and request, the Gateway's signature, one `route.publish_site` per Node and the Gateway's TLS probe. A Route that needs private DNS, the Ingress edge or a LAN rule runs this workflow. So does a Route whose Nodes have no executor with the `route` family.
+
 The Gateway builds the Caddy access ACLs as five commands for one site: two that deny the checkout, one that opens passage above the served roots, and two that grant read on the roots. Each command names every path it covers, because each command is one Ansible task on the Node.
 
 A Laravel Instance registered in place can be active without a Route. If registration reserves a Route, that Route must become authoritative before the Instance activates. Other Laravel activation and Route ownership constraints still apply.
