@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use Symfony\Component\Yaml\Yaml;
 
@@ -17,6 +18,12 @@ final readonly class PrometheusConfigRenderer
      */
     public const string ScrapeInterval = '10s';
 
+    /**
+     * The Gateway's [task insights](/reference/tasks#prometheus-exporter) totals change every five minutes, so one scrape a
+     * minute shows each change and costs the Gateway one small query.
+     */
+    public const string TaskInsightsScrapeInterval = '60s';
+
     /** @param list<array{name:string,address:string}> $nodes
      * @param  list<ServiceMetricsNode>  $services
      */
@@ -29,7 +36,28 @@ final readonly class PrometheusConfigRenderer
             "global:\n  scrape_interval: ".self::ScrapeInterval."\n  evaluation_interval: ".self::ScrapeInterval."\nscrape_configs:\n"
             .$this->job('orbit-node-exporter', $nodes, MetricsFootprint::ExporterPort, null)
             .$this->job('orbit-cadvisor', $nodes, MetricsFootprint::CadvisorPort, null)
-            .$this->serviceJobs($services);
+            .$this->serviceJobs($services)
+            .$this->taskInsightsJob();
+    }
+
+    /**
+     * Prometheus reaches the Gateway by its private name over WireGuard, as every Node does, and trusts the Orbit root alone.
+     * The Gateway admits only the Metrics Node on this path.
+     */
+    private function taskInsightsJob(): string
+    {
+        $job = [[
+            'job_name' => 'orbit-task-insights',
+            'scrape_interval' => self::TaskInsightsScrapeInterval,
+            'scrape_timeout' => '10s',
+            'sample_limit' => 20000,
+            'scheme' => 'https',
+            'metrics_path' => '/api/v1/metrics/task-insights',
+            'tls_config' => ['ca' => app(LeafCertificateSigner::class)->rootCertificate(), 'server_name' => 'gateway.orbit'],
+            'static_configs' => [['targets' => ['gateway.orbit:443']]],
+        ]];
+
+        return preg_replace('/^/m', '  ', rtrim(Yaml::dump($job, 10, 2, Yaml::DUMP_MULTI_LINE_LITERAL_BLOCK)))."\n";
     }
 
     /** @param list<ServiceMetricsNode> $targets */

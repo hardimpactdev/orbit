@@ -1749,6 +1749,21 @@ Every five minutes the `task:insights-refresh` tick records each ended group who
 
 Until the first refresh has finished, the records may be incomplete, so the endpoint computes the report from the task tables and stores nothing. After it, a Project with no stored report yet, such as a new one, gets it computed from the records on its first read; two such reads store one report. `task:insights-backfill` records every ended group, older ones included; running it again writes the same records.
 
+### Prometheus exporter
+
+`GET /api/v1/metrics/task-insights` exposes the stored reports in the Prometheus text format. The [Metrics role](/reference/metrics#task-insights-scrape)'s Prometheus scrapes it once a minute. The Gateway admits only the active Metrics Node, by its WireGuard address; any other caller gets `metrics.scraper_required` or `peer.identity_unknown` (HTTP 403). A scrape reads the stored reports and the Project codes, never the task tables or the records. Before the first refresh it answers HTTP 200 with no samples.
+
+Each gauge carries `project`, the Project's code or `all`, and `period`, and takes the value of the period's current summary. A null number has no sample.
+
+| Metric `orbit_task_insights_…` | Field |
+| --- | --- |
+| `computed_timestamp_seconds` | When the report was computed, as a Unix time; it shows a stale report |
+| `tasks`, `merged`, `excluded`, `tokens`, `cost_usd`, `tokens_per_merged_pr`, `review_rounds`, `questions_per_task` | The field of the same name |
+| `cost_per_merged_pr_usd` | `cost_per_merged_pr` |
+| `yield_ratio`, `pr_first_pass_ratio`, `subtask_first_pass_ratio`, `handoff_first_try_ratio`, `cache_hit_ratio` | The share of the same name |
+| `wasted_ratio` | `wasted_share` |
+| `lead_time_median_seconds`, `queue_median_seconds`, `work_median_seconds`, `merge_wait_median_seconds`, `pr_merge_wait_median_seconds`, `delivery_time_median_seconds`, `deploy_wait_median_seconds` | The `_ms` median, in seconds |
+
 ### On the board
 
 The strip shows tokens per merged PR with its cost, lead time, yield, first-pass pull requests, and wasted tokens. Each shows its change against the previous period, green when better and red when worse. Fewer tokens, a shorter lead time, and less waste are better. A higher yield and first-pass share are better. The strip has a 7-day and 30-day switch and a Project filter.
