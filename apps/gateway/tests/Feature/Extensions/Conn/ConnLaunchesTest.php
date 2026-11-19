@@ -1800,6 +1800,7 @@ describe('launch control and progress', function (): void {
         expect($launch->child_versions)->toBe(OperationKinds::CoordinatorChildren[OperationKinds::ConnLaunch]);
         InstanceRuntime::query()->create(['instance_id' => $this->instance->id, 'node_id' => $this->host->id,
             'incus_project' => 'orbit-instances', 'container_name' => 'fixture-clone', 'bridge_address' => '10.253.0.2',
+            't3_port' => 3800, 'container_server' => ContainerServer::Conn,
             'runtime_version' => 'fixture-runtime', 'agent_version' => 'fixture-agent', 'power_state' => InstanceRuntimePowerState::Running]);
         upgradeLaunchChildVersions(OperationKinds::ConnLaunchInspect, OperationKinds::ConnLaunchDispatch);
         $native = app(ConnLaunchNativeWork::class);
