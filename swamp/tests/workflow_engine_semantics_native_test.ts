@@ -157,14 +157,15 @@ Deno.test({ name: "harness: items of a forEach without a limit overlap, so a one
     assert(items.some((a, i) => items.some((b, k) => i !== k && a.start < b.end && b.start < a.end)), "the three downloads overlap");
 } });
 
-Deno.test({ name: "seed copy: the copies of two targets never overlap; they run after both certificates and before both checks", ignore: !binary, async fn() {
+Deno.test({ name: "seed copy: the copies of two targets overlap; they run after both certificates and before both checks", ignore: !binary, async fn() {
     await pinned();
     const targets = [{ node_id: 12 }, { node_id: 13 }];
     const run = await renderedRun("workflow-operation-instance-seed-copy.yaml", { operation_id: 1, node_id: 3, kind: "instance.seed_copy",
         intent: { targets }, execution_secrets: {} }, { outputs: () => ({ assets: "/tmp/assets", stdout: "" }), hold: 400 });
     assertEquals(run.status, "succeeded", run.stderr);
     assertEquals(of(run.calls, "Copy the seed").length, 2);
-    oneAtATime(run.calls, "Copy the seed");
+    const [a, b] = of(run.calls, "Copy the seed");
+    assert(a.start < b.end && b.start < a.end, "the two copies overlap");
     before(run.calls, "Read its Incus certificate", "Copy the seed");
     before(run.calls, "Copy the seed", "Check the holder");
 } });

@@ -32,7 +32,7 @@ sequenceDiagram
   %%> The seed hold (one rule for one resource, docs/reference/development-containers.md#the-seed-hold):
   %%> - one hold key per default, `instance_seed:DEFAULT_ID`: the seed copy takes it as its Operation lock at admission and keeps it to its end, so every push of the run sends a seed that no retake deletes or renames
   %%> - a deployment of the default asks the Gateway for the seed before its first `seed` phase and keeps it to its end; it waits while a seed copy is open (see container/deploy-default.mmd)
-  %%> - a Node past the run's target limit: the copies run one target at a time, so the run budget grows with the targets and must fit in the Swamp serve run cap; the limit is the number of copy steps that fit beside the fixed phases (`ProofSeeds::maxTargets`), and the end of the run admits the Nodes it left out; a `ci-runner` add or converge names its own Node, and the limit keeps that Node, because the end of a run admits no Node that a copy tried at the seed
+  %%> - a Node past the run's target limit: the copies share the default Node's uplink, so the run budget grows with the targets and must fit in the Swamp serve run cap; the limit is the number of copy steps that fit beside the fixed phases (`ProofSeeds::maxTargets`), and the end of the run admits the Nodes it left out; a `ci-runner` add or converge names its own Node, and the limit keeps that Node, because the end of a run admits no Node that a copy tried at the seed
   %%> Result:
   %%> - a task is recorded with the full intent: the default's Node, container and inner volume, per target its Node and WireGuard address, and `release_base` when the run's targets are all the Nodes behind the seed
   %%> - the run budget is captured: the fixed phases plus one copy step bound per target (`ProofSeeds::budgetSeconds`)
@@ -46,10 +46,10 @@ sequenceDiagram
     %%> - the Node is unreachable: this target fails with the SSH error as its detail, in this phase and in each later one; the copy and the check do nothing for a target that failed
     %%> - the Node goes away in the middle of this phase: the phase leaves no certificate and no result, so the copy step fails the target as `The certificate phase ended without a result` and does nothing else for it; a copy that ends the same way leaves no `copied-ID` mark, so the check step fails the target as `The copy phase ended without a result` and checks no holder, which may hold a seed of the same name from an earlier copy
   end
-  loop each CI Node, one at a time
+  loop each CI Node, side by side
     SW->>N: Copy the seed<br/>Ansible · tags copy
     %%> What it does:
-    %%> - adds the client remote `proof-node-ID` of root when it is missing, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
+    %%> - adds the client remote `proof-node-ID` of root when it is missing, one copy at a time under a lock file, because root's client rewrites one file for all its remotes without a lock and two adds side by side would lose one, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
     %%> - names the base: when the default holds a `base-COMMIT` pair and the holder holds `seed-COMMIT`, renames the holder's pair to `base-COMMIT` through the remote; a rename keeps the creation time, so both sides share that snapshot
     %%> - `incus storage volume copy` of the inner volume to `proof-seed-inner` with `--refresh --mode=push`, then `incus copy DEFAULT proof-node-ID:proof-seed` with the same flags, in `orbit-instances-nested`
     %%> Why push:
@@ -60,10 +60,11 @@ sequenceDiagram
     %%> - a retake deletes or renames the old `seed-COMMIT`, so without the default's `base-COMMIT` no snapshot is shared and the refresh sends the whole pair; the retake keeps it while a ready CI Node records that seed (`ProofSeeds`)
     %%> Why the whole instance:
     %%> - a snapshot source carries no snapshots, so a refresh from it could not find a common one
-    %%> Why one at a time:
-    %%> - each push takes a snapshot of the default's mounted inner volume, and Incus freezes its file system (`fsfreeze`) for that snapshot; a second freeze of a frozen file system fails with `Device or resource busy`, so two copies side by side can fail a target
+    %%> Why side by side:
+    %%> - one push of an incremental seed takes about 30 s; one after the other, the run took the sum, and a slow target delayed the next
+    %%> - each push of the default's mounted inner volume freezes its file system (`fsfreeze`) and thaws it at once, before it sends anything; a freeze while the other push holds its own fails with `Failed freezing filesystem`, so the copy tries only that push again, up to five times, 2 s apart
     %%> On failure:
-    %%> - this target fails with `instance.seed_copy_failed`; the next target's copy still runs
+    %%> - this target fails with `instance.seed_copy_failed`; the other targets' copies still run
   end
   loop each CI Node, side by side
     SW->>C: Check the holder<br/>Ansible · tags check
