@@ -600,6 +600,22 @@ class BridgePolicy(unittest.TestCase):
                              [('10.44.0.3/32', 'orbit:endpoint:1800000000000001'), ('172.17.0.4/32', 'orbit:endpoint:1800000000000004')])
             self.assertEqual(bridge.apply(root, None), 0)
 
+    def test_a_converge_that_only_stamps_a_new_admission_reports_no_change(self):
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api):
+            root = Path(directory)
+            self.assertEqual(bridge.apply(root, intent(1), True), 1)
+            self.assertEqual(bridge.apply(root, intent(2), True), 0)
+            self.assertEqual(bridge.apply(root, intent(3, '10.44.0.7'), True), 2)
+            # The same endpoint under a newer admission: the rule and the record take the new stamp, and nothing new is admitted.
+            self.assertEqual(bridge.apply(root, intent(4, '10.44.0.7'), True), 0)
+            self.assertEqual([r['description'] for r in incus.current['egress']], ['orbit:endpoint:1800000000000004'])
+            self.assertEqual(self.stamps(root), ['10.44.0.7-3306-1800000000000004.json'])
+            self.assertEqual(json.loads((root / 'config.json').read_text())['admitted_at'], 1800000000000004)
+            # A withdrawn endpoint and a changed bridge are changes.
+            self.assertEqual(bridge.apply(root, intent(5), True), 2)
+            self.assertEqual(bridge.apply(root, {**intent(6), 'cidr': '10.253.1.0/24'}, True), 1)
+
     def test_refresh_drops_records_an_older_helper_left(self):
         incus = Incus()
         with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api), \
@@ -610,7 +626,8 @@ class BridgePolicy(unittest.TestCase):
                    'translated': {'host': '172.17.0.4', 'port': 1025}}
             bridge.state_file(root, 'endpoint', old, host='10.253.0.1', port=1025, capture=old['admitted_at'])
             version = incus.version
-            self.assertEqual(bridge.apply(root, None), 1)
+            # The older record of the same endpoint goes; what the bridge admits stays the same, so that is no change.
+            self.assertEqual(bridge.apply(root, None), 0)
             self.assertEqual(self.stamps(root), ['10.253.0.1-1025-1800000000000001.json'])
             self.assertEqual(incus.version, version)
 

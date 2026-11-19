@@ -120,7 +120,9 @@ The timer recovers missed Docker events and DNAT rules installed after a start e
 
 Lock acquisition makes one nonblocking attempt. An owned lock returns `instance.bridge_busy` immediately, without changing endpoint records, ACL rules or health. Retry the operation after the current writer finishes. Docker and NAT reads use the helper’s remaining budget: 30 seconds for refresh and 300 seconds for lifecycle work. Each Incus curl request keeps its five-second limit, with one request reserved for readback. A read timeout or curl exit 28 returns `instance.bridge_command_timeout` and releases the lock.
 
-Failure recording uses the held lock; a caller that cannot acquire it reports the error without waiting again. An unchanged run leaves active records and health unchanged and sends no Incus write request. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
+Failure recording uses the held lock; a caller that cannot acquire it reports the error without waiting again. An unchanged run leaves active records and health unchanged and sends no Incus write request.
+
+Each admission and host converge stamps a new admission time on the same endpoints. The helper reports a change only when what the bridge admits changed: an ACL rule added or removed, or an endpoint record, the bridge configuration or health that differs apart from its stamp. So a host converge with unchanged endpoints reports no change. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
 
 An empty Docker NAT snapshot changes no ACL or endpoint record. A failed NAT read also preserves them. These snapshots cannot judge publications during a Docker restart. Duplicate matching rows leave that publication unchanged, even when every row names the same target. A restart on the same address has no additional ACL outage: its allow is never withdrawn. Stale records and their rules remain until the separate removal design lands or an authoritative host convergence removes them.
 
@@ -689,7 +691,7 @@ Where each path writes the name:
 | Create of a default, a move | The container phase, right after the first start: the files, then the kernel hostname at once |
 | Clone and task copy | `/etc/machine-info` as a boot file before the first start; the rest in the private names pass right after it |
 | Start, wake, deployment | Only a stopped container: the start phase writes the files through the file API before it boots it. A running or frozen container gets nothing |
-| Node converge | The files, in running, stopped and frozen containers, through the file API. Nothing restarts and the kernel hostname stays |
+| Node converge | Its `check` tag every time, and its roles phase when it runs: the files that differ, in every running, stopped or frozen container. Nothing restarts |
 
 T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
 
