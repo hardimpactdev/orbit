@@ -7,7 +7,7 @@ Laravel Zero 13 client for Orbit. This file holds every CLI rule. Read no other 
 - Keep the CLI stateless except for explicit files under `$ORBIT_HOME`.
 - A command that works on the Gateway validates explicit input, sends typed requests through `nckrtl/orbit-php-sdk` (`packages/php-sdk`) and renders human and JSON output. The Gateway owns policy: the CLI decides no access, placement or validation rule that the Gateway owns. Local commands, such as `gateway:use`, `gateway:remove`, `dns:resolve` and `profile` with an explicit URL, work without the Gateway.
 - Run no SSH, remote sudo, package manager, systemd or shell for a remote change. Privileged local changes stay in the visible `gateway:add`, `gateway:trust`, `dns:resolve` and `self-update` commands.
-- Add no database, web route, queue, scheduler or frontend setup. Laravel Boost is a development dependency only; production commands must not depend on it.
+- Add no database, web route, queue, scheduler or frontend setup.
 - Each command's page and chart under `docs/cli/<family>/` own its contract. Read them before you change the command.
 
 ## Output
