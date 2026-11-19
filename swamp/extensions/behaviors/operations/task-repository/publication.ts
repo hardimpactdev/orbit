@@ -65,7 +65,7 @@ function requireSuccess<T extends { error_code: string }>(
 /** Typed comparisons and private CLI reply shaping only; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-publication-data",
-    version: "2026.11.15.1",
+    version: "2026.11.19.1",
     resources: {
         public: {
             description: "Public publication observations",
@@ -274,11 +274,16 @@ export const behavior = {
                     throw new Error("tasks.publish_failed");
                 }
                 let number: number;
+                let created: string | null;
                 try {
-                    number =
-                        z.object({ number: z.number().int().positive() }).parse(
-                            JSON.parse(await read(args.directory, "pull.json")),
-                        ).number;
+                    const reply = z.object({
+                        number: z.number().int().positive(),
+                        created_at: z.string().datetime().nullish(),
+                    }).parse(
+                        JSON.parse(await read(args.directory, "pull.json")),
+                    );
+                    number = reply.number;
+                    created = reply.created_at ?? null;
                 } catch {
                     throw new Error("tasks.publish_failed");
                 }
@@ -290,6 +295,8 @@ export const behavior = {
                         pull_request_number: number,
                         pull_request_url:
                             `https://github.com/${args.input.repository}/pull/${number}`,
+                        // When GitHub opened the pull request: a created and an updated one both reply with it.
+                        pull_request_created_at: created,
                     }),
                 });
             },

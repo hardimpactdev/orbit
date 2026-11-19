@@ -27,7 +27,7 @@ use Illuminate\Support\Collection;
  * @phpstan-type Row array{
  *     model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
  *     tokens: int, cost: ?float, input: int, cached: int, wasted: int, lines: int,
- *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, first_pass: bool,
+ *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, pr_merge_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
  *     questions: int, causes: array<string, int>
  * }
@@ -174,6 +174,7 @@ final class TaskInsights
                 'queue' => $merged ? self::span($group->ready_at, $group->started_at) : null,
                 'work' => $merged ? self::span($group->started_at, $group->settled_at) : null,
                 'merge_wait' => self::span($group->settled_at, $mergedAt),
+                'pr_merge_wait' => self::span($group->pr_opened_at, $mergedAt),
                 'first_pass' => $merged && array_filter($groupChildren, static fn (Task $child): bool => $child->fixup_problem !== null) === [],
                 'verdict_subtasks' => count($groupVerdicts),
                 'first_approved' => count(array_filter($groupVerdicts, static fn (array $verdict): bool => $verdict['approved'])),
@@ -219,6 +220,7 @@ final class TaskInsights
             queueMs: self::median($merged, 'queue'),
             workMs: self::median($merged, 'work'),
             mergeWaitMs: self::median($merged, 'merge_wait'),
+            prMergeWaitMs: self::median($merged, 'pr_merge_wait'),
             yield: self::share(count($merged), count($rows)),
             prFirstPass: self::share(count(array_filter($merged, static fn (array $row): bool => $row['first_pass'])), count($merged)),
             wastedShare: self::share(array_sum(array_column($rows, 'wasted')), $tokens),
@@ -292,7 +294,7 @@ final class TaskInsights
 
     /**
      * @param  list<Row>  $rows
-     * @param  'lead'|'queue'|'work'|'merge_wait'  $key
+     * @param  'lead'|'queue'|'work'|'merge_wait'|'pr_merge_wait'  $key
      */
     private static function median(array $rows, string $key): ?int
     {

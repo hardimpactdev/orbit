@@ -77,6 +77,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
 | `vm_power` | task | [VM power](/reference/compute-drivers#vm-power): always `null`, because no task VM exists |
 | `ready_at`, `ended_at`, `merged_at` | task | [Lifecycle times](#lifecycle-times): when the task first entered `todo`, when it ended, and when GitHub merged its pull request |
+| `pr_opened_at` | task | [Lifecycle times](#lifecycle-times): when GitHub opened the task's pull request. Null until Orbit reads it |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics): distinct-thread tokens, per-subtask usage deltas, recorded whole-branch line counts, and duration |
 
 Clearing the assistance flag can keep the last reason.
@@ -509,6 +510,10 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 `GET /api/v1/tasks` returns at most `limit` groups, newest first. `limit` is 1 to 100; the default is 20. `meta.next_cursor` names the next page, or is null on the last page. Send it back as `cursor` with the same filters to read the next page. A cursor is an opaque string; one in another form answers `422` with `validation.failed`. This is the paging of [`operation:list`](/reference/operations#page-the-list). A page is not a snapshot: a group created after the first page appears on no later page. The list orders by id alone, so a page boundary never moves when a group changes status.
 
 `project_id` and `status` filter the groups before the page is cut, so a filtered list pages the same way. With `parent_id`, the list returns that group's subtasks in position order, whole and unpaged; `limit` and `cursor` are refused with it. With `parent_id`, `status` takes a subtask status, and a `project_id` other than the group's Project lists nothing.
+
+#### Find the task of a pull request
+
+`repository` and `pull_request` together list the groups whose pull request this is: `repository` is `owner/name` and `pull_request` the number. A group matches when its published `pr_url` or its `watched_pr_url` names that pull request; the owner and name match in any case. No match is an empty list. One without the other, or either with `parent_id`, answers `422`. Each URL column has an index on its lower-case form, so the filter reads only the matching rows. Conn's PR panel reads this to show a pull request's task.
 
 A list row has every field of `task:show` except the group's [`publication`](#publication-state) and, on each subtask, `completion_summary`, `fixup_problem` and the latest check's `output`. A summary is stored in full and a check keeps 16 KiB of output, so a page of full rows grows without bound. Publication reads the group's publish Operations and done check, several reads per group. Read one group with `task:show` to get them.
 
@@ -1589,7 +1594,7 @@ The board retains recorded lifecycle times, PR identity, token usage and line ch
 
 ### Lifecycle times
 
-`started_at`, `settled_at`, `completed_at` and `merged_at` describe recorded task history. Swamp records lifecycle transitions through the existing APIs. Task insights read those records. A subtask's `started_at` is set when its first turn in a task copy moves it from `todo` to `running`, and a later turn keeps it; its duration counts from then. Its `settled_at` is set when it first becomes `completed`, `failed` or `cancelled`, by any path, and its duration ends there. A reopen to `running` clears `settled_at`, so its duration runs again until it ends again. Conn reads these metrics in its [Tasks panel](/reference/conn#tasks-panel).
+`started_at`, `settled_at`, `completed_at`, `pr_opened_at` and `merged_at` describe recorded task history; [Insights come from recorded times](#insights-come-from-recorded-times) says where the pull request times come from. Swamp records lifecycle transitions through the existing APIs. Task insights read those records. A subtask's `started_at` is set when its first turn in a task copy moves it from `todo` to `running`, and a later turn keeps it; its duration counts from then. Its `settled_at` is set when it first becomes `completed`, `failed` or `cancelled`, by any path, and its duration ends there. A reopen to `running` clears `settled_at`, so its duration runs again until it ends again. Conn reads these metrics in its [Tasks panel](/reference/conn#tasks-panel).
 
 ### Tokens and line diff
 
@@ -1701,6 +1706,7 @@ Durations and token counts are medians. Shares are between 0 and 1. A number is 
 | `queue_ms` | `ready_at` to `started_at` |
 | `work_ms` | `started_at` to `settled_at`, the subtasks up to settling |
 | `merge_wait_ms` | `settled_at` to `merged_at`: review, fixups, and merge |
+| `pr_merge_wait_ms` | `pr_opened_at` to `merged_at`: how long the pull request stayed open. A merged task without `pr_opened_at` does not count |
 | `excluded` | Merged tasks that lack a time that `lead_time_ms` needs |
 | `yield` | `merged` divided by `tasks` |
 | `pr_first_pass` | Merged tasks with no fixup subtask, from a [final review](#review-a-subtask) or from [settling](#settling), divided by `merged` |
@@ -1987,6 +1993,8 @@ JSON reads and the browser stream return the same stored snapshot and use the sa
 The insights are computed on each read from the task rows, their threads, comments, checks, and questions. There is no snapshot table to fill or repair, and a fixed definition applies to old and new tasks alike. The fleet holds a few hundred tasks a month, so a read stays small.
 
 A task stores its own lifecycle times. `updated_at` moves on any write, and the Activity log samples reads and keeps no record of a task whose state changed. Without the times, lead time would be a guess.
+
+`pr_opened_at` is GitHub's `created_at` of the pull request. A publish records it from GitHub's reply when it opens or updates the pull request, and the [settle tick](#a-copy-group-settles-on-merge) and `task:complete` record it when they read the watched pull request. The first time recorded stays. A task that ended before Orbit recorded the time keeps it null.
 
 `merged_at` is GitHub's merge time, read when Orbit confirms the merge. `merge_status` is set only when Orbit merges, so it misses a pull request that a person merged. Counting merges from GitHub's answer covers both.
 

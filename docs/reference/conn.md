@@ -582,6 +582,7 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 | `status` | Only tasks with this raw task status, such as `running` or `waiting_for_review`. |
 | `limit` | 1 to 100 rows; 20 by default. |
 | `cursor` | Start below this task id: `meta.next_cursor` of the page before. |
+| `repository`, `pull_request` | Only the tasks of this pull request, as on [`task:list`](/reference/tasks#find-the-task-of-a-pull-request): `owner/name` and the number, both or neither. |
 
 `meta.next_cursor` is null on the last page. Each row:
 
@@ -597,6 +598,7 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 | `subtask_counts` | `{total, todo, running, completed, failed, cancelled}`. `reserved` and `reviewing` count as `running`. |
 | `created_at`, `updated_at` | The task row's times. |
 | `last_activity_at` | When the task last did something: [Last activity](/reference/tasks#last-activity). |
+| `pr_opened_at` | When GitHub opened the task's pull request: [`pr_opened_at`](/reference/tasks#lifecycle-times). Null when Orbit has not read it. |
 
 `attention` is `{kind, question, reason}`. Its `kind` is one of these, in this order:
 
@@ -1547,7 +1549,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /environments/{environment_id}/renew` | — | Operation (202) |
 | `GET /threads` | `project`, `instance` query, both optional | list of thread, and `meta.environments` |
 | `POST /environments/{environment_id}/threads` | `{"thread_id": "a1b2", "title": "Fix the login"}` | thread (201, or 200 when recorded already) |
-| `GET /tasks` | `project`, `instance`, `status`, `limit`, `cursor` query, all optional | list of task row, and `meta.next_cursor` ([Tasks panel](#tasks-panel)) |
+| `GET /tasks` | `project`, `instance`, `status`, `limit`, `cursor`, `repository` with `pull_request` query, all optional | list of task row, and `meta.next_cursor` ([Tasks panel](#tasks-panel)) |
 | `GET /tasks/{id}` | — | task ([Tasks panel](#tasks-panel)) |
 
 The objects:
