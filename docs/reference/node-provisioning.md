@@ -760,7 +760,16 @@ The network phase uses it for the WireGuard files. `tasks/managed-files-check.ym
 
 Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
 
-The check phase reads the same way, but it repairs nothing. `tasks/check-read.yml` reads a list of paths and units in one call. For each path it returns what `ansible.builtin.stat` would: whether it exists, its type, mode, owner, group and, for a regular file, its SHA-256. For each unit it returns the exit code and state of `systemctl is-active`. A path listed twice is read once. The role check reads all of a role's services, files, folders and private files in one call. The agent check reads the agent binary and its service in one call. The software check reads the installed versions with one `dpkg-query` call instead of `package_facts`. The asserts are the same as before and loop over the same items, so a drift fails the check at the same task and names the same item. A private file's checksum stays out of the output. A read that fails, or prints anything but its JSON document, fails the check.
+The check phase reads the same way, but it repairs nothing. `tasks/check-read.yml` reads a list of paths, units and read-only commands in one call. For each path it returns what `ansible.builtin.stat` would: whether it exists, its type, mode, owner, group and, for a regular file, its SHA-256. A path can also be read through its symbolic link. For each unit it returns the exit code and state of `systemctl is-active`. For each command it returns the exit code and output; a missing program gives exit code 127. A path listed twice is read once.
+
+Each part of the check makes one call:
+
+- The agent check reads the agent binary, its service and the selected CLI through its link.
+- The software check reads the installed versions with `dpkg-query` instead of `package_facts`, and the JavaScript, browser and Deno versions and the Vite+ runtime.
+- The role check reads a role's services, files, folders, private files, the Prometheus file and the Swamp start cache.
+- The CI check reads the CI collections, project and network settings, profile and ACL. A failed read names its item.
+
+The asserts are the same as before and loop over the same items, so a drift fails the check at the same task and names the same item. A private file's checksum stays out of the output. A read that fails, or prints anything but its JSON document, fails the check.
 
 The same rule covers an install that a converge would otherwise redo. An archive install, such as Squid on an Instance container host, follows [Package sources](#package-sources).
 

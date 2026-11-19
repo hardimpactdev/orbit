@@ -3,13 +3,12 @@ contexts:
   # dpkg-query lists each package as `<status> <name> <version>`; only installed packages count. A package of two
   # architectures keeps both versions, as package_facts did; a removed package that keeps its configuration counts as not installed.
   software-installed:
-    software_installed:
-      stdout_lines:
-      - installed base-files 14ubuntu1
-      - installed libc6 2.42-0ubuntu3
-      - installed libc6 2.42-0ubuntu2
-      - config-files php8.3-fpm 8.3.6-0ubuntu0.24.04.1
-      - not-installed git
+    check_read:
+      commands:
+        dpkg:
+          rc: 0
+          stdout: "installed base-files 14ubuntu1\ninstalled libc6 2.42-0ubuntu3\ninstalled libc6 2.42-0ubuntu2\n\
+            config-files php8.3-fpm 8.3.6-0ubuntu0.24.04.1\nnot-installed git\n"
   # The managed file check prints the JSON list of drifted indexes ("[]" when clean, as the private DNS check does).
   # A failed check or any other text repairs every file.
   managed-files-check-clean:

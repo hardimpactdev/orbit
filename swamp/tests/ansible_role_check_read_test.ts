@@ -77,7 +77,7 @@ function failedAt(output: string, task: string, item: RegExp | null) {
 Deno.test("a healthy role passes the batched check with one read, judging every item", async () => {
     const { code, output } = await check();
     assertEquals(code, 0, output);
-    assertEquals(output.split("TASK [Read the checked paths and units in one call]").length - 1, 1, output);
+    assertEquals(output.split("TASK [Read the checked paths, units and commands in one call]").length - 1, 1, output);
     assertMatch(output, /changed=0\s/);
     // No stat or systemctl call per item remains.
     assert(!output.includes("TASK [Read role file metadata]") && !output.includes("TASK [Read selected role services]"), output);
@@ -115,4 +115,105 @@ Deno.test("a changed private file fails the check without printing it", async ()
     assert(code !== 0, output);
     failedAt(output, "Check private files", null);
     assert(!output.includes(await sha256("other\n")) && !output.includes(await sha256("secret\n")), output);
+});
+
+/** Run the real CI check against a stand-in `incus` that answers from `state`; `change` alters the state first. */
+async function ciCheck(change: (state: Record<string, unknown>) => void = () => {}) {
+    const folder = await Deno.makeTempDir();
+    try {
+        const plans = {
+            ci: {
+                pool: "orbit-ci", project: "orbit-ci", acl: "orbit-ci-egress", network: "orbit-ci-br",
+                projectConfig: { "features.profiles": "true", "features.networks": "false" },
+                networkConfig: { "ipv4.nat": "true" },
+                profile: { config: { "limits.cpu": "2" }, devices: {}, description: "Orbit CI runner" },
+                egress: [{ action: "allow", destination: "10.0.0.0/8", state: "enabled" }],
+            },
+        };
+        const state: Record<string, unknown> = {
+            "/1.0/storage-pools": ["/1.0/storage-pools/orbit-ci"], "/1.0/projects": ["/1.0/projects/default", "/1.0/projects/orbit-ci"],
+            "/1.0/network-acls": ["/1.0/network-acls/orbit-ci-egress"], "/1.0/networks": ["/1.0/networks/orbit-ci-br"],
+            "/1.0/profiles/default?project=orbit-ci": plans.ci.profile,
+            "/1.0/network-acls/orbit-ci-egress": {
+                description: "Orbit CI runner boundary", config: {}, ingress: [],
+                egress: [{ action: "allow", destination: "10.0.0.0/8", state: "enabled", description: "" }],
+            },
+            "project orbit-ci features.profiles": "true", "project orbit-ci features.networks": "false", "network orbit-ci-br ipv4.nat": "true",
+        };
+        change(state);
+        await Deno.writeTextFile(`${folder}/state.json`, JSON.stringify(state));
+        await Deno.mkdir(`${folder}/bin`);
+        await Deno.writeTextFile(`${folder}/bin/incus`, `#!/usr/bin/env python3
+import json, sys
+state = json.load(open(${JSON.stringify(`${folder}/state.json`)}))
+args = sys.argv[1:]
+key = args[1] if args[0] == 'query' else ' '.join([args[0]] + args[2:])
+if key not in state:
+    sys.exit(1)
+value = state[key]
+print(value if isinstance(value, str) else json.dumps(value))
+`);
+        await Deno.chmod(`${folder}/bin/incus`, 0o755);
+        await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
+            hosts: "localhost", connection: "local", gather_facts: false, vars: { plans },
+            tasks: [{ name: "Check CI", "ansible.builtin.import_tasks": `${tasks}ci.yml`, vars: { ci_check_only: true } }],
+        }]));
+        const result = await new Deno.Command("ansible-playbook", {
+            args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped",
+            env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default", PATH: `${folder}/bin:${Deno.env.get("PATH")}` },
+        }).output();
+        return { code: result.code, output: new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr) };
+    } finally { await Deno.remove(folder, { recursive: true }); }
+}
+
+Deno.test("healthy CI state passes the CI check with one read", async () => {
+    const { code, output } = await ciCheck();
+    assertEquals(code, 0, output);
+    assertEquals(output.split("TASK [Read the checked paths, units and commands in one call]").length - 1, 1, output);
+    assertMatch(output, /changed=0\s/);
+});
+
+const ciDrifts: Array<[string, (state: Record<string, unknown>) => void, string, RegExp]> = [
+    ["a missing CI project", (s) => { s["/1.0/projects"] = ["/1.0/projects/default"]; }, "Check CI resources", /'collection': 'projects'/],
+    ["a changed CI setting", (s) => { s["project orbit-ci features.networks"] = "true"; }, "Check CI settings", /'key': 'features\.networks'/],
+    ["a changed CI profile", (s) => { s["/1.0/profiles/default?project=orbit-ci"] = { config: {}, devices: {}, description: "Orbit CI runner" }; },
+        "Check the CI profile", /Assertion failed/],
+    ["changed CI egress", (s) => { s["/1.0/network-acls/orbit-ci-egress"] = { description: "Orbit CI runner boundary", config: {}, ingress: [], egress: [] }; },
+        "Check CI egress", /Assertion failed/],
+    ["a CI setting that cannot be read", (s) => { delete s["network orbit-ci-br ipv4.nat"]; }, "Require every CI read",
+        /\(item=network orbit-ci-br ipv4\.nat\)[\s\S]*network orbit-ci-br ipv4\.nat could not be read \(exit 1\)\./],
+];
+for (const [name, change, task, item] of ciDrifts) {
+    Deno.test(`${name} fails the CI check at that item`, async () => {
+        const { code, output } = await ciCheck(change);
+        assert(code !== 0, output);
+        failedAt(output, task, item);
+    });
+}
+
+Deno.test("the check read follows a link when asked and runs each command once, a missing program giving 127", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.writeTextFile(`${folder}/target`, "cli\n");
+        await Deno.symlink(`${folder}/target`, `${folder}/link`);
+        await Deno.writeTextFile(`${folder}/play.json`, JSON.stringify([{
+            hosts: "localhost", connection: "local", gather_facts: false,
+            tasks: [
+                { name: "Read", "ansible.builtin.import_tasks": `${tasks}check-read.yml`, vars: {
+                    check_read_paths: [`${folder}/link`], check_read_followed: [`${folder}/link`],
+                    check_read_commands: { echo: ["echo", "one"], missing: [`${folder}/missing`], failing: ["false"] },
+                } },
+                { name: "Show", "ansible.builtin.debug": { msg: "RESULT{{ check_read | to_json }}RESULT" } },
+            ],
+        }]));
+        const result = await new Deno.Command("ansible-playbook", {
+            args: ["-i", "localhost,", `${folder}/play.json`], stdout: "piped", stderr: "piped", env: { ANSIBLE_NOCOLOR: "1", ANSIBLE_STDOUT_CALLBACK: "default" },
+        }).output();
+        const output = new TextDecoder().decode(result.stdout) + new TextDecoder().decode(result.stderr);
+        assertEquals(result.code, 0, output);
+        const read = JSON.parse(JSON.parse(`"${output.split("RESULT")[1]}"`));
+        assertEquals([read.paths[`${folder}/link`].islnk, read.paths[`${folder}/link`].checksum], [true, undefined]);
+        assertEquals([read.followed[`${folder}/link`].isreg, read.followed[`${folder}/link`].checksum], [true, await sha256("cli\n")]);
+        assertEquals(read.commands, { echo: { rc: 0, stdout: "one\n" }, missing: { rc: 127, stdout: "" }, failing: { rc: 1, stdout: "" } });
+    } finally { await Deno.remove(folder, { recursive: true }); }
 });

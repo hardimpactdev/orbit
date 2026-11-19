@@ -2,10 +2,12 @@
 # One read of a check's paths and units instead of a stat or `systemctl is-active` call per item
 # (docs/reference/node-provisioning.md#check-many-files-in-one-read). `check_read_paths` lists paths, read like
 # ansible.builtin.stat without follow and with a SHA-256 checksum of a regular file; a path listed twice is read once.
-# `check_read_units` lists units. `check_read` keeps each path's stat-shaped result under `paths` and each unit's
-# `systemctl is-active` exit code and state under `units`, so the asserts that follow judge every item as before.
+# `check_read_followed` lists paths read the same way through their symbolic links, kept under `followed`.
+# `check_read_units` lists units. `check_read_commands` maps a name to a read-only argv; a missing program gives rc 127.
+# `check_read` keeps each path's stat-shaped result under `paths`, each unit's `systemctl is-active` exit code and state
+# under `units`, and each command's exit code and output under `commands`, so the asserts that follow judge every item as before.
 # A read that fails, or prints anything but its JSON document, fails the check. `check_read_private` keeps both out of the output.
-- name: Read the checked paths and units in one call
+- name: Read the checked paths, units and commands in one call
   check_mode: false
   ansible.builtin.command:
     argv:
@@ -15,15 +17,11 @@
       - |
         import grp, hashlib, json, os, pwd, stat, subprocess, sys
         request = json.load(sys.stdin)
-        paths = {}
-        for path in request['paths']:
-            if path in paths:
-                continue
+        def read(path, follow):
             try:
-                found = os.lstat(path)
+                found = os.stat(path) if follow else os.lstat(path)
             except FileNotFoundError:
-                paths[path] = {'exists': False}
-                continue
+                return {'exists': False}
             mode = found.st_mode
             entry = {'exists': True, 'isdir': stat.S_ISDIR(mode), 'isreg': stat.S_ISREG(mode), 'islnk': stat.S_ISLNK(mode),
                      'mode': '%04o' % stat.S_IMODE(mode), 'rusr': bool(mode & stat.S_IRUSR), 'uid': found.st_uid, 'gid': found.st_gid}
@@ -41,17 +39,29 @@
                     for block in iter(lambda: file.read(1 << 16), b''):
                         digest.update(block)
                 entry['checksum'] = digest.hexdigest()
-            paths[path] = entry
+            return entry
+        paths = {path: read(path, False) for path in dict.fromkeys(request['paths'])}
+        followed = {path: read(path, True) for path in dict.fromkeys(request['followed'])}
         units = {}
         for unit in request['units']:
             done = subprocess.run(['systemctl', 'is-active', '--', unit], capture_output=True, text=True)
             units[unit] = {'rc': done.returncode, 'state': done.stdout.strip()}
-        print(json.dumps({'paths': paths, 'units': units}))
-    stdin: "{{ {'paths': check_read_paths | default([]), 'units': check_read_units | default([])} | to_json }}"
+        commands = {}
+        for name, argv in request['commands'].items():
+            try:
+                done = subprocess.run(argv, capture_output=True, text=True)
+            except FileNotFoundError:
+                commands[name] = {'rc': 127, 'stdout': ''}
+                continue
+            commands[name] = {'rc': done.returncode, 'stdout': done.stdout}
+        print(json.dumps({'paths': paths, 'followed': followed, 'units': units, 'commands': commands}))
+    stdin: >-
+      {{ {'paths': check_read_paths | default([]), 'followed': check_read_followed | default([]),
+      'units': check_read_units | default([]), 'commands': check_read_commands | default({})} | to_json }}
   register: check_read_output
   changed_when: false
   no_log: "{{ check_read_private | default(false) }}"
-- name: Keep the checked paths and units
+- name: Keep the checked paths, units and commands
   ansible.builtin.set_fact:
     check_read: "{{ check_read_output.stdout | from_json }}"
   no_log: "{{ check_read_private | default(false) }}"

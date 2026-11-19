@@ -1,7 +1,13 @@
 ---
 - name: Read the Prometheus file before binding it
+  when: not metrics_check_only
   ansible.builtin.stat: { path: /etc/orbit/metrics/prometheus.yml }
   register: metrics_prometheus_file
+# A check reads the file in check-files.yml's one read.
+- name: Keep the Prometheus file of the check read
+  when: metrics_check_only
+  ansible.builtin.set_fact:
+    metrics_prometheus_file: { stat: "{{ check_read.paths['/etc/orbit/metrics/prometheus.yml'] }}" }
 - name: Restore a missing Prometheus file
   when: not metrics_prometheus_file.stat.exists
   ansible.builtin.copy:
