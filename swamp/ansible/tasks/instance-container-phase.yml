@@ -690,13 +690,14 @@
 
 # Both static PHP binaries read this compiled-in scan directory. The settings are shared by every container, not a Project's: the
 # memory limit, and PHP Data Bridge, which PHP loads from the runtime folder before the app. The bridge returns at once outside a
-# web request, and FrankenPHP serves in classic mode, where it runs.
+# web request, and FrankenPHP serves in classic mode, where it runs. The scan directory also holds the two security settings, as
+# the CLI reads php-cli.ini instead of any php.ini (docs/reference/php-runtime.md#production-safe-settings).
 - name: Configure the container's PHP settings
   tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
   vars:
     container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
-    container_php_ini_content: "memory_limit = 1G\nauto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n"
+    container_php_ini_content: "memory_limit = 1G\nauto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\nzend.exception_ignore_args = 1\nsession.upload_progress.enabled = 0\n"
     container_php_cli_ini_path: /etc/orbit/php/php-cli.ini
     container_php_cli_ini_lines: "{{ (container.php_cli_ini | default(none) or '').splitlines() }}"
     # The wanted lines without those whose module the runtime folder lacks; no line left is no file.

@@ -1750,7 +1750,11 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A production live sleeps and wakes; Caddy holds its visitor | Planned with production containers ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Production containers](/reference/production-containers#sleep-and-wake) |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
-The Gateway setting `ORBIT_EXECUTOR_POWER_ENABLED`, off by default, selects signed sleep and wake. On either engine, the Gateway holds a visit while the wake runs, up to `ORBIT_VISIT_WAKE_WAIT_SECONDS` (30 s by default); [Wake](/reference/app-dev-runtime-hibernation#wake) lists the answers. The Gateway sends the order only over the Node's WebSocket. With no `accepted` line by the six-second deadline, the order has expired and the Operation fails with `executor.not_accepted`; an accepted order with no result ends `interrupted` with `executor.result_unknown` ([Signed power delivery](/reference/executor#signed-power-delivery)). A frozen Instance keeps the engine that froze it, even after a setting change.
+The Gateway setting `ORBIT_EXECUTOR_POWER_ENABLED`, off by default, selects signed sleep and wake. On either engine, the Gateway holds a visit while the wake runs, up to `ORBIT_VISIT_WAKE_WAIT_SECONDS` (30 s by default); [Wake](/reference/app-dev-runtime-hibernation#wake) lists the answers.
+
+The signed wake waits up to 30 s for the app to answer, so a slow FrankenPHP start, such as one during a role converge, still wakes. A visit that gets a failed wake ends that wake at once, and the next visit starts a new one. A wake or sleep neither waits for nor holds a role converge on its Node ([Operations](/reference/operations)).
+
+The Gateway sends the order only over the Node's WebSocket. With no `accepted` line by the six-second deadline, the order has expired and the Operation fails with `executor.not_accepted`; an accepted order with no result ends `interrupted` with `executor.result_unknown` ([Signed power delivery](/reference/executor#signed-power-delivery)). A frozen Instance keeps the engine that froze it, even after a setting change.
 
 **The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development container to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. A clone, a default and a nested-fleet Instance follow the same rule; no list of names or ids exempts one. `ORBIT_HIBERNATION_CONTAINER_SLEEP` chooses which Instances it acts on:
 
@@ -2033,7 +2037,7 @@ What is built:
 - Conn shows a server whose container is stopped as asleep. It does not wake it yet; this remains in [ADR 0250's acceptance](/decisions/0250-run-instances-and-task-groups-in-incus-containers#remaining-acceptance).
 - The desktop app starts these threads. The phone does not yet.
 
-The agents use their own subagents only. MCP servers come from the project's own files: `.mcp.json` for Claude Code and the project's Codex configuration.
+The agents use their own subagents only. MCP servers come from the project's own files: `.mcp.json` for Claude Code and the project's Codex configuration. In the Orbit repository, the root `.mcp.json` and `.codex/config.toml` each start one server, the Gateway's Laravel Boost (`php apps/gateway/artisan boost:mcp`). It runs in any Gateway environment, so it starts in a task copy whose Gateway is production, and offers only the documentation search, the database tools, the log entries and the last error, with no prompts. Requests, Horizon and the scheduler never load Boost.
 
 ## Tasks in an Instance container
 

@@ -17,10 +17,17 @@ use Illuminate\Support\Str;
 
 /**
  * Serializes automatic convergence, the release pass's role converge and its full converge for changed host inputs, with Instance, Conn
- * and Process work on the Nodes they share. Task work never conflicts.
+ * and Process work on the Nodes they share. Task work and power work never conflict.
  */
 final readonly class NodeWorkAdmission
 {
+    /**
+     * A wake, a sleep and the start that stands in for a nested clone's wake touch only their own container and its asleep marker: no
+     * Caddy publication and no Node role state. A visitor or an idle sleep must never wait for a role converge, so they neither wait nor
+     * hold. The executor's readiness wait covers a converge's network rewrites during a wake.
+     */
+    public const array PowerKinds = ['instance.wake', 'instance.sleep', 'instance.start'];
+
     /** A refused automatic role converge holds its place this long; the release pass renews it on each retry. */
     public const int WaitSeconds = 60;
 
@@ -36,7 +43,7 @@ final readonly class NodeWorkAdmission
      * `*_operation_id` (such as the completion of a create), leads back to a holder, step by step. New work on a holder's target waits
      * like any other. The wait is bounded: after WaitLimitSeconds the converge is admitted beside the holders, and it records them in
      * its state as `admitted_beside`, so their continuations go on while it runs. Task work (`tasks.*`: copy turns, checks,
-     * publishes, syncs, cancels) runs inside its copy and neither waits nor holds.
+     * publishes, syncs, cancels) runs inside its copy and neither waits nor holds, and so does power work (PowerKinds).
      *
      * @param  array<string,mixed>  $input
      * @return list<int> the holders an automatic role converge is admitted beside, for its `admitted_beside` state
@@ -47,7 +54,7 @@ final readonly class NodeWorkAdmission
         $roles = $kind === 'node.converge' && data_get($input, '_converge.intent.automatic') === true;
         // A removal is accepted at once and never waits for a converge, waiting or running: its Caddy writes take the Node's publication
         // lock and check the live file before the rename, as a converge admitted beside Instance work relies on too.
-        if (! $roles && InstanceDestroyKind::removes($kind)) {
+        if (! $roles && (InstanceDestroyKind::removes($kind) || in_array($kind, self::PowerKinds, true))) {
             return [];
         }
         if (! $roles && ! Str::is(array_map(static fn (string $pattern): string => str_replace('%', '*', $pattern), $patterns), $kind)) {
@@ -73,7 +80,7 @@ final readonly class NodeWorkAdmission
                     foreach ($patterns as $pattern) {
                         $query->orWhere('kind', 'like', $pattern);
                     }
-                });
+                })->whereNotIn('kind', self::PowerKinds);
         } else {
             $open->whereIn('node_id', $nodes)->where('kind', 'node.converge')->where('input->_converge->intent->automatic', true);
         }

@@ -1,9 +1,5 @@
-[mcp_servers.orbit-cli-boost]
-command = "php"
-args = ["orbit", "boost:mcp"]
-cwd = "apps/cli"
-
 [mcp_servers.orbit-gateway-boost]
 command = "php"
-args = ["artisan", "boost:mcp"]
-cwd = "apps/gateway"
+args = ["apps/gateway/artisan", "boost:mcp"]
+# Codex passes a stdio server only a few variables; search-docs reaches its service through the proxy.
+env_vars = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]

@@ -95,12 +95,12 @@ A container Instance's site calls the same endpoint behind its asleep marker. Th
 
 | Outcome | Answer |
 | --- | --- |
-| The wake reached the app | `200`; Caddy continues the original request |
+| The wake reached the app | `307` to the same path and query; the browser repeats the request, and the app answers it |
 | The wake failed | `503` `The wake failed (<error_code>). Reload the page to try again.` |
 | The deadline passed during the wake | `503` `The Instance is still waking. Reload the page in a moment.` |
 | Other lifecycle work held the Instance until the deadline | `503` `The Instance is busy with other work. Try again shortly.` |
 
-While other lifecycle work holds the Instance, the visit tries to admit the wake again every 250 ms. Orbit keeps no memory of a failed wake: a reload admits a new one. The exception is an interrupted wake whose order is unknown ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), R2). Its fence admits no second wake, so every visit gets its failure until an operator verifies the Node.
+While other lifecycle work holds the Instance, the visit tries to admit the wake again every 250 ms. Orbit keeps no memory of a failed wake: the visit that gets the failure ends that wake at once, even before its queued completion runs, so a reload admits a new one. The exception is an interrupted wake whose order is unknown ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), R2). Its fence admits no second wake, so every visit gets its failure until an operator verifies the Node.
 
 An admitted signed Operation sends its order once, over the Node's WebSocket. A failed publish or an order that expires without `accepted` fails the wake, and the held visit gets the plain `503`. Nothing retries the order. A signed wake does not read the Python wake files or use the Python power helper. See [Signed power delivery](/reference/executor#signed-power-delivery) for handback.
 
