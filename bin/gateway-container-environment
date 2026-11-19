@@ -17,7 +17,18 @@ INVENTORY = Path("/home/orbit/.orbit/gateway-containers.json")
 INCUS = ["incus", "--force-local", "--project", "orbit-releases"]
 # The fleet rules write these on a nested-fleet Gateway host only (InstanceFleetGateway). The guest reads its copies.
 # Publish the environment before the marker and remove the marker first, so a reader never sees the marker without its proxy.
-FLEET = {"instance-fleet-environment": Path("/etc/environment"), "instance-fleet": Path("/etc/orbit/instance-fleet")}
+FLEET = {"instance-fleet-environment": Path("/etc/environment"), "instance-fleet-proxy.env": Path("/etc/environment"),
+         "instance-fleet": Path("/etc/orbit/instance-fleet")}
+# The guest's Gateway units load this copy with an optional EnvironmentFile (gateway-web/orbit-fleet-proxy.conf): only the
+# proxy settings of /etc/environment, which systemd reads as they are.
+PROXY = re.compile(rb"(?:HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy)=.*\n?")
+
+
+def fleet_copy(name, host):
+    content = host.read_bytes()
+    if name != "instance-fleet-proxy.env":
+        return content
+    return b"".join(line for line in content.splitlines(keepends=True) if PROXY.fullmatch(line))
 
 
 def publish_fleet(fd, fleet):
@@ -33,7 +44,7 @@ def publish_fleet(fd, fleet):
         out = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
         try:
             with os.fdopen(out, "wb") as copy:
-                copy.write(host.read_bytes())
+                copy.write(fleet_copy(name, host))
             os.replace(staged, name, src_dir_fd=fd, dst_dir_fd=fd)
         finally:
             try:

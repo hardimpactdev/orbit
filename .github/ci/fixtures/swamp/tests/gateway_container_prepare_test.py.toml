@@ -8,6 +8,8 @@ inputs = [
   "swamp/ansible/files/gateway-release-guest.py",
   "swamp/ansible/files/gateway-release-infrastructure.py",
   "swamp/scripts/gateway-release-checkout.sh",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/ansible/files/gateway-web/orbit-fleet-proxy.conf",
 ]
 cases = [
   "test_network_must_be_private_and_disjoint_except_its_existing_bridge",
@@ -23,4 +25,5 @@ cases = [
   "test_release_checkout_keeps_only_admitted_history_for_cold_fleet_cli_resolution",
   "test_env_projection_tracks_atomic_edits_without_exposing_the_bare_repo",
   "test_env_projection_carries_the_hosts_fleet_files_only_on_a_nested_fleet_host",
+  "test_each_release_gives_the_gateway_units_the_published_proxy_settings",
 ]

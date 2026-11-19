@@ -133,7 +133,11 @@ The installed phase dispatcher accepts commits that carry recovery protocol 4 or
 
 After replacing the shared Gateway environment file, run `sudo /usr/local/libexec/orbit-gateway-environment configure` on the Node. It refreshes the file visible to the container and applies the configuration to the serving release.
 
-The same refresh carries the host's nested-fleet files into the container. On the nested Gateway of an Instance fleet, the fleet rules write `/etc/orbit/instance-fleet` and the egress proxy in `/etc/environment` on the host, not in the container. Each refresh copies both into the read-only environment mount as `instance-fleet-environment` and then `instance-fleet`, and removes the marker first when the host has none. After the fleet rules change either file on the host, run `sudo /usr/local/libexec/orbit-gateway-environment refresh`; no restart is needed, because the Gateway reads the copies on each use.
+The same refresh carries the host's nested-fleet files into the container. On the nested Gateway of an Instance fleet, the fleet rules write `/etc/orbit/instance-fleet` and the egress proxy in `/etc/environment` on the host, not in the container. Each refresh copies both into the read-only environment mount as `instance-fleet-environment`, `instance-fleet-proxy.env` and then `instance-fleet`, and removes the marker first when the host has none.
+
+`instance-fleet-proxy.env` holds only the six proxy lines of `/etc/environment`. Each preparation installs the drop-in `50-orbit-fleet-proxy.conf` for every `orbit-gateway-*` and `orbit-process-*` unit, so web, Horizon, the schedule and the Gateway Processes load that file with an optional `EnvironmentFile=-`. On the host the fleet rules give the php-fpm pool the same proxy. An outer Gateway's host publishes no file, so its units get no proxy setting.
+
+After the fleet rules change either file on the host, run `sudo /usr/local/libexec/orbit-gateway-environment refresh`. The Gateway's own reads of the marker and proxy need no restart, because it reads the copies on each use; a unit reads the proxy file when it starts, so restart the units, or let the next release start them.
 
 Preparation, every candidate and the reactivated old share that mount, so a release or a rollback never loses them. A release container, marked by `ORBIT_GATEWAY_CONTAINER=1`, reads only these copies. See [Instance host in the fleet](/reference/development-containers#instance-host-in-the-fleet).
 
