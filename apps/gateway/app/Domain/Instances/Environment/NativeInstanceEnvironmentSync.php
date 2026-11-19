@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Domain\Instances\Deployment\ContainerHostPaths;
 use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Processes\ProcessOperationAdmission;
@@ -125,6 +126,11 @@ final readonly class NativeInstanceEnvironmentSync
         $sql = [];
         $testValues = $testing?->values;
         if ($context->productionContainer) {
+            $instance = Instance::query()->with('project')->findOrFail($context->instanceId);
+            $php = $instance->selected_php_version ?? $instance->project->php_version ?? '8.5';
+            foreach ($values as $key => $value) {
+                $values[$key] = app(ContainerHostPaths::class)->map($value, $instance, $php, 'Environment key ['.$key.']');
+            }
             $projected = app(ProductionDatabaseEndpoints::class)->project($context->instanceId, $values);
             $values = $projected['values'];
             $sql = $projected['sql'];
