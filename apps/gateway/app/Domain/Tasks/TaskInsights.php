@@ -20,14 +20,16 @@ use App\Models\TaskQuestion;
 use App\Support\Percentile;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
  * Computes [task insights](/reference/tasks#task-insights) from the ended tasks, their threads, verdicts,
- * handoff checks, and questions. Every number is defined here and nowhere else.
+ * handoff checks, and questions. Every number is defined here and nowhere else: `rowsOf` builds the row of each
+ * task group, which `TaskInsightRecorder` stores, and `aggregate` reduces rows to a report, which `TaskInsightTotals` stores.
  *
  * @phpstan-type Row array{
- *     model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
+ *     id: int, project_id: int, model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
  *     tokens: int, cost: ?float, input: int, cached: int, wasted: int, lines: int,
  *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, pr_merge_wait: ?int, delivery: ?int, deploy_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
@@ -44,15 +46,41 @@ final class TaskInsights
      */
     private const array GroupColumns = ['id', 'project_id', 'ready_at', 'started_at', 'settled_at', 'ended_at', 'merged_at', 'deployed_at', 'pr_opened_at', 'lines_added', 'lines_deleted'];
 
-    /** @param  7|30  $days */
+    /** The periods a report covers, by their name in the API; the only list of them. */
+    public const array Periods = ['7d' => 7, '30d' => 30];
+
+    /**
+     * The report computed from the source tables. The endpoint reads it from `TaskInsightTotals` instead,
+     * which aggregates the same rows from their [records](/reference/tasks#task-insights).
+     *
+     * @param  7|30  $days
+     */
     public function report(int $days, ?int $projectId, CarbonImmutable $now): TaskInsightsData
+    {
+        $groups = Task::topLevel()->where('ended_at', '>=', self::trendStart($now))
+            ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId));
+
+        return $this->aggregate($days, $this->rowsOf($groups), $now);
+    }
+
+    /** The start of the oldest trend week: no older row counts in a report. */
+    public static function trendStart(CarbonImmutable $now): CarbonImmutable
+    {
+        return $now->utc()->startOfDay()->addDay()->subWeeks(self::Weeks);
+    }
+
+    /**
+     * The report over rows of one Project, or of all of them; rows that ended before the trend start do not count.
+     *
+     * @param  7|30  $days
+     * @param  list<Row>  $rows
+     */
+    public function aggregate(int $days, array $rows, CarbonImmutable $now): TaskInsightsData
     {
         $tomorrow = $now->utc()->startOfDay()->addDay();
         $from = $tomorrow->subDays($days);
-        $trendFrom = $tomorrow->subWeeks(self::Weeks);
-        $releases = GatewayRelease::query()->where('outcome', 'verified')->whereNotNull('sha')
-            ->orderBy('created_at')->get(['sha', 'created_at']);
-        $rows = $this->rows($trendFrom, $projectId, $releases);
+        $trendFrom = self::trendStart($now);
+        usort($rows, static fn (array $a, array $b): int => $a['id'] <=> $b['id']);
         $in = static fn (CarbonImmutable $start, CarbonImmutable $end): array => array_values(array_filter(
             $rows,
             static fn (array $row): bool => $row['ended_at'] >= $start && $row['ended_at'] < $end,
@@ -86,21 +114,23 @@ final class TaskInsights
     }
 
     /**
-     * One row per task that ended since the start of the trend.
+     * One row per ended task group that the query selects, ordered by id.
      *
-     * @param  Collection<int, GatewayRelease>  $releases
+     * @param  Builder<Task>  $query  top-level tasks
      * @return list<Row>
      */
-    private function rows(CarbonImmutable $since, ?int $projectId, Collection $releases): array
+    public function rowsOf(Builder $query): array
     {
+        $releases = GatewayRelease::query()->where('outcome', 'verified')->whereNotNull('sha')
+            ->orderBy('created_at')->get(['sha', 'created_at']);
         $codes = Project::query()->pluck('code', 'id')->all();
-        $groups = Task::topLevel()
+        $groups = $query
             ->whereIn('status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))
-            ->where('ended_at', '>=', $since)
-            ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
+            ->whereNotNull('ended_at')
             ->orderBy('id')->toBase()->get(self::GroupColumns)
             ->map(static fn (object $group): array => [
-                'id' => self::number($group->id), 'project' => ValidatedData::nullableString($codes[self::number($group->project_id)] ?? null) ?? '',
+                'id' => self::number($group->id), 'project_id' => self::number($group->project_id),
+                'project' => ValidatedData::nullableString($codes[self::number($group->project_id)] ?? null) ?? '',
                 'lines' => self::number($group->lines_added) + self::number($group->lines_deleted),
                 ...array_map(self::time(...), ['ready_at' => $group->ready_at, 'started_at' => $group->started_at, 'settled_at' => $group->settled_at,
                     'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at, 'pr_opened_at' => $group->pr_opened_at]),
@@ -182,6 +212,8 @@ final class TaskInsights
             $merged = $mergedAt !== null;
 
             $rows[] = [
+                'id' => $group['id'],
+                'project_id' => $group['project_id'],
                 // The model the group's first implementer thread ran; a group with no implementer thread counts as Unknown.
                 'model' => array_values(array_filter($groupThreads, static fn (array $thread): bool => $thread['role'] === 'implementer'))[0]['model'] ?? null,
                 'project' => $group['project'],

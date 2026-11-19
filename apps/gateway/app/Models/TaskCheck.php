@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskInsightObserver;
 use App\Domain\Tasks\TaskPrMode;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
@@ -41,7 +42,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $pr_body the reviewer's pull request body on this check
  * @property int|null $pr_text_operation_id the reviewer turn that sent the title and the body
  */
-#[ObservedBy([TaskBroadcastObserver::class])]
+#[ObservedBy([TaskBroadcastObserver::class, TaskInsightObserver::class])]
 final class TaskCheck extends Model
 {
     #[\Override]

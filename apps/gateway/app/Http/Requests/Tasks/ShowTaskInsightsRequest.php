@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Tasks;
 
+use App\Domain\Tasks\TaskInsights;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class ShowTaskInsightsRequest extends FormRequest
@@ -12,15 +13,17 @@ final class ShowTaskInsightsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'period' => ['sometimes', 'string', 'in:7d,30d'],
+            'period' => ['sometimes', 'string', 'in:'.implode(',', array_keys(TaskInsights::Periods))],
             'project_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }
 
-    /** @return 7|30 */
-    public function days(): int
+    /** @return key-of<TaskInsights::Periods> */
+    public function period(): string
     {
-        return $this->validated('period') === '7d' ? 7 : 30;
+        $period = $this->validated('period', '30d');
+
+        return is_string($period) && array_key_exists($period, TaskInsights::Periods) ? $period : '30d';
     }
 
     public function projectId(): ?int
