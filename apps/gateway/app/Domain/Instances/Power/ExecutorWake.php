@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Power;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Executor\ExecutorOrderPublisher;
 use App\Domain\Executor\ExecutorOrderSigner;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -419,8 +420,9 @@ final readonly class ExecutorWake
             return false;
         }
         $operation->forceFill(['state' => [...($operation->state ?? []), self::JournalReadAt => now()->getTimestamp()]])->save();
-        // Each read runs in its own job, so one unreachable Node cannot hold up other Operations or the wake hooks of this pass.
-        Bus::dispatch(new CompleteExecutorWake($operationId));
+        // Each read runs in its own job, off the prompt queue, so an unreachable Node holds up neither other Operations nor wake
+        // completions and hooks.
+        Bus::dispatch((new CompleteExecutorWake($operationId))->onQueue(GatewayQueue::Operations->value));
 
         return true;
     }

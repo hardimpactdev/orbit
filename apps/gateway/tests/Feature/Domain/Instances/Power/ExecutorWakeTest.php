@@ -39,6 +39,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Testing\Fakes\EventFake;
 use Orbit\Extensions\Conn\Domain\ConnLaunchAccess;
 use Orbit\Extensions\Conn\Domain\ConnLaunchChild;
@@ -1174,6 +1175,22 @@ it('gives a recovered publication its six-second result window before timing out
     expect($operation->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.wake_timeout');
     Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
     Queue::assertPushed(CompleteExecutorWake::class, 1);
+});
+
+it('waits out the last second before its deadline itself instead of releasing the job', function (): void {
+    $instance = executorWakeInstance();
+    $operation = executorWakePendingCompletion($instance, 60);
+    $this->freezeTime();
+    Sleep::fake();
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+    $job = Queue::pushed(CompleteExecutorWake::class)->sole()->withFakeQueueInteractions();
+
+    $this->travel(5_600)->milliseconds();
+    app()->call([$job, 'handle']);
+
+    $job->assertNotReleased();
+    Sleep::assertSlept(fn ($duration): bool => (int) $duration->totalMilliseconds === 400);
+    expect($operation->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.wake_timeout');
 });
 
 it('does not wait on a held publication lock and recovers once its owner leaves', function (): void {

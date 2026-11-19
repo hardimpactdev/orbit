@@ -6,6 +6,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Executor\ExecutorOrderBroadcast;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\InstanceContainer;
@@ -956,6 +957,6 @@ it('queues each journal read on its own, so an unreachable Node holds up no othe
     $commands = journalAnswers([]);
     expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(2);
     expect($commands)->toHaveCount(0);
-    expect(Queue::pushed(CompleteExecutorWake::class, fn (CompleteExecutorWake $job): bool => $job->delay === null)->pluck('operationId')->unique()->sort()->values()->all())
-        ->toBe([$first->id, $second->id]);
+    $reads = Queue::pushed(CompleteExecutorWake::class, fn (CompleteExecutorWake $job): bool => $job->delay === null && $job->queue === GatewayQueue::Operations->value);
+    expect($reads->pluck('operationId')->sort()->values()->all())->toBe([$first->id, $second->id]);
 });

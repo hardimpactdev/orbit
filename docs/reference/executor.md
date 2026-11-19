@@ -364,7 +364,7 @@ The deadline case covers a publish that threw, an order with no `accepted` line 
 - A `seen` or `open` record is read again after 1 s, and every 10 s after the first 30 s.
 - A Node that cannot be read ends the Operation `interrupted` with `executor.result_unknown`. It keeps its lock, and the Gateway queues a new read every 10 s.
 - A journal that cannot prove absence ends the same way. Its executor has no `journal.accepts` marker, or the order is older than 24 hours.
-- Each read is its own job with a 2 s connect timeout, so one unreachable Node delays no other Instance.
+- Each read again is its own job on the `operations` queue, with a 2 s connect timeout. One unreachable Node delays neither another Instance's recovery nor a wake's completion.
 
 A visitor's held request sees a failed Operation and gets the plain `503`.
 
