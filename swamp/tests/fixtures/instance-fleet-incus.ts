@@ -682,10 +682,12 @@ if (command[0] === "curl") {
     state.operations.push({ node, roles, status: state.convergeStatus?.[node] ?? (egress ? "succeeded" : "failed") });
     done({ data: { id: 900 + state.operations.length, status: "pending" } });
   }
-  // The refresh reads every admitted Operation in one call; curl prints each body and then the `-w` newline.
+  // The refresh reads every admitted Operation in one call; with `-w '\n%{exitcode}\n'` curl prints each body, then that
+  // transfer's exit code on a line of its own.
   const operationUrls = command.filter((value) => value.startsWith("https://") && /\/api\/v1\/operations\/\d+$/.test(value));
-  if (method === "GET" && operationUrls.length > 1) {
-    Deno.stdout.writeSync(new TextEncoder().encode(operationUrls.map((value) => JSON.stringify(readOperation(Number(value.slice(value.lastIndexOf("/") + 1)))) + "\n").join("")));
+  const writeOut = command[command.indexOf("-w") + 1];
+  if (method === "GET" && operationUrls.length > 0 && command.includes("-w") && writeOut.includes("%{exitcode}")) {
+    Deno.stdout.writeSync(new TextEncoder().encode(operationUrls.map((value) => JSON.stringify(readOperation(Number(value.slice(value.lastIndexOf("/") + 1)))) + "\n0\n").join("")));
     save();
     Deno.exit(0);
   }

@@ -347,7 +347,7 @@ const convergeAdmit = (node: number, host = true) =>
   `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d ${
     node === 2 && !host ? '{"base":true}' : '{"base":false}'}`;
 const convergeRead = (...operations: number[]) =>
-  `${api} --fail -w \\n ${operations.map((operation) => `https://10.45.0.1/api/v1/operations/${operation}`).join(" ")}`;
+  `${api} --fail -w \\n%{exitcode}\\n ${operations.map((operation) => `https://10.45.0.1/api/v1/operations/${operation}`).join(" ")}`;
 /** Each converge has the default scope. With `host` off (an ID map below 2,000,000), nested-app-dev keeps the base scope. */
 const convergeCallsFor = (nodes: number[], host = true) => {
   const gateway = nodes.includes(1) ? [convergeAdmit(1, host), convergeRead(901)] : [];

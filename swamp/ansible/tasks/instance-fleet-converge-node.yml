@@ -25,33 +25,39 @@
       {{ fleet_converge.results | selectattr('rc', 'eq', 0) | map(attribute='item.name')
          | zip(fleet_converge.results | selectattr('rc', 'eq', 0) | map(attribute='stdout') | map('from_json') | map(attribute='data.id'))
          | list }}
-# One read names every admitted Operation; curl prints each body on a line of its own, in the order of the URLs.
+# One read names every admitted Operation. curl writes each body on a line of its own, in the order of the URLs, and that transfer's
+# own exit code on the next line: curl's exit code is only the last transfer's. A read counts only when every transfer exited 0 with
+# a JSON object; any other read, a dropped or cut first response too, is polled again and never parsed.
 - name: Wait for the converges of the due nested Nodes
   when: fleet_converge_admitted | length > 0
   ansible.builtin.command:
     argv: >-
-      {{ ['timeout', '90'] + fleet_curl + ['--fail', '-w', '\n']
+      {{ ['timeout', '90'] + fleet_curl + ['--fail', '-w', '\n%{exitcode}\n']
          + (fleet_converge_admitted | map(attribute='1') | map('regex_replace', '^', fleet_api ~ '/operations/') | list) }}
   register: fleet_converge_wait
   changed_when: false
   failed_when: false
-  vars:
-    fleet_converge_read: "{{ fleet_converge_wait.stdout_lines | default([]) | reject('equalto', '') | map('from_json') | map(attribute='data') | list }}"
+  vars: &fleet_converge_poll
+    fleet_converge_lines: "{{ fleet_converge_wait.stdout_lines | default([]) }}"
+    fleet_converge_whole: >-
+      {{ fleet_converge_lines | length == 2 * fleet_converge_admitted | length
+         and fleet_converge_lines[1::2] | reject('equalto', '0') | list | length == 0
+         and fleet_converge_lines[0::2] | reject('match', '^\{.*\}$') | list | length == 0 }}
+    fleet_converge_read: "{{ fleet_converge_lines[0::2] | map('from_json') | map(attribute='data') | list if fleet_converge_whole | bool else [] }}"
   until: >-
-    fleet_converge_wait.rc == 0 and fleet_converge_read | length == fleet_converge_admitted | length
+    fleet_converge_whole | bool
     and fleet_converge_read | map(attribute='status') | difference(['succeeded', 'failed', 'cancelled', 'interrupted']) | length == 0
   retries: "{{ ((fleet_converge_nodes | map(attribute='seconds') | map('int') | max) / 5) | int }}"
   delay: "{{ fleet_ready_delay }}"
 - name: Read the converges of the nested Nodes
+  vars: *fleet_converge_poll
   ansible.builtin.set_fact:
-    # One row per admitted Node: its name, its Operation and the Operation as last read.
+    # One row per admitted Node: its name, its Operation and the Operation as last read; a last read that was not whole reads none.
     fleet_converge_ops: >-
-      {%- set read = fleet_converge_wait.stdout_lines | default([]) | reject('equalto', '') | list
-          if fleet_converge_wait.rc | default(1) == 0 else [] -%}
       {%- set rows = [] -%}
       {%- for admitted in fleet_converge_admitted -%}
       {%- set _ = rows.append({'name': admitted[0], 'id': admitted[1],
-            'data': ((read[loop.index0] | from_json).data | default({})) if read | length == fleet_converge_admitted | length else {}}) -%}
+            'data': fleet_converge_read[loop.index0] if fleet_converge_read | length == fleet_converge_admitted | length else {}}) -%}
       {%- endfor -%}
       {{ rows }}
 - name: Check the converges of the nested Nodes

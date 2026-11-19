@@ -57,7 +57,7 @@ ANSIBLE_TESTS = ('tests/ansible_artifact_test.py', 'tests/ansible_inputs_test.py
                  'tests/ansible_node_add_test.py', 'tests/ansible_shape_gate_tools_test.py',
                  'tests/ansible_gateway_swamp_grants_test.py',
                  'tests/ansible_task_vm_fleet_wait_test.py',
-                 'tests/ansible_hub_prune_test.py',
+                 'tests/ansible_hub_prune_test.py', 'tests/ansible_fleet_converge_poll_test.py',
                  'tests/ansible_wireguard_hub_lan_rules_test.py', 'tests/ansible_wireguard_hub_lan_recovery_test.py',
                  'tests/ansible_wireguard_hub_lan_load_test.py', 'tests/ansible_hub_converge_peers_test.py', 'tests/ansible_static_php_test.py',
                  'tests/instance_migrate_env_test.py', 'tests/instance_node_runtime_test.py', 'tests/instance_migrate_dotenv_test.py',

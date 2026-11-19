@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\DB;
  * whether it is a base converge (`node.converge` with `base: true`). A base intent never converges the network, the hub's own
  * included (NodeDesiredConvergeInput::baseIntent), so two base converges of different Nodes never conflict. Two converges of
  * different peers of the hub never conflict either: each network phase writes the hub's recorded peer set, the same for both, with
- * atomic file copies, one `wg syncconf` and UFW's own lock, and prunes only by the bounds of its snapshot. So the nested-fleet
+ * atomic file copies, one `wg syncconf` and UFW's own lock, prunes only by the bounds of its snapshot, and deletes obsolete UFW rules
+ * by their spec, never by a number that the other converge's delete would shift (node-converge-hub-filter-absent.yml). So the nested-fleet
  * refresh converges nested-app-dev and nested-app-prod together (docs/reference/development-containers.md). A converge of the hub
  * Node itself, beside any other converge, still refuses unless both are base converges.
  */

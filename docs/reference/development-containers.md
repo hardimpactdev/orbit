@@ -3183,6 +3183,8 @@ Then `nested-app-dev` and `nested-app-prod` converge side by side: two peers of 
 
 The refresh admits both app Nodes together and reads their two Operations in one call every 5 seconds until both have ended, so no run is still going when the refresh fails. A failed or refused converge fails the refresh after its group has ended, and the error names each Node that failed. A failed nested Gateway admits no app Node. A failed refresh records no digest, not even for a Node whose converge succeeded, so the next refresh converges them all again. The run then restores the old seed.
 
+curl's exit code is only the last transfer's, so each transfer writes its own exit code after its body. A read counts only when every transfer exited 0 with a JSON object; a dropped or cut response, the first one too, is read again and never parsed.
+
 A due converge still prepares inputs and runs its final checks, even when all its skippable phases match the record.
 
 Below the 2,000,000 [ID map size](#instance-host-in-the-fleet), `nested-app-dev` cannot build its Instance image. There the refresh converges it with the base scope, as before, and its software and role state in `base` stay as they were. A proof needs a default at 2,000,000 when its converge or role-add cases run on `nested-app-dev`.
