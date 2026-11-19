@@ -73,7 +73,7 @@ final readonly class NativeNodeRoleRelocateInput
             $this->removal->capture($source, $ghost, $before['source'], desiredAssignment: $assignment)]);
         $websocket = $role === RoleName::WebSocket ? $this->websocket($target) : null;
         $firewall = $child ? ['desired' => [], 'remove' => []] : app(NodeRoleFirewallInput::class)->convergeCommands($target, $role);
-        $ingress = $role === RoleName::Ingress && $operation !== null ? $this->ingress($target, $assignment, $before['target'], $operation) : null;
+        $ingress = $role === RoleName::Ingress ? $this->ingress($target, $assignment, $before['target'], $operation) : null;
 
         return ['schema_version' => 1, 'role' => $role->value, 'assignment_id' => $assignment->id,
             'target_node_id' => $target->id, 'source_node_id' => $source->id, 'ssh' => $ssh,
