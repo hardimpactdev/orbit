@@ -87,7 +87,7 @@ Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It dele
 
 Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.
 
-The Gateway holds that request while the Instance wakes. When the wake succeeds, it answers an empty 200, and Caddy continues the original request to the app with its method, URI and body. The visitor gets the app's own page. Otherwise the Gateway answers `503` with a short `text/plain` sentence that says what failed. The answer has no HTML, script or automatic reload. A reload sends a new request, which starts a new wake.
+The Gateway holds that request while the Instance wakes. When the wake succeeds, it answers `307` to the same path and query. The browser repeats the request, with the same method and body, and the awake app answers it. The visitor gets the app's own page after one extra round trip ([why a redirect](/reference/executor#the-wake-inside-the-request)). Otherwise the Gateway answers `503` with a short `text/plain` sentence that says what failed. The answer has no HTML, script or automatic reload. A reload sends a new request, which starts a new wake.
 
 For a Node-level Process wake, the request runs the wake below and answers when it has ended.
 

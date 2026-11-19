@@ -42,7 +42,7 @@ sequenceDiagram
   %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd), and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
   %%> - an open wake of the Instance is joined: a second caller gets the same Operation; a visit that joins is held on it too
-  %%> - Caddy's visit is held while the wake runs, up to 30 s (`ORBIT_VISIT_WAKE_WAIT_SECONDS`): then 200 and the app's own page, or a plain `503` text with no page, script or reload (Nick 2026-11-19; supersedes the 2026-11-15 rule "wake spinner shows at once; never hold the request")
+  %%> - Caddy's visit is held while the wake runs, up to 30 s (`ORBIT_VISIT_WAKE_WAIT_SECONDS`): then `307` to the same URI, which the browser repeats to the awake app, or a plain `503` text with no page, script or reload (Nick 2026-11-19; supersedes the 2026-11-15 rule "wake spinner shows at once; never hold the request")
   %%> - a join to a Conn launch's wake records shared use while locking the wake Operation. If launch cleanup already cancelled the queued wake, a new request admits a new wake
   %%> - after a failed wake, the next visit admits a new wake; only an interrupted wake under its fence (R2) keeps answering its failure
   %%> On failure:
@@ -68,9 +68,9 @@ sequenceDiagram
       %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
       %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
       alt done or partial
-        GW-->>CL: 200, continue request<br/>original method, URI and body
+        GW-->>CL: 307 to the same URI<br/>same method and body
         %%> Result:
-        %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
+        %%> - Caddy returns the 307 unchanged; the browser repeats the request and the awake app answers it. A 200 would end as an empty page on production's published routes, whose activation and app sit in separate `handle` blocks
         %%> - the Operation succeeds and records the runtime running
       else failed, refused or no result in 30 s
         %% path: executor-failed
@@ -99,7 +99,7 @@ sequenceDiagram
   opt Caddy, for a development visit
     Note over GW: Hold the visit<br/>up to 30 s
     %%> Result:
-    %%> - the Gateway admits or joins the wake, runs the Node's resume below within the visit, and waits for the Operation to end; 200 continues the request to the app, otherwise a plain `503`
+    %%> - the Gateway admits or joins the wake, runs the Node's resume below within the visit, and waits for the Operation to end; `307` to the same URI, otherwise a plain `503`
     %%> Why:
     %%> - a container that Python froze wakes in 14–19 s until its next executor sleep; 30 s covers it without a second state
   end

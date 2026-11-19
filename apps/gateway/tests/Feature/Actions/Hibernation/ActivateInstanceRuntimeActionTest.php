@@ -118,12 +118,18 @@ describe('host-checkout Vite wake', function (): void {
         // The automatic-deploy projection mark is independent of wake and must stay untouched.
         expect($instance->refresh()->development_projection_pending)->toBeTrue();
 
-        viteWakePoll($instance)->assertOk()->assertContent('');
+        viteWakePoll($instance, '/form?step=2')->assertStatus(307)->assertHeader('Location', '/form?step=2')->assertContent('');
 
         expect($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
         expect($instance->refresh()->development_projection_pending)->toBeTrue();
         assertRecordedWakePort($instance);
     });
+
+    it('sends the visitor only to a path on its own host', function (string $uri): void {
+        [$instance] = hibernatedViteCheckout();
+
+        viteWakePoll($instance, $uri)->assertStatus(307)->assertHeader('Location', '/');
+    })->with(['https://evil.example/', '//evil.example/', '/\\evil.example/']);
 
     it('answers a plain 503 and keeps the recorded port when it is taken, startup is refused or readiness fails', function (string $failure): void {
         [$instance, $state] = hibernatedViteCheckout();
@@ -140,7 +146,7 @@ describe('host-checkout Vite wake', function (): void {
         $state->busy = false;
         $state->startRefused = false;
         $state->ready = true;
-        viteWakePoll($instance)->assertOk();
+        viteWakePoll($instance)->assertStatus(307)->assertHeader('Location', '/');
         expect($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
     })->with(['busy', 'start', 'readiness']);
 

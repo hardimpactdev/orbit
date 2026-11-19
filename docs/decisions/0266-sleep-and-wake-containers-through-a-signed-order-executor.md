@@ -106,7 +106,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The executor
 
 1. Caddy on the Node finds the asleep marker and calls the Gateway's [activation endpoint](/reference/app-dev-runtime-hibernation), as today.
 2. The Gateway records or joins the wake Operation, signs, publishes, and holds the visit while it waits for the result. The hold lasts up to 30 s, the Gateway setting `ORBIT_VISIT_WAKE_WAIT_SECONDS`.
-3. On `done` or `partial`, the endpoint answers 200. Caddy then passes the original request to the app, and the response is the app's own.
+3. On `done` or `partial`, the endpoint answers `307` to the visitor's own path and query. Caddy returns it unchanged, the browser repeats the request with the same method and body, and the awake app answers it. A `200` would end the request as an empty page on routes that keep the activation and the app in separate `handle` blocks, as production's published routes do.
 4. On a failed or refused result, an ended Operation or the end of the hold, the endpoint answers `503` with one plain sentence: no page, no script and no reload. The Operation goes on as below. A reload of the page is a new visit.
 
 2026-11-19 (Nick, after signed sleep and wake went live): the visit is held; the progress page is removed. A signed wake returns the real page in about 0.4 s. This supersedes the 2026-11-15 rule "wake spinner shows at once; never hold the request" and the first version of this section, which answered a progress page after a 500 ms bound. A container that the Python path froze resumes in 14–19 s until its next executor sleep; the 30 s hold covers it, so it needs no state of its own.

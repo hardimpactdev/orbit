@@ -537,11 +537,12 @@ it('holds a visit to a frozen container while the Node resumes it in the same Op
         && $job->delay !== null && now()->diffInSeconds($job->delay) >= InstanceWake::SafetyNetSeconds - 1);
 });
 
-it('lets the visit continue to the app once the Node resumed the container', function (): void {
+it('sends the visitor back to the same URI once the Node resumed the container', function (): void {
     $clone = frozenClone();
     $node = wakeNode($clone);
 
-    activationPoll($clone, '/dashboard?tab=1')->assertOk()->assertContent('')->assertHeader('Cache-Control', 'no-store, private');
+    activationPoll($clone, '/dashboard?tab=1')->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1')
+        ->assertContent('')->assertHeader('Cache-Control', 'no-store, private');
 
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('succeeded')
         ->and($node->calls)->toBe(['hibernation.marker:mark', 'hibernation.times', ...cleanUpCalls(3)]);
@@ -727,7 +728,7 @@ it('holds a second visit during the resume on the same wake and continues it onc
         $first->refresh()->forceFill(['status' => 'succeeded', 'lock_key' => null, 'state' => [InstanceWake::ResumeState => 'resumed']])->save();
     });
 
-    activationPoll($clone, '/second')->assertOk();
+    activationPoll($clone, '/second')->assertStatus(307)->assertHeader('Location', '/second');
 
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1)->and($state->calls)->toBe([])
         ->and($first->refresh()->status->value)->toBe('succeeded');
@@ -750,7 +751,7 @@ it('lets the extensions catch up after a wake through the Node, as after a workf
     $contribution->shouldReceive('projectWake')->once()->withArgs(fn (Instance $woken): bool => $woken->id === $clone->id);
     app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
 
-    activationPoll($clone)->assertOk();
+    activationPoll($clone)->assertStatus(307)->assertHeader('Location', '/');
 });
 
 it('keeps a cancel that came during the Node resume, and starts no workflow for it', function (): void {
@@ -774,7 +775,7 @@ it('still ends the wake when an extension fails after the Node resume', function
     $contribution->shouldReceive('projectWake')->andThrow(new RuntimeException('extension down'));
     app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
 
-    activationPoll($clone)->assertOk();
+    activationPoll($clone)->assertStatus(307)->assertHeader('Location', '/');
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('succeeded');
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });

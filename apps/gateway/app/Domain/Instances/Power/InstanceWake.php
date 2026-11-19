@@ -318,7 +318,7 @@ final readonly class InstanceWake extends InstancePower
     }
 
     /**
-     * The runtime activation endpoint holds the visit while its wake runs: null lets Caddy continue the original request, and a
+     * The runtime activation endpoint holds the visit while its wake runs: null sends the visitor back to the same URI, and a
      * string is the plain error the visit gets instead. A signed wake ends in about 0.4 s. A container that the old Python path
      * froze resumes through the Node's resume or its workflow in 14–19 s, so the visit waits up to
      * `orbit.executor.visit_wait_seconds` (30 s) for either.

@@ -19,8 +19,10 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * Caddy's forward_auth for a sleeping Instance. The request is held while the Instance wakes: a 200 lets Caddy continue the
- * original request to the app, and any other answer reaches the visitor as it is, here a plain 503 with a short text.
+ * Caddy's forward_auth for a sleeping Instance. The request is held while the Instance wakes. Caddy returns any non-2xx answer to
+ * the visitor as it is: a woken Instance answers a 307 to the visitor's own URI, which the browser repeats with the same method and
+ * body and the awake app answers; a failed wake answers a plain 503 with a short text. A 2xx would continue the request only where
+ * the route runs the app after forward_auth; routes that hold activation and the app in separate `handle` blocks end it there.
  */
 #[RequiresNodeAccess(ServingNode::InstanceHost)]
 final class RuntimeActivationsController extends Controller
@@ -41,7 +43,7 @@ final class RuntimeActivationsController extends Controller
         if ($instance->runtime()->exists()) {
             $failure = $wake->activate($instance, 'node:'.(RequireActiveWireGuardPeer::activePeer($request)->id ?? $instance->node_id));
 
-            return $failure === null ? $this->ready() : $this->failed($failure);
+            return $failure === null ? $this->ready($request) : $this->failed($failure);
         }
 
         try {
@@ -54,12 +56,18 @@ final class RuntimeActivationsController extends Controller
             return $this->failed('The runtime wake failed. Check the Gateway log before retrying.');
         }
 
-        return $this->ready();
+        return $this->ready($request);
     }
 
-    private function ready(): Response
+    /** Only a path on the visitor's own host: a forwarded URI that names another origin goes to `/`. */
+    private function ready(Request $request): Response
     {
-        return response('', 200)->header('Cache-Control', 'no-store');
+        $uri = $request->headers->get('X-Forwarded-Uri');
+        $location = is_string($uri) && str_starts_with($uri, '/') && ! str_starts_with($uri, '//') && ! str_starts_with($uri, '/\\') ? $uri : '/';
+
+        return response('', 307)
+            ->header('Location', $location)
+            ->header('Cache-Control', 'no-store');
     }
 
     private function failed(string $message): Response

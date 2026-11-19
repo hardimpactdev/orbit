@@ -112,7 +112,7 @@ The first executor guard took the first non-`vars` handler. So it accepted only 
 
 Then it ran signed orders on a real Instance in that layout. Container default Instance 2 (`proofapp.nested-dev`) got its site rendered by the pre-#4020 renderer with Vite on and compiled by Caddy. Both settings were on. With the pinned executor, sleep Operation 211 failed with `instance.sleep_route_unready` over the WebSocket, as on production. With the branch executor, sleep 212 froze the container in 475 ms (`done`, `websocket`).
 
-A visit then woke it through Operation 213 (`done`, `websocket`, 56,065 pages read, none failed). In this older layout the waking visit gets an empty 200, because nothing follows the activation inside `handle @orbit_asleep`. The next request reaches the app. The newer layout continues the waking visit to the app.
+A visit then woke it through Operation 213 (`done`, `websocket`, 56,065 pages read, none failed). In this older layout an activation `200` reached the visitor as an empty page, because nothing follows the activation inside `handle @orbit_asleep`. Production's routes still have this layout, so a woken visit now answers `307` to the same URI in both layouts ([the wake inside the request](#the-wake-inside-the-request)).
 
 The guard does not check where the proxy goes, so the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
 
@@ -292,11 +292,17 @@ Two Pest files in `apps/gateway/tests/Feature/Infrastructure/Executor` test this
 
 The Gateway holds the visitor's request while the wake runs. One monotonic budget of `ORBIT_VISIT_WAKE_WAIT_SECONDS`, default 30 s, covers admission, publishing, waiting, and recording the success. The Gateway caps SQLite writer waits and Reverb HTTP calls by the remaining budget and checks the recorded receipt between short Valkey waits. A sibling can consume the Valkey copy without losing the result. `instance:wake` and other callers keep the `ORBIT_EXECUTOR_WAIT_MS` bound, default 500 ms.
 
-Caddy runs `forward_auth` before the app handlers in one ordered route. A 200 continues the original method, URI, query and body; the response is the app's own. A failed or refused result answers at once with `503` and one plain sentence that names the code. So does an Operation that ended without success. An example is `The wake failed (instance.container_start_failed). Reload the page to try again.`
+Caddy returns any non-2xx `forward_auth` answer to the visitor unchanged. When the wake succeeds, the Gateway answers `307` with `Location` set to the visitor's own path and query, from `X-Forwarded-Uri`. The browser repeats the request with the same method and body, and the awake app answers it.
+
+A `200` would continue the request only in the newer layout, where the app handlers follow the activation in one ordered route. Production's published routes keep the activation and the app in separate `handle` blocks, where a `200` ends the request as an empty page. The redirect works in both layouts without a route republish, at the cost of one round trip. The Gateway sends only a path on the visitor's own host: any other forwarded URI redirects to `/`.
+
+A failed or refused result answers at once with `503` and one plain sentence that names the code. So does an Operation that ended without success. An example is `The wake failed (instance.container_start_failed). Reload the page to try again.`
 
 A wake that has not ended within the budget answers `503` with `The Instance is still waking. Reload the page in a moment.` There is no progress page, script or reload; a reload is a new visit that joins or admits the wake. While other lifecycle work holds the Instance, the visit tries the admission again every 250 ms within the budget.
 
 A container that the Python path froze is held too: the Node's resume runs within the visit, and its workflow if that resume fails. Subtask 6003 proved it on the nested fleet with container default Instance 2 (`webtest.nested-dev`), frozen by Python. The visit got the app's own page, `200`, in 2.07 s. With the app's web unit masked, the wake failed, and the visit got the plain `503` `The wake failed (instance.container_start_failed)` in 23.9 s.
+
+Then, with the route replaced by the shape of production's `route-50.json` (separate `handle` blocks), a GET got the `307` in 1.5 s and the app's page on the repeat, and a POST with a body reached the app as a POST after the redirect. A visit while a sleep held the Instance, with a 0.2 s budget, got the plain `503` through that route.
 
 ### Wake handoff recovery
 
