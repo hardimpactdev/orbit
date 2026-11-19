@@ -1,7 +1,8 @@
 ---
 # Clear the inner Incus's network pid files (each managed bridge's dnsmasq.pid) from the stopped nested containers that
 # `fleet_runtime_names` names (instance_fleet_runtime.py). A stop keeps the file, and an empty one stopped `orbitinst0` on nested-app-dev.
-# - The refresh runs it before it takes `base`, so no `base` holds one.
+# - The refresh runs it before it takes `base` of a stopped fleet, so no stopped `base` holds one. A `base` of the running fleet (btrfs)
+#   holds the live files, which the reset clears.
 # - The reset runs it between the restore of `base` and the start, and its rescue before it starts the containers again: a `base` taken
 #   before the heal (placed by instance-fleet-start.yml) holds neither the heal nor a clean disk.
 # A container that is not stopped (`skipped`) or that could not be checked without following a link (`unsafe`) fails the step, so no

@@ -57,6 +57,8 @@
     # deduplicated their root disks, on the container's own disk beside the refresh record; and the inner Incus's storage folder.
     fleet_shrink_record: /var/lib/orbit/fleet-shrink.json
     fleet_inner_pools: /var/lib/incus/storage-pools
+    # The transient timer that thaws a fleet frozen for `base` when the refresh's controller is lost (instance-fleet-refresh.yml).
+    fleet_thaw_unit: orbit-fleet-thaw
     fleet_tunnel: wg-nested
     # The inner bridge of the nested containers (TaskVmNestedFleet::Network). The seed holds it; no fleet step creates it.
     fleet_network: oe-nested
