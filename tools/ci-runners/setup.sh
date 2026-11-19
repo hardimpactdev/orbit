@@ -12,6 +12,7 @@
 #   tools/ci-runners/setup.sh hook NAME              # job-started hook that resets the checkout; restart only when idle
 #   tools/ci-runners/setup.sh proof_hook             # the same hook for the orbit-proof runner on this host (sudo)
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
+#   tools/ci-runners/setup.sh move NAME              # move an idle runner onto the orbit-ci pool, registration kept
 #
 # A registration token comes from `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`
 # and expires after an hour. The script never stores or prints it. Prefer ORBIT_RUNNER_TOKEN: an argument shows in
@@ -25,6 +26,8 @@ set -euo pipefail
 
 REPOSITORY=$(cd "$(dirname "$0")/../.." && pwd)
 PROJECT=orbit-ci
+# The role's ZFS or btrfs pool (ci-runner.host); the project's default profile roots a new runner on it.
+POOL=orbit-ci
 IMAGE=images:ubuntu/26.04
 RUNNER_VERSION=2.338.0
 RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
@@ -310,6 +313,37 @@ register() {
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
 }
 
+# The root pool a runner's root disk resolves to, and whether the runner pins it in its own devices.
+root_pool() {
+  incus query "/1.0/instances/$1?project=$PROJECT" |
+    python3 -c 'import json,sys; i=json.load(sys.stdin); print(i["expanded_devices"]["root"]["pool"], "root" in i["devices"])'
+}
+
+# A runner made before the role's pool keeps its old pool through a root device that ci-runner.host pinned. Incus moves
+# a root only while the instance is stopped, so this refuses while the runner runs a job (a Runner.Worker process),
+# stops it, moves the root onto the pool, drops the pin and starts it. The registration in its root moves with it.
+move() {
+  local name=$1 pool pinned running busy
+  read -r pool pinned < <(root_pool "$name")
+  if [ "$pool" != "$POOL" ]; then
+    running=$(incus list "$name" --project "$PROJECT" -c s -f csv)
+    if [ "$running" = RUNNING ]; then
+      # pgrep answers 1 only when no process matches; any other answer is a job or an unknown state.
+      busy=0
+      in_ct "$name" pgrep -f Runner.Worker >/dev/null || busy=$?
+      [ "$busy" = 1 ] || { echo "$name: runs a job or cannot be read; move it when idle" >&2; return 75; }
+      incus stop "$name" --project "$PROJECT"
+    fi
+    incus move "$name" --project "$PROJECT" --storage "$POOL"
+    read -r pool pinned < <(root_pool "$name")
+    [ "$pool" = "$POOL" ] || { echo "$name: still on $pool" >&2; return 1; }
+    [ "$running" != RUNNING ] || incus start "$name" --project "$PROJECT"
+  fi
+  # The project's default profile gives the same root on the pool.
+  [ "$pinned" = False ] || incus config device remove "$name" root --project "$PROJECT" >/dev/null
+  echo "$name: on $POOL"
+}
+
 user_manager() {
   local name=$1
   # Apply only this prerequisite to existing runners; no packages or listener restart.
@@ -340,5 +374,6 @@ verify() {
 
 case "${1:-}" in
   runtime_device | container | actions | hook | proof_hook | register | user_manager | verify) "$@" ;;
-  *) sed -n '2,20p' "$0" >&2; exit 2 ;;
+  move) "$@" ;;
+  *) sed -n '2,21p' "$0" >&2; exit 2 ;;
 esac
