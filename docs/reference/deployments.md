@@ -26,6 +26,8 @@ The production home is planned to go: [Production containers](/reference/product
 
 An AppProd deployment builds in that Instance’s permanent preparation container, then promotes a verified clone. The prior live drains and freezes for rollback. A deploy step is required by default. Set `--required=false` to record its failure and continue. Both step phases run from the repository root. See [production containers](/reference/production-containers).
 
+A Laravel release with `storage` as a shared path gets its `public/storage` link without a `storage:link` step. Process commands and environment values may name a host path only where the container has an exact equivalent; see [Host paths](/reference/production-containers#host-paths).
+
 ## The production home
 
 Each production Instance has a home, `/home/<production-user>`, with these paths.
