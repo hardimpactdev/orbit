@@ -44,7 +44,9 @@ Today only `app-dev` Nodes enable the `firewall` family, because the converge in
 - a sent step past its budget fails with `engine.step_budget_exceeded`;
 - the Operation fails as soon as one step failed;
 - the Operation succeeds once all steps are done;
-- the Operation ends as cancelled at the first transition after a cancel request, unless every step already ended: then the steps' real result counts.
+- the Operation ends as cancelled at the first transition after a cancel request.
+
+The steps' real result beats a cancel: when every step already ended, their result counts.
 
 Orders are published after the transaction commits. For each step the engine first schedules its deadline, then publishes its order:
 
@@ -156,7 +158,8 @@ The foundation was proven in a task copy's nested fleet:
 - `firewall:allow`, a repeat and `firewall:remove` on app-dev ran on the engine, and each ufw table matched;
 - an Operation took 0.55–0.67 seconds from request to result, against 2.8–3.7 seconds on Swamp; the step itself took 0.2–0.3 seconds, and a repeat 62 ms;
 - an executor stopped for 12 seconds: its first order expired and the engine re-sent it;
-- a `nats-server` restart: the executor and the Gateway reconnected. The first Operation after it fell back to Swamp, because the capability read failed, and succeeded; the next ran on the engine;
+- a `nats-server` restart: the executor and the Gateway reconnected;
+- the first Operation after that restart ran on Swamp, since its capability read failed, and succeeded;
 - a Node whose executor did not report `ufw.ensure_rule` ran its firewall Operations on Swamp, in 2.8–7.8 seconds each;
 - the consumer process stopped for 5 seconds: the start event waited in its durable consumer and ran on restart.
 

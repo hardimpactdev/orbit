@@ -106,7 +106,7 @@ With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus
 When it joins, the executor:
 
 1. connects as `node-<id>` with the credentials the converge wrote, with its own inbox prefix `_INBOX.node-<id>`;
-2. reports its primitives and version to key `n<id>` of the `NODES` bucket, so the Gateway can route a kind to it, and repeats the report every minute;
+2. reports its primitives and version to key `n<id>` of the `NODES` bucket, every minute; the Gateway routes a kind by this report;
 3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
 
 It runs orders in slots: two per CPU, between 2 and 8. It pulls one order at a time and only when a slot is free, so a pulled order never waits past its acknowledgement wait. In an Incus container the CPU count comes from the smaller of the affinity mask and `/proc/cpuinfo`, which lxcfs limits to the container's quota.
@@ -116,10 +116,10 @@ For each order it:
 1. checks it exactly as the socket does (`server::verify`), on a blocking thread, with the same allowlist, journal, nonce and expiry rules;
 2. reads any content the order names by SHA-256 from the `CONTENT` bucket into `/var/lib/orbit/executor/blobs`, and checks the hash;
 3. runs it, and sends a progress acknowledgement every 2 s so a running order is not redelivered;
-4. publishes the result line as a receipt on `orbit.receipts.<id>`. The order's own result uses the nonce as `Nats-Msg-Id`; a refusal uses `refused-<nonce>`, so a replay never shadows the real result;
+4. publishes the result line as a receipt on `orbit.receipts.<id>`, with the nonce as `Nats-Msg-Id` (a refusal uses `refused-<nonce>`);
 5. acknowledges the order only after JetStream stored the receipt.
 
-An order that is never acknowledged comes back, and the journal answers it as a repeat. A refusal is a receipt too, so the Gateway learns of an expired order and sends a new one.
+An order that is never acknowledged comes back, and the journal answers it as a repeat. Its refusal's own message id keeps it from shadowing the real result. A refusal is a receipt too, so the Gateway learns of an expired order and sends a new one.
 
 ### ufw.ensure_rule
 
