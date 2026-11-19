@@ -138,11 +138,13 @@ final readonly class RouteEngineFlow implements EngineDefinition
     {
         $mine = static fn (string $list): array => array_values(array_filter(RouteExecutionProof::objects($plan[$list] ?? []),
             static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
-        $nodes = ValidatedData::object($plan['nodes']);
-        if (! is_array($nodes[(string) $node] ?? null)) {
+        // JSON keys such as "3" are integer keys in a PHP array.
+        $nodes = is_array($plan['nodes'] ?? null) ? $plan['nodes'] : [];
+        $connection = $nodes[$node] ?? null;
+        if (! is_array($connection) || ! is_string($connection['account'] ?? null)) {
             throw new EngineUnsupported("Node {$node} has no connection.");
         }
-        $account = ValidatedData::string(ValidatedData::object($nodes[(string) $node])['account']);
+        $account = $connection['account'];
         $leaves = [];
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             if (ValidatedData::integer($leaf['node_id']) !== $node) {
