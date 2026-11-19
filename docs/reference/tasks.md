@@ -516,23 +516,28 @@ Such a task takes, by its own ID, the calls that a subtask takes:
 | `task:turn` | The implementer and reviewer turns |
 | `task:check:cancel` | Cancels the running check |
 | `task:update` with `deliverables` | Replaces the deliverables, with the [corrections of a started subtask](#correct-the-deliverables-of-a-started-subtask) and their `reason`. Such an update takes no other field |
-| `task:update` with `status` `completed` or `failed` | Ends the task's work, as on a subtask. The task stays open. Such an update takes no other field |
-| `task:comment:create` | A comment on the task's open work, as on a subtask. Once the work ended, a comment goes to the task |
+| `task:update` with `work_status` | Moves the work's status by the [subtask moves](#change-subtasks), the reopen included. Such an update takes no other field |
+| `task:comment:create` | A comment, on the work while it is open, as on a subtask |
 | `task:comment:list` | The task's comments and its work's comments |
 
-An `assistance_requested` comment on the work opens a [question](#questions) with the task's ID as `task_id` and the work's ID as `subtask_id`. A `resolution` comment resolves it.
+`status` stays the task's own status, with its moves and its no-op repeat; `work_status` is the work's. A `work_status` on a task without work answers `422` with `validation.failed`, and so does one with `deliverables`.
+
+An `assistance_requested` comment on open work opens a [question](#questions) with the task's ID as `task_id` and the work's ID as `subtask_id`. Once the work ended, a comment goes to the task. A `resolution` goes where the request it answers is recorded, the work or the task, also after the work ended or the task took its own deliverables. A resolution clears the assistance request. It does not close the question: `task:question:close <question> --status=answered` does. An ended task takes no comment and answers `409` with `tasks.group_closed`.
 
 Its turn prompt holds the task's brief once and the task's deliverables, with no subtask part.
 
 Review, publish and completion follow the rules of a task with subtasks, with the work as its one and last subtask:
 
 - A reviewer turn by the task's ID reviews a passed handoff check of the work. Its prompt names the task, not a subtask.
-- `task:update <task> --status=completed` after that turn is the approval that [the done rule](#when-the-work-is-done) reads. Other statuses, such as `running`, stay statuses of the task.
+- `task:update` with `work_status` `completed` after that turn is the approval that [the done rule](#when-the-work-is-done) reads.
+- After a completion, `work_status` `running` reopens the work as the [reopen of the last subtask](#reopen-the-last-subtask) does. A person repairs a merge round that stopped this way.
 - `task:publish` and the automatic publish of `pr_when_done` publish the done check. A conflict with main starts the [merge round](#the-merge-round) on the work: it reopens and completes the work as it does the last subtask.
-- `task:complete` completes the task and ends its open work.
-- [Task insights](#task-insights) count the work once, as one subtask. A started task with no subtask takes no subtask: subtask create answers `409` with `tasks.own_work`. Record an outcome found during the task as a new task.
+- `task:complete` completes the task and cancels its open work, from every status it completes.
+- [Task insights](#task-insights) count the work once, as one subtask.
 
-In `backlog`, a task without subtasks takes its own deliverables by `task:update`, also after its last subtask was destroyed. A task with subtasks takes none: the update answers `422` with `validation.failed`. In `backlog`, a task whose own deliverables are empty takes a subtask: the first subtask create replaces its own empty work. While it holds deliverables, subtask create answers `409` with `tasks.own_work`; clear them first to split the task.
+A started task with no subtask takes no subtask: subtask create answers `409` with `tasks.own_work`. Record an outcome found during the task as a new task.
+
+In `backlog`, a task without subtasks takes its own deliverables by `task:update`, also after its last subtask was destroyed. A task with subtasks takes none: the update answers `422` with `validation.failed`. In `backlog`, a task whose own deliverables are empty takes a subtask: the first subtask create replaces its own empty work. While it holds deliverables, subtask create answers `409` with `tasks.own_work`; clear them first to split the task. A work with comments or questions is not replaced: subtask create answers `409` with `tasks.own_work`, and the split needs a new task.
 
 A create writes the task and its work, or its subtasks, in one transaction. The body alone chooses the shape: a query parameter named `deliverables` is no field of it.
 
@@ -638,7 +643,7 @@ The task and subtask operations return these errors.
 | `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks or its own deliverables |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
-| `tasks.own_work` | 409 | Subtask create in a started [task with no subtask](#a-task-with-no-subtask), or in one in `backlog` that holds deliverables |
+| `tasks.own_work` | 409 | Subtask create in a started [task with no subtask](#a-task-with-no-subtask), or in one in `backlog` whose work holds deliverables, comments or questions |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started, when no [correction](#correct-the-deliverables-of-a-started-subtask) applies |
 | `tasks.reason_unexpected` | 422 | A `reason` on an update that is not a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask) |

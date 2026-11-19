@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
+use App\Models\TaskQuestion;
 use Illuminate\Support\Facades\DB;
 
 final readonly class CreateTaskAction
@@ -33,6 +34,10 @@ final readonly class CreateTaskAction
             throw new ResourceOperationException('tasks.own_work', $status === TaskGroupStatus::Backlog
                 ? 'This task holds its own deliverables. Clear them before you split it into subtasks.'
                 : 'A started task with no subtask takes no subtask. Create a new task for the new outcome.', 409);
+        }
+        // The empty work goes with the first subtask only while it holds no history: a comment or a question stays with the task.
+        if ($work instanceof Task && ($work->comments()->exists() || TaskQuestion::query()->where('subtask_id', $work->id)->exists())) {
+            throw new ResourceOperationException('tasks.own_work', 'This task has comments or questions on its own work. Create a new task to split the work into subtasks.', 409);
         }
 
         if ($data->deliverables === [] && $status !== TaskGroupStatus::Backlog) {

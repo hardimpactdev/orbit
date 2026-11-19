@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\RunTaskMergeRoundAction;
-use App\Actions\Tasks\UpdateTaskAction;
-use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupDone;
@@ -106,7 +106,7 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     expect(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
 
     // The completion by the task's id is the approval: the work completes, the task stays open, and its work is done on C0.
-    $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'completed'])->assertOk()
+    $this->patchJson("/api/v1/tasks/{$id}", ['work_status' => 'completed'])->assertOk()
         ->assertJsonPath('data.status', 'running')->assertJsonPath('data.work.status', 'completed')->assertJsonPath('data.subtasks', []);
     expect(app(TaskGroupDone::class)->check($group->refresh())?->id)->toBe($world->check->id);
 
@@ -155,22 +155,100 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     expect($insights->tasks)->toBe(1)->and($insights->handoffFirstTry)->toBe(1.0);
 });
 
-it('ends the work of a task with no subtask by completed or failed on the task\'s id, and leaves every other status to the task', function (): void {
+/** A task in backlog with no subtask whose work holds DELIVERABLES; with no work when DELIVERABLES is null. */
+function soloDraft(TaskDoneFixture $world, ?array $deliverables = []): Task
+{
+    $draft = Task::query()->create(['project_id' => $world->group->project_id, 'title' => 'Plan', 'brief' => 'Plan it.', 'status' => TaskGroupStatus::Backlog]);
+    if ($deliverables !== null) {
+        CreateTaskGroupAction::openWork($draft, $deliverables);
+    }
+
+    return $draft->refresh();
+}
+
+it('moves the work of a task with no subtask by work_status on the task\'s id, and leaves status to the task', function (): void {
     $world = soloDoneWorld();
     $id = $world->group->id;
 
-    // A task with subtasks keeps the meaning of status: a group update takes no completed.
-    $other = TaskDoneFixture::make();
-    $this->patchJson("/api/v1/tasks/{$other->group->id}", ['status' => 'completed'])->assertUnprocessable();
-
-    $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'completed'])->assertOk()->assertJsonPath('data.work.status', 'completed');
-    // Running stays a status of the task itself; the work stays completed.
+    // status stays the task's own: completed is no move of a task, and repeating the status of a failed task is a no-op.
+    $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'completed'])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.status_move_refused');
+    $this->patchJson("/api/v1/tasks/{$id}", ['work_status' => 'completed'])->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.work.status', 'completed');
     $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'reviewing'])->assertOk()->assertJsonPath('data.status', 'reviewing')->assertJsonPath('data.work.status', 'completed');
     $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'running'])->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.work.status', 'completed');
-    app(UpdateTaskAction::class)->execute($world->group->refresh(), $world->subtask->refresh(), new UpdateTaskData(null, null, null, status: TaskStatus::Running));
-    $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'completed', 'title' => 'Other'])->assertUnprocessable();
-    $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'failed'])->assertOk()->assertJsonPath('data.work.status', 'failed');
 
-    expect($world->subtask->refresh()->status)->toBe(TaskStatus::Failed)
-        ->and($world->group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    // The reopen after a completion, as for the last subtask: a fix turn runs on the work again.
+    $this->patchJson("/api/v1/tasks/{$id}", ['work_status' => 'running'])->assertOk()->assertJsonPath('data.work.status', 'running');
+    $this->withHeader('Idempotency-Key', 'solo-fix')->postJson("/api/v1/tasks/{$id}/turn", ['role' => 'implementer', 'prompt' => 'Fix the merge.'])->assertStatus(202);
+    soloEnd(Operation::query()->where('kind', OperationKinds::TasksCopyTurn)->sole());
+
+    // Each change of the work is a request of its own, and takes no field of the task.
+    foreach ([['work_status' => 'completed', 'title' => 'Other'], ['work_status' => 'completed', 'status' => 'running'],
+        ['work_status' => 'reviewing', 'deliverables' => [], 'reason' => 'Both.']] as $body) {
+        $this->patchJson("/api/v1/tasks/{$id}", $body)->assertUnprocessable();
+    }
+    expect($world->subtask->refresh()->status)->toBe(TaskStatus::Running);
+
+    $this->patchJson("/api/v1/tasks/{$id}", ['work_status' => 'failed'])->assertOk()->assertJsonPath('data.work.status', 'failed');
+    $world->group->update(['status' => TaskGroupStatus::Failed]);
+    $this->patchJson("/api/v1/tasks/{$id}", ['status' => 'failed'])->assertOk()->assertJsonPath('data.status', 'failed');
+
+    // A task with subtasks, or with no work, takes no work_status.
+    $other = TaskDoneFixture::make();
+    $this->patchJson("/api/v1/tasks/{$other->group->id}", ['work_status' => 'running'])->assertUnprocessable();
+    $this->patchJson('/api/v1/tasks/'.soloDraft($world, null)->id, ['work_status' => 'running'])->assertUnprocessable();
+    // A draft's deliverables take no status with them.
+    $draft = soloDraft($world);
+    $this->patchJson("/api/v1/tasks/{$draft->id}", ['deliverables' => [], 'status' => 'todo'])->assertUnprocessable();
+    expect($draft->refresh()->status)->toBe(TaskGroupStatus::Backlog);
+});
+
+it('ends the open work of a settling or waiting task with no subtask when the task completes', function (string $status): void {
+    $world = soloDoneWorld();
+    $world->group->update(['status' => $status, 'taskable_type' => null, 'taskable_id' => null]);
+
+    $this->postJson("/api/v1/tasks/{$world->group->id}/complete")->assertOk()->assertJsonPath('data.status', 'completed')->assertJsonPath('data.work.status', 'cancelled');
+})->with(['settling', 'waiting_for_review']);
+
+it('takes comments on the task\'s id where the request they answer is recorded, and refuses them once the task ended', function (): void {
+    $world = soloDoneWorld();
+    $id = $world->group->id;
+    $thread = $world->subtask->implementer_agent_thread_id;
+    $ask = fn (int $task, string $type, string $body, array $more = []) => $this->postJson("/api/v1/tasks/{$task}/comments", ['type' => $type, 'body' => $body, 'author' => 'owner', ...$more]);
+
+    // An attributed comment validates as the work takes it.
+    $ask($id, 'assistance_requested', 'Which format?', ['agent_thread_id' => $thread])->assertCreated()->assertJsonPath('data.task_id', $world->subtask->id);
+    // A resolution clears the request after the work failed.
+    $this->patchJson("/api/v1/tasks/{$id}", ['work_status' => 'failed'])->assertOk();
+    $ask($id, 'resolution', 'CSV.', ['agent_thread_id' => $thread])->assertCreated()->assertJsonPath('data.task_id', $world->subtask->id);
+    expect($world->subtask->refresh()->assistance_requested)->toBeFalse()->and($world->group->refresh()->assistance_requested)->toBeFalse();
+    // A resolution clears assistance; the durable question stays escalated until task:question:close answers it.
+    $question = TaskQuestion::query()->sole();
+    expect($question->status)->toBe(QuestionStatus::Escalated);
+    $this->postJson("/api/v1/task-questions/{$question->id}/close", ['status' => 'answered', 'reason' => 'CSV.'])->assertOk();
+    expect($question->refresh()->status)->toBe(QuestionStatus::Answered);
+
+    // A request on a draft with no work clears after the draft takes its own deliverables.
+    $draft = soloDraft($world, null);
+    $ask($draft->id, 'assistance_requested', 'Which scope?')->assertCreated()->assertJsonPath('data.task_id', $draft->id);
+    CreateTaskGroupAction::openWork($draft, []);
+    $ask($draft->id, 'resolution', 'All of it.')->assertCreated()->assertJsonPath('data.task_id', $draft->id);
+    expect($draft->refresh()->assistance_requested)->toBeFalse();
+
+    // An ended task takes no comment, whatever its work's status.
+    $ended = soloDraft($world);
+    $ended->update(['status' => TaskGroupStatus::Failed]);
+    $ask($ended->id, 'assistance_requested', 'Still there?')->assertConflict()->assertJsonPath('error.code', 'tasks.group_closed');
+});
+
+it('keeps the history of a draft\'s work: a draft whose work has comments or questions takes no subtask', function (): void {
+    $world = soloDoneWorld();
+    $draft = soloDraft($world);
+    $this->postJson("/api/v1/tasks/{$draft->id}/comments", ['type' => 'assistance_requested', 'body' => 'Split it?', 'author' => 'owner'])->assertCreated();
+
+    $this->postJson('/api/v1/tasks', ['parent_id' => $draft->id, 'title' => 'First', 'brief' => 'First part.'])
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.own_work');
+
+    $this->getJson("/api/v1/tasks/{$draft->id}/comments")->assertOk()->assertJsonCount(1, 'data');
+    expect(TaskQuestion::query()->where('task_id', $draft->id)->count())->toBe(1)
+        ->and(Task::query()->where('parent_id', $draft->id)->sole()->type)->toBe(TaskType::Work);
 });

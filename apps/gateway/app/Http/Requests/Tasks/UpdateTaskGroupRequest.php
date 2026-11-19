@@ -33,7 +33,12 @@ final class UpdateTaskGroupRequest extends FormRequest
     public function rules(): array
     {
         if ($this->addressesWork()) {
-            return array_filter((new UpdateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables') || in_array($field, ['reason', 'status'], true), ARRAY_FILTER_USE_KEY);
+            $child = (new UpdateTaskRequest)->rules();
+
+            return [
+                ...array_filter($child, static fn (string $field): bool => str_starts_with($field, 'deliverables') || $field === 'reason', ARRAY_FILTER_USE_KEY),
+                'work_status' => $child['status'],
+            ];
         }
         if ($this->route('task') instanceof Task && $this->route('task')->parent_id !== null) {
             return (new UpdateTaskRequest)->rules();
@@ -60,7 +65,8 @@ final class UpdateTaskGroupRequest extends FormRequest
     {
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), match (true) {
-                $this->addressesWork() => ['deliverables', 'status', 'reason'],
+                // Each change of the work is a request of its own: its deliverables, or its status.
+                $this->addressesWork() => array_key_exists('deliverables', $this->json()->all()) ? ['deliverables', 'reason'] : ['work_status'],
                 $this->route('task') instanceof Task && $this->route('task')->parent_id !== null => ['title', 'brief', 'position', 'deliverables', 'topology', 'status', 'reason'],
                 default => ['title', 'brief', 'status', 'preview', 'pr_mode', 'reason', ...TaskAgent::fields()],
             });
@@ -71,8 +77,8 @@ final class UpdateTaskGroupRequest extends FormRequest
 
     /**
      * Whether the request changes a task's own work (docs/reference/tasks.md#a-task-with-no-subtask). It sets the deliverables: it names
-     * `deliverables`, on a task that has its work or no subtask. Or it ends the work: a task with its work takes `completed` and
-     * `failed`, which no task update takes. Either takes only the work's fields.
+     * `deliverables`, on a task that has its work or no subtask. Or it moves the work's status: it names `work_status`, on a task that
+     * has its work. `status` stays the task's own.
      */
     public function addressesWork(): bool
     {
@@ -85,7 +91,7 @@ final class UpdateTaskGroupRequest extends FormRequest
             return $task->work()->exists() || ! Task::query()->where('parent_id', $task->id)->exists();
         }
 
-        return in_array($body['status'] ?? null, [TaskStatus::Completed->value, TaskStatus::Failed->value], true) && $task->work()->exists();
+        return array_key_exists('work_status', $body) && $task->work()->exists();
     }
 
     public function parentPayload(): UpdateTaskGroupData
@@ -103,6 +109,21 @@ final class UpdateTaskGroupRequest extends FormRequest
             preview: is_bool($this->validated('preview')) ? $this->validated('preview') : null,
             agents: TaskAgent::provided($this->validated()),
             prMode: is_string($this->validated('pr_mode')) ? TaskPrMode::from($this->validated('pr_mode')) : null,
+        );
+    }
+
+    /** The change of a task's own work, as a subtask update takes it. */
+    public function workPayload(): UpdateTaskData
+    {
+        $status = $this->validated('work_status');
+
+        return new UpdateTaskData(
+            title: null,
+            brief: null,
+            position: null,
+            status: is_string($status) ? TaskStatus::from($status) : null,
+            deliverables: array_key_exists('deliverables', $this->validated()) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
+            reason: is_string($this->validated('reason')) ? $this->validated('reason') : null,
         );
     }
 

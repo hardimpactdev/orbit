@@ -29,7 +29,6 @@ use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskStatus;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -132,7 +131,7 @@ final class TaskGroupsController extends Controller
     public function update(UpdateTaskGroupRequest $request, Task $task, UpdateTaskGroupAction $action, UpdateTaskAction $childAction): JsonResponse
     {
         if ($request->addressesWork()) {
-            $action->work($task, fn (Task $work): Task => $childAction->execute($task, $work, $request->childPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id')));
+            $action->work($task, fn (Task $work): Task => $childAction->execute($task, $work, $request->workPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id')));
 
             return response()->json(['data' => TaskGroupData::fromModel($task->refresh())->toArray(), 'meta' => $this->meta($request)]);
         }
@@ -168,11 +167,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function storeComment(StoreTaskCommentRequest $request, Task $task, StoreTaskCommentAction $action, StoreTaskGroupCommentAction $parentAction): JsonResponse
     {
-        // A task with no subtask takes a comment on its open work, as a subtask does (docs/reference/tasks.md#a-task-with-no-subtask).
-        $work = $task->parent_id === null ? $task->work()->first() : null;
-        if ($work instanceof Task && ! in_array($work->status, [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled], true)) {
-            $task = $work;
-        }
+        $task = $request->target();
         $comment = $task->parent_id === null
             ? $parentAction->execute($task, StoreTaskGroupCommentData::from($request->validated()), $request->attributes->getString('orbit.request_id'))
             : $action->execute($task, $request->validated(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
