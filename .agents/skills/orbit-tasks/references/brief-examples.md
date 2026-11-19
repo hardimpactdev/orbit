@@ -95,8 +95,10 @@ Title: **A sleeping Instance without a restore plan wakes fast, and the Operatio
 - Out of scope: a new design for prepared restore.
 
 **Proof:**
-- In this copy's nested fleet, put a test Instance to sleep.
-- Wake it five times through the normal wake entry point.
+- Use a test Instance in this copy's nested fleet.
+- Repeat five times:
+  - Put the Instance to sleep.
+  - Wake it through the normal wake entry point.
 - Record for each wake:
   - the Operation ID;
   - `restore_mode`;
