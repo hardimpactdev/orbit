@@ -2845,15 +2845,15 @@ A real Node gets no parent, so its Squid configuration, its table and its intent
 
 Measured by hand on a task copy on 2026-11-17, with Squid 7.7 on `nested-app-dev`, its product configuration and its table: without a parent, a `GET` of `http://archive.ubuntu.com/ubuntu/dists/resolute/InRelease` and a `CONNECT` to `example.com:443` each got 503 at once. With the parent, both succeeded.
 
-**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has a separate `host` digest. It covers the machine-software recipe under `apps/gateway/resources/machine-software`, `nested-app-dev`'s host intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, folders and Incus, without the admission time), and the `swamp/ansible` tree except the following files. The first three belong to the Swamp role. The last two run from the controller checkout during Conn launches or task turns.
+**Where it runs.** The [refresh](#what-a-refresh-skips) of the default's fleet has a separate `host` digest. It covers three inputs:
 
-- `swamp/ansible/tasks/role-swamp.yml`
-- `swamp/ansible/tasks/swamp-housekeeping.yml`
-- `swamp/ansible/tasks/swamp-binary-retention.yml`
-- `swamp/ansible/conn-launch.yml`
-- `swamp/ansible/t3_copy_rpc.mjs`
+- the code that `nested-app-dev`'s converge can load. The [phase resolver](/reference/node-provisioning#skip-a-phase-whose-input-did-not-change) names it: every `swamp/ansible` file that a `node.converge` phase reaches, plus the implicit and unreached files, the files the phases name beside the bundle, the staged role siblings, the Tool helper and the Tool folder;
+- the machine-software recipe under `apps/gateway/resources/machine-software`;
+- `nested-app-dev`'s host intent as the nested Gateway renders it (`orbit:node-converge-digest --host app-dev`; the image definition, folders and Incus, without the admission time).
 
-No other path is excluded. Shared, new and unclassified files in the tree still count. A missing host record, a changed digest or a failed read of a required host input makes the host due. A failed read leaves no host digest in the record. When the host is due, `nested-app-dev` joins the due converges with its `app-dev` role, not just the base scope. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
+A file that only another Operation's playbook reaches is not in the code. Examples are the outer Instance-container plays, the Swamp role and the Conn launch controller. A change to only those files keeps the host, so the refresh runs no converge and does not retake `base`. The refresh reads the code in the outer container: the runtime's Deno runs the checkout's own `host_code.ts` over the files of its `HEAD` commit. The read takes about a second.
+
+A missing host record, a changed digest or a failed read of a host input makes the host due. A phase that the resolver cannot bound brings the whole bundle into the code. A failed read leaves no host digest in the record. When the host is due, `nested-app-dev` joins the due converges with its `app-dev` role, not just the base scope. Its converge still skips each phase whose own digest did not change. The default's seed then holds a ready Instance host, and every copy inherits it with no work of its own.
 
 The app-dev role creates its wake marker directory in `/dev/shm`. Its systemd-tmpfiles rule recreates the directory at boot with owner `root:caddy` and mode `0755`, including after a base retake restarts the nested Node.
 
