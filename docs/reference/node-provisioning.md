@@ -659,6 +659,13 @@ A few inputs belong to one `node.converge` phase only, and the other phases leav
 | `agent` | the agent, executor and CLI pins |
 | `roles` | the role plans of the intent and each role's variables |
 
+The roles phase reads an Instance host's per-Instance lists (the `app-dev` or `ci-runner` role's `instances`) without the Instances themselves, because Instances come and go between any two converges:
+
+- `machine_names`, each container's presented name, is left out. The clone script, the container phase and every start write a container's name files themselves.
+- `t3_files` counts as its distinct server programs and drop-ins. Every container that runs the same server gets the same drop-ins, so a new or removed Instance does not move the digest, and a changed drop-in does.
+
+The roles phase still gets both lists whole when it runs.
+
 The `input` and `check` tags also read them, but those tags never skip. A release moves the agent, executor and CLI pins, so after a release only the agent phase runs again, unless something else changed. A test proves the table against the shipped Ansible files: no other skippable phase can load a task or template that reads one of these inputs.
 
 Every phase reads all other variables, so a change of any other recorded input, secret value or plan moves every phase digest. That also holds for a new intent field that the table does not name. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.

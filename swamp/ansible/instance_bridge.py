@@ -5,6 +5,8 @@ One nonblocking attempt only; a busy writer refuses without applying intent.
 Every writer holds the same lock while reading and replacing records and ACL rules.
 The refresh only adds rules. Reconciliation removes endpoint rules or intent.
 A confirmed record replaces the older records of its host and port; it never withdraws an admission.
+A run reports a change only when what the bridge admits changed: each lifecycle capture and converge stamps a new admission time
+on the same endpoints, and that alone is no change.
 """
 import argparse
 import fcntl
@@ -152,7 +154,7 @@ def write_rules(name, resolved, config, reconcile, deadline=None, root=None, sta
     try:
         current, _ = api(name, deadline=work_deadline)
         if root is not None:
-            changed += confirm_records(root, current, staged, retiring, resolved, config)
+            confirm_records(root, current, staged, retiring, resolved, config)
         changes = plan(current, resolved, config['cidr'], config.get('baseline', {}), capture)
         for action, direction, rule in changes:
             current, etag = api(name, deadline=work_deadline)
@@ -166,12 +168,15 @@ def write_rules(name, resolved, config, reconcile, deadline=None, root=None, sta
                                               and same_endpoint(row, rule))] + [rule]
             else:
                 updated[direction] = [row for row in updated[direction] if row != rule]
+            # A newer stamp on a rule the ACL already holds admits nothing new.
+            restamp = action == 'add' and rule_admission(rule) is not None and any(
+                owned_endpoint(row, config['cidr']) and same_endpoint(row, rule) for row in current.get(direction, []))
             attempting_put = True
             api(name, updated, etag, deadline=work_deadline)
             attempting_put = False
-            changed += 1
+            changed += 0 if restamp else 1
             if root is not None:
-                changed += confirm_records(root, updated, staged, retiring, resolved, config)
+                confirm_records(root, updated, staged, retiring, resolved, config)
         return changed
     except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as error:
         if not attempting_put and failure_code(error) != 'instance.bridge_command_timeout':
@@ -181,7 +186,7 @@ def write_rules(name, resolved, config, reconcile, deadline=None, root=None, sta
         except (PolicyError, ValueError, OSError, subprocess.SubprocessError) as read_error:
             raise PolicyError('instance.bridge_state_unresolved') from read_error
         if root is not None:
-            changed += confirm_records(root, current, staged, retiring, resolved, config)
+            confirm_records(root, current, staged, retiring, resolved, config)
         if not plan(current, resolved, config['cidr'], config.get('baseline', {}), capture):
             return changed + int(attempting_put)
         raise
@@ -318,8 +323,20 @@ def refresh_health(root, reconcile, warnings):
     return state_file(root, 'health', report)
 
 
+def admitted_state(root):
+    """The Node's records, config and health without admission stamps: what the bridge admits, for the change count."""
+    root = Path(root)
+    def read(path):
+        return json.loads(path.read_text()) if path.exists() else None
+    def unstamped(row):
+        return json.dumps({key: value for key, value in row.items() if key != 'admitted_at'}, sort_keys=True) if isinstance(row, dict) else row
+    return (sorted({unstamped(read(path)) for path in (root / 'endpoints').glob('*.json')}), unstamped(read(root / 'config.json')),
+            read(root / 'health.json'), (root / 'reconcile.pending').exists())
+
+
 def apply_locked(root, incoming, reconcile, withdraw, deadline):
     remaining(deadline)
+    before = admitted_state(root)
     if withdraw and (incoming is None or not reconcile):
         raise PolicyError('instance.container_bridge_write_failed')
     config = incoming if incoming is not None else json.loads((root / 'config.json').read_text())
@@ -394,7 +411,7 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
         resolved[(host, port)] = max(resolved.get((host, port), 0), endpoint['admitted_at'])
         active.append(endpoint)
     endpoints = active
-    changed = 0
+    changed = 0  # ACL writes that admit or withdraw something; the files count once, by admitted_state.
     # Stage outside the inventory. Only confirmed ACL tuples become refresh input.
     staged = []
     try:
@@ -409,13 +426,13 @@ def apply_locked(root, incoming, reconcile, withdraw, deadline):
     if incoming is not None and reconcile:
         for path, endpoint in records:
             if endpoint['admitted_at'] < capture and path.exists():
-                changed += state_file(root, 'endpoint', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
-        changed += state_file(root, 'config', {key: value for key, value in config.items() if key != 'endpoints'})
+                state_file(root, 'endpoint', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
+        state_file(root, 'config', {key: value for key, value in config.items() if key != 'endpoints'})
         state_file(root, 'pending', remove=True)
     # Only a full refresh/converge proves Node-wide health; a successful attach checks its own subset.
     if incoming is None or reconcile:
-        changed += refresh_health(root, reconcile, warnings)
-    return changed
+        refresh_health(root, reconcile, warnings)
+    return changed + int(admitted_state(root) != before)
 
 
 def main():

@@ -678,6 +678,27 @@ Deno.test("the admission time of the Instance bridge does not move a digest; the
     assertEquals((await prepared({}, { admitted: 1763330000123456 })).phases.digests.roles === (await prepared({})).phases.digests.roles, false);
 });
 
+Deno.test("an Instance that comes or goes does not move the roles digest; a changed T3 drop-in or other role input does", async () => {
+    const t3 = (container: string, program = "/opt/orbit-agent/current/bin/t3", content = "ExecStart=t3 serve") =>
+        ({ project: "orbit-instances", container, program, files: [{ path: "/etc/systemd/system/t3.service.d/server.conf", mode: "0644", content }] });
+    const named = (container: string, hostname: string) => ({ project: "orbit-instances", container, hostname, pretty: hostname });
+    const host = (instances: Record<string, unknown>, domain = "one.orbit") => ({ roles: [{ assignment_id: 5, role: "app-dev", domain, runtime: { instances: {
+        cidr: "10.46.0.0/24", ingress: [], ...instances } } }], selected_roles: ["app-dev"] });
+    const before = host({ machine_names: [named("instance-1", "default.web"), named("instance-2", "a.web")], t3_files: [t3("instance-2")] });
+    const first = await prepared({}, { intent: before });
+    // Instance 2 went, Instances 3 and 4 came: the same drop-ins, other containers and names.
+    const churned = host({ machine_names: [named("instance-1", "default.web"), named("instance-3", "b.web"), named("instance-4", "c.web")],
+        t3_files: [t3("instance-3"), t3("instance-4")] });
+    assertEquals((await prepared(first.phases.digests, { intent: churned, operationId: 42 })).phases.unchanged, [...skippable]);
+    // Every phase still reads the lists: the roles phase writes them into the containers.
+    assertEquals((await prepared(first.phases.digests, { intent: churned })).vars.converge_intent.roles, churned.roles);
+    const moved = (intent: Record<string, unknown>) => prepared(first.phases.digests, { intent }).then((done) => done.phases.unchanged);
+    assertEquals(await moved(host({ machine_names: [], t3_files: [t3("instance-2", undefined, "ExecStart=t3 serve --new")] })), ["agent", "software", "tools", "network"]);
+    assertEquals(await moved(host({ machine_names: [], t3_files: [t3("instance-2", "/opt/orbit-agent/current/bin/conn-server")] })), ["agent", "software", "tools", "network"]);
+    assertEquals(await moved(host({ machine_names: [], t3_files: [t3("instance-2")], ingress: [{ action: "allow" }] })), ["agent", "software", "tools", "network"]);
+    assertEquals(await moved({ ...host({ machine_names: [], t3_files: [t3("instance-2")] }, "two.orbit") }), ["agent", "software", "tools", "network"]);
+});
+
 Deno.test("a changed shipped Tool file that the Tool helper imports moves the tools digest", async () => {
     const tree = await Deno.makeTempDir();
     try {

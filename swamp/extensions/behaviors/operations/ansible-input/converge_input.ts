@@ -77,6 +77,21 @@ export function admissionValues(intent: unknown): string[] {
     return [...versions, ...admitted, ...Object.values(record).flatMap(admissionValues)];
 }
 
+/** A role as the roles digest reads it: an Instance host's per-Instance lists (InstanceHostIntent) change with every Instance that comes or
+ * goes, so they count only by what the role writes from them for any container. `machine_names` names each container's presented name,
+ * which the clone script, the container phase and every start write themselves (instance_machine_name.py); it counts not at all. Each
+ * entry of `t3_files` holds the drop-ins of one server program, the same text for every container that runs it
+ * (InstanceContainer::t3DropIns); it counts as its distinct programs and drop-ins, so a changed drop-in still moves the roles phase
+ * (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
+export function churnFreeRole(role: unknown): unknown {
+    const runtime = (role as { runtime?: { instances?: Record<string, unknown> } } | null)?.runtime;
+    const instances = runtime?.instances;
+    if (instances === null || typeof instances !== "object" || Array.isArray(instances)) return role;
+    const { machine_names: _names, t3_files: t3, ...rest } = instances;
+    const servers = Array.isArray(t3) ? [...new Set(t3.map((entry) => JSON.stringify({ program: entry?.program, files: entry?.files })))].sort().map((text) => JSON.parse(text)) : t3;
+    return { ...(role as Record<string, unknown>), runtime: { ...runtime, instances: { ...rest, ...(t3 === undefined ? {} : { t3_files: servers }) } } };
+}
+
 /** The inputs that one skippable node.converge phase alone reads, besides the `input` and `check` tags, which never skip: intent fields and
  * run folder entries by path from the run folder. A release moves the agent, executor and CLI pins, so it moves only the agent phase. Every
  * other field and file, a new one included, is read by every phase. node_converge_test proves the table against the shipped bundle
@@ -220,6 +235,7 @@ export async function convergeInput(folder: string, operationId: number, builder
     const { recorded_digests: _recorded, ...playIntent } = intent;
     const vars = { converge_intent: playIntent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans };
     await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml(vars), { mode: 0o600 });
+    const roleViews: Record<string, string> = {};
     // Reuse the shipped role materializer. Only its literal variables are consumed: its cross-Node
     // inventory and publication plays are deliberately never used by a Node converge.
     for (const role of intent.roles) {
@@ -233,6 +249,18 @@ export async function convergeInput(folder: string, operationId: number, builder
         const outcome = await new Deno.Command('timeout', { args: ['60', 'python3', builder, path, 'node.converge'], stdout: 'null', stderr: 'null' }).output();
         if (!outcome.success) throw new Error('The recorded role input could not be materialized');
         await Deno.chmod(`${path}/vars.yml`, 0o600);
+        // The same role folder from the churn-free role, which only the roles digest reads (churnFreeRole).
+        const shadow = await Deno.makeTempDir({ prefix: "orbit-converge-digest-" });
+        try {
+            await Deno.writeTextFile(`${shadow}/intent.json`, JSON.stringify(churnFreeRole(role)), { mode: 0o600 });
+            await Deno.writeTextFile(`${shadow}/plans.json`, JSON.stringify(plans), { mode: 0o600 });
+            for (const [name, value] of Object.entries(secrets)) await Deno.writeTextFile(`${shadow}/secret-${name}`, value, { mode: 0o600 });
+            const built = await new Deno.Command('timeout', { args: ['60', 'python3', builder, shadow, 'node.converge'], stdout: 'null', stderr: 'null' }).output();
+            if (!built.success) throw new Error('The recorded role input could not be materialized');
+            for await (const file of Deno.readDir(shadow)) {
+                if (file.isFile) roleViews[`/role-${role.assignment_id}/${file.name}`] = (await Deno.readTextFile(`${shadow}/${file.name}`)).replaceAll(shadow, path);
+            }
+        } finally { await Deno.remove(shadow, { recursive: true }); }
     }
     // After every file the phases read is written. Each phase reads the run folder without the inputs of another phase (phaseInputs)
     // and only its own code.
@@ -244,7 +272,12 @@ export async function convergeInput(folder: string, operationId: number, builder
         const others = Object.entries(phaseInputs).filter(([owner]) => owner !== phase).map(([, inputs]) => inputs!);
         const fields = others.flatMap((inputs) => inputs.fields);
         const view: Record<string, string | null> = Object.fromEntries(entries.filter((entry) => others.some((inputs) => inputs.entries?.test(entry))).map((entry) => [entry, null]));
-        view["/vars.yml"] = unsafeYaml({ ...vars, converge_intent: Object.fromEntries(Object.entries(playIntent).filter(([field]) => !fields.includes(field))) });
+        const read = Object.fromEntries(Object.entries(playIntent).filter(([field]) => !fields.includes(field)));
+        if (phase === "roles") {
+            if (Array.isArray(read.roles)) read.roles = read.roles.map(churnFreeRole);
+            Object.assign(view, roleViews);
+        }
+        view["/vars.yml"] = unsafeYaml({ ...vars, converge_intent: read });
         return [phase, await sha256(`${await runDigest(folder, operationId, view)}\n${codes[phase]}`)];
     }))) as Record<typeof skippable[number], string>;
     // A phase whose code above the bundle cannot be read runs every time; the result names the file.
