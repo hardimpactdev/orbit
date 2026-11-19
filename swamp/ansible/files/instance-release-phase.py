@@ -65,21 +65,26 @@ def save(path, value):
 
 
 @contextmanager
-def lock(path, *, shared=False):
+def lock(path, *, shared=False, seconds=60):
     relative = path.relative_to(BASE).as_posix()
     if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|legacy-schedules/[1-9][0-9]*/lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
         raise Refusal("unrecognized production resource lock")
     if shared and not relative.startswith("legacy-schedules/"):
         raise Refusal("shared access requires a production Schedule lock")
     def acquire(arguments, *, pass_fds):
-        result = run(arguments, pass_fds=pass_fds, timeout=65, check=False)
+        result = run(arguments, pass_fds=pass_fds, timeout=seconds + 5, check=False)
         return result.returncode, result.stdout, result.stderr
     publisher = runpy.run_path(str(LIB / "orbit_route_withdraw.py"))
     try:
-        with publisher["release_resource_lock"](path, acquire, shared=shared):
+        with publisher["release_resource_lock"](path, acquire, shared=shared, seconds=seconds):
             yield
     except publisher["WithdrawFailure"] as error:
         raise Refusal("deployment.resource_busy: cannot acquire the selected production resource") from error
+
+
+def capacity_lock():
+    # A first-move copy holds this lock for up to its 1200-second bound. Waiters outlast it.
+    return lock(BASE / ".capacity" / "lock", seconds=1260)
 
 
 def run(args, *, data=None, timeout=150, check=True, pass_fds=()):
@@ -230,7 +235,7 @@ class Release:
         directory = BASE / ".capacity"
         directory.mkdir(mode=0o700, exist_ok=True)
         filename = directory / (self.owner + ".json")
-        with lock(directory / "lock"):
+        with capacity_lock():
             live = self.inventory["live"]
             prep = self.ctl["instance"](self.prep)
             if prep:
@@ -289,11 +294,13 @@ class Release:
         usage = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--", "du", "-scxb", "--", *paths]).stdout
         return int(usage.splitlines()[-1].split()[0])
 
-    def copied_shared(self):
-        # The pool now counts the first-move copy. Drop it from this operation's reservation at
-        # once, so a parallel deploy does not subtract it a second time.
+    def copy_shared(self):
+        # The pool counts the first-move copy as it grows, while this reservation still holds all of
+        # it. Copy and drop it from the reservation in one capacity lock hold, so a parallel check
+        # never counts a half-done copy twice. It runs once per move, so parallel checks may wait.
         filename = BASE / ".capacity" / (self.owner + ".json")
-        with lock(filename.parent / "lock"):
+        with capacity_lock():
+            self.route_files("prepare")
             self.persist(shared_copied=True)
             held = read(filename, {}) or {}
             if held.get("operation_id") == self.operation:
@@ -302,7 +309,7 @@ class Release:
     def free_capacity(self):
         filename = BASE / ".capacity" / (self.owner + ".json")
         if filename.exists():
-            with lock(filename.parent / "lock"):
+            with capacity_lock():
                 if (read(filename, {}) or {}).get("operation_id") == self.operation:
                     filename.unlink(missing_ok=True)
 
@@ -390,9 +397,10 @@ class Release:
                 self.primitive("wake", self.operation)
             self.sql(self.prep, sql)
             self.reserve(plan, measured=True)
-            self.route_files("prepare")
             if plan.get("legacy"):
-                self.copied_shared()
+                self.copy_shared()
+            else:
+                self.route_files("prepare")
             dependency_receipt = self.converge_checkout(plan)
             vp = self.prepare_vp(plan)
             self.write_service(plan)

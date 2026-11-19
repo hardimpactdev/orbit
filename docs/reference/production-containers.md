@@ -226,7 +226,7 @@ Before changing the preparation container, a deploy or [migration](#a-checkout-p
 
 The release size is the largest known size: the last measured build, the preparation container’s disk use, and on a first move the checkout’s size. A preparer that has not built yet never lowers it.
 
-A first move adds the shared directories and the SQLite database backup that it copies into the volume, until the copy is done; then it drops them from its reservation at once, because the pool already counts them. The headroom is a tenth of the pool, and at least 1 GiB, so the pool never runs near full. Each other deploy on the Node reserves its own release size.
+A first move adds the shared directories and the SQLite database backup that it copies into the volume, until the copy is done. It copies them and drops them from its reservation while it holds the Node's capacity lock, because the pool already counts them; a parallel deploy's check waits for the one-time copy and never counts it twice. The headroom is a tenth of the pool, and at least 1 GiB, so the pool never runs near full. Each other deploy on the Node reserves its own release size.
 
 A Node without swap stops preparation after the clone instead of freezing it. The memory check already covers preparation and hot together, so nothing overcommits. The drained release is stopped and needs no swap.
 
