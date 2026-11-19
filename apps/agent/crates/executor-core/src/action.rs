@@ -216,6 +216,9 @@ mod tests {
         assert_eq!("sleep".parse::<Action>(), Ok(Action::Sleep));
         assert_eq!("wake".parse::<Action>(), Ok(Action::Wake));
         assert_eq!(Action::Wake.family(), Family::Power);
+        assert_eq!("dns.publish_records".parse(), Ok(Action::DnsPublishRecords));
+        assert_eq!(Action::DnsPublishRecords.family(), Family::Dns);
+        assert!(Enabled::parse("dns\n").expect("valid file").allows(Action::DnsPublishRecords));
         assert_eq!("PROOF.NOOP".parse::<Action>(), Err(UnknownActionError));
         // The proof's `unknown_action` order (tools/swamp-proof-guest/executor-order.php) relies on this name staying unknown.
         assert_eq!("proof.unknown".parse::<Action>(), Err(UnknownActionError));

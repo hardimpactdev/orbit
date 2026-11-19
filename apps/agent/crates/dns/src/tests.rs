@@ -96,11 +96,31 @@ fn a_wrong_mode_or_a_link_in_place_is_replaced() {
 }
 
 #[test]
-fn a_failed_check_restarts_nothing() {
+fn a_failed_check_puts_the_previous_files_back_and_restarts_nothing() {
     let mut fake = Fake::new();
+    fs::write(fake.file(RECORDS), "address=/.test/10.44.0.9\n").unwrap();
     fake.fail = Some("/usr/sbin/dnsmasq");
     assert_eq!(publish_records(&fake, &input()).unwrap_err().code, "dns.check_failed");
+    assert_eq!(fs::read(fake.file(RECORDS)).unwrap(), b"address=/.test/10.44.0.9\n");
+    assert!(!fake.file(CATALOG).exists());
     assert_eq!(fake.runs.borrow().len(), 1);
+}
+
+#[test]
+fn a_missing_folder_fails_the_write_and_leaves_the_records_as_they_were() {
+    let fake = Fake::new();
+    fs::write(fake.file(RECORDS), "old\n").unwrap();
+    fs::remove_dir_all(fake.root.path().join("var/lib/orbit/private-dns")).unwrap();
+    assert_eq!(publish_records(&fake, &input()).unwrap_err().code, "dns.write_failed");
+    assert_eq!(fs::read(fake.file(RECORDS)).unwrap(), b"old\n");
+    assert!(fake.runs.borrow().is_empty());
+}
+
+#[test]
+fn a_failed_restart_reports_it() {
+    let mut fake = Fake::new();
+    fake.fail = Some("/usr/bin/systemctl");
+    assert_eq!(publish_records(&fake, &input()).unwrap_err().code, "dns.restart_failed");
 }
 
 #[test]

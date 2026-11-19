@@ -229,7 +229,7 @@ Content comes as blobs. It answers `applied` with the number of changed files an
 
 `dns.publish_records` (family `dns`, enabled by the `vpn` role) places a VPN Node's private DNS: dnsmasq's records in `/etc/dnsmasq.d/orbit-records.conf` and the listener's catalog in `/var/lib/orbit/private-dns/catalog.json`. Both come as blobs. Each file is written root-owned with mode 0644, only when it differs; a link in its place is replaced, never followed.
 
-Then `dnsmasq --test` checks the configuration, and `dnsmasq.service` and `orbit-private-dns.service` restart. They restart on every publication, as the Swamp phase did, so a repeat after a crash still loads the files. A failed check restarts nothing, so dnsmasq keeps the records it loaded last.
+Then `dnsmasq --test` checks the configuration, and `dnsmasq.service` and `orbit-private-dns.service` restart. They restart on every publication, as the Swamp phase did, so a repeat after a crash still loads the files. A failed check puts the previous files back and restarts nothing, so the next start of dnsmasq still finds a configuration that passes.
 
 It answers `applied` with the number of changed files. Codes: `dns.input_invalid`, `dns.content_missing`, `dns.write_failed`, `dns.check_failed`, `dns.restart_failed`.
 

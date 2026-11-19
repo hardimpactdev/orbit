@@ -120,29 +120,53 @@ struct BlobDigest {
 
 /// Places the records and the catalog, root-owned and mode 0644, each only when it differs. Then dnsmasq checks its
 /// configuration, and dnsmasq and the listener restart. They restart on every publication, as the Swamp phase did: a
-/// repeat after a crash between a write and the restart must still load the files. A failed check restarts nothing,
-/// so the running dnsmasq keeps its last loaded records. Answers how many files changed.
+/// repeat after a crash between a write and the restart must still load the files. A failed check puts the previous
+/// files back and restarts nothing, so the next start of dnsmasq still finds a configuration that passes. Answers how
+/// many files changed.
 ///
 /// # Errors
 ///
 /// `dns.input_invalid`, `dns.content_missing`, `dns.write_failed`, `dns.check_failed` or `dns.restart_failed`.
 pub fn publish_records(system: &impl System, input: &serde_json::Value) -> Result<u32, Failure> {
     let input: Input = serde_json::from_value(input.clone()).map_err(|error| Failure::new("dns.input_invalid", error.to_string()))?;
-    let mut changes = 0;
+    let mut contents = Vec::new();
     for (path, blob) in [(RECORDS, &input.records), (CATALOG, &input.catalog)] {
-        let content = system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("dns.content_missing", detail))?;
+        contents.push((path, system.blob(&blob.blob.sha256).map_err(|detail| Failure::new("dns.content_missing", detail))?));
+    }
+    // Each replaced file with what it held before: a plain file's bytes, or None when there was none.
+    let mut replaced: Vec<(&str, Option<Vec<u8>>)> = Vec::new();
+    for (path, content) in &contents {
         let dest = system.path(path);
-        if fs::read(&dest).ok().as_deref() == Some(content.as_slice()) && placed(&dest, system.owner()) {
+        let previous = fs::symlink_metadata(&dest).ok().filter(fs::Metadata::is_file).and_then(|_| fs::read(&dest).ok());
+        if previous.as_deref() == Some(content.as_slice()) && placed(&dest, system.owner()) {
             continue;
         }
-        replace(&dest, &content, system.owner()).map_err(|error| Failure::new("dns.write_failed", format!("{path}: {error}")))?;
-        changes += 1;
+        if let Err(error) = replace(&dest, content, system.owner()) {
+            restore(system, &replaced);
+            return Err(Failure::new("dns.write_failed", format!("{path}: {error}")));
+        }
+        replaced.push((path, previous));
     }
-    system.run(30, &["/usr/sbin/dnsmasq", "--test"]).map_err(|detail| Failure::new("dns.check_failed", detail))?;
+    if let Err(detail) = system.run(30, &["/usr/sbin/dnsmasq", "--test"]) {
+        restore(system, &replaced);
+        return Err(Failure::new("dns.check_failed", detail));
+    }
     system
         .run(60, &["/usr/bin/systemctl", "restart", "dnsmasq.service", "orbit-private-dns.service"])
         .map_err(|detail| Failure::new("dns.restart_failed", detail))?;
-    Ok(changes)
+    Ok(u32::try_from(replaced.len()).unwrap_or(u32::MAX))
+}
+
+/// Puts back what each replaced file held before; a file that did not exist is removed. Best effort: the failure the
+/// caller reports is the one that matters.
+fn restore(system: &impl System, replaced: &[(&str, Option<Vec<u8>>)]) {
+    for (path, previous) in replaced {
+        let dest = system.path(path);
+        let _ = match previous {
+            Some(bytes) => replace(&dest, bytes, system.owner()),
+            None => fs::remove_file(&dest),
+        };
+    }
 }
 
 /// Whether the file is a plain file with the owner and mode the primitive gives it.

@@ -150,7 +150,7 @@ An address with no active Node gets a refusal with `peer.identity_unknown`.
 
 WireGuard binds each address to one peer key, so a Node cannot connect with another Node's address. When the user expires, the server closes the connection, and the client reconnects and asks again. A removed Node therefore loses the bus within an hour. When its WireGuard peer goes, its connection also ends once the server's pings go unanswered. Replacing the seed changes nothing on the Nodes.
 
-Every process on a Node shares the Node's WireGuard address. So each Node also runs a guard: an nftables table, `orbit_bus_guard`, that rejects a connection to the Gateway's NATS port from any user but root. The bus boundary is therefore root on the Node. An app or an agent shell on the Node cannot join as its executor. The Gateway's own host gets no guard: the Gateway's processes do not run as root, and they join with the Gateway's own key, not by address.
+Every process on a Node shares the Node's WireGuard address. So each Node also runs a guard: an nftables table, `orbit_bus_guard`, that rejects a connection to the Gateway's NATS port from any user but root. The bus boundary is therefore root on the Node. An app or an agent shell on the Node cannot join as its executor. On the Gateway's own host the guard also admits the Gateway's runtime user, whose processes join with the Gateway's own key. Any other user there stays out.
 
 The callout runs in the consumer process, between receipts and events. While that process is down, new Node connections fail and retry; connected Nodes keep their users until they expire.
 

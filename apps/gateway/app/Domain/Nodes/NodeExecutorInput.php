@@ -54,9 +54,9 @@ final readonly class NodeExecutorInput
 
         // The machine bus (ADR 0271): only the Gateway's address, and the guard that lets only root reach it. A Node holds no bus
         // credential; the Gateway admits it by its WireGuard address. Without the engine's key both files are removed, and the
-        // executor serves its socket alone. The Gateway's own host gets no guard: there the Gateway's processes, which do not run as
-        // root, use the bus with their own key, and the guard would cut them off.
-        $guard = in_array(RoleName::Gateway, $roles, true) ? null : NodeBusAccess::guard();
+        // executor serves its socket alone. On the Gateway's own host the guard also admits the Gateway's runtime user, whose
+        // processes join with the Gateway's key; any other user there stays out.
+        $guard = NodeBusAccess::guard(in_array(RoleName::Gateway, $roles, true) ? $node->user : null);
 
         return $intent === null ? null : [...$intent, 'unit' => self::unit($guard !== null), 'bus_url' => NodeBusAccess::url(),
             'bus_path' => NodeBusAccess::Path, 'bus_guard' => $guard, 'bus_guard_path' => NodeBusAccess::GuardPath];
