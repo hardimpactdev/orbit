@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Power;
 
+use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -36,10 +37,21 @@ final class ExecutorFence
                 && (isset($operation->state[ExecutorWake::PublishedAt]) || $operation->executor_accepted_us !== null));
     }
 
-    /** R2: an issued order without a recorded receipt. Its Operation cannot be cancelled, and its end keeps the lock. */
+    /**
+     * R2: an issued order without a recorded receipt. Its Operation cannot be cancelled, and its end keeps the lock. A signed power order
+     * that expired without an `accepted` line can no longer act on any Node, so it holds nothing: its Operation fails and frees the lock.
+     */
     public static function holds(Operation $operation): bool
     {
-        return self::issued($operation) && $operation->executor_result === null;
+        return self::issued($operation) && $operation->executor_result === null && ! self::expiredUnaccepted($operation);
+    }
+
+    private static function expiredUnaccepted(Operation $operation): bool
+    {
+        $published = $operation->state[ExecutorWake::PublishedAt] ?? null;
+
+        return ExecutorWake::owns($operation) && ExecutorPowerIntent::managed($operation) && $operation->executor_accepted_us === null
+            && ! isset($operation->state[ExecutorWake::Recovery]) && is_int($published) && now()->getTimestampMs() >= $published + ExecutorOrderSigner::ExpiresAfterMs;
     }
 
     /**

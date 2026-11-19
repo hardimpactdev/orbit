@@ -12,7 +12,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Executor\ExecutorResultWait;
-use App\Infrastructure\Executor\ExecutorSshRelay;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
 use App\Infrastructure\Executor\ExecutorWakeLock;
 use App\Infrastructure\Swamp\SwampDispatch;
@@ -26,7 +25,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -44,15 +42,9 @@ final readonly class ExecutorWake
 
     public const int CompletionSeconds = 6;
 
-    public const int AcceptanceMs = 150;
-
     public const string Recovery = 'executor_swamp_recovery';
 
-    private const string Wire = 'executor_native_order';
-
     private const string NativeStart = 'executor_native_swamp_start';
-
-    private const string RelayAttempted = 'executor_relay_attempted_ms';
 
     private const string RecoveryQueued = 'executor_recovery_queued_at';
 
@@ -124,19 +116,6 @@ final readonly class ExecutorWake
 
                 return $line;
             };
-            if (ExecutorPowerIntent::managed($operation)) {
-                $operation->refresh();
-                $acceptance = self::untilAcceptance($operation);
-                if ($acceptance > 0 && $operation->executor_accepted_us === null && $operation->executor_result === null) {
-                    $this->wait->wait($operation->id, min($acceptance, $budget->left()), $durable);
-                    $tail = min(self::untilAcceptance($operation), $budget->left());
-                    if ($tail > 0 && $tail < 0.001) {
-                        usleep((int) ceil($tail * 1e6));
-                    }
-                }
-                $this->relay($operation->id, $budget->left(), $budget);
-                $remaining = $budget->left();
-            }
             $reply = $this->wait->wait($operation->id, $remaining, $durable);
             if (! in_array($reply->status, [ExecutorWaitStatus::Done, ExecutorWaitStatus::Partial], true) || $budget->left() <= 0) {
                 return false;
@@ -198,24 +177,27 @@ final readonly class ExecutorWake
                 return false;
             }
             $publishedAt = now()->getTimestampMs();
-            if ($managed && $budget->write(static fn (): bool => DB::transaction(static function () use ($operation, $order, $publishedAt): bool {
+            if ($managed && $budget->write(static fn (): bool => DB::transaction(static function () use ($operation, $publishedAt): bool {
                 $operation->refresh();
                 if ($operation->status !== OperationStatus::Running || $operation->cancel_requested_at !== null) {
                     return false;
                 }
-                $operation->forceFill(['state' => [...ExecutorFence::issue($operation->state), self::Wire => Crypt::encryptString($order->wire), self::PublishedAt => $publishedAt]])->save();
+                $operation->forceFill(['state' => [...ExecutorFence::issue($operation->state), self::PublishedAt => $publishedAt]])->save();
 
                 return true;
             })) !== true) {
                 return false;
             }
             try {
-                $this->publisher->publish($operation, $order, $managed ? min($budget->left(), self::AcceptanceMs / 1000) : $budget->left());
+                $this->publisher->publish($operation, $order, $budget->left());
             } catch (Throwable $exception) {
                 if (! $managed) {
                     throw $exception;
                 }
-                Log::warning('Executor publish unavailable; relay recovery remains eligible.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                Log::warning('The executor order could not be published; the Operation fails.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                $this->failUnpublished($operation, $budget);
+
+                return false;
             }
             if ($managed) {
                 return true;
@@ -246,47 +228,24 @@ final readonly class ExecutorWake
             && ($operation->state[self::State] ?? false) === true;
     }
 
-    private static function untilAcceptance(Operation $operation): float
+    /** The publish refused the order before it left the Gateway: no Node can act on it, so the fence lifts and the Operation fails. */
+    private function failUnpublished(Operation $operation, ExecutorWakeBudget $budget): void
     {
-        $published = $operation->state[self::PublishedAt] ?? null;
-
-        return is_int($published) ? (($published + self::AcceptanceMs) * 1000 - (int) now()->format('Uu')) / 1e6 : 0.0;
-    }
-
-    private function relay(int $operationId, float $timeout, ?ExecutorWakeBudget $budget = null): void
-    {
-        if ($timeout < 0.001) {
-            return;
-        }
-        $this->lock->run('relay', $operationId, static function () use ($operationId, $timeout, $budget): void {
-            $claim = static fn (): ?array => DB::transaction(static function () use ($operationId): ?array {
-                $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->firstOrFail();
-                $state = $operation->state ?? [];
-                $published = $state[self::PublishedAt] ?? null;
-                $wire = $state[self::Wire] ?? null;
-                if (! is_int($published) || ! is_string($wire) || self::untilAcceptance($operation) > 0
-                    || $operation->status !== OperationStatus::Running || $operation->cancel_requested_at !== null || $operation->executor_result !== null
-                    || isset($state[self::RelayAttempted])
-                    || ($operation->executor_accepted_us !== null && $operation->executor_accepted_us <= ($published + self::AcceptanceMs) * 1000)
-                    || now()->getTimestampMs() >= $published + ExecutorOrderSigner::ExpiresAfterMs) {
-                    return null;
-                }
-                $operation->forceFill(['state' => [...$state, self::RelayAttempted => now()->getTimestampMs()]])->save();
-
-                return [$operation, $wire];
-            });
-            $claimed = $budget === null ? $claim() : $budget->write($claim);
-            $left = $budget?->left() ?? $timeout;
-            if ($claimed === null || $left < 0.001) {
-                return;
-            }
-            [$operation, $wire] = $claimed;
-            try {
-                app(ExecutorSshRelay::class)->send($operation, Crypt::decryptString($wire), $left, $budget);
-            } catch (Throwable $exception) {
-                Log::warning('Executor SSH relay did not return its result.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
-            }
+        $settle = fn () => DB::transaction(function () use ($operation): void {
+            $operation->refresh();
+            $state = $operation->state ?? [];
+            unset($state[ExecutorFence::Issued], $state[self::PublishedAt]);
+            $operation->forceFill(['state' => $state])->save();
+            $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
+                'error_code' => 'executor.publish_failed', 'lock_key' => null], onlyWhileOpen: true);
         });
+        if ($budget->write(static function () use ($settle): bool {
+            $settle();
+
+            return true;
+        }) === null) {
+            \Illuminate\Support\defer($settle, always: true);
+        }
     }
 
     /** The request only closes a success. The background completion also closes a refusal, failure or expired wake. */
@@ -301,7 +260,7 @@ final readonly class ExecutorWake
             $success = ExecutorResults::succeeded($line);
             $managed = ExecutorPowerIntent::managed($operation);
             $sleep = $operation->kind === InstanceSleep::Kind;
-            if ($expire && $managed && ($line === null || (! $sleep && ($line['status'] ?? null) === 'failed' && ($line['code'] ?? null) === 'instance.container_stopped'))) {
+            if ($expire && $managed && ! $sleep && ExecutorFence::handsToBoot($line)) {
                 $this->recoverInSwamp($operation);
 
                 return false;
@@ -317,14 +276,13 @@ final readonly class ExecutorWake
             $power = $sleep ? app(InstanceSleep::class) : app(InstanceWake::class);
             $incompleteFreeze = $sleep && InstanceSleep::isIncompleteFreeze($line);
             if ($managed) {
-                $code = ExecutorResults::failureCode($line ?? []);
+                $code = $line === null ? 'executor.not_accepted' : ExecutorResults::failureCode($line);
                 if ($sleep && $success && ! InstanceSleep::hasSleepOutcome($line)) {
                     $success = false;
                     $code = 'executor.sleep_receipt_missing';
                 }
             }
             $state = $operation->state ?? [];
-            unset($state[self::Wire]);
             $this->operations->change($operation, ['status' => $success ? OperationStatus::Succeeded : OperationStatus::Failed,
                 'finished_at' => now(), 'lock_key' => null, 'error_code' => $success ? null : $code,
                 'state' => [...$state, ...($success && ! $sleep ? [self::FollowUpState => 'pending'] : [])],
@@ -351,7 +309,6 @@ final readonly class ExecutorWake
     private function recoverInSwamp(Operation $operation): void
     {
         $state = $operation->state ?? [];
-        unset($state[self::Wire]);
         $this->operations->change($operation, ['status' => OperationStatus::Queued,
             'state' => [...$state, self::Recovery => true, self::CompletionState => 'delivered', self::RecoveryQueued => now()->timestamp,
                 'executor_swamp_recovery_at_ms' => now()->getTimestampMs(),
@@ -407,17 +364,9 @@ final readonly class ExecutorWake
         }
 
         $queued = $this->enqueue($operationId, self::CompletionState, OperationStatus::Running);
-        if (ExecutorPowerIntent::managed($operation)) {
-            $operation->refresh();
-            $acceptance = self::untilAcceptance($operation);
-            if ($acceptance > 0 && $operation->executor_accepted_us === null && $operation->executor_result === null) {
-                usleep((int) ceil($acceptance * 1e6));
-            }
-            $this->relay($operationId, max(0.0, ((self::completionDeadline($operation)?->getTimestampMs() ?? 0) - now()->getTimestampMs()) / 1000));
-            $operation->refresh();
-            if ($operation->executor_result !== null) {
-                $this->completeHandoff($operation);
-            }
+        $operation->refresh();
+        if (ExecutorPowerIntent::managed($operation) && $operation->executor_result !== null) {
+            $this->completeHandoff($operation);
         }
 
         return $queued;

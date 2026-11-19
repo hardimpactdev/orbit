@@ -21,13 +21,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Executor\ExecutorReply;
-use App\Infrastructure\Executor\ExecutorResultQueue;
 use App\Infrastructure\Executor\ExecutorResults;
-use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\Operations\BroadcastOperationNotice;
@@ -40,7 +35,6 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
-use Psr\Log\NullLogger;
 
 require_once __DIR__.'/ExecutorWakeTestHelpers.php';
 
@@ -109,35 +103,30 @@ it('projects the residual-memory safety stop as stopped, with no frozen plan for
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
-it('relays the original signature after the no-accepted cutoff without a second Operation', function (): void {
+it('fails a wake the Node never accepted once its order expires, with no SSH relay and no Swamp run', function (): void {
     $instance = managedPowerFixture();
     $this->travelTo(now()->startOfSecond());
-    $publishedWireHash = null;
-    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use (&$publishedWireHash): void {
-        $publishedWireHash = hash('sha256', $event->order->wire);
-        $this->travel(151)->milliseconds();
-    };
+    $this->mock(SshExecutor::class)->shouldNotReceive('execute');
     $wake = app(InstanceWake::class)->start($instance, 'cli', null);
-    expect($wake)->status->toBe(OperationStatus::Queued);
-    expect($publishedWireHash)->toBeNull();
-    $this->mock(SshExecutor::class)->shouldReceive('execute')->once()->andReturnUsing(
-        function (SshConnection $connection, RemoteCommand $command) use ($wake, &$publishedWireHash): CommandResult {
-            expect($connection->shareConnection)->toBeTrue();
-            expect($command->arguments)->toBe(['sudo', '-n', '-u', 'orbit-executor-relay', '/usr/local/libexec/orbit-executor', 'relay']);
-            expect($command->timeout)->toBeGreaterThan(0.5);
-            expect($command->input)->toBeNull();
-            $input = stream_get_contents($command->protectedInput->stream());
-            expect($publishedWireHash === hash('sha256', trim($input)))->toBeTrue();
-            $receipt = ['status' => 'done', 'action' => 'wake', 'target' => (string) $wake->target_id, 'operation' => (string) $wake->id];
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+    expect($wake->refresh())->status->toBe(OperationStatus::Running)->executor_accepted_us->toBeNull();
 
-            return new CommandResult(0, '{"status":"accepted"}'."\n".json_encode($receipt, JSON_THROW_ON_ERROR)."\n", '', 23, false);
-        });
+    $this->travel(6)->seconds();
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
 
+    expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.not_accepted')->lock_key->toBeNull();
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
+    Queue::assertNotPushed(StartAdmittedSwampRun::class);
+});
+
+it('fails a wake at once when the Gateway cannot publish its order', function (): void {
+    $instance = managedPowerFixture();
+    $this->mock(SshExecutor::class)->shouldNotReceive('execute');
+    $this->publisher->publishing = fn () => throw new RuntimeException('No websocket role is active.');
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
     Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
 
-    expect($wake->refresh()->result['executor']['delivery'])->toBe('ssh');
-    expect($wake)->status->toBe(OperationStatus::Succeeded);
-    expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
+    expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.publish_failed')->lock_key->toBeNull();
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
@@ -185,29 +174,25 @@ it('signs a headless wake without relaxing a web Instance readiness check', func
     }
 });
 
-it('starts durable recovery at six seconds and signs only a fresh order for the bound Swamp run', function (): void {
+it('hands a wake that found its container stopped to the Swamp boot and signs only a fresh order for the bound run', function (): void {
     $instance = managedPowerFixture();
     $swamp = containerDefaultNode('swamp-worker', '10.44.0.8', listed: false);
     $swamp->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
     $nativeNonce = null;
-    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use (&$nativeNonce): void {
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use (&$nativeNonce, $instance): void {
         $nativeNonce = $event->order->nonce;
         powerLine($event, ['status' => 'accepted']);
+        powerLine($event, ['status' => 'failed', 'code' => 'instance.container_stopped', 'action' => 'wake',
+            'target' => (string) $instance->id, 'operation' => $event->order->operation]);
     };
     $this->travelTo(Carbon::now()->startOfSecond());
     $wake = app(InstanceWake::class)->admitDeferred($instance, 'conn', null);
     Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
 
-    $this->travel(5999)->milliseconds();
-    (new CompleteExecutorWake($wake->id))->withFakeQueueInteractions()->handle(app(ExecutorWake::class));
-    Queue::assertNotPushed(StartAdmittedSwampRun::class);
-    $this->travel(1)->millisecond();
-    $job = new CompleteExecutorWake($wake->id);
-    $job->handle(app(ExecutorWake::class));
-    $job->handle(app(ExecutorWake::class));
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
     Queue::assertPushed(StartAdmittedSwampRun::class, 1);
     expect(Queue::pushed(StartAdmittedSwampRun::class)->sole()->operationId)->toBe($wake->id);
-    expect($wake->refresh())->status->toBe(OperationStatus::Queued)->kind->toBe(InstanceWake::Kind)->executor_result->toBeNull();
+    expect($wake->refresh())->status->toBe(OperationStatus::Queued)->kind->toBe(InstanceWake::Kind);
     $run = (string) Str::uuid();
     $wake->update(['status' => OperationStatus::Running, 'state' => [...$wake->state, 'swamp_run_id' => $run]]);
 
@@ -343,27 +328,6 @@ it('signs no order for a destroy, which only removes both engines\' files', func
     expect(ExecutorPowerIntent::action($operation->refresh(), 'boot'))->toBeNull();
 });
 
-it('projects the SSH refusal even if notifying the waiter fails', function (): void {
-    $instance = managedPowerFixture();
-    $this->travelTo(now()->startOfSecond());
-    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
-    $this->publisher->publishing = function (): void {
-        $this->travel(151)->milliseconds();
-    };
-    $queue = $this->mock(ExecutorResultQueue::class);
-    $queue->shouldReceive('push')->andThrow(new RuntimeException('queue unavailable'));
-    app()->instance(ExecutorResults::class, new ExecutorResults($queue, new NullLogger, app(CommandActivityInputSanitizer::class)));
-    $this->mock(SshExecutor::class)->shouldReceive('execute')->once()->andReturn(new CommandResult(0,
-        "{\"status\":\"accepted\"}\n{\"status\":\"refused\",\"reason\":\"expired\"}\n", '', 10, false));
-
-    app(ExecutorWake::class)->continueHandoff($wake->id);
-    expect($wake->refresh()->executor_result)->toMatchArray(['status' => 'refused', 'delivery' => 'ssh']);
-    $this->travel(7)->seconds();
-    app(ExecutorWake::class)->completeHandoff($wake);
-    expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.order_refused');
-    Queue::assertNotPushed(StartAdmittedSwampRun::class);
-});
-
 it('does not replace a recorded refusal with a conflicting recovery success', function (): void {
     $instance = managedPowerFixture();
     $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
@@ -409,15 +373,15 @@ it('rejects a successful signed resume wrapper with no successful executor recei
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 })->with(['refused' => ['refused', 'executor.order_refused'], 'missing' => [null, 'executor.result_unproven']]);
 
-it('keeps an accepted action fenced while its Swamp recovery is queued', function (): void {
+it('interrupts an accepted action with no receipt at its deadline and keeps its fence, with no Swamp recovery', function (): void {
     $instance = managedPowerFixture();
     $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
-    $wake->update(['status' => OperationStatus::Running, 'attempts' => 1, 'executor_accepted_us' => (int) now()->format('Uu'),
-        'state' => [...$wake->state, ExecutorWake::PublishedAt => now()->subSeconds(7)->getTimestampMs()]]);
+    $wake->forceFill(['status' => OperationStatus::Running, 'attempts' => 1, 'executor_accepted_us' => (int) now()->format('Uu'),
+        'state' => [...$wake->state, ExecutorWake::PublishedAt => now()->subSeconds(7)->getTimestampMs()]])->save();
     app(ExecutorWake::class)->completeHandoff($wake);
 
-    expect(fn () => app(CancelOperationAction::class)->execute($wake))->toThrow(ResourceOperationException::class, 'has started');
-    expect($wake->refresh())->status->toBe(OperationStatus::Queued)->cancel_requested_at->toBeNull()->lock_key->not->toBeNull();
+    expect($wake->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->not->toBeNull();
+    Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
 it('interrupts rather than releasing the target when recovery ends without a receipt', function (): void {
