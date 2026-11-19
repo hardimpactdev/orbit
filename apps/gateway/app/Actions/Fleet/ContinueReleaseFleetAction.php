@@ -20,7 +20,6 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Nodes\ManagedNodeEligibility;
-use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
@@ -31,6 +30,7 @@ use App\Models\GatewayRelease;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -123,7 +123,15 @@ final readonly class ContinueReleaseFleetAction
                 return 10;
             }
 
+            // One pass visits each Node once, from its start until the phase settles. The next pass starts every Node afresh.
             $previousRows = (array) ($phase['nodes'] ?? []);
+            if (! in_array($phase['status'] ?? null, ['pending', 'deferred'], true)) {
+                $phase['started_at'] = now()->toISOString();
+                $previousRows = array_map(static fn (mixed $row): array => array_intersect_key(ValidatedData::object($row), array_flip(['node_id', 'name']))
+                    + ['status' => 'pending'], $previousRows);
+            }
+            // The release projection opens the first pass at verification. Drop this fallback after one release.
+            $phase['started_at'] ??= $release->created_at?->copy()->addMilliseconds((int) $release->duration_ms)->toISOString() ?? now()->toISOString();
             $rows = [];
             $phase['nodes'] = &$rows;
             foreach ($members as $node) {
@@ -142,27 +150,15 @@ final readonly class ContinueReleaseFleetAction
             $failed = false;
             foreach ($members as $node) {
                 $row = &$rows[$node->id];
-                if ($row['status'] === 'failed') {
-                    foreach (['delivery_operation_id', 'role_operation_id'] as $key) {
-                        $previous = $this->operation($row, $key);
-                        if ($previous !== null && ($previous->status !== OperationStatus::Succeeded
-                            || ($key === 'delivery_operation_id' && ($row['agent'] ?? null) === 'failed'))) {
-                            if ($previous->finished_at?->gt(now()->subSeconds(FleetReleaseLag::RetryAfterSeconds))) {
-                                if ($key === 'role_operation_id') {
-                                    // A failed role converge never holds back the Nodes after it.
-                                    $failed = true;
+                // A Node keeps its outcome for the rest of the pass: drift after `current` waits for the next pass, and a failed
+                // Node never holds back the Nodes after it.
+                if (in_array($row['status'], ['current', 'failed'], true)) {
+                    $failed = $failed || $row['status'] === 'failed';
 
-                                    continue 2;
-                                }
-
-                                return FleetReleaseLag::RetryAfterSeconds;
-                            }
-                            unset($row[$key]);
-                        }
-                    }
+                    continue;
                 }
                 try {
-                    $delay = $this->visit($release, $node, $row, $inputs, $host, $cli, $cliUnavailable);
+                    $delay = $this->visit($release, $node, $row, $inputs, $host, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
                     if ($delay !== null) {
                         $this->save($release, $phase, 'pending');
 
@@ -279,7 +275,7 @@ final readonly class ContinueReleaseFleetAction
     }
 
     /** @param array<string,mixed> $row */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host, ?DesiredCliReleaseData $cli, bool $cliUnavailable): ?int
+    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $host, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
     {
         $recorded = $node->release_inputs ?? [];
         if (($recorded['host'] ?? null) !== $host) {
@@ -304,15 +300,6 @@ final readonly class ContinueReleaseFleetAction
         $needsDelivery = static fn (array $applied): bool => ($applied['agent'] ?? null) !== $pin || $drifted
             || ($cli !== null && (! $cli->isAvailable() || ($applied['cli'] ?? null) !== $cli->version));
 
-        if ($row['status'] === 'current' && $changed === [] && ! $needsDelivery($recorded)) {
-            return null;
-        }
-        $revisit = $row['status'] === 'current';
-        if ($revisit) {
-            // A previously completed visit cannot certify this new work.
-            unset($row['delivery_operation_id'], $row['role_operation_id'], $row['agent']);
-            $deliveryOperation = $roleOperation = null;
-        }
         $row['roles'] = array_fill_keys(array_column($desired, 'role'), 'unchanged');
         foreach ($changed as $role) {
             $row['roles'][$role['role']] = 'pending';
@@ -369,11 +356,11 @@ final readonly class ContinueReleaseFleetAction
                 }
             }
         }
-        // On the first visit, a role converge that succeeded under this release's code, the pass's own or one run by hand, applied
-        // the role. Instance work on the Node moves its digest on while it waits, so the recorded digest alone never settles it.
-        $converged = $revisit ? [] : $this->convergedRoles($release, $node);
+        // A role converge that succeeded during this pass, its own or one run by hand, applied the role assignment it captured.
+        // Instance work on the Node moves the digest on while it waits, so the recorded digest alone never settles it.
+        $converged = $this->convergedAssignments($node, $passStarted);
         foreach ($changed as $id => $role) {
-            if (in_array($role['role'], $converged, true)) {
+            if (in_array($id, $converged, true)) {
                 $row['roles'][$role['role']] = 'converged';
                 unset($changed[$id]);
             }
@@ -393,18 +380,8 @@ final readonly class ContinueReleaseFleetAction
         }
         $row['agent'] ??= 'unchanged';
         if ($changed !== []) {
-            $admission = app(NodeWorkAdmission::class);
-            try {
-                $row['role_operation_id'] = app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true)->id;
-            } catch (ResourceOperationException $refusal) {
-                if ($refusal->errorCode === 'operation.target_busy') {
-                    // New Instance and task work queues behind this converge until the Operations that hold the Node end.
-                    $admission->wait($node->id);
-                }
-
-                throw $refusal;
-            }
-            $admission->stopWaiting($node->id);
+            // A busy refusal queues the converge ahead of new Instance and task work on the Node (NodeWorkAdmission).
+            $row['role_operation_id'] = app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true)->id;
 
             return 10;
         }
@@ -414,25 +391,21 @@ final readonly class ContinueReleaseFleetAction
     }
 
     /**
-     * Roles that a succeeded, not T3-deferred `node.converge` of the Node applied after the release was verified.
+     * Role assignment IDs that a succeeded, not T3-deferred `node.converge` of the Node admitted since the pass started applied.
      *
-     * @return list<string>
+     * @return list<int>
      */
-    private function convergedRoles(GatewayRelease $release, Node $node): array
+    private function convergedAssignments(Node $node, Carbon $since): array
     {
-        $verified = $release->created_at?->copy()->addMilliseconds((int) $release->duration_ms);
-        if ($verified === null) {
-            return [];
-        }
-        $roles = [];
+        $ids = [];
         foreach (Operation::query()->where('kind', 'node.converge')->where('node_id', $node->id)
-            ->where('status', OperationStatus::Succeeded->value)->where('created_at', '>=', $verified)->cursor() as $operation) {
+            ->where('status', OperationStatus::Succeeded->value)->where('created_at', '>=', $since)->cursor() as $operation) {
             if (($operation->result['t3_restart_deferred'] ?? []) === []) {
-                array_push($roles, ...ValidatedData::stringList(data_get($operation->input, '_converge.intent.selected_roles', [])));
+                array_push($ids, ...array_map(intval(...), array_keys((array) data_get($operation->input, '_converge.release_inputs.roles', []))));
             }
         }
 
-        return array_values(array_unique($roles));
+        return array_values(array_unique($ids));
     }
 
     /** @param array<string,mixed> $row */
