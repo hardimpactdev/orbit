@@ -28,8 +28,7 @@ final readonly class TaskCheckedCandidate
         if ($check->kind !== TaskCheckKind::Handoff || $check->status !== TaskCheckStatus::Passed || $check->commit_sha === null) {
             return false;
         }
-        $owner = Operation::query()->where('kind', 'tasks.check')->where('target_type', 'task_group')->where('target_id', $group->id)
-            ->where('input->subtask', $check->task_id)->where('input->phase', TaskCheckKind::Handoff->value)->where('input->check_id', $check->id)->first();
+        $owner = $this->owner($group, $check);
         $plan = $owner?->result['ci'] ?? null;
         $result = $owner?->result;
         $requiresCi = $group->project->handoffCheckName() !== null || $plan !== null;
@@ -45,5 +44,12 @@ final readonly class TaskCheckedCandidate
             && $check->head_after !== null && ($result['head'] ?? null) === $check->head_after
             && $check->tree_after !== null && ($result['tree'] ?? null) === $check->tree_after
             && ($result['ci'] ?? null) === $plan && $ciPassed;
+    }
+
+    /** The handoff check Operation that recorded this check: its input names the base it judged against, its result each deliverable's outcome. */
+    public function owner(Task $group, TaskCheck $check): ?Operation
+    {
+        return Operation::query()->where('kind', 'tasks.check')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('input->subtask', $check->task_id)->where('input->phase', TaskCheckKind::Handoff->value)->where('input->check_id', $check->id)->first();
     }
 }

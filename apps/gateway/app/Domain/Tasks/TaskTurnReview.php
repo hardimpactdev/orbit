@@ -1,0 +1,66 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Tasks;
+
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
+use App\Models\Operation;
+use App\Models\Task;
+use App\Models\TaskCheck;
+use Illuminate\Database\Eloquent\Builder;
+
+/**
+ * What a reviewer turn's prompt names beyond the briefs (docs/reference/tasks.md#run-an-external-turn): the check it reviews, that
+ * check's commit and base and each deliverable's outcome, the review round with the commit the last finished review judged, and the
+ * implementer's handoff note.
+ */
+final readonly class TaskTurnReview
+{
+    /**
+     * @param  array<string, string>  $results  each deliverable's outcome in the check, by its id
+     * @param  string|null  $previous  the commit of the latest finished reviewer turn on the subtask; null on the first review
+     */
+    public function __construct(
+        public int $check,
+        public string $sha,
+        public string $base,
+        public int $round,
+        public ?string $previous,
+        public array $results,
+        public ?string $note,
+    ) {}
+
+    /**
+     * A finished turn ended its Operation as succeeded and did not end in a question; a turn that failed, was cancelled or asked counts
+     * for no round and gives no handoff note.
+     *
+     * @param  Operation  $owner  the handoff check Operation that recorded CHECK (TaskCheckedCandidate::owner)
+     */
+    public static function of(Task $group, Task $subtask, TaskCheck $check, Operation $owner): self
+    {
+        $reviews = self::finished($group, $subtask, TaskThreadRole::Reviewer)->get();
+        $handoff = self::finished($group, $subtask, TaskThreadRole::Implementer)->first();
+        $note = $handoff?->result['reply'] ?? null;
+        $results = [];
+        foreach (is_array($owner->result['deliverables'] ?? null) ? $owner->result['deliverables'] : [] as $deliverable) {
+            if (is_array($deliverable) && is_string($deliverable['id'] ?? null) && is_string($deliverable['outcome'] ?? null)) {
+                $results[$deliverable['id']] = $deliverable['outcome'];
+            }
+        }
+        $previous = $reviews->first()?->input['candidate'] ?? null;
+
+        return new self($check->id, (string) $check->commit_sha, is_string($owner->input['base'] ?? null) ? $owner->input['base'] : '',
+            $reviews->count() + 1, is_string($previous) ? $previous : null, $results, is_string($note) && $note !== '' ? $note : null);
+    }
+
+    /** @return Builder<Operation> the role's finished copy turns on the subtask, newest first */
+    private static function finished(Task $group, Task $subtask, TaskThreadRole $role): Builder
+    {
+        return Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->where('status', OperationStatus::Succeeded->value)
+            ->where('input->subtask', $subtask->id)->where('input->role', $role->value)
+            ->where('result->state', AgentThreadState::Done->value)->orderByDesc('id');
+    }
+}

@@ -5,7 +5,7 @@ description: Use when preparing, implementing, or reviewing an Orbit task group.
 
 # Orbit Tasks
 
-The Gateway Tasks engine is generic. This file is Orbit's repository policy for task groups. The [quality bar](../../../AGENTS.md#quality-bar) and the check policy in the root `AGENTS.md` apply to every subtask. The Gateway's prompts carry the turn receipt schema, the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule), and the handoff mechanics, so this file does not repeat them.
+The Gateway Tasks engine is generic. This file is Orbit's repository policy for task groups. The [quality bar](../../../AGENTS.md#quality-bar) and the check policy in the root `AGENTS.md` guide every implementer. The Gateway's [turn prompts](../../../docs/reference/tasks.md#run-an-external-turn) carry each role's rules, the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule), the task check step and the handoff note, so this file does not repeat them.
 
 ## Plan a group
 
@@ -130,15 +130,14 @@ Leave out the slice Guardrails when the slice has none.
 6. Give a number with its source and its two end points, such as "from the wake request to `ready_at`".
 7. Put everything the implementer needs inline or in the repository. Name no path on another machine or in another repository.
 8. Accepted limits say what the reviewer must not block on, with the reason.
-9. Say what the implementer does with another bug found on the way: report it and commit no fix. If it blocks the proof, ask.
-10. Leave out a section that has nothing to say.
-11. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now.
+9. Leave out a section that has nothing to say.
+10. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now.
 
 Name implementation paths only where the contract fixes them.
 
 ### Turn prompts
 
-A turn prompt carries review findings, new evidence, and corrections inside the agreed outcome. It adds no outcome and restates neither the brief nor these rules. One exception holds until the copy rules name the task check: the owner may tell the implementer to run the Project task check before it hands off.
+A turn prompt carries review findings, new evidence, and corrections inside the agreed outcome. It adds no outcome and restates neither the brief nor these rules. It does not repeat what the Gateway's prompt already gives: the task check step, the implementer's handoff note, the round of a re-review and the verdict line.
 
 ## Agree and create the group
 
@@ -158,6 +157,6 @@ Every task read uses [recorded Gateway state](../../../docs/reference/tasks.md#r
 
 ## Review a subtask
 
-Judge the work against the group's expected outcomes and guardrails, then the quality bar. Do not block on an accepted limit. This does not widen the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule): it still decides what blocks. When you write the reviewer prompt for `task-turn`, do not widen that bar: the rule sets the reviewer's scope.
+Judge the work against the group's expected outcomes and guardrails. Do not block on an accepted limit. This does not widen the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule): it still decides what blocks. When you write the reviewer prompt for `task-turn`, do not widen that bar: the rule sets the reviewer's scope.
 
-The reviewer whose approval opens the pull request puts any open follow-up that users must know about into the receipt's `pull_request.summary`. The operator decides which follow-ups become a later group.
+The reviewer whose approval opens the pull request puts any open follow-up that users must know about into the body of its [pull request text](../../../docs/reference/tasks.md#the-reviewers-pull-request-text). The operator decides which follow-ups become a later group.

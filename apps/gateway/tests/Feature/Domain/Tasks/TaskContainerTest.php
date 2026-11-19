@@ -1717,14 +1717,14 @@ describe('a turn of a group that owns a copy', function (): void {
                 // Capture sets the new thread's ID and marks it admitted: T3 does not hold it yet.
                 't3_thread_id' => $thread->external_id, 'admission' => 'admitted', 'answered' => [], 'answered_run' => null, 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
-            // The implementer learns how to ask: a question ends the turn.
-            // The group's title and brief come first, the copy rules once, then the turn's clock: the admission's time and the end of its bound.
+            // The implementer gets its own fixed text: the briefs, its rules, the caller's prompt and the end of the turn's bound.
             ->and(Str::isUuid($thread->external_id))->toBeTrue()->and($thread->external_id_admission)->toBe('admitted')
             ->and(Str::isUuid($turn->input['turn']['message_id']))->toBeTrue()
-            ->and($turn->input['turn']['prompt'])->toBe("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\nBrief:\nDo it\n\n".TaskTurnPrompt::CopyRules
-                ."\n\nThis turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. Commit your work before then."
-                ."\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
-                .'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.')
+            ->and($turn->input['turn']['prompt'])->toBe(TaskTurnPrompt::implementer($group->tasks()->firstOrFail(), $group->project->taskCheckCommand(),
+                'Run Doctor and commit a note.', CarbonImmutable::parse('2026-11-16T10:00:00Z')))
+            ->and($turn->input['turn']['prompt'])->toStartWith("You implement one subtask of an Orbit task in its task copy.")
+            ->and($turn->input['turn']['prompt'])->toContain("<task_brief title=\"Group\">\nBrief\n</task_brief>\n\n<subtask_brief title=\"Step\">\nDo it\n</subtask_brief>")
+            ->and($turn->input['turn']['prompt'])->toEndWith("<turn>\nRun Doctor and commit a note.\n</turn>\n\nOrbit ends this turn at 2026-11-16T11:00:00Z. Commit your work before then.")
             ->and($thread->only(['driver', 'role', 'model', 'effort', 'provider_instance', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
                 'effort' => 'medium', 'provider_instance' => 'claudeMedium', 'node_id' => $copy->node_id])
             ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($thread->id)
@@ -1977,7 +1977,7 @@ describe('a turn of a group that owns a copy', function (): void {
                 // The CLI driver reported its own thread ID over the admitted one: its provenance is not proven.
                 't3_thread_id' => 'mcp:66105c2c', 'admission' => 'overwritten', 'answered' => [], 'answered_run' => null, 'seconds' => 3600, 'title' => $first->input['turn']['title']])
             ->and($next->input['turn']['message_id'])->not->toBe($first->input['turn']['message_id'])
-            ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.\n\n".TaskTurn::AskRule)
+            ->and($next->input['turn']['prompt'])->toContain("<turn>\nFix the failing test.\n</turn>")
             ->and($named->input['thread_id'])->toBe($first->input['thread_id'])->and($named->input['turn']['thread'])->toBe('continue')
             ->and(AgentThread::query()->where('task_group_id', $group->id)->sole()->only(['model', 'effort', 'provider_instance']))
             ->toBe(['model' => 'claude-opus-5-5', 'effort' => 'medium', 'provider_instance' => 'claudeMedium'])
@@ -2011,7 +2011,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'codexHigh', 'model' => 'gpt-6.1-sol',
             'options' => [['id' => 'reasoningEffort', 'value' => 'high']]])
-            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::ReviewRule."\n\n".TaskTurn::PrTextRule)
+            ->and($review->input['turn']['prompt'])->toContain("</review_rules>\n\n".TaskTurn::PrTextRule."\n\n<turn>\n")
             ->and(AgentThread::query()->findOrFail($review->input['thread_id'])->only(['model', 'effort', 'provider_instance']))
             ->toBe(['model' => 'gpt-6.1-sol', 'effort' => 'high', 'provider_instance' => 'codexHigh']);
     });
@@ -2033,7 +2033,7 @@ describe('a turn of a group that owns a copy', function (): void {
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         $implementer = copyTurn($group);
-        copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
+        copyTurnEnded($implementer, 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => [['label' => 'assistant', 'text' => 'Handed off.']]]);
         $check = copyCandidate($group);
 
         $review = copyTurn($group, ['role' => 'reviewer', 'check' => $check->id, 'prompt' => 'Review the checked commit.']);
@@ -2049,19 +2049,19 @@ describe('a turn of a group that owns a copy', function (): void {
             // A Claude thread carries no model options: its instance's CLAUDE_CODE_EFFORT_LEVEL sets its effort, as before.
             ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'model' => 'claude-opus-5-5', 'options' => [],
                 'candidate' => $check->commit_sha])
-            // The reviewer gets the group's title and brief first, the copy rules once and its clock, as the implementer does.
-            ->and($review->input['turn']['prompt'])->toStartWith("Task group: Group\n\nGroup brief:\nBrief\n\nSubtask: Step\n\n")
-            ->and(substr_count($review->input['turn']['prompt'], TaskTurnPrompt::CopyRules))->toBe(1)
-            ->and($review->input['turn']['prompt'])->toMatch('/'.preg_quote(TaskTurnPrompt::CopyRules, '/').'\n\nThis turn started at \S+Z and Orbit ends it at \S+Z\. Commit your work before then\.\n\n'
-                .'Prompt of this turn:\nReview the checked commit\.\n\nThe checked commit under review: '.$check->commit_sha.'\./')
-            // The reviewer rule bounds the review by the task's scope (docs/reference/tasks.md#the-reviewer-rule); a reviewer that approves
-            // then sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
-            ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::ReviewRule."\n\n".TaskTurn::PrTextRule)
-            ->and(substr_count($review->input['turn']['prompt'], TaskTurn::ReviewRule))->toBe(1)
-            // The scope and the impact bar bound the findings (docs/reference/tasks.md#the-reviewer-rule).
-            ->and(TaskTurn::ReviewRule)->toContain('A finding blocks only if a normal run, or a likely failure')->not->toContain('Report every finding')
-            ->and($implementer->input['turn']['prompt'])->not->toContain(TaskTurn::ReviewRule)
-            ->and($implementer->input['turn']['prompt'])->toEndWith("\n\n".TaskTurn::AskRule)
+            // The reviewer gets its own fixed text: the first review of the check's commit, the implementer's handoff note, the review
+            // rules (docs/reference/tasks.md#the-reviewer-rule) and the pull request text rule (docs/reference/tasks.md#the-reviewers-pull-request-text).
+            ->and($review->input['turn']['prompt'])->toStartWith("You review one subtask of an Orbit task in its task copy.\n"
+                ."This is the first review of this subtask: check {$check->id}, commit {$check->commit_sha}, against base ")
+            ->and($review->input['turn']['prompt'])->toContain("<task_brief title=\"Group\">\nBrief\n</task_brief>\n\n<subtask_brief title=\"Step\">\nDo it\n</subtask_brief>\n\n"
+                ."<handoff_note>\nHanded off.\n</handoff_note>\n")
+            ->and($review->input['turn']['prompt'])->toContain("</review_rules>\n\n".TaskTurn::PrTextRule."\n\n<turn>\nReview the checked commit.\n</turn>\n\n")
+            ->and($review->input['turn']['prompt'])->toContain('A finding blocks only if:')->not->toContain('Commit your work')
+            ->and($implementer->input['turn']['prompt'])->not->toContain('<review_rules>')->not->toContain(TaskTurn::PrTextRule)
+            // A later reviewer turn on the subtask is a re-review: its round, and the commit the finished review judged.
+            ->and($again->input['turn']['prompt'])->toContain("This is review round 2 of this subtask: check {$check->id}, commit {$check->commit_sha}. "
+                ."You last reviewed commit {$check->commit_sha}.\n")
+            ->and($again->input['turn']['prompt'])->toContain("Re-review. Check only:\n")
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
             ->and($group->refresh()->reviewer_agent_thread_id)->toBe($thread->id)
             ->and($again->input['thread_id'])->toBe($thread->id)->and($again->input['turn']['thread'])->toBe('continue');
@@ -2502,8 +2502,8 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($answer->input['turn']['answered'])->toBe(['request:1'])
             // The answer cancels only requests of the run that owns them.
             ->and($answer->input['turn']['answered_run'])->toBe('run:1')
-            ->and($answer->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nYou asked in your last turn:\n[Color] Which color?\n- Red: Choose red\n"
-                ."- Blue: Choose blue\n\nAnswer:\nBlue.\n\n".TaskTurn::AskRule);
+            ->and($answer->input['turn']['prompt'])->toContain("<turn>\nYou asked in your last turn:\n[Color] Which color?\n- Red: Choose red\n"
+                ."- Blue: Choose blue\n\nAnswer:\nBlue.\n</turn>\n\nOrbit ends this turn at ");
         copyTurnEnded($answer, 'succeeded', copyTurnDone('mcp:1'));
         expect(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBeNull()
             // A thread that asked nothing last time quotes nothing.
