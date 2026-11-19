@@ -91,8 +91,8 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 3613
-slices = 90
+cost = 3605
+slices = 89
 inputs = [
   # Exercise every case when the workflow changes its runner or concurrency policy.
   ".github/workflows/ci.yml",
@@ -222,7 +222,7 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base" = 67 # ESTIMATE: local 31.411s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps" = 60
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 45
-  "a due shrink keeps base of the running fleet and starts after it; the next refresh stops none, retakes base of all three and is then current" = 84 # ESTIMATE: three refreshes, as the case it replaces (local 39.196s x 2.1, rounded up, plus 1s)
+  "a due shrink keeps base of the running fleet and starts after it; the next refresh stops none, retakes base of all three and is then current" = 76 # ESTIMATE: local 35.566s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "a shrink that still runs stops before the refresh writes anything; a check that fails keeps base and a start that fails is named" = 56 # ESTIMATE: three refreshes, local 26s x 2.1
 
   "a fleet start restores the nested Gateway pins as orbit, reports a no-op on rerun and fails if the store cannot be repaired" = 40 # ESTIMATE: local 18 s x 2.1, rounded up plus 1 s

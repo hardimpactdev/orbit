@@ -171,12 +171,8 @@ def same_file(first, second):
         if not (stat.S_ISREG(a.st_mode) and stat.S_ISREG(b.st_mode) and a.st_dev == b.st_dev and a.st_size == b.st_size
                 and (a.st_mode, a.st_uid, a.st_gid) == (b.st_mode, b.st_uid, b.st_gid)):
             return False
-        while True:
-            one, two = (os.read(each, 1 << 20) for each in opened)
-            if one != two:
-                return False
-            if not one:
-                return True
+        # Bounded by the size both had; the read at that size also compares what either gained since.
+        return all(os.pread(opened[0], 1 << 20, at) == os.pread(opened[1], 1 << 20, at) for at in range(0, a.st_size + 1, 1 << 20))
     except OSError:
         return False
     finally:
