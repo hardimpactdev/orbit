@@ -11,11 +11,9 @@ orbit task:turn <task> --role=implementer --prompt="Fix the failing test."
 orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --json
 ```
 
-The agent receives the group's title and brief, then the title, brief and deliverables of the subtask, then Orbit's copy rules, then your prompt, for every role. Send only what this turn adds; do not paste the group's brief or the subtask's brief, and do not restate the copy rules.
+Each role gets its own fixed text around your prompt: the group's and the subtask's briefs, the deliverables, the role's rules, then your prompt and the end of the turn. The implementer's rules tell it to run the Project check before it hands off and what its handoff note holds. The reviewer's text names the check, its commit and base, each deliverable's result in that check and the implementer's handoff note. It also says whether this is the first review or a re-review, and with which earlier commit. [Run an external turn](/reference/tasks#run-an-external-turn) lists both texts. Send only what this turn adds: do not paste the briefs, the handoff note or the rules, and do not ask for a verdict line, since the reviewer's text fixes it.
 
-Build and prove the feature end to end in the copy before its pull request opens: [Build a feature in one copy](/reference/tasks#build-a-feature-in-one-copy).
-
-The prompt also gives the agent the turn's clock, for every role: `This turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. Commit your work before then.` The start is the time Orbit admitted the turn, in UTC; the end is one hour later, the turn's bound.
+The last line gives the end of the turn's bound: `Orbit ends this turn at 2026-11-16T11:00:00Z.` It is one hour after Orbit admitted the turn, in UTC.
 
 `--role` is `implementer` or `reviewer`. A turn without `--thread` continues the role's thread, `--thread=new` starts a new thread, and `--thread=ID` names the thread the turn continues. A new thread takes its role's model; a continued thread keeps its model.
 

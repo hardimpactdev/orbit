@@ -501,6 +501,10 @@ default = ["docs"]
 inputs = [".codex/**"]
 default = ["docs"]
 
+[roots.".claude"]
+inputs = [".claude/**"]
+default = ["docs"]
+
 [roots.".githooks"]
 inputs = [".githooks/**"]
 default = ["docs"]

@@ -12,6 +12,7 @@
 # Code that is not proven yet stays skip. A command that becomes ready also maps the code that implements it,
 # including its Gateway Action and CLI files.
 .agents/**                                       skip
+.claude/**                                       skip
 .codex/**                                     skip
 .githooks/**                                     skip
 .github/**                                       skip
