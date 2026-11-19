@@ -67,6 +67,17 @@ def incus(*args, stdin=None, ok=(0,), timeout=None):
     return result
 
 
+def gone(project, name):
+    """Whether Incus confirms, when asked again, that the container no longer exists. A removal is admitted beside a role converge
+    (NodeWorkAdmission), so a container listed at the start of a pass can be deleted before the pass reaches it: it is already removed,
+    and no failure. Only Incus's own not-found answer counts; a failed read of any other kind is no proof, and the failure stands."""
+    result = subprocess.run(["incus", "query", f"/1.0/instances/{name}?project={project}"], capture_output=True, text=True,
+                            errors="surrogateescape", check=False, timeout=30)
+    return result.returncode != 0 and re.fullmatch(
+        rf'Error: (?:Failed to fetch instance "{re.escape(name)}" in project "{re.escape(project)}": )?Instance not found',
+        result.stderr.strip()) is not None
+
+
 def subject_hash(pem):
     """OpenSSL's hashed name of a certificate, or None for text that is not one."""
     result = subprocess.run(["openssl", "x509", "-noout", "-subject_hash"], input=pem, capture_output=True, text=True, check=False)
@@ -241,6 +252,9 @@ def container(project, row, files, trust, browser, libraries, names, libraries_c
         if presented is not None:
             machine_name(project, name, status, label, presented, code, summary)
     except IncusFailure as failure:
+        if gone(project, name):
+            summary["gone"].append(label)
+            return
         summary["failed"].append(f"{label}: {failure}")
     browser_trust(project, name, status, label, browser, summary)
 
@@ -251,7 +265,7 @@ def converge(projects, files, trust_spec, browser, libraries, state, machine_nam
     state_file = Path(state)
     libraries_changed = (state_file.read_text().strip() if state_file.is_file() else "") != digest
     summary = {"written": [], "removed": [], "ldconfig": [], "ca_bundle": [], "cache_dropped": [], "frozen": [], "skipped": [],
-               "browser_trust": [], "failed": []}
+               "browser_trust": [], "gone": [], "failed": []}
     try:
         pem = Path(trust_spec["source"]).read_text()
     except OSError:
@@ -291,7 +305,7 @@ def t3_files(entries, state):
     every other container had its turn."""
     state_file = Path(state)
     pending = json.loads(state_file.read_text()) if state_file.is_file() else []
-    summary = {"written": [], "reload": [], "frozen": [], "skipped": [], "failed": []}
+    summary = {"written": [], "reload": [], "frozen": [], "skipped": [], "gone": [], "failed": []}
     rows = {(row.get("project"), row["name"]): row["status"]
             for row in json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)} if entries or pending else {}
     existing = [entry for entry in pending if (entry["project"], entry["name"]) in rows]
@@ -330,6 +344,9 @@ def t3_files(entries, state):
             elif changed and status == "Frozen":
                 summary["frozen"].append(label)
         except IncusFailure as failure:
+            if gone(project, name):
+                summary["gone"].append(label)
+                continue
             summary["failed"].append(f"{label}: {failure}")
     summary["reload"] = pending
     if summary["failed"]:
@@ -359,6 +376,9 @@ process.stdout.write(JSON.stringify(runs));
 """
 
 
+T3_UNREAD = "T3 is active and its open runs could not be read"
+
+
 def t3_busy(project, name, program):
     """Why T3 in the running container must not restart now, or None: an open run of any thread, or a read that failed while its unit is
     active."""
@@ -371,7 +391,7 @@ def t3_busy(project, name, program):
                        "/usr/bin/timeout", "60", "node", "-", json.dumps(T3_OPEN), program, stdin=T3_OPEN_RUNS, timeout=90)
         runs = json.loads(listed.stdout)
     except (IncusFailure, subprocess.TimeoutExpired, ValueError) as failure:
-        return f"T3 is active and its open runs could not be read: {str(failure)[:200]}"
+        return f"{T3_UNREAD}: {str(failure)[:200]}"
     open_turns = sorted({run.get("threadId", "?") for run in runs if run.get("status") in T3_OPEN})
     return f"open turn in {', '.join(open_turns)}" if open_turns else None
 
@@ -383,7 +403,7 @@ def t3_restart(targets, t3_files, state):
     state_file = Path(state)
     pending = json.loads(state_file.read_text()) if state_file.is_file() else []
     programs = {(entry["project"], entry["container"]): entry["program"] for entry in t3_files}
-    summary = {"restarted": [], "deferred": [], "failed": []}
+    summary = {"restarted": [], "deferred": [], "gone": [], "failed": []}
     for target in targets:
         project, name = target["project"], target["name"]
         entry = {"project": project, "name": name}
@@ -396,7 +416,16 @@ def t3_restart(targets, t3_files, state):
                 pending = [held for held in pending if held != entry]
                 continue
             except IncusFailure as failure:
+                if gone(project, name):
+                    summary["gone"].append(entry)
+                    pending = [held for held in pending if held != entry]
+                    continue
                 summary["failed"].append(f"{project}/{name}: {failure}")
+        elif reason.startswith(T3_UNREAD) and gone(project, name):
+            # Its open runs could not be read because it was deleted: nothing is left to restart, and the Node need not wait for it.
+            summary["gone"].append(entry)
+            pending = [held for held in pending if held != entry]
+            continue
         else:
             summary["deferred"].append({**entry, "reason": reason})
         if entry not in pending:
