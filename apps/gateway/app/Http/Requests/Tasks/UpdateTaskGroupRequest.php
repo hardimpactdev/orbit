@@ -32,6 +32,9 @@ final class UpdateTaskGroupRequest extends FormRequest
     /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|In|ProhibitedIf|NotBlank>> */
     public function rules(): array
     {
+        if ($this->work() instanceof Task) {
+            return array_filter((new UpdateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables') || $field === 'reason', ARRAY_FILTER_USE_KEY);
+        }
         if ($this->route('task') instanceof Task && $this->route('task')->parent_id !== null) {
             return (new UpdateTaskRequest)->rules();
         }
@@ -56,12 +59,25 @@ final class UpdateTaskGroupRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->route('task') instanceof Task && $this->route('task')->parent_id !== null
-                ? ['title', 'brief', 'position', 'deliverables', 'topology', 'status', 'reason']
-                : ['title', 'brief', 'status', 'preview', 'pr_mode', 'reason', ...TaskAgent::fields()]);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), match (true) {
+                $this->work() instanceof Task => ['deliverables', 'reason'],
+                $this->route('task') instanceof Task && $this->route('task')->parent_id !== null => ['title', 'brief', 'position', 'deliverables', 'topology', 'status', 'reason'],
+                default => ['title', 'brief', 'status', 'preview', 'pr_mode', 'reason', ...TaskAgent::fields()],
+            });
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
+    }
+
+    /**
+     * The work row whose deliverables a request to a task with no subtask corrects: such a request names `deliverables`, and
+     * then only a `reason` (docs/reference/tasks.md#a-task-with-no-subtask).
+     */
+    public function work(): ?Task
+    {
+        $task = $this->route('task');
+
+        return $task instanceof Task && $task->parent_id === null && $this->has('deliverables') ? $task->work()->first() : null;
     }
 
     public function parentPayload(): UpdateTaskGroupData

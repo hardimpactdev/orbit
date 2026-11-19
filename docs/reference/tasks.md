@@ -490,11 +490,11 @@ List, show, and `task:question:list` accept any authorized peer. Update and the 
 | `task:egress` | `GET /api/v1/tasks/{task}/egress` | Gateway |
 | `task:agent:show` | `GET /api/v1/tasks/{task}/agents/{session}` | Gateway |
 
-Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `tasks` segment. `{task}` selects the existing ID of either a parent or a child. Check, turn and check cancellation require a child. Start, publish, complete and agent reads require a parent. Destroy requires a child whose parent is in Backlog. Comments select either level.
+Each MCP tool name is the operation name with hyphens, such as `task-create`. The paths keep the `tasks` segment. `{task}` selects the existing ID of either a parent or a child. Check, turn and check cancellation require a child, or a [task with no subtask](#a-task-with-no-subtask) by its own ID. Start, publish, complete and agent reads require a parent. Destroy requires a child whose parent is in Backlog. Comments select either level.
 
 Parent creation requires `project_id`, `title` (at most 160 characters), and `brief` (at most 8,000 characters). Child creation uses `parent_id` instead of `project_id` and inherits the Project; a contradictory Project is refused. The Project must read its repository through the GitHub App. A Project with [`source_access: gh_cli`](/reference/projects#source-access) cannot start a task, because Orbit publishes only through the App.
 
-Parent creation accepts an ordered `subtasks` array of at most 50 `{title, brief, deliverables}` objects and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Creating in Todo changes board state only; `task:start` creates the parent's task copy. Parent creation accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
+Parent creation accepts an ordered `subtasks` array of at most 50 `{title, brief, deliverables}` objects, or the task's own `deliverables` instead, and a `status` of `backlog` or `todo`. The status defaults to `backlog`. Creating in Todo changes board state only; `task:start` creates the parent's task copy. Parent creation accepts only `orchestration: external`, which is also the default. The API, PHP SDK, CLI option `task:create --orchestration`, and MCP expose this field. Update cannot change it.
 
 Create also accepts `review`, `manual` (default) or `automatic`, the mode of the gate of the group's pull request; update cannot change it, and show returns it. The strict boolean `current_recipe` (CLI `--current-recipe`, default `false`) remains a stored create-time field; it selects no VM image and changes no task-copy start behavior. Update cannot change it. [List tasks](#list-tasks) pages the groups. Show returns the task and its subtasks in position order.
 
@@ -502,7 +502,26 @@ Update changes a task's `title`, `brief`, or `status`. Title and brief change on
 
 For an external group, `task:update` also accepts `status` moves among `running`, `reviewing`, `settling`, and `waiting_for_review`. It still moves between `backlog` and `todo`, with the same deliverable requirements, but starts no work. A status update cannot enter `reserved`, leave `reserved`, cross between preparation and active work, or end the group. Only provision moves `todo` to `reserved`. Use `task:cancel` or `task:complete` to end a group. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing, including on an ended group. These updates need no idempotency key.
 
-A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable.
+A task moves to `todo`, by create or update, only when it has subtasks and every subtask has at least one deliverable, or when it is a task with no subtask that has at least one deliverable.
+
+### A task with no subtask
+
+A task with no subtask holds its own deliverables and does its own work. Create it with `deliverables` in place of `subtasks`; a create that names both answers `422` with `validation.failed`. The deliverables follow the rules of [Deliverables](#deliverables).
+
+Such a task takes, by its own ID, the calls that a subtask takes:
+
+| Call | By the task's ID |
+| --- | --- |
+| `task:check` | The baseline and handoff checks of the task's work |
+| `task:turn` | The implementer and reviewer turns |
+| `task:check:cancel` | Cancels the running check |
+| `task:update` with `deliverables` | Replaces the deliverables, with the [corrections of a started subtask](#correct-the-deliverables-of-a-started-subtask) and their `reason`. Such an update takes no other field |
+
+Its turn prompt holds the task's brief once and the task's deliverables, with no subtask part. A started task with no subtask takes no subtask: subtask create answers `409` with `tasks.own_work`. Record an outcome found during the task as a new task.
+
+Show and list return the task's work as `work`: the fields of a subtask, with its deliverables, latest check and implementer. `subtasks` is then empty, and a list with `parent_id` lists nothing. A task with subtasks has `work: null`.
+
+The Gateway stores the work as one row under the task, of type `work`, with the task's title and brief. The row is the task's current subtask for the check, turn, status and review rules of this page. No read shows it as a subtask.
 
 ### List tasks
 
@@ -599,9 +618,10 @@ The task and subtask operations return these errors.
 | --- | --- | --- |
 | `tasks.orchestration_unsupported` | 422 | A subtask would declare a topology |
 | `tasks.status_move_refused` | 422 | An external group or subtask status update attempts a move outside the allowed transitions |
-| `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks |
+| `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks or its own deliverables |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
+| `tasks.own_work` | 409 | Subtask create in a [task with no subtask](#a-task-with-no-subtask) |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started, when no [correction](#correct-the-deliverables-of-a-started-subtask) applies |
 | `tasks.reason_unexpected` | 422 | A `reason` on an update that is not a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask) |
@@ -615,7 +635,7 @@ The task and subtask operations return these errors.
 
 ## Deliverables
 
-A deliverable is one item that a subtask must deliver, in a form Orbit can check. The ADE or an operator writes the deliverables next to the brief. The implementer confirms each one at handoff. Orbit verifies the mechanical ones before the reviewer starts.
+A deliverable is one item that a subtask, or a [task with no subtask](#a-task-with-no-subtask), must deliver, in a form Orbit can check. The ADE or an operator writes the deliverables next to the brief. The implementer confirms each one at handoff. Orbit verifies the mechanical ones before the reviewer starts.
 
 Each deliverable has an `id`, a `type`, a `description`, and the fields of its type.
 

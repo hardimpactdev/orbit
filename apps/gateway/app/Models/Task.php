@@ -415,6 +415,16 @@ final class Task extends Model
         $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::FinalReview->value));
     }
 
+    /**
+     * Subtasks a read lists as subtasks: all but the work row of a task with no subtask ({@see TaskType::Work}).
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeListedSubtasks(Builder $query): void
+    {
+        $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::Work->value));
+    }
+
     /** Whether the task's pull request merged, by Orbit or by a person ([Task insights](/reference/tasks#task-insights)). */
     public function pullRequestMerged(): bool
     {
@@ -484,6 +494,16 @@ final class Task extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id')->orderBy('position')->orderBy('id');
+    }
+
+    /**
+     * The work row of a task with no subtask ({@see TaskType::Work}); none for a task with subtasks.
+     *
+     * @return HasOne<Task, $this>
+     */
+    public function work(): HasOne
+    {
+        return $this->hasOne(self::class, 'parent_id')->where('type', TaskType::Work->value);
     }
 
     /** @return BelongsTo<Project, $this> */

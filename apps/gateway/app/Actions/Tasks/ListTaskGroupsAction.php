@@ -76,7 +76,7 @@ final readonly class ListTaskGroupsAction
             return new Collection;
         }
 
-        return $group->tasks()
+        return $group->tasks()->listedSubtasks()
             ->select(TaskData::ListColumns)
             ->with(['latestCheck' => static fn ($query) => $query->select(self::qualified('task_checks', TaskCheckData::ListColumns))])
             ->when($status instanceof TaskStatus, static fn ($query) => $query->where('status', $status))

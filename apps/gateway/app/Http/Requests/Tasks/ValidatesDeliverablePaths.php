@@ -32,7 +32,8 @@ trait ValidatesDeliverablePaths
             }
             $task = $this->route('task');
             if ($task instanceof Task && $task->parent_id === null) {
-                $task = null;
+                // A task with no subtask corrects the deliverables of its work row.
+                $task = $task->work()->first();
             }
             if ($task instanceof Task && ($task->status !== TaskStatus::Todo || ! $group instanceof Task || $task->parent_id !== $group->id)) {
                 return;
@@ -55,6 +56,9 @@ trait ValidatesDeliverablePaths
                 }
                 $commit = TaskReviewBase::commit($task);
             } else {
+                if (($data['deliverables'] ?? []) !== []) {
+                    $lists['deliverables'] = $data['deliverables'];
+                }
                 foreach ($data['subtasks'] ?? [] as $index => $input) {
                     if (($input['deliverables'] ?? []) !== []) {
                         $lists["subtasks.{$index}.deliverables"] = $input['deliverables'];

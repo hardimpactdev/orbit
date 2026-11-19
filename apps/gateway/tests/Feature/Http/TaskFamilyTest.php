@@ -220,5 +220,5 @@ it('filters children by status and rejects fields from the other create level', 
     $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&status=completed')->assertOk()->assertJsonCount(0, 'data');
     $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&status=todo')->assertOk()->assertJsonCount(1, 'data');
     $this->postJson('/api/v1/tasks', ['parent_id' => $this->parent->id, 'title' => 'Child', 'brief' => 'Brief', 'preview' => true])->assertUnprocessable();
-    $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Parent', 'brief' => 'Brief', 'deliverables' => []])->assertUnprocessable();
+    $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Parent', 'brief' => 'Brief', 'topology' => []])->assertUnprocessable();
 });

@@ -61,7 +61,9 @@ final class CreateTaskGroupRequest extends FormRequest
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
             ...TaskAgent::rules(),
-            'subtasks' => ['sometimes', 'array', 'max:50'],
+            // A task with no subtask holds its own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
+            ...array_filter((new CreateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables'), ARRAY_FILTER_USE_KEY),
+            'subtasks' => ['sometimes', 'array', 'max:50', 'prohibits:deliverables'],
             'subtasks.*.title' => ['required', 'string', 'max:160'],
             'subtasks.*.brief' => ['required', 'string', 'max:8000'],
             'subtasks.*.topology' => ['sometimes', 'array', 'list'],
@@ -98,6 +100,7 @@ final class CreateTaskGroupRequest extends FormRequest
                     'preview',
                     'current_recipe',
                     ...TaskAgent::fields(),
+                    'deliverables',
                     'subtasks',
                 ]);
         } catch (UnexpectedValueException $exception) {
@@ -129,6 +132,7 @@ final class CreateTaskGroupRequest extends FormRequest
             brief: $this->string('brief')->toString(),
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             tasks: $tasks,
+            deliverables: $this->has('deliverables') ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
             preview: $this->boolean('preview'),
             currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),

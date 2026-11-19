@@ -68,6 +68,10 @@ final readonly class UpdateTaskGroupAction
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;
             if ($locked->isDirty()) {
+                // The work row of a task with no subtask repeats the task's title and brief (TaskType::Work).
+                if ($locked->isDirty(['title', 'brief'])) {
+                    $locked->work()->first()?->update(['title' => $locked->title, 'brief' => $locked->brief]);
+                }
                 $locked->save();
             }
 

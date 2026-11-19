@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskType;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -35,8 +36,11 @@ final readonly class CreateTaskGroupAction
             );
         }
 
-        if ($data->status === TaskGroupStatus::Todo && $data->tasks === []) {
+        if ($data->status === TaskGroupStatus::Todo && $data->tasks === [] && $data->deliverables === null) {
             throw TaskGroupGuard::noSubtasks();
+        }
+        if ($data->status === TaskGroupStatus::Todo && $data->deliverables === []) {
+            throw TaskGroupGuard::deliverablesMissing(['"'.$data->title.'"']);
         }
 
         $missing = array_keys(array_filter($data->tasks, static fn (TaskInputData $task): bool => $task->deliverables === []));
@@ -71,6 +75,19 @@ final readonly class CreateTaskGroupAction
                 'title' => $task->title,
                 'brief' => $task->brief,
                 'deliverables' => $task->deliverables,
+                'status' => TaskStatus::Todo,
+            ]);
+        }
+
+        // A task with no subtask holds its work in one row of its own (docs/reference/tasks.md#a-task-with-no-subtask).
+        if ($data->deliverables !== null) {
+            Task::query()->create([
+                'parent_id' => $group->id,
+                'type' => TaskType::Work,
+                'position' => 1,
+                'title' => $data->title,
+                'brief' => $data->brief,
+                'deliverables' => $data->deliverables,
                 'status' => TaskStatus::Todo,
             ]);
         }

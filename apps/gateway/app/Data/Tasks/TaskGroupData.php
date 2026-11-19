@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskType;
 use App\Models\Instance;
 use App\Models\Route;
 use App\Models\Task;
@@ -92,6 +93,11 @@ final class TaskGroupData extends Data
         public ?int $issue = null,
         /** Show only: a list row leaves it out, so its reads never run for a list (docs/reference/tasks.md#publication-state). */
         public Lazy|TaskPublicationData|null $publication = null,
+        /**
+         * The work of a task with no subtask: its deliverables, checks, implementer and review. Null for a task with subtasks, which
+         * lists them in `subtasks` (docs/reference/tasks.md#a-task-with-no-subtask).
+         */
+        public ?TaskData $work = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -103,6 +109,7 @@ final class TaskGroupData extends Data
         }
         $data = $this->toArray();
         $data['subtasks'] = array_map(static fn (TaskData $task): array => $task->toListArray(), $this->subtasks);
+        $data['work'] = $this->work?->toListArray();
 
         return $data;
     }
@@ -113,6 +120,7 @@ final class TaskGroupData extends Data
         $data = $this->toArray();
         unset($data['brief'], $data['assistance_question'], $data['assistance_reason']);
         $data['subtasks'] = array_map(static fn (TaskData $task): array => $task->toCompactArray(), $this->subtasks);
+        $data['work'] = $this->work?->toCompactArray();
 
         return $data;
     }
@@ -204,7 +212,8 @@ final class TaskGroupData extends Data
             durationMs: $group->duration_ms,
             questions: (int) ($group->questions ?? 0),
             escalations: (int) ($group->escalations ?? 0),
-            subtasks: TaskData::fromModels($group->tasks),
+            subtasks: TaskData::fromModels($group->tasks->reject(static fn (Task $task): bool => $task->type === TaskType::Work)->values()),
+            work: ($work = $group->tasks->first(static fn (Task $task): bool => $task->type === TaskType::Work)) instanceof Task ? TaskData::fromModel($work) : null,
         );
     }
 
