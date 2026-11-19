@@ -107,6 +107,6 @@ bun run dev
 
 ## CI
 
-The Web job runs unit, verification and browser tests before building selected web changes and every PR. Main can reuse the verified PR tree; otherwise it runs the Web job. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select it. `Required checks` expects it to succeed when it is selected. [CI](/reference/implementation-loop#ci) lists the checks. Desktop checks remain paused.
+The Web job runs unit, verification and browser tests before building selected web changes and every PR. Main reuses the web build of the commit's merge queue run and builds no second one. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select it. `Required checks` expects it to succeed when it is selected. [CI](/reference/implementation-loop#ci) lists the checks. Desktop checks remain paused.
 
 The agent lockfile also covers compiled extension crates under `apps/gateway/extensions/*/agent/`. Run tests and Clippy through `scripts/check-crates` from `apps/agent` to include the local path dependencies composed by its Cargo manifest. Delivery identity and CI selection include their sources.

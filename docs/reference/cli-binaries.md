@@ -20,7 +20,7 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 Every `main` commit whose `Main delivery checks`, `Required checks` and `Gateway release inputs` passed gets a GitHub release on [hardimpactdev/orbit](https://github.com/hardimpactdev/orbit/releases). The release holds the CLI binaries. When the agent source changed since the previous release, the release also holds the [`orbit-agent`](/reference/node-agent#releases).
 
-On a push or manual CI run on `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Gateway release inputs` passes, which follows `Main delivery checks` and the main `Required checks`. Delivery verifies the merge queue run and web artifact of the landed commit. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest trusted `ci.yml` main run has a successful `Main delivery checks` job on that exact SHA, then builds and publishes. A pull-request run never starts a release.
+On a push or manual CI run on `main`, CI's `Start the CLI release` job dispatches `Orbit CLI Release`, `.github/workflows/orbit-cli-release.yml`, as soon as `Gateway release inputs` passes, which follows `Main delivery checks` and the main `Required checks`. Delivery verifies the merge queue run and web artifact of the landed commit. The release workflow confirms that the commit is on the first-parent history of `main` and that its latest trusted `ci.yml` main run has successful `Main delivery checks` and `Gateway release inputs` jobs on that exact SHA, then builds and publishes. A pull-request run never starts a release.
 
 CI's dispatch is the only automatic release trigger; CI completion starts no second release run. Manual `workflow_dispatch` remains available for [backfill](#publish-a-missed-commit). A missing or red merge queue run blocks delivery and publication. Runs for the same commit run in sequence. A repeated dispatch checks the existing release and changes nothing when its commit and assets match. The release appears a few minutes after `Main delivery checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
@@ -93,12 +93,12 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 | Checksums URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/SHA256SUMS` |
 | Provenance URL | `https://github.com/hardimpactdev/orbit/releases/download/cli-v<version>/provenance.sigstore.json` |
 | Signing identity | Certificate SAN `https://github.com/hardimpactdev/orbit/.github/workflows/orbit-cli-release.yml@refs/heads/main`, OIDC issuer `https://token.actions.githubusercontent.com` |
-| Commits with a release | Commits on the first-parent history of `main` with a successful `Main delivery checks` run. A side commit never has one |
+| Commits with a release | Commits on the first-parent history of `main` whose newest main run passed `Main delivery checks` and `Gateway release inputs`. A side commit never has one |
 | Immutability | A published asset never changes. The tag points at `C`, and the release appears with all its assets at once |
 
 `bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
 
-A release appears once `Main delivery checks` is green and the release workflow has built and published it, usually a few minutes later; other CI jobs may still run. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
+A release appears once `Gateway release inputs` is green and the release workflow has built and published it, usually a few minutes later; other CI jobs may still run. Until then every CLI URL above returns 404. Gateway deployment uses the frozen agent and proceeds independently of CLI publication. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
 
 ### Find the release for a commit
 

@@ -348,6 +348,16 @@ class EvidenceTest(unittest.TestCase):
             with self.subTest(marker=marker), self.assertRaisesRegex(ValueError, 'Gateway release inputs must pass in the newest main CI run'):
                 delivery.delivery_evidence(self.github(jobs=jobs), SHA, release=True)
 
+    def test_the_release_flag_reaches_the_evidence_check(self):
+        for flags, release in ((['--release'], True), ([], False)):
+            with self.subTest(flags=flags), patch.object(delivery, 'GitHub'), patch.object(delivery, 'write_summary'), \
+                    patch.object(delivery, 'delivery_evidence', return_value=(RUN, {delivery.DELIVERY: JOB})) as evidence, \
+                    patch.object(delivery.sys, 'argv', ['ci-delivery', 'verify', '--sha', SHA, *flags]), \
+                    patch.dict(delivery.os.environ, {'GITHUB_REPOSITORY': REPO}):
+                delivery.os.environ.pop('SOURCE_RUN_ID', None)
+                delivery.main()
+                self.assertEqual(evidence.call_args.args[1:], (SHA, None, release))
+
     def test_latest_trusted_run_and_latest_job_attempt_win(self):
         github = self.github(runs=[RUN, RUN | dict(id=44)])
         delivery.delivery_evidence(github, SHA)
