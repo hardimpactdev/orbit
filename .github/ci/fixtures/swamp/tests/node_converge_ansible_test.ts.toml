@@ -35,9 +35,11 @@ cases = [
   "a converge before the executor's rollout records why it skips the install and changes nothing",
   "the executor plan check accepts a valid plan without writes",
   "the executor plan check rejects an invalid plan with its error code without writes",
+  "an automatic converge leaves a newer selected CLI to fleet delivery",
+  "a hand converge selects the recorded CLI release",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 102 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases, plus 15s for the package hold case (local 7s x 2.1)
+cost = 106 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s, plus 2s for the two executor plan cases, plus 15s for the package hold case (local 7s x 2.1), plus 4s for the two CLI ownership cases (local 1.7s x 2.1)
 inputs = [
   "apps/gateway/resources/machine-software/recipe.json",
   "bin/swamp-shape-gate",
