@@ -1010,3 +1010,10 @@ it('fingerprints the rendered Metrics plan without the private password or expor
     expect($runtime['execution_secrets'])->toBe([])
         ->and(array_column($runtime['intent']['files'], 'path'))->not->toContain('/etc/orbit/metrics/grafana/admin-password');
 });
+
+it('bounds the admission job by time, so a pass of full Node converges never runs out of attempts', function (): void {
+    $job = new AdmitFleetRollout(1);
+    // Each poll while a converge runs is one attempt: 360 attempts of 10 s ended a pass after an hour.
+    expect(property_exists($job, 'tries'))->toBeFalse()
+        ->and($job->retryUntil()->getTimestamp())->toBe(now()->addHours(AdmitFleetRollout::RetryHours)->getTimestamp());
+});
