@@ -273,7 +273,15 @@ An interruption **before the migration commit** can return traffic to the host. 
 
 On the Node, run `sudo /usr/local/libexec/orbit-instance-release-phase recover <instance-id> <full-commit> <operation-id>` with the recorded release identity. Recovery uses the Instance journal and is safe to retry after the reported fault is fixed. The old home remains unserved.
 
-The failed Operation's receipt never reached the Gateway, so the Instance still has no confirmed release: rollback and Process controls answer `deployment.selection_unconfirmed`. Run `orbit instance:deploy <instance>` once more to confirm it. Admission selects the same commit as a first move. The Node finds that recovery completed this move: its journal holds the migration commit and the verified release, its inventory names this commit live with no old release, the live link selects it and the Schedule marker belongs to this Instance. It then adopts that release instead of moving again. The deploy builds nothing and copies no data. The handover checks the release through its Routes and runs the `after_activation` steps that the failed deploy did not reach. The receipt records live, old and artifact on the Gateway. Rollback, Process controls and later deploys then work as usual. Any other Node state refuses the deploy, as before.
+The failed Operation's receipt never reached the Gateway, so the Instance still has no confirmed release: rollback and Process controls answer `deployment.selection_unconfirmed`. Run `orbit instance:deploy <instance>` once more to confirm it. Admission selects the same commit as a first move.
+
+The Node then checks that recovery completed this move:
+
+- Its journal holds the migration commit and the verified release.
+- Its inventory names this commit live with no old release, and the live link selects it.
+- The Schedule marker belongs to this Instance.
+
+It then adopts that release instead of moving again. The deploy builds nothing and copies no data. The handover checks the release through its Routes and runs the `after_activation` steps that the failed deploy did not reach. The receipt records live, old and artifact on the Gateway. Rollback, Process controls and later deploys then work as usual. Any other Node state refuses the deploy, as before.
 
 The next successful container deploy creates a retained rollback that uses the same shared volume.
 
