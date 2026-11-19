@@ -22,7 +22,7 @@ Build and prove every feature end to end in one Orbit container, a task copy wit
 - Guard against a race or crash window only when the [reviewer rule](docs/reference/tasks.md#the-reviewer-rule) and its impact bar would block on it.
 - Every behaviour change has a test that fails without it. The documentation changes with the code.
 
-A breach of this bar blocks a review under the [reviewer rule](docs/reference/tasks.md#the-reviewer-rule).
+This bar guides the implementer. The [reviewer rule](docs/reference/tasks.md#the-reviewer-rule) alone says what blocks a review, and it wins over this bar.
 
 ## Feature contributions
 
@@ -55,7 +55,7 @@ For documentation work, use [writing-documentation](.agents/skills/writing-docum
 
 ## Checks and resources
 
-In an Orbit task, run the tests that cover the change in each changed project: stock Pest with a file path or `--filter` in a Composer project, or the test command that [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) names. Do not run `composer check` or `bin/review-check`: the Gateway runs the Project check at handoff. Outside a task, run `composer test` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Check a framework or library API you are not sure of against the installed version: `search_docs` for the Laravel ecosystem, otherwise the package source under `vendor/` or `node_modules/`. CI checks the four Composer projects, the web app, and the Rust agent; root `composer check` also runs checks across projects locally.
+In an Orbit task, run the tests that cover the change in each changed project: stock Pest with a file path or `--filter` in a Composer project, or the test command that [Bun and Rust projects](docs/reference/bun-and-rust-projects.md) names. Before you hand off, run the Project's task check (`bin/task-check` for Orbit) and fix what it reports. Do not run `composer check` or `bin/review-check`: the task check and CI cover them. Outside a task, run `composer test` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Check a framework or library API you are not sure of against the installed version: `search_docs` for the Laravel ecosystem, otherwise the package source under `vendor/` or `node_modules/`. CI checks the four Composer projects, the web app, and the Rust agent; root `composer check` also runs checks across projects locally.
 
 For dependency updates and advisories, follow [Dependencies](docs/contributor-guide.md#dependencies). Run `composer audit:dependencies` from the root.
 
