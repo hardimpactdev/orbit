@@ -735,6 +735,10 @@ The network phase uses it for the WireGuard files. `tasks/managed-files-check.ym
 
 Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
 
+The same rule covers an install that a converge would otherwise redo. On an Instance container host, one `dpkg-query` read of Squid's status replaces apt's cache refresh and package check. Squid has no pinned version, because the host's updates upgrade it. Apt runs only when the status is not `installed`. Config files left after a removal count as not installed.
+
+On a `websocket` Node, one read verifies the Reverb release folder, which is named by its repository and ref. The checkout must be at the wanted ref with no tracked change. `vendor/autoload.php` must exist. `vendor/composer/installed.json` must hold each package of `composer.lock` at its locked version, without dev packages. A release that verifies skips Git and Composer. In any other state, the converge checks out the ref again, discards tracked changes and installs again. A new checkout still restarts Reverb.
+
 ### Role units at a converge
 
 Every converge writes the units that the Node's roles own, the `base` scope included. `NodeRoleUnits` picks them from the Node's role assignments:

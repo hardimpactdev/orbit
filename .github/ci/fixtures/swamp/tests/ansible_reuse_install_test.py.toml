@@ -1,0 +1,28 @@
+order = 1540
+cases = [
+  "test_an_installed_squid_skips_apt",
+  "test_squid_removed_with_its_config_files_left_installs_again",
+  "test_an_unknown_squid_package_installs",
+  "test_a_release_that_verifies_at_the_ref_is_reused",
+  "test_a_missing_release_is_checked_out_and_installed",
+  "test_a_checkout_at_another_ref_is_checked_out_again",
+  "test_a_changed_tracked_file_is_restored",
+  "test_a_missing_vendor_folder_installs_again",
+  "test_an_install_that_differs_from_the_lock_file_installs_again",
+  "test_an_install_with_dev_packages_installs_again",
+]
+file = "swamp/tests/ansible_reuse_install_test.py"
+# The Reverb verify runs PHP.
+php = true
+# The file ran 8.8 s locally (task copy 3734, 2026-11-19).
+# ESTIMATE: local time scaled like the hub LAN files (167 s hosted for 155.554 s locally), x 1.15, rounded up. Python files run whole.
+cost = 11
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/websocket.yml",
+]
