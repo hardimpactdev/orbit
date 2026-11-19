@@ -37,9 +37,10 @@ function stepped(context: unknown, row: typeof receipt.cases[number]): unknown {
       if (property === "parent") return stepped(value, row);
       if (property !== "step") return typeof value === "function" ? value.bind(target) : value;
       return async (...args: unknown[]) => {
-        const passed = await (value as Callback).apply(target, args.map(follow));
-        // An ignored step also returns false, and no assertion ran in it.
+        // An ignored step also returns false, and no assertion ran in it. Read the flag as Deno gets it, before the
+        // step runs: the caller may change the definition afterwards.
         const ignored = args.some((arg) => arg && typeof arg === "object" && "ignore" in arg && arg.ignore);
+        const passed = await (value as Callback).apply(target, args.map(follow));
         if (!passed && !ignored) {
           row.failed_step = true;
           save();

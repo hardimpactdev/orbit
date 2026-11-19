@@ -1013,7 +1013,10 @@ if __name__ == '__main__':
 const loose = { sanitizeOps: false, sanitizeResources: false, sanitizeExit: false };
 Deno.test("shapes pass", async (t) => {
   assert(await t.step(function namedStep() {}));
-  assertEquals(await t.step({ name: "ignored", ignore: true, fn: () => { throw new Error("never"); } }), false);
+  const reused = { name: "ignored", ignore: true, fn: () => {} };
+  const ignored = t.step(reused);
+  reused.ignore = false;
+  assertEquals(await ignored, false);
   await t.step("inner", async (inner) => {
     assert(inner.parent === t);
     assertEquals(inner.name, "inner");
