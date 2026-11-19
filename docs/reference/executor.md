@@ -158,10 +158,14 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 1. The size and the form (`order_too_large`, `order_malformed`).
 2. The signature, with `verify_strict` against each pinned key (`bad_signature`), then the payload's shape (`bad_payload`).
 3. The action is on the allowlist (`unknown_action`) and its family is enabled on this Node (`action_not_enabled`). A valid signature does not enable a family.
-4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr` and `route.publish_site` is the Node itself. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+4. The Node (`wrong_node`) and the target (`unknown_target`). See [Targets](#targets).
 5. The expiry: past (`expired`), or more than 10 s ahead of the Node's clock (`expiry_too_far`).
 6. The nonce has never been seen, across restarts too (`replayed_nonce`). The refusal carries the first order's result once it exists.
 7. The Operation: a done record with the same Operation, action and target returns the first result, marked `"repeat": true`, and does not act.
+
+### Targets
+
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr` and `route.publish_site`. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -197,19 +201,27 @@ An order that is never acknowledged comes back, and the journal answers it as a 
 
 ### tls.ensure_csr
 
-`tls.ensure_csr` (family `route`, crate `orbit-executor-route`) takes `directory`, a version folder `/etc/caddy/orbit-certificates/<scope>/versions/<16 hex>`, and `domain`. It makes the folder (root:caddy, 0750) and an RSA 2048 key in it once (root:caddy, 0640), written beside its final name and moved in place. It answers `output` with a certificate request for that key: CN `Orbit` and the one subject name `DNS:<domain>`. A repeat reuses the key, so a re-sent order never replaces a key that a signed certificate may already match. Codes: `route.input_invalid`, `app-dev.certificate_request_failed`.
+`tls.ensure_csr` (family `route`, crate `orbit-executor-route`) takes `directory`, a version folder `/etc/caddy/orbit-certificates/<scope>/versions/<16 hex>`, and `domain`. It makes the folder (root:caddy, 0750) and an RSA 2048 key in it once (root:caddy, 0640), written beside its final name and moved in place. It answers `output` with a certificate request for that key: CN `Orbit` and the one subject name `DNS:<domain>`. A repeat reuses the key. A signed certificate may already match that key, so a second order must not replace it. Codes: `route.input_invalid`, `app-dev.certificate_request_failed`.
 
 ### route.publish_site
 
-`route.publish_site` (family `route`) places one Node's part of a Route, in this order:
+`route.publish_site` (family `route`) places one Node's part of a Route. Its steps run in this order:
 
-1. Caddy access: each row is a kind (`deny_defaults`, `deny`, `passage`, `grant_defaults`, `grant`), a user and paths. The executor builds the same `find` and `setfacl` command that `RouteWebRootCommands` renders. A missing optional path is left out, never made.
-2. `APP_URL` in an existing `.env`: the last such line is replaced, or the line is added. The file keeps its owner and mode.
-3. Links, replaced atomically.
-4. PHP-FPM pools by `version` and an optional production `user`: the executor derives the path, the `php-fpm -t` test and the unit. A changed pool reloads its running unit; a stopped unit starts.
-5. Each leaf's `cert.pem` beside its key, the version's `current` link, and the account's own copy of key and certificate.
-6. The Orbit root in the system trust, with `update-ca-certificates` only when it changed.
-7. The Caddyfile, written as a candidate, validated as the `caddy` user and moved in place only when it differs. Caddy reloads when the Caddyfile or a certificate changed. A failed validation leaves the live file as it was.
+| Step | What it does |
+| --- | --- |
+| Caddy access | One `find` or `setfacl` command per row, as `RouteWebRootCommands` renders it. See below. |
+| `APP_URL` | Replaces the last `APP_URL=` line of an existing `.env`, or adds one. The file keeps its owner and mode. |
+| Links | Replaced atomically. |
+| PHP-FPM pools | Named by `version` and an optional production `user`, from which the executor derives the path, the `php-fpm -t` test and the unit. See below. |
+| Leaves | Each leaf's `cert.pem` beside its key, the version's `current` link, and the account's own copy. |
+| Trust | The Orbit root in the system trust. `update-ca-certificates` runs only when it changed. |
+| Caddyfile | A candidate, validated as the `caddy` user, replaces the live file only when it differs. See below. |
+
+Each access row names a kind (`deny_defaults`, `deny`, `passage`, `grant_defaults` or `grant`), a user and paths. The executor builds the command from those fields. It leaves out a missing optional path and never makes one.
+
+A changed pool reloads its running unit, and a stopped unit starts.
+
+Caddy reloads when the Caddyfile or a certificate changed. A failed validation leaves the live Caddyfile as it was.
 
 Content comes as blobs. It answers `applied` with the number of changed files and units; ACL commands do not count. Codes: `route.input_invalid`, `route.content_missing`, `route.publish_failed`.
 

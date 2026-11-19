@@ -35,10 +35,10 @@ Kinds with a definition today:
 
 ### route.create
 
-The engine runs the plan the Gateway admitted (`route_create`), so Route holds and the start-time Caddyfile refresh work as before:
+The engine runs the plan the Gateway admitted (`route_create`). Route holds work as before, and so does the refresh of a waiting create's Caddyfiles at its start. The steps:
 
 1. `csr-<i>`: the leaf's Node makes its key once and answers a certificate request. The key never leaves the Node.
-2. `sign-<i>`: the Gateway signs the request through the same action as `operation:direct:certificate-sign`. It checks the admitted leaf, the root, the run and that no cancel is pending.
+2. `sign-<i>`: the Gateway signs the request through the action that `operation:direct:certificate-sign` uses. That action checks the admitted leaf, the root and the run. It refuses once a cancel is pending.
 3. `site-<node>`: `route.publish_site` places the Node's part: Caddy access, `APP_URL`, links, PHP-FPM pools, the leaf and its account copy, the Orbit root's trust, and the Caddyfile.
 4. `probe-<i>`: the Gateway makes a TLS handshake with each serving Node, by its WireGuard address and the Route's name, trusting the Orbit root alone.
 
