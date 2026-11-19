@@ -1,0 +1,12 @@
+order = 1392
+cases = [
+  "test_the_shared_files_pass_skips_a_container_deleted_after_the_listing",
+  "test_the_shared_files_pass_still_fails_a_container_that_exists",
+  "test_the_t3_pass_skips_a_container_deleted_after_the_listing",
+  "test_the_t3_pass_still_fails_a_container_that_exists",
+  "test_the_t3_restart_drops_a_deleted_container_and_keeps_a_failed_one",
+  "test_a_deleted_container_whose_runs_cannot_be_read_is_not_deferred",
+  "test_only_incus_own_not_found_answer_counts_as_gone",
+]
+file = "swamp/tests/instance_container_files_gone_test.py"
+inputs = ["swamp/ansible/instance_container_files.py"]

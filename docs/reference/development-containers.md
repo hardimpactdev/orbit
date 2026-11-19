@@ -566,6 +566,8 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
 
+A removal runs beside the converge, so a container that the converge listed can be deleted before its turn. When a call on a container fails, the converge asks Incus again. If Incus answers `Instance not found`, the converge lists the container under `gone` and skips it. A container that still exists keeps its failure. The T3 drop-ins, the T3 restarts and the NIC move of the Instance bridge follow the same rule. A deleted container also leaves the T3 restart list.
+
 #### T3's unit drop-ins
 
 A container with a T3, a clone or a migrated checkout, holds two root-owned drop-ins of `t3.service`: `10-orbit-boot.conf` and `20-orbit-server.conf` in `/etc/systemd/system/t3.service.d/`. `InstanceContainer::t3DropIns` renders both. The create writes them before the first start, and the Gateway hands the same texts to the Node converge as `t3_files`, one entry for each container with a T3. A default has none.

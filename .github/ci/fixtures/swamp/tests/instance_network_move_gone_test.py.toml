@@ -1,0 +1,8 @@
+order = 1393
+cases = [
+  "test_a_container_deleted_after_the_listing_is_skipped",
+  "test_a_failed_update_of_a_container_that_exists_fails",
+]
+file = "swamp/tests/instance_network_move_gone_test.py"
+cost = 3
+inputs = ["swamp/ansible/tasks/instance-network-move-nic.yml", "swamp/ansible/requirements.txt"]
