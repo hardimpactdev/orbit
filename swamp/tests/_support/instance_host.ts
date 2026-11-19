@@ -159,6 +159,7 @@ function writeTasks(folder: string) {
             "instance-bridge-rules.yml",
             "instance-bridge-refresh.yml",
             "instance-egress.yml",
+            "apt-missing.yml",
             "instance-folder.yml",
             "instance-container-files.yml",
             "instance-vite-plus-home.yml",

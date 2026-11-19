@@ -74,8 +74,8 @@ def build_node_add(folder):
         groups[group].append(name)
 
     bootstrap = intent['bootstrap']
-    # Enrollment connects as the bootstrap account: first with the bootstrap key, which authorizes the Swamp key, then with that.
-    remote('node-bootstrap', 'bootstrap', {**bootstrap, 'host_keys': [observed['host_key']]}, str(folder / 'bootstrap-identity'))
+    # Enrollment connects as the bootstrap account with the Swamp key, which the operator authorized before node:add.
+    remote('node-bootstrap', 'bootstrap', {**bootstrap, 'host_keys': [observed['host_key']]}, control)
     remote('node-control', 'node', {**bootstrap, 'host_keys': [observed['host_key']]}, control)
     for index, hub in enumerate(network['hubs']):
         remote(f'hub{index}', 'hubs', hub['ssh'], hub['ssh']['identity_file'], hub_index=index)

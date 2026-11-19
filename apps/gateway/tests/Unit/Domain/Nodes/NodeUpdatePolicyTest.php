@@ -25,7 +25,8 @@ it('installs Ubuntu security updates every day and never reboots the Node itself
         ->and($files['/etc/apt/apt.conf.d/52orbit-unattended-upgrades'])
         ->toContain("#clear Unattended-Upgrade::Allowed-Origins;\n")
         ->toContain('Unattended-Upgrade::Allowed-Origins { "${distro_id}:${distro_codename}-security"; };')
-        ->toContain("Unattended-Upgrade::Automatic-Reboot \"false\";\n");
+        ->toContain("Unattended-Upgrade::Automatic-Reboot \"false\";\n")
+        ->toContain("DPkg::Lock::Timeout \"300\";\n");
 });
 
 it('keeps the daily timers off on a Node of an Instance container nested fleet, so a proof cannot change under an upgrade', function (): void {

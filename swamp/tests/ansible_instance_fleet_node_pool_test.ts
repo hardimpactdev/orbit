@@ -16,7 +16,7 @@ function poolTasks(): Task[] {
     const tasks = parse(Deno.readTextFileSync(file)) as Task[];
     const first = tasks.findIndex((task) => task.name === "Name the driver of the fleet Node's pool");
     const last = tasks.findIndex((task) => task.name === "Create the pool on the Node's root");
-    return tasks.slice(first, last + 1).filter((task) => task.name !== "Install the btrfs tools on the fleet Node");
+    return tasks.slice(first, last + 1).filter((task) => !["Find the btrfs tools on the fleet Node", "Install the btrfs tools on the fleet Node"].includes(task.name ?? ""));
 }
 
 async function run(pools: Pool[], profiles: Record<string, unknown> = {}, instances: Record<string, string> = { pool: "orbit-instances", project: "orbit-instances" }) {
