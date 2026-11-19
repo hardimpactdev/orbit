@@ -59,8 +59,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
-use Tests\Support\SwampNodeFixture;
 use Tests\Support\InstancePool;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 

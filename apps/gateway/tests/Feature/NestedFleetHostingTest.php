@@ -68,8 +68,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
-use Tests\Support\SwampNodeFixture;
 use Tests\Support\InstancePool;
+use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 require_once __DIR__.'/Domain/Instances/ContainerInstanceHelpers.php';
