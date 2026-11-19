@@ -21,18 +21,44 @@ final readonly class ContainerHostPaths
     /**
      * A host-only path anywhere in a value that does not continue a longer path: at its start, after a separator such
      * as `--runtime=` or `VAR=`, after a shell operator (`;`, `&&`, `||`, `|`, `(`, a backtick, `$(`) or inside quotes.
+     * The token runs to the next path terminator, so a shell expansion or glob inside it stays part of the token.
      */
-    private const string HostPath = '~(?<![A-Za-z0-9_.\~/])(?:/opt/orbit/|/home/orbit-app-[0-9]+(?![A-Za-z0-9_.-])|/usr/bin/php)[^\s:\'"`,;&|()<>$\\\\]*~';
+    private const string HostPath = '~(?<![A-Za-z0-9_.\~/])(?:/opt/orbit/|/home/orbit-app-[0-9]+(?![A-Za-z0-9_.-])|/usr/bin/php)[^\s:\'"`,;&|()<>]*~';
+
+    /** A literal path: only these characters may be mapped. Anything else, such as `$`, `*`, `?`, `[` or `\`, refuses. */
+    private const string Literal = '~\A[A-Za-z0-9._/+@%=-]+\z~D';
 
     public function __construct(private ContainerProcessCommands $commands) {}
 
     public function map(string $value, Instance $instance, string $php, string $label): string
     {
-        return (string) preg_replace_callback(self::HostPath, fn (array $match): string => $this->path($match[0], $instance, $php, $label), $value);
+        return (string) preg_replace_callback(self::HostPath, fn (array $match): string => $this->path($match[0][0],
+            $this->continues($value, $match[0][1], $match[0][1] + strlen($match[0][0])), $instance, $php, $label), $value, flags: PREG_OFFSET_CAPTURE);
     }
 
-    private function path(string $path, Instance $instance, string $php, string $label): string
+    /**
+     * Whether the shell word goes on past the path, as in `/usr/bin/php`$V`` or `"/usr/bin/php"8.5`. A quote or backtick
+     * after the path must close the one before it and end the word; an opening parenthesis never ends a path.
+     */
+    private function continues(string $value, int $start, int $end): bool
     {
+        $next = $value[$end] ?? '';
+        if ($next === '(') {
+            return true;
+        }
+        if (! in_array($next, ['"', "'", '`'], true)) {
+            return false;
+        }
+
+        return ($start > 0 ? $value[$start - 1] : '') !== $next || preg_match('~\A(?:[\s;&|()<>"\'`,:]|\z)~', substr($value, $end + 1)) !== 1;
+    }
+
+    private function path(string $path, bool $continues, Instance $instance, string $php, string $label): string
+    {
+        if ($continues || preg_match(self::Literal, $path) !== 1) {
+            throw new ResourceOperationException('deployment.host_path_unsupported',
+                "{$label} names the host-only path [{$path}], which uses shell expansion or a glob that Orbit cannot map to a container path. Write the literal container path or a command on PATH before deploying.", 409);
+        }
         if (preg_match('~\A/usr/bin/php(?:[0-9]+[.][0-9]+)?\z~D', $path) === 1) {
             return $this->commands->resolve([$path], $php, $label, hostPaths: true)[0];
         }

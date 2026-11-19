@@ -405,6 +405,30 @@ describe('production container deployments', function (): void {
         }
     });
 
+    it('refuses a host path that a shell expansion, a glob or a word continues instead of mapping a prefix of it', function (): void {
+        $paths = app(ContainerHostPaths::class);
+        $instance = appProdReleasePlacement($this->prod, 'host-expansion', str_repeat('c', 40));
+        foreach ([
+            'exec /usr/bin/php${PHP_VERSION} artisan queue:work' => '/usr/bin/php${PHP_VERSION}',
+            'exec /usr/bin/php$PHP_VERSION artisan queue:work' => '/usr/bin/php$PHP_VERSION',
+            'exec /usr/bin/php$(cat .php-version) artisan a' => '/usr/bin/php$',
+            'exec /usr/bin/php`cat .php-version` artisan a' => '/usr/bin/php',
+            'exec "/usr/bin/php"8.5 artisan a' => '/usr/bin/php',
+            'exec /usr/bin/php8.* artisan a' => '/usr/bin/php8.*',
+            'exec /usr/bin/php8.? artisan a' => '/usr/bin/php8.?',
+            'exec /usr/bin/php[78].4 artisan a' => '/usr/bin/php[78].4',
+            'CHROME=/opt/orbit/chrome/${CHROME_VERSION}/chrome run' => '/opt/orbit/chrome/${CHROME_VERSION}/chrome',
+            'cd /home/orbit-app-7/current/$DIR && run' => '/home/orbit-app-7/current/$DIR',
+        ] as $command => $token) {
+            expect(fn () => $paths->map($command, $instance, '8.5', 'Process [2:work] argument'))
+                ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.host_path_unsupported')
+                    ->and($error->getMessage())->toContain('Process [2:work] argument', "[{$token}]", 'shell expansion'));
+        }
+        // An exact PHP path maps to the runtime layout's `bin/php`, which the runtime folder ships for each version.
+        expect($paths->map('/usr/bin/php8.5', $instance, '8.5', 'Process [2:work] argument'))->toBe('/opt/orbit-runtime/current/php/8.5/bin/php')
+            ->and($paths->map('/usr/bin/php', $instance, '8.5', 'Process [2:work] argument'))->toBe('/opt/orbit-runtime/current/php/8.5/bin/php');
+    });
+
     it('confirms a first move that recovery completed forward, so rollback, Process update and deploy reopen', function (): void {
         $sha = str_repeat('c', 40);
         $instance = appProdReleasePlacement($this->prod, 'forward-recovery', $sha);

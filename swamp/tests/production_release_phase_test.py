@@ -477,7 +477,7 @@ class ProductionReleaseTest(unittest.TestCase):
                 patch.object(guest, "SOURCE", cache), patch.object(guest, "repository", return_value=str(source)), \
                 patch.object(guest, "git_environment", return_value=env):
             guest.fetch(plan)
-            inputs = guest.checkout(plan)
+            inputs = guest.checkout(plan)["inputs"]
             (tree / "vendor").mkdir()
             installed = tree / "vendor/installed"
             installed.write_text("installed dependencies")
@@ -495,7 +495,7 @@ class ProductionReleaseTest(unittest.TestCase):
             (source / "new").write_text("next revision")
             plan["sha"] = commit()
             guest.fetch(plan)
-            self.assertEqual(guest.checkout(plan), inputs)
+            self.assertEqual(guest.checkout(plan)["inputs"], inputs)
             self.assertEqual([p.stat().st_ino for p in (tree, tree / "unchanged", installed)], inodes)
             self.assertTrue(all(p.stat().st_ino == inode for p, inode in old_objects.items()))
             self.assertEqual((tree / "uploads/seed").read_text(), "new live upload")
@@ -508,7 +508,7 @@ class ProductionReleaseTest(unittest.TestCase):
             (source / "composer.lock").write_text("lock v2")
             plan["sha"] = commit()
             guest.fetch(plan)
-            next_inputs = guest.checkout(plan)
+            next_inputs = guest.checkout(plan)["inputs"]
             self.assertNotEqual(inputs, next_inputs)
             self.assertFalse(installed.exists())
             (tree / "vendor").mkdir()
@@ -523,13 +523,13 @@ class ProductionReleaseTest(unittest.TestCase):
                 directory.mkdir()
                 (directory / "native-addon").write_text("node-22")
             plan["prepared"] = {"scope": plan["scope"], "artifact": guest.content_digest(), "inputs": next_inputs}
-            self.assertEqual(guest.checkout(plan), next_inputs)
+            self.assertEqual(guest.checkout(plan)["inputs"], next_inputs)
             self.assertTrue(all((directory / "native-addon").is_file() for directory in modules))
             plan["prepared"]["artifact"] = guest.content_digest()
             (source / ".node-version").write_text("24.0.0")
             plan["sha"] = commit()
             guest.fetch(plan)
-            self.assertNotEqual(guest.checkout(plan), next_inputs)
+            self.assertNotEqual(guest.checkout(plan)["inputs"], next_inputs)
             self.assertTrue(all(not directory.exists() for directory in modules))
 
             # Change branch, then rewrite its history. Neither path may ship a former commit's objects.
@@ -745,14 +745,14 @@ class ProductionReleaseTest(unittest.TestCase):
         (shared / "storage/app/public").mkdir(parents=True)
         (shared / "storage/app/public/og.png").write_text("image")
         (app / "storage").symlink_to(shared / "storage", target_is_directory=True)
-        plan = {"routes": [{"web_root": "public"}], "application_suffix": "", "shared_paths": ["storage"]}
+        plan = {"routes": [{"web_root": "public"}], "application_suffix": "", "shared_paths": ["storage"], "storage_links": []}
         return workspace, shared, app, plan
 
     def test_a_laravel_release_with_shared_storage_gets_the_public_storage_link_only_where_it_is_absent(self):
         workspace, shared, app, plan = self.storage_app()
         with patch.object(guest, "WORK", workspace), patch.object(guest, "SHARED", shared):
             guest.links(plan)  # Absent by design, as on a host that never ran storage:link: admitted.
-            guest.link_public_storage(plan)
+            self.assertEqual(guest.link_public_storage(plan), ["."])
             self.assertEqual(os.readlink(app / "public/storage"), "../storage/app/public")
             self.assertEqual((app / "public/storage/og.png").read_text(), "image")
             guest.links(plan)
@@ -776,8 +776,56 @@ class ProductionReleaseTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not resolve"):
                 guest.links(plan)
 
-    def test_the_candidate_check_refuses_a_broken_public_storage_link_before_it_starts_the_web_server(self):
+    def test_a_build_step_that_removes_the_public_storage_link_preparation_made_is_refused_before_the_switch(self):
+        workspace, shared, app, plan = self.storage_app()
+        with patch.object(guest, "WORK", workspace), patch.object(guest, "SHARED", shared):
+            plan["storage_links"] = guest.link_public_storage(plan)
+            guest.links(plan)
+            # The build step removes the link.
+            (app / "public/storage").unlink()
+            with self.assertRaisesRegex(ValueError, "build step removed or replaced"):
+                guest.links(plan)
+            # The build step replaces public/ with its own output, which has no link.
+            shutil.rmtree(app / "public")
+            (app / "public/build").mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, "build step removed or replaced"):
+                guest.links(plan)
+            # The build step puts a real directory or another link in its place.
+            (app / "public/storage").mkdir()
+            with self.assertRaisesRegex(ValueError, "build step removed or replaced"):
+                guest.links(plan)
+            (app / "public/storage").rmdir()
+            (app / "elsewhere").mkdir()
+            (app / "public/storage").symlink_to(app / "elsewhere")
+            with self.assertRaisesRegex(ValueError, "build step removed or replaced"):
+                guest.links(plan)
+            # A real directory that was there before preparation stays exempt: preparation made no link.
+            (app / "public/storage").unlink()
+            (app / "public/storage").mkdir()
+            plan["storage_links"] = guest.link_public_storage(plan)
+            self.assertEqual(plan["storage_links"], [])
+            guest.links(plan)
+
+    def test_preparation_records_the_public_storage_links_it_made_and_readiness_requires_them(self):
+        output = json.dumps({"inputs": "b" * 64, "storage_links": ["."]})
+        self.r.ctl["instance"] = MagicMock(return_value={"config": {"volatile.base_image": "image"}, "expanded_devices": {"runtime": {}}})
+        with patch.object(self.r, "guest_action", side_effect=[None, output]), \
+                patch.object(self.r, "guest", return_value=CompletedProcess([], 0, stdout="digest -")):
+            plan = {**self.plan, "repository": "https://github.com/example/app", "branch": "main"}
+            self.assertEqual(self.r.converge_checkout(plan)["inputs"], "b" * 64)
+        self.assertEqual(phase.read(self.r.operation_file)["storage_links"], ["."])
         self.r.state.update(action="deploy", routes=self.plan["routes"], shared_paths=["storage"], artifact="sha256:" + "a" * 64)
+        record = {"config": {"user.orbit.release.artifact": self.r.state["artifact"]}}
+        with patch.object(self.r, "identity", return_value=record), patch.object(self.r, "sql"), \
+                patch.object(self.r, "user", return_value=CompletedProcess([], 0, stdout=NEXT)), \
+                patch.object(self.r, "guest_action") as guest_action, patch.object(self.r, "guest"), \
+                patch.object(self.r, "primitive", return_value="10.0.0.9"), patch.object(self.r, "probe"):
+            self.r.ready()
+        self.assertEqual(guest_action.call_args.args[2]["storage_links"], ["."])
+
+    def test_the_candidate_check_refuses_a_broken_public_storage_link_before_it_starts_the_web_server(self):
+        self.r.state.update(action="deploy", routes=self.plan["routes"], shared_paths=["storage"], storage_links=["."],
+                            artifact="sha256:" + "a" * 64)
         record = {"config": {"user.orbit.release.artifact": self.r.state["artifact"]}}
         with patch.object(self.r, "identity", return_value=record), patch.object(self.r, "sql"), \
                 patch.object(self.r, "user", return_value=CompletedProcess([], 0, stdout=NEXT)), \
@@ -854,6 +902,24 @@ class ProductionReleaseTest(unittest.TestCase):
         state = phase.read(self.r.operation_file)
         self.assertEqual(state["completed_steps"], ["after-0", "after-1"])
         self.assertEqual([row["name"] for row in state["step_outcomes"]], ["warm", "notify"])
+
+    def test_adoption_refuses_after_steps_that_changed_order_and_runs_nothing(self):
+        for steps in (["repair", "notify"], [], ["warm"]):
+            with self.subTest(steps=steps):
+                self.tearDown_marker()
+                (self.r.private / "after.json").unlink(missing_ok=True)
+                plan = self.recovered_first_move()
+                plan["steps"] = [{"name": name, "phase": "after_activation", "command": "true", "timeout_seconds": 60} for name in steps]
+                self.r.settled.update(completed_steps=["after-0"], step_outcomes=[
+                    {"name": "notify", "phase": "after_activation", "required": True, "exit_code": 0}])
+                with patch.object(self.r, "identity", return_value={"config": {"user.orbit.release.artifact": "sha256:" + "a" * 64}}), \
+                        patch.object(self.r, "user") as user, patch.object(self.r, "primitive") as primitive, \
+                        self.assertRaisesRegex(phase.Refusal, "after steps changed"):
+                    self.r.build(plan)
+                user.assert_not_called()
+                primitive.assert_not_called()
+                self.assertFalse(self.r.operation_file.exists())
+                self.assertFalse((self.r.private / "after.json").exists())
 
     def test_adoption_keeps_an_interrupted_required_after_step_interrupted(self):
         plan = self.recovered_first_move()

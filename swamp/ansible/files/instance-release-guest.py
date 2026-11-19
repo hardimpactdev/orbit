@@ -227,20 +227,24 @@ def checkout(plan):
         remove(local)
         local.parent.mkdir(parents=True, exist_ok=True)
         local.symlink_to(persistent, target_is_directory=True)
-    link_public_storage(plan)
+    created = link_public_storage(plan)
     environment(plan)
-    return fingerprint
+    return {"inputs": fingerprint, "storage_links": created}
 
 
 def link_public_storage(plan):
     """The host layout's `storage:link`: a Laravel release serves its public uploads from the shared volume.
 
-    The link is made only where `public/storage` is absent. A real directory or a link the checkout has is kept."""
+    The link is made only where `public/storage` is absent. A real directory or a link the checkout has is kept.
+    Returns the application directories that got the link, which the candidate's readiness then requires."""
+    created = []
     for application in public_storage(plan):
         link = application / "public/storage"
         if not link.exists() and not link.is_symlink():
             (application / "storage/app/public").mkdir(parents=True, exist_ok=True)
             link.symlink_to("../storage/app/public", target_is_directory=True)
+            created.append(str(application.relative_to(WORK / "current")))
+    return created
 
 
 def applications(plan):
@@ -261,11 +265,19 @@ def public_storage(plan):
 
 
 def links(plan):
-    """A candidate never serves a `public/storage` link that leads nowhere, such as a host path the container lacks."""
+    """A candidate never serves a `public/storage` link that leads nowhere, such as a host path the container lacks.
+
+    Where preparation made the link, the candidate still has it after the build steps, leading to the shared uploads."""
     for application in public_storage(plan):
         link = application / "public/storage"
         if link.is_symlink() and not link.exists():
             raise ValueError("the release has a public storage link that does not resolve")
+    root = WORK / "current"
+    for directory in plan["storage_links"]:
+        application = beneath(root, relative(directory, empty=True))
+        link = application / "public/storage"
+        if not link.exists() or link.resolve() != (application / "storage/app/public").resolve():
+            raise ValueError("a build step removed or replaced the public storage link that preparation made")
 
 
 def environment(plan):
@@ -314,7 +326,7 @@ def main(action):
     if action == "fetch":
         fetch(plan)
     elif action == "checkout":
-        print(checkout(plan))
+        print(json.dumps(checkout(plan)))
     elif action == "environment":
         environment(plan)
     elif action == "links":

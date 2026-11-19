@@ -341,10 +341,11 @@ class Release:
         save(receipt, {})
         checkout = {key: plan.get(key) for key in ("sha", "environment", "testing_environment", "application_suffix",
                                                    "routes", "shared_paths")}
-        inputs = self.guest_action(self.prep, "checkout", {**checkout, "scope": scope, "prepared": previous})
-        if not re.fullmatch(r"[0-9a-f]{64}", inputs):
+        result = json.loads(self.guest_action(self.prep, "checkout", {**checkout, "scope": scope, "prepared": previous}))
+        if not re.fullmatch(r"[0-9a-f]{64}", result["inputs"]):
             raise Refusal("deployment.step_failed: invalid dependency input fingerprint")
-        return {"scope": scope, "inputs": inputs}
+        self.persist(storage_links=result["storage_links"])
+        return {"scope": scope, "inputs": result["inputs"]}
 
     def recovered_forward(self, plan, fingerprint):
         """Confirm a first move that `recover` completed after its migration commit, without moving it again.
@@ -366,8 +367,8 @@ class Release:
             raise Refusal("deployment.selection_invalid: the recovered release differs from its record")
         safe = {key: plan[key] for key in ("action", "routes", "health_path", "php_version", "application_suffix")}
         after = [step for step in plan["steps"] if step["phase"] == "after_activation"]
-        save(self.private / "after.json", after)
         completed, outcomes, executing = self.settled_after(after)
+        save(self.private / "after.json", after)
         self.persist(**safe, operation=self.operation, sha=self.sha, plan_digest=fingerprint, previous=None, previous_old=None,
                      legacy=None, shared_paths=plan["shared_paths"], units=metadata["units"], completed_steps=completed,
                      step_outcomes=outcomes, executing=executing,
@@ -378,13 +379,17 @@ class Release:
     def settled_after(self, after):
         """The failed first move's after steps that ran, so the adopting Operation never runs one twice.
 
-        The settled journal records `after-<index>` keys and, in order, one outcome per after step it started. A key
-        carries over when the step at that index still has the same name; an interrupted one stays interrupted."""
+        The settled journal records `after-<index>` keys and, in order, one outcome per after step it started. Those
+        steps must still lead the admitted after steps, by name and in order; any other list is refused, since a key
+        that moved could run a step twice. An interrupted step stays interrupted."""
         ran = [row for row in self.settled.get("step_outcomes", []) if row.get("phase") == "after_activation"]
+        if [step["name"] for step in after[:len(ran)]] != [row["name"] for row in ran]:
+            raise Refusal("deployment.selection_invalid: the after steps changed since the recovered first move ran them. "
+                          "Restore their order, or confirm by hand which ran, before deploying")
         completed, outcomes = [], []
         for index, row in enumerate(ran):
             key = f"after-{index}"
-            if index >= len(after) or after[index]["name"] != row["name"] or key not in self.settled.get("completed_steps", []):
+            if key not in self.settled.get("completed_steps", []):
                 break
             completed.append(key)
             outcomes.append(row)
@@ -643,9 +648,9 @@ class Release:
             raise Refusal("deployment.selection_invalid: different revision in candidate")
         if self.state["action"] != "rollback":  # A retained release already served with its own public/storage.
             try:
-                self.guest_action(self.name, "links", {key: self.state[key] for key in ("routes", "application_suffix", "shared_paths")})
+                self.guest_action(self.name, "links", {key: self.state[key] for key in ("routes", "application_suffix", "shared_paths", "storage_links")})
             except Refusal as error:
-                raise Refusal("deployment.not_ready: the candidate has a public storage link that does not resolve") from error
+                raise Refusal("deployment.not_ready: the candidate's public storage link is missing or does not resolve") from error
         self.guest(self.name, "systemctl", "start", "orbit-frankenphp.service")
         self.guest(self.name, "systemctl", "is-active", "--quiet", "orbit-frankenphp.service")
         self.user(self.name, "php", "-r", "exit(extension_loaded('pcov') || extension_loaded('php_data_bridge') ? 1 : 0);")
