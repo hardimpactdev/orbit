@@ -232,8 +232,8 @@ All expected outcomes of the group. Read first: `apps/cli/boost.json`,
 ```json
 [
   {"id": "no-generated-block", "type": "command",
-   "description": "Neither AGENTS.md holds a generated block, and no boost.json names guidelines, on or off",
-   "command": "! grep -l '<laravel-boost-guidelines>' apps/cli/AGENTS.md apps/gateway/AGENTS.md && ! grep -ls '\"guidelines\"' apps/cli/boost.json apps/gateway/boost.json",
+   "description": "In each project, AGENTS.md exists without a generated block, and a boost.json, if one is left, names no guidelines, on or off",
+   "command": "for p in apps/cli apps/gateway; do test -f $p/AGENTS.md && ! grep -q '<laravel-boost-guidelines>' $p/AGENTS.md && { test ! -e $p/boost.json || ! grep -q '\"guidelines\"' $p/boost.json; } || exit 1; done",
    "directory": "."},
   {"id": "cli-guidance", "type": "file", "change": "modified",
    "description": "The generated block is gone", "path": "apps/cli/AGENTS.md"},
