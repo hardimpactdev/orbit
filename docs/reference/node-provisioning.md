@@ -667,6 +667,12 @@ The Tool helper is the TypeScript policy that judges each Tool. It runs on the S
 
 Without a CLI plan, the base phase removes `/usr/local/bin/orbit` when it is a managed version link, regular `/usr/local/bin/orbit-0.N.0` binaries and the managed root profile `/root/.orbit/config.json`. It preserves unrelated executables, backups and directories. The final check requires these managed files to be absent. A failed phase retains completed changes; a new converge repeats the same desired state.
 
+### Check many files in one read
+
+A phase that runs should spend its time on drift, not on proving that nothing changed. One Ansible module per item costs about 0.2 to 0.3 seconds over SSH and Incus, even when the item is correct. So a task that manages many items reads the whole expected state in one read-only check on the host.
+
+It then passes only the items that differ to the existing repair task. That task keeps its register, handlers and `changed_when`, so a repaired item still reports a change and triggers what follows it. A check that fails or prints an unexpected result repairs every item. The Gateway's [private DNS release files](/reference/private-dns#release-and-sockets) use this rule.
+
 ### Role units at a converge
 
 Every converge writes the units that the Node's roles own, the `base` scope included. `NodeRoleUnits` picks them from the Node's role assignments:
