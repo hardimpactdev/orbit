@@ -70,6 +70,18 @@ final readonly class ContainerProcessCommands
         return $this->executable($name, null, $name) !== null;
     }
 
+    /** The version of the runtime folder's part that ships the program, such as its Node release for `node`. */
+    public function version(string $name): ?string
+    {
+        foreach ($this->recipes->currentRecipe()->instances->runtime ?? [] as $part) {
+            if (array_key_exists($name, $part->bin)) {
+                return $part->version;
+            }
+        }
+
+        return null;
+    }
+
     private function executable(string $name, ?string $php, string $label): ?string
     {
         $folders = $this->recipes->currentRecipe()->instances;

@@ -77,12 +77,22 @@ export function admissionValues(intent: unknown): string[] {
     return [...versions, ...admitted, ...Object.values(record).flatMap(admissionValues)];
 }
 
+/** The inputs that one skippable node.converge phase alone reads, besides the `input` and `check` tags, which never skip: intent fields and
+ * run folder entries by path from the run folder. A release moves the agent, executor and CLI pins, so it moves only the agent phase. Every
+ * other field and file, a new one included, is read by every phase. node_converge_test proves the table against the shipped bundle
+ * (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
+export const phaseInputs: Partial<Record<typeof skippable[number], { fields: readonly string[]; entries: RegExp | null }>> = {
+    agent: { fields: ["agent", "executor", "cli"], entries: null },
+    roles: { fields: ["roles"], entries: /^\/role-[0-9]+$/ },
+};
+
 /**
  * What the phases read besides code (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change): every file written for
  * them, that is the run folder without the Gateway's intent files and the digests, with the values of this Operation (its ID, its run folder,
- * the versions of its certificate leaves and the admission time of its Instance bridge) replaced by fixed marks.
+ * the versions of its certificate leaves and the admission time of its Instance bridge) replaced by fixed marks. `view` gives one phase's
+ * view by path from the run folder: an entry it does not read (null) or the text it reads in place of the file.
  */
-export async function runDigest(folder: string, operationId: number): Promise<string> {
+export async function runDigest(folder: string, operationId: number, view: Record<string, string | null> = {}): Promise<string> {
     const mark = new RegExp(`operation-${operationId}(?![0-9])`, "g");
     const own = [...new Set(admissionValues(JSON.parse(await Deno.readTextFile(`${folder}/intent.json`))))];
     const rows: string[] = [];
@@ -90,10 +100,12 @@ export async function runDigest(folder: string, operationId: number): Promise<st
         const entries = [];
         for await (const entry of Deno.readDir(path)) entries.push(entry);
         for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
+            const relative = `${path.slice(folder.length)}/${entry.name}`;
+            if (view[relative] === null) continue;
             if (entry.isDirectory) await walk(`${path}/${entry.name}`);
             else if (entry.isFile && entry.name !== "intent.json" && entry.name !== "digests.json") {
                 const text = own.reduce((read, value) => read.replaceAll(value, "admitted-#"),
-                    (await Deno.readTextFile(`${path}/${entry.name}`)).replaceAll(folder, "orbit-ansible-#").replace(mark, "operation-#"));
+                    (view[relative] ?? await Deno.readTextFile(`${path}/${entry.name}`)).replaceAll(folder, "orbit-ansible-#").replace(mark, "operation-#"));
                 rows.push(`${path.slice(folder.length)}/${entry.name}\0${await sha256(text)}`);
             }
         }
@@ -206,7 +218,8 @@ export async function convergeInput(folder: string, operationId: number, builder
     await Deno.writeTextFile(`${folder}/known_hosts`, [...known].sort().join("\n") + "\n", { mode: 0o600 });
     // The recorded digests are the input of the skip only; Ansible reads none of them, and a digest must not read its own record.
     const { recorded_digests: _recorded, ...playIntent } = intent;
-    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml({ converge_intent: playIntent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans }), { mode: 0o600 });
+    const vars = { converge_intent: playIntent, kind: 'node.converge', converge_tool_helper: toolHelper, converge_deno: toolRuntime, converge_secrets: secrets, converge_plans: plans };
+    await Deno.writeTextFile(`${folder}/vars.yml`, unsafeYaml(vars), { mode: 0o600 });
     // Reuse the shipped role materializer. Only its literal variables are consumed: its cross-Node
     // inventory and publication plays are deliberately never used by a Node converge.
     for (const role of intent.roles) {
@@ -221,11 +234,19 @@ export async function convergeInput(folder: string, operationId: number, builder
         if (!outcome.success) throw new Error('The recorded role input could not be materialized');
         await Deno.chmod(`${path}/vars.yml`, 0o600);
     }
-    // After every file the phases read is written. Each phase reads the whole run folder and only its own code.
-    const run = await runDigest(folder, operationId);
+    // After every file the phases read is written. Each phase reads the run folder without the inputs of another phase (phaseInputs)
+    // and only its own code.
     const moving: Partial<Record<typeof skippable[number], string>> = {};
     const codes = await phaseCodeDigests(code, moving);
-    const reads = Object.fromEntries(await Promise.all(skippable.map(async (phase) => [phase, await sha256(`${run}\n${codes[phase]}`)]))) as Record<typeof skippable[number], string>;
+    const entries: string[] = [];
+    for await (const entry of Deno.readDir(folder)) entries.push(`/${entry.name}`);
+    const reads = Object.fromEntries(await Promise.all(skippable.map(async (phase) => {
+        const others = Object.entries(phaseInputs).filter(([owner]) => owner !== phase).map(([, inputs]) => inputs!);
+        const fields = others.flatMap((inputs) => inputs.fields);
+        const view: Record<string, string | null> = Object.fromEntries(entries.filter((entry) => others.some((inputs) => inputs.entries?.test(entry))).map((entry) => [entry, null]));
+        view["/vars.yml"] = unsafeYaml({ ...vars, converge_intent: Object.fromEntries(Object.entries(playIntent).filter(([field]) => !fields.includes(field))) });
+        return [phase, await sha256(`${await runDigest(folder, operationId, view)}\n${codes[phase]}`)];
+    }))) as Record<typeof skippable[number], string>;
     // A phase whose code above the bundle cannot be read runs every time; the result names the file.
     const phases = { ...await phaseDigests(intent, reads, skippable), ...(Object.keys(moving).length ? { moving } : {}) };
     await Deno.writeTextFile(`${folder}/digests.json`, JSON.stringify(phases), { mode: 0o600 });
