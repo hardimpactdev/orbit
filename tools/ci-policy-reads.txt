@@ -1,9 +1,8 @@
 # The files and folders outside bin/, tools/ and .github/ that the CI policy tests open, one glob per line.
 # bin/task-check runs its ci-policy part when a change touches one of these, or anything under bin/, tools/ or .github/.
-# Recorded on 2026-11-19 from one real run of both discovery commands of CI's "CI policy" job, with inotify watching
-# every tracked folder outside those three trees, after `git update-index --really-refresh` so that git's own index
-# refresh opens nothing. The files under apps/gateway/ that a background file watcher of the copy opened in a 60-second
-# idle recording are left out. A folder whose every tracked file the run opened is listed as folder/**.
+# Recorded on 2026-11-19 in a separate worktree that no other process touched (20 idle seconds: no opens). Each test
+# module ran alone with CI's discovery command, while inotify watched every tracked folder outside those three trees.
+# A folder whose every tracked file the run opened is listed as folder/**.
 # A read that this run did not show, such as a test added later, is left to CI, which runs the full suite on every PR.
 .agents/skills/swamp/**
 .agents/skills/swamp-getting-started/**
@@ -14,13 +13,6 @@ apps/cli/tests/Unit/**
 apps/gateway/resources/ci-runner/**
 apps/gateway/resources/machine-software/**
 apps/gateway/tests/.pest/**
-swamp/ansible/instance/**
-swamp/ansible/library/**
-swamp/ansible/module_utils/**
-swamp/ansible/tasks/**
-swamp/ansible/templates/**
-swamp/models/**
-swamp/workflows/**
 .agents/skills/swamp-source.json
 apps/agent/Cargo.toml
 apps/agent/scripts/build-delivery
@@ -45,117 +37,19 @@ apps/gateway/phpunit.xml
 docs/reference/compute-drivers.md
 packages/php-sdk/phpunit.xml.dist
 swamp/.swamp.yaml
-swamp/ansible/ai-router-model-forwarder.yml
-swamp/ansible/ai-router-task-guard.yml
-swamp/ansible/ansible.cfg
-swamp/ansible/build_vars.py
-swamp/ansible/conn-environment-restart.yml
-swamp/ansible/conn-launch.yml
-swamp/ansible/files/fleet-reboot-ci-drain.sh
-swamp/ansible/files/fleet-reboot-planned.sh
-swamp/ansible/files/gateway-release-guest.py
-swamp/ansible/files/gateway-release-infrastructure.py
-swamp/ansible/files/incus-network-pid-heal.py
-swamp/ansible/files/instance-browser-trust.sh
-swamp/ansible/files/instance-container-power.py
-swamp/ansible/files/instance-container-wake.sh
-swamp/ansible/files/instance-control-environment.py
-swamp/ansible/files/instance-control-process.py
-swamp/ansible/files/instance-control-schedule.py
-swamp/ansible/files/instance-legacy-schedule.py
-swamp/ansible/files/instance-release-control.py
-swamp/ansible/files/instance-release-guest.py
-swamp/ansible/files/instance-release-phase.py
-swamp/ansible/files/instance-release-prepare.py
-swamp/ansible/files/instance-release-routes.py
-swamp/ansible/files/instance-release-sql.py
-swamp/ansible/files/instance-release-vp.ts
-swamp/ansible/files/production-release-host.py
-swamp/ansible/fleet-converge-inputs.json
-swamp/ansible/gateway-bootstrap.yml
-swamp/ansible/gateway-container-prepare.yml
-swamp/ansible/gateway-container-runtime.yml
-swamp/ansible/instance-connection-environment.yml
-swamp/ansible/instance-container-destroy.yml
-swamp/ansible/instance-container-power.yml
-swamp/ansible/instance-container.yml
-swamp/ansible/instance-mail-update.yml
-swamp/ansible/instance-migrate.yml
-swamp/ansible/instance-nic-filters.json
-swamp/ansible/instance_bridge.py
-swamp/ansible/instance_container_files.py
-swamp/ansible/instance_env_keys.py
-swamp/ansible/instance_fleet_runtime.py
-swamp/ansible/instance_fleet_shrink.py
-swamp/ansible/instance_folder_debs.py
-swamp/ansible/instance_folder_same.py
-swamp/ansible/instance_machine_name.py
-swamp/ansible/instance_mail.py
-swamp/ansible/instance_mail_line.py
-swamp/ansible/instance_migrate_files.py
-swamp/ansible/instance_migrate_git.py
-swamp/ansible/instance_migrate_links.py
-swamp/ansible/instance_nested.py
-swamp/ansible/instance_nested_club_key.sh
-swamp/ansible/instance_network.py
-swamp/ansible/instance_node_runtime.py
-swamp/ansible/instance_node_services.py
-swamp/ansible/instance_root_disk.py
-swamp/ansible/instance_shape_tools.py
-swamp/ansible/instance_workspace_owner.py
-swamp/ansible/operation-fleet-reboot.yml
-swamp/ansible/operation-instance-create.yml
-swamp/ansible/operation-node-add.yml
-swamp/ansible/operation-node-converge-local-dns.yml
-swamp/ansible/operation-node-converge.yml
-swamp/ansible/operation-node-role-add-local-dns.yml
-swamp/ansible/operation-node-role-add.yml
-swamp/ansible/proof-gateway.yml
-swamp/ansible/proof-observer-facts.php
-swamp/ansible/proof-observers.yml
-swamp/ansible/proof-seed-copy.yml
-swamp/ansible/release-response-wait.yml
+swamp/ansible/library/orbit_static_php.py
 swamp/ansible/requirements.txt
 swamp/ansible/requirements.yml
-swamp/ansible/route-create-site.yml
-swamp/ansible/route-withdraw.yml
-swamp/ansible/schedule-logs.yml
 swamp/ansible/shape-gate-requirements.txt
 swamp/ansible/shape_tool_names.py
-swamp/ansible/swamp-worker-renewal.yml
-swamp/ansible/t3_copy_rpc.mjs
-swamp/ansible/task-copy-turn.yml
-swamp/ansible/task-host-firewall-remove.yml
-swamp/ansible/task-instance-workspace.yml
-swamp/ansible/task-vm-fleet-wait.yml
-swamp/ansible/task_copy_codex_model.py
-swamp/ansible/task_copy_scan.py
-swamp/ansible/transport-exit-codes.json
-swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts
-swamp/extensions/behaviors/operations/ansible-input/role_add_plans.ts
-swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts
-swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts
-swamp/extensions/behaviors/operations/node-base-inventory/collect.py
+swamp/ansible/tasks/instance-fleet.yml
 swamp/extensions/behaviors/operations/node/ci_host_spec.ts
-swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json
-swamp/extensions/behaviors/operations/project-maintenance/manifest.yaml
-swamp/extensions/behaviors/operations/task-repository/manifest.yaml
-swamp/extensions/behaviors/operations/tools/constraints.ts
-swamp/extensions/behaviors/operations/tools/contract.ts
-swamp/extensions/behaviors/operations/tools/native.ts
-swamp/manifest.yaml
 swamp/proof/batches.yaml
-swamp/proof/cli-release.json
 swamp/proof/instance/clone.cases.yaml
 swamp/proof/instance/create.cases.yaml
 swamp/proof/instance/destroy.cases.yaml
 swamp/proof/instance/migrate.cases.yaml
 swamp/proof/selection.txt
-swamp/scripts/instance_clone.py
-swamp/scripts/instance_clone_guest.py
-swamp/scripts/instance_clone_launch.py
-swamp/scripts/production-release-phase
-swamp/scripts/release-container.py
 swamp/tests/_support/host_image_boundary.ts
 swamp/tests/_support/instance_host.ts
 swamp/tests/_support/slice.ts
@@ -210,6 +104,9 @@ swamp/tests/task_instance_workspace_receipt_test.py
 swamp/tests/task_instance_workspace_scan_test.py
 swamp/tests/task_instance_workspace_snapshot_test.py
 swamp/tests/task_instance_workspace_test.py
+swamp/workflows/workflow-dependency-results-prune.yaml
+swamp/workflows/workflow-operation-instance-complete.yaml
+swamp/workflows/workflow-operation-instance-connection-environment.yaml
 
 # Existence checks. inotify records opens, not checks that a file exists or is tracked, so these come from the tests:
 # tools/test_ci_task_check.py:74 checks that each pin test exists.

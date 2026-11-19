@@ -583,7 +583,7 @@ class CiPolicyTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}; {trees}')
         # Opened in the recorded run, or checked for existence by a policy test.
-        for path in ('swamp/ansible/tasks/apt-proxy.yml', '.agents/skills/swamp-getting-started/references/tracks.md',
+        for path in ('swamp/ansible/tasks/instance-fleet.yml', '.agents/skills/swamp-getting-started/references/tracks.md',
                      'apps/agent/src/commands/ci_runner.rs', 'apps/cli/design/Flows/node-add.json',
                      'apps/docs/composer.json', 'docs/reference/compute-drivers.md',
                      'apps/gateway/tests/.pest/shards.json', 'apps/cli/tests/Feature/CommandSurfaceTest.php',
@@ -591,7 +591,8 @@ class CiPolicyTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}, which a policy test reads')
         for path in ('docs/reference/tasks.md', 'apps/pi-server/src/main.ts', 'apps/web/src/main.ts',
-                     'swamp/docs/automatic-deploy.md', '.agents/skills/orbit-tasks/SKILL.md',
+                     'swamp/docs/automatic-deploy.md', 'swamp/ansible/tasks/apt-proxy.yml', 'swamp/manifest.yaml',
+                     '.agents/skills/orbit-tasks/SKILL.md',
                      'apps/cli/design/Flows/NodeAddFlowCommand.php',
                      'apps/cli/tests/Expected/database-connections/database-create/postgres.json'):
             with self.subTest(path=path):
@@ -634,7 +635,7 @@ class CiPolicyTest(unittest.TestCase):
                  (['.github/ci/checks.toml'], ['check-flows', 'docs-lint', 'ci-policy']),
                  (['docs/reference/tasks.md'], ['check-flows', 'docs-lint']),
                  (['apps/docs/app/Documentation/DocsImpact.php'], ['check-flows', 'docs-lint']),
-                 (['swamp/workflows/workflow-operation-instance-create.yaml'], ['check-flows', 'docs-lint', 'ci-policy']),
+                 (['swamp/workflows/workflow-operation-instance-create.yaml'], ['check-flows', 'docs-lint']),
                  (['apps/agent/src/commands/ci_runner.rs'], ['ci-policy']),
                  (['apps/pi-server/src/main.ts'], []),
                  (['.node-version'], ['ci-policy']),
