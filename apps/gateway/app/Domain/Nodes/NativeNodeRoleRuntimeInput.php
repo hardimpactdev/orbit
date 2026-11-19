@@ -20,6 +20,7 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
+use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\MachineRecipe;
 use App\Infrastructure\Nodes\NodeRoleRuntimeSource;
@@ -69,7 +70,9 @@ final readonly class NativeNodeRoleRuntimeInput
             $gateway = app(GatewayRuntimeFiles::class)->render($node);
             $runtime['gateway'] = ['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => $node->user,
                 'environment' => GatewayReleaseLayout::fromConfig()->sharedPath().'/gateway.env', 'retired_settings' => GatewayRuntimeFiles::RetiredSettings,
-                'tmpfiles' => GatewayRuntimeFiles::RuntimeTmpfiles];
+                'tmpfiles' => GatewayRuntimeFiles::RuntimeTmpfiles,
+                // The machine bus's server binary, pinned by its tarball's SHA-256, only on a Gateway that runs the bus (ADR 0271).
+                ...(GatewayBus::enabled() ? ['nats' => GatewayBus::artifact()] : [])];
             if (GatewayReleaseHost::inventory($node) !== null) {
                 $runtime['gateway']['inventory'] = GatewayReleaseLayout::fromConfig()->containerInventoryPath();
                 $runtime['gateway']['container'] = true;

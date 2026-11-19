@@ -8,11 +8,12 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 import urllib.error
 import urllib.request
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import MagicMock, patch
@@ -629,6 +630,112 @@ class ProductionReleaseTest(unittest.TestCase):
             self.r.free_capacity()
             with patch.object(other, "identity"):
                 other.reserve(self.plan)
+
+    def first_move(self, prep=None):
+        self.r.ctl["instance"] = MagicMock(return_value=prep)
+        self.r.ctl["owned"] = MagicMock()
+        self.r.ctl["memory_use"] = MagicMock(return_value=(10, 10, 0))
+        self.r.ctl["capacity_estimate"] = MagicMock(return_value={
+            "available_bytes": {"ram": 3 * 1024**3, "swap": 0, "pool": 2000}, "required_bytes": {"ram": 2 * 1024**3, "swap": 0, "pool": 1500}})
+        self.r.inventory = {"live": None, "old": None}
+        home = "/home/orbit-app-2"
+        sizes = {home + "/current/": 700, home + "/storage": 300, home + "/database.sqlite": 40, home + "/database.sqlite-wal": 10}
+        du = lambda argv, **kwargs: CompletedProcess(argv, 0, stdout=f"{sum(sizes[path] for path in argv[argv.index('--', 4) + 1:])}\ttotal\n"
+                                                     if "du" in argv else "")
+        self.stack.enter_context(patch.object(phase, "run", side_effect=du))
+        self.stack.enter_context(patch("os.path.isdir", return_value=True))
+        self.stack.enter_context(patch("os.path.isfile", return_value=True))
+        return {**self.plan, "legacy": {"project_id": 2, "home": home, "units": [], "commit": NEXT}}
+
+    def test_the_first_move_reserves_the_checkout_and_the_storage_and_sqlite_copy(self):
+        plan = self.first_move()
+        self.r.reserve(plan)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1050)
+        self.assertEqual(phase.read(phase.BASE / ".capacity" / "instance-21.json")["pool"], 1050)
+
+    def test_an_unbuilt_preparer_never_lowers_the_known_release_size(self):
+        plan = self.first_move({"config": {}, "state": {"disk": {"root": {"usage": 100}}}})
+        self.r.reserve(plan, measured=True)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1050)
+        self.r.state["build_bytes"] = 900
+        self.r.reserve(plan, measured=True)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 1250)
+
+    def test_the_copied_storage_leaves_the_reservation_at_once(self):
+        plan = self.first_move()
+        self.r.reserve(plan)
+        with patch.object(self.r, "route_files") as routes:
+            self.r.copy_shared()
+        routes.assert_called_once_with("prepare")
+        self.assertEqual(phase.read(phase.BASE / ".capacity" / "instance-21.json")["pool"], 700)
+        self.assertTrue(phase.read(self.r.operation_file)["shared_copied"])
+        # A parallel deploy no longer subtracts the copy that the pool already counts.
+        self.r.reserve(plan, measured=True)
+        self.assertEqual(self.r.ctl["capacity_estimate"].call_args.kwargs["release"], 700)
+        with patch.object(self.r, "route_files"), patch.object(self.r, "copy_shared") as copied, \
+                patch.object(self.r, "reserve"), patch.object(self.r, "primitive"), patch.object(self.r, "sql"), \
+                patch.object(self.r, "converge_checkout", side_effect=phase.Refusal("stop")), \
+                patch.object(self.r, "legacy_commit", return_value=NEXT), patch.object(self.r, "check_selection"), \
+                patch.object(phase, "legacy_schedule_lock", return_value=nullcontext(Path("/nonexistent"))), self.assertRaisesRegex(phase.Refusal, "stop"):
+            self.r.state = {}
+            self.r.inventory = {"live": None, "old": None}
+            self.r.build({**plan, "expected_live": None})
+        copied.assert_called_once_with()
+
+    def test_a_parallel_check_never_counts_a_half_done_first_move_copy_twice(self):
+        if not shutil.which("flock"):
+            self.skipTest("requires util-linux flock")
+        real = phase.run
+        plan = self.first_move()
+        du = phase.run.side_effect
+        self.stack.enter_context(patch.object(phase, "run", side_effect=lambda argv, **kwargs:
+                                              real(argv, **kwargs) if argv[0] == "flock" else du(argv, **kwargs)))
+        # The pool holds 2500 bytes. A reserves its 700-byte checkout and 350-byte copy, B its 400-byte release;
+        # each needs 1000 bytes of headroom beyond its own release.
+        pool = {"free": 2500}
+        self.r.ctl["capacity_estimate"] = MagicMock(side_effect=lambda prepared, served, name, release: {
+            "available_bytes": {"ram": 3 * 1024**3, "swap": 0, "pool": pool["free"]},
+            "required_bytes": {"ram": 2 * 1024**3, "swap": 0, "pool": release + 1000}})
+        other = phase.Release(22, OLD, 301)
+        other.private.mkdir(parents=True)
+        other.inventory, other.ctl, other.state = {"live": None, "old": None}, self.r.ctl, {"build_bytes": 400}
+        self.r.reserve(plan)
+        other.reserve(self.plan)
+        checking, outcome = threading.Event(), []
+
+        def check():
+            checking.set()
+            try:
+                other.reserve(self.plan, measured=True)
+                outcome.append("admitted")
+            except phase.Refusal as error:
+                outcome.append(str(error))
+
+        def copy(phase_name):
+            pool["free"] -= 175
+            peer.start()
+            checking.wait(5)
+            time.sleep(0.5)  # B's recheck runs now unless the copy holds the capacity lock.
+            pool["free"] -= 175
+
+        peer = threading.Thread(target=check)
+        with patch.object(self.r, "route_files", side_effect=copy):
+            self.r.copy_shared()
+        peer.join(10)
+        self.assertEqual(outcome, ["admitted"])
+        self.assertEqual(phase.read(phase.BASE / ".capacity" / "instance-21.json")["pool"], 700)
+
+    def test_a_node_without_swap_stops_preparation_instead_of_freezing_it(self):
+        self.r.state["preparer_awake"] = True
+        prep = {"config": {"user.orbit.release.operation": "300"}}
+        for swap, action in ((True, "sleep"), (False, "rest")):
+            with self.subTest(swap=swap):
+                (self.r.private / "parked.json").unlink(missing_ok=True)
+                self.r.ctl["instance"] = MagicMock(return_value=prep)
+                self.r.ctl["has_swap"] = MagicMock(return_value=swap)
+                with patch.object(self.r, "primitive") as primitive:
+                    self.r.park()
+                primitive.assert_called_once_with(action, 300)
 
     def test_untrusted_checkout_paths_cannot_traverse_the_persistent_volume(self):
         with tempfile.TemporaryDirectory() as root:

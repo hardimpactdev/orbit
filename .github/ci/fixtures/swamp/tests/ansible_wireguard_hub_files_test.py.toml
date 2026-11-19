@@ -1,0 +1,22 @@
+order = 633
+cases = [
+  "test_drifted_source_files_alone_are_rewritten_and_restart_the_unit",
+  "test_a_failed_file_check_rewrites_every_source_file",
+  "test_matching_hub_files_are_not_copied_again",
+  "test_only_drifted_hub_files_are_copied",
+]
+file = "swamp/tests/ansible_wireguard_hub_files_test.py"
+# The file ran 9.7 s locally (task copy 3734, 2026-11-19).
+# ESTIMATE: local time scaled like the hub LAN files (167 s hosted for 155.554 s locally), x 1.15, rounded up. Python files run whole.
+cost = 12
+inputs = [
+  "swamp/tests/_support/wireguard_hub_lan.py",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/managed-files-check.yml",
+  "swamp/ansible/tasks/node-converge-hub.yml",
+  "swamp/ansible/tasks/node-hub-source.yml",
+]

@@ -19,6 +19,36 @@
     group: root
     mode: "0755"
   loop: "{{ ['/var/lib/orbit/private-dns'] + private_dns.directories }}"
+# One read compares every release file with the intent. Only the files that differ go to the copy task,
+# so its change and the listener restart keep their meaning.
+- name: Check the private DNS release files
+  check_mode: false
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -I
+      - -c
+      - |
+        import grp, hashlib, json, os, pwd, stat, sys
+        uid, gid = pwd.getpwnam(sys.argv[1]).pw_uid, grp.getgrnam(sys.argv[2]).gr_gid
+        drift = []
+        for index, (path, digest) in enumerate(json.load(sys.stdin)):
+            try:
+                with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as file:
+                    found = os.fstat(file.fileno())
+                    if not (stat.S_ISREG(found.st_mode) and stat.S_IMODE(found.st_mode) == 0o644 and found.st_uid == uid
+                            and found.st_gid == gid and hashlib.sha256(file.read()).hexdigest() == digest):
+                        drift.append(index)
+            except OSError:
+                drift.append(index)
+        print(json.dumps(drift))
+      - root
+      - root
+    stdin: "{{ private_dns.files | map(attribute='path') | zip(private_dns.files | map(attribute='content') | map('hash', 'sha256')) | list | to_json }}"
+  register: private_dns_check
+  changed_when: false
+  failed_when: false
+# A failed or unreadable check, an index outside the list included, repairs every file.
 - name: Write private DNS release files
   ansible.builtin.copy:
     dest: "{{ item.path }}"
@@ -26,7 +56,11 @@
     owner: root
     group: root
     mode: "0644"
-  loop: "{{ private_dns.files }}"
+  loop: >-
+    {{ private_dns_check.stdout | from_json | unique | map('extract', private_dns.files) | list
+       if private_dns_check.rc == 0 and private_dns_check.stdout is regex('^\[(\d+(, \d+)*)?\]$')
+          and private_dns_check.stdout | from_json | select('ge', private_dns.files | length) | list | length == 0
+       else private_dns.files }}
   loop_control: { label: "{{ item.path }}" }
   register: private_dns_files
 - name: Test the private DNS release before activation

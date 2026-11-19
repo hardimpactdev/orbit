@@ -264,7 +264,10 @@ impl orbit_executor_core::executor::Run for Runner {
                     .wake_with(self.api.as_ref(), order.target().as_str())
                     .expect("power wake");
             }
-            orbit_executor_core::action::Action::ProofNoop => panic!("power actions only"),
+            orbit_executor_core::action::Action::ProofNoop
+            | orbit_executor_core::action::Action::UfwEnsureRule => {
+                panic!("power actions only")
+            }
         }
         orbit_executor_core::journal::Outcome::Done
     }
@@ -482,7 +485,7 @@ fn caddy_admin_requires_the_full_loopback_authority() {
         let response: &[u8] = if request == "GET /config/ HTTP/1.0"
             && host == format!("Host: {address}")
         {
-            b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}"
+            b"HTTP/1.0 200 OK\r\n\r\n{\"match\":[{\"file\":{\"root\":\"/markers\",\"try_files\":[\"/app-instance-2.asleep\"]}}],\"handle\":[{\"handler\":\"reverse_proxy\",\"rewrite\":{\"method\":\"GET\",\"uri\":\"/api/v1/runtime-activations/app-instance/2\"}}]}"
         } else {
             b"HTTP/1.0 403 Forbidden\r\n\r\n"
         };
@@ -495,6 +498,74 @@ fn caddy_admin_requires_the_full_loopback_authority() {
         &response,
         Path::new("/markers/app-instance-2.asleep")
     ));
+}
+
+/// Real compiled routes from production server srv2: the activation proxy sits in a `subroute`, behind a `vars` route.
+const PRODUCTION_ROUTES: [(&str, &str); 3] = [
+    (
+        "1830",
+        include_str!("fixtures/caddy-production-srv2/route-53.json"),
+    ),
+    (
+        "4",
+        include_str!("fixtures/caddy-production-srv2/route-50.json"),
+    ),
+    (
+        "3733",
+        include_str!("fixtures/caddy-production-srv2/route-25.json"),
+    ),
+];
+
+fn production_checks(id: &str, route: &str) -> bool {
+    let response = format!("HTTP/1.0 200 OK\r\n\r\n{{\"apps\":{{\"http\":{{\"servers\":{{\"srv2\":{{\"routes\":[{route}]}}}}}}}}}}");
+    route_checks(
+        response.as_bytes(),
+        Path::new(&format!(
+            "/data/caddy/orbit/hibernation/app-instance-{id}.asleep"
+        )),
+    )
+}
+
+#[test]
+fn caddy_guard_accepts_production_routes_and_refuses_their_broken_activation() {
+    for (id, route) in PRODUCTION_ROUTES {
+        assert!(
+            production_checks(id, route),
+            "production route of Instance {id}"
+        );
+        let uri = format!("/api/v1/runtime-activations/app-instance/{id}");
+        let rewrite = format!("\"rewrite\":{{\"method\":\"GET\",\"uri\":\"{uri}\"}},");
+        assert!(route.contains(&rewrite));
+        for broken in [
+            route.replace(&rewrite, ""),
+            route.replace(&uri, &format!("{uri}0")),
+            route.replace("\"method\":\"GET\"", "\"method\":\"POST\""),
+            route.replace(
+                "\"handler\":\"reverse_proxy\",\"headers\"",
+                "\"handler\":\"static_response\",\"headers\"",
+            ),
+        ] {
+            assert!(
+                !production_checks(id, &broken),
+                "broken route of Instance {id}: {broken}"
+            );
+        }
+        assert!(!production_checks(&format!("{id}0"), route));
+    }
+}
+
+#[test]
+fn caddy_guard_refuses_a_catch_all_ahead_of_the_activation_route() {
+    // Route 50 with its app proxy moved ahead of the activation route: Caddy sends the marked visit to the sleeping app.
+    let (id, route) = PRODUCTION_ROUTES[1];
+    let mut config: serde_json::Value = serde_json::from_str(route).expect("route 50");
+    let routes = config["handle"][0]["routes"]
+        .as_array_mut()
+        .expect("site routes");
+    let app = routes.pop().expect("app route");
+    assert!(app.get("match").is_none());
+    routes.insert(2, app);
+    assert!(!production_checks(id, &config.to_string()));
 }
 
 #[test]

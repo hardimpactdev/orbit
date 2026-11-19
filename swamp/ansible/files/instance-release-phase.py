@@ -65,21 +65,26 @@ def save(path, value):
 
 
 @contextmanager
-def lock(path, *, shared=False):
+def lock(path, *, shared=False, seconds=60):
     relative = path.relative_to(BASE).as_posix()
     if not re.fullmatch(r"[.]capacity/lock|[.]routing[.]lock|legacy-schedules/[1-9][0-9]*/lock|[1-9][0-9]*/[.]release/(?:lock|park[.]lock)", relative):
         raise Refusal("unrecognized production resource lock")
     if shared and not relative.startswith("legacy-schedules/"):
         raise Refusal("shared access requires a production Schedule lock")
     def acquire(arguments, *, pass_fds):
-        result = run(arguments, pass_fds=pass_fds, timeout=65, check=False)
+        result = run(arguments, pass_fds=pass_fds, timeout=seconds + 5, check=False)
         return result.returncode, result.stdout, result.stderr
     publisher = runpy.run_path(str(LIB / "orbit_route_withdraw.py"))
     try:
-        with publisher["release_resource_lock"](path, acquire, shared=shared):
+        with publisher["release_resource_lock"](path, acquire, shared=shared, seconds=seconds):
             yield
     except publisher["WithdrawFailure"] as error:
         raise Refusal("deployment.resource_busy: cannot acquire the selected production resource") from error
+
+
+def capacity_lock():
+    # A first-move copy holds this lock for up to its 1200-second bound. Waiters outlast it.
+    return lock(BASE / ".capacity" / "lock", seconds=1260)
 
 
 def run(args, *, data=None, timeout=150, check=True, pass_fds=()):
@@ -230,7 +235,7 @@ class Release:
         directory = BASE / ".capacity"
         directory.mkdir(mode=0o700, exist_ok=True)
         filename = directory / (self.owner + ".json")
-        with lock(directory / "lock"):
+        with capacity_lock():
             live = self.inventory["live"]
             prep = self.ctl["instance"](self.prep)
             if prep:
@@ -249,24 +254,33 @@ class Release:
                 served = (0, 0, 0)
             if prepared[0] == 0 and not measured and plan.get("memory_limit_bytes"):
                 prepared = (positive(plan["memory_limit_bytes"]), 0, 0)
+            # The clone grows the pool by the release. Take the largest known size: a fresh cold
+            # build obtains its first measured size before cloning, and an unbuilt preparer never
+            # hides a larger build or legacy checkout that this operation is still going to write.
+            current = read(self.record(live), {}) if live else {}
+            sizes = [int(current.get("build_bytes", 0)), int(self.state.get("build_bytes", 0))]
+            if prep:
+                root = (((prep.get("state") or {}).get("disk") or {}).get("root") or {})
+                sizes.append(int(root.get("usage", 0)))
+            legacy = plan.get("legacy")
+            if (legacy or {}).get("commit"):
+                sizes.append(self.legacy_usage(legacy, [legacy["home"] + "/current/"]))
+            copy = 0
+            if legacy and not self.state.get("shared_copied"):
+                # The first move copies the shared directories and a backup of the SQLite
+                # database, with its committed WAL pages, into the volume once, while preparing.
+                paths = [legacy["home"] + "/" + localpath(path) for path in plan["shared_paths"]]
+                paths = [path for path in paths if os.path.isdir(path)]
+                paths += [path for path in (legacy["home"] + "/database.sqlite" + suffix for suffix in ("", "-wal"))
+                          if os.path.isfile(path)]
+                if paths:
+                    copy = self.legacy_usage(legacy, paths)
+            disk = max(sizes) + copy
             try:
-                result = self.ctl["capacity_estimate"](prepared, served, self.node["pool"])
+                result = self.ctl["capacity_estimate"](prepared, served, self.node["pool"], release=disk)
             except (ValueError, OSError, subprocess.SubprocessError) as error:
                 raise Refusal(f"deployment.node_capacity: {error}") from error
             available, needed = result["available_bytes"], result["required_bytes"]
-            # Reserve the observed release footprint in addition to the common free-space floor.
-            # A fresh cold build obtains its first measured size before cloning.
-            current = read(self.record(live), {}) if live else {}
-            disk = max(int(current.get("build_bytes", 0)), int(self.state.get("build_bytes", 0)))
-            if prep:
-                root = (((prep.get("state") or {}).get("disk") or {}).get("root") or {})
-                disk = max(disk, int(root.get("usage", 0)))
-            if not disk and (plan.get("legacy") or {}).get("commit"):
-                legacy = plan["legacy"]
-                size = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--",
-                            "du", "-sxb", "--", legacy["home"] + "/current/"]).stdout
-                disk = int(size.split()[0])
-            needed["pool"] += disk
             reservations = [read(path) for path in directory.glob("instance-*.json") if path != filename]
             for key in needed:
                 left = available[key] - sum(item[key] for item in reservations)
@@ -274,12 +288,28 @@ class Release:
                     raise Refusal(f"deployment.node_capacity: {key} needs {needed[key]} bytes, {left} unreserved")
             # These watermarks belong to the Node only once.
             save(filename, {"operation_id": self.operation, "ram": needed["ram"] - 1024**3,
-                            "swap": needed["swap"], "pool": disk})
+                            "swap": needed["swap"], "pool": disk, "copy": copy})
+
+    def legacy_usage(self, legacy, paths):
+        usage = run(["runuser", "-u", "orbit-app-" + str(legacy["project_id"]), "--", "du", "-scxb", "--", *paths]).stdout
+        return int(usage.splitlines()[-1].split()[0])
+
+    def copy_shared(self):
+        # The pool counts the first-move copy as it grows, while this reservation still holds all of
+        # it. Copy and drop it from the reservation in one capacity lock hold, so a parallel check
+        # never counts a half-done copy twice. It runs once per move, so parallel checks may wait.
+        filename = BASE / ".capacity" / (self.owner + ".json")
+        with capacity_lock():
+            self.route_files("prepare")
+            self.persist(shared_copied=True)
+            held = read(filename, {}) or {}
+            if held.get("operation_id") == self.operation:
+                save(filename, {**held, "pool": held["pool"] - held["copy"], "copy": 0})
 
     def free_capacity(self):
         filename = BASE / ".capacity" / (self.owner + ".json")
         if filename.exists():
-            with lock(filename.parent / "lock"):
+            with capacity_lock():
                 if (read(filename, {}) or {}).get("operation_id") == self.operation:
                     filename.unlink(missing_ok=True)
 
@@ -367,7 +397,10 @@ class Release:
                 self.primitive("wake", self.operation)
             self.sql(self.prep, sql)
             self.reserve(plan, measured=True)
-            self.route_files("prepare")
+            if plan.get("legacy"):
+                self.copy_shared()
+            else:
+                self.route_files("prepare")
             dependency_receipt = self.converge_checkout(plan)
             vp = self.prepare_vp(plan)
             self.write_service(plan)
@@ -505,7 +538,8 @@ class Release:
             if self.state.get("preparer_awake") and read(marker) != self.operation:
                 prep = self.ctl["instance"](self.prep)
                 if prep and prep["config"].get("user.orbit.release.operation") == str(self.operation):
-                    self.primitive("sleep", self.operation)
+                    # Without swap, preparation stops and the next deploy wakes it cold. The capacity check demands no swap then.
+                    self.primitive("sleep" if self.ctl["has_swap"]() else "rest", self.operation)
                 save(marker, self.operation)
 
     def probe(self, address=None, *, routes=None, health=None, verify_token=None):

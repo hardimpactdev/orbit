@@ -2,7 +2,7 @@
 title: "Executor"
 description: "How orbit-executor checks callers and signed orders, keeps its journal, serves the relay command, how the Gateway hands its results to a waiting request, and how the role converge installs it."
 covers:
-  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,clippy.toml,contract/fixtures/executor-order.json}
+  - apps/agent/{crates/executor-core/**,crates/executor/**,crates/power/**,crates/firewall/**,clippy.toml,contract/fixtures/executor-order.json}
   - apps/gateway/app/{Domain/Nodes/NodeExecutorInput.php,Domain/Executor/**,Infrastructure/Executor/**,Console/Commands/ExecutorParityCommand.php}
   - tools/swamp-proof-guest/executor-order.php
   - swamp/ansible/tasks/node-executor.yml
@@ -16,7 +16,7 @@ covers:
 
 ## Where it runs
 
-The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `proof` and `power` families. A Node with several roles enables the union of their families.
+The role converge installs the executor only on a Node whose roles enable an action family. Today that is `app-dev`, which enables the `firewall`, `power` and `proof` families. A Node with several roles enables the union of their families.
 
 The converge writes:
 
@@ -26,6 +26,8 @@ The converge writes:
 | `/etc/orbit/executor/gateway.pub` | One or two Gateway Ed25519 public keys, base64, one per line. The Gateway setting `ORBIT_EXECUTOR_PUBLIC_KEYS` names them |
 | `/etc/orbit/executor/node` | The Node id |
 | `/etc/orbit/executor/enabled` | The enabled families, one per line |
+| `/etc/orbit/executor/nats.json` | The [machine bus](#the-machine-bus) URL. Only when the Gateway runs the bus |
+| `/etc/orbit/executor/bus-guard.nft` | The nftables guard that lets only root reach the machine bus. The unit loads it before each start. Only when the Gateway runs the bus |
 | `/etc/orbit/executor/restore-threads` | The [restore pool](#rust-wake)'s size, 32; the executor refuses fewer than 16 |
 | `/etc/systemd/system/orbit-executor.service` | A plain service that runs `orbit-executor serve`, with `Restart=always` |
 | `/etc/sudoers.d/orbit-executor-relay` | The Node user may run exactly `orbit-executor relay` as `orbit-executor-relay` |
@@ -42,6 +44,8 @@ A converge skips the executor install until the Gateway has both parts it needs.
 
 - `executor.release_missing`: the Gateway's pinned agent delivery has no `executor-linux-x86_64` artifact.
 - `executor.keys_missing`: `ORBIT_EXECUTOR_PUBLIC_KEYS` is empty.
+
+A family newer than the pinned delivery stays off: `NodeExecutorInput::FamilySince` names the first agent version that knows it, such as `firewall` from 0.16.0. An older executor refuses to start on an unknown family.
 
 Roll out in this order:
 
@@ -75,11 +79,11 @@ Every executor Node must run the build that the Gateway pins before `ORBIT_EXECU
 php artisan orbit:executor-parity [--json]
 ```
 
-For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`). It also reads the Node's [activation proxies](#activation-proxy) from Caddy's loaded config.
+For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`). A Node where root finds no `incus` command, such as the `services` Node, has no containers, so none is frozen. It also reads the Node's [activation proxies](#activation-proxy) from Caddy's loaded config.
 
 A frozen container is fine when the Gateway records its Instance asleep, with a sleep that owns the freeze. A frozen container without such a record fails the Node with `instance.frozen_unrecorded`, and the check names each such Instance. A failed Python sleep can leave one: Incus holds the container frozen while the Gateway still records it running. No engine owns that freeze, so the settings alone would pick the engine for its wake ([Switching engines](#switching-engines)).
 
-It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active, no unrecorded freeze and only right activation proxies. A Node whose Incus list fails counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
+It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active, no unrecorded freeze and only right activation proxies. A Node whose installed Incus fails its list, or whose `sudo -n` fails, counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
 
 | Problem | Meaning | Fix |
 | --- | --- | --- |
@@ -87,7 +91,7 @@ It exits 0 when it checked at least one such Node, and every one runs the pinned
 | `executor.missing` | No binary at the path | `orbit node:converge <node> --full` |
 | `executor.inactive` | The service does not run | Read its journal, then converge the Node |
 | `executor.running_build_differs` | The file is the pinned build, but the service still runs another one: the binary changed without a restart | `systemctl restart orbit-executor` on the Node |
-| `executor.node_unreachable` | The SSH read failed | Repair the Node's access |
+| `executor.node_unreachable` | The SSH read failed, or Incus is installed but its list failed | Repair the Node's access or its Incus |
 | `executor.node_unmanaged` | The Node has no verified SSH management | Finish its enrollment |
 | `instance.frozen_unrecorded` | A container is frozen, but the Gateway does not record its Instance asleep | With the settings still off, `orbit instance:wake <id>` for each listed Instance, then check again |
 | `caddy.config_unreadable` | Caddy's admin API did not answer with its config, or the Node could not read it | Check `caddy.service` on the Node, then `orbit node:converge <node>` |
@@ -98,11 +102,27 @@ The flag switch runs this check first and changes no flag while it fails ([Switc
 
 #### Activation proxy
 
-A visit to a sleeping Instance reaches the Gateway through its site's activation proxy: Caddy's `forward_auth`, a `reverse_proxy` that rewrites the visit to a GET of `/api/v1/runtime-activations/app-instance/<id>` ([The wake inside the request](#the-wake-inside-the-request)). The executor's own Caddy guard checks only that the asleep marker's first handler is that proxy with that URI. It does not check where the proxy goes or with which method.
+A visit to a sleeping Instance reaches the Gateway through its site's activation proxy: Caddy's `forward_auth`, a `reverse_proxy` that rewrites the visit to a GET of `/api/v1/runtime-activations/app-instance/<id>` ([The wake inside the request](#the-wake-inside-the-request)). The executor's own Caddy guard follows a marked visit as Caddy runs it. It takes every route with the asleep marker's matcher, in order, and skips `vars`. It enters each `subroute` through its routes that have no matcher or the same marker matcher. The first other handler must be that proxy, with that URI and the method GET. Otherwise the sleep refuses with `instance.sleep_route_unready`.
 
-So the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
+Production's compiled routes nest the proxy this way, in a `subroute` on a second marker route after the `vars` route. The guard's tests hold three such routes from server `srv2`.
 
-The check reads every site on its own. A site is one top-level route of one Caddy server, named by its host, server and index, so a private clone's host on the bridge and on the WireGuard listener is two sites. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. It resolves that proxy's upstream host there to every address, with `getaddrinfo`. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
+Two renderings are live. Before #4020 the renderer drew `handle @orbit_asleep { forward_auth … }`: Caddy compiles it into a `vars` marker route and a sibling marker route whose `subroute` holds the proxy (production routes 50 and 53). Since #4020 it draws `forward_auth @orbit_asleep` inside `route { }`, and the marker matcher sits on the inner route (production route 25). A site keeps its loaded shape until the Node's Caddy sites are next published.
+
+The first executor guard took the first non-`vars` handler. So it accepted only the newer shape and refused signed sleep Operation 29546 on production. Subtask 5980 loaded both renderers' output for a Vite and a plain site into the nested `app-dev` Node's Caddy 2.11.7. It read the admin API's config back: the first guard refused both older sites and the fixed guard accepted all four.
+
+Then it ran signed orders on a real Instance in that layout. Container default Instance 2 (`proofapp.nested-dev`) got its site rendered by the pre-#4020 renderer with Vite on and compiled by Caddy. Both settings were on. With the pinned executor, sleep Operation 211 failed with `instance.sleep_route_unready` over the WebSocket, as on production. With the branch executor, sleep 212 froze the container in 475 ms (`done`, `websocket`).
+
+A visit then woke it through Operation 213 (`done`, `websocket`, 56,065 pages read, none failed). In this older layout the waking visit gets an empty 200, because nothing follows the activation inside `handle @orbit_asleep`. The next request reaches the app. The newer layout continues the waking visit to the app.
+
+The guard does not check where the proxy goes, so the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
+
+The check reads every site on its own. A site is one top-level route of one Caddy server, named by its host, server and index, so a private clone's host on the bridge and on the WireGuard listener is two sites. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. Within the site, every route that carries the marker counts, at any depth and in config order. Caddy's compiled config nests the proxy:
+
+- The site's handler is a `subroute`. Several sibling routes inside it carry the same marker matcher. One holds only `vars`, and another holds the proxy.
+- `forward_auth` compiles to a `subroute` that wraps the `reverse_proxy`. The check steps into each `subroute` it reaches.
+- A site without Vite can sit one level deeper again: a route with no matcher, then a `subroute` whose inner route carries the marker and the proxy.
+
+The tests use production's own routes, read from beast's admin API, as fixtures. A marker route that reaches no handler but `vars` gives an empty proxy, so the handler fails. It resolves that proxy's upstream host there to every address, with `getaddrinfo`. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
 
 | Field | Expected today |
 | --- | --- |
@@ -138,7 +158,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 1. The size and the form (`order_too_large`, `order_malformed`).
 2. The signature, with `verify_strict` against each pinned key (`bad_signature`), then the payload's shape (`bad_payload`).
 3. The action is on the allowlist (`unknown_action`) and its family is enabled on this Node (`action_not_enabled`). A valid signature does not enable a family.
-4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop` is the Node itself. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+4. The Node (`wrong_node`) and the target (`unknown_target`). The target of `proof.noop` and `ufw.ensure_rule` is the Node itself. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 5. The expiry: past (`expired`), or more than 10 s ahead of the Node's clock (`expiry_too_far`).
 6. The nonce has never been seen, across restarts too (`replayed_nonce`). The refusal carries the first order's result once it exists.
 7. The Operation: a done record with the same Operation, action and target returns the first result, marked `"repeat": true`, and does not act.
@@ -149,11 +169,37 @@ A refusal line holds `"status":"refused"`, the `reason` and the Node's clock as 
 
 Orders for one target run one at a time under that target's lock; different targets run in parallel. The nonce and done maps are held only for one lookup or insert, with no I/O under them.
 
+## The machine bus
+
+With `/etc/orbit/executor/nats.json` present, `serve` also joins the machine bus of the [Gateway engine](/reference/gateway-engine) ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats)). Without it the executor serves its socket alone. The bus runs in its own thread and reconnects a second after any failure.
+
+When it joins, the executor:
+
+1. connects with no credential, with its own inbox prefix `_INBOX.node-<id>`; the Gateway admits it as `node-<id>` by its WireGuard address;
+2. reports its primitives and version to key `n<id>` of the `NODES` bucket, every minute; the Gateway routes a kind by this report;
+3. opens its durable pull consumer `node-<id>` on the `ORDERS` stream. The Gateway makes it before the Node's first order; until then the executor checks every 5 s and logs once.
+
+It runs orders in slots: two per CPU, between 2 and 8. It pulls one order at a time and only when a slot is free, so a pulled order never waits past its acknowledgement wait. In an Incus container the CPU count comes from the smaller of the affinity mask and `/proc/cpuinfo`, which lxcfs limits to the container's quota.
+
+For each order it:
+
+1. checks it exactly as the socket does (`server::verify`), on a blocking thread, with the same allowlist, journal, nonce and expiry rules;
+2. reads any content the order names by SHA-256 from the `CONTENT` bucket into `/var/lib/orbit/executor/blobs`, and checks the hash;
+3. runs it, and sends a progress acknowledgement every 2 s so a running order is not redelivered;
+4. publishes the result line as a receipt on `orbit.receipts.<id>`, with the nonce as `Nats-Msg-Id` (a refusal uses `refused-<nonce>`);
+5. acknowledges the order only after JetStream stored the receipt.
+
+An order that is never acknowledged comes back, and the journal answers it as a repeat. Its refusal's own message id keeps it from shadowing the real result. A refusal is a receipt too, so the Gateway learns of an expired order and sends a new one.
+
+### ufw.ensure_rule
+
+`ufw.ensure_rule` (family `firewall`, crate `orbit-executor-firewall`) makes one ufw rule present or absent. Its input is `action`, `port`, `protocol`, `source`, `comment`, `ensure` (`present` or `absent`) and `retain`; an unknown field refuses. It reads `ufw status numbered`, plans the changes, runs one `ufw` argv per change, reads the table again and checks every expected line and its position. It answers `applied` with the number of changes, or fails with the firewall code, such as `firewall.backend_inactive` or `firewall.verify_failed`. The planner is a port of the Swamp flow's planner, with its tests. The [firewall commands](/cli/firewall) describe the rules it keeps.
+
 ## The Gateway signer and the event
 
-`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values). The signer sends no `input` yet: the first primitive that takes one adds it.
+`App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values), then `input` when the order carries one. `signStep` signs one step of an engine Operation: its `operation` is `<id>:<step>`, it names the step's Node and target, and it carries the primitive's input ([Gateway engine](/reference/gateway-engine#orders-and-receipts)).
 
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 

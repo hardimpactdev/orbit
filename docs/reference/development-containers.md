@@ -1048,6 +1048,7 @@ Each prepared Node runs one proxy for all its containers.
 - **Configuration.** `/etc/squid/orbit-instance-egress.conf`. Squid's AppArmor profile lets it read only `/etc/squid`.
 - **Checked first.** The converge parses a new configuration beside the live one, and only a configuration that parses replaces it.
 - **No stock Squid.** The converge masks the package's own `squid.service` before the package installs. So the stock configuration, which listens on every address, never runs.
+- **Installed once.** Each converge reads the package's status with `dpkg-query`. Apt runs for a missing Squid and after a failed read. The host's updates upgrade it ([one read](/reference/node-provisioning#check-many-files-in-one-read)).
 What it serves:
 
 - **Scope.** A forward proxy with `CONNECT`, open to every public host and port.
@@ -2832,6 +2833,8 @@ So the folder plans in the fleet Node's intent carry `shift: false`, and from th
 A real `app-dev` or CI Node gets no `fleet_node` and no folder `shift`, so its intent, its profile and its containers' devices stay as they were.
 
 The fleet's egress proxy lies in the Instance container's own bridge, in `10.253.0.0/16` one level up. The nested Gateway reads its address from `HTTPS_PROXY` in its `/etc/environment`, which the fleet rules write whole. It gives the fleet Node no Instance bridge in that /24: a bridge that holds the proxy address makes `nested-app-dev` dial itself, and its Incus cannot fetch the stock image.
+
+A nested Gateway in a [release container](/reference/gateway-recovery#move-the-gateway-to-release-containers) reads the host's copy of that file and of the marker from its read-only environment mount, `/opt/orbit-gateway-environment`. The Gateway host refreshes both with the Gateway environment: at preparation, at each release and at `orbit-gateway-environment refresh` or `configure`. A host change between those reaches the container at the next refresh. The same refresh publishes the proxy lines alone as `instance-fleet-proxy.env`, which the container's Gateway units load when they start, in place of the host pool's `zz-orbit-nested-egress.conf`. An outer Gateway's host has no marker, so it publishes none of them.
 
 `nested-app-dev` reaches the internet only through that proxy: it has no route out and no public DNS. So the proxy of its own containers ([Egress and DNS](#egress-and-dns)) takes the fleet's proxy as its only parent. `InstanceFleetGateway::egressProxy` is the one reader of `HTTPS_PROXY`; it gives both the address that the bridge leaves out and this parent. The fleet Node's intent carries the parent in `instances.egress.parent`, and its Squid configuration and table follow from it:
 

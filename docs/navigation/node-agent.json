@@ -6,7 +6,8 @@
       "order": 14,
       "pages": [
         "reference/node-agent",
-        "reference/executor"
+        "reference/executor",
+        "reference/gateway-engine"
       ]
     }
   ]

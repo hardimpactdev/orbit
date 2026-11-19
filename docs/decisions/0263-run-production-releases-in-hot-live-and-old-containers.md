@@ -135,7 +135,7 @@ PowerSync runs on the Services Node as Node Processes and replicates from the sh
 
 Each production Instance can set a memory limit; the default permits a busy release to use the Node’s available memory. Three containers persist between releases: the preparation container, live, and old when one exists. During deployment hot briefly adds a fourth. Reserve disk, RAM and swap across all deploying Instances, taking account of the time between starting hot and reclaiming preparation memory. See [capacity](/reference/production-containers#capacity).
 
-Check capacity before waking preparation. Refuse insufficient RAM, swap or pool space with `deployment.node_capacity`. Automatic deployment retries capacity refusals without counting them against the commit.
+Check capacity before waking preparation. Refuse insufficient RAM, swap or pool space with `deployment.node_capacity`. The pool check sizes its reserve by the release and keeps headroom; a Node without swap stops preparation instead of freezing it, so it needs no swap. Automatic deployment retries capacity refusals without counting them against the commit.
 
 ### 9. PHP: the static glibc build, pinned per release
 
