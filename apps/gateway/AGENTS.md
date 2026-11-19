@@ -14,7 +14,7 @@ Laravel 13 control plane for Orbit. This file holds every Gateway rule; read no 
 ## Code
 
 - Start every PHP file with `declare(strict_types=1)`.
-- Keep controllers thin. Put behaviour in `final readonly` actions. Take input through Form Requests. Answer with the sibling controllers' JSON envelope (`data` from typed Spatie Data, `meta`); add no Eloquent API Resource.
+- Keep controllers thin. Put behaviour in `final readonly` actions. Take input through Form Requests. The endpoint's contract sets its response; follow the sibling endpoint. Add no Eloquent API Resource.
 - An API route sits behind `RequireActiveWireGuardPeer` by default. Copy the sibling route's middleware: the trust bootstrap routes `gateway:status` and `gateway:trust` are public, `copy:*` routes use `RequireTaskKey`, and Conn managed-target routes authenticate on their own.
 - `bin/mcp-tools` generates the MCP tools from the API and skips callbacks, private and browser endpoints. `app/Http/Mcp` runs a tool as an internal API request: add no identity, access, validation or redaction logic there, and hand-write no tool for an API operation.
 - Redact secrets before they reach a response, error, log or activity record. Pass a secret through stdin or a mode-0600 file, never through argv.
