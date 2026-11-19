@@ -113,7 +113,7 @@ sequenceDiagram
     %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
     %%> - before the first start, the stopped copy gets the Orbit root in its CA bundle when the seed's bundle lacks it, so Chromium trusts Orbit's sites; a copy without a bundle refuses
     %%> - before the first start, the stopped copy gets the composed `NO_PROXY` drop-ins, the bytes `env:sync` writes
-    %%> - before the first start, the stopped copy gets T3's files and last `/etc/orbit/instance`, so its boot starts T3; a drop-in turns off T3's default dependencies, so T3 waits for nftables, the local file systems, the journal and sysctl, not for `sysinit.target`; a second drop-in sets `ExecStart` to the program of the runtime's recorded container server, `bin/t3` or `bin/conn-server`, which every later call in the container runs too
+    %%> - before the first start, the stopped copy gets T3's files and last `/etc/orbit/instance`, so its boot starts T3; they go in beside the boot files, which share no folder with them, and before the `NO_PROXY` drop-ins; a drop-in turns off T3's default dependencies, so T3 waits for nftables, the local file systems, the journal and sysctl, not for `sysinit.target`; a second drop-in sets `ExecStart` to the program of the runtime's recorded container server, `bin/t3` or `bin/conn-server`, which every later call in the container runs too
     %%> - before the first start, the stopped copy gets `/etc/machine-info` with `PRETTY_HOSTNAME=<instance>.<project slug>`, so T3's first start shows that name; the copy's Incus templates leave the file alone
     %%> - the clone script starts the copy without the `start` phase; its services completion runs the shared app-account swap before the Node store command, so an old-seed normal copy moves to `www-data` there; a nested-fleet copy keeps `orbit` and `work` (docs/reference/development-containers.md#the-app-users-name)
     %%> - a nested-fleet copy starts only through the start guard: its config and devices exactly as the intent writes them, no `inner-pool` device without an inner volume in the intent, the copy's inner volume with exactly its keys, and a root volume without `zfs.delegate`
@@ -128,12 +128,13 @@ sequenceDiagram
     %%> ACL:
     %%> - reads the copy's own ACL by its name, never the list of every ACL on the Node; a missing ACL is created, a different one is set
     %%> Branch (a branch the seed already holds needs no network and no mirror):
+    %%> - the branch is read and fetched on the Node beside the ID map step and the start: it needs nothing of the copy; the step waits for it before it ends
     %%> - an explicit branch choice (`branch_selection`) runs no `ls-remote`: the admission read GitHub. A new branch whose admitted source commit is the seed commit fetches nothing; any other choice fetches its source into the Node's mirror with the read token
     %%> - a create by name only reads GitHub with `ls-remote`: a branch on the origin is fetched into the Node's mirror; a branch the origin lacks fetches nothing
     %%> - the Node's mirror holds the branch only when it was fetched; the token stays on the Node
     %%> - a branch made on GitHub after the admission: the copy still starts at the admitted commit; a later push of it is refused as `tasks.not_fast_forward` when the GitHub branch has commits the copy lacks, and fast-forwards, losing no commit, when it does not
     %%> Timing:
-    %%> - each clone phase prints the seconds of each of its parts; the result carries them as `timings`, so every create shows where its time went
+    %%> - each clone phase prints the seconds of each of its parts; parts that run beside others (T3's files, the branch) keep their own seconds; the result carries them as `timings`, so every create shows where its time went
     opt nested-fleet clone with a Club key
       SW->>C: Deliver the Club key<br/>native clone-club-key
       %%> When: right after the copy's first start; the copy's inner Swamp serve starts with the container and reads the key from `/run/orbit-club`

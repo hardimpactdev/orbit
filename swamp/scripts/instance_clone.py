@@ -680,6 +680,13 @@ def main():
         credential = folder / "git-credential"
         credential.write_text(line)
         credential.chmod(0o600)
+        files_pool = ThreadPoolExecutor(max_workers=1)
+        t3_files = None
+
+        def timed_t3_files(model):
+            with timed("t3_files_seconds"):
+                t3_start_files(model)
+
         try:
             current = run(
                 [
@@ -900,6 +907,11 @@ def main():
                 if remove:
                     change(project + ["file", "delete", "--force"] + remove)
                 boot_timer.__exit__()
+                # T3's files go in beside the boot files (docs/reference/development-containers.md#t3-starts-with-the-copy): they share
+                # no folder with the machine ID, the trust files or the NSS store, and the proxy drop-ins, which may share T3's unit
+                # folder, go only after T3's files are in. Both end before the start.
+                if model is not None:
+                    t3_files = files_pool.submit(timed_t3_files, model)
                 boot_timer = timed("boot_files")
                 boot_timer.__enter__()
                 change(
@@ -945,13 +957,14 @@ def main():
                         continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
+                if t3_files is not None:
+                    t3_files.result()
                 proxy_drop_ins()
             boot_timer.__exit__()
             # 1 when the copy's boot starts T3: this run carried the model environment and the copy was not running yet.
             timings["t3_files"] = 0
-            if model is not None and read["status"] != "Running":
-                with timed("t3_files_seconds"):
-                    t3_start_files(model)
+            if t3_files is not None:
+                t3_files.result()
                 timings["t3_files"] = 1
             firewall_timer = timed("firewall")
             firewall_timer.__enter__()
@@ -1000,6 +1013,83 @@ def main():
             if checked.returncode:
                 raise RuntimeError("instance.container_network_unsafe")
             check_timer.__exit__()
+
+            def fetch_branch():
+                # Git credentials remain on the Node, and leave even when a read/fetch fails. The Node's mirror is made only for a fetch:
+                # a branch the seed holds needs none.
+                mirror = Path(container["mirror"])
+
+                def make_mirror():
+                    mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    if not (mirror / "HEAD").exists():
+                        change(["git", "init", "--quiet", "--bare", str(mirror)])
+
+                branch_timer = timed("branch")
+                branch_timer.__enter__()
+                git = [
+                    "git",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "core.fsmonitor=false",
+                    "-C",
+                    str(mirror),
+                ]
+                remote_git = (
+                    [
+                        "timeout",
+                        "80",
+                        "env",
+                        "GIT_CONFIG_NOSYSTEM=1",
+                        "GIT_CONFIG_GLOBAL=/dev/null",
+                    ]
+                    + git
+                    + [
+                        "-c",
+                        "credential.helper=",
+                        "-c",
+                        "credential.helper=store --file=" + str(credential),
+                        "-c",
+                        "http.followRedirects=false",
+                        "-c",
+                        "url.https://github.com/.insteadOf=git@github.com:",
+                        "-c",
+                        "url.https://github.com/.insteadOf=ssh://git@github.com/",
+                        "-c",
+                        "protocol.allow=never",
+                        "-c",
+                        "protocol." + container["protocols"][0] + ".allow=always",
+                    ]
+                )
+                if "branch_selection" in container:
+                    select_branch(container, git, remote_git, run, make_mirror)
+                else:
+                    # A create by name only: GitHub says whether the origin has the branch. A branch it lacks starts at the seed's commit.
+                    branch = "refs/heads/" + container["branch"]
+                    # `ls-remote` needs no repository: it runs with the same options outside the mirror, which may not exist.
+                    outside = remote_git[: remote_git.index("-C")] + remote_git[remote_git.index("-C") + 2 :]
+                    remote = run(
+                        outside
+                        + ["ls-remote", "--heads", "--", container["repository"], branch]
+                    ).stdout.strip()
+                    if remote:
+                        make_mirror()
+                        run(
+                            remote_git
+                            + [
+                                "fetch",
+                                "--quiet",
+                                "--no-tags",
+                                "--",
+                                container["repository"],
+                                "+" + branch + ":" + branch,
+                            ]
+                        )
+                branch_timer.__exit__()
+
+            # The branch is read and fetched on the Node beside the start: it needs nothing of the copy, and the copy's boot, T3's
+            # start among it, runs meanwhile. The phase waits for it before it reports.
+            branch = files_pool.submit(fetch_branch)
             with timed("idmap"):
                 try:
                     if unshift_clone_rootfs(container, read, run):
@@ -1064,78 +1154,10 @@ def main():
                     mail = {"status": "failed", "reason": "instance.mail_update_failed"}
                 print("orbit-mail=" + mail["status"] + (":" + mail["reason"] if "reason" in mail else ""))
             mail_timer.__exit__()
-            # Git credentials remain on the Node, and leave even when a read/fetch fails. The Node's mirror is made only for a fetch:
-            # a branch the seed holds needs none.
-            mirror = Path(container["mirror"])
-
-            def make_mirror():
-                mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                if not (mirror / "HEAD").exists():
-                    change(["git", "init", "--quiet", "--bare", str(mirror)])
-
-            branch_timer = timed("branch")
-            branch_timer.__enter__()
-            git = [
-                "git",
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "core.fsmonitor=false",
-                "-C",
-                str(mirror),
-            ]
-            remote_git = (
-                [
-                    "timeout",
-                    "80",
-                    "env",
-                    "GIT_CONFIG_NOSYSTEM=1",
-                    "GIT_CONFIG_GLOBAL=/dev/null",
-                ]
-                + git
-                + [
-                    "-c",
-                    "credential.helper=",
-                    "-c",
-                    "credential.helper=store --file=" + str(credential),
-                    "-c",
-                    "http.followRedirects=false",
-                    "-c",
-                    "url.https://github.com/.insteadOf=git@github.com:",
-                    "-c",
-                    "url.https://github.com/.insteadOf=ssh://git@github.com/",
-                    "-c",
-                    "protocol.allow=never",
-                    "-c",
-                    "protocol." + container["protocols"][0] + ".allow=always",
-                ]
-            )
-            if "branch_selection" in container:
-                select_branch(container, git, remote_git, run, make_mirror)
-            else:
-                # A create by name only: GitHub says whether the origin has the branch. A branch it lacks starts at the seed's commit.
-                branch = "refs/heads/" + container["branch"]
-                # `ls-remote` needs no repository: it runs with the same options outside the mirror, which may not exist.
-                outside = remote_git[: remote_git.index("-C")] + remote_git[remote_git.index("-C") + 2 :]
-                remote = run(
-                    outside
-                    + ["ls-remote", "--heads", "--", container["repository"], branch]
-                ).stdout.strip()
-                if remote:
-                    make_mirror()
-                    run(
-                        remote_git
-                        + [
-                            "fetch",
-                            "--quiet",
-                            "--no-tags",
-                            "--",
-                            container["repository"],
-                            "+" + branch + ":" + branch,
-                        ]
-                    )
-            branch_timer.__exit__()
+            branch.result()
         finally:
+            # A failed step leaves no T3 push or branch fetch running behind the phase, and the credential stays until both end.
+            files_pool.shutdown(wait=True)
             credential.unlink(missing_ok=True)
     elif phase == "club-key":
         # The nested Gateway's Club key, from SSH stdin into the copy's /run, a tmpfs that no snapshot holds

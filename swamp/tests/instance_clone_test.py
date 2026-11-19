@@ -14,6 +14,7 @@ import stat
 import struct
 import subprocess
 import tempfile
+import threading
 import unittest
 import urllib.parse
 from pathlib import Path
@@ -315,7 +316,7 @@ class IdmapTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None, stdin="PRIVATE-INPUT", before_start=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None, stdin="PRIVATE-INPUT", before_start=None, on_call=None):
         calls = []
         self.inputs = {}
         self.decoding = {}
@@ -374,6 +375,9 @@ class CloneTest(unittest.TestCase):
 
             def command(argv, **kwargs):
                 nonlocal read
+                # `on_call`: a test's view of each command as it begins, before it is recorded; it may hold the command back.
+                if on_call:
+                    on_call(argv)
                 calls.append(argv)
                 self.inputs[id(argv)] = kwargs.get("input")
                 self.decoding[id(argv)] = kwargs.get("errors")
@@ -896,6 +900,46 @@ class CloneTest(unittest.TestCase):
         self.assertFalse(any("PLACEHOLDER" in " ".join(call) for call in calls))
         self.assertEqual([call for call in calls if "PLACEHOLDER" in str(self.inputs.get(id(call)))], [writes[0]])
         self.assertEqual(json.loads(transcript[0].strip().splitlines()[-1])["timings"]["t3_files"], 1)
+
+    def test_t3_files_go_in_beside_the_boot_files_and_before_the_proxy_drop_ins(self):
+        # The machine ID push, the first boot file, waits until a T3 file push begins: only a T3 push beside the boot files lets it go on.
+        t3_push, beside = threading.Event(), []
+
+        def on_call(argv):
+            if argv[3:5] == ["file", "push"] and argv[-1] == "instance-7/home/agent/.config/orbit/model.env":
+                t3_push.set()
+            if argv[3:5] == ["file", "push"] and argv[-1] == "instance-7/etc/machine-id":
+                beside.append(t3_push.wait(5))
+
+        proxy = {"NO_PROXY": "localhost", "no_proxy": "localhost"}
+        calls, _, error = self.clone_with({**self.T3_FILES, "proxy_environment": proxy}, rootfs=self.T3_ROOT, on_call=on_call,
+                                          stdin="https://x-access-token:PRIVATE@github.com\n" + self.FRAME + "\n" + self.MODEL)
+        self.assertEqual(error, "")
+        self.assertEqual(beside, [True])
+        writes = self.t3_writes(calls)
+        drop_ins = [call for call in self.pushes(calls) if call[-1].startswith("instance-7/etc/profile.d/")]
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertTrue(drop_ins)
+        # T3's own drop-in folder may be the proxy's: its files are all in before a proxy drop-in, and everything before the start.
+        self.assertLess(max(calls.index(call) for call in writes), min(calls.index(call) for call in drop_ins))
+        self.assertLess(max(calls.index(call) for call in writes + drop_ins), start)
+
+    def test_the_branch_is_read_on_the_node_beside_the_start(self):
+        # The start waits until the branch's read on the Node begins: only a read beside the start lets it go on.
+        read, beside = threading.Event(), []
+
+        def on_call(argv):
+            if "ls-remote" in argv:
+                read.set()
+            if argv[3:4] == ["start"]:
+                beside.append(read.wait(5))
+
+        calls, _, error = self.clone()
+        self.assertEqual(error, "")
+        self.assertTrue(any("ls-remote" in call for call in calls))
+        calls, _, error = self.clone(on_call=on_call)
+        self.assertEqual(error, "")
+        self.assertEqual(beside, [True])
 
     def test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line(self):
         held = {"content": '{"projectSettingsFolded":true}\n', "uid": "2750", "gid": "2750", "mode": "0600"}
