@@ -113,9 +113,7 @@ class FixtureCostEvidenceTest(unittest.TestCase):
             with self.subTest(file=file):
                 fixture = fixtures[file]
                 self.assertTrue(fixture['self_hosted'])
-                # ADR 0262 names host_updates as a temporary capacity gap until the next CI slice re-costs it.
-                if file != 'swamp/tests/ansible_instance_host_updates_test.ts':
-                    self.assertNotIn(file, budget['capacity_gap'])
+                self.assertNotIn(file, budget['capacity_gap'])
                 self.assertGreaterEqual(len(measured['runs']), 5)
                 self.assertEqual(fixture['case_costs'], {name: math.ceil(seconds) for name, seconds in measured['case_seconds'].items()})
                 self.assertEqual(fixture['cost'], sum(fixture['case_costs'].values()))
