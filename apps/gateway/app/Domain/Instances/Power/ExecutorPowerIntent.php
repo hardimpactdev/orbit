@@ -91,7 +91,11 @@ final class ExecutorPowerIntent
             default => null,
         };
 
-        return ExecutorOrderSigner::fromConfig()->sign($operation, $action, (string) $operation->target_id, $powerCheck);
+        // A wake that probes the app waits the intent's `web.ready_seconds` for it; an order without it gets the executor's 30 s.
+        $ready = data_get($operation->input, 'web.ready_seconds');
+        $input = $action === 'wake' && $powerCheck === null && is_int($ready) ? ['web' => ['ready_seconds' => $ready]] : [];
+
+        return ExecutorOrderSigner::fromConfig()->sign($operation, $action, (string) $operation->target_id, $powerCheck, $input);
     }
 
     /** @return array<string, mixed>|null The lifecycle phase's receipt, recorded once on the Operation (ADR 0266, R1). */

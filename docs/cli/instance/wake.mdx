@@ -38,7 +38,7 @@ With [signed power routing](/reference/executor#signed-power-delivery), the WebS
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 
-Waking an Instance that is awake changes nothing and also succeeds, except a nested-fleet default: one that no sleep froze, running or stopped, is refused with `instance.sleep_unsupported`. A running nested-fleet clone takes its start, which checks it and changes nothing that runs. A failed wake keeps the asleep marker. A visit gets a plain-text `503`, such as `The wake failed (instance.container_start_failed). Reload the page to try again.` A reload, or this command, starts a new wake. [Wake](/reference/app-dev-runtime-hibernation#wake) lists every answer.
+Waking an Instance that is awake changes nothing and also succeeds, except a nested-fleet default: one that no sleep froze, running or stopped, is refused with `instance.sleep_unsupported`. A running nested-fleet clone takes its start, which checks it and changes nothing that runs. A failed wake keeps the asleep marker. A visit gets a plain-text `503`, such as `The wake failed (instance.container_start_failed). Reload the page to try again.` That visit ends the failed wake at once, so a reload, or this command, starts a new wake. A wake never waits for, or is refused by, a role converge on its Node. [Wake](/reference/app-dev-runtime-hibernation#wake) lists every answer.
 
 The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake` Operation, or an `instance.start` Operation for a stopped clone of a nested-fleet default. The MCP tool is `instance-wake`.
 
@@ -77,7 +77,7 @@ For a nested-fleet clone:
 | `instance.start_unsupported` | The start of a nested-fleet clone was called for another Instance. |
 | `instance.nested_club_key_missing` | The start of a nested-fleet clone found no Club key on the Gateway. Its inner fleet cannot become ready, so the run did not start. |
 | `instance.container_fleet_check_failed`, `instance.container_fleet_resume_failed` | The inner fleet of a nested-fleet clone did not start or did not become ready. The failure's detail says why. |
-| `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. |
+| `instance.lifecycle_busy`, `operation.target_busy` | Other lifecycle work runs on the Instance. A Node converge never causes it. |
 | `instance.container_start_failed` | The container or one of its units did not start, or the asleep marker could not be removed. |
 | `instance.power_helper_busy` | Another power action on the Instance's Node stayed busy past the wait, for example a restore stuck in disk I/O. The marker stays. |
 | `instance.power_helper_failed` | The power helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. Retry, or read the Node's journal. |

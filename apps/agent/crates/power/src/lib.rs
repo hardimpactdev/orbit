@@ -157,6 +157,8 @@ pub struct Power {
     pool: pool::Pool,
     restore_bound: Duration,
     web_port: u16,
+    /// How long a wake waits for the app when its order names no bound.
+    ready_bound: Duration,
     /// Restore items still running per target, stalled ones included.
     readers: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<pool::Readers>>>,
     /// How long a sleep or discard waits for a target's stalled restore readers.
@@ -181,6 +183,7 @@ impl Power {
             pool: pool::Pool::new(threads),
             restore_bound: Duration::from_secs(2),
             web_port: 8080,
+            ready_bound: wake::READY_BOUND,
             readers: std::sync::Mutex::default(),
             reader_bound: READER_BOUND,
             reader: wake::restore,

@@ -80,7 +80,7 @@ def coverage():
     """List product commands without an expected output, from the command list of the CLI."""
     listing = subprocess.check_output(['php', 'orbit', 'list', '--format=json'], cwd=ROOT / 'apps/cli', text=True)
     commands = sorted(command['name'] for command in json.loads(listing)['commands']
-                      if ':' in command['name'] and not command['name'].startswith(('internal:', 'design:', 'make:', 'app:build', 'mcp:', 'boost:', 'vendor:', 'stub:', 'skill:'))
+                      if ':' in command['name'] and not command['name'].startswith(('internal:', 'design:', 'make:', 'app:build', 'vendor:', 'stub:', 'skill:'))
                       and not command.get('hidden')) 
     commands += [name for name in ('doctor', 'profile') if any(command['name'] == name for command in json.loads(listing)['commands'])]
     expected = ROOT / 'apps/cli/tests/Expected'

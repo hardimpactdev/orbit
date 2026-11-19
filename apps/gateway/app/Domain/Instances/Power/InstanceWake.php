@@ -357,7 +357,9 @@ final readonly class InstanceWake extends InstancePower
                 return null;
             }
             $line = $operation->refresh()->executor_result;
-            if (is_array($line) && ! ExecutorResults::succeeded($line)) {
+            if (is_array($line) && ! ExecutorResults::succeeded($line) && ! (ExecutorPowerIntent::managed($operation) && ExecutorFence::handsToBoot($line))) {
+                self::endFailed($operation);
+
                 return 'The wake failed ('.ExecutorResults::failureCode($line).'). Reload the page to try again.';
             }
         } elseif ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
@@ -374,6 +376,22 @@ final readonly class InstanceWake extends InstancePower
         return $operation->status->terminal()
             ? self::failure($operation)
             : 'The Instance is still waking. Reload the page in a moment.';
+    }
+
+    /**
+     * Ends a wake whose receipt is a terminal failure now, not when its queued completion runs, so the next visit admits a fresh
+     * wake instead of joining this one. Only the Operation's own end runs here; the queued completion still relays its notices.
+     * A receipt that hands the container to a boot is no failure: the visit keeps waiting for the boot. An error here never
+     * changes the visitor's answer.
+     */
+    private static function endFailed(Operation $operation): void
+    {
+        try {
+            app(ExecutorWake::class)->complete($operation, expire: true);
+        } catch (Throwable $exception) {
+            Log::warning('The visit could not end a failed wake; its queued completion ends it.',
+                ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+        }
     }
 
     /** ADR 0266, R4: the one text a visit shows of a wake that ended without reaching the app, or of the start that stands in for it. */

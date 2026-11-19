@@ -97,14 +97,16 @@ it('holds a visit until its deadline, answers still waking, later fails without 
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
-it('answers an unsuccessful result with its failure and retains it for the queued failure', function (string $status, array $details, string $code, string $shown): void {
+it('answers an unsuccessful result with its failure and ends the wake on that visit', function (string $status, array $details, string $code, string $shown): void {
     $instance = executorWakeInstance();
     $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => $status, ...$details]);
 
     executorWakeVisit($instance)->assertServiceUnavailable()->assertContent("The wake failed ({$shown}). Reload the page to try again.\n");
 
+    // The visit ends the failed wake itself, so the next visit admits a new one; the queued completion changes nothing.
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
-    expect($operation)->status->toBe(OperationStatus::Running)->executor_result->toMatchArray(['status' => $status, ...$details]);
+    expect($operation)->status->toBe(OperationStatus::Failed)->error_code->toBe($code)->lock_key->toBeNull()
+        ->executor_result->toMatchArray(['status' => $status, ...$details]);
     $this->travel(7)->seconds();
     (new CompleteExecutorWake($operation->id))->handle(app(ExecutorWake::class));
     expect($operation->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe($code)->lock_key->toBeNull();
@@ -130,7 +132,7 @@ it('ends a held visit with a plain 503 as soon as a failed receipt arrives, not 
     $response->assertServiceUnavailable()->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
         ->assertContent("The wake failed (restore_failed). Reload the page to try again.\n");
     expect($elapsedMs)->toBeLessThan(1000);
-    expect(Operation::query()->where('kind', InstanceWake::Kind)->sole())->status->toBe(OperationStatus::Running)
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->sole())->status->toBe(OperationStatus::Failed)
         ->executor_result->toMatchArray(['status' => 'failed', 'code' => 'restore_failed']);
 });
 
