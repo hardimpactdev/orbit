@@ -587,6 +587,8 @@ The grace in step 11 covers private DNS only; it does not wait for public DNS. P
 
 A failure in step 2, 3, 4, 7 or 8, before step 9 ran, gives the Ingress back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`. The source never stopped serving, and no private DNS answer names the target. The target keeps the sites it already built. Fix the cause and run the same command again. A failure from step 9 on keeps the target as the Ingress; fix the cause and run the same command with `--from=SOURCE`.
 
+A first move cancelled before its run starts also gives the Ingress back to the source before the Cluster's Nodes are freed for Route writes. A cancelled `--from` retry keeps the target.
+
 A `--from` retry never gives the Ingress back. Its earlier run may already have switched private DNS to the target, so the target stays the Ingress whatever step fails.
 
 A failure in step 12 keeps the target `active`, because it already serves every public site and private DNS names it. The result has `source_cleanup_failed: true`, and the source keeps its public sites and rules until the retry with `--from=SOURCE` removes them.

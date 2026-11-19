@@ -39,6 +39,26 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
 
     public const string DnsStep = 'Publish the role DNS';
 
+    /**
+     * An Ingress move cancelled before its run never configured the target, and the source still serves: the source keeps the role.
+     * A `--from` retry keeps the target, because its earlier run may have switched private DNS. Runs in the cancelling transaction,
+     * before the terminal status frees the Route publication hold.
+     */
+    public static function cancelledBeforeRun(Operation $operation): void
+    {
+        $relocate = ValidatedData::object($operation->input['_relocate'] ?? []);
+        if ($operation->kind !== 'node.role_relocate' || ($relocate['role'] ?? null) !== RoleName::Ingress->value || ($relocate['retry'] ?? false) === true) {
+            return;
+        }
+        $assignment = NodeRole::query()->lockForUpdate()->whereKey(ValidatedData::integer($relocate['assignment_id']))
+            ->where('node_id', ValidatedData::integer($relocate['target_node_id']))->first();
+        if ($assignment === null) {
+            return;
+        }
+        $assignment->update(['node_id' => ValidatedData::integer($relocate['source_node_id'])]);
+        $assignment->markConvergenceActive();
+    }
+
     /** Ingress steps that run before private DNS switches; the source still serves alone when one of them fails. */
     public const array IngressPreparationSteps = ['Probe the Process backends', 'Apply the Ingress role', 'Publish the Caddy sites', 'Probe the Router hop',
         'Check the public certificates', 'Check the certificate answers'];

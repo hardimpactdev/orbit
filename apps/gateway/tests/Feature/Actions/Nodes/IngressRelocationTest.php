@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\AdmitNodeRoleOperationAction;
+use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\NativeNodeRoleAddInput;
@@ -465,4 +466,32 @@ it('refuses an Ingress move that would reach a public Process on another listene
 
     expect(Operation::query()->count())->toBe(0)
         ->and($assignment->refresh()->node_id)->toBe($source->id);
+});
+
+it('gives the Ingress back to the source when a first move is cancelled before its run, and keeps the target for a --from retry', function (): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'assignment' => $assignment, 'cluster' => $cluster] = ingressRelocationFleet();
+    ingressRelocationGateway();
+
+    $first = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true);
+    expect($assignment->refresh()->node_id)->toBe($target->id);
+
+    app(CancelOperationAction::class)->execute($first);
+
+    // The target was never configured and DNS still names the source: a Caddy render must place the public sites on the source.
+    expect($first->refresh()->status->value)->toBe('cancelled')
+        ->and($assignment->refresh()->node_id)->toBe($source->id)
+        ->and($assignment->status)->toBe(LifecycleStatus::Active)
+        ->and(DB::table('route_publication_holds')->where('operation_id', $first->id)->count())->toBe(0)
+        ->and(app(PublicRouteEligibility::class)->servingIngress($cluster)?->id)->toBe($source->id);
+
+    $moved = app(AdmitNodeRoleOperationAction::class)->relocate($target->refresh(), RoleName::Ingress, true);
+    settleIngressRelocation($moved, ['Publish the role DNS-0' => 'succeeded', 'Let DNS answers expire-0' => 'failed'], 'Let DNS answers expire-0');
+    $retry = app(AdmitNodeRoleOperationAction::class)->relocate($target->refresh(), RoleName::Ingress, true, $source);
+
+    app(CancelOperationAction::class)->execute($retry);
+
+    expect($retry->refresh()->status->value)->toBe('cancelled')
+        ->and($assignment->refresh()->node_id)->toBe($target->id);
 });
