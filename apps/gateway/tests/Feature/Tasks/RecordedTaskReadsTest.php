@@ -216,7 +216,7 @@ it('takes the median merge wait from PR opened over the merged tasks that know b
     $project = Project::query()->create(['name' => 'app', 'slug' => 'app', 'repository_url' => 'https://github.com/example/app.git', 'default_branch' => 'main', 'root' => 'public']);
     $ended = static fn (?string $opened, ?string $merged): Task => Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Ended', 'brief' => 'Brief',
         'status' => TaskGroupStatus::Completed, 'ended_at' => now(), 'settled_at' => now()->subHour(), 'pr_opened_at' => $opened, 'merged_at' => $merged]);
-    $insights = static fn (): array => app(TaskInsights::class)->report(7, $project->id, CarbonImmutable::now())->toArray()['current'];
+    $insights = static fn (): array => app(TaskInsights::class)->report('7d', $project->id, CarbonImmutable::now())->toArray()['current'];
     $ended(null, now()->subMinutes(30)->toIso8601String());
     $ended(now()->subHours(9)->toIso8601String(), null);
 
