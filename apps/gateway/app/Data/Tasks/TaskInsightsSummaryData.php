@@ -25,6 +25,7 @@ final class TaskInsightsSummaryData extends Data
         public ?int $queueMs,
         public ?int $workMs,
         public ?int $mergeWaitMs,
+        public ?int $prMergeWaitMs,
         public ?float $yield,
         public ?float $prFirstPass,
         public ?float $wastedShare,

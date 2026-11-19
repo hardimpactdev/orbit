@@ -14,6 +14,7 @@ final readonly class GitHubPullRequest
      * @param  bool  $draft  whether the pull request is still a draft
      * @param  string|null  $authorLogin  the GitHub login that opened the pull request
      * @param  bool  $fromFork  whether the head branch lives in another repository than the base branch (a deleted fork counts)
+     * @param  string|null  $createdAt  when the pull request was opened
      */
     public function __construct(
         public GitHubPullRequestState $state,
@@ -28,6 +29,7 @@ final readonly class GitHubPullRequest
         public ?string $authorLogin = null,
         public bool $fromFork = false,
         public ?string $headRef = null,
+        public ?string $createdAt = null,
     ) {}
 
     /** Whether GitHub reports that the pull request conflicts with its base branch. */

@@ -14,6 +14,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 
@@ -221,4 +222,33 @@ it('filters children by status and rejects fields from the other create level', 
     $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&status=todo')->assertOk()->assertJsonCount(1, 'data');
     $this->postJson('/api/v1/tasks', ['parent_id' => $this->parent->id, 'title' => 'Child', 'brief' => 'Brief', 'preview' => true])->assertUnprocessable();
     $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Parent', 'brief' => 'Brief', 'deliverables' => []])->assertUnprocessable();
+});
+
+it('lists the groups of one pull request by repository and number, watched or published, in any case, and none for another', function (): void {
+    $published = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Published', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running,
+        'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/12', 'pr_opened_at' => '2026-11-17T10:00:00Z']);
+    $watched = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Watched', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running,
+        'watched_pr_url' => 'https://github.com/HardImpactDev/Orbit/pull/34', 'watched_pr_number' => 34]);
+    $find = fn (string $query): array => $this->getJson('/api/v1/tasks?'.$query)->assertOk()->json('data');
+
+    expect(array_column($find('repository=hardimpactdev/orbit&pull_request=12'), 'id'))->toBe([$published->id])
+        ->and($find('repository=hardimpactdev/orbit&pull_request=12')[0]['pr_opened_at'])->toBe('2026-11-17T10:00:00+00:00')
+        ->and(array_column($find('repository=HARDIMPACTDEV/orbit&pull_request=34'), 'id'))->toBe([$watched->id])
+        ->and($find('repository=hardimpactdev/orbit&pull_request=1'))->toBe([])
+        ->and($find('repository=other/orbit&pull_request=34'))->toBe([]);
+    $this->getJson('/api/v1/tasks?repository=hardimpactdev/orbit')->assertUnprocessable();
+    $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&repository=hardimpactdev/orbit&pull_request=12')->assertUnprocessable();
+});
+
+it('reads the pull request filter through the URL indexes', function (): void {
+    $queries = [];
+    DB::listen(static function ($query) use (&$queries): void {
+        $queries[] = $query;
+    });
+    $this->getJson('/api/v1/tasks?repository=hardimpactdev/orbit&pull_request=12')->assertOk();
+    $list = collect($queries)->first(static fn ($query): bool => str_contains($query->sql, 'lower(pr_url)'));
+    $plan = collect(DB::select('EXPLAIN QUERY PLAN '.$list->sql, $list->bindings))->pluck('detail')->implode("\n");
+
+    expect($plan)->toContain('USING INDEX tasks_pr_url_lower_index')->toContain('USING INDEX tasks_watched_pr_url_lower_index')
+        ->not->toContain('SCAN tasks');
 });

@@ -2797,7 +2797,8 @@ describe('a copy group whose watched pull request merged settles itself', functi
     function settleTick(string $state, ?Throwable $branch = null): int
     {
         $reads = 0;
-        $pull = new GitHubPullRequest(GitHubPullRequestState::from($state), null, null, str_repeat('a', 40), 'main', mergedAt: $state === 'merged' ? '2026-11-16T20:00:00Z' : null);
+        $pull = new GitHubPullRequest(GitHubPullRequestState::from($state), null, null, str_repeat('a', 40), 'main', mergedAt: $state === 'merged' ? '2026-11-16T20:00:00Z' : null,
+            createdAt: '2026-11-16T18:00:00Z');
         app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($pull, $branch, &$reads): void {
             $github->shouldReceive('repositoryInstallation')->andReturn(7);
             $github->shouldReceive('repositoryPullRequestReadToken')->andReturn('read-token');
@@ -2843,6 +2844,18 @@ describe('a copy group whose watched pull request merged settles itself', functi
         destroySucceeded($destroy);
         expect(Instance::query()->find($copy->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)->and($group->taskable_id)->toBeNull();
     });
+
+    it('records when GitHub opened the watched pull request, and never moves a time already recorded', function (?string $recorded, string $expected): void {
+        [$group] = watchedCopy();
+        $group->update(['pr_opened_at' => $recorded]);
+
+        settleTick('open');
+
+        expect($group->refresh()->pr_opened_at?->toIso8601ZuluString())->toBe($expected);
+    })->with([
+        'none recorded' => [null, '2026-11-16T18:00:00Z'],
+        'one recorded' => ['2026-11-16T17:00:00Z', '2026-11-16T17:00:00Z'],
+    ]);
 
     it('records a pull request that closed without a merge, and leaves the group and its copy for a person', function (): void {
         [$group, $copy] = watchedCopy();

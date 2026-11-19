@@ -98,6 +98,21 @@ describe('conn:task:list', function (): void {
         panelCall($this->phone, 'tasks?limit=101')->assertStatus(422);
     });
 
+    it('finds the tasks of one pull request by repository and number, watched or published, in any case', function (): void {
+        $published = panelTask('Published', attributes: ['pr_url' => 'https://github.com/hardimpactdev/orbit/pull/12', 'pr_opened_at' => '2026-11-17T10:00:00Z']);
+        $watched = panelTask('Watched', attributes: ['watched_pr_url' => 'https://github.com/HardImpactDev/Orbit/pull/34', 'watched_pr_number' => 34]);
+        panelTask('Other number', attributes: ['pr_url' => 'https://github.com/hardimpactdev/orbit/pull/123']);
+        $find = fn (string $query): array => panelCall($this->phone, 'tasks?'.$query)->assertOk()->json('data');
+
+        expect(array_column($find('repository=hardimpactdev/orbit&pull_request=12'), 'id'))->toBe([$published->id])
+            ->and($find('repository=hardimpactdev/orbit&pull_request=12')[0]['pr_opened_at'])->toBe('2026-11-17T10:00:00+00:00')
+            ->and(array_column($find('repository=hardimpactdev/ORBIT&pull_request=34'), 'id'))->toBe([$watched->id])
+            ->and($find('repository=hardimpactdev/other&pull_request=12'))->toBe([])
+            ->and($find('repository=hardimpactdev/orbit&pull_request=99'))->toBe([]);
+        panelCall($this->phone, 'tasks?pull_request=12')->assertStatus(422);
+        panelCall($this->phone, 'tasks?repository=hardimpactdev/orbit/pull&pull_request=12')->assertStatus(422);
+    });
+
     it('shows a row\'s project, workspace, pull request, subtask counts and times', function (): void {
         $group = panelTask('Row', 'row', ['pr_url' => 'https://github.com/hardimpactdev/orbit/pull/3990']);
         foreach ([TaskStatus::Completed, TaskStatus::Reviewing, TaskStatus::Running, TaskStatus::Todo] as $status) {
@@ -115,7 +130,7 @@ describe('conn:task:list', function (): void {
             'pull_request' => ['number' => 3990, 'url' => 'https://github.com/hardimpactdev/orbit/pull/3990', 'state' => null],
             'subtask_counts' => ['total' => 4, 'todo' => 1, 'running' => 2, 'completed' => 1, 'failed' => 0, 'cancelled' => 0],
             'created_at' => '2026-11-17T12:00:00+00:00', 'updated_at' => '2026-11-17T12:00:00+00:00', 'last_activity_at' => null,
-            'deployed_at' => null,
+            'deployed_at' => null, 'pr_opened_at' => null,
         ]);
 
         $group->update(['watched_pr_number' => 4000, 'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/4000', 'watched_pr_state' => 'open']);
