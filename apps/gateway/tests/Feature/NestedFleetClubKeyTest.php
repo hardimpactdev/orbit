@@ -356,7 +356,7 @@ describe('the result of a start', function (): void {
                 'app-prod' => ['reason' => 'digest_changed', 'phases' => ['software', 'roles']]],
             'converge_nodes' => ['app-dev', 'app-prod'], 'changed' => 0, 'tokens' => 'reminted', 'tokens_reason' => 'incomplete',
             'base' => 'kept', 'base_containers' => [], 'record' => 'present', 'tools' => 'built', 'tools_reason' => 'missing',
-            'shrink' => 'ran', 'shrink_reason' => 'packages', 'swamp' => 'installed', 'swamp_reason' => 'changed', 'swamp_version' => '20261114.210101.0-sha.537e03d1',
+            'shrink' => 'started', 'shrink_reason' => 'packages', 'swamp' => 'installed', 'swamp_reason' => 'changed', 'swamp_version' => '20261114.210101.0-sha.537e03d1',
             'seconds' => ['gateway' => 14, 'converge' => 70, 'ready' => 3, 'base' => 1, 'tools' => 34]];
         $deploy = static function (array $file) use ($instance): Operation {
             $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
@@ -408,6 +408,10 @@ describe('the result of a start', function (): void {
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['tools' => true])])->result)->not->toHaveKey('fleet_refresh')
             // So are what it did with the nested root disks' shrink and why.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'shrink' => 'shrunk']])->result)->not->toHaveKey('fleet_refresh')
+            // The shrink runs after the refresh: a refresh never says it ran it.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'shrink' => 'ran']])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'shrink' => 'skipped', 'shrink_reason' => 'shrunk']])->result['fleet_refresh'])
+            ->toBe([...$refresh, 'shrink' => 'skipped', 'shrink_reason' => 'shrunk'])
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'shrink_reason' => 'size']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['shrink' => true])])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'shrink' => 'skipped', 'shrink_reason' => 'current']])->result['fleet_refresh'])
