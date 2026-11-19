@@ -267,10 +267,18 @@ contexts:
       - stdout: '[{"name":"seed/current"},{"name":"seed/old"}]'
     keep:
     - current
-  # `ufw status numbered` on the vpn Node (2026-11-16): the task VM hub's route rules among other orbit rules.
-  ufw-numbered-hub:
+  # `ufw show added` on the vpn Node: the task VM hub's route rules among other orbit rules; a live route rule follows an obsolete one.
+  ufw-added-hub:
     hub_task_vm_rules:
-      stdout: "Status: active\n\n     To                         Action      From\n     --                         ------      ----\n[ 1] Anywhere on orbit          ALLOW IN    10.44.0.0/24               # orbit:wireguard-members\n[ 2] 10.44.0.128/25 22/tcp on orbit ALLOW FWD   10.44.0.15 on orbit        # orbit:task-vm-control-ssh\n[ 3] 10.44.0.128/25 80/tcp      ALLOW FWD   10.44.0.7                  # orbit:task-vm-router-web-10-44-0-7-80\n[ 4] 10.252.10.1 53/udp on orbittask0 ALLOW IN    Anywhere                   # orbit:task-vms-dns-udp\n[ 5] 10.44.0.128/25 3774/tcp    ALLOW FWD   10.44.0.15                 # orbit:task-vm-swamp-pi\n[ 6] 10.44.0.128/25 9000/tcp    ALLOW FWD   10.44.0.20\n\n"
+      stdout_lines:
+      - "Added user rules (see 'ufw status' for running firewall):"
+      - "ufw allow in on orbit from 10.44.0.0/24 comment 'orbit:wireguard-members'"
+      - "ufw route allow in on orbit out on orbit from 10.44.0.15 to 10.44.0.128/25 port 22 proto tcp comment 'orbit:task-vm-control-ssh'"
+      - "ufw route allow from 10.44.0.7 to 10.44.0.128/25 port 80 proto tcp comment 'orbit:task-vm-router-web-10-44-0-7-80'"
+      - "ufw allow in on orbittask0 to 10.252.10.1 port 53 proto udp comment 'orbit:task-vms-dns-udp'"
+      - "ufw route allow from 10.44.0.15 to 10.44.0.128/25 port 3774 proto tcp comment 'orbit:task-vm-swamp-pi'"
+      - "ufw route allow from 10.44.0.20 to 10.44.0.128/25 port 9000 proto tcp"
+    item: "ufw route allow from 10.44.0.7 to 10.44.0.128/25 port 80 proto tcp comment 'orbit:task-vm-router-web-10-44-0-7-80'"
   ufw-numbered:
     firewall_numbered: &id001
       stdout: '[ 1] 8318/tcp ALLOW IN 10.0.0.9 # orbit:allow-node-9
@@ -586,6 +594,12 @@ contexts:
       stdout: Rule non-existent
     task_host_firewall_removed:
       stdout: Rule non-existent
+  ufw-delete-gone:
+    hub_task_vm_deleted:
+      stdout: Could not delete non-existent rule
+  ufw-delete-done:
+    hub_task_vm_deleted:
+      stdout: Rule deleted
   ufw-active:
     firewall:
       stdout: 'Status: active
@@ -1074,6 +1088,82 @@ contexts:
     fleet_record_read:
       rc: 1
       stdout: ''
+  fleet-converge-admitted-all:
+    fleet_api: https://hub.orbit.test/api/v1
+    fleet_curl: [curl, -sSk]
+    fleet_converge_admitted: [[gateway, '206'], [app-prod, '207'], [app-dev, '208']]
+  # Both Operations read whole, both ended.
+  fleet-converge-poll-ended:
+    fleet_converge_admitted: [[app-prod, '207'], [app-dev, '208']]
+    fleet_converge_wait:
+      rc: 0
+      stdout_lines:
+      - '{"data":{"id":"207","status":"succeeded","result":null}}'
+      - '0'
+      - '{"data":{"id":"208","status":"failed","result":null}}'
+      - '0'
+  # Both read whole; nested-app-dev still runs.
+  fleet-converge-poll-running:
+    fleet_converge_admitted: [[app-prod, '207'], [app-dev, '208']]
+    fleet_converge_wait:
+      rc: 0
+      stdout_lines:
+      - '{"data":{"id":"207","status":"succeeded","result":null}}'
+      - '0'
+      - '{"data":{"id":"208","status":"running","result":null}}'
+      - '0'
+  # The first response was cut (curl 18) while the last transfer, and so curl, exited 0.
+  fleet-converge-poll-first-cut:
+    fleet_converge_admitted: [[app-prod, '207'], [app-dev, '208']]
+    fleet_converge_wait:
+      rc: 0
+      stdout_lines:
+      - '{"data":{"id":"207","sta'
+      - '18'
+      - '{"data":{"id":"208","status":"succeeded","result":null}}'
+      - '0'
+  # The first transfer exited 0 with a body that is no JSON object, such as a proxy page.
+  fleet-converge-poll-first-garbled:
+    fleet_converge_admitted: [[app-prod, '207'], [app-dev, '208']]
+    fleet_converge_wait:
+      rc: 0
+      stdout_lines:
+      - '<html>bad gateway'
+      - '0'
+      - '{"data":{"id":"208","status":"succeeded","result":null}}'
+      - '0'
+  # The first transfer failed before any body (curl 28, timed out).
+  fleet-converge-poll-first-dropped:
+    fleet_converge_admitted: [[app-prod, '207'], [app-dev, '208']]
+    fleet_converge_wait:
+      rc: 0
+      stdout_lines:
+      - ''
+      - '28'
+      - '{"data":{"id":"208","status":"succeeded","result":null}}'
+      - '0'
+  # The last transfer failed, so curl exited 22.
+  fleet-converge-poll-last-dropped:
+    fleet_converge_admitted: [[app-prod, '207'], [app-dev, '208']]
+    fleet_converge_wait:
+      rc: 22
+      stdout_lines:
+      - '{"data":{"id":"207","status":"succeeded","result":null}}'
+      - '0'
+      - ''
+      - '22'
+  # timeout stopped curl during the second transfer: its lines are missing.
+  fleet-converge-poll-killed:
+    fleet_converge_admitted: [[app-prod, '207'], [app-dev, '208']]
+    fleet_converge_wait:
+      rc: 0
+      stdout_lines:
+      - '{"data":{"id":"207","status":"succeeded","result":null}}'
+      - '0'
+  fleet-converge-admitted-one-refused:
+    fleet_api: https://hub.orbit.test/api/v1
+    fleet_curl: [curl, -sSk]
+    fleet_converge_admitted: [[app-dev, '208']]
   fleet-intents-read:
     fleet_roles: [gateway, app-dev, app-prod]
     fleet_intents_read:
@@ -2273,6 +2363,62 @@ cases:
   field: vars.fleet_host_read
   context: fleet-intents-host
   expected: '4444444444444444444444444444444444444444444444444444444444444444'
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: ansible.builtin.command.argv
+  context: fleet-converge-admitted-all
+  expected: [timeout, '90', curl, -sSk, --fail, -w, '\n%{exitcode}\n', https://hub.orbit.test/api/v1/operations/206,
+    https://hub.orbit.test/api/v1/operations/207, https://hub.orbit.test/api/v1/operations/208]
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: ansible.builtin.command.argv
+  context: fleet-converge-admitted-one-refused
+  expected: [timeout, '90', curl, -sSk, --fail, -w, '\n%{exitcode}\n', https://hub.orbit.test/api/v1/operations/208]
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-ended
+  expected: true
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-running
+  expected: true
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-first-cut
+  expected: false
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-first-garbled
+  expected: false
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-first-dropped
+  expected: false
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-last-dropped
+  expected: false
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-killed
+  expected: false
+- file: tasks/instance-fleet-converge-node.yml
+  task: Read the converges of the nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-ended
+  expected: true
+- file: tasks/instance-fleet-converge-node.yml
+  task: Read the converges of the nested Nodes
+  field: vars.fleet_converge_whole
+  context: fleet-converge-poll-first-cut
+  expected: false
 - file: tasks/instance-fleet-refresh.yml
   task: Choose how base is taken
   field: vars.fleet_pool_drivers
@@ -2670,11 +2816,27 @@ cases:
 - file: tasks/node-converge-hub-filter-absent.yml
   task: Delete the task VM route rules
   field: loop
-  context: ufw-numbered-hub
+  context: ufw-added-hub
   expected:
-  - 5
-  - 3
-  - 2
+  - "ufw route allow in on orbit out on orbit from 10.44.0.15 to 10.44.0.128/25 port 22 proto tcp comment 'orbit:task-vm-control-ssh'"
+  - "ufw route allow from 10.44.0.7 to 10.44.0.128/25 port 80 proto tcp comment 'orbit:task-vm-router-web-10-44-0-7-80'"
+  - "ufw route allow from 10.44.0.15 to 10.44.0.128/25 port 3774 proto tcp comment 'orbit:task-vm-swamp-pi'"
+- file: tasks/node-converge-hub-filter-absent.yml
+  task: Delete the task VM route rules
+  field: ansible.builtin.command.cmd
+  context: ufw-added-hub
+  expected: "ufw --force route delete allow from 10.44.0.7 to 10.44.0.128/25 port 80 proto tcp comment 'orbit:task-vm-router-web-10-44-0-7-80'"
+- file: tasks/node-converge-hub-filter-absent.yml
+  task: Delete the task VM route rules
+  field: changed_when
+  context: ufw-delete-done
+  expected: true
+# The other converge of a hub peer deleted the rule first.
+- file: tasks/node-converge-hub-filter-absent.yml
+  task: Delete the task VM route rules
+  field: changed_when
+  context: ufw-delete-gone
+  expected: false
 - file: tasks/instance-container-phase.yml
   task: Name the seed
   field: ansible.builtin.set_fact.seed_bases

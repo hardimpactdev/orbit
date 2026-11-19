@@ -602,7 +602,9 @@ With no scope flag, the attempt includes Orbit's base and every recorded role. `
 
 The Gateway validates recorded state without a live preflight, reserves the target and its first recorded VPN hub until settlement, and captures an immutable intent. Unreachable machines fail during execution, not admission. The CLI validates inputs, calls the SDK and renders the Operation; the Gateway admits, records and projects; Swamp executes.
 
-Node convergence, role addition, convergence or removal, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent unless their converges share a VPN hub. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
+Node convergence, role addition, convergence or removal, enrollment and agent rekey share the Node's Operation admission lock. A holder causes `operation.target_busy` for another admission on that Node; distinct Nodes remain independent. Enrollment holds the lock for its whole run, including its frozen role work, without admitting a second role Operation. Existing terminal and timeout settlement rules release the hold. Another converge that owns the hub reservation is also refused.
+
+Converges of two peers of one VPN hub are independent too. Each network phase writes the hub's recorded peer set with atomic file copies, one `wg syncconf` and UFW's own lock. A converge of the hub Node itself still refuses beside any other converge, unless both are base converges.
 
 The native Swamp workflow runs these phases in order. Input preparation writes private inventory, variables and pinned SSH known hosts. Each machine phase invokes one tagged Ansible playbook, within the admitted scope.
 
