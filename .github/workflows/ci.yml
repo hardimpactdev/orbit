@@ -922,6 +922,8 @@ jobs:
       contents: read
       statuses: read
       actions: read
+      # One comment that names over-budget fixture units.
+      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -947,6 +949,24 @@ jobs:
           runpy.run_path('bin/ci-delivery')['validate'](needs)
           PYTHON
 
+      # A unit that was cut and failed no assertion does not fail its shard. This names such units in the summary and
+      # in one comment on the pull request, so a unit that hangs stays visible. Reporting never changes the gate.
+      - name: Report over-budget fixture units
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --pattern 'ci-unit-times-*' --dir "$RUNNER_TEMP/unit-times" || exit 0
+          bin/ci-units cuts --times "$RUNNER_TEMP/unit-times" > "$RUNNER_TEMP/cuts.md"
+          [ -s "$RUNNER_TEMP/cuts.md" ] || exit 0
+          number=${PR_NUMBER:-$(printf '%s' "$QUEUE_REF" | sed -n 's|^refs/heads/gh-readonly-queue/main/pr-\([0-9]*\)-.*|\1|p')}
+          [ -n "$number" ] || exit 0
+          printf '\n\n[CI run](%s), %s.\n' "$RUN_URL" "$GITHUB_EVENT_NAME" >> "$RUNNER_TEMP/cuts.md"
+          gh pr comment "$number" --body-file "$RUNNER_TEMP/cuts.md"
       - name: Report fixture queue pressure
         if: always()
         continue-on-error: true

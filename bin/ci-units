@@ -829,7 +829,38 @@ def run(units, budget, fixtures, times, tools=None):
         f"| `{r['unit']}` | {r['status']} | {r['seconds']:.1f} | {r.get('startup_seconds', '—')} |" for r in results)
     print(table)
     summary(table)
-    return int(not units or CANCELLED.is_set() or any(r['status'] != 'passed' for r in results))
+    cut = cut_units(results)
+    if cut:
+        # A slow check never gates: a unit that was cut and failed no assertion does not fail the shard. It is named,
+        # so a unit that hangs stays visible in the log, the job summary and the pull request.
+        text = cut_report(results)
+        print(text, flush=True)
+        summary(text)
+        for row in cut:
+            print(f"::warning title=Fixture unit over budget::{row['unit']} was not run to the end ({row['status']}).", flush=True)
+    return int(not units or CANCELLED.is_set() or any(r['status'] != 'passed' and r not in cut for r in results))
+
+
+def cut_units(results):
+    """The units that the unit ceiling or the shard deadline cut, without a failed case: they do not gate."""
+    return [row for row in results if row['status'] in ('OVER BUDGET', 'NOT RUN')
+            and not any(case.get('status') == 'FAILED' for case in row.get('cases') or [])]
+
+
+def cut_report(results):
+    """Markdown that names each cut unit with its cases, or an empty string."""
+    cut = cut_units(results)
+    if not cut:
+        return ''
+    lines = [f'**Over budget, not run to the end: {len(cut)} fixture units.** They do not fail Required checks. '
+             'A unit that is named here in every run hangs or is too slow: split it or make it faster.', '',
+             '| Unit | Result | Seconds | Declared | Cases |', '| --- | --- | ---: | ---: | --- |']
+    for row in cut:
+        declared = row.get('declared_seconds')
+        lines.append(f"| `{row['unit']}` | {'cut at ' + format(row['seconds'], '.0f') + ' s' if row['status'] == 'OVER BUDGET' else 'not started'} "
+                     f"| {row['seconds']:.1f} | {'—' if declared is None else format(declared, 'g')} "
+                     f"| {'; '.join(case['name'] for case in row.get('cases') or []) or '—'} |")
+    return '\n'.join(lines)
 
 
 def prepare(shard_deadline, tools=None):
@@ -888,9 +919,19 @@ def main():
     runner.add_argument('--times', type=Path, default=Path('ci-unit-times.json'))
     runner.add_argument('--workers', type=int, help="concurrent units (default: the lanes of the units' pool)")
     runner.add_argument('--tools', type=Path, help='pinned tools cache (default: the shape gate cache)')
+    cuts = commands.add_parser('cuts', help='name the units of a run that were cut and did not gate')
+    cuts.add_argument('--times', type=Path, required=True, help='folder with the ci-unit-times files of every shard')
     args = parser.parse_args()
     if args.command == 'collect':
         print(json.dumps(collect(args.file), indent=2))
+        return 0
+    if args.command == 'cuts':
+        # The Required job reads the times of every shard of the run and names the cut units once.
+        results = [row for path in sorted(args.times.rglob('*.json')) for row in json.loads(path.read_text())]
+        text = cut_report(results)
+        if text:
+            print(text)
+            summary(text)
         return 0
     budget, fixtures, defaults = configuration()
     if args.command == 'run':
