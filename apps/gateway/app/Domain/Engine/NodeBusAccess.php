@@ -34,16 +34,9 @@ final readonly class NodeBusAccess
     /** The Gateway's bus address for an executor, or null when the Gateway has no engine key or no WireGuard address. */
     public static function url(): ?string
     {
-        if (! GatewayBus::enabled()) {
-            return null;
-        }
-        $gateway = Node::query()->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::Gateway->value))->value('wireguard_ip');
-        if (! is_string($gateway) || $gateway === '') {
-            return null;
-        }
-        $port = config('orbit.engine.nats.port');
+        $address = GatewayBus::address();
 
-        return 'nats://'.$gateway.':'.(is_int($port) ? $port : 4222);
+        return $address === null ? null : 'nats://'.$address.':'.GatewayBus::port();
     }
 
     /**

@@ -102,7 +102,7 @@ A start or an order can be lost when the Gateway stops between a commit and its 
 
 ## The machine bus
 
-`nats-server` runs on the Gateway and listens on port 4222. The Gateway firewall allows that port on the WireGuard interface only. JetStream keeps these streams; `orbit:engine-setup` and the consumer make them, and both are idempotent:
+`nats-server` runs on the Gateway and listens on port 4222 of the Gateway's WireGuard address only, so the bus is never reachable from the Internet, even on a Gateway host without a firewall. The Gateway's own client, and every executor, connect to that address. JetStream keeps these streams; `orbit:engine-setup` and the consumer make them, and both are idempotent:
 
 | Stream | Subjects | Retention | Consumers |
 | --- | --- | --- | --- |
@@ -175,7 +175,7 @@ The Gateway role converge installs the bus when the Gateway holds the key:
 
 - `gateway-nats.yml` makes the `nats` user and installs the pinned `nats-server` release, checked by SHA-256;
 - `GatewayRuntimeFiles` writes `/etc/nats/nats.conf`, `nats-server.service` and `orbit-gateway-engine.service`;
-- `NodeFirewallRuleCatalog` adds the rule `orbit:gateway-nats` for port 4222 on the `orbit` interface.
+- `NodeFirewallRuleCatalog` adds the rule `orbit:gateway-nats` for port 4222 on the `orbit` interface, for a host whose firewall is on.
 
 To turn the engine on for a fleet:
 

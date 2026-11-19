@@ -57,6 +57,16 @@ it('gives an executor only the Gateway\'s address, never a credential', function
     expect(NodeBusAccess::url())->toBe('nats://10.44.0.1:4222');
 });
 
+it('listens on the Gateway\'s WireGuard address alone, so the bus is never public', function (): void {
+    expect(GatewayBus::config())->toContain("\nlisten: 10.44.0.1:4222\n")
+        ->and(GatewayBus::config())->not->toContain('0.0.0.0');
+
+    $this->gateway->forceFill(['wireguard_ip' => ''])->saveQuietly();
+
+    expect(GatewayBus::config())->toBeNull()
+        ->and(NodeBusAccess::url())->toBeNull();
+});
+
 it('sends every connection but the Gateway\'s user to the auth callout', function (): void {
     $config = (string) GatewayBus::config();
     $gateway = NatsCredentials::publicKey(GatewayBus::gatewaySeed());
