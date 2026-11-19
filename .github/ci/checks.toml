@@ -53,9 +53,6 @@ capacity_gap = [
   # A hosted gap applies only when other changes select the file; a change to the file itself runs all its units.
   "swamp/tests/ansible_task_copy_turn_test.ts",
   "swamp/tests/ansible_instance_host_image_test.ts",
-  # 90 hosted units, 3,625 declared seconds: it fits a plan of its own, not one that also changes the converge input list
-  # with other Swamp work. Its units are admitted in case order; the saved-record cases come early.
-  "swamp/tests/ansible_instance_fleet_test.ts",
 ]
 
 [runner-pool]

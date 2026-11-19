@@ -206,7 +206,7 @@ class PlanningTest(unittest.TestCase):
         budget, fixtures, _ = units.configuration()
         hosted = [file for file in budget['capacity_gap'] if not fixtures[file].get('self_hosted')]
         self.assertEqual(hosted, ['swamp/tests/ansible_task_copy_turn_test.ts',
-                                  'swamp/tests/ansible_instance_host_image_test.ts', 'swamp/tests/ansible_instance_fleet_test.ts'])
+                                  'swamp/tests/ansible_instance_host_image_test.ts'])
         # Only a self-hosted gap may hold a unit above the lane.
         config = json.loads(json.dumps(original))
         row = next(f for f in config['fixture'] if f['file'] == hosted[0])
