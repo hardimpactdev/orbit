@@ -27,7 +27,7 @@ Follow [stage 4](../../../docs/reference/pipeline/4-pr-and-ci.mmd) for independe
 
 CI proof confirms an already-passing local proof. It is deliberately disabled by `ORBIT_PROOF_ENABLED` until commands have been checked systematically; do not enable it as part of ordinary feature work. Copy proofs do not replay flagged cases on the merge base. The [pipeline](../../../docs/reference/command-development-pipeline.mdx#4-pr-and-ci) owns both limits. Neither a skipped CI proof nor green fast checks replace the pre-PR proof.
 
-Watch CI, fix failures caused by the change and repeat affected proofs after fixes. Report unrelated failures separately. Publication is not merge or release approval. [Stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd) and [stage 6](../../../docs/reference/pipeline/6-task-image-seed-refresh.mmd) own release and seed refresh; do not trigger a release to discover whether the feature works.
+Watch CI, fix failures caused by the change and repeat affected proofs after fixes. Report unrelated failures separately. Publication is not merge or release approval. After the gate, the author queues the pull request; the [merge queue](../../../docs/reference/implementation-loop.md#merge-queue) runs the fixture shards and merges it. [Stage 5](../../../docs/reference/pipeline/5-automatic-release.mmd) and [stage 6](../../../docs/reference/pipeline/6-task-image-seed-refresh.mmd) own release and seed refresh; do not trigger a release to discover whether the feature works.
 
 Report the PR, tested checkout, cases and verdicts, checks, unresolved coverage and actual delivery state.
 

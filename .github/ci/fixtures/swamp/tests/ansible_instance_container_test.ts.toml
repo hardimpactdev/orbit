@@ -141,6 +141,7 @@ inputs = [
   "swamp/ansible/instance_network.py",
   "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/instance_nested.py",
+  "swamp/ansible/instance_root_disk.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",

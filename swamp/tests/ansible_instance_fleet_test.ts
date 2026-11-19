@@ -2677,20 +2677,19 @@ Deno.test({
 /** The grants reload changed the nested Gateway's disk: its `base` alone is due, and nothing else differs. */
 const grantsDue = (state: Record<string, unknown>) => Object.assign(state, { grantsChanged: 2, digests: { "apps/gateway": "a1", swamp: "e2" } });
 
-Deno.test({
-  name: "on a btrfs inner pool a failed hold of the queue writes, a failed queue save, a hold without room or a stalled freeze lets the writes go and takes base with the fleet stopped",
-  ignore: !hasAnsible,
-  fn() {
-    const f = refreshedOnce();
-    try {
-      f.change((state) => state.poolDriver = "btrfs");
-      // A hold of the writes or a queue save that fails lets the writes go and takes the stopped path: no freeze, no armed thaw.
-      for (const [swamp, failure] of [["e4", "queuePauseFails"], ["e5", "queueSaveFails"]]) {
+// A hold of the writes or a queue save that fails lets the writes go and takes the stopped path: no freeze, no armed thaw.
+// One case for each failure in this group: together their refreshes ran past the unit ceiling on the pool.
+for (const [what, swamp, failure] of [["a failed hold of the queue writes", "e4", "queuePauseFails"], ["a failed queue save", "e5", "queueSaveFails"]]) {
+  Deno.test({
+    name: `on a btrfs inner pool ${what} lets the writes go and takes base with the fleet stopped`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = refreshedOnce();
+      try {
         f.change((state) => {
+          state.poolDriver = "btrfs";
           grantsDue(state);
           state.digests = { "apps/gateway": "a1", swamp };
-          delete state.queuePauseFails;
-          delete state.queueSaveFails;
           state[failure] = true;
         });
         const unsaved = f.run("refresh");
@@ -2700,13 +2699,25 @@ Deno.test({
         assert(!unsavedCalls.some((call) => call.startsWith("incus pause") || call.startsWith("systemd-run")), unsavedCalls.join("\n"));
         assertEquals(f.state().queuePaused, undefined, failure);
         assertEquals(f.refreshed()?.base_mode, "stopped");
+      } finally {
+        f.cleanup();
       }
+    },
+  });
+}
+
+Deno.test({
+  name: "on a btrfs inner pool a hold without room lets the writes go and takes base with the fleet stopped",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
       // A hold with less than 10 s left right before the freeze is refused: a 10 s hold has none. The writes go, the armed thaw is
       // cancelled, nothing freezes, and the stopped path takes base, after the old base went before the hold.
       f.change((state) => {
+        state.poolDriver = "btrfs";
         grantsDue(state);
         state.digests = { "apps/gateway": "a1", swamp: "e6" };
-        delete state.queueSaveFails;
       });
       const late = f.run("refresh", ["-e", "fleet_queue_pause_ms=10000"]);
       assert(late.ok, late.output);
@@ -2719,9 +2730,22 @@ Deno.test({
       assertEquals(lateCalls.filter((call) => call === "incus snapshot delete nested-gateway base").length, 1);
       assertEquals([f.state().queuePaused, f.state().thawArmed], [undefined, undefined]);
       assertEquals(f.refreshed()?.base_mode, "stopped");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "on a btrfs inner pool a stalled freeze lets the writes go and takes base with the fleet stopped",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
       // A freeze that stalls past the hold's time left minus 5 s is ended by its timeout: each target is resumed, the writes go, the armed
       // thaw is cancelled, nothing stays frozen, and the stopped path takes base. A 16 s hold leaves the freeze at most 10 s.
       f.change((state) => {
+        state.poolDriver = "btrfs";
         grantsDue(state);
         state.digests = { "apps/gateway": "a1", swamp: "e7" };
         state.pauseDelay = 11;
@@ -2743,16 +2767,16 @@ Deno.test({
   },
 });
 
-Deno.test({
-  name: "a directory pool, an unreadable pool read or a due shrink takes base with the fleet stopped",
-  ignore: !hasAnsible,
-  fn() {
-    // Each of these takes the stopped path for the same due base.
-    for (const [why, edit] of [
-      ["a directory pool", (state: Record<string, unknown>) => state.poolDriver = "dir"],
-      ["an unreadable pool read", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", poolsUnreadable: true })],
-      ["a due shrink", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", shrink: { due: true, reason: "packages" } })],
-    ] as [string, (state: Record<string, unknown>) => void][]) {
+// Each of these takes the stopped path for the same due base. One case each: together they ran past the unit ceiling on the pool.
+for (const [why, edit] of [
+  ["a directory pool", (state: Record<string, unknown>) => state.poolDriver = "dir"],
+  ["an unreadable pool read", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", poolsUnreadable: true })],
+  ["a due shrink", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", shrink: { due: true, reason: "packages" } })],
+] as [string, (state: Record<string, unknown>) => void][]) {
+  Deno.test({
+    name: `${why} takes base with the fleet stopped`,
+    ignore: !hasAnsible,
+    fn() {
       const g = refreshedOnce();
       try {
         g.change((state) => {
@@ -2767,9 +2791,9 @@ Deno.test({
       } finally {
         g.cleanup();
       }
-    }
-  },
-});
+    },
+  });
+}
 
 Deno.test({
   name: "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three",

@@ -117,7 +117,9 @@ export function fixture(instance: "default" | "feature" = "default", dirty = fal
   Deno.copyFileSync(new URL("library/orbit_migrate_env.py", root), `${folder}/library/orbit_migrate_env.py`);
   Deno.writeTextFileSync(`${folder}/host-processes.json`, "{}");
   Deno.writeTextFileSync(`${folder}/process-environments.json`, "{}");
-  Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}]}));
+  // A real Node's ZFS pool, whose root device keeps its size (instance_root_disk.py).
+  Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({"network-acls": [{name: "orbitinst0-egress", egress: [], ingress: []}],
+    pool: {name: "orbit-instances", driver: "zfs", config: {}}}));
   Deno.writeTextFileSync(
     `${folder}/bin/incus`,
     `#!/bin/sh\ncase " $* " in *" systemd-analyze verify "*) exit 0;; esac\nexec '${Deno.execPath()}' run -A '${new URL("../fixtures/instance-migrate-incus.ts", import.meta.url).pathname}' "$@"\n`,
@@ -127,6 +129,7 @@ export function fixture(instance: "default" | "feature" = "default", dirty = fal
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
   Deno.copyFileSync(new URL("instance_migrate_git.py", root), `${folder}/instance_migrate_git.py`);
   Deno.copyFileSync(new URL("instance_machine_name.py", root), `${folder}/instance_machine_name.py`);
+  Deno.copyFileSync(new URL("instance_root_disk.py", root), `${folder}/instance_root_disk.py`);
   Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
   for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-container-run-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml", "instance-private-names.yml", "instance-machine-name.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {

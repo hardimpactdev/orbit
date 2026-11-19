@@ -33,7 +33,7 @@ Follow the [contributor guide](docs/contributor-guide.md): **architecture → do
 - Keep the PR focused on the feature, including any harness changes it needs.
 - Follow [Add a plug-in point](docs/reference/extensions.md#add-a-plug-in-point) when adding or changing extension contributions.
 - Before you open or update a PR, run one independent review in a fresh subagent with the PR diff and the plug-in point checklist. Fix its findings first. State in the PR body that this review ran.
-- Merge needs green CI and the gate of stage 4.
+- Merge needs green CI and the gate of stage 4. Queue the pull request with `gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>`: the [merge queue](docs/reference/implementation-loop.md#merge-queue) tests and merges it. Do not update a branch because `main` moved.
 
 ## Skills
 

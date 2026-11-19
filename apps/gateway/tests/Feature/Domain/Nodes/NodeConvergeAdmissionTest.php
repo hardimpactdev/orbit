@@ -13,6 +13,7 @@ use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\FleetReleaseLag;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Fleet\ReleaseNodeInputs;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
@@ -34,6 +35,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\GatewayRelease;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -41,6 +43,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -389,8 +392,9 @@ it('selects only existing assignments without changing their status or settings'
         ->and($a->refresh()->status->value)->toBe('active')->and($b->refresh()->status->value)->toBe('failed');
 });
 
-it('allocates every app-dev Node\'s Instance bridge in the admission, before the read-only capture', function (array $scope, ?string $bridge): void {
+it('allocates every Instance host app-dev Node\'s bridge in the admission, before the read-only capture', function (array $scope, ?string $bridge): void {
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    InstancePool::give($this->node);
     // The capture records what it sees and stops the admission there; the test needs nothing after it.
     $seen = new ArrayObject;
     app()->instance(NodeDesiredConvergeInput::class, new class($seen)
@@ -413,6 +417,55 @@ it('allocates every app-dev Node\'s Instance bridge in the admission, before the
     'every role' => [[], '10.253.0.0/24'],
     'the base only' => [['base' => true], null],
 ]);
+
+it('allocates the bridge of a new app-dev Node with the Instance host opt-in and no runtime in its first converge admission', function (): void {
+    // A new Incus host: the operator's opt-in is its only signal, before any runtime or bridge health exists.
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    Node::query()->whereKey($this->node->id)->update(['settings' => ['instance_host' => true]]);
+    $seen = new ArrayObject;
+    app()->instance(NodeDesiredConvergeInput::class, new class($seen)
+    {
+        public function __construct(private ArrayObject $seen) {}
+
+        public function capture(Node $node): never
+        {
+            $this->seen['bridge'] = Node::query()->whereKey($node->id)->value('instance_bridge');
+            $this->seen['intent'] = app(InstanceHostIntent::class)->for($node);
+
+            throw new RuntimeException('capture reached');
+        }
+    });
+
+    $this->postJson($this->url, []);
+
+    expect(InstanceRuntime::query()->where('node_id', $this->node->id)->exists())->toBeFalse()
+        ->and($seen['bridge'])->toBe('10.253.0.0/24')
+        ->and($seen['intent']['cidr'])->toBe('10.253.0.0/24')
+        ->and($seen['intent']['pool'])->toBe('orbit-instances')
+        ->and($seen['intent'])->not->toHaveKey('create_pool');
+});
+
+it('releases an unused Instance bridge of an app-dev Node without the Instance pool in the admission, before the capture', function (): void {
+    // As release 2158 left the live services Node: app-dev beside other roles, no Incus, and a bridge from an earlier admission.
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+    Node::query()->whereKey($this->node->id)->update(['instance_bridge' => '10.253.4.0/24']);
+    $seen = new ArrayObject;
+    app()->instance(NodeDesiredConvergeInput::class, new class($seen)
+    {
+        public function __construct(private ArrayObject $seen) {}
+
+        public function capture(Node $node): never
+        {
+            $this->seen['bridge'] = Node::query()->whereKey($node->id)->value('instance_bridge');
+
+            throw new RuntimeException('capture reached');
+        }
+    });
+
+    $this->postJson($this->url, []);
+
+    expect($seen->getArrayCopy())->toHaveKey('bridge')->and($seen['bridge'])->toBeNull();
+});
 
 it('claims local DNS before dispatch and retains cleanup after a later machine failure or crash', function (bool $direct, bool $crash): void {
     Node::withoutEvents(fn () => $this->control->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned',

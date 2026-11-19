@@ -5,9 +5,9 @@
 # `dev_ports` and no `own_site`, so it gets no development port redirect, no own-site rules and no wake of frozen containers. It shares
 # the kernel, Incus and container side with a task container host, then installs the two shared folders and builds the image.
 # It creates no Instance.
-# The Node provides the Incus pool: ZFS, where a copy is a clone, or a directory pool on a nested proof Node, where a copy is a full copy.
+# The Node provides the Incus pool: ZFS, or btrfs on a nested proof Node; either way a copy is a clone, never a file copy.
 # A CI-only Node's converge creates it first (instance-pool-create.yml). An Instance fleet Node (`nested-app-dev`) gets Incus and a
-# directory pool first (instance-fleet-node.yml).
+# btrfs pool first (instance-fleet-node.yml).
 - name: Prepare Incus and the pool of an Instance fleet Node
   when: instances.fleet_node | default(false)
   ansible.builtin.include_tasks: instance-fleet-node.yml
@@ -26,8 +26,8 @@
   ansible.builtin.assert:
     that:
       - instance_pool_read.rc == 0
-      - (instance_pool_read.stdout | from_json).driver in ['zfs', 'dir']
-    fail_msg: "instance.host_unavailable: the Node needs the Incus storage pool {{ instances.pool }}, of driver zfs or dir"
+      - (instance_pool_read.stdout | from_json).driver in ['zfs', 'btrfs']
+    fail_msg: "instance.host_unavailable: the Node needs the Incus storage pool {{ instances.pool }}, of driver zfs or btrfs"
     quiet: true
 
 # The Gateway gives each Node a unique /24 of 10.253.0.0/16, but it does not see the bridges an operator made, such as a CI bridge.

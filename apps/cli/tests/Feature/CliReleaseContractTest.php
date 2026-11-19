@@ -411,7 +411,7 @@ describe('CLI release workflow', function (): void {
         $verification = collect($workflow['jobs']['resolve']['steps'])->firstWhere(
             'name', 'Require exact main delivery evidence',
         );
-        expect($verification['run'])->toBe('python3 bin/ci-delivery verify --sha "$COMMIT"')
+        expect($verification['run'])->toBe('python3 bin/ci-delivery verify --sha "$COMMIT" --release')
             ->and($verification['env']['COMMIT'])->toBe('${{ steps.release.outputs.commit }}')
             ->and($verification['env'])->not->toHaveKey('SOURCE_RUN_ID')
             ->and($verification)->not->toHaveKey('if')

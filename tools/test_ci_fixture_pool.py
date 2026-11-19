@@ -52,14 +52,17 @@ class FixturePoolTest(unittest.TestCase):
         self.assertEqual(['swamp/gap.py'], plan['not_run'][0]['units'])
         self.assertEqual({'swamp/a.py', 'swamp/b.py'}, set(units.planned_units(plan)))
 
-    def test_both_nodes_use_shared_labels_and_forks_use_hosted(self):
+    def test_both_nodes_use_shared_labels_and_no_job_installs_hosted_tools(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
         job = workflow['jobs']['fixtures']
-        # Pin the whole condition: a fork cannot choose labels from its own payload.
-        self.assertEqual("${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"hardimpact\",\"orbit-shard\"]') }}", job['runs-on'])
+        # Fixed labels: no event payload chooses a runner, and no pull request starts a shard.
+        self.assertEqual(['self-hosted', 'hardimpact', 'orbit-shard'], job['runs-on'])
+        outputs = workflow['jobs']['changes']['outputs']
+        for name in ('fixture_shards', 'self_hosted_shards'):
+            self.assertIn("github.event_name == 'pull_request') && '[]'", outputs[name])
         for step in job['steps']:
-            if step.get('id') == 'python' or step.get('name') == 'Cache pinned fixture tools and collections' or step.get('uses', '').startswith('denoland/setup-deno@'):
-                self.assertEqual("runner.environment != 'self-hosted'", step['if'])
+            self.assertNotIn('runner.environment', step.get('if', ''))
+            self.assertNotRegex(step.get('uses', ''), r'^(denoland/setup-deno|actions/setup-python|actions/cache)@')
         self.assertEqual(4, job['timeout-minutes'])
         self.assertNotIn('max-parallel', job['strategy'])
         self.assertTrue(any(step.get('run', '').startswith('bin/ci-units run ') for step in job['steps']))
@@ -133,9 +136,9 @@ class FixturePoolTest(unittest.TestCase):
         self.assertNotIn('capacity', plan)
         selected = units.planned_units(plan)
         expected = [name for name, _ in units.units_for(fixtures[file], budget)]
-        self.assertEqual(85, len(expected))
+        self.assertEqual(90, len(expected))
         self.assertEqual(set(expected), {name for name in selected if name.split('#')[0] == file})
-        self.assertEqual(16, len(plan['shards']) + len(plan['self_hosted_shards']))
+        self.assertEqual(17, len(plan['shards']) + len(plan['self_hosted_shards']))
         costs = {name: cost for fixture in fixtures.values() for name, cost in units.units_for(fixture, budget)}
         for shard in plan['shards'] + plan['self_hosted_shards']:
             self.assertEqual(2, units.shard_workers(shard['units'], budget, fixtures))
@@ -149,9 +152,8 @@ class FixturePoolTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         plan = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, fixtures, defaults)
         file = 'swamp/tests/ansible_instance_host_updates_test.ts'
-        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
-        self.assertEqual(4, len(expected))
-        self.assertEqual(expected, {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+        self.assertEqual(4, len(list(units.units_for(fixtures[file], budget))))
+        self.assert_every_unit_placed(plan, file, budget, fixtures)
         self.assertNotIn('capacity', plan)
         self.assertEqual([], units.unplaced_units(plan))
         self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), budget['runner_shards'])
@@ -171,7 +173,7 @@ class FixturePoolTest(unittest.TestCase):
         for part in ('-' + phase if phase else '' for phase in phases):
             with self.subTest(part=part):
                 plan = units.plan([f'swamp/ansible/tasks/instance-fleet{part}.yml'], budget, fixtures, defaults)
-                self.assertEqual(85, sum(name.split('#')[0] == fleet for name in units.planned_units(plan)))
+                self.assertEqual(90, sum(name.split('#')[0] == fleet for name in units.planned_units(plan)))
 
     def test_a_host_role_change_with_the_fleet_node_part_and_the_container_fixture_fits_the_shards(self):
         # The changed paths of the btrfs pool change for the nested app-dev Node (17 files, 18 November 2026).
@@ -187,11 +189,13 @@ class FixturePoolTest(unittest.TestCase):
         planned = {name.split('#')[0] for name in units.planned_units(plan)}
         self.assertNotIn('swamp/tests/ansible_instance_fleet_test.ts', planned)
         for part in ('host_updates', 'host_runtime', 'host_browser', 'host_acl', 't3_restart'):
-            file = f'swamp/tests/ansible_instance_{part}_test.ts'
-            self.assertEqual({name for name, _ in units.units_for(fixtures[file], budget)},
-                             {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+            self.assert_every_unit_placed(plan, f'swamp/tests/ansible_instance_{part}_test.ts', budget, fixtures)
         self.assertEqual({row['file'] for row in plan.get('not_run', [])},
                          {'swamp/tests/ansible_instance_container_test.ts', 'swamp/tests/ansible_instance_host_test.ts'})
+
+    def assert_every_unit_placed(self, plan, file, budget, fixtures):
+        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
+        self.assertEqual(expected, {name for name in units.planned_units(plan) if name.split('#')[0] == file})
 
 
     def test_spare_places_shorten_lanes_without_changing_admitted_units(self):

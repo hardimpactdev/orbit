@@ -99,6 +99,19 @@ class TaskCheckFailureTest(unittest.TestCase):
                     'clean and cancels without the discard flag that a dirty copy needs.\n\n')
         self.assertCaught('docs-lint', self.check('docs-lint'), 'librarian.document_complexity', 'docs/reference/tasks.md')
 
+    def test_api_change_meets_no_stale_openapi_from_2917(self):
+        # Handoff check 2917: docs-impact read an ignored docs/openapi.json from an earlier build and called the generator
+        # stale. CI builds the API outputs first, so the task check must too.
+        self.vendor('apps/docs')
+        self.vendor('apps/gateway')
+        (self.repo / 'docs/openapi.json').write_text('{}\n')
+        self.change('apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php', 'final class UpdateNodeRequest',
+                    '/** A comment that changes no API. */\nfinal class UpdateNodeRequest')
+        _, summary, output = self.check('docs-impact')
+        self.assertIn(summary.get('docs-impact'), ('passed', 'FAILED'), output)
+        self.assertNotIn('bin/docs-openapi generator status is stale', output)
+        self.assertNotEqual((self.repo / 'docs/openapi.json').read_text(), '{}\n')
+
     def test_phpstan_from_3715(self):
         self.vendor('packages/php-sdk')
         self.change('packages/php-sdk/src/Requests/Tasks/CancelTaskRequest.php',

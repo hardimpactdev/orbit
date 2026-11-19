@@ -48,10 +48,18 @@ function fold(folder: string, path: string): string {
     return parts.join("/");
 }
 
-/** The files above the bundle that a text names: a path from the playbook folder that climbs out of it, or a local source that climbs
- * out of the bundle from its own file. */
+/** The relative modules a JavaScript or TypeScript file imports, folded from its own folder: `from "../x.ts"`, `import "./x.ts"` or
+ * `import("../x.ts")`. A path is relative to the bundle root; one that starts with `../` is above the bundle. */
+export function importNames(file: string, text: string): string[] {
+    if (!/\.(m?[jt]s|tsx?)$/.test(file)) return [];
+    const folder = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+    return [...new Set([...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["'](\.{1,2}\/[^"']+)["']/g)].map((match) => fold(folder, match[1])))];
+}
+
+/** The files above the bundle that a text names: a path from the playbook folder that climbs out of it, a local source that climbs
+ * out of the bundle from its own file, or a module a script imports from above the bundle. */
 export function outsideNames(file: string, text: string): string[] {
-    const found = new Set<string>();
+    const found = new Set<string>(importNames(file, text).filter((path) => path.startsWith("../")));
     for (const match of text.matchAll(/\bplaybook_dir\s*(?:\}\}\s*\/|(?:~|\+)\s*'\/)((?:\.\.\/)+[^"'{}\s,)\]]+)/g)) {
         const path = fold("", match[1]);
         if (path.startsWith("../")) found.add(path);

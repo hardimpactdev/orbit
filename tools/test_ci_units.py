@@ -1193,28 +1193,26 @@ class WorkflowTest(unittest.TestCase):
     def test_ordinary_matrix_budget_tools_artifacts_and_output(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
         block = source.split('  fixtures:\n', 1)[1].split('\n  self-hosted-fixtures:\n', 1)[0]
-        for text in ['needs: changes', "needs.changes.outputs.fixture_shards != '[]'", "'ubuntu-26.04' || fromJSON('[\"self-hosted\",\"hardimpact\",\"orbit-shard\"]')",
+        for text in ['needs: changes', "needs.changes.outputs.fixture_shards != '[]'", 'runs-on: [self-hosted, hardimpact, orbit-shard]',
                      'timeout-minutes: 4', 'fail-fast: false', 'shard: ${{ fromJSON(needs.changes.outputs.fixture_shards) }}',
                      'name: Fixtures (${{ matrix.shard.name }})', 'ci-unit-times-${{ matrix.shard.name }}',
-                     'bin/ci-units run', "if: steps.tools.outputs.php == 'true'", 'shape-gate-requirements.txt']:
+                     'bin/ci-units run', "if: steps.tools.outputs.php == 'true'"]:
             self.assertIn(text, block)
-        self.assertIn("github.event.pull_request.head.repo.full_name != github.repository", block)
-        self.assertIn("fixture_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.fixture_shards }}", source)
+        self.assertNotIn('pull_request', block)
+        self.assertIn("fixture_shards: ${{ (steps.reuse.outputs.reuse == 'true' || github.event_name == 'pull_request') && '[]' || steps.units.outputs.fixture_shards }}", source)
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
 
-    def test_self_hosted_shards_run_only_for_a_branch_of_this_repository(self):
+    def test_self_hosted_shards_run_only_in_the_merge_queue_run(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
         block = source.split('\n  self-hosted-fixtures:\n', 1)[1].split('\n  proof:\n', 1)[0]
-        self.assertIn("if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository "
-                      "&& needs.changes.outputs.self_hosted_shards != '[]' }}", block)
+        self.assertIn("if: ${{ github.event_name == 'merge_group' && needs.changes.outputs.self_hosted_shards != '[]' }}", block)
         for text in ('name: Self-hosted fixtures (${{ matrix.shard.name }})', 'runs-on: [self-hosted, hardimpact, orbit-shard]',
                      'timeout-minutes: 4', 'shard: ${{ fromJSON(needs.changes.outputs.self_hosted_shards) }}', 'bin/ci-units run'):
             self.assertIn(text, block)
-        self.assertIn("self_hosted_shards: ${{ steps.reuse.outputs.reuse == 'true' && '[]' || steps.units.outputs.self_hosted_shards }}", source)
+        self.assertIn("self_hosted_shards: ${{ (steps.reuse.outputs.reuse == 'true' || github.event_name == 'pull_request') && '[]' || steps.units.outputs.self_hosted_shards }}", source)
         required = source.split('\n  required:\n', 1)[1].split('\n    runs-on:', 1)[0]
         self.assertIn('self-hosted-fixtures]', required)
-        self.assertIn("SELF_HOSTED_FIXTURES: ${{ github.event_name != 'pull_request' && 'none' || "
-                      "github.event.pull_request.head.repo.full_name == github.repository && 'run' || 'fork' }}", source)
+        self.assertIn("SELF_HOSTED_FIXTURES: ${{ github.event_name == 'merge_group' && 'run' || 'none' }}", source)
         delivery = source.split('\n  delivery:\n', 1)[1].split('\n  main-required:\n', 1)[0]
         self.assertNotIn('fixtures', delivery)
 

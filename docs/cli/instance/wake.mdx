@@ -57,7 +57,7 @@ A host reboot, an out-of-memory kill or a stop by hand can leave a clone of a ne
 
 A stopped nested-fleet default does not take this path: it starts only through its deployment.
 
-When signed power routing is on (`ORBIT_EXECUTOR_POWER_ENABLED`, off by default), the wake runs through the Rust executor on the same Operation: the Gateway sends a signed order on the Node's WebSocket, tries the same order over the SSH relay when no `accepted` arrives within 150 ms, and starts a Swamp run that sends a freshly signed order through the relay when no result arrives within six seconds ([Signed power delivery](/reference/executor#signed-power-delivery)). An executor refusal or failure fails the wake; it is never shown as success. An Instance that a Python sleep froze still wakes through Python. With routing off, this command uses the Python path unchanged.
+When signed power routing is on (`ORBIT_EXECUTOR_POWER_ENABLED`, off by default), the wake runs through the Rust executor on the same Operation: the Gateway sends a signed order on the Node's WebSocket, tries the same order over the SSH relay when no `accepted` arrives within 150 ms, and starts a Swamp run that sends a freshly signed order through the relay when no result arrives within six seconds ([Signed power delivery](/reference/executor#signed-power-delivery)). An executor refusal or failure fails the wake; it is never shown as success. An Instance that a Python sleep froze still wakes through Python. With routing off, this command uses the Python path unchanged, except for an Instance that the executor froze: it still wakes through the executor ([Switching engines](/reference/executor#switching-engines)).
 
 ## How it works
 

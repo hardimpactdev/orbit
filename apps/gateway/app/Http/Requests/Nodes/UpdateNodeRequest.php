@@ -14,10 +14,10 @@ use Illuminate\Validation\ValidationException;
 use stdClass;
 use UnexpectedValueException;
 
-/** One closed object: a new name, a platform, the LAN address, reboot hold, the apps folder, nested-fleet hosting, or a CI Node's CI places; at least one. */
+/** One closed object: a new name, a platform, the LAN address, reboot hold, the apps folder, nested-fleet hosting, the Instance host opt-in, or a CI Node's CI places; at least one. */
 final class UpdateNodeRequest extends FormRequest
 {
-    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'apps', 'nested_fleet', 'ci'];
+    private const array MEMBERS = ['name', 'platform', 'lan_ip', 'reboot_hold', 'apps', 'nested_fleet', 'instance_host', 'ci'];
 
     public function authorize(): bool
     {
@@ -35,6 +35,7 @@ final class UpdateNodeRequest extends FormRequest
             'lan_ip' => ['sometimes', 'nullable', 'ipv4'],
             'reboot_hold' => ['sometimes', 'boolean:strict'],
             'nested_fleet' => ['sometimes', 'boolean:strict'],
+            'instance_host' => ['sometimes', 'boolean:strict'],
             'apps' => ['sometimes', 'nullable', 'array:path'],
             'apps.path' => ['sometimes', 'nullable', 'string'],
             'ci' => ['sometimes', 'nullable', 'array:places,proof_only'],
@@ -59,6 +60,7 @@ final class UpdateNodeRequest extends FormRequest
             ...array_intersect_key($body, array_flip(['name', 'platform', 'lan_ip', 'reboot_hold'])),
             ...($patch->hasApps ? ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]] : []),
             ...($patch->hasNestedFleet ? ['nested_fleet' => $patch->nestedFleet] : []),
+            ...($patch->hasInstanceHost ? ['instance_host' => $patch->instanceHost] : []),
             ...($patch->hasCi ? ['ci' => $patch->ci?->toArray()] : []),
         ];
     }
@@ -97,12 +99,12 @@ final class UpdateNodeRequest extends FormRequest
         return is_bool($hold) ? $hold : null;
     }
 
-    /** The apps, nested_fleet and ci members; the settings parser owns their shape and the `node.settings_*` codes. */
+    /** The apps, nested_fleet, instance_host and ci members; the settings parser owns their shape and the `node.settings_*` codes. */
     public function settings(): NodeSettingsPatch
     {
         $decoded = json_decode($this->getContent(), associative: false);
         $settings = new stdClass;
-        foreach (['apps', 'nested_fleet', 'ci'] as $member) {
+        foreach (['apps', 'nested_fleet', 'instance_host', 'ci'] as $member) {
             if ($decoded instanceof stdClass && property_exists($decoded, $member)) {
                 $settings->{$member} = $decoded->{$member};
             }
@@ -120,7 +122,7 @@ final class UpdateNodeRequest extends FormRequest
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
         if ($body === []) {
-            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, apps, nested_fleet, or ci.']]);
+            throw ValidationException::withMessages(['body' => ['The request body must contain at least one of name, platform, lan_ip, reboot_hold, apps, nested_fleet, instance_host, or ci.']]);
         }
 
         return $body;

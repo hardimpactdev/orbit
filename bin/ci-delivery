@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Selected PR checks and exact main delivery evidence."""
+"""Selected checks of a pull request or merge queue run, and exact main delivery evidence."""
 import argparse
 import json
 import os
@@ -26,12 +26,9 @@ def validate(needs):
     self_hosted = [unit for shard in json.loads(needs['changes']['outputs']['self_hosted_shards']) for unit in shard['units']]
     self_hosted_result = needs.pop('self-hosted-fixtures')['result']
     mode = os.environ['SELF_HOSTED_FIXTURES']
-    if mode == 'fork' and self_hosted:
-        sys.exit("This change selects fixtures that run only on Orbit's runners, and a fork's code never reaches them: "
-                 f"{', '.join(self_hosted)}. A maintainer must push the branch to the repository.")
     if mode == 'run' and self_hosted_result != 'success' and not (self_hosted == [] and self_hosted_result == 'skipped'):
         sys.exit(f'Required self-hosted fixtures failed: {self_hosted_result}')
-    if mode not in ('run', 'fork', 'none') or mode != 'run' and self_hosted_result != 'skipped':
+    if mode not in ('run', 'none') or mode != 'run' and self_hosted_result != 'skipped':
         sys.exit(f'Unexpected self-hosted fixture state: {mode}, {self_hosted_result}')
     selected = json.loads(needs['changes']['outputs']['jobs'])
     selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
@@ -64,8 +61,6 @@ def validate(needs):
         if eligibility and eligibility['status'] == 'completed' and eligibility['conclusion'] != 'success':
             sys.exit(f"Proof eligibility failed: {eligibility['conclusion']}")
         if proof and proof['status'] == 'completed' and proof['conclusion'] == 'skipped':
-            if os.environ.get('PROOF_BASE'):
-                sys.exit('A carried-change proof must run on the selected range.')
             # A selected proof may skip only with explicit, successful metadata evidence.
             if eligibility and eligibility['status'] == 'completed':
                 if eligibility['run_attempt'] != proof['run_attempt']:
@@ -95,8 +90,6 @@ def validate(needs):
             print(f'Waiting for required jobs: {list(pending)}', flush=True)
             time.sleep(15)
     if selected['proof-run'] and os.environ['FORK_PROOF'] == 'true':
-        if os.environ.get('PROOF_BASE'):
-            sys.exit('A maintainer must push a repository branch to prove changes carried from undelivered main.')
         pages = json.loads(subprocess.check_output([
             'timeout', '60', 'gh', 'api', '--paginate', '--slurp',
             f"repos/{os.environ['GH_REPO']}/commits/{os.environ['PROOF_SHA']}/statuses?per_page=100",
@@ -116,6 +109,7 @@ def validate(needs):
 
 WORKFLOW = '.github/workflows/ci.yml'
 DELIVERY = 'Main delivery checks'
+RELEASE = 'Gateway release inputs'
 
 
 class GitHub:
@@ -160,7 +154,7 @@ def trusted_run(run, repository, sha, workflow_id):
             and run.get('workflow_id') == workflow_id and run.get('path') == WORKFLOW)
 
 
-def delivery_evidence(github, sha, source_run_id=None):
+def delivery_evidence(github, sha, source_run_id=None, release=False):
     workflow = github.one('actions/workflows/ci.yml')
     if workflow.get('path') != WORKFLOW:
         raise ValueError('CI workflow identity is invalid')
@@ -185,6 +179,11 @@ def delivery_evidence(github, sha, source_run_id=None):
     job = jobs.get(DELIVERY)
     if not job or job.get('head_sha') != sha or job.get('status') != 'completed' or job.get('conclusion') != 'success':
         raise ValueError('Main delivery checks must complete successfully on this exact SHA; old Required checks cannot substitute')
+    # A release needs the last main job of this same run: a green one of an earlier run on the commit does not count.
+    marker = jobs.get(RELEASE)
+    if release and (not marker or marker.get('head_sha') != sha or marker.get('status') != 'completed'
+                    or marker.get('conclusion') != 'success'):
+        raise ValueError('Gateway release inputs must pass in the newest main CI run on this exact SHA')
     return run, jobs
 
 
@@ -203,12 +202,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['verify'])
     parser.add_argument('--sha', required=True)
+    parser.add_argument('--release', action='store_true', help='Also require Gateway release inputs of the same run')
     args = parser.parse_args()
     github = GitHub(os.environ['GITHUB_REPOSITORY'])
     try:
         if not re.fullmatch('[0-9a-f]{40}', args.sha):
             raise ValueError('Pass a full commit SHA')
-        run, jobs = delivery_evidence(github, args.sha, os.environ.get('SOURCE_RUN_ID'))
+        run, jobs = delivery_evidence(github, args.sha, os.environ.get('SOURCE_RUN_ID'), args.release)
         write_summary(release_summary(run, jobs))
     except (ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         write_summary(f'CI delivery verification failed: {error}')

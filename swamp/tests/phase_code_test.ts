@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { fileURLToPath } from "node:url";
-import { phaseCodeDigests } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
+import { phaseCodeDigests, roleSiblings } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { classify, named, outsideNames, phases, type Resolution, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
 import { codeTree } from "./phase_code_fixture.ts";
 
@@ -352,6 +352,10 @@ Deno.test("a release script the roles phase copies from above the bundle moves t
         await Deno.mkdir(root, { recursive: true });
         await new Deno.Command("cp", { args: ["-r", shipped, `${root}/ansible`] }).output();
         await new Deno.Command("cp", { args: ["-r", fileURLToPath(new URL("../scripts", import.meta.url)), `${root}/scripts`] }).output();
+        for (const sibling of roleSiblings.filter((path) => path.startsWith("extensions/"))) {
+            await Deno.mkdir(`${root}/${sibling.slice(0, sibling.lastIndexOf("/"))}`, { recursive: true });
+            await Deno.copyFile(fileURLToPath(new URL(`../${sibling}`, import.meta.url)), `${root}/${sibling}`);
+        }
         const shippedCode: [string, string, string] = [`${root}/ansible`, code[1], code[2]];
         assertEquals((await resolvePhases(`${root}/ansible`)).roles.outside.includes("../scripts/release-container.py"), true);
         const moving = {};
@@ -360,6 +364,30 @@ Deno.test("a release script the roles phase copies from above the bundle moves t
         await Deno.writeTextFile(`${root}/scripts/release-container.py`, "\n# changed\n", { append: true });
         const now = await phaseCodeDigests(shippedCode);
         assertEquals(phases.filter((phase) => now[phase] !== first[phase]), ["roles"]);
+        // A module that a module the roles phase imports imports in turn moves it too.
+        await Deno.writeTextFile(`${root}/extensions/behaviors/operations/instance-deploy/vp_requirements.ts`, "\n// changed\n", { append: true });
+        const later = await phaseCodeDigests(shippedCode);
+        assertEquals(phases.filter((phase) => later[phase] !== now[phase]), ["roles"]);
+    } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+// The files a converge stages beside the bundle (write.ts) are the files its phases name above it: one list serves both.
+Deno.test("the files the phases name above the shipped bundle are the staged role siblings", async () => {
+    const resolved = await resolvePhases(shipped);
+    const outside = new Set(phases.flatMap((phase) => resolved[phase].outside));
+    assertEquals([...outside].sort(), roleSiblings.map((path) => `../${path}`).sort());
+});
+
+Deno.test("a staged sibling that no phase names moves every phase digest", async () => {
+    const { tree, code } = await codeTree();
+    try {
+        await Deno.mkdir(`${tree}/scripts`);
+        await Deno.writeTextFile(`${tree}/scripts/unnamed`, "one\n");
+        const staged: [string, string, string, string] = [...code, `${tree}/scripts/unnamed`];
+        const first = await phaseCodeDigests(staged);
+        await Deno.writeTextFile(`${tree}/scripts/unnamed`, "two\n");
+        const now = await phaseCodeDigests(staged);
+        assertEquals(phases.filter((phase) => now[phase] === first[phase]), []);
     } finally { await Deno.remove(tree, { recursive: true }); }
 });
 

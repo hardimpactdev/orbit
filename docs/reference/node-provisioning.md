@@ -295,7 +295,9 @@ A proof copy on a CI-only Node is a development Instance. Its destroy and a canc
 
 A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. [proof:run](/cli/proof/run#the-run) decides which Node takes each proof copy: one copy per free place, on every Node that offers proof places. Orbit never adds `app-dev` to a CI Node to host proof copies.
 
-On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent for every app-dev Node and every CI-only Node. Its `nested` part applies on an app-dev Node with nested-fleet hosting on, or on a CI-only Node. The role runtime runs the branch for either kind. The CI Node gets no `app-dev` role for this.
+On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent for every CI-only Node and every app-dev Node that is an [Instance container host](/reference/development-containers#nodes). Its `nested` part applies on an app-dev Node with nested-fleet hosting on, or on a CI-only Node. The role runtime runs the branch for either kind. The CI Node gets no `app-dev` role for this.
+
+To add a new real Instance container host, provide its pool and set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in) before its first `app-dev` converge. An app-dev Node without the Incus pool, such as a services Node without Incus, gets no `instances` intent, no Instance bridge and no `orbit:instances-*` firewall rules.
 
 The branch prepares:
 
@@ -308,7 +310,7 @@ The Gateway records the branch on the Node, in `nodes.ci_nested_hosting`: true w
 
 So a proof copy there passes the placement rule, and its intent keeps `fleet`, so its inner fleet can be reset ([Nested fleet setting](/reference/projects#nested-fleet-setting)). Without the record, the Node takes no proof copies, and a copy there is refused with `instance.nested_fleet_host_unavailable`. The record follows the rule of the hold script record ([Proof places on a CI Node](#proof-places-on-a-ci-node)). A passed add or role converge sets it from its intent. A `node:converge` only keeps it. A failed run or a role removal clears it.
 
-The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node.
+The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node. On a Node with no container branch and no `app-prod` role, that admission instead releases an Instance bridge that no container uses.
 
 A CI-only Node gets its Incus pool `orbit-instances` from its own converge. When the pool is missing, the converge reads the Node's ZFS Incus pools and the zpool behind each one. With exactly one zpool, it creates the pool on a new dataset of that zpool: `incus storage create orbit-instances zfs source=<zpool>/orbit-instances`. With no ZFS Incus pool, or with more than one zpool to choose from, it refuses with `instance.host_unavailable` and the reason, and creates nothing. An existing pool `orbit-instances` stays as it is. An `app-dev` Node keeps the rule of [Prepare a Node](/reference/development-containers#prepare-a-node): the operator provides the pool.
 
@@ -509,7 +511,7 @@ A failure keeps an existing Node's earlier recorded identity, settings and statu
 
 ### Instance containers on an app-dev Node
 
-Every app-dev Node gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. The Node must provide the Incus storage pool `orbit-instances`. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every app-dev Node gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. The Node must provide the Incus storage pool `orbit-instances`, of the ZFS driver; any other driver refuses with `instance.host_unavailable`. The one exception is the nested fleet's `app-dev` Node: its own converge creates a btrfs pool ([Instance host in the fleet](/reference/development-containers#instance-host-in-the-fleet)). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 Each such converge also writes every Instance container's [presented machine name](/reference/development-containers#the-machine-name) into its `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts`, through the Incus file API, whether the container runs, is stopped or is frozen. Nothing restarts: the kernel hostname follows at the container's next start, and T3's label at T3's next start.
 
@@ -636,7 +638,9 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 - its code: for a `node.converge` phase, the Ansible files that phase can load (see below); for a role Operation, the whole Ansible bundle;
 - the Tool helper and the shipped Tool files that it imports: for a `node.converge`, in the `tools` and `roles` phases only.
 
-For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
+For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder.
+
+Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
 
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 

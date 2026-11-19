@@ -12,7 +12,7 @@ use stdClass;
 final readonly class NodeSettingsParser
 {
     /** @var list<string> */
-    private const array TOP_LEVEL_KEYS = ['apps', 'nested_fleet'];
+    private const array TOP_LEVEL_KEYS = ['apps', 'nested_fleet', 'instance_host'];
 
     /**
      * Only node:update sets a CI Node's `ci`; node:add takes the other members.
@@ -50,6 +50,8 @@ final readonly class NodeSettingsParser
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
             hasNestedFleet: array_key_exists('nested_fleet', $object),
             nestedFleet: $this->nestedFleet(array_key_exists('nested_fleet', $object) ? $object['nested_fleet'] : false),
+            hasInstanceHost: array_key_exists('instance_host', $object),
+            instanceHost: $this->flag('instance_host', $object),
             hasCi: array_key_exists('ci', $object),
             ci: array_key_exists('ci', $object) ? $this->nestedCi($object['ci']) : null,
         );
@@ -67,6 +69,7 @@ final readonly class NodeSettingsParser
         return new NodeSettingsData(
             apps: array_key_exists('apps', $object) ? $this->nestedApps($object['apps']) : null,
             nested_fleet: $this->nestedFleet(array_key_exists('nested_fleet', $object) ? $object['nested_fleet'] : false),
+            instance_host: $this->flag('instance_host', $object),
         );
     }
 
@@ -74,6 +77,17 @@ final readonly class NodeSettingsParser
     {
         if (! is_bool($value)) {
             $this->reject('nested_fleet must be a JSON boolean.');
+        }
+
+        return $value;
+    }
+
+    /** @param  array<array-key, mixed>  $object */
+    private function flag(string $key, array $object): bool
+    {
+        $value = $object[$key] ?? false;
+        if (! is_bool($value)) {
+            $this->reject("{$key} must be a JSON boolean.");
         }
 
         return $value;

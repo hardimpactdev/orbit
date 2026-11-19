@@ -69,6 +69,8 @@ cases = [
   "each skippable role phase is guarded by the role digests; every other role step runs as before",
   "input preparation with an empty code list writes every phase digest and skips only on an equal record",
   "the result names a phase whose digest always moves because code above the bundle cannot be read",
+  "every file the converge's roles read outside ansible/ is staged beside it and shipped",
+  "a changed release controller moves every role phase digest",
 ]
 file = "swamp/tests/node_converge_test.ts"
 cost = 4
@@ -87,7 +89,6 @@ inputs = [
   "swamp/extensions/behaviors/_lib/public_output.ts",
   "swamp/extensions/behaviors/operations/analytics/clickhouse_files.ts",
   "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
-  "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
   "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
   "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
   "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
@@ -106,6 +107,5 @@ inputs = [
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
   "swamp/tests/fixtures/node-converge-*.json",
-  "swamp/tests/phase_code_fixture.ts",
   "swamp/workflows/workflow-operation-node-converge-direct.yaml",
 ]

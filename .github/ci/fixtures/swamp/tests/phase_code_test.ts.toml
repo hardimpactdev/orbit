@@ -21,6 +21,8 @@ cases = [
   "a loop item source whose values the task lists literally joins its phase; an unbounded one makes the phase read the whole bundle",
   "a Python file may read its own source by __file__, but a path beside it makes the phase read the whole bundle",
   "a release script the roles phase copies from above the bundle moves the roles digest only",
+  "the files the phases name above the shipped bundle are the staged role siblings",
+  "a staged sibling that no phase names moves every phase digest",
   "a file named above the bundle that cannot be read gives its phase a digest that always moves, and says why",
 ]
 file = "swamp/tests/phase_code_test.ts"
