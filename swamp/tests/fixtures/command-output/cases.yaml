@@ -1,14 +1,15 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
-  # dpkg-query lists each package as `<status> <name> <version>`; only installed packages count. A package of two
-  # architectures keeps both versions, as package_facts did; a removed package that keeps its configuration counts as not installed.
+  # dpkg-query lists each package as `<status> <architecture> <name> <version>`. As apt names it, a native or `all` package
+  # is bare and a foreign one keeps `:<arch>`; every state but `not-installed` and `config-files` has an installed version.
   software-installed:
     check_read:
       commands:
+        architecture: {rc: 0, stdout: "amd64\n"}
         dpkg:
           rc: 0
-          stdout: "installed base-files 14ubuntu1\ninstalled libc6 2.42-0ubuntu3\ninstalled libc6 2.42-0ubuntu2\n\
-            config-files php8.3-fpm 8.3.6-0ubuntu0.24.04.1\nnot-installed git\n"
+          stdout: "installed amd64 base-files 14ubuntu1\ninstalled amd64 libc6 2.42-0ubuntu3\ninstalled i386 libc6 2.42-0ubuntu2\n\
+            unpacked all tzdata 2025b\nconfig-files amd64 php8.3-fpm 8.3.6-0ubuntu0.24.04.1\nnot-installed amd64 git \n"
   # The managed file check prints the JSON list of drifted indexes ("[]" when clean, as the private DNS check does).
   # A failed check or any other text repairs every file.
   managed-files-check-clean:
@@ -3084,7 +3085,9 @@ cases:
   context: software-installed
   expected:
     base-files: [14ubuntu1]
-    libc6: [2.42-0ubuntu3, 2.42-0ubuntu2]
+    libc6: [2.42-0ubuntu3]
+    libc6:i386: [2.42-0ubuntu2]
+    tzdata: [2025b]
 non_command_output:
 - file: tasks/node-role-runtime.yml
   task: Refresh the system roots
