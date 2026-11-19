@@ -12,7 +12,6 @@ parameters:
         - database/migrations
         - extensions
         - ../../tools/phpstan
-        - ../../tools/boost
     databaseMigrationsPath:
         - database/migrations
         - vendor/nckrtl/horizon-new-dawn/database/migrations
