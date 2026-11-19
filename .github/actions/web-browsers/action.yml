@@ -1,0 +1,49 @@
+name: Provide the web test browsers
+description: Install the locked Playwright browsers and their system libraries, from cached downloads when the cache has them.
+# The libraries are about 190 Ubuntu packages. A mirror that failed during their download failed the job. The packages
+# that the first install on a runner image downloads are cached for that image and Playwright version. A later run
+# installs them with apt from those files: no index refresh and no download. The job on main saves the caches, so pull
+# requests and the merge queue read them. Run after `bun install` in apps/web.
+runs:
+  using: composite
+  steps:
+    - name: Prepare browser download cache
+      id: browser-downloads
+      shell: bash
+      working-directory: apps/web
+      run: |
+        echo "playwright=$(bun --print 'require("playwright/package.json").version')" >> "$GITHUB_OUTPUT"
+        echo "image=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+        sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 /var/cache/orbit-playwright-apt
+        sudo install -d -o _apt -m 0700 /var/cache/orbit-playwright-apt/partial
+        printf 'Dir::Cache::archives "/var/cache/orbit-playwright-apt";\nAPT::Keep-Downloaded-Packages "true";\n' \
+          | sudo tee /etc/apt/apt.conf.d/99-orbit-playwright-cache >/dev/null
+    - name: Cache browsers
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: web-browsers-v3-${{ runner.os }}-${{ runner.arch }}-pw${{ steps.browser-downloads.outputs.playwright }}
+    # One entry for each runner image and Playwright version, written once: by the first run whose install downloaded
+    # the whole set. The stock action saves only after a miss and a job that passed. Raise the number at the end of
+    # the key to drop an entry.
+    - name: Cache system library packages
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: /var/cache/orbit-playwright-apt/*.deb
+        key: web-apt-v3-${{ runner.os }}-${{ runner.arch }}-pw${{ steps.browser-downloads.outputs.playwright }}-${{ steps.browser-downloads.outputs.image }}-1
+    - name: Install test browsers and system libraries
+      shell: bash
+      working-directory: apps/web
+      run: |
+        archives=/var/cache/orbit-playwright-apt
+        if compgen -G "$archives/*.deb" >/dev/null; then
+          echo "Installing the system libraries from the cached packages in $archives"
+          # apt orders the files itself. Its own archive folder is another one here, so it reads these files in place.
+          if sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install --yes --no-install-recommends \
+              -o Dir::Cache::archives=/var/cache/apt/archives "$archives"/*.deb; then
+            bunx playwright install --only-shell webkit chromium
+            exit 0
+          fi
+          echo "::warning title=Web test libraries::The cached packages did not install; using the Ubuntu mirror."
+        fi
+        bunx playwright install --with-deps --only-shell webkit chromium

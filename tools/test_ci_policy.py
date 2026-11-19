@@ -1,4 +1,5 @@
 """Required checks: every selected job, and a selected proof, gates the result."""
+import json
 import re
 import subprocess
 import unittest
@@ -128,37 +129,59 @@ class RequiredGateTest(unittest.TestCase):
         commands = [step.get('run', '') for step in steps]
         required = [
             'bun install --frozen-lockfile',
-            'bunx playwright install --with-deps --only-shell webkit chromium',
             'bun run test:unit',
             'bun run test:browser',
             'bun run build && test -s dist/index.html && test -s dist/version.json',
         ]
         indexes = [commands.index(command) for command in required]
         self.assertEqual(indexes, sorted(indexes))
+        # The browsers and their system libraries come from the shared action, between the install and the tests.
+        browsers = steps.index({'uses': './.github/actions/web-browsers'})
+        self.assertTrue(indexes[0] < browsers < indexes[1])
         publish = next(i for i, step in enumerate(steps) if step.get('id') == 'web-artifact')
         self.assertLess(indexes[-1], publish)
         for index in indexes:
             self.assertNotIn('if', steps[index])
             self.assertFalse(steps[index].get('continue-on-error', False))
 
-    def test_web_caches_downloads_without_skipping_fresh_system_library_installation(self):
+    def test_web_installs_system_libraries_from_cached_packages_without_a_mirror(self):
         import yaml
-        steps = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']['web']['steps']
-        cache = next(step for step in steps if step.get('name') == 'Cache browser downloads')
-        self.assertEqual({'~/.cache/ms-playwright', '/var/cache/orbit-playwright-apt/*.deb'},
-                         set(cache['with']['path'].splitlines()))
-        key = cache['with']['key']
-        for identity in ('runner.os', 'runner.arch', 'ubuntu-26.04',
-                         'steps.browser-downloads.outputs.playwright', 'steps.browser-downloads.outputs.image'):
-            self.assertIn(identity, key)
-        self.assertTrue(key.startswith(cache['with']['restore-keys']))
+        workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+        steps = yaml.safe_load((ROOT / '.github/actions/web-browsers/action.yml').read_text())['runs']['steps']
         setup = next(step for step in steps if step.get('id') == 'browser-downloads')
-        self.assertIn('Dir::Cache::archives', setup['run'])
+        self.assertIn('Dir::Cache::archives "/var/cache/orbit-playwright-apt"', setup['run'])
         self.assertIn('APT::Keep-Downloaded-Packages', setup['run'])
-        installer = next(step for step in steps if step.get('name') == 'Install test browsers and system libraries')
-        self.assertLess(steps.index(cache), steps.index(installer))
+        browsers = next(step for step in steps if step.get('name') == 'Cache browsers')
+        self.assertEqual(browsers['with']['path'], '~/.cache/ms-playwright')
+        self.assertIn('steps.browser-downloads.outputs.playwright', browsers['with']['key'])
+        packages = next(step for step in steps if step.get('name') == 'Cache system library packages')
+        self.assertEqual(packages['with']['path'], '/var/cache/orbit-playwright-apt/*.deb')
+        # One entry for each runner image and Playwright version, with no older set restored into it: the cached files
+        # must be exactly what one install on this image downloaded.
+        for identity in ('runner.os', 'runner.arch', 'steps.browser-downloads.outputs.playwright', 'steps.browser-downloads.outputs.image'):
+            self.assertIn(identity, packages['with']['key'])
+        self.assertNotIn('restore-keys', packages['with'])
+        self.assertNotIn('restore-keys', browsers['with'])
+        installer = steps[-1]
+        self.assertEqual(installer['name'], 'Install test browsers and system libraries')
         self.assertNotIn('if', installer)
-        self.assertFalse(installer.get('continue-on-error', False))
+        run = installer['run']
+        # Cached packages install with apt from the files, with no index refresh; then the browsers install alone.
+        offline = run.index('apt-get install --yes --no-install-recommends')
+        self.assertIn('"$archives"/*.deb', run)
+        self.assertNotIn('apt-get update', run)
+        self.assertLess(offline, run.index('bunx playwright install --only-shell webkit chromium'))
+        # Without cached packages, or when they do not install, the mirror path of before runs: the last command.
+        self.assertTrue(run.rstrip().endswith('bunx playwright install --with-deps --only-shell webkit chromium'))
+        # The Web job and the job on main run the same steps, so main saves each cache under the key the others read.
+        for job in ('web', 'web-test-caches'):
+            uses = [step for step in workflow[job]['steps'] if step.get('uses') == './.github/actions/web-browsers']
+            self.assertEqual(1, len(uses), job)
+            self.assertNotIn('playwright install', json.dumps(workflow[job]))
+        warm = workflow['web-test-caches']
+        self.assertEqual(warm['if'], "github.ref == 'refs/heads/main' && github.event_name == 'push'")
+        self.assertNotIn('needs', warm)
+        self.assertNotIn('web-test-caches', json.dumps(workflow['required']) + json.dumps(workflow['delivery']) + json.dumps(workflow['main-required']))
 
     def test_slow_jobs_are_absent_from_required_ci(self):
         caller = (ROOT / '.github/workflows/ci.yml').read_text()
