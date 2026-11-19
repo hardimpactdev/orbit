@@ -2822,7 +2822,9 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
 
-A fleet Node pool is always btrfs; no Incus layer has a `dir` pool. A pool of another driver, such as the directory pool `orbit-instances` of a Node made before the btrfs pool, refuses with `instance.host_unavailable` before anything changes. Its owner moves its containers to a btrfs pool and recreates the pool as btrfs. There is no directory fallback.
+A fleet Node pool is always btrfs; no Incus layer keeps a `dir` pool. The converge (`files/fleet-node-pool.py`) moves the directory pool of a Node made before the btrfs pool to btrfs, with no hand step. It stops each instance on the pool and records the state it had, moves every instance and custom volume to the btrfs pool `<pool>-move`, and points the profiles there.
+
+It then deletes the directory pool, creates it again as btrfs, moves everything back and returns each instance to its state. A root device loses its `size` before it reaches btrfs. Each step reads what is left, so a converge stopped part way finishes on the next run. A create is killed after 120 s, and the task runs the script once more. Any other driver refuses with `instance.host_unavailable` before anything changes.
 
 The nested proof Node `nested-app-prod` runs the same first part for its release pool `orbit-releases`, which holds its release containers. So that pool is btrfs too, and its release root devices carry no `size`. A production Node keeps `orbit-releases` on ZFS ([Production containers](/reference/production-containers)).
 

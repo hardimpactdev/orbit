@@ -36,32 +36,18 @@
   when: apt_missing | length > 0
   ansible.builtin.apt: { name: btrfs-progs, state: present, install_recommends: false, update_cache: true, cache_valid_time: 3600 }
 
-- name: Read the Incus pools
-  ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools?recursion=1"] }
-  register: fleet_node_pools
-  changed_when: false
-
-# A pool of another driver, such as a `dir` pool of an older copy, is never used and never moved here: its owner moves it by hand.
-- name: Refuse a pool of another driver
-  vars:
-    fleet_node_drivers: "{{ fleet_node_pools.stdout | from_json | selectattr('name', 'equalto', instances.pool) | map(attribute='driver') | list }}"
-  ansible.builtin.assert:
-    that: fleet_node_drivers in [[], ['btrfs']]
-    fail_msg: >-
-      instance.host_unavailable: the Incus pool {{ instances.pool }} uses the {{ fleet_node_drivers | join(", ") }} driver; a fleet Node
-      pool must be btrfs, so move its containers to a btrfs pool and recreate {{ instances.pool }} as btrfs
-    quiet: true
-
-# The first create right after the btrfs tools arrive once hung with no operation (task copy 3728, 2026-11-19); a second try worked.
-- name: Create the pool on the Node's root
-  when: fleet_node_pools.stdout | from_json | selectattr('name', 'equalto', instances.pool) | list | length == 0
-  ansible.builtin.command:
-    argv: [timeout, "120", incus, storage, create, "{{ instances.pool }}", btrfs, "source=/var/lib/incus/storage-pools/{{ instances.pool }}"]
-  register: fleet_node_create
-  until: fleet_node_create.rc == 0
+# fleet-node-pool.py creates a missing pool and moves a `dir` pool of an older copy to btrfs with every instance and volume it holds, so
+# no copy needs a hand step. A run stopped part way finishes on the next one, so a create that hangs and is killed gets one more run.
+# Any other driver refuses.
+- name: Keep the pool on btrfs
+  ansible.builtin.script:
+    cmd: "files/fleet-node-pool.py {{ instances.pool | quote }}"
+    executable: /usr/bin/python3
+  register: fleet_node_pool
+  until: fleet_node_pool is succeeded
   retries: 1
   delay: 5
-  changed_when: true
+  changed_when: fleet_node_pool.rc | default(1) == 0 and (fleet_node_pool.stdout | from_json).changed
 
 # The power helper reads this marker and keeps the fast wake off for every Instance here, as for nested-fleet Instances (ADR 0261).
 - name: Make the folder of the marker
