@@ -1,0 +1,30 @@
+---
+# After per-container Incus calls of a converge failed: `gone_failed` lists each failed call as {project, name, stderr}. A removal is
+# admitted beside a role converge (NodeWorkAdmission), and a removal or an idle sleep stops a container first, so a container listed
+# earlier in the run can be stopped or deleted before its turn. Incus is asked again for each one:
+# - a container it answers with its own not-found text for is already removed, and no failure;
+# - with `gone_not_running` (work that only a running container takes, such as a restart), a container it reports as Stopped or Frozen
+#   gets what the listing gives a container in that state: nothing now;
+# - a failed call on a container that still runs, one Incus cannot answer for, or any existing one without `gone_not_running`, fails
+#   the converge with `instance.host_unavailable` and the call's stderr.
+- name: Ask Incus again for each container whose call failed
+  ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ item.name }}?project={{ item.project }}"] }
+  loop: "{{ gone_failed }}"
+  loop_control: { label: "{{ item.project }}/{{ item.name }}" }
+  register: gone_reads
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a failed call on a container that still runs
+  ansible.builtin.assert:
+    that: >-
+      (item.rc != 0 and (item.stderr | trim) == gone_answer)
+      or (gone_not_running | default(false) and item.rc == 0 and (item.stdout | from_json).status | default('') in ['Stopped', 'Frozen'])
+    fail_msg: "instance.host_unavailable: {{ item.item.project }}/{{ item.item.name }}: {{ item.item.stderr | trim }}"
+    quiet: true
+  loop: "{{ gone_reads.results }}"
+  loop_control: { label: "{{ item.item.project }}/{{ item.item.name }}" }
+  vars:
+    # Incus's own answer for a container that does not exist; any other failed read is no proof.
+    gone_answer: >-
+      {{ 'Error: Failed to fetch instance "' ~ item.item.name ~ '" in project "' ~ item.item.project ~ '": Instance not found' }}

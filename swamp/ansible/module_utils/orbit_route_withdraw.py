@@ -5,7 +5,9 @@ Under the Node's publication lock it reads the Caddyfile, the shared PHP-FPM poo
 states of the withdrawn Route into what the Node holds, proves that nothing outside the Route changed, keeps the previous
 generation of each file it replaces, tests every candidate, then commits and reloads. Two withdrawals of different Routes on one
 Node therefore both land: the second reads what the first wrote. The merge is a port of the Swamp composition (sections.ts,
-dns.ts); swamp/tests/route_withdraw_parity_test.ts holds the two to the same result.
+dns.ts); swamp/tests/route_withdraw_parity_test.ts holds the two to the same result on the captured live state. Against a live file that
+an older Orbit or a Node converge wrote, the withdrawal goes further than the composition: it removes the Route's own site groups in
+whatever form they are, and keeps global options that it does not change as the Node holds them.
 """
 
 import grp
@@ -42,14 +44,19 @@ def _same(a, b):
     return _json(a) == _json(b)
 
 
-def merge_sections(before, after, current, family, alternatives=()):
+def merge_sections(before, after, current, family, alternatives=(), *, removable=False):
+    """`removable`: a section the step removes goes whatever its bytes (Caddy site groups, whose names say whose they are)."""
     result = dict(current)
     keys = dict.fromkeys([*before, *after, *(key for state in alternatives for key in state)])
     for key in keys:
         previous, desired, actual = before.get(key, MISSING), after.get(key, MISSING), current.get(key, MISSING)
         if _same(previous, desired) and all(_same(state.get(key, MISSING), desired) for state in alternatives):
             continue
-        if (not _same(actual, previous) and not _same(actual, desired)
+        # A removed site group is the Route's own whatever its bytes: an older Orbit, or a converge since the plan, may have written it
+        # in another form. A missing one is already withdrawn.
+        if removable and desired is MISSING:
+            pass
+        elif (not _same(actual, previous) and not _same(actual, desired)
                 and not any(_same(actual, state.get(key, MISSING)) for state in alternatives)):
             raise WithdrawFailure(f"{family}.owned_revision_conflict")
         if desired is MISSING:
@@ -78,12 +85,32 @@ def merge_caddy(before, after, current, alternatives=(), before_had_served_group
             raise WithdrawFailure("caddy.current_config_missing")
         current = original[0]
     observed = caddy_sections(current)
+    # A step that leaves the global options alone keeps them as the Node holds them: a Node converge may have rebuilt them since.
+    header = observed[0] if original[0] == desired[0] else desired[0]
     headers = [original[0], desired[0], *(caddy_sections(state)[0] for state in alternatives)]
-    if observed[0] not in headers:
+    if header == desired[0] and observed[0] not in headers:
         raise WithdrawFailure("caddy.global_revision_conflict")
-    groups = merge_sections(original[1], desired[1], observed[1], "caddy", [caddy_sections(state)[1] for state in alternatives])
+    groups = merge_sections(original[1], desired[1], observed[1], "caddy", [caddy_sections(state)[1] for state in alternatives],
+                            removable=True)
     blocks = [block for value in groups.values() for block in value]
-    return desired[0] + ("\n" + "\n".join(blocks) if blocks else "")
+    return header + ("\n" + "\n".join(blocks) if blocks else "")
+
+
+# The site groups of one scope (RouteCaddySiteSource): `<scope>`, `<scope>-dev`, `<scope>-bridge` and `<scope>-dev-bridge`.
+_SCOPE_SUFFIX = re.compile(r"-(?:dev-bridge|dev|bridge)\Z")
+
+
+def scope_family(states, live):
+    """The live groups of a withdrawn scope that no captured state names: an older Orbit rendered them under another name of the same
+    scope. A scope is withdrawn when its own group `<source> <scope>` is in a captured state and not in the last one."""
+    keys = {key for state in states for key in state}
+    withdrawn = {key for key in keys if key not in states[-1]}
+    family = set()
+    for key in live:
+        source, name = key.split("\0", 1)
+        if key not in keys and f"{source}\0{_SCOPE_SUFFIX.sub('', name)}" in withdrawn:
+            family.add(key)
+    return family
 
 
 _POOL = re.compile(r"orbit-(?:instance|workspace|app-instance)-[1-9][0-9]*(?:-[0-9a-f]{8})?")
@@ -218,6 +245,12 @@ def compose(plan, live, account=None, group=None):
         chain, content = plan["caddy"]["chain"], live["caddy"]
         for step in plan["caddy"]["steps"]:
             content = merge_caddy(chain[step["from"]], chain[step["to"]], content, chain, step["had_served_groups"])
+        if content:
+            header, groups = caddy_sections(content)
+            family = scope_family([caddy_sections(state)[1] for state in chain], groups)
+            if family:
+                blocks = [block for key, value in groups.items() if key not in family for block in value]
+                content = header + ("\n" + "\n".join(blocks) if blocks else "")
         out["caddy"] = content
     if plan.get("php"):
         for version in plan["php"]["versions"]:
@@ -274,9 +307,9 @@ def check_untouched(plan, live, composed, account=None):
     """Refuses with route.withdraw_foreign_change when a site block, PHP scope or DNS record outside the Route would change."""
     if composed["caddy"] is not None:
         chain = [caddy_sections(state) for state in plan["caddy"]["chain"]]
-        owned = _owned([groups for _, groups in chain])
         result = caddy_sections(composed["caddy"])
         read = caddy_sections(live["caddy"]) if live["caddy"] else (None, {})
+        owned = _owned([groups for _, groups in chain]) | scope_family([groups for _, groups in chain], read[1])
         for key in set(read[1]) | set(result[1]):
             if key not in owned and read[1].get(key) != result[1].get(key):
                 raise WithdrawFailure("route.withdraw_foreign_change", "Caddy site " + key.replace("\0", " "))

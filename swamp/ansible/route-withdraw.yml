@@ -55,8 +55,31 @@
             account_folders: "{{ homes | zip(scopes) | map('join', '/.orbit/certificates/') | list }}"
           changed_when: true
           when: plan.cleanup | length > 0
+      rescue:
+        # Swamp keeps no stderr of a failed command step, so the refusal of the Node transaction (its WithdrawFailure code and message)
+        # goes to failure.json, which the node workflow's `failure` step prints and the withdrawal's result carries to the Gateway.
+        - name: Write the withdrawal refusal
+          ansible.builtin.copy:
+            content: >-
+              {{ {'error_code': ansible_failed_result.error_code
+                   if ansible_failed_result.error_code | default('') is match('^[a-z_]+\.[a-z0-9_]+$') else 'route.withdraw_failed',
+                  'detail': ((ansible_failed_task.name | default('A withdrawal task')) ~ ': '
+                             ~ (ansible_failed_result.msg | default('The task failed.') | string | trim))[:1800]} | to_json }}
+            dest: "{{ run }}/failure.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          check_mode: false
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Fail with the refusal
+          ansible.builtin.fail:
+            msg: "{{ ansible_failed_result.msg | default('The withdrawal failed.') }}"
       always:
+        # After a refusal the node workflow reads failure.json first; its cleanup step removes the folder then.
         - name: Remove the run folder
+          when: ansible_failed_task is not defined
           ansible.builtin.file:
             path: "{{ run }}"
             state: absent

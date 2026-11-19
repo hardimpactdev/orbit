@@ -166,7 +166,10 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
         }
         $withdrawal = $run['withdrawal'] ?? null;
         if (is_array($withdrawal) && ($withdrawal['ready'] ?? null) === false) {
-            return ['route.withdrawal_failed', ['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed', ...$diagnostics]];
+            // The Node transaction's own refusal (orbit_route_withdraw), when a Node child printed one.
+            $refusal = is_string($withdrawal['error_code'] ?? null) ? ['withdrawal_error_code' => $withdrawal['error_code']] : [];
+
+            return ['route.withdrawal_failed', ['removed' => false, 'failed_step' => 'Withdraw the Route', 'error_code' => 'route.withdrawal_failed', ...$refusal, ...$diagnostics]];
         }
         $summary = is_array($run['summary'] ?? null) ? $run['summary'] : [];
         $first = is_array($summary['failed_steps'] ?? null) && is_string($summary['failed_steps'][0] ?? null) ? $summary['failed_steps'][0] : null;
@@ -220,7 +223,8 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
 
     /**
      * A failed container stop or deletion writes its failed task and the end of its stderr into remove.json, because Swamp keeps no stderr of
-     * a failed command step, and "Read container removal" prints the file. That line becomes the failure's recorded stderr.
+     * a failed command step, and "Read container removal" prints the file. That line becomes the failure's recorded stderr. A refused Route
+     * withdrawal carries its Node transaction's code and message in the withdrawal result instead (route-withdraw-node `failure`).
      *
      * @param  array<string,mixed>  $data
      * @param  array<string,mixed>  $result
@@ -228,11 +232,23 @@ final readonly class DevelopmentInstanceDestroyProjection implements DirectOpera
     private function failure(array $data, array $result, Operation $operation): mixed
     {
         $native = $data['failure'] ?? null;
-        $file = $this->phaseFile(is_array($data['result'] ?? null) ? $data['result'] : [], $result['failed_step'] ?? null);
+        $run = is_array($data['result'] ?? null) ? $data['result'] : [];
+        $file = $this->phaseFile($run, $result['failed_step'] ?? null);
+        $withdrawal = $run['withdrawal'] ?? null;
+        if (($result['failed_step'] ?? null) === 'Withdraw the Route' && is_array($withdrawal) && is_string($withdrawal['error_code'] ?? null)) {
+            $detail = is_string($withdrawal['detail'] ?? null) ? trim($withdrawal['detail']) : '';
+            $file = ['detail' => $withdrawal['error_code'].($detail === '' ? '' : ': '.$detail)];
+        }
         if (! is_string($file['detail'] ?? null) || trim($file['detail']) === '') {
             return $native;
         }
-        $step = is_array($native) && is_string($native['failed_step'] ?? null) ? $native['failed_step'] : ValidatedData::string($result['failed_step']);
+        // The recorded stderr belongs to the failed step the run's events named first (DirectOperation keeps that step).
+        $observed = $operation->state['native_failure'] ?? null;
+        $step = match (true) {
+            is_array($native) && is_string($native['failed_step'] ?? null) => $native['failed_step'],
+            is_array($observed) && is_string($observed['failed_step'] ?? null) => $observed['failed_step'],
+            default => ValidatedData::string($result['failed_step']),
+        };
 
         return app(NativeStepFailure::class)->written($step, $file['detail'], $operation);
     }

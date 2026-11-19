@@ -94,6 +94,7 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/tasks/instance-folder*.yml',
         'swamp/ansible/tasks/instance-bridge-*.yml',
         'swamp/ansible/tasks/instance-container-files.yml',
+        'swamp/ansible/tasks/instance-containers-gone.yml',
         'swamp/ansible/tasks/instance-power-helper.yml',
         'swamp/ansible/tasks/instance-fleet-node.yml',
         'swamp/ansible/tasks/instance-pool-create.yml',

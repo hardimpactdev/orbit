@@ -8,6 +8,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\Power\ExecutorFence;
 use App\Domain\Instances\Power\ExecutorWake;
+use App\Domain\Nodes\NodeRoleRelocateProjection;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -49,6 +50,7 @@ final readonly class CancelOperationAction
                     ? app(DevelopmentInstanceCreateProjection::class)->recovery($operation, ValidatedData::object($container)) : null;
                 // A completion cancelled before its run keeps the clone for a retry, as a cancelled run does.
                 $recovery = $operation->kind === 'instance.complete' ? InstanceCompleteProjection::cancelledBeforeRun($operation) : $recovery;
+                NodeRoleRelocateProjection::cancelledBeforeRun($operation);
                 $this->store->change($operation, ['cancel_requested_at' => $operation->cancel_requested_at ?? now(),
                     'status' => OperationStatus::Cancelled, 'finished_at' => now(), 'error_code' => null,
                     'current_step' => null, 'failed_step' => null, 'lock_key' => null,

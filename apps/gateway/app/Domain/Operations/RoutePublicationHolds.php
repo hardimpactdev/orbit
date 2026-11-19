@@ -46,6 +46,14 @@ final class RoutePublicationHolds
     /** Kinds that render their whole publication again from the current catalog when a promotion starts them. */
     private const array RefreshedKinds = ['instance.create', 'instance.complete', 'instance.clone', 'instance.restore', 'route.create'];
 
+    /**
+     * Kinds that are no Route write but publish Caddyfiles the Gateway rendered at their admission: an Ingress move. Admission takes
+     * the Nodes through `holdRun` or refuses; the terminal state frees them, as for a Route write.
+     *
+     * @var list<string>
+     */
+    private const array RunKinds = ['node.role_relocate'];
+
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
     private const int UnconfirmedMinutes = 15;
 
@@ -127,7 +135,22 @@ final class RoutePublicationHolds
     /** Whether the terminal state of the kind has holds to free. */
     public static function tracks(string $kind): bool
     {
-        return self::applies($kind) || self::holdsPerStep($kind);
+        return self::applies($kind) || self::holdsPerStep($kind) || in_array($kind, self::RunKinds, true);
+    }
+
+    /**
+     * Takes the Nodes for the whole run of an admitted Operation of a `RunKinds` kind, in the caller's transaction. False when a Route
+     * write holds or waits for one of them: the caller refuses, and nothing waits.
+     *
+     * @param  list<int>  $nodes
+     */
+    public function holdRun(Operation $operation, array $nodes): bool
+    {
+        if (! in_array($operation->kind, self::RunKinds, true)) {
+            throw new \LogicException("Operation kind [{$operation->kind}] holds no Nodes for its run.");
+        }
+
+        return $nodes === [] || (! $this->waitingOverlaps($nodes) && $this->acquire($operation->id, $nodes));
     }
 
     /** A Route write that waits for a held Node: native workflows report `waiting` too, and those are not ours. */

@@ -5,12 +5,14 @@ declare(strict_types=1);
 use App\Domain\AppDev\ClusterRouterDnsSelection;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Process as ManagedProcess;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -40,7 +42,7 @@ function routerNames(): array
 {
     $overrides = app(ClusterRouterDnsSelection::class)->answers()['overrides'];
 
-    return array_keys(array_values($overrides)[0] ?? []);
+    return array_keys(array_first($overrides) ?? []);
 }
 
 it('names every Route of the Cluster while the real fleet is rendered', function (): void {
@@ -81,4 +83,53 @@ it('names a Route that a removal has marked retiring while the fleet before the 
 
     expect($namesBefore)->toContain('kept.create-bench.test', 'gone.create-bench.test')
         ->and($namesAfter)->toContain('kept.create-bench.test')->not->toContain('gone.create-bench.test');
+});
+
+/** A live public Process Route on the Router, which also holds the Ingress. */
+function publicProcessRoute(Node $router): Route
+{
+    $process = ManagedProcess::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $router->id, 'name' => 'sync',
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'nginx:alpine', 'ports' => ['192.168.6.20:18080:8080/tcp']],
+        'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $router->cluster_id, 'provenance' => 'explicit', 'publication' => 'public',
+        'domain' => 'sync.example.com', 'status' => 'pending']);
+    $route->customProxy()->create(['node_id' => $router->id, 'process_id' => $process->id, 'upstream' => 'http://192.168.6.20:18080']);
+    $route->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => 'cleanup']);
+
+    return $route;
+}
+
+it('lists the Router LAN answer that earlier releases gave a public Process name, so publishers withdraw it', function (): void {
+    [$router] = routerClusterWithRoutes();
+    $router->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $router->cluster_id]);
+    publicProcessRoute($router);
+
+    $retired = app(ClusterRouterDnsSelection::class)->retiredAnswers();
+    $dns = app(NativeRoutePublicationInput::class)->dns($router);
+
+    expect($retired)->not->toBe([])
+        ->and(array_column(array_values($retired), 'sync.example.com'))->each->toBe('192.168.6.20')
+        ->and(collect($retired)->flatMap(static fn (array $names): array => array_keys($names))->unique()->all())->toBe(['sync.example.com'])
+        // The published catalog never holds the retired answer; the snapshot carries it beside the catalog for the merge.
+        ->and(json_decode($dns['catalog'], true)['overrides'])->each->not->toHaveKey('sync.example.com')
+        ->and(json_decode(json_encode($dns['retired']), true))->toBe($retired);
+});
+
+it('never answers a public Process Route with the Router LAN address, because only the Ingress serves it', function (): void {
+    [$router] = routerClusterWithRoutes();
+    $router->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $router->cluster_id]);
+    $process = ManagedProcess::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $router->id, 'name' => 'sync',
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'nginx:alpine', 'ports' => ['10.44.0.7:18080:8080/tcp']],
+        'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $router->cluster_id, 'provenance' => 'explicit', 'publication' => 'public',
+        'domain' => 'sync.example.com', 'status' => 'pending']);
+    $route->customProxy()->create(['node_id' => $router->id, 'process_id' => $process->id, 'upstream' => 'http://10.44.0.7:18080']);
+    $route->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => 'cleanup']);
+
+    expect(routerNames())->toContain('kept.create-bench.test')
+        ->and(routerNames())->not->toContain('sync.example.com');
 });

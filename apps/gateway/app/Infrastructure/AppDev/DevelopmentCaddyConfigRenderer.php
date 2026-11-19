@@ -13,6 +13,9 @@ final readonly class DevelopmentCaddyConfigRenderer
 {
     public const string ORBIT_ROOT_CA_PATH = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt';
 
+    /** The system bundle that update-ca-certificates writes: the public roots and, on Orbit Nodes, the Orbit root. */
+    public const string SYSTEM_ROOTS_PATH = '/etc/ssl/certs/ca-certificates.crt';
+
     public function __construct(
         private string $gatewayOrigin = 'https://gateway.orbit',
     ) {}
@@ -231,10 +234,13 @@ final readonly class DevelopmentCaddyConfigRenderer
                 $site->proxyAddresses(),
                 static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
             );
-            $trust = ! $site->upstreamSystemRoots && ($site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps)
+            // System roots come from the bundle file, which Caddy reads on each load; Go's own pool stays cached for the process,
+            // so it would miss an Orbit root that update-ca-certificates adds after Caddy started.
+            $roots = $site->upstreamSystemRoots ? self::SYSTEM_ROOTS_PATH : $root;
+            $trust = $site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps
                 ? <<<CADDY
 
-                        tls_trusted_ca_certs {$root}
+                        tls_trusted_ca_certs {$roots}
                 CADDY
                 : '';
             $pool = count($site->proxyAddresses()) > 1

@@ -12,7 +12,9 @@ const args = [...Deno.args];
 // A script sent with `python3 -c` (instance_node_services.py) or `python3 -I -c` (instance_shape_tools.py, and instance_fleet_shrink.py,
 // whose first argument is its mode) is recorded by its name.
 // instance_fleet_runtime.py's first argument is the inner pools folder.
-const shrinkScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && ["check", "run"].includes(args[9]);
+const shrinkScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && ["check", "based"].includes(args[9]);
+// The shrink that the refresh starts as a transient unit (`systemd-run --unit orbit-fleet-shrink ... python3 -I -c <script> run ...`).
+const shrinkUnit = args[5] === "systemd-run" && args[7] === "orbit-fleet-shrink";
 const runtimeScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && args[9] === "/var/lib/incus/storage-pools";
 // The heal sent into a nested Instance host (`incus exec <name> -- python3 -I -c <script> ensure`) is recorded by its name too.
 const healScript = args[5] === "incus" && args[6] === "exec" && args[8] === "--" && args[9] === "python3" && args[10] === "-I" && args[11] === "-c"
@@ -20,6 +22,7 @@ const healScript = args[5] === "incus" && args[6] === "exec" && args[8] === "--"
 // The Instance host's code read (instance-fleet-refresh.yml) is recorded with its script by name.
 const hostCodeScript = args[5] === "sh" && args[6] === "-c" && args[7].includes("archive -o");
 const recorded = hostCodeScript ? [...args.slice(0, 7), "<host-code-read>", ...args.slice(8)]
+  : shrinkUnit ? args.map((arg, index) => args[index - 1] === "-c" ? "<instance_fleet_shrink.py>" : arg)
   : healScript ? [...args.slice(0, 12), "<incus-network-pid-heal.py>", ...args.slice(13)]
   : args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)]
   : args[5] === "python3" && args[6] === "-I" && args[7] === "-c"
@@ -101,9 +104,9 @@ if (command[0] === "systemctl" && command[1] === "stop" && command[2] === "orbit
   done();
 }
 
-// instance_fleet_shrink.py in the Instance container: `check` answers `shrink` (by default not due), `run` answers `shrinkResult` (by
-// default both parts ran) and makes the next check current; `shrinkExit` ends either with that code and no result line.
-if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c" && ["check", "run"].includes(command[4])) {
+// instance_fleet_shrink.py in the Instance container: `check` answers `shrink` (by default not due); `based` makes a `shrunk` check
+// current; `shrinkExit` ends either with that code and no result line.
+if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c" && ["check", "based"].includes(command[4])) {
   if (command[5] !== "/var/lib/orbit/fleet-shrink.json" || command[6] !== "/var/lib/incus/storage-pools") fail(`The shrink script got ${command.slice(5, 7)}`);
   if (state.shrinkExit) {
     save();
@@ -111,9 +114,25 @@ if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c" && ["
     Deno.exit(state.shrinkExit);
   }
   if (command[4] === "check") done(JSON.stringify(state.shrink ?? { due: false, reason: "current" }));
-  const result = state.shrinkResult ?? { shrink: "ran", relinked: 345, dedupe: "ran" };
-  if (result.shrink === "ran") state.shrink = { due: false, reason: "current" };
-  done(JSON.stringify(result));
+  const based = state.shrink?.reason === "shrunk";
+  if (based) state.shrink = { due: false, reason: "current" };
+  done(JSON.stringify({ based }));
+}
+// Its `run` as the unit orbit-fleet-shrink: `shrinkStartFails` refuses the start; otherwise a run whose `shrinkResult` (by default
+// both parts ran) is `ran` leaves the check `shrunk`. `shrinkRuns` keeps the unit running until a stop, which counts in `shrinkStopped`.
+if (shrinkUnit) {
+  if (state.shrinkStartFails) fail("Unit orbit-fleet-shrink.service was already loaded or has a fragment file.");
+  const run = command.slice(command.indexOf("-c") + 2);
+  if (run[0] !== "run" || run[1] !== "/var/lib/orbit/fleet-shrink.json" || run[2] !== "/var/lib/incus/storage-pools") fail(`The shrink unit got ${run}`);
+  if (state.shrinkRuns) state.shrinkUnit = "running";
+  else if ((state.shrinkResult ?? { shrink: "ran" }).shrink === "ran") state.shrink = { due: true, reason: "shrunk" };
+  done();
+}
+if (command[0] === "systemctl" && command[1] === "stop" && command[2] === "orbit-fleet-shrink.service") {
+  if (!state.shrinkUnit) fail("Failed to stop orbit-fleet-shrink.service: Unit orbit-fleet-shrink.service not loaded.", 5);
+  delete state.shrinkUnit;
+  state.shrinkStopped = (state.shrinkStopped ?? 0) + 1;
+  done();
 }
 
 // incus-network-pid-heal.py `ensure` in a nested Instance host: it places itself (its standard input) and its drop-in when they differ,

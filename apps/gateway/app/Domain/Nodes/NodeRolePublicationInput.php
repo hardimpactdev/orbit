@@ -8,9 +8,11 @@ use App\Domain\Operations\DirectOperationPrivateBindings;
 use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 
@@ -32,12 +34,17 @@ final readonly class NodeRolePublicationInput
         }
         if ($role === RoleName::Metrics) {
             $caddy = array_map(static fn ($assignment): int => $assignment->node_id, CaddySiteRoles::serving(RoleName::Gateway));
+        } elseif ($role === RoleName::Ingress && is_int($node->cluster_id)) {
+            // The Router's site trusts the Ingress by where the Ingress runs (DevelopmentSiteRepository::routerSite), so an Ingress change republishes it.
+            $caddy = [...$caddy, ...NodeRole::query()->where('cluster_id', $node->cluster_id)->where('role', RoleName::Router)->pluck('node_id')
+                ->map(static fn (mixed $id): int => StoredInteger::from($id))->all()];
         } elseif ($role === RoleName::Gateway) {
             // Reverb's site admits the Gateway address, so a Gateway transfer also republishes Reverb.
             $caddy = [...$caddy, ...array_map(static fn ($assignment): int => $assignment->node_id, CaddySiteRoles::serving(RoleName::WebSocket))];
         }
         $php = in_array($role, [RoleName::AppDev, RoleName::AppProd], true) ? [$node->id] : [];
-        $dns = in_array($role, [RoleName::Gateway, RoleName::AppDev, RoleName::Metrics, RoleName::WebSocket, RoleName::Analytics], true)
+        // Private DNS answers the Cluster's public names with its Ingress, so an Ingress change republishes it.
+        $dns = in_array($role, [RoleName::Gateway, RoleName::Ingress, RoleName::AppDev, RoleName::Metrics, RoleName::WebSocket, RoleName::Analytics], true)
             ? PrivateDnsPublicationNodes::query()->pluck('id')->all() : [];
         $ordered = static function (array $ids): array {
             $ids = array_values(array_unique($ids));

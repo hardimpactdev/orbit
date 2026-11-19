@@ -369,7 +369,9 @@ The Process must be an active Node-owned Docker Process on an active Linux Node.
 
 The Process must publish exactly one TCP listener on that selected address. A missing or ambiguous listener returns `route.upstream_unresolved` before storing intent. Orbit never rewrites published ports or falls back from a missing LAN listener to WireGuard. Add the LAN publication with `process:update` first. Loopback, wildcard, and UDP listeners are ineligible. A raw `upstream` stays private and loopback-only. Public Process IDs are numeric. Custom proxy Routes cannot change domain, scope, target, or publication after creation.
 
-The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Private DNS answers with the Ingress. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
+The selected Ingress terminates public TLS with the same ACME policy and `ingress-firewall` activation step as public app Routes. It sends HTTP directly to the resolved Process listener, keeps Host, streams without buffering, permits WebSocket upgrades, and allows one hour between upstream reads and response headers. It needs no Router hop or Router role, and installs no Caddy site or certificate on the Process Node. Set public DNS yourself; a Cloudflare proxy can front the public hostname.
+
+Private DNS answers with the Ingress's WireGuard address, also for a requester on the Router's LAN. The Router serves no site for the hostname, so the name never gets the Router LAN answer.
 
 Activation verifies the Process Node's firewall and sends an HTTP HEAD request from the Ingress to the selected listener before publishing. WireGuard uses the existing `orbit:wireguard-members` trust rule. LAN needs an active managed `orbit:` TCP allow rule for the Ingress LAN source and selected port; a rule for another port, source, or network does not qualify. Orbit refuses activation with `route.upstream_firewall_mismatch` when this rule is missing, and `route.upstream_unreachable` when the listener cannot be reached.
 
@@ -517,7 +519,9 @@ Public TLS terminates on the Ingress with a Let's Encrypt certificate that Caddy
 
 When Ingress shares a Node with the Router, with `app-prod`, or with both, one Caddy service serves the public Route and never proxies to its own public listener. When the Ingress Node runs a target of the Route, its public site serves that target directly and replaces the target's private site for that host. A Router on another Node then accepts the public certificate, because the Node's system roots include the Orbit root. Until Let's Encrypt issues the certificate, that host does not complete TLS on the Node.
 
-On an Ingress Node, only public sites bind every address. Router and workload sites stay on the WireGuard and LAN addresses, as [listener addresses](/reference/caddy-configuration#listener-addresses) describes. `ingress` and `gateway` never share a Node: `node:role:add` refuses `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node.
+An Ingress on its own Node reaches the Router with the system bundle, which Caddy reads each time it loads its configuration. The bundle holds the Orbit root that the `ingress` role installs, and the public roots, which an [Ingress relocation](#ingress-relocation) needs while the source still serves.
+
+On an Ingress Node, only public sites bind every address. Router and workload sites stay on the WireGuard and LAN addresses, as [listener addresses](/reference/caddy-configuration#listener-addresses) describes. `ingress` and `gateway` never share a Node: `node:role:add` and `node:role:relocate` refuse `ingress` on the Gateway Node, and `node:role:relocate` refuses `gateway` onto an Ingress Node.
 
 The Ingress firewall opens `orbit:ingress-http` (port 80) and `orbit:ingress-https` (port 443) only while the Cluster has at least one live public Route. When the last one leaves the public edge, the Ingress firewall step closes both rules. A new Ingress Node without a public Route has ports 80 and 443 closed to public traffic: UFW denies incoming traffic by default, and neither `orbit:ingress-http` nor `orbit:ingress-https` is present. Its only managed firewall rule is `orbit:wireguard-members`, which allows private WireGuard traffic.
 
@@ -533,11 +537,63 @@ The Gateway refuses to remove an Ingress while any Route in its Cluster has `pub
 
 ### Ingress removal
 
-`node:role:remove NODE ingress --force` is refused with reason `public_routes_attached` while any Route in the Node's Cluster has `publication=public`. Make each such Route private or remove it first. The Gateway checks this again when it claims the assignment.
+`node:role:remove NODE ingress --force` is refused with reason `public_routes_attached` while any Route in the Node's Cluster has `publication=public`. Make each such Route private or remove it first. The Gateway checks this again when it claims the assignment. To move the Ingress to another Node, relocate it instead: a [public Process Route](#public-process-hostnames) can't become private, so it would block the removal.
+
+Making a public app Route private on a Node that holds `ingress` with `router` or `app-prod` is a known limit: the intermediate build puts the Ingress site and the private site on the same address and fails with `caddy.render_failed`. Relocate the Ingress first; the private change then works on the remaining Node.
 
 The claimed assignment is `removing`, so it serves nothing. The Gateway builds the Node's Caddyfile: the public sites leave, and the Node's other sites stay on their private addresses. Then it closes `orbit:ingress-http` and `orbit:ingress-https` and reconciles service metrics. Caddy stays installed. When Ingress was the Node's last role, the Gateway reopens public SSH before it deletes the assignment.
 
 The same command removes an Ingress whose convergence failed. A failed step leaves the assignment `failed` with `failed_step=remove:STEP` and an `error_code`. Run the same command again to retry. A failure in the build uses `ingress.caddy_config_failed`, as [When a build fails](/reference/caddy-configuration#when-a-build-fails) describes. With `--offline`, the Gateway removes an unreachable Ingress on its side only and lists what stays on the Node under `retained_on_node`.
+
+### Ingress relocation
+
+`node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. It can't be the Router or run a target of a public Route, because its public site would then replace that Route's private hop before Let's Encrypt issues the certificate.
+
+When the source runs a target of a public Route, the Router must be the source too (reason `source_serves_public_route`). A separate Router would get a hop that trusts only the Orbit certificate, while the source still answers with Let's Encrypt until its removal.
+
+Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
+
+Admission checks each live [public Process Route](#public-process-hostnames) as Route activation does. The Process Node's recorded firewall must admit the target, and the Process must publish one listener on the address the target selects. Otherwise the move is refused with `route.upstream_firewall_mismatch` or `route.upstream_unresolved`, and nothing is recorded. The listener the target selects must also be the one the Route recorded. `process:update` protects the recorded listener, so a move to another listener is refused with `route.upstream_listener_changed`.
+
+The move takes the [Route publication hold](#coordinate-publication) on every Node of the Cluster at admission and keeps it until it ends. The run writes Caddyfiles that the Gateway rendered at admission, also when it gives the role back. So a Route write started during the move waits, and one that holds a Node already refuses the move with `route.publication_held`.
+
+Until private DNS switches, the run prepares the target:
+
+1. Admission moves the assignment to the target. Every later build renders the target as the Cluster's Ingress.
+2. The target sends an HTTP HEAD request to each public Process listener. A refused or timed-out connection fails the move.
+3. The target gets the Ingress role as `node:role:add --converge` gives it, without private DNS. It installs Caddy and the Orbit root.
+4. The target builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
+5. A Router on another Node gets its Caddyfile again. Its site trusts the Ingress by where the Ingress runs.
+6. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
+7. For each public app Route, the target sends an HTTPS HEAD request to the Router address its sites use. A refused connection or a bad certificate fails the move.
+8. The target must serve a valid public certificate for every public name. It asks itself over HTTPS and retries for at most 300 seconds. An answer of 500 or more fails the move.
+
+Then the run switches and cleans up:
+
+9. Private DNS is published again. A name that only the Ingress serves, such as a public Process hostname, now answers with the target.
+10. A public app Route keeps its Router answer, because its Router serves it privately.
+11. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
+12. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
+13. Public SSH reopens on the source if Ingress was its last role.
+
+Until step 12 both Nodes serve the public sites. The target's sites reach the Router over HTTPS with the system bundle, `/etc/ssl/certs/ca-certificates.crt`, which holds the Orbit root and the public roots. So the hop works while the source still answers with its Let's Encrypt certificate, and after it answers with its Orbit certificate.
+
+The grace in step 11 covers private DNS only; it does not wait for public DNS. Public DNS is yours:
+
+- Lower the TTL of each public record well before the move, or front the hostnames with a proxy that switches its origin at once.
+- Point the records at the target at the start of the run. The target answers on ports 80 and 443 from step 6.
+- Let's Encrypt issues the target's certificates only for names that public DNS points at the target. [Publish the public edge](#publish-the-public-edge) describes issuance.
+- Step 8 fails for a name that still has no valid certificate after 300 seconds.
+- Every public name counts, also one whose DNS points elsewhere on purpose.
+- A client can still hold the source's public answer after step 12. It fails until that answer expires.
+
+A failure in step 2, 3, 4, 7 or 8, before step 9 ran, gives the Ingress back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`. The source never stopped serving, and no private DNS answer names the target. The target keeps the sites it already built. Fix the cause and run the same command again. A failure from step 9 on keeps the target as the Ingress; fix the cause and run the same command with `--from=SOURCE`.
+
+A first move cancelled before its run starts also gives the Ingress back to the source before the Cluster's Nodes are freed for Route writes. A cancelled `--from` retry keeps the target.
+
+A `--from` retry never gives the Ingress back. Its earlier run may already have switched private DNS to the target, so the target stays the Ingress whatever step fails.
+
+A failure in step 12 keeps the target `active`, because it already serves every public site and private DNS names it. The result has `source_cleanup_failed: true`, and the source keeps its public sites and rules until the retry with `--from=SOURCE` removes them.
 
 ## Change an existing Route
 
@@ -746,7 +802,7 @@ It takes each with util-linux `flock` and waits at most 30 seconds for both toge
 5. Once every test passed, it keeps the previous generation of each file it replaces in `/var/lib/orbit/route-previous/`, one copy each.
 6. It reloads PHP-FPM, renames the Caddy candidate, reloads Caddy and restarts dnsmasq.
 
-The compare in step 3 covers each Caddy site block, PHP scope, DNS record and catalog entry that is not the withdrawn Route's own, and the Caddy global options. On any difference the withdrawal refuses with `route.withdraw_foreign_change` and changes nothing. A withdrawal only removes sections. A captured state that would add or edit a section that stays is refused with `route.withdraw_foreign_change` too.
+The compare in step 3 covers each Caddy site block, PHP scope, DNS record and catalog entry that is not the withdrawn Route's own, and the Caddy global options. On any difference the withdrawal refuses with `route.withdraw_foreign_change` and changes nothing. The Route's own Caddy site groups are the groups its captured states remove, and any other group of a withdrawn scope that the Node holds: `<scope>`, `<scope>-dev`, `<scope>-bridge` and `<scope>-dev-bridge` of the same Caddy source. A withdrawal only removes sections. A captured state that would add or edit a section that stays is refused with `route.withdraw_foreign_change` too.
 
 The previous generations are `Caddyfile`, `php-<version>-orbit-scopes.conf`, `orbit-records.conf` and `catalog.json`. The folder is root only, mode `0700`. It sits outside `/etc/caddy`, `pool.d` and `/etc/dnsmasq.d`, so no service reads a copy.
 
@@ -754,7 +810,9 @@ A failed test puts every written file back before any reload, and keeps no copy.
 
 Some writers take no Node lock, such as the Gateway's whole-file Caddy builds. So right before it writes a file, and again right before it renames the Caddy candidate, the withdrawal checks that the file is still as it read it. A file that changed refuses with `route.live_changed` and every file is put back; run the removal again.
 
-A revision of the Route's own sections that matches no captured state still refuses with `caddy.owned_revision_conflict`, `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A PHP scope of the Route matches when its `group` names the account's primary group by name or by gid ([route child contracts](#route-child-contracts)). A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
+The withdrawal removes the Route's own Caddy site groups whatever their bytes, and counts a missing one as withdrawn. An older Orbit may have rendered them in another form, and a Node converge does not rewrite them. Global options that no step changes stay as the Node holds them, so a converge that rebuilt them does not refuse the withdrawal.
+
+A revision of the Route's own PHP scopes or DNS records that matches no captured state still refuses with `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A PHP scope of the Route matches when its `group` names the account's primary group by name or by gid ([route child contracts](#route-child-contracts)). A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
 
 The lock files are regular files owned by root that no group or other may write; a lock that is not refuses with `route.publish_lock_invalid`. The withdrawal sets each to mode `0600`, so only root can open it. They are never replaced or removed. Closing the descriptor releases a lock, including when the process dies. No SSH round trip occurs while a lock is held.
 

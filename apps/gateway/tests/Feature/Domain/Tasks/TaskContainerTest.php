@@ -45,6 +45,7 @@ use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -1432,6 +1433,59 @@ describe('a cancel of a group that owns a copy', function (): void {
         $this->withHeader('Idempotency-Key', 'cancel-discard')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
             ->assertStatus(202)->assertJsonPath('data.kind', 'tasks.cancel');
         expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
+    });
+
+    it('is accepted over HTTP, with its destroy, while an automatic role converge waits for the copy\'s Node', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+        $this->ssh->answer = ['state' => 'clean', 'baseline' => 'recorded', 'head' => 'task-1',
+            'modified' => ['count' => 0, 'names' => []], 'untracked' => ['count' => 0, 'names' => []],
+            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
+        // Instance work holds the Node, so the release's role converge is refused and queues: new Instance work waits behind it.
+        app(OperationStore::class)->create('instance.deploy', 'instance', 99, $copy->node_id, [], 'test', null);
+        $converge = ['_converge' => ['intent' => ['release_roles_only' => true, 'automatic' => true]]];
+        expect(copyRefusal(fn () => app(NodeWorkAdmission::class)->check('node.converge', $copy->node_id, $converge)))->toBe('operation.target_busy 409')
+            ->and(copyRefusal(fn () => app(OperationStore::class)->create('instance.deploy', 'instance', 100, $copy->node_id, [], 'test', null)))
+            ->toBe('operation.target_busy 409');
+
+        $this->withHeader('Idempotency-Key', 'cancel-waiting')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
+            ->assertStatus(202)->assertJsonPath('data.kind', 'tasks.cancel');
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
+    });
+
+    it('answers HTTP 409 operation.target_busy recorded as such, and admits the copy\'s destroy at once while an automatic role converge runs on its Node', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+        $this->ssh->answer = ['state' => 'clean', 'baseline' => 'recorded', 'head' => 'task-1',
+            'modified' => ['count' => 0, 'names' => []], 'untracked' => ['count' => 0, 'names' => []],
+            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
+        $converge = Operation::query()->create(['operation_version' => 1, 'child_versions' => [], 'kind' => 'node.converge', 'target_type' => 'node', 'target_id' => $copy->node_id,
+            'node_id' => $copy->node_id, 'input' => ['_converge' => ['intent' => ['release_roles_only' => true, 'automatic' => true]]], 'state' => [], 'status' => OperationStatus::Running,
+            'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test', 'lock_key' => 'node:'.$copy->node_id]);
+
+        // A refusal of the cancel answers HTTP 409 with its own code, never gateway.unhandled, and Activity records that code.
+        $other = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1, 'triggered_by' => 'test']);
+        $this->withHeader('Idempotency-Key', 'cancel-busy')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
+            ->assertStatus(409)->assertJsonPath('error.code', 'operation.target_busy');
+        $activity = Activity::query()->where('command', 'task:cancel')->sole();
+        expect([$activity->status, $activity->error_code])->toBe(['failed', 'operation.target_busy']);
+        $other->update(['status' => OperationStatus::Cancelled, 'finished_at' => now()]);
+
+        // Release 2161's first cancel of group 5956 was refused while a release converge ran on the copy's Node. The copy's destroy is
+        // now accepted at once beside it (docs/reference/node-provisioning.md).
+        $this->withHeader('Idempotency-Key', 'cancel-converging')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
+            ->assertStatus(202)->assertJsonPath('data.kind', 'tasks.cancel');
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue()
+            ->and($converge->refresh()->status)->toBe(OperationStatus::Running);
     });
 
     it('admits no destroy when another Operation takes the group lock after the cancel\'s checks', function (): void {

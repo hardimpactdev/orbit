@@ -171,3 +171,19 @@ it('reports a release the Gateway refused, and refuses a step hold for a removal
     expect($destroy->fresh()->result)->toMatchArray(['route_hold_released' => false, 'route_hold_release_status' => 403])
         ->and(heldBy($this->node->id))->toBeNull();
 });
+
+it('records the refusal of the Node withdrawal transaction as the failure stderr, not the exit code', function (): void {
+    $destroy = ($this->running)(app(StartInstanceDestroyAction::class)->execute($this->instance, true));
+    // The failed step the event projection saw first; Swamp kept no stderr of the failed apply phase.
+    $destroy->update(['state' => [...$destroy->state, 'native_failure' => ['failed_step' => 'Read container removal',
+        'detail' => 'Command exited with code 1', 'stderr_recorded' => false]]]);
+
+    ($this->terminal)($destroy, 'failed', ['withdrawal' => ['ready' => false, 'error_code' => 'caddy.owned_revision_conflict',
+        'detail' => 'Withdraw the Route from the shared files: caddy.owned_revision_conflict']]);
+
+    $destroy = $destroy->fresh();
+    expect($destroy->error_code)->toBe('route.withdrawal_failed')
+        ->and($destroy->result)->toMatchArray(['failed_step' => 'Withdraw the Route', 'withdrawal_error_code' => 'caddy.owned_revision_conflict'])
+        ->and($destroy->state['native_failure'])->toBe(['failed_step' => 'Read container removal',
+            'detail' => 'caddy.owned_revision_conflict: Withdraw the Route from the shared files: caddy.owned_revision_conflict', 'stderr_recorded' => true]);
+});
