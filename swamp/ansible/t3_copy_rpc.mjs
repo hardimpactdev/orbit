@@ -16,7 +16,7 @@
 // private JSON on stdin. Only bounded public evidence goes to stdout. Recovery reads the original server and never sends a message.
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 
 // The shortest session that outlives one read, or one interrupt or stop and its wait for the run to end.
 const SessionTtl = "1m";
@@ -185,10 +185,11 @@ async function workspaceProject(rpc) {
     return (shell?.snapshot?.projects ?? []).find((entry) => entry.workspaceRoot === "/srv/workspace" && entry.archivedAt == null);
 }
 
-// The T3 server version the program at T3 serves, as its own `--version` states it: `t3 v0.1.7`, or the Conn Server's
-// `conn-server 0.2.0 (T3 server 0.1.10 contract, ...)`. The answering server must report it, so only that pinned program passes.
+// The server the program at T3 runs and the T3 server version it serves, as its own `--version` states it: `t3 v0.1.7`, or the
+// Conn Server's `conn-server 0.2.0 (T3 server 0.1.10 contract, ...)`. The answering server must report that version, so only that
+// pinned program passes.
 let served;
-function servedVersion() {
+function servedServer() {
     if (served !== undefined) return served;
     let text = "";
     try {
@@ -196,33 +197,52 @@ function servedVersion() {
     } catch {
         // No version: no server can match it.
     }
-    served = /^t3 v(\d+\.\d+\.\d+)$/.exec(text)?.[1] ?? /^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b/.exec(text)?.[1] ?? null;
+    const t3 = /^t3 v(\d+\.\d+\.\d+)$/.exec(text)?.[1];
+    const conn = /^conn-server \S+ \(T3 server (\d+\.\d+\.\d+) contract\b/.exec(text)?.[1];
+    served = t3 !== undefined ? { version: t3, conn: false } : conn !== undefined ? { version: conn, conn: true } : null;
     return served;
 }
 
-async function launchIdentity(environmentId, witness) {
+/**
+ * The incarnation of the server state that answers: the environment, the device and inode of the server's main store, and a
+ * witness named by the inspection's probe session, which an older state restored over it lacks. `mark` is true only at the
+ * inspection's first read: for the Conn Server it writes the witness.
+ */
+async function launchIdentity(environmentId, witness, mark = false) {
     if (typeof witness !== "string" || !/^[A-Za-z0-9:_-]{1,128}$/.test(witness)) return null;
-    const version = servedVersion();
-    if (version === null) return null;
+    const server = servedServer();
+    if (server === null) return null;
     const response = await fetch(`${origin}/.well-known/t3/environment`, { redirect: "error", signal: AbortSignal.timeout(left()) });
     if (!response.ok) return null;
     const descriptor = await response.json();
     const localEnvironmentId = readFileSync(`${userdata}/environment-id`, "utf8").trim();
-    if (!environmentId || descriptor.environmentId !== environmentId || localEnvironmentId !== environmentId || descriptor.serverVersion !== version) return null;
-    const path = `${userdata}/statev2.sqlite`;
+    if (!environmentId || descriptor.environmentId !== environmentId || localEnvironmentId !== environmentId || descriptor.serverVersion !== server.version) return null;
+    const path = `${userdata}/${server.conn ? "engine.sqlite" : "statev2.sqlite"}`;
     const { dev, ino } = statSync(path, { bigint: true });
 
-    // The stock auth API writes and revokes the probe session in this database. Its row survives revocation and restart,
-    // while an older database restored into the same inode lacks it. Read only presence, never a credential or thread data.
-    const { DatabaseSync } = await import("node:sqlite");
-    const database = new DatabaseSync(path, { readOnly: true, timeout: 1000 });
-    try {
-        if (database.prepare("SELECT 1 FROM auth_sessions WHERE session_id = ?").get(witness) === undefined) return null;
-        const current = statSync(path, { bigint: true });
-        if (current.dev !== dev || current.ino !== ino) return null;
-    } finally {
-        database.close();
+    if (server.conn) {
+        // The Conn Server deletes a revoked session from its auth.json, so the helper keeps the witness itself: an empty file named by
+        // the probe session in the server's state folder. A restored older state lacks it. It holds no secret.
+        const folder = `${userdata}/orbit-launch-witnesses`;
+        if (mark) {
+            mkdirSync(folder, { recursive: true, mode: 0o700 });
+            writeFileSync(`${folder}/${witness}`, "", { mode: 0o600, flag: "wx" });
+        } else if (!existsSync(`${folder}/${witness}`)) {
+            return null;
+        }
+    } else {
+        // The stock auth API writes and revokes the probe session in this database. Its row survives revocation and restart,
+        // while an older database restored into the same inode lacks it. Read only presence, never a credential or thread data.
+        const { DatabaseSync } = await import("node:sqlite");
+        const database = new DatabaseSync(path, { readOnly: true, timeout: 1000 });
+        try {
+            if (database.prepare("SELECT 1 FROM auth_sessions WHERE session_id = ?").get(witness) === undefined) return null;
+        } finally {
+            database.close();
+        }
     }
+    const current = statSync(path, { bigint: true });
+    if (current.dev !== dev || current.ino !== ino) return null;
     const fingerprint = createHash("sha256").update(`${environmentId}\0${dev}\0${ino}\0${witness}`).digest("hex");
     return `${witness}.${fingerprint}`;
 }
@@ -277,7 +297,7 @@ function launchModel(config, projectId, requestedProvider) {
 }
 
 async function inspectLaunch(rpc, environmentId, requestedProvider) {
-    const incarnation = await launchIdentity(environmentId, issued.sessionId);
+    const incarnation = await launchIdentity(environmentId, issued.sessionId, true);
     if (incarnation === null) return { error_code: "conn.launch_server_changed" };
     const project = await workspaceProject(rpc);
     if (typeof project?.id !== "string") return { error_code: "conn.launch_workspace_failed" };
