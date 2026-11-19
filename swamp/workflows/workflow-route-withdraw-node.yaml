@@ -101,6 +101,7 @@ jobs:
     # route-withdraw reads into its result. Nothing when apply never reached the Node transaction.
   - name: 'failure'
     labels: {role: swamp}
+    writes: true
     dependsOn:
     - {step: 'apply', condition: {type: failed}}
     task:

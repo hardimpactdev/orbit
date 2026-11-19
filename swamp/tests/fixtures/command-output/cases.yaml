@@ -3155,6 +3155,10 @@ non_command_output:
   task: Remove the certificate folders
   field: vars.caddy_folders
   reason: Prefixes admitted certificate scopes.
+- file: route-withdraw.yml
+  task: Write the withdrawal refusal
+  field: ansible.builtin.copy.content
+  reason: Selects the public error code of the orbit_route_withdraw module's failure metadata.
 - file: tasks/fleet-reboot-read.yml
   task: Keep the boot state
   field: ansible.builtin.set_fact.boot.newest_kernel
