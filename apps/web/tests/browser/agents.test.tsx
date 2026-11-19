@@ -39,6 +39,7 @@ it("shows a recorded transcript after the task Node is deleted", async () => {
         project_id: 999,
         taskable_type: null,
         tasks: [],
+        subtasks: [],
         work: null,
     };
     const session = {
