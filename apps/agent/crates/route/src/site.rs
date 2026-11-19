@@ -69,6 +69,7 @@ enum AclKind {
 struct UrlLine {
     path: String,
     url: String,
+    owner: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,13 +87,6 @@ struct Pool {
     version: String,
     user: Option<String>,
     content: BlobRef,
-}
-
-/// Whether a pool file was written, so its running unit must reload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Written {
-    Changed,
-    Unchanged,
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,18 +129,17 @@ pub fn publish_site(system: &impl System, input: &serde_json::Value) -> Result<u
     let mut pools = Vec::new();
     for pool in &input.php {
         let content = pool.content.text(system)?.replace("__ORBIT_NODE_GROUP__", &account.gid.to_string()).replace("/__ORBIT_NODE_HOME__", &account.home);
-        let written = if site.file(&pool_path(pool), content.as_bytes(), root, root, 0o644)? { Written::Changed } else { Written::Unchanged };
-        pools.push((pool, written));
+        site.file(&pool_path(pool), content.as_bytes(), root, root, 0o644)?;
+        pools.push(pool);
     }
-    for (pool, _) in &pools {
+    for pool in &pools {
         system.run(30, &pool_test(pool)).map_err(failed)?;
     }
-    for (pool, written) in &pools {
-        site.php_unit(&pool_unit(pool), *written)?;
+    for pool in &pools {
+        site.php_unit(&pool_unit(pool))?;
     }
 
     let caddy = system.group("caddy").map_err(failed)?;
-    let served = site.changes;
     for leaf in &input.leaves {
         site.leaf(leaf, &input.account, &account, caddy)?;
     }
@@ -155,12 +148,11 @@ pub fn publish_site(system: &impl System, input: &serde_json::Value) -> Result<u
             system.run(60, &strings(&["/usr/sbin/update-ca-certificates"])).map_err(failed)?;
         }
     }
+    // Caddy reloads on every publication, as the Swamp site phase did: a repeat after a crash between the move and the
+    // reload must still make the files live.
     if let Some(caddyfile) = &input.caddy {
-        let certificates_changed = site.changes > served;
-        let replaced = site.caddyfile(caddyfile.text(system)?.as_bytes(), caddy)?;
-        if replaced || certificates_changed {
-            system.run(60, &strings(&["/usr/bin/systemctl", "reload", "caddy"])).map_err(failed)?;
-        }
+        site.caddyfile(caddyfile.text(system)?.as_bytes(), caddy)?;
+        system.run(60, &strings(&["/usr/bin/systemctl", "reload", "caddy"])).map_err(failed)?;
     }
     Ok(site.changes)
 }
@@ -174,7 +166,9 @@ fn validate(input: &Input) -> Result<(), Failure> {
                 && acl.paths.iter().all(path)
                 && acl.optional_paths.iter().all(|optional| acl.paths.contains(optional))
         })
-        && input.url_lines.iter().all(|line| path(&line.path) && line.path.ends_with("/.env") && !line.url.contains(['\n', '\0']))
+        && input.url_lines.iter().all(|line| {
+            path(&line.path) && line.path.ends_with("/.env") && NAME.is_match(&line.owner) && !line.url.contains(['\n', '\0'])
+        })
         && input.links.iter().all(|link| path(&link.path) && NAME.is_match(&link.owner) && !link.target.is_empty() && !link.target.contains(['\n', '\0']))
         && input.php.iter().all(|pool| VERSION.is_match(&pool.version) && pool.user.as_ref().is_none_or(|user| NAME.is_match(user)))
         && input.leaves.iter().all(|leaf| SCOPE.is_match(&leaf.scope) && CERTIFICATE_VERSION.is_match(&leaf.version));
@@ -261,9 +255,14 @@ impl<S: System> Site<'_, S> {
     }
 
     /// `APP_URL=` in an existing `.env`: the last such line is replaced, or the line is appended. The file keeps its owner
-    /// and mode, and a missing file fails, as the former `lineinfile` did.
+    /// and mode, and a missing file fails, as the former `lineinfile` did. The `.env` may be a link, but the file it reaches
+    /// must belong to the Route's account: a link to a file of another user, such as root's, is refused.
     fn url_line(&mut self, line: &UrlLine) -> Result<(), Failure> {
         let real = fs::canonicalize(self.system.path(&line.path)).map_err(Self::failed)?;
+        let owner = self.system.account(&line.owner).map_err(Self::failed)?;
+        if fs::metadata(&real).map_err(Self::failed)?.uid() != owner.uid {
+            return Err(Self::failed(format!("{} is not the account's own file", line.path)));
+        }
         let text = fs::read_to_string(&real).map_err(Self::failed)?;
         let wanted = format!("APP_URL={}", line.url);
         let mut lines: Vec<&str> = text.lines().collect();
@@ -327,8 +326,9 @@ impl<S: System> Site<'_, S> {
         Ok(true)
     }
 
-    /// Enables the unit, starts a stopped one and reloads a running one whose pool changed. A reload keeps open requests.
-    fn php_unit(&mut self, unit: &str, written: Written) -> Result<(), Failure> {
+    /// Enables the unit, starts a stopped one and reloads a running one, every time, as the Swamp site phase did: a repeat
+    /// after a crash between the write and the reload must still load the pool. A reload keeps open requests.
+    fn php_unit(&mut self, unit: &str) -> Result<(), Failure> {
         let systemctl = |args: &[&str]| self.system.run(30, &[vec!["/usr/bin/systemctl".to_owned()], strings(args)].concat());
         if systemctl(&["is-enabled", "--quiet", unit]).is_err() {
             systemctl(&["enable", unit]).map_err(Self::failed)?;
@@ -337,7 +337,7 @@ impl<S: System> Site<'_, S> {
         if systemctl(&["is-active", "--quiet", unit]).is_err() {
             systemctl(&["start", unit]).map_err(Self::failed)?;
             self.changes += 1;
-        } else if written == Written::Changed {
+        } else {
             systemctl(&["reload", unit]).map_err(Self::failed)?;
         }
         Ok(())
@@ -363,7 +363,7 @@ impl<S: System> Site<'_, S> {
     }
 
     /// Validates the candidate as `caddy` and moves it over the live file only when content or metadata differ.
-    fn caddyfile(&mut self, content: &[u8], caddy: u32) -> Result<bool, Failure> {
+    fn caddyfile(&mut self, content: &[u8], caddy: u32) -> Result<(), Failure> {
         let live = self.system.path(CADDYFILE);
         let candidate = format!("/etc/caddy/.orbit-candidate-{}", std::process::id());
         let path = self.system.path(&candidate);
@@ -381,7 +381,7 @@ impl<S: System> Site<'_, S> {
                 fs::rename(&path, &live).map_err(Self::failed)?;
                 self.changes += 1;
             }
-            Ok(!same)
+            Ok(())
         })();
         let _ = fs::remove_file(&path);
         result
@@ -392,6 +392,8 @@ impl<S: System> Site<'_, S> {
 fn replace(dest: &Path, content: &[u8], uid: u32, gid: u32, mode: u32) -> std::io::Result<()> {
     let parent = dest.parent().unwrap_or_else(|| Path::new("/"));
     let temporary: PathBuf = parent.join(format!(".orbit-route-{}-{}", std::process::id(), dest.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned())));
+    // A temporary file a stopped run left behind under the same name goes first.
+    let _ = fs::remove_file(&temporary);
     let result = (|| {
         let mut stream = File::options().write(true).create_new(true).mode(0o600).open(&temporary)?;
         fchown(&stream, Some(uid), Some(gid))?;

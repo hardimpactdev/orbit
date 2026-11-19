@@ -58,6 +58,7 @@ it('leaves a Route that needs a part the engine does not run to Swamp', function
 })->throws(EngineUnsupported::class)->with([
     'private DNS' => ['dns', ['node_id' => 5]],
     'the Ingress edge' => ['ingress', ['node_id' => 6]],
+    'Ingress ports' => ['ingress_ports', ['node_id' => 6, 'port' => 443, 'ensure' => 'present']],
     'a LAN rule' => ['lan', ['node_id' => 3]],
     'a production .env' => ['env_files', ['node_id' => 3]],
     'awake markers' => ['awake', ['node_id' => 3]],
@@ -76,7 +77,7 @@ it('sends the Node typed access kinds that rebuild the admitted commands, and it
         ->and(array_column($input['acl'], 'kind'))->toBe(['deny_defaults', 'deny', 'passage', 'grant_defaults', 'grant'])
         ->and($input['acl'][2])->toMatchArray(['user' => null])
         ->and($input['acl'][4]['optional_paths'])->toBe(['/home/orbit/apps/shop/storage/app/public'])
-        ->and($input['url_lines'])->toBe([['path' => '/home/orbit/apps/shop/.env', 'url' => 'https://shop.orbit']])
+        ->and($input['url_lines'])->toBe([['path' => '/home/orbit/apps/shop/.env', 'url' => 'https://shop.orbit', 'owner' => 'orbit']])
         ->and($input['php'])->toBe([['version' => '8.4', 'user' => null, 'content' => ['blob' => ['content' => "[shop]\n"]]]])
         ->and($input['leaves'])->toBe([['scope' => 'app-instance-7', 'version' => '0123456789abcdef',
             'certificate' => ['blob' => ['content' => "-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n"]]]])
@@ -138,3 +139,21 @@ it('puts step content into the Node\'s content keys and leaves only its hash in 
         'leaves' => [['certificate' => ['blob' => ['sha256' => hash('sha256', 'pem')]]]]])
         ->and($bus->puts)->toBe([[3, 'site'], [3, 'pem']]);
 });
+
+it('leaves a Route to Swamp when its site order would pass the signer\'s limit', function (): void {
+    $sites = [];
+    foreach (range(1, 40) as $index) {
+        $sites[] = ['checkout' => "/home/orbit/apps/shop-with-a-long-checkout-name-{$index}", 'relative_root' => 'public', 'application' => "/home/orbit/apps/shop-{$index}"];
+    }
+    $acl = RouteWebRootCommands::access(3, ['user' => 'orbit', 'sites' => $sites], (new Instance)->forceFill(['source_is_laravel' => true]));
+
+    app(RouteEngineFlow::class)->steps(routeOperation(routePlan(['acl' => $acl])));
+})->throws(EngineUnsupported::class);
+
+it('leaves a Route to Swamp when a leaf or account is outside the executor\'s shape', function (array $overrides): void {
+    app(RouteEngineFlow::class)->steps(routeOperation(routePlan($overrides)));
+})->throws(EngineUnsupported::class)->with([
+    'a domain the executor refuses' => [['leaves' => [[...routePlan()['leaves'][0], 'domain' => 'Shop Orbit']]]],
+    'an account the executor refuses' => [['nodes' => ['3' => ['account' => 'Root!']]]],
+    'a pool without its unit' => [['php_reloads' => []]],
+]);

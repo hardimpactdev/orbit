@@ -10,6 +10,7 @@ use App\Domain\Engine\EngineDefinition;
 use App\Domain\Engine\EngineRun;
 use App\Domain\Engine\EngineUnsupported;
 use App\Domain\Engine\StepSpec;
+use App\Domain\Executor\ExecutorOrderSigner;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use LogicException;
@@ -35,6 +36,18 @@ final readonly class RouteEngineFlow implements EngineDefinition
 
     private const array Unsupported = ['lan', 'ingress', 'ingress_ports', 'dns', 'env_files', 'awake'];
 
+    /** The executor's own shape rules (orbit-executor-route), checked here first so a mismatch starts on Swamp. */
+    private const string Name = '/\A[a-z_][a-z0-9_-]{0,31}\z/D';
+
+    private const string Scope = '/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/D';
+
+    private const string Directory = '#\A/etc/caddy/orbit-certificates/[A-Za-z0-9][A-Za-z0-9._-]*/versions/[0-9a-f]{16}\z#D';
+
+    private const string Domain = '/\A(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/D';
+
+    /** Bytes a signed order adds around its input: the payload's other fields, base64 and the signature. */
+    private const int OrderOverhead = 400;
+
     public function __construct(private NativeRouteConvergenceProjection $projection, private SignDirectCertificatesAction $signer,
         private LeafCertificateSigner $root) {}
 
@@ -49,14 +62,16 @@ final readonly class RouteEngineFlow implements EngineDefinition
         $steps = $signs = $sites = [];
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             $node = ValidatedData::integer($leaf['node_id']);
+            self::csrInput($leaf);
             $steps[] = new StepSpec("csr-{$index}", $node, 'tls.ensure_csr', (string) $node, budgetMs: 60_000, resendMs: 15_000);
             $steps[] = $signs[] = new StepSpec("sign-{$index}", 0, 'certificate.sign', 'gateway', ["csr-{$index}"], budgetMs: 30_000);
         }
         $after = array_map(static fn (StepSpec $step): string => $step->name, $signs);
         foreach (ValidatedData::integerList($plan['site_nodes']) as $node) {
-            // Shapes the executor cannot take send the Route to Swamp now, before anything starts.
-            $this->siteInput($plan, $node, static fn (): string => "-----BEGIN CERTIFICATE-----\n");
-            $steps[] = $sites[] = new StepSpec("site-{$node}", $node, 'route.publish_site', (string) $node, $after, budgetMs: 240_000, resendMs: 30_000);
+            // Shapes the executor cannot take, or an order over its size, send the Route to Swamp now, before anything starts.
+            self::fits($this->siteInput($plan, $node, static fn (): string => "-----BEGIN CERTIFICATE-----\n"));
+            // The budget covers every command's own time limit: five access commands of 120 s, the pool tests, trust and Caddy.
+            $steps[] = $sites[] = new StepSpec("site-{$node}", $node, 'route.publish_site', (string) $node, $after, budgetMs: 900_000, resendMs: 30_000);
         }
         $after = array_map(static fn (StepSpec $step): string => $step->name, $sites);
         foreach (array_keys(RouteExecutionProof::objects($plan['probes'])) as $index) {
@@ -94,10 +109,14 @@ final readonly class RouteEngineFlow implements EngineDefinition
     public function finish(Operation $operation, EngineRun $run): void
     {
         $failed = $run->failed();
+        // The Gateway's signer refuses once a cancel is pending: that refusal is the cancel, not a failed signature.
+        if ($failed !== null && $operation->cancel_requested_at !== null && str_starts_with($failed->name, 'sign-')) {
+            $failed = null;
+        }
         $data = match (true) {
             $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
                 'failure' => ['failed_step' => self::chartStep($failed->name), 'stderr_recorded' => false]],
-            $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
+            $failed === null && $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
@@ -117,7 +136,35 @@ final readonly class RouteEngineFlow implements EngineDefinition
      */
     private static function csrInput(array $leaf): array
     {
-        return ['directory' => ValidatedData::string($leaf['directory']), 'domain' => ValidatedData::string($leaf['domain'])];
+        $directory = ValidatedData::string($leaf['directory']);
+        $domain = ValidatedData::string($leaf['domain']);
+        if (preg_match(self::Directory, $directory) !== 1 || preg_match(self::Domain, $domain) !== 1) {
+            throw new EngineUnsupported('A leaf outside the executor\'s shape runs on Swamp.');
+        }
+
+        return ['directory' => $directory, 'domain' => $domain];
+    }
+
+    /**
+     * Refuses a site order that would pass the signer's limit once its blobs are digests (ExecutorOrderSigner::MaxWireBytes).
+     *
+     * @param  array<array-key, mixed>  $input
+     */
+    private static function fits(array $input): void
+    {
+        $digests = static function (array $value) use (&$digests): array {
+            foreach ($value as $key => $item) {
+                if (is_array($item)) {
+                    $value[$key] = is_array($item['blob'] ?? null) ? ['blob' => ['sha256' => str_repeat('0', 64)]] : $digests($item);
+                }
+            }
+
+            return $value;
+        };
+        $json = json_encode($digests($input), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        if ((int) ceil((strlen($json) + self::OrderOverhead) / 3) * 4 > ExecutorOrderSigner::MaxWireBytes) {
+            throw new EngineUnsupported('A site order over the signer\'s limit runs on Swamp.');
+        }
     }
 
     /** @return array<string, mixed> */
@@ -145,12 +192,15 @@ final readonly class RouteEngineFlow implements EngineDefinition
             throw new EngineUnsupported("Node {$node} has no connection.");
         }
         $account = $connection['account'];
+        $named = static fn (string $name): string => preg_match(self::Name, $name) === 1 ? $name : throw new EngineUnsupported('An account outside the executor\'s shape runs on Swamp.');
+        $named($account);
         $leaves = [];
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             if (ValidatedData::integer($leaf['node_id']) !== $node) {
                 continue;
             }
-            if (ValidatedData::string($leaf['user']) !== $account || preg_match('#\Aversions/([0-9a-f]{16})\z#', ValidatedData::string($leaf['target']), $version) !== 1) {
+            if (ValidatedData::string($leaf['user']) !== $account || preg_match('#\Aversions/([0-9a-f]{16})\z#', ValidatedData::string($leaf['target']), $version) !== 1
+                || preg_match(self::Scope, ValidatedData::string($leaf['scope'])) !== 1) {
                 throw new EngineUnsupported('A leaf outside the account or version shape runs on Swamp.');
             }
             $leaves[] = ['scope' => ValidatedData::string($leaf['scope']), 'version' => $version[1], 'certificate' => ['blob' => ['content' => self::leafPem($signed($index))]]];
@@ -161,11 +211,13 @@ final readonly class RouteEngineFlow implements EngineDefinition
         return [
             'account' => $account,
             'acl' => array_map(self::access(...), $mine('acl')),
-            'url_lines' => array_map(static fn (array $row): array => ['path' => ValidatedData::string($row['path']),
+            'url_lines' => array_map(static fn (array $row): array => ['path' => str_ends_with(ValidatedData::string($row['path']), '/.env') ? ValidatedData::string($row['path'])
+                : throw new EngineUnsupported('A URL line outside a .env runs on Swamp.'),
                 'url' => str_starts_with(ValidatedData::string($row['line']), 'APP_URL=') ? substr(ValidatedData::string($row['line']), 8)
-                    : throw new EngineUnsupported('A URL line outside APP_URL runs on Swamp.')], $mine('url_lines')),
+                    : throw new EngineUnsupported('A URL line outside APP_URL runs on Swamp.'),
+                'owner' => $named(ValidatedData::string($row['owner']))], $mine('url_lines')),
             'links' => array_map(static fn (array $row): array => ['path' => ValidatedData::string($row['path']), 'target' => ValidatedData::string($row['target']),
-                'owner' => ValidatedData::string($row['owner'])], $mine('links')),
+                'owner' => $named(ValidatedData::string($row['owner']))], $mine('links')),
             'php' => self::pools($mine('php_files'), $mine('php_tests'), $mine('php_reloads')),
             'leaves' => $leaves,
             'root_certificate' => $trusted ? ['blob' => ['content' => ValidatedData::string($plan['root_certificate'])]] : null,
@@ -224,6 +276,9 @@ final readonly class RouteEngineFlow implements EngineDefinition
      */
     private static function pools(array $files, array $tests, array $reloads): array
     {
+        if (count($files) !== count($tests) || count($files) !== count($reloads)) {
+            throw new EngineUnsupported('PHP-FPM pools without one test and one unit each run on Swamp.');
+        }
         $pools = $expected = [];
         foreach ($files as $index => $file) {
             $unit = ValidatedData::string(($reloads[$index] ?? [])['unit'] ?? '');

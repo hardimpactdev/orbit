@@ -39,24 +39,38 @@ pub fn ensure_csr(system: &impl System, input: &serde_json::Value) -> Result<Str
     let directory = &input.directory;
     system.run(30, &strings(&["/usr/bin/install", "-d", "-o", "root", "-g", "caddy", "-m", "0750", directory])).map_err(failed)?;
     let key = format!("{directory}/key.pem");
-    let subject = ["-subj", "/CN=Orbit", "-addext"];
     let name = format!("subjectAltName=DNS:{}", input.domain);
     if !system.path(&key).exists() {
-        // The key is written beside its final name and moved in place, so a stopped run never leaves half a key.
-        let partial = format!("{directory}/key.pem.partial");
-        let mut argv = strings(&["/usr/bin/openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"]);
-        argv.push(partial.clone());
-        system.run(60, &argv).map_err(failed)?;
-        system.run(10, &strings(&["/usr/bin/chown", "root:caddy", &partial])).map_err(failed)?;
-        system.run(10, &strings(&["/usr/bin/chmod", "0640", &partial])).map_err(failed)?;
-        std::fs::rename(system.path(&partial), system.path(&key)).map_err(|error| failed(error.to_string()))?;
+        new_key(system, directory, &key).map_err(failed)?;
     }
-    let mut argv = strings(&["/usr/bin/openssl", "req", "-new", "-key", &key]);
-    argv.extend(strings(&subject));
-    argv.push(name);
-    let request = system.run(30, &argv).map_err(failed)?;
+    let request = match request(system, &key, &name) {
+        Ok(request) => request,
+        // A key that openssl cannot read matches no signed certificate: it is replaced once.
+        Err(_) => {
+            new_key(system, directory, &key).map_err(failed)?;
+            request(system, &key, &name).map_err(failed)?
+        }
+    };
     if !request.contains("-----BEGIN CERTIFICATE REQUEST-----") {
         return Err(failed("openssl gave no request".to_owned()));
     }
     Ok(request)
+}
+
+/// An RSA 2048 key, written beside its final name and moved in place, so a stopped run never leaves half a key.
+fn new_key(system: &impl System, directory: &str, key: &str) -> Result<(), String> {
+    let partial = format!("{directory}/key.pem.partial");
+    let mut argv = strings(&["/usr/bin/openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out"]);
+    argv.push(partial.clone());
+    system.run(60, &argv)?;
+    system.run(10, &strings(&["/usr/bin/chown", "root:caddy", &partial]))?;
+    system.run(10, &strings(&["/usr/bin/chmod", "0640", &partial]))?;
+    std::fs::rename(system.path(&partial), system.path(key)).map_err(|error| error.to_string())
+}
+
+/// A request for `key`: CN `Orbit` and the one subject name.
+fn request(system: &impl System, key: &str, name: &str) -> Result<String, String> {
+    let mut argv = strings(&["/usr/bin/openssl", "req", "-new", "-key", key, "-subj", "/CN=Orbit", "-addext"]);
+    argv.push(name.to_owned());
+    system.run(30, &argv)
 }

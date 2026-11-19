@@ -71,14 +71,17 @@ impl System for Fake {
                 fs::create_dir_all(self.path(folder)).expect("account copy folder");
                 Ok(String::new())
             }
+            [_, "req", _, _, key, ..] if fs::read_to_string(self.path(key)).is_ok_and(|text| text == "BROKEN") => Err("unreadable key".to_owned()),
             [_, "req", ..] => Ok("-----BEGIN CERTIFICATE REQUEST-----\nCSR\n-----END CERTIFICATE REQUEST-----\n".to_owned()),
             [_, "is-active", ..] if self.inactive => Err("inactive".to_owned()),
             _ => Ok(String::new()),
         }
     }
 
-    fn account(&self, _name: &str) -> Result<Account, String> {
+    /// Every account is the current user, except `intruder`, who owns nothing here.
+    fn account(&self, name: &str) -> Result<Account, String> {
         let (uid, gid) = Self::me();
+        let uid = if name == "intruder" { uid + 1 } else { uid };
         Ok(Account { uid, gid, home: "/home/orbit".to_owned() })
     }
 
@@ -141,7 +144,7 @@ fn site_input(fake: &mut Fake, caddyfile: &str) -> serde_json::Value {
             {"kind": "grant", "user": "orbit", "paths": ["/home/orbit/apps/shop/public", "/home/orbit/apps/shop/storage/app/public"],
              "optional_paths": ["/home/orbit/apps/shop/storage/app/public"]},
         ],
-        "url_lines": [{"path": "/home/orbit/apps/shop/.env", "url": "https://shop.orbit"}],
+        "url_lines": [{"path": "/home/orbit/apps/shop/.env", "url": "https://shop.orbit", "owner": "orbit"}],
         "php": [{"version": "8.4", "user": null, "content": fake.blob("[orbit]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/apps\n")}],
         "leaves": [{"scope": "app-instance-7", "version": "0123456789abcdef", "certificate": fake.blob("-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n")}],
         "root_certificate": fake.blob("-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n"),
@@ -160,7 +163,7 @@ fn site_fake() -> Fake {
 }
 
 #[test]
-fn a_site_places_every_file_and_a_repeat_changes_nothing() {
+fn a_site_places_every_file_and_a_repeat_changes_nothing_but_still_reloads() {
     let mut fake = site_fake();
     let input = site_input(&mut fake, "shop.orbit {\n}\n");
 
@@ -169,8 +172,8 @@ fn a_site_places_every_file_and_a_repeat_changes_nothing() {
 
     assert!(first > 0);
     assert_eq!(second, 0, "a repeat finds every file in place");
-    assert_eq!(fake.reloads("caddy"), 1, "Caddy reloads for the first publication only");
-    assert_eq!(fake.reloads("php8.4-fpm.service"), 1, "a running pool reloads only when its file changed");
+    assert_eq!(fake.reloads("caddy"), 2, "a repeat after a crash before the reload must still make the files live");
+    assert_eq!(fake.reloads("php8.4-fpm.service"), 2, "a running pool reloads on every publication");
     let (_, gid) = Fake::me();
     let pool = fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool");
     assert_eq!(pool, format!("[orbit]\ngroup = {gid}\nchdir = /home/orbit/apps\n"));
@@ -241,4 +244,37 @@ fn a_site_refuses_input_outside_its_shape() {
     input["url_lines"][0]["path"] = json!("/etc/shadow");
     assert_eq!(publish_site(&fake, &input).expect_err("not an .env").code, "route.input_invalid");
     assert!(fake.commands.borrow().is_empty());
+}
+
+#[test]
+fn an_env_that_reaches_another_users_file_is_refused() {
+    let mut fake = site_fake();
+    let mut input = site_input(&mut fake, "shop.orbit {\n}\n");
+    input["url_lines"][0]["owner"] = json!("intruder");
+
+    assert_eq!(publish_site(&fake, &input).expect_err("not the account's file").code, "route.publish_failed");
+    assert_eq!(fs::read_to_string(fake.path("/home/orbit/apps/shop/.env")).expect("env"), "APP_NAME=Shop\nAPP_URL=http://old\nDB=x\n");
+}
+
+#[test]
+fn a_broken_key_is_replaced_once() {
+    let fake = Fake::new();
+    fake.write(&format!("{DIRECTORY}/key.pem"), "BROKEN");
+
+    ensure_csr(&fake, &json!({"directory": DIRECTORY, "domain": "shop.orbit"})).expect("a request for a new key");
+
+    assert_eq!(fake.ran("genpkey"), 1);
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "KEY");
+}
+
+#[test]
+fn a_temporary_file_a_stopped_run_left_does_not_block_the_write() {
+    let mut fake = site_fake();
+    let pid = std::process::id();
+    fake.write(&format!("/etc/caddy/.orbit-route-{pid}-.orbit-candidate-{pid}"), "left over");
+    let input = site_input(&mut fake, "shop.orbit {\n}\n");
+
+    publish_site(&fake, &input).expect("publication");
+
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), "shop.orbit {\n}\n");
 }
