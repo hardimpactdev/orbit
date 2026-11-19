@@ -7,6 +7,7 @@ description = "Order format, caller and order checks, done records, journal and 
 
 [dependencies]
 base64 = "0.22"
+crypto_box = { version = "0.9", default-features = false, features = ["seal", "getrandom", "std"] }
 libc = "0.2"
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
 rustix = { version = "1", features = ["fs", "net", "process"] }
