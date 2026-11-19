@@ -3,7 +3,8 @@ cases = [
   "test_a_failed_idmap_metadata_restore_deletes_the_copy_and_retry_copies_the_seed_again",
   "test_a_copy_with_a_stripped_idmap_unshifts_its_rootfs_before_start",
   "test_a_stripped_idmap_on_another_pool_driver_refuses_before_start",
-  "test_a_clone_with_no_missing_idmap_never_opens_its_pool",
+  "test_a_clone_with_no_missing_idmap_reads_its_pool_only_for_the_root_device",
+  "test_the_copy_root_device_follows_the_pool_driver",
   "test_unshift_preserves_modes_links_acls_and_capabilities_and_can_repeat",
   "test_running_copy_or_an_empty_source_map_does_no_filesystem_work",
   "test_an_unreadable_rootfs_or_xattr_refuses_by_name",
@@ -129,6 +130,7 @@ inputs = [
   "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_nested_club_key.sh",
   "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/instance_root_disk.py",
   "swamp/ansible/instance_workspace_owner.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -181,7 +183,7 @@ inputs = [
   "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output" = 2
   "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry" = 2
   "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
-  "test_names_a_failed_delivery_without_its_output" = 2
+  "test_names_a_failed_delivery_without_its_output" = 1 # 2026-11-18: 0.016 s measured locally, mocked subprocesses; the whole file ran in 13.4 s
   "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices" = 2
   "test_nested_guard_admits_the_live_shape_of_the_first_nested_container" = 1 # 2026-11-16: 0.001 s measured locally
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
@@ -257,7 +259,8 @@ inputs = [
 # ID map cases: local unprivileged runs under 1 s per case; conservative CI estimates.
 "test_a_copy_with_a_stripped_idmap_unshifts_its_rootfs_before_start" = 1
 "test_a_stripped_idmap_on_another_pool_driver_refuses_before_start" = 1
-"test_a_clone_with_no_missing_idmap_never_opens_its_pool" = 1
+"test_a_clone_with_no_missing_idmap_reads_its_pool_only_for_the_root_device" = 1
+"test_the_copy_root_device_follows_the_pool_driver" = 1 # added 2026-11-18 (no root size on a btrfs pool)
 "test_unshift_preserves_modes_links_acls_and_capabilities_and_can_repeat" = 1
 "test_running_copy_or_an_empty_source_map_does_no_filesystem_work" = 1
 "test_an_unreadable_rootfs_or_xattr_refuses_by_name" = 1

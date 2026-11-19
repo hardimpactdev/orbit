@@ -5,10 +5,10 @@ import { browserTrust, fixture as rawFixture, hasAnsible } from "./_support/inst
 
 import { capture, readBoundaries, restore, stages, type Stage } from "./_support/host_image_boundary.ts";
 const boundaries = readBoundaries();
-type Kind = "dir" | "zfs" | "nested";
-const options = (kind: Kind) => ({ pool: kind === "zfs" ? "zfs" : "dir", nested: kind === "nested" });
+type Kind = "btrfs" | "zfs" | "nested";
+const options = (kind: Kind) => ({ pool: kind === "zfs" ? "zfs" : "btrfs", nested: kind === "nested" });
 async function fixture(opts: Parameters<typeof rawFixture>[0] = {}, boundary = "prepare", phases: Stage[] = ["normal", "nested", "finish"]) {
-    const kind: Kind = opts?.nested ? "nested" : opts?.pool === "dir" ? "dir" : "zfs";
+    const kind: Kind = opts?.nested ? "nested" : opts?.pool === "btrfs" ? "btrfs" : "zfs";
     const f = await rawFixture(opts);
     let run: ReturnType<typeof stages>;
     try { run = stages(f); restore(f, boundaries[`${kind}-${boundary}`]); } catch (error) { f.cleanup(); throw error; }
@@ -23,7 +23,7 @@ async function fixture(opts: Parameters<typeof rawFixture>[0] = {}, boundary = "
 }
 // Regenerate a boundary from capture(f) after the named production stage, never by editing its state by hand.
 // Every consumed successful boundary has a producer below. The original full normal command trace also remains pinned.
-for (const kind of ["dir", "zfs", "nested"] as const) {
+for (const kind of ["btrfs", "zfs", "nested"] as const) {
     for (const phase of ["system", "prepare"] as const) {
         Deno.test({
             name: `the saved ${kind} host ${phase} boundary matches the shipped tasks`,
@@ -47,7 +47,7 @@ Deno.test({
     name: "a fleet Node's profile mounts the runtime and agent folders unshifted, as its folder plans say",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture(options("dir"), "system", ["prepare"]);
+        const f = await fixture(options("btrfs"), "system", ["prepare"]);
         try {
             unshifted(f);
             const result = await f.run(); assert(result.ok, result.output);
@@ -63,13 +63,13 @@ Deno.test({
     name: "an unshifted agent folder opens its programs to everyone; an idmapped one keeps them to gid 2750",
     ignore: !hasAnsible,
     async fn() {
-        const f = await rawFixture(options("dir"));
+        const f = await rawFixture(options("btrfs"));
         try {
             unshifted(f);
             const result = await stages(f)("system"); assert(result.ok, result.output);
             const agent = `opt/orbit-agent/${f.instances.folders.agent.version}/agent`;
             const opened = capture(f).entries;
-            const kept = boundaries["dir-system"].entries;
+            const kept = boundaries["btrfs-system"].entries;
             const programs = Object.keys(opened).filter((path) => path === agent || path.startsWith(`${agent}/`));
             assert(programs.length > 1, Object.keys(opened).join("\n"));
             // An isolated container reads them as nobody's, so the bits for others must open each directory and file, and run each program.
@@ -150,10 +150,10 @@ Deno.test({
 });
 
 Deno.test({
-    name: "a directory pool skips the clone probe: a copy there is a full copy",
+    name: "a btrfs pool skips the ZFS clone probe",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir" }, "system", ["prepare"]);
+        const f = await fixture({ pool: "btrfs" }, "system", ["prepare"]);
         try {
             const result = await f.run();
             assert(result.ok, result.output);
@@ -200,7 +200,7 @@ Deno.test({
     name: "the image names the trust module in agent's NSS store, after it checked the module's library in the build container",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir" });
+        const f = await fixture({ pool: "btrfs" });
         try {
             const result = await f.run();
             assert(result.ok, result.output);
@@ -245,7 +245,7 @@ for (const [held, shown] of [["0.25.5-3", "0.25.5-3"], [null, "not installed"]] 
     });
 }
 
-for (const [pool, temporary] of [["dir", "orbit-instance-build"], ["zfs", "orbit-clone-probe-copy"]]) {
+for (const [pool, temporary] of [["btrfs", "orbit-instance-build"], ["zfs", "orbit-clone-probe-copy"]]) {
     Deno.test({
         name: `${temporary} refuses an inherited unguarded profile NIC before starting`,
         ignore: !hasAnsible,
@@ -352,7 +352,7 @@ Deno.test({
         "a prior prepared-image builder is refused by exact name and recipe without deletion",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir" });
+        const f = await fixture({ pool: "btrfs" });
         try {
             const state = f.state();
             const instances = [{
@@ -387,7 +387,7 @@ Deno.test({
     name: "a Node without the nested-fleet switch runs the exact command lines of the normal image",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir" });
+        const f = await fixture({ pool: "btrfs" });
         try {
             const result = await f.run();
             assert(result.ok, result.output);
@@ -407,7 +407,7 @@ Deno.test({
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
             assertEquals(f.state().images.flatMap((image: {project: string; aliases: {name: string}[]}) =>
                 image.aliases.map((alias) => `${image.project}/${alias.name}`)).filter((name: string) => name.includes("orbit-instance-nested")), []);
-            assertEquals(capture(f), boundaries["dir-finish"]);
+            assertEquals(capture(f), boundaries["btrfs-finish"]);
         } finally {
             f.cleanup();
         }
@@ -421,7 +421,7 @@ Deno.test({
     name: "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir", nested: true }, "normal", ["nested", "finish"]);
+        const f = await fixture({ pool: "btrfs", nested: true }, "normal", ["nested", "finish"]);
         try {
             const result = await f.run();
             assert(result.ok, result.output);
@@ -508,7 +508,7 @@ for (const [failure, task, repair, breakIt] of nestedFailures) {
         name: `${failure} fails only the nested-fleet image: the role succeeds and records the failed task`,
         ignore: !hasAnsible,
         async fn() {
-            const f = await fixture({ pool: "dir", nested: true }, "normal", ["nested", "finish"]);
+            const f = await fixture({ pool: "btrfs", nested: true }, "normal", ["nested", "finish"]);
             try {
                 breakIt(f);
                 const result = await f.run();
@@ -550,7 +550,7 @@ Deno.test({
     name: "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir", nested: true });
+        const f = await fixture({ pool: "btrfs", nested: true });
         try {
             const state = f.state();
             state.sudo_paths_by_project = { "orbit-instances": "user:ubuntu" };
@@ -571,7 +571,7 @@ Deno.test({
     name: "a hosting intent without the nested-fleet image builds only the normal image",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({ pool: "dir", nested: true });
+        const f = await fixture({ pool: "btrfs", nested: true });
         try {
             f.write({ ...f.instances, nested: { project: f.instances.nested!.project } });
             const result = await f.run();

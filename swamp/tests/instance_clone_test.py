@@ -23,6 +23,7 @@ SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
 NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 NODE_SERVICES = SCRIPT.parents[1] / "ansible/instance_node_services.py"
 MACHINE_NAME = SCRIPT.parents[1] / "ansible/instance_machine_name.py"
+ROOT_DISK = SCRIPT.parents[1] / "ansible/instance_root_disk.py"
 # The copy's presented machine name (InstanceMachineName); the `127.0.1.1` line of its hosts file names it after the clone's pass.
 HOSTNAME = "feature.tool"
 NAMED_LINE = "127.0.1.1\tfeature.tool feature instance-7"
@@ -195,7 +196,7 @@ class IdmapTest(unittest.TestCase):
         exec(compile(module, str(SCRIPT), "exec"), namespace)
         return namespace["unshift_clone_rootfs"]
 
-    def run_helper(self, root, source=None, own=None, status="Stopped", driver="dir"):
+    def run_helper(self, root, source=None, own=None, status="Stopped", driver="btrfs"):
         container = {"name": "instance-7", "project": "orbit-instances", "root_disk_pool": "orbit-instances",
                      "clone": {"source": "instance-1"}}
         calls = []
@@ -482,7 +483,7 @@ class CloneTest(unittest.TestCase):
                     return subprocess.CompletedProcess(argv, 0 if acl else 1, json.dumps(acl) if acl else "", "" if acl else "Error: Network ACL not found")
                 if argv[:2] == ["incus", "query"]:
                     if argv[2].startswith("/1.0/storage-pools/"):
-                        output = json.dumps({"driver": container.get("fixture_pool_driver", "dir"), "config": {"source": folder}})
+                        output = json.dumps({"driver": container.get("fixture_pool_driver", "zfs"), "config": {"source": folder}})
                     elif argv[2] == "/1.0/instances/instance-1?project=orbit-instances":
                         output = json.dumps({"config": {"volatile.last_state.idmap": json.dumps(container.get("fixture_source_idmap", []))}})
                     elif "snapshots?" in argv[2]:
@@ -532,7 +533,7 @@ class CloneTest(unittest.TestCase):
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
                         json.dumps({"node_services": node_service_code or 'print(\'{"status":"unchanged"}\')', "mail": mail_code or 'print(\'{"status":"unchanged"}\')',
-                                    "machine_name": MACHINE_NAME.read_text()}),
+                                    "machine_name": MACHINE_NAME.read_text(), "root_disk": ROOT_DISK.read_text()}),
                         "container",
                     ],
                 ),
@@ -572,7 +573,7 @@ class CloneTest(unittest.TestCase):
 
         with patch("os.lstat", shifted), patch("os.lchown", side_effect=lambda p, u, g: touched.append((str(p), u, g))):
             calls, _, error = self.clone(rootfs={"etc/hostname": "default"},
-                                        overrides={"fixture_source_idmap": IdmapTest.MAP}, before_start=starting)
+                                        overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": "btrfs"}, before_start=starting)
         self.assertEqual(error, "")
         pool = next(i for i, call in enumerate(calls) if call[:2] == ["incus", "query"] and "/storage-pools/" in call[2])
         start = next(i for i, call in enumerate(calls) if call[3:4] == ["start"])
@@ -626,7 +627,7 @@ class CloneTest(unittest.TestCase):
                     self.assertEqual(struct.unpack_from("<I", attrs[str(path)], 20)[0], 0)
 
                 with patch("os.lstat", lstat), patch("os.lchown", chown), patch("os.chmod", chmod), patch("os.getxattr", getxattr), patch("os.setxattr", setxattr):
-                    calls, read, error = self.clone(rootfs={"program": "seed program"}, overrides={"fixture_source_idmap": IdmapTest.MAP})
+                    calls, read, error = self.clone(rootfs={"program": "seed program"}, overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": "btrfs"})
                     self.assertEqual(error, "instance.clone_idmap_unshift_failed\n")
                     self.assertEqual(len(chowns), 1, "Fail after ownership changed and privileged metadata was lost")
                     self.assertIn(["incus", "--project", "orbit-instances", "delete", "instance-7", "--force"], calls)
@@ -634,24 +635,37 @@ class CloneTest(unittest.TestCase):
                     self.assertFalse(any(call[3:4] == ["start"] for call in calls))
                     fail = False
                     retried, _, error = self.clone(existing=read, rootfs={"program": "seed program"},
-                                                   overrides={"fixture_source_idmap": IdmapTest.MAP}, before_start=starting)
+                                                   overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": "btrfs"}, before_start=starting)
                     self.assertEqual(error, "")
                     self.assertTrue(any(call[3:6] == ["copy", "instance-1/seed-abc", "instance-7"] for call in retried))
                     self.assertEqual(len(chowns), 2)
 
     def test_a_stripped_idmap_on_another_pool_driver_refuses_before_start(self):
-        calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": "zfs"})
-        self.assertEqual(error, "instance.clone_idmap_unshift_unsupported\n")
-        self.assertFalse(any(call[3:4] == ["start"] for call in calls))
+        for driver in ("zfs", "dir"):
+            with self.subTest(driver=driver):
+                calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": driver})
+                self.assertEqual(error, "instance.clone_idmap_unshift_unsupported\n")
+                self.assertFalse(any(call[3:4] == ["start"] for call in calls))
 
-    def test_a_clone_with_no_missing_idmap_never_opens_its_pool(self):
+    def test_a_clone_with_no_missing_idmap_reads_its_pool_only_for_the_root_device(self):
         for source, own in (([], []), ([], IdmapTest.MAP), (IdmapTest.MAP, IdmapTest.MAP)):
             with self.subTest(source=source, own=own), patch("os.lchown") as chown:
                 calls, _, error = self.clone(overrides={"fixture_source_idmap": source},
                                             damaged=lambda read: read["config"].update({"volatile.last_state.idmap": json.dumps(own)}))
                 self.assertEqual(error, "")
                 chown.assert_not_called()
-                self.assertFalse(any(call[:2] == ["incus", "query"] and "/storage-pools/" in call[2] for call in calls))
+                # The root device's one read of its pool driver; the unshift opens no pool.
+                self.assertEqual(sum(call[:2] == ["incus", "query"] and "/storage-pools/" in call[2] for call in calls), 1)
+
+    def test_the_copy_root_device_follows_the_pool_driver(self):
+        # instance_root_disk.py: no `size` on a btrfs pool, the intent's size on every other pool.
+        for driver, size in (("btrfs", []), ("zfs", ["root,size=40GiB"])):
+            with self.subTest(driver=driver):
+                calls, _, error = self.clone(overrides={"fixture_pool_driver": driver})
+                self.assertEqual(error, "")
+                copy = next(call for call in calls if call[3:4] == ["copy"])
+                self.assertEqual([arg for arg in copy if arg.startswith("root,size=")], size)
+                self.assertIn("root,pool=" + "orbit-instances", copy)
 
     def test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy(self):
         calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "other"}]})

@@ -18,10 +18,7 @@
           '--device', 'eth0,security.acls.default.egress.action=reject',
           '--device', 'eth0,security.acls.default.ingress.action=reject']
          + (['--device'] | product(['eth0,'] | product(nic_filters.items() | map('join', '=')) | map('join')) | flatten) }}
-    resource_args: >-
-      {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
-         + ['--device', 'root,type=disk', '--device', 'root,path=/',
-            '--device', 'root,pool=' ~ container.root_disk_pool, '--device', 'root,size=' ~ container.root_disk_size] }}
+    config_args: "{{ ['--config'] | product(container.config.items() | map('join', '=')) | list | flatten }}"
     as_app: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/var/www', container.name,
           '--', 'runuser', '-u', 'www-data', '--'] }}
@@ -286,6 +283,36 @@
     fail_msg: instance.nested_fleet_image_unavailable
     quiet: true
 
+# The root device that create, clone, the grow and the start guard write and admit: instance_root_disk.py, run on the Node, is its one
+# rule (no `size` on a btrfs pool; docs/reference/development-containers.md#the-root-disk).
+- name: Read the root disk device
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start']
+  block:
+    - name: Read the root pool
+      ansible.builtin.command: { argv: [incus, query, "--", "/1.0/storage-pools/{{ container.root_disk_pool | urlencode }}"] }
+      register: root_pool_read
+      changed_when: false
+    - name: Render the root disk device
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_root_disk.py') }}"
+          - "{{ {'type': 'disk', 'path': '/', 'pool': container.root_disk_pool, 'size': container.root_disk_size} | to_json }}"
+          - "{{ (root_pool_read.stdout | from_json).driver }}"
+      register: root_disk_read
+      changed_when: false
+
+- name: Name the root disk arguments
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start']
+  ansible.builtin.set_fact:
+    root_device: "{{ root_disk_read.stdout | from_json }}"
+    resource_args: >-
+      {{ config_args + (['--device'] | product((root_disk_read.stdout | from_json).items() | map('join', '=') | map('regex_replace', '^', 'root,'))
+                        | list | flatten) }}
+
 # A new nested-fleet default holds its inner fleet on its own btrfs volume (a copy's intent has `inner_volume` too, but a copy runs the
 # native clone, never this phase)
 # (docs/reference/development-containers.md#the-inner-volume). The create makes the volume before the container; a retry reuses it,
@@ -512,16 +539,17 @@
 
 # A nested-fleet default's root disk grows to its intent's size, which a Gateway setting names: its quota also counts the seeds that its
 # copies pin. Incus sets the ZFS quota on a running container. Only a smaller `<n>GiB` grows: a failed shrink below the used space
-# leaves the dataset without a quota, so no start shrinks one (docs/reference/development-containers.md#the-root-disk).
+# leaves the dataset without a quota, so no start shrinks one (docs/reference/development-containers.md#the-root-disk). A root device
+# without a size, on a btrfs pool, never grows.
 - name: Grow the root disk to its intent
   tags: [container, clone, start]
   when: >-
     phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool and container_read.rc == 0
-    and container.allowed_devices is defined
+    and container.allowed_devices is defined and root_device.size is defined
     and (container_read.stdout | from_json).expanded_devices.root.size | default('') is match('^[1-9][0-9]*GiB$')
-    and ((container_read.stdout | from_json).expanded_devices.root.size[:-3] | int) < (container.root_disk_size[:-3] | int)
+    and ((container_read.stdout | from_json).expanded_devices.root.size[:-3] | int) < (root_device.size[:-3] | int)
   ansible.builtin.command:
-    argv: "{{ incus_project + ['config', 'device', 'set', container.name, 'root', 'size=' ~ container.root_disk_size] }}"
+    argv: "{{ incus_project + ['config', 'device', 'set', container.name, 'root', 'size=' ~ root_device.size] }}"
   changed_when: true
 
 # Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
@@ -540,7 +568,9 @@
         network_name: "{{ container.network }}"
         network_failure: instance.container_network_unsafe
         expected_network_device: eth0
-        network_allowed_devices: "{{ container.allowed_devices | default({}) }}"
+        # An empty `allowed_devices` keeps the plain guard: only a non-empty list selects the nested one, which admits the rule's root.
+        network_allowed_devices: >-
+          {{ container.allowed_devices | combine({'root': root_device}) if container.allowed_devices | default({}) | length > 0 else {} }}
         network_allowed_config: "{{ container.config }}"
         # The only volume besides the root that the guard admits, with exactly these keys.
         network_allowed_volumes: >-

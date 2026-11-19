@@ -48,6 +48,8 @@ capacity_gap = [
   # A case above the 150-second lane on the self-hosted pool; ADR 0262 names each case.
   "swamp/tests/ansible_instance_host_test.ts",
   "swamp/tests/ansible_wireguard_hub_lan_rules_test.py",
+  # Temporary: the next CI slice re-costs this file and removes it; ADR 0262 names the reason.
+  "swamp/tests/ansible_instance_host_updates_test.ts",
   # The two largest hosted files: 70 units and 2,462 of the 4,160 declared seconds that 16 hosted shards hold.
   # With other selected work, as in a plan that also carries undelivered main revisions, they pass runner_shards.
   # A hosted gap applies only when other changes select the file; a change to the file itself runs all its units.

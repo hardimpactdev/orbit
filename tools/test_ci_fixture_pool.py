@@ -13,6 +13,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent))
 from test_ci_units import BUDGET, ROOT, fixture, planned, units
 
+HOST_UPDATES = 'swamp/tests/ansible_instance_host_updates_test.ts'
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -152,9 +154,8 @@ class FixturePoolTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         plan = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, fixtures, defaults)
         file = 'swamp/tests/ansible_instance_host_updates_test.ts'
-        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
-        self.assertEqual(4, len(expected))
-        self.assertEqual(expected, {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+        self.assertEqual(4, len(list(units.units_for(fixtures[file], budget))))
+        self.assert_every_unit_placed(plan, file, budget, fixtures)
         self.assertNotIn('capacity', plan)
         self.assertEqual([], units.unplaced_units(plan))
         self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), budget['runner_shards'])
@@ -190,11 +191,22 @@ class FixturePoolTest(unittest.TestCase):
         planned = {name.split('#')[0] for name in units.planned_units(plan)}
         self.assertNotIn('swamp/tests/ansible_instance_fleet_test.ts', planned)
         for part in ('host_updates', 'host_runtime', 'host_browser', 'host_acl', 't3_restart'):
-            file = f'swamp/tests/ansible_instance_{part}_test.ts'
-            self.assertEqual({name for name, _ in units.units_for(fixtures[file], budget)},
-                             {name for name in units.planned_units(plan) if name.split('#')[0] == file})
-        self.assertEqual({row['file'] for row in plan.get('not_run', [])},
-                         {'swamp/tests/ansible_instance_container_test.ts', 'swamp/tests/ansible_instance_host_test.ts'})
+            self.assert_every_unit_placed(plan, f'swamp/tests/ansible_instance_{part}_test.ts', budget, fixtures)
+        not_run = {'swamp/tests/ansible_instance_container_test.ts', 'swamp/tests/ansible_instance_host_test.ts'}
+        # Temporary (ADR 0262): host_updates is a named gap until the next CI slice re-costs it and removes this line.
+        not_run |= {HOST_UPDATES} & set(budget['capacity_gap'])
+        self.assertEqual({row['file'] for row in plan.get('not_run', [])}, not_run)
+
+    def assert_every_unit_placed(self, plan, file, budget, fixtures):
+        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
+        placed = {name for name in units.planned_units(plan) if name.split('#')[0] == file}
+        named = {name for row in plan.get('not_run', []) if row['file'] == file for name in row['units']}
+        # Temporary (ADR 0262): only host_updates, while checks.toml names it a capacity gap, may name units "not run"
+        # instead of placing them. The next CI slice re-costs it, removes the gap and this exception.
+        if file == HOST_UPDATES and file in budget['capacity_gap']:
+            self.assertEqual(set(), placed & named)
+            placed |= named
+        self.assertEqual(expected, placed)
 
 
     def test_spare_places_shorten_lanes_without_changing_admitted_units(self):

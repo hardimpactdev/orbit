@@ -49,7 +49,15 @@ final readonly class NodeBridges
         $bridge = long2ip($long & ((-1 << (32 - $length)) & 0xFFFF_FFFF)).'/'.$length;
         Node::query()->whereKey($nodeId)->update(['ci_bridge' => $bridge]);
         $instance = Node::query()->whereKey($nodeId)->value('instance_bridge');
-        if (is_string($instance) && self::overlap($instance, $bridge) && ! InstanceRuntime::query()->where('node_id', $nodeId)->exists()) {
+        if (is_string($instance) && self::overlap($instance, $bridge)) {
+            self::releaseUnused($nodeId);
+        }
+    }
+
+    /** Drops the Node's Instance bridge when no container uses it; one in use stays. */
+    public static function releaseUnused(int $nodeId): void
+    {
+        if (Node::query()->whereKey($nodeId)->value('instance_bridge') !== null && ! InstanceRuntime::query()->where('node_id', $nodeId)->exists()) {
             Node::query()->whereKey($nodeId)->update(['instance_bridge' => null]);
         }
     }

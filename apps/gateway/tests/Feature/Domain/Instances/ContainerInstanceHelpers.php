@@ -22,6 +22,7 @@ use App\Models\Project;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\InstancePool;
 
 /* The Nodes, Projects and admitted creates of the container Instance tests, shared by their files. */
 
@@ -34,6 +35,7 @@ function containerDefaultNode(string $name = 'beast', string $ip = '10.44.0.7', 
     ]));
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     if ($listed) {
+        InstancePool::give($node);
         app(AllocateInstanceBridgeAction::class)->execute($node);
     }
 

@@ -51,18 +51,27 @@ The container flows keep the existing Instance kinds. Their charts sit one folde
 
 ## Nodes
 
-Container host preparation applies to every `app-dev` Node. Task VMs are removed.
+Container host preparation applies to every `app-dev` Node with the Incus pool `orbit-instances`. Task VMs are removed.
 
-The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
+The Gateway reads no pool, so it counts an `app-dev` Node as an Instance container host when one of these holds:
+
+- The operator set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in), `instance_host`. A new host needs it before its first converge.
+- It is the `app-dev` Node of a nested Instance fleet, whose converge creates a directory pool.
+- It records an Instance runtime.
+- Its agent reports the Instance bridge's health, which only a converged container branch writes.
+
+Any other `app-dev` Node, such as a services Node without Incus, is no container host. Its converge runs its other roles and no container branch. The Node gets no Instance bridge and no `orbit:instances-*` firewall rules, so Doctor expects none. Its admission releases an Instance bridge that no container uses. A bridge that a container uses always stays, and so does the release bridge of an `app-prod` Node.
+
+The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. A copy is a clone, never a file copy: the pool of a real Node is ZFS, and the nested proof Node `nested-app-dev` has a btrfs pool on its btrfs root.
 
 A [CI-only Node](/reference/node-provisioning#proof-copies-on-a-ci-node) gets the same container setup through its `ci-runner` role, with nested-fleet hosting on. It never gets the `app-dev` role. It holds no default Instance: it holds a [seed of the proof default](#the-seed-on-each-ci-node), and it takes only proof copies.
 
 ### Prepare a Node
 
-Every `app-dev` role converge runs the container branch. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) owns that placement. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every `app-dev` role converge of an Instance container host runs the container branch. The `ci-runner` converge of a CI Node that hosts proof copies runs the same branch from the same intent, with its nested part; [ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies) owns that placement. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 - **Allocation.** The admission of a role add or converge allocates the Node's bridge. The captured intent only reads it.
-- **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or a directory pool on a nested proof Node. The converge chooses no disk itself.
+- **Pool.** The Node provides the Incus storage pool `orbit-instances`: ZFS, or btrfs on the nested proof Node. The converge chooses no disk itself.
 - **Pool of a CI-only Node.** Its `ci-runner` converge creates the pool on a new dataset of the zpool that its ZFS Incus pool uses ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)).
 - **Missing pool.** A Node without the pool is refused with `instance.host_unavailable`.
 - **Project.** Containers of `orbit-instances` must set an isolated ID map. They may mount host folders and have proxy devices, and cannot be VMs. The profile mounts the two shared folders.
@@ -149,7 +158,7 @@ Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40
 
 Clone phases stage their release's helpers and intent once in a private folder for the run. Later phases run them by path. This keeps scripts off the SSH command and avoids its size limit. The repository credential stays on stdin. Cleanup removes the folder on success or failure, including a failed first launch.
 
-The clone copy supplies a complete root disk device, including its type, path, pool and size. This works when the seed inherits its root disk from a profile or stores it locally.
+The clone copy supplies a complete root disk device, including its type, path, pool and, except on a [btrfs pool](#the-root-disk), its size. This works when the seed inherits its root disk from a profile or stores it locally.
 
 Every development container has the same layout. The image and the create set it up. Root owns everything below except the homes and the workspace. A container installs as little as possible: the image holds only OS packages, the users, `agent`'s sudo grant and the firewall.
 
@@ -1302,7 +1311,7 @@ When both parts have ended, the step checks the two sessions and the checkout. B
 
 The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`, the drop-in `/etc/systemd/system/t3.service.d/10-orbit-boot.conf`, and the drop-in that names the [container server](#container-server). The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
 
-Before the first start, Orbit checks the stopped copy's on-disk ID map. A restricted Incus project strips that map during a local copy. On Nodes without idmapped mounts, the files still hold the source's shifted IDs. When the copy records an empty map and the source records a shift, Orbit unshifts the copied rootfs on a `dir` pool. Incus can then shift it to the copy's own map at start.
+Before the first start, Orbit checks the stopped copy's on-disk ID map. A restricted Incus project strips that map during a local copy. On Nodes without idmapped mounts, the files still hold the source's shifted IDs. When the copy records an empty map and the source records a shift, Orbit unshifts the copied rootfs on the btrfs pool of `nested-app-dev`, where an idmapped mount fails. Incus can then shift it to the copy's own map at start.
 
 This preserves owners, setuid and setgid modes, named POSIX ACL entries and file capability root IDs. IDs outside the source map stay unchanged. If normalization fails, Orbit deletes the incomplete copy and fails the create with its error code. A retry copies the seed again; it never resumes partially restored metadata. Sources with an empty map, including Nodes using idmapped mounts, need no change. Another pool driver in this state refuses before start with `instance.clone_idmap_unshift_unsupported`.
 
@@ -2545,6 +2554,8 @@ Each runtime records its Incus project once. Every step that reaches the contain
 
 The root disk of a nested-fleet default has the size of the Gateway setting [`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`](/reference/gateway-environment), 80 GiB by default. Every other container, a copy of a default among them, keeps 40 GiB.
 
+On a btrfs pool, such as the pool of the nested proof Node `nested-app-dev`, the root disk has no size. Incus would set it with btrfs qgroups, which the unprivileged nested Node refuses, and the copy's own volume already caps that pool. The Node-side rule `instance_root_disk.py` drops the size there for create, clone, the start's grow and the guard alike, and keeps it on every ZFS pool.
+
 Incus sets the size as the ZFS `quota` of the container's dataset. A quota counts the dataset's snapshots. A default's seeds stay on its dataset while a copy made from them lives, as hidden `deleted-*` snapshots, and each one that a `base` retake replaced holds about 1.7 GiB. A copy's quota counts only its own blocks. The inner Doctor wants 2 GiB and 10% of the disk free, and a [refresh](#refresh-after-a-release) checks that room first. At 40 GiB, six living copies on old seeds left too little room on Instance 2454.
 
 The size reaches a container two ways:
@@ -2779,10 +2790,12 @@ What the host needs, measured by hand on a task copy at 1,165,536 on 2026-11-16:
 | AppArmor | The third-level Incus cannot load a profile (`apparmor_parser: Access denied`), so the bridge's dnsmasq fails. The drop-in `INCUS_SECURITY_APPARMOR=false` for `incus.service` turns its AppArmor off; the Incus one level up still confines `nested-app-dev` |
 | ID map | Base 65,536 with 100,000 IDs. See below the table |
 | Isolated maps | The first isolated map starts at the base plus 65,536: 131,072. So at 1,165,536 no isolated 65,536 map fits (`Not enough uid/gid available`). One of 34,464 IDs started at 131,072 |
-| Pool | A directory pool: a copy is a full copy. `btrfs` would clone on `nested-app-dev`'s btrfs root, but the container branch accepts only `zfs` and `dir` |
+| Pool | btrfs on `nested-app-dev`'s btrfs root: a copy is a subvolume snapshot. See below the table |
 | Network | The Node's input rules drop DHCP on `orbitinst0` until the role converge adds `orbit:instances-*` |
 | Egress | One isolated container launched in 10 s and ran `apt-get update`, a `git` install and an HTTPS request through the egress proxy in 11 s |
 | Shared folders | A read-only disk with `shift=true` fails the start; `shift=false` starts. See below the table |
+
+The btrfs pool was measured on a task copy on 2026-11-18. The root of `nested-app-dev` is mounted with `user_subvol_rm_allowed`, so its unprivileged Incus creates, snapshots and deletes subvolumes. A copy of a 644 MB rootfs took 8.5 to 8.8 s on the former directory pool and 0.65 to 1.0 s on btrfs. Retaking `base` of `nested-app-dev` took 7.1 s with its stop and start, and `base` holds the pool's subvolumes.
 
 The shared folders were measured by hand with Incus 6.0.5 on 2026-11-16. A read-only folder disk with `shift=true` failed the start: `idmapping abilities are required but aren't supported on system`. With `shift=false` an isolated container of 34,464 IDs started at once. Its uid 2750 read a file of mode 644 but not a `root:2750` directory of mode 0750. It read the directory once it was open to others.
 
@@ -2794,9 +2807,11 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 
 1. It writes the drop-in `/etc/systemd/system/incus.service.d/50-orbit-nested.conf` with `Environment=INCUS_SECURITY_APPARMOR=false`. The Incus there cannot load AppArmor profiles; the Incus one level up still confines `nested-app-dev`.
 2. It installs Incus from the recipe's pinned packages.
-3. It creates the directory pool `orbit-instances`.
+3. It installs `btrfs-progs` and creates the btrfs pool `orbit-instances` on the Node's btrfs root.
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
+
+A Node made before the btrfs pool has a directory pool `orbit-instances`. The container branch replaces it only when nothing uses it but the root device of the managed `default` profile in an Instance project. Any Instance, volume, other profile or other device refuses with `instance.host_unavailable` and names it, before anything changes. Otherwise the branch removes that root device, deletes the pool and creates the btrfs pool with `source=/var/lib/incus/storage-pools/orbit-instances`. Step 5 writes the profile's root device again. A rerun after a break goes on from where it stopped. There is no directory fallback.
 
 Fleet start appends the managed user `orbit` to `incus-admin` on every nested Node marked as an Instance host by `/etc/orbit/instance-fleet-node`. The Gateway's direct workspace and runtime reads call Incus as that user, without sudo. The account already has passwordless sudo, so this adds no authority. The fleet builds its own Nodes; their account setup belongs to fleet start. Every copy start repairs missing membership, including a copy of an existing seed, with no converge or seed refresh. Other groups remain unchanged, and a current membership reports no change.
 
@@ -3357,7 +3372,7 @@ It may also hold `host`: `converged`, `kept` or `skipped_idmap_small` ([Instance
 
 The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
-The first seed of every run, the `seed` phase of "Prepare the container", was always taken with the fleet running. On a nested proof Node with a directory pool, the seed is a file copy and not one point in time; that affects only proofs.
+The first seed of every run, the `seed` phase of "Prepare the container", was always taken with the fleet running. The nested proof Node's Instance pool is btrfs, so the Instances in a seed are subvolumes, and a copy of one there is a snapshot, not a file copy.
 
 After a restore, the run starts the restored fleet and waits for readiness. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
@@ -3813,7 +3828,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
 | `instance.clone_t3_files_refused` | 502 | A folder or JSON file of [T3's files](#t3-starts-with-the-copy) in a clone's copy is a link or of another type. The create stops before the copy starts |
-| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `dir` driver. The incomplete copy is deleted |
+| `instance.clone_idmap_unshift_unsupported` | 502 | A copied rootfs needs its source's ownership shift removed, but its storage pool does not use the `btrfs` driver. The incomplete copy is deleted |
 | `instance.clone_idmap_unshift_failed` | 502 | Orbit could not read or normalize a stopped copy's ownership, permissions, ACLs or capabilities before its first start. The incomplete copy is deleted so a retry copies the seed again |
 | `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |

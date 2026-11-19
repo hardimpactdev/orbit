@@ -68,6 +68,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
+use Tests\Support\InstancePool;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
@@ -301,6 +302,7 @@ describe('a CI Node that hosts proof copies', function (): void {
         $before = ciRunnerRuntime($none);
         $both = ciNode(3, LifecycleStatus::Active, 'ci-app', '10.44.0.35');
         $both->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
+        InstancePool::give($both);
         app(NodeRoleRuntimeInput::class)->prepare($none, $none->roles()->sole());
 
         expect($before)->not->toHaveKey('instances')

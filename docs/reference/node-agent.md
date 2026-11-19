@@ -143,6 +143,8 @@ Each fact also names its `scope`, the path it read. On beast the apt fact is abo
 
 On an Instance host, the `host` fact includes `instance_bridge.error_code` from `/var/lib/orbit/instance-bridge/health.json`. The observer reads only a known public error code; absent state means the host has no refresh policy. Unreadable or malformed state reports `instance.container_bridge_health_unreadable`. Command timeouts retain `instance.bridge_command_timeout`. A concurrent writer returns `instance.bridge_busy` without changing the health file, so that refusal does not become a new observer fact. If bounded ACL readback after an ambiguous request cannot determine the applied state, the fact retains `instance.bridge_state_unresolved`. Doctor reports a failure as `node.instance_bridge_unhealthy`, preserving the observed public code. The [Instance host role](/reference/development-containers#prepare-a-node) owns the file and refresh timer.
 
+Only a converged container branch writes the file, so the Gateway also reads a reported `instance_bridge`, healthy or not, as evidence that an `app-dev` Node has the Incus pool `orbit-instances` and is an [Instance container host](/reference/development-containers#nodes). An `app-dev` Node whose agent reports none, with no Instance runtime, gets no container branch.
+
 ### Environment key names
 
 The watch list's `environments` names the `.env` of each Instance on the Node. For each, the agent sends an `env_keys` fact:

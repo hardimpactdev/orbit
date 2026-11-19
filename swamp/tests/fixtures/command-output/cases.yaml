@@ -52,6 +52,7 @@ contexts:
       root_disk_size: 80GiB
       allowed_devices:
         root: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
   root-larger:
     phase: start
     container_read:
@@ -61,6 +62,7 @@ contexts:
       root_disk_size: 40GiB
       allowed_devices:
         root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
   root-odd-form:
     phase: start
     container_read:
@@ -70,6 +72,27 @@ contexts:
       root_disk_size: 40GiB
       allowed_devices:
         root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+  # A btrfs nested app-dev Node: the root device without a size, so it never grows (2026-11-18, copy 5892).
+  root-unsized:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "40GiB", "type": "disk"}}}'
+    container:
+      root_disk_size: 80GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
+    root_device: {type: disk, path: /, pool: orbit-instances}
+  # instance_root_disk.py's output for a 40GiB intent on a btrfs pool and on a ZFS pool.
+  root-disk-btrfs:
+    config_args: ['--config', 'limits.cpu=2']
+    root_disk_read:
+      stdout: '{"type": "disk", "path": "/", "pool": "orbit-instances"}'
+  root-disk-zfs:
+    config_args: ['--config', 'limits.cpu=2']
+    root_disk_read:
+      stdout: '{"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"}'
   grants-current:
     fleet_grants:
       stdout: 'localhost : ok=3 changed=0 unreachable=0 failed=0'
@@ -1290,7 +1313,29 @@ contexts:
     release_volume_names: [base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e, seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac]
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
+  # `incus query /1.0/storage-pools?recursion=1` on a pre-btrfs nested app-dev Node, with one Instance left on the pool.
+  fleet-node-dir-pool:
+    instances: {pool: orbit-instances, project: orbit-instances}
+    fleet_node_pools:
+      stdout: '[{"config":{"source":"/var/lib/incus/storage-pools/orbit-instances"},"description":"","name":"orbit-instances","driver":"dir","used_by":["/1.0/instances/instance-7?project=orbit-instances","/1.0/profiles/default","/1.0/profiles/orbit-instance?project=orbit-instances"],"status":"Created","locations":["none"]}]'
+    # `incus query` of each profile on that pool: the managed root, and a custom profile's root that refuses the migration.
+    fleet_node_profiles:
+      results:
+      - item: /1.0/profiles/default
+        stdout: '{"name":"default","description":"","config":{},"devices":{},"used_by":[]}'
+      - item: /1.0/profiles/orbit-instance?project=orbit-instances
+        stdout: '{"name":"orbit-instance","description":"","config":{},"devices":{"root":{"path":"/","pool":"orbit-instances","type":"disk"}},"used_by":[]}'
 cases:
+- file: tasks/instance-fleet-node.yml
+  task: Read the profiles that use the pool
+  field: loop
+  context: fleet-node-dir-pool
+  expected: ["/1.0/profiles/default", "/1.0/profiles/orbit-instance?project=orbit-instances"]
+- file: tasks/instance-fleet-node.yml
+  task: Refuse a pool that another user holds
+  field: vars.fleet_node_held
+  context: fleet-node-dir-pool
+  expected: ["/1.0/instances/instance-7?project=orbit-instances", "orbit-instances/orbit-instance root"]
 - file: release-response-wait.yml
   task: Wait for queued response bytes in the former live
   field: vars.queued
@@ -2511,6 +2556,21 @@ cases:
   field: when
   context: root-odd-form
   expected: false
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-unsized
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Name the root disk arguments
+  field: ansible.builtin.set_fact.resource_args
+  context: root-disk-btrfs
+  expected: ['--config', 'limits.cpu=2', '--device', 'root,type=disk', '--device', 'root,path=/', '--device', 'root,pool=orbit-instances']
+- file: tasks/instance-container-phase.yml
+  task: Name the root disk arguments
+  field: ansible.builtin.set_fact.resource_args
+  context: root-disk-zfs
+  expected: ['--config', 'limits.cpu=2', '--device', 'root,type=disk', '--device', 'root,path=/', '--device', 'root,pool=orbit-instances', '--device', 'root,size=40GiB']
 - file: tasks/instance-container-phase.yml
   task: Read the deploy step inputs at the commit
   field: ansible.builtin.command.stdin
