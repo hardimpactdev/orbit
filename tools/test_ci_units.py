@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = SourceFileLoader('ci_units', str(ROOT / 'bin/ci-units'))
 units = module_from_spec(spec_from_loader(loader.name, loader))
 loader.exec_module(units)
-BUDGET = dict(shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=9, runner_shards=9, spread_shards=9, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
+BUDGET = dict(capacity_gap_first=[], shard_seconds=150, shard_workers=4, shard_deadline_seconds=190, shard_ceiling_seconds=240, unit_ceiling_seconds=180, slice_seconds=60, slice_startup_seconds=6, pr_shards=9, runner_shards=9, spread_shards=9, self_hosted_shards=8, self_hosted_workers=2, default_cost=30, machinery_canary=[], capacity_gap=[])
 
 
 def fixture(file, cost=30, inputs=(), **options):
@@ -194,6 +194,41 @@ class PlanningTest(unittest.TestCase):
         self.assertEqual(sorted(names(result)), ['swamp/gap.ts#0/2', 'swamp/gap.ts#1/2'])
         self.assertEqual(units.unplaced_units(result), ['swamp/other.py'])
 
+    def test_the_fleet_file_yields_to_a_host_task_in_the_same_change_and_runs_whole_for_its_own_change(self):
+        budget, fixtures, defaults = units.configuration()
+        fleet = 'swamp/tests/ansible_instance_fleet_test.ts'
+        count = len(fixtures[fleet]['cases'])
+        placed = lambda plan: sum(name.split('#')[0] == fleet for name in units.planned_units(plan))
+        named = lambda plan: sum(len(row['units']) for row in plan.get('not_run', []) if row['file'] == fleet)
+        # An input of every fleet case alone: the whole file fits and runs.
+        alone = units.plan(['swamp/ansible/fleet-converge-inputs.json'], budget, fixtures, defaults)
+        self.assertEqual((count, 0), (placed(alone), named(alone)))
+        self.assertNotIn('capacity', alone)
+        # With a host task in the same change both do not fit: the fleet units that fit run, the plan names the rest.
+        paths = ['swamp/ansible/fleet-converge-inputs.json', 'swamp/ansible/tasks/instance-host.yml']
+        both = units.plan(paths, budget, fixtures, defaults)
+        self.assertNotIn('capacity', both)
+        self.assertEqual(count, placed(both) + named(both))
+        self.assertGreater(placed(both), count // 2)
+        self.assertGreater(named(both), 0)
+        self.assertLessEqual(len(both['shards']) + len(both['self_hosted_shards']), budget['runner_shards'])
+        # Without the name the same change fails Required.
+        unnamed = {**budget, 'capacity_gap': [file for file in budget['capacity_gap'] if file != fleet], 'capacity_gap_first': []}
+        self.assertIn('capacity', units.plan(paths, unnamed, fixtures, defaults))
+        # The fleet file keeps its place before the hosted gaps listed after it: where it fitted before, it still fits.
+        beside = units.plan(['swamp/ansible/fleet-converge-inputs.json', 'swamp/ansible/files/instance-container-power.py'],
+                            budget, fixtures, defaults)
+        self.assertEqual((count, 0), (placed(beside), named(beside)))
+        self.assertNotIn('capacity', beside)
+        # The two older hosted gaps keep their order by directness, with and without the fleet file in the list.
+        older = lambda plan: [sum(name.split('#')[0] == f'swamp/tests/ansible_{part}_test.ts' for name in units.planned_units(plan))
+                              for part in ('task_copy_turn', 'instance_host_image')]
+        paths = ['swamp/ansible/tasks/address-node.yml', 'swamp/ansible/tasks/instance-host.yml']
+        self.assertEqual(older(units.plan(paths, budget, fixtures, defaults)), older(units.plan(paths, unnamed, fixtures, defaults)))
+        self.assertEqual(37, older(units.plan(paths, budget, fixtures, defaults))[1])
+        # A change to the fleet file itself runs every unit of it.
+        self.assertEqual((count, 0), tuple(f(units.plan([fleet, *paths], budget, fixtures, defaults)) for f in (placed, named)))
+
     def test_a_capacity_gap_must_name_registered_files_and_a_hosted_gap_keeps_the_lane(self):
         original, inventory = units.registry.load(ROOT)
         for gaps in (['swamp/tests/missing_test.ts'], 'swamp/tests/ansible_instance_migrate_move_test.ts',
@@ -205,11 +240,19 @@ class PlanningTest(unittest.TestCase):
                     units.configuration()
         budget, fixtures, _ = units.configuration()
         hosted = [file for file in budget['capacity_gap'] if not fixtures[file].get('self_hosted')]
-        self.assertEqual(hosted, ['swamp/tests/ansible_task_copy_turn_test.ts',
+        self.assertEqual(hosted, ['swamp/tests/ansible_instance_fleet_test.ts',
+                                  'swamp/tests/ansible_task_copy_turn_test.ts',
                                   'swamp/tests/ansible_instance_host_image_test.ts'])
+        self.assertEqual(['swamp/tests/ansible_instance_fleet_test.ts'], budget['capacity_gap_first'])
+        for first in ([hosted[1]] * 2, ['swamp/tests/ansible_instance_container_test.ts'], ['swamp/tests/missing_test.ts'], hosted[1]):
+            config = json.loads(json.dumps(original))
+            config['budget']['capacity_gap_first'] = first
+            with self.subTest(first=first), patch.object(units.registry, 'load', return_value=(config, inventory)):
+                with self.assertRaisesRegex(ValueError, 'capacity_gap_first must list unique hosted files of capacity_gap'):
+                    units.configuration()
         # Only a self-hosted gap may hold a unit above the lane.
         config = json.loads(json.dumps(original))
-        row = next(f for f in config['fixture'] if f['file'] == hosted[0])
+        row = next(f for f in config['fixture'] if f['file'] == hosted[1])
         row['case_costs'] = {**row['case_costs'], next(iter(row['case_costs'])): config['budget']['shard_seconds'] + 1}
         row['cost'] = sum(row['case_costs'].values())
         with patch.object(units.registry, 'load', return_value=(config, inventory)):
@@ -530,7 +573,7 @@ class TableTest(unittest.TestCase):
 
     def test_table_files_costs_and_unsliceable_rules(self):
         budget, fixtures, defaults = units.configuration()
-        self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': []},
+        self.assertEqual({**budget, 'machinery_canary': [], 'capacity_gap': [], 'capacity_gap_first': []},
                          {**BUDGET, 'shard_workers': 2, 'shard_deadline_seconds': 210, 'lane_seconds': 130, 'pr_shards': 20, 'runner_shards': 20, 'self_hosted_shards': 10, 'spread_shards': 16})
         self.assertTrue(defaults)
         for f in fixtures.values():
