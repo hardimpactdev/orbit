@@ -65,9 +65,15 @@
       loop: ["{{ intent.executor.bus_path }}", "{{ intent.executor.bus_guard_path }}"]
       when: intent.executor.bus_url is not string
       register: executor_bus_absent
-    - name: Drop the loaded bus guard with its file
+    - name: Read whether the bus guard is still loaded
+      ansible.builtin.command: nft list table inet orbit_bus_guard
+      when: intent.executor.bus_url is not string
+      register: executor_bus_guard
+      changed_when: false
+      failed_when: false
+    - name: Drop the loaded bus guard
       ansible.builtin.command: nft destroy table inet orbit_bus_guard
-      when: executor_bus_absent is changed
+      when: intent.executor.bus_url is not string and executor_bus_guard.rc == 0
       changed_when: true
     - name: Allow the Node user the one relay command
       ansible.builtin.copy:
