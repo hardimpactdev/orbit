@@ -197,6 +197,67 @@ What to notice:
 - This is not a bug, so the `command` has no `fails_on_base`.
 - There is no Open question. The section would have nothing to say.
 
+## A removal, one subtask
+
+From group 6017, as the owner corrected it. The paths and the generator are real. Outcome 3 is a value chosen for this example.
+
+Title: **The project guidance files hold only text that the repository maintains**
+
+```markdown
+**Problem:** `composer guidance:update` in `apps/cli` and `apps/gateway` runs
+Laravel Boost, which writes a `<laravel-boost-guidelines>` block into each
+project's `AGENTS.md` (`"guidelines": true` in `boost.json`). Agents read that
+block on every turn, and the repository's own rules already cover it.
+
+**Expected outcome:**
+1. `apps/cli/AGENTS.md` and `apps/gateway/AGENTS.md` hold no generated
+   guideline block.
+2. Nothing in either project writes guideline text into an `AGENTS.md`.
+3. The skills that Boost installs and its MCP server work as before.
+
+**Guardrails:**
+- Decided: the result comes from the removal. No test, check or flag guards
+  against the block coming back.
+- Out of scope: the guidance of the other projects.
+```
+
+Subtask 1 of 1: **Remove the guideline generator from the CLI and the Gateway**
+
+```markdown
+All expected outcomes of the group. Read first: `apps/cli/boost.json`,
+`apps/gateway/boost.json`, `apps/cli/config/boost.php`,
+`apps/gateway/config/boost.php`.
+```
+
+```json
+[
+  {"id": "no-generated-block", "type": "command",
+   "description": "After the guidance command runs, neither AGENTS.md holds a generated block",
+   "command": "(cd apps/cli && composer guidance:update) && (cd apps/gateway && composer guidance:update) && ! grep -l '<laravel-boost-guidelines>' apps/cli/AGENTS.md apps/gateway/AGENTS.md",
+   "directory": "."},
+  {"id": "cli-guidance", "type": "file", "change": "modified",
+   "description": "The generated block is gone", "path": "apps/cli/AGENTS.md"},
+  {"id": "gateway-guidance", "type": "file", "change": "modified",
+   "description": "The generated block is gone", "path": "apps/gateway/AGENTS.md"}
+]
+```
+
+What to notice:
+
+- The outcomes state what exists afterwards. They ask for the writer of the block to go, not for a flag that turns it off.
+- The first brief said: "after the project's own guidance command runs, each `AGENTS.md` is unchanged." Its implementer committed a test in each project and set `guidelines` to `false`. The owner rejected both: such a test guards against nothing that the structure allows.
+- The one-time check is a `command` deliverable. The handoff check runs it, and nothing is committed for it.
+- Outcome 3 is a keep-working outcome about what stays, not about the absence of the block.
+
+## An accepted limit for a model's output
+
+From group 5987. Its proof rested on the output of a model: a new agent session wrote a brief from the changed skill. The brief had no limit for a slip in that output, and each of three review rounds found a new slip in the rerun. The Guardrails line it needed:
+
+```markdown
+- Accepted limits: the briefs of the proof are the output of a model. One slip
+  that an owner would correct does not block.
+```
+
 ## A feature with three subtasks
 
 From group 5915. The line in angle brackets shows where a fact from another repository goes.

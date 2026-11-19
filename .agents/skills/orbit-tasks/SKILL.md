@@ -9,7 +9,7 @@ The Gateway Tasks engine is generic. This file is Orbit's repository policy for 
 
 ## Plan a group
 
-Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour is agreed. The ADRs and documentation on the group's branch are the contract that every subtask implements.
+Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour is agreed. The ADRs and documentation on the branch are the contract.
 
 - Build and prove the whole feature in the group's copy before its pull request: [Build a feature in one copy](../../../docs/reference/tasks.md#build-a-feature-in-one-copy).
 - Plan at most five subtasks. When a feature needs more, ask the operator before you split it into groups. Never split it into groups whose pull requests each wait for a release to find the next problem.
@@ -48,9 +48,9 @@ Never use a `file` deliverable on a doc page as a stand-in for a real run. A del
 
 ### Documentation
 
-No group starts with a fixed docs subtask. When you know the page that must change, give the subtask that changes the behaviour a `file` deliverable for it. Otherwise the docs-impact part of the handoff check names the page. To find the pages while you plan, run `bin/docs-impact --base <start-commit>` with one `--paths` for each planned path, including paths that do not exist yet; the start commit follows [its one rule](../../../docs/reference/tasks.md#start-commit). The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report.
+No group starts with a fixed docs subtask. When you know the page that must change, give the subtask that changes the behaviour a `file` deliverable for it. Otherwise the docs-impact part of the handoff check names the page. To find the pages while you plan, run `bin/docs-impact` as the [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) describes, with the [start commit](../../../docs/reference/tasks.md#start-commit) as base.
 
-The handoff check runs the impact check on every subtask. For a page that needs no update, follow [Docs-impact waivers in a copy](../../../docs/reference/tasks.md#docs-impact-waivers-in-a-copy). The reviewer confirms the reason. Orbit's publish copies the same lines into the PR body; for a pull request opened another way, copy them before READY. Private Git notes cannot waive the gate.
+The handoff check runs the impact check on every subtask. For a page that needs no update, follow [Docs-impact waivers in a copy](../../../docs/reference/tasks.md#docs-impact-waivers-in-a-copy). The reviewer confirms the reason.
 
 Record a significant decision in an ADR with the status `In progress.`, as the [ADR guide](../../../docs/decisions/README.md) describes. The last subtask that completes a decision absorbs the ADR into its owning page; give that subtask a `file` deliverable for the page. An implementer absorbs an ADR only when its deliverables name that page.
 
@@ -62,11 +62,7 @@ A subtask that changes the web UI gets a `review` deliverable for the phone and 
 
 ### Bugs
 
-The first code subtask of a bug group adds a `command` deliverable that fails on its start commit and passes on the working tree. Set `fails_on_base` to the JSON boolean `true`, and list in `paths` every new or changed file the base run needs. If the command runs `pest --parallel`, give it one test path, with `--filter` if needed, because ParaTest takes only one path:
-
-```json
-{"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]}
-```
+The first code subtask of a bug group adds a `command` deliverable that fails on its start commit and passes on the working tree. Set `fails_on_base` to the JSON boolean `true`, and list in `paths` every new or changed file the base run needs. If the command runs `pest --parallel`, give it one test path, with `--filter` if needed, because ParaTest takes only one path. [Brief examples](references/brief-examples.md) shows one.
 
 When no command can reproduce the bug, say so in the brief and add a `review` deliverable for the manual check instead. The [tasks reference](../../../docs/reference/tasks.md#prove-a-command-fails-on-the-start-commit) defines the two runs.
 
@@ -118,26 +114,30 @@ subtask, <what works>.
 **Guardrails:** <only what is specific to this slice>
 ```
 
-Leave out the slice Guardrails when the slice has none.
-
 ### Writing rules
 
 1. State the problem and the expected outcome, not the fix.
 2. Put in a design only when it is already decided or proven, under Decided.
 3. Problem holds facts: Operation IDs, times, numbers, and what ran at that moment. Label a guess as a guess.
 4. Write each expected outcome as a rule that holds in every case, not as one transition.
-5. What must keep working is an expected outcome too.
+5. What must keep working is an expected outcome too. The absence of a removed thing is not: see rule 11.
 6. Give a number with its source and its two end points, such as "from the wake request to `ready_at`".
 7. Put everything the implementer needs inline or in the repository. Name no path on another machine or in another repository.
 8. Accepted limits say what the reviewer must not block on, with the reason.
-9. Leave out a section that has nothing to say.
+9. Leave out a section that has nothing to say, slice Guardrails included.
 10. Add no fact, path, limit or requirement that the source does not give. When the source leaves a choice open, or a keep-working outcome seems needed but the source does not state it, put it to the owner as a marked question, such as `<Owner: retry the failed step, or fail the Operation?>`. Never write it as a settled fact, outcome, guardrail or title. Word the title and the outcomes so that they hold whichever way the owner answers. A request in the source is not a fact about today: "report the error" does not say that no error is reported now.
+11. For a removal, state what exists afterwards. Ask for the source of the removed thing to go, not for a switch that turns it off. Ask for no committed test, check or flag whose only job is to catch it coming back. To check the result once, add a `command` deliverable: the handoff check runs it, and nothing is committed.
+12. When the proof rests on a model's output, such as a brief that a new session writes, add an accepted limit that names the slips that do not block. Without it, each rerun finds a new slip.
 
 Name implementation paths only where the contract fixes them.
 
 ### Turn prompts
 
-A turn prompt carries review findings, new evidence, and corrections inside the agreed outcome. It adds no outcome and restates neither the brief nor these rules. It does not repeat what the Gateway's prompt already gives: the task check step, the implementer's handoff note, the round of a re-review and the verdict line.
+A turn prompt carries review findings, new evidence, corrections inside the agreed outcome, and the owner's change to a running group. It adds no other outcome and restates neither the brief nor these rules. It repeats nothing that the Gateway's prompt gives.
+
+### Correct a running group
+
+The Gateway refuses to change a running group: a `PATCH` of its brief answers `tasks.not_in_backlog`, and one of a started subtask's deliverables answers `tasks.deliverables_locked` outside the [admitted corrections](../../../docs/reference/tasks.md#correct-the-deliverables-of-a-started-subtask). The owner's change goes word for word, marked as the owner's change, into the next implementer prompt and into every later review prompt.
 
 ## Agree and create the group
 
@@ -145,18 +145,17 @@ A task that the outer loop filed arrives in Backlog with a docs subtask and a pl
 
 Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, the expected outcomes it owns, and the deliverable that would disprove success. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
-Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. Moving the parent to Todo changes board state only. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`.
+Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`.
 
 ## Implement a subtask
 
 - Keep evidence, such as logs and check output, under `.orbit-artifacts/`. Git ignores it.
 - Build test fixtures from real output.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
-
-Every task read uses [recorded Gateway state](../../../docs/reference/tasks.md#recorded-snapshots-for-all-readers), including the agent viewer and stream; it does not contact the runtime. Follow [copy turn agents](../../../docs/reference/tasks.md#copy-turn-agents) for execution and evidence.
+- Follow [copy turn agents](../../../docs/reference/tasks.md#copy-turn-agents) for execution and evidence.
 
 ## Review a subtask
 
-Judge the work against the group's expected outcomes and guardrails. Do not block on an accepted limit. This does not widen the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule): it still decides what blocks. When you write the reviewer prompt for `task-turn`, do not widen that bar: the rule sets the reviewer's scope.
+Judge the work against the group's expected outcomes and guardrails. Do not block on an accepted limit. This does not widen the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule): it still decides what blocks.
 
 The reviewer whose approval opens the pull request puts any open follow-up that users must know about into the body of its [pull request text](../../../docs/reference/tasks.md#the-reviewers-pull-request-text). The operator decides which follow-ups become a later group.
