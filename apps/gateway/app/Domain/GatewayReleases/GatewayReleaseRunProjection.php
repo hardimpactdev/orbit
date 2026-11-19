@@ -218,7 +218,7 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         }
         if ($code === null && ! $reconcile) {
             app(ContinueReleaseFleetAction::class)->preserveHostBaselines($previous);
-            $phases['fleet'] = ['status' => config('fleet.rollout') ? 'pending' : 'disabled', 'nodes' => []];
+            $phases['fleet'] = ['status' => config('fleet.rollout') ? 'pending' : 'disabled', 'started_at' => now()->toISOString(), 'nodes' => []];
         }
         if ($code === null && $record->trigger === 'deploy') {
             $phases['newest_green'] = $pin ?? ['outcome' => 'unknown'];

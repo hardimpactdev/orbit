@@ -15,6 +15,7 @@ inputs = [
   "swamp/ansible/instance_network.py",
   "swamp/ansible/instance_node_services.py",
   "swamp/ansible/instance_machine_name.py",
+  "swamp/ansible/instance_root_disk.py",
   "swamp/ansible/instance_mail.py",
   "swamp/ansible/instance_bridge.py",
   "swamp/ansible/instance_node_runtime.py",

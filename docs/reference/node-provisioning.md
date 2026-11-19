@@ -295,7 +295,9 @@ A proof copy on a CI-only Node is a development Instance. Its destroy and a canc
 
 A Node that also has `app-dev`, such as the Node of the proof default, already hosts containers through its `app-dev` role. So it offers proof places, but it is not a CI-only Node: its `app-dev` converge prepares it, and it takes normal Instances. The default's own Node needs no seed copy, because it holds the seed. [proof:run](/cli/proof/run#the-run) decides which Node takes each proof copy: one copy per free place, on every Node that offers proof places. Orbit never adds `app-dev` to a CI Node to host proof copies.
 
-On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent for every app-dev Node and every CI-only Node. Its `nested` part applies on an app-dev Node with nested-fleet hosting on, or on a CI-only Node. The role runtime runs the branch for either kind. The CI Node gets no `app-dev` role for this.
+On a CI-only Node, each `ci-runner` add and converge also runs the Instance container branch of the `app-dev` role, with nested-fleet hosting on. The Node gets no `nested_fleet` switch for this. It is the same set of Ansible tasks, not a copy of them ([Prepare a Node](/reference/development-containers#prepare-a-node)). The Gateway sends the branch's `instances` intent for every CI-only Node and every app-dev Node that is an [Instance container host](/reference/development-containers#nodes). Its `nested` part applies on an app-dev Node with nested-fleet hosting on, or on a CI-only Node. The role runtime runs the branch for either kind. The CI Node gets no `app-dev` role for this.
+
+To add a new real Instance container host, provide its pool and set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in) before its first `app-dev` converge. An app-dev Node without the Incus pool, such as a services Node without Incus, gets no `instances` intent, no Instance bridge and no `orbit:instances-*` firewall rules.
 
 The branch prepares:
 
@@ -308,7 +310,7 @@ The Gateway records the branch on the Node, in `nodes.ci_nested_hosting`: true w
 
 So a proof copy there passes the placement rule, and its intent keeps `fleet`, so its inner fleet can be reset ([Nested fleet setting](/reference/projects#nested-fleet-setting)). Without the record, the Node takes no proof copies, and a copy there is refused with `instance.nested_fleet_host_unavailable`. The record follows the rule of the hold script record ([Proof places on a CI Node](#proof-places-on-a-ci-node)). A passed add or role converge sets it from its intent. A `node:converge` only keeps it. A failed run or a role removal clears it.
 
-The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node.
+The intent leaves out the parts that serve a Route or a sleep through the Node's Caddy: the own-site rules, the redirect of agent development ports and the wake of frozen containers. The tasks are the same; the intent decides. The admission of the role add or converge allocates the Node's Instance bridge, as for an `app-dev` Node. On a Node with no container branch and no `app-prod` role, that admission instead releases an Instance bridge that no container uses.
 
 A CI-only Node gets its Incus pool `orbit-instances` from its own converge. When the pool is missing, the converge reads the Node's ZFS Incus pools and the zpool behind each one. With exactly one zpool, it creates the pool on a new dataset of that zpool: `incus storage create orbit-instances zfs source=<zpool>/orbit-instances`. With no ZFS Incus pool, or with more than one zpool to choose from, it refuses with `instance.host_unavailable` and the reason, and creates nothing. An existing pool `orbit-instances` stays as it is. An `app-dev` Node keeps the rule of [Prepare a Node](/reference/development-containers#prepare-a-node): the operator provides the pool.
 
@@ -509,7 +511,7 @@ A failure keeps an existing Node's earlier recorded identity, settings and statu
 
 ### Instance containers on an app-dev Node
 
-Every app-dev Node gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. The Node must provide the Incus storage pool `orbit-instances`. [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every app-dev Node gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. The Node must provide the Incus storage pool `orbit-instances`, of the ZFS driver; any other driver refuses with `instance.host_unavailable`. The one exception is the nested fleet's `app-dev` Node: its own converge creates a btrfs pool ([Instance host in the fleet](/reference/development-containers#instance-host-in-the-fleet)). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 Each such converge also writes every Instance container's [presented machine name](/reference/development-containers#the-machine-name) into its `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts`, through the Incus file API, whether the container runs, is stopped or is frozen. Nothing restarts: the kernel hostname follows at the container's next start, and T3's label at T3's next start.
 
@@ -590,7 +592,7 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 On Linux app-dev Nodes, Orbit manages `/etc/tmpfiles.d/orbit.conf`. At boot, systemd creates `/dev/shm/orbit/hibernation` with owner `root:caddy` and mode `0755`. Removing the app-dev role withdraws the file.
 
-A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses host-wide inputs.
+A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses changed host inputs, per Node: the Gateway runtime (`gateway-runtime.yml` and its rendered files) counts only for a Node with the `gateway` role, so a change to it holds only that Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
 
 [Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
 
@@ -633,18 +635,72 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 
 - the files written for the phases: the converge variables, `plans.json`, the inventory, the known hosts and each role's variables;
 - for a role Operation, its variables: the Operation kind, the role intent and its execution secrets;
-- the Ansible bundle, which also builds each role's variables;
-- the Tool helper and the shipped Tool files that it imports.
+- its code: for a `node.converge` phase, the Ansible files that phase can load (see below); for a role Operation, the whole Ansible bundle;
+- the Tool helper and the shipped Tool files that it imports: for a `node.converge`, in the `tools` and `roles` phases only.
 
 For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder.
 
-Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
+Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle.
+
+The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
 
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 
 Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, its private run folder, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
-Every phase reads the same variables, so all phase digests move together. A change of any recorded input, secret value, plan or shipped converge code runs every phase again.
+Every phase reads the same variables, so a change of any recorded input, secret value or plan moves every phase digest. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.
+
+Swamp resolves each phase's files from the staged bundle when it prepares the input. The resolver is `phase_code.ts` beside the input behaviour. It works in these steps:
+
+1. It starts at the tasks that `--tags <phase>` selects in the converge playbooks. These are the tasks and plays tagged with the phase or `always`.
+2. It also starts at each statically imported file that tags a task with the phase or `always`.
+3. The roles phase also starts at the local DNS wrapper playbook, because the roles phase may run that playbook instead.
+4. It follows every bundle file that a reached file names, by path or by file name.
+5. It follows a Python file by its module name. So Ansible modules, `module_utils` files and imported helpers count.
+6. It follows a named folder with every file under it.
+
+A path names a folder when it has two or more parts or ends in `/`. A local `copy`, `template` or `synchronize` source and a fileglob also name a folder.
+
+A glob also names every bundle file that it matches, by its whole path or by its end. So a bare glob such as `incus-network-*.py` counts every folder that Ansible searches for it.
+
+A full-line comment is not read. A file that more than one phase reaches is in each of those phases. `ansible.cfg`, `build_vars.py` and both converge playbooks are in every phase. `build_vars.py` is the role materializer.
+
+Some references cannot be resolved. Each of them makes its phase read the whole bundle, as before:
+
+- an include or import with a templated name;
+- a file or template lookup of a computed path;
+- a local `copy`, `template`, `script` or `synchronize` source with a templated name;
+- a `with_fileglob` with a templated glob;
+- a Jinja `include`, `import`, `from` or `extends` whose template name is not a literal string, in any reached file;
+- `role_path`;
+- a Python file that opens files beside itself.
+
+The tasks that a phase selects in a converge playbook get the same check as the task files.
+
+The resolver does resolve four forms: a playbook-relative path that ends in a literal file name, a run-folder path, a fileglob item, and a loop item. A loop item source such as `{{ item.src }}` resolves when the task's own `loop`, `with_items` or `with_list` writes every value literally. A value may start with `{{ playbook_dir }}/`. A Python file that reads its own source by `__file__` is resolved too.
+
+A phase may name a file above the bundle in three ways. A path from the playbook folder can climb out of it, such as `{{ playbook_dir }}/../scripts/release-container.py`. A local `copy`, `template`, `script`, `unarchive` or `synchronize` source can climb out from its own file. A script can import a module from above the bundle, such as `files/instance-release-vp.ts` from `../../extensions`. That file joins the phase digest by its content, with the modules it imports in turn.
+
+These files are the role siblings that a converge stages beside the bundle, and a test keeps the two lists equal. A staged sibling that no phase names is in every phase digest.
+
+Swamp reads each file above the bundle beside it, from the same tree. When it cannot be read, the phase gets a digest that moves at every converge, so the phase always runs. The converge result then names the file under `digests_moving`. The Gateway does not keep that field.
+
+Each bundle file is in exactly one of four classes. The resolver checks them in this order:
+
+| Class | Which files | In which phase digests |
+| --- | --- | --- |
+| Implicit | `ansible.cfg`, `build_vars.py`, the collection and Python pins (`requirements*.yml`, `requirements*.txt`, `galaxy.yml`), and every file under `library/`, `module_utils/`, a `*_plugins/` folder, `group_vars/`, `host_vars/`, `roles/`, `collections/`, `vars/`, `defaults/` or `meta/` | every phase |
+| Converge | a file that a phase walk reaches | each phase that reaches it |
+| Other Operation | a file that only the walk of another playbook reaches. Another playbook is any bundle YAML file that is a list of plays, other than the converge playbooks | none |
+| Unreached | a file that nothing reaches | every phase |
+
+Ansible may load an implicit file without a name, so it is in every phase. A converge phase loads any other file only by a name that its walk sees. A reference that the walk cannot name makes the phase read the whole bundle. So a file that only another Operation's playbooks reach cannot change a converge, and a change to such a playbook, such as `instance-container-power.yml`, runs no phase again.
+
+Ansible finds a relative `copy` or `template` source in `files/` or `templates/` only by its name, which the walk sees, so those folders are not implicit. Git ignores Python byte code, so it is in no digest.
+
+A test fails when a phase of the shipped bundle falls back to the whole bundle, or when a reached file includes a task file outside its phase's set (`swamp/tests/phase_code_test.ts`). It also fails when a file that nothing reaches, an implicit file, a templated include in a converge playbook, or a file in a copied folder does not move its digests, or when another Operation's playbook moves one. A role Operation's phases still read the whole bundle.
+
+The first converge of each Node after this rule shipped finds every code digest moved and runs every phase once.
 
 Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
 

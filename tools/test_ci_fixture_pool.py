@@ -152,9 +152,8 @@ class FixturePoolTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         plan = units.plan(['swamp/ansible/tasks/instance-host.yml'], budget, fixtures, defaults)
         file = 'swamp/tests/ansible_instance_host_updates_test.ts'
-        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
-        self.assertEqual(4, len(expected))
-        self.assertEqual(expected, {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+        self.assertEqual(4, len(list(units.units_for(fixtures[file], budget))))
+        self.assert_every_unit_placed(plan, file, budget, fixtures)
         self.assertNotIn('capacity', plan)
         self.assertEqual([], units.unplaced_units(plan))
         self.assertLessEqual(len(plan['shards']) + len(plan['self_hosted_shards']), budget['runner_shards'])
@@ -190,11 +189,13 @@ class FixturePoolTest(unittest.TestCase):
         planned = {name.split('#')[0] for name in units.planned_units(plan)}
         self.assertNotIn('swamp/tests/ansible_instance_fleet_test.ts', planned)
         for part in ('host_updates', 'host_runtime', 'host_browser', 'host_acl', 't3_restart'):
-            file = f'swamp/tests/ansible_instance_{part}_test.ts'
-            self.assertEqual({name for name, _ in units.units_for(fixtures[file], budget)},
-                             {name for name in units.planned_units(plan) if name.split('#')[0] == file})
+            self.assert_every_unit_placed(plan, f'swamp/tests/ansible_instance_{part}_test.ts', budget, fixtures)
         self.assertEqual({row['file'] for row in plan.get('not_run', [])},
                          {'swamp/tests/ansible_instance_container_test.ts', 'swamp/tests/ansible_instance_host_test.ts'})
+
+    def assert_every_unit_placed(self, plan, file, budget, fixtures):
+        expected = {name for name, _ in units.units_for(fixtures[file], budget)}
+        self.assertEqual(expected, {name for name in units.planned_units(plan) if name.split('#')[0] == file})
 
 
     def test_spare_places_shorten_lanes_without_changing_admitted_units(self):

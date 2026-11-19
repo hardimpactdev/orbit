@@ -33,7 +33,7 @@ const read = (path: string) => Deno.readTextFileSync(new URL(`../${path}`, impor
 const processes = { "/etc/orbit/processes/41/worker.env": "QUEUE_CONNECTION=database\nAPP_KEY=base64:" + "k".repeat(44) + "\nDB_PASSWORD=" + "p".repeat(32) + "\n" };
 const stage = { launcher: read("scripts/instance_clone_launch.py"), script: read("scripts/instance_clone.py"), container: { instance_id: 8 },
     guest: read("scripts/instance_clone_guest.py"), network: read("ansible/instance_network.py"), account: "orbit",
-    bundle: { node_services: read("ansible/instance_node_services.py"), machine_name: read("ansible/instance_machine_name.py"),
+    bundle: { node_services: read("ansible/instance_node_services.py"), machine_name: read("ansible/instance_machine_name.py"), root_disk: read("ansible/instance_root_disk.py"),
         mail: read("ansible/instance_mail.py"), bridge: read("ansible/instance_bridge.py"), node: read("ansible/instance_node_runtime.py"),
         workspace_owner: read("ansible/instance_workspace_owner.py") } };
 const frame = (files: Record<string, string>) => JSON.stringify({ stage, private: JSON.stringify({ processes: files }), processes: files });

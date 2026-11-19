@@ -64,6 +64,7 @@ final readonly class CloneStage
             'bundle' => [
                 'node_services' => $this->read('ansible/instance_node_services.py'),
                 'machine_name' => $this->read('ansible/instance_machine_name.py'),
+                'root_disk' => $this->read('ansible/instance_root_disk.py'),
                 'mail' => $this->read('ansible/instance_mail.py'),
                 'bridge' => $this->read('ansible/instance_bridge.py'),
                 'node' => $this->read('ansible/instance_node_runtime.py'),

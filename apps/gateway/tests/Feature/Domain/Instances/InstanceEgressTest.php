@@ -8,6 +8,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Process;
+use Tests\Support\InstancePool;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -120,6 +121,7 @@ describe('the Instance egress proxy', function (): void {
         ]));
         Cluster::query()->create(['name' => 'home', 'tld' => 'test']);
         $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+        InstancePool::give($node);
         app(InstanceHostIntent::class)->prepare($node);
 
         expect(app(InstanceHostIntent::class)->for($node)['egress']['squid'])->toContain('acl private_name dstdomain .orbit .test');

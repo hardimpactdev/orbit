@@ -308,7 +308,8 @@ const record = "/var/lib/orbit/fleet-refresh.json";
 const convergeInputs: string[] = JSON.parse(Deno.readTextFileSync(new URL("fleet-converge-inputs.json", root))).inputs;
 const recordReads = [`cat ${record}`,
   `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")} HEAD:swamp`];
-const hostTreeRead = "git -c safe.directory=* -c core.quotePath=true -C /srv/workspace ls-tree -r -t --full-tree HEAD -- swamp/ansible apps/gateway/resources/machine-software";
+/** The Instance host's code digest: the checkout's own host_code.ts over its HEAD, with the runtime's Deno. */
+const hostCodeRead = "sh -c <host-code-read> sh /srv/workspace /opt/orbit-runtime/current/bin/deno swamp/extensions/behaviors/operations/ansible-input/host_code.ts";
 /** After the migrate, the nested Gateway prints the digest of each Node's base converge intent; it admits and writes nothing. */
 const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --host app-dev gateway app-dev app-prod";
 /** With the Club key every refresh reads the nested Gateway's Swamp tokens: names and dates, no secret. */
@@ -1521,7 +1522,7 @@ Deno.test({
       assertEquals(calls, [
         `test -s ${clubKey}`,
         ...recordReads,
-        hostTreeRead,
+        hostCodeRead,
         recordRemove,
         ...mountReads,
         ...swampReads,
@@ -1921,8 +1922,7 @@ function pythonJson(value: unknown): string {
   return JSON.stringify(value);
 }
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
-const fixtureHostDigest = (intent = "4".repeat(64)) => sha256(`host ${sha256(pythonJson([`100644 blob ${"5".repeat(40)}\tapps/gateway/resources/machine-software/recipe.json`,
-  `100644 blob ${"3".repeat(40)}\tswamp/ansible/shared.yml`]))} ${intent}`);
+const fixtureHostDigest = (intent = "4".repeat(64)) => sha256(`host ${"6".repeat(64)} ${intent}`);
 /** A time as the record keeps the oldest token's creation: `YYYYMMDDHHMMSS`, UTC. */
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
@@ -2179,7 +2179,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout",
+  name: "the Instance host is due only for code the app-dev converge can load, not for another Operation's playbook, nor converges on an unreadable checkout",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -2188,9 +2188,12 @@ Deno.test({
       const result = new Deno.Command("git", { args: ["-C", checkout, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args] }).outputSync();
       assert(result.success, new TextDecoder().decode(result.stderr));
     };
-    const commit = (path: string, text: string) => {
+    const write = (path: string, text: string) => {
       Deno.mkdirSync(`${checkout}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
       Deno.writeTextFileSync(`${checkout}/${path}`, text);
+    };
+    const commit = (path: string, text: string) => {
+      write(path, text);
       git("add", "--", path);
       git("commit", "-qm", "Change a fixture input");
     };
@@ -2209,10 +2212,26 @@ Deno.test({
     };
     try {
       git("init", "-q");
-      const housekeeping = "swamp/ansible/tasks/swamp-housekeeping.yml";
-      commit(housekeeping, "stock housekeeping");
-      commit("swamp/ansible/tasks/instance-fleet-node.yml", "stock roles");
-      commit("apps/gateway/resources/machine-software/recipe.json", "stock recipe");
+      // The checkout's own resolver and host code, and a bundle whose roles phase loads the app-dev role's task file; the outer
+      // Instance-container play is another Operation's playbook (phase_code.ts class c).
+      const input = "swamp/extensions/behaviors/operations/ansible-input";
+      for (const name of ["phase_code.ts", "converge_input.ts", "host_code.ts"]) write(`${input}/${name}`, Deno.readTextFileSync(new URL(`../${input.slice(6)}/${name}`, root)));
+      write(`${input}/converge_tool.ts`, "export {};\n");
+      write("swamp/extensions/behaviors/operations/tools/contract.ts", "export {};\n");
+      for (const sibling of ["extensions/behaviors/operations/instance-deploy/vp_requirements.ts", "extensions/behaviors/operations/instance-vp-command/requirements.ts",
+        "scripts/production-release-phase", "scripts/release-container.py"]) write(`swamp/${sibling}`, "sibling\n");
+      write("swamp/ansible/ansible.cfg", "[defaults]\n");
+      write("swamp/ansible/build_vars.py", "");
+      write("swamp/ansible/operation-node-converge.yml",
+        "- hosts: all\n  tasks:\n    - { name: Roles, ansible.builtin.include_tasks: tasks/node-role-app-dev.yml, tags: [roles] }\n");
+      write("swamp/ansible/operation-node-converge-local-dns.yml", "- hosts: all\n  tasks: []\n");
+      write("swamp/ansible/tasks/node-role-app-dev.yml", "- { name: Build the Instance host, ansible.builtin.debug: { msg: stock } }\n");
+      write("swamp/ansible/instance-container-power.yml",
+        "- hosts: all\n  tasks:\n    - { name: Relay, ansible.builtin.include_tasks: tasks/executor-power-relay.yml }\n");
+      write("swamp/ansible/tasks/executor-power-relay.yml", "- { name: Relay, ansible.builtin.debug: { msg: stock } }\n");
+      write("apps/gateway/resources/machine-software/recipe.json", "stock recipe\n");
+      git("add", "-A");
+      git("commit", "-qm", "Seed the fixture checkout");
       f.change((state) => {
         state.hostCheckout = checkout;
         const previous = JSON.parse(state.outer.files[record]);
@@ -2221,20 +2240,23 @@ Deno.test({
       });
       const calibrated = refresh(true);
       const bases = Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots]));
-      commit("swamp/ansible/conn-launch.yml", "Conn launch controller");
-      commit("swamp/ansible/t3_copy_rpc.mjs", "Task-turn RPC stdin");
-      commit(housekeeping, "updated housekeeping");
-      commit("swamp/ansible/tasks/role-swamp.yml", "updated Swamp role");
-      commit("swamp/ansible/tasks/swamp-binary-retention.yml", "updated Swamp retention");
+      // Release 2157: only outer Instance-container plays changed. The host is kept and no base is retaken.
+      commit("swamp/ansible/instance-container-power.yml",
+        "# A comment.\n- hosts: all\n  tasks:\n    - { name: Relay, ansible.builtin.include_tasks: tasks/executor-power-relay.yml }\n");
+      commit("swamp/ansible/tasks/executor-power-relay.yml", "- { name: Relay, ansible.builtin.debug: { msg: changed } }\n");
       f.change((state) => {
         state.digests = { "apps/gateway": "a9" };
         state.pendingMigration = true;
       });
       assertEquals(refresh(false, true).host, calibrated.host);
       assertEquals(Object.fromEntries(names.map((name) => [name, f.state().containers[name].snapshots])), bases);
-      commit(`swamp/ansible/unknown/${housekeeping}`, "a new path with the excluded suffix");
+      // A task file the app-dev role loads, and the machine-software recipe, each make the host due.
+      commit("swamp/ansible/tasks/node-role-app-dev.yml", "- { name: Build the Instance host, ansible.builtin.debug: { msg: changed } }\n");
       const changed = refresh(true);
       assert(changed.host && changed.host !== calibrated.host);
+      commit("apps/gateway/resources/machine-software/recipe.json", "new recipe\n");
+      const recipe = refresh(true);
+      assert(recipe.host && recipe.host !== changed.host);
       f.change((state) => state.hostCheckout = `${checkout}/missing`);
       const unreadable = refresh(true);
       assertEquals(unreadable.host, undefined);

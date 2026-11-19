@@ -159,6 +159,10 @@ Gateway static analysis checks `nft --version` before its two real-kernel cases.
 
 Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for `nftables` on Azure and twenty-five seconds for `valkey-server`, which also configures a service. The fallback has twenty seconds for either package.
 
+The Valkey install keeps the packages it downloaded in the Actions cache, keyed by the runner image, and the job on main that warms the Gateway test caches saves that cache. A later run on the same image installs those packages with `dpkg` and needs no mirror: a mirror that times out then leaves the real-client job unaffected.
+
+The cache holds one entry for each runner image, and only a whole set: the download of one install that no failed attempt preceded. After a failed attempt, cached or from a mirror, a part may be installed, and the next download holds only the rest. A run whose cached packages fail to install uses the two mirrors and leaves the entry alone. Raising the number at the end of the cache key drops an entry.
+
 Apt suspends `needrestart` on the disposable runner so unrelated service scans and restarts do not consume the install deadline. At the deadline, the helper identifies the timed-out operation and kills its process group. It verifies the installed commands and fails if neither attempt supplies them. Gateway static analysis keeps its two-minute job limit; the real-client job has four minutes.
 
 The required CI policy job runs alongside input selection and fixture execution, so its tests do not delay fixture startup. Its failure fails Required checks; main does not run it again. The CI policy tests run actionlint on every tracked file under `.github/workflows` to check Actions syntax, types and context availability. The checker defaults to the same tracked files; explicit file arguments limit the check to those files. It downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
@@ -259,9 +263,13 @@ The report separates ordinary shared, tool-dependent shared and GitHub-hosted fi
 
 The report includes distinct runners and this run's peak running and queued fixture jobs against the pool model. It does not measure global runner occupancy, online capacity or other runs' queued jobs. A cancelled workflow that never reaches its reporting step has no automatic report; the script can inspect it later.
 
-`capacity_gap` in the `[budget]` of `checks.toml` lists the files that cannot always fit the shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work, a hosted gap file before a self-hosted one. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
+`capacity_gap` in the `[budget]` of `checks.toml` lists the files that cannot always fit the shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work, a hosted gap file before a self-hosted one, and a hosted gap file named in `capacity_gap_first` before the other hosted ones. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
-A listed file must be a registered fixture. Most are `self_hosted` files. The two hosted ones, `ansible_task_copy_turn_test.ts` and `ansible_instance_host_image_test.ts`, are the largest hosted files: 70 units and 2,462 declared seconds, more than half of what 16 hosted shards hold. Each fits a plan of its own, and a change to the file itself runs all of its units: the gap applies only when other changes select the file. With much other selected work they pass `runner_shards`, for example when a queue run [also plans a commit that reached main past the queue](#merge-queue).
+A listed file must be a registered fixture. Most are `self_hosted` files. Two of the hosted ones, `ansible_task_copy_turn_test.ts` and `ansible_instance_host_image_test.ts`, are large hosted files: 70 units and 2,462 declared seconds, more than half of what 16 hosted shards hold. Each fits a plan of its own, and a change to the file itself runs all of its units: the gap applies only when other changes select the file. With much other selected work they pass `runner_shards`, for example when a queue run [also plans a commit that reached main past the queue](#merge-queue).
+
+`ansible_instance_fleet_test.ts` is the third hosted gap file, and the largest: 90 units that fill 17 of the 20 shards. A change to an input of every case selects the whole file; with much other hosted work in the same pull request, such as a change to `instance-host.yml`, both do not fit. `capacity_gap_first` names it, so it keeps its place before the other two; those keep their order by directness.
+
+The author then runs the units that the plan names as not run in the task copy, with `bin/ci-units run`, and reports the results in the pull request. Splitting the file by phase removes it from the list.
 
 A hosted gap file keeps every unit within the 150-second lane; only a `self_hosted` gap file may hold a larger unit. More shards are not the remedy: ten runners already run 20 jobs in two waves, and a third wave ends after the [five-minute budget](#ci-budget).
 
@@ -388,7 +396,7 @@ The WireGuard hub LAN Python fixture cost 167 seconds as one file, and a Python 
 
 The Instance host updates file runs in self-hosted fixture shards. Across 24 PR observations per case, the runtime update reached 166.761 seconds and the Squid rollback reached 152.639 seconds. Both cases are near the 180-second ceiling and above the lane, so each is split into stages that fit a lane. Each stage keeps the initial converge and the changed-input converge that the case needs.
 
-Changes to `swamp/ansible/tasks/instance-host.yml` require the dir, ZFS and nested prepare-boundary producers, the nested prepare repeat, and the default-remote replacement proof. These five cases are always placed. Their names are validated against the registry, so a rename must update the admission rule.
+Changes to `swamp/ansible/tasks/instance-host.yml` require the btrfs, ZFS and nested prepare-boundary producers, the nested prepare repeat, and the default-remote replacement proof. These five cases are always placed. Their names are validated against the registry, so a rename must update the admission rule.
 
 The nested-fleet image cases of the Instance host image file run on pull requests, one case per slice. Their costs are Beast estimates until hosted runs measure them.
 
@@ -779,7 +787,7 @@ Inside a selected Pest job, it reuses the file-level mapping that the repository
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
-| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it |
+| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it; `bin/build-api` first when API reference inputs changed |
 | `check-flows` | Tooling, docs or API reference inputs changed | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
 | `docs-lint` | Tooling, docs or API reference inputs changed | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
@@ -789,6 +797,8 @@ Inside a selected Pest job, it reuses the file-level mapping that the repository
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | Directly touched planned units, then other planned units that fit the budget, through `bin/ci-units run`; the rest are deferred to CI (see below) |
+
+The `docs-impact` part builds the API outputs first, as CI's Docs job does. The gate checks the ignored OpenAPI document and MCP manifest against the sources, so an earlier build's outputs never read as stale.
 
 Tooling inputs are paths under `bin/`, `tools/` or `.github/`. The CI checks table owns docs and API reference inputs. The local check uses those inputs, not CI's unconditional PR Docs job, to select expensive checks. The `ci-policy` part still runs before Pest and the fixtures when selected. CI runs its full policy suite on every PR.
 
@@ -983,6 +993,8 @@ The check name remains `Required checks` so branch protection, task handoff CI a
 ### Gateway test time limits
 
 Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="5"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. That file owns the five-second default for plain `composer test`, CI and `bin/task-check`. Tests remain unsized except for reviewed cases that need a real deadline, kernel age or private database initialization.
+
+The CLI suite has the same five-second default in `apps/cli/phpunit.xml.dist`. Its former two seconds cut tests whose cleanup waited on the runner's disk.
 
 CI's Gateway suite and privileged cases inherit the project default without a command-line override. The task check reads the same default when CI passes no override. All retain failure and stop-on-risky behavior. Fixtures for large row limits insert batches that fit SQLite's parameter limit while still storing every row up to the production limit.
 
