@@ -26,9 +26,14 @@
   when: fleet_node_apparmor.changed
   ansible.builtin.systemd_service: { name: incus.service, daemon_reload: true, state: restarted }
 
-# The pool is btrfs on the Node's own btrfs root, so a copy is a subvolume snapshot, never a file copy. The Incus btrfs driver needs
-# `btrfs-progs`.
+# The Instance pool is btrfs on the Node's own btrfs root, so a copy is a subvolume snapshot, never a file copy. The Incus btrfs driver
+# needs `btrfs-progs`. The release pool of a nested proof Node (production-release-host.yml) sets `instances.driver` to `dir`: it holds
+# the release containers, so it is never replaced.
+- name: Name the driver of the fleet Node's pool
+  ansible.builtin.set_fact:
+    fleet_node_driver: "{{ instances.driver | default('btrfs') }}"
 - name: Install the btrfs tools on the fleet Node
+  when: fleet_node_driver == 'btrfs'
   ansible.builtin.apt: { name: btrfs-progs, state: present, install_recommends: false, update_cache: true, cache_valid_time: 3600 }
 
 - name: Read the Incus pools
@@ -41,7 +46,7 @@
 # anything changes. A rerun after a break part way goes on: once the root device is gone the pool is unused and is deleted, and a
 # deleted pool is created below.
 - name: Replace a pool of another driver
-  when: fleet_node_pool | length > 0 and (fleet_node_pool | first).driver != 'btrfs'
+  when: fleet_node_pool | length > 0 and (fleet_node_pool | first).driver != fleet_node_driver
   vars:
     fleet_node_pool: "{{ fleet_node_pools.stdout | from_json | selectattr('name', 'equalto', instances.pool) | list }}"
     fleet_node_managed_projects: "{{ [instances.project] + ([instances.nested.project] if instances.nested is defined else []) }}"
@@ -70,7 +75,7 @@
         that: fleet_node_held | length == 0
         fail_msg: >-
           instance.host_unavailable: the Incus pool {{ instances.pool }} uses the {{ (fleet_node_pool | first).driver }} driver and
-          holds {{ fleet_node_held | join(', ') }}; the converge replaces it with a btrfs pool only when nothing but the root device
+          holds {{ fleet_node_held | join(', ') }}; the converge replaces it with a {{ fleet_node_driver }} pool only when nothing but the root device
           of the managed default profile uses it
         quiet: true
       vars:
@@ -87,12 +92,14 @@
       ansible.builtin.command: { argv: [incus, storage, delete, "{{ instances.pool }}"] }
       changed_when: true
 
-- name: Create the btrfs pool on the Node's root
-  when: fleet_node_pool | length == 0 or (fleet_node_pool | first).driver != 'btrfs'
+- name: Create the pool on the Node's root
+  when: fleet_node_pool | length == 0 or (fleet_node_pool | first).driver != fleet_node_driver
   vars:
     fleet_node_pool: "{{ fleet_node_pools.stdout | from_json | selectattr('name', 'equalto', instances.pool) | list }}"
   ansible.builtin.command:
-    argv: [incus, storage, create, "{{ instances.pool }}", btrfs, "source=/var/lib/incus/storage-pools/{{ instances.pool }}"]
+    argv: >-
+      {{ ['incus', 'storage', 'create', instances.pool, fleet_node_driver]
+         + (['source=/var/lib/incus/storage-pools/' ~ instances.pool] if fleet_node_driver == 'btrfs' else []) }}
   changed_when: true
 
 # The power helper reads this marker and keeps the fast wake off for every Instance here, as for nested-fleet Instances (ADR 0261).
