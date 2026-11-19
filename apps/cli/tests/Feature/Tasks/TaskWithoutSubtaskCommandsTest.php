@@ -157,3 +157,33 @@ it('lists a task with no subtask without a subtask count', function (): void {
 
     expect($row)->not->toBeNull()->and($row)->toContain('—')->and($row)->not->toContain('0/0')->and($row)->not->toContain('1/1');
 });
+
+it('shows the latest check of a task with no subtask, and sends its read deliverables back with their paths', function (): void {
+    MockClient::global(gateway_fixture_mock('tasks/task-show/no-subtask'));
+
+    expect(Artisan::call('task:show', ['task' => '1', '--json' => true]))->toBe(0);
+    $work = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['work'];
+    expect($work['check'])->toMatchArray(['id' => 19, 'kind' => 'handoff', 'status' => 'passed'])
+        ->and($work['deliverables'][0])->toMatchArray(['fails_on_base' => true, 'paths' => ['packages/php-sdk/tests/Unit/Requests/Tasks/TaskRequestsTest.php']]);
+
+    file_put_contents($this->deliverables, json_encode($work['deliverables'], JSON_THROW_ON_ERROR));
+    MockClient::destroyGlobal();
+    $mock = MockClient::global([UpdateTaskRequest::class => task_without_subtask(['status' => 'running'], ['status' => 'running'])]);
+
+    expect(Artisan::call('task:update', ['task' => '1', '--deliverables' => $this->deliverables, '--reason' => 'Retry the check.', '--json' => true]))->toBe(0);
+
+    $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
+        && json_decode((string) $request->body(), true, flags: JSON_THROW_ON_ERROR)['deliverables'] === $work['deliverables']);
+});
+
+it('lists a task with no subtask with the ID and status of its latest check', function (): void {
+    $list = json_decode(gateway_fixture('tasks/task-list/default')['body'], true, flags: JSON_THROW_ON_ERROR);
+    $task = json_decode(gateway_fixture('tasks/task-show/no-subtask')['body'], true, flags: JSON_THROW_ON_ERROR)['data'];
+    unset($task['work']['check']['output'], $task['publication']);
+    $list['data'] = [$task];
+    MockClient::global([...gateway_fixture_mock(), ListTasksRequest::class => MockResponse::make($list, 200, ['Content-Type' => 'application/json'])]);
+
+    expect(Artisan::call('task:list', ['--json' => true]))->toBe(0);
+
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['task_groups'][0]['work']['check'])->toBe($task['work']['check']);
+});

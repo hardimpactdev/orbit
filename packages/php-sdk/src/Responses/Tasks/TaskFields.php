@@ -114,10 +114,10 @@ final class TaskFields
 
     /**
      * A subtask's typed deliverables. String fields pass through, and a command deliverable may carry boolean
-     * fails_on_base. A record without the list has none.
+     * fails_on_base and the list of its paths. A record without the list has none.
      *
      * @param  array<string, mixed>  $data
-     * @return list<array<string, string|bool>>
+     * @return list<array<string, string|bool|list<string>>>
      */
     public static function deliverables(array $data, string $record, string $requestId): array
     {
@@ -143,6 +143,9 @@ final class TaskFields
 
                 if (is_string($field) || ($key === 'fails_on_base' && is_bool($field))) {
                     $fields[$key] = $field;
+                } elseif ($key === 'paths') {
+                    // The paths that a fails_on_base command needs, so a read deliverable can be sent back in an update.
+                    $fields[$key] = self::strings($field, $record, $requestId);
                 }
             }
 
@@ -150,6 +153,50 @@ final class TaskFields
         }
 
         return $deliverables;
+    }
+
+    /**
+     * The latest check of a subtask as the Gateway sends it, or null. A list row leaves out its output.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, int|string|null|list<string>>|null
+     */
+    public static function check(array $data, string $record, string $requestId): ?array
+    {
+        $value = $data['check'] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        if (! is_array($value) || ! is_int($value['id'] ?? null) || ! is_string($value['kind'] ?? null) || ! is_string($value['status'] ?? null)) {
+            throw self::invalid($record, $requestId);
+        }
+
+        $check = [];
+        foreach ($value as $key => $field) {
+            if (! is_string($key)) {
+                throw self::invalid($record, $requestId);
+            }
+            $check[$key] = is_array($field) ? self::strings($field, $record, $requestId) : (is_int($field) || is_string($field) ? $field : null);
+        }
+
+        return $check;
+    }
+
+    /** @return list<string> */
+    private static function strings(mixed $value, string $record, string $requestId): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw self::invalid($record, $requestId);
+        }
+        $strings = [];
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                throw self::invalid($record, $requestId);
+            }
+            $strings[] = $item;
+        }
+
+        return $strings;
     }
 
     public static function invalid(string $record, string $requestId): GatewayApiException

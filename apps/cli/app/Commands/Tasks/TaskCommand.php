@@ -465,7 +465,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         ));
     }
 
-    /** @param list<array<string, string|bool>> $deliverables */
+    /** @param list<array<string, string|bool|list<string>>> $deliverables */
     private function writeDeliverables(array $deliverables): void
     {
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
