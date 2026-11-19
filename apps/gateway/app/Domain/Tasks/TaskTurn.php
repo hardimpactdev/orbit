@@ -33,28 +33,10 @@ final readonly class TaskTurn
     /** How long the agent's turn may run before Swamp ends its wait; the bound of a task VM turn. */
     public const int TurnSeconds = 3600;
 
-    /** How an implementer in a copy asks: T3 has no other way to hand a question back, and Orbit ends the turn at it. */
-    public const string AskRule = 'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.';
-
-    /**
-     * What a reviewer in a copy judges, whatever its provider (docs/reference/tasks.md#the-reviewer-rule): the task's scope, and inside it
-     * only findings with real impact. Its approval leads into PrTextRule, which follows it.
-     */
-    public const string ReviewRule = 'Judge only the task\'s scope: the brief, its deliverables, the diff of the checked commit against the task\'s base, '
-        .'and what that diff directly affects. Report your blocking findings and at most a short list of non-blocking ones. A finding blocks only if '
-        .'a normal run, or a likely failure (a crash, reboot or network loss at one step), would stop or delete something live, break live requests or '
-        .'user-visible behaviour, lose or corrupt data, produce a wrong result the brief asks for, or add a security hole. A missed or unproven '
-        .'deliverable, and a broken or missing test the brief asks for, also block. Give the file, line and failing case of each blocking finding. '
-        .'Rare interleavings, races that need several unlikely events, hardening and defence in depth are non-blocking follow-ups for the pull request '
-        .'body. Do not ask for new recovery states, markers or retry paths to cover them. Prefer removing a state over hardening it. In code behind a '
-        .'flag that is off by default, a finding that matters only with the flag on goes on a "before the flag goes on" list; it does not block. '
-        .'A re-review checks only the earlier blocking findings and regressions in their fixes. Report nothing outside the scope: no ideas, refactors '
-        .'or redesigns beyond the task. Do not ask for changes outside the files the task touches unless a blocking finding forces it; then name that '
-        .'finding. If you find no blocking finding, approve.';
-
     /**
      * How a reviewer in a copy approves (docs/reference/tasks.md#the-reviewers-pull-request-text): it sends the pull request text through
-     * its copy key. Orbit opens the pull request once the group is done; the copy holds no Git token.
+     * its copy key. The reviewer's prompt holds it after its review rules (TaskTurnPrompt::reviewer). Orbit opens the pull request once
+     * the group is done; the copy holds no Git token.
      */
     public const string PrTextRule = 'If you approve this commit, write its pull request: a title of one line, and a body in Markdown in a file such as '
         .'pr-body.md. Send them before this turn ends: . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" '
@@ -114,12 +96,15 @@ final readonly class TaskTurn
         // A reviewer's turn names the task branch its checkout goes back to, should the copy still hold its detach.
         $settle = array_map(self::earlier(...), self::unsettled($group));
         $candidate = null;
+        $review = null;
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
-            if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
+            $owner = $check instanceof TaskCheck ? $this->candidates->owner($group, $check) : null;
+            if (! $check instanceof TaskCheck || ! $owner instanceof Operation || ! $this->candidates->eligible($group, $check)) {
                 throw new ResourceOperationException('tasks.commit_not_checked', 'Review requires the current subtask checked candidate.', 422);
             }
             $candidate = (string) $check->commit_sha;
+            $review = TaskTurnReview::of($group, $task, $check, $owner);
         }
         $provider = null;
         $options = [];
@@ -144,8 +129,9 @@ final readonly class TaskTurn
         // The phase checks the candidate out for the reviewer and the task branch out again after it (docs/cli/task/copy-turn.mmd).
         // A turn that continues a thread whose last turn asked answers it: the questions come first, in the agent's own words.
         $prompt = $provider === null && $thread->questions !== null ? self::asked($thread->questions)."\n\nAnswer:\n".$data->prompt : $data->prompt;
-        $prompt = $candidate === null ? $prompt."\n\n".self::AskRule : $prompt."\n\nThe checked commit under review: {$candidate}. The checkout holds it, "
-            .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.'."\n\n".self::ReviewRule."\n\n".self::PrTextRule;
+        // Each role gets its own fixed text around the caller's prompt; a reviewer's also names its check, its round and the handoff note.
+        $prompt = $review === null ? TaskTurnPrompt::implementer($task, $group->project->taskCheckCommand(), $prompt, now())
+            : TaskTurnPrompt::reviewer($task, $review, $prompt, now());
 
         return [
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
@@ -159,7 +145,7 @@ final readonly class TaskTurn
                 // The answer cancels only stored requests of the run that owns them; a stored question without one is not answerable.
                 ...self::answerable($provider === null ? $thread->questions ?? [] : []),
                 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
-                'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
+                'prompt' => $prompt],
         ];
     }
 

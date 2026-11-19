@@ -2324,7 +2324,7 @@ A continued turn whose title T3 lists not exactly once launches nothing and is `
 
 A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
 
-A reviewer turn's composed prompt names the checked commit and ends with two fixed rules: the [reviewer rule](/reference/tasks#the-reviewer-rule), which bounds the review by the task's scope and lets only findings with real impact block, and the [pull request text](/reference/tasks#the-reviewers-pull-request-text) rule. An implementer turn's prompt ends with the rule on how to ask instead.
+Each role's turn gets its own fixed prompt text, as [Run an external turn](/reference/tasks#run-an-external-turn) describes. A reviewer's text names the checked commit and holds the [reviewer rule](/reference/tasks#the-reviewer-rule) and the [pull request text](/reference/tasks#the-reviewers-pull-request-text) rule. An implementer's text holds its own rules, including how to ask, and neither of those two.
 
 ### A question ends the turn
 
