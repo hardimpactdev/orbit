@@ -652,7 +652,16 @@ The converge variables hold the attempt's intent and the values of its execution
 
 Swamp replaces the values of the attempt with fixed marks before it hashes a file: its Operation ID, its private run folder, the version that the admission gives each role certificate leaf, and the admission time of the Instance bridge. So two attempts with the same recorded state have the same digest. A leaf version names only the leaf's folder on the Node, and the admission time only orders bridge writes. The digests the Node records are not in the variables, so a digest does not read its own record.
 
-Every phase reads the same variables, so a change of any recorded input, secret value or plan moves every phase digest. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.
+A few inputs belong to one `node.converge` phase only, and the other phases leave them out of their digest:
+
+| Phase | Its own inputs |
+| --- | --- |
+| `agent` | the agent, executor and CLI pins |
+| `roles` | the role plans of the intent and each role's variables |
+
+The `input` and `check` tags also read them, but those tags never skip. A release moves the agent, executor and CLI pins, so after a release only the agent phase runs again, unless something else changed. A test proves the table against the shipped Ansible files: no other skippable phase can load a task or template that reads one of these inputs.
+
+Every phase reads all other variables, so a change of any other recorded input, secret value or plan moves every phase digest. That also holds for a new intent field that the table does not name. Code is different: a `node.converge` phase reads only the Ansible files that it can load, so a change to a task file that only the network phase loads runs only the network phase again.
 
 Swamp resolves each phase's files from the staged bundle when it prepares the input. The resolver is `phase_code.ts` beside the input behaviour. It works in these steps:
 
