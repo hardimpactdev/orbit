@@ -566,6 +566,16 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
 
+A removal runs beside the converge, and a removal or an idle sleep stops a container first. So a container that the converge listed as running can be stopped or deleted before its turn. When a call on a container fails, the converge asks Incus again.
+
+When Incus answers `Instance not found`, the container is gone. The converge lists it under `gone` and skips it, and it leaves the T3 restart list.
+
+When Incus now reports `Stopped` or `Frozen`, the container gets the work of that state, as if the listing had shown it so. Its shared files and T3 drop-ins are written through the file API. A stopped container loses its linker cache. Nothing runs inside it. A stopped T3 needs no restart now and stays on the restart list. The runtime folder's Processes need no restart either.
+
+A container that still runs keeps its failure. A failed NIC move always fails, because a device update works on a stopped container too.
+
+A container that needs no restart lets the folder's restart mark clear. A failed restart of a running container keeps the mark for the next converge.
+
 #### T3's unit drop-ins
 
 A container with a T3, a clone or a migrated checkout, holds two root-owned drop-ins of `t3.service`: `10-orbit-boot.conf` and `20-orbit-server.conf` in `/etc/systemd/system/t3.service.d/`. `InstanceContainer::t3DropIns` renders both. The create writes them before the first start, and the Gateway hands the same texts to the Node converge as `t3_files`, one entry for each container with a T3. A default has none.
@@ -3245,7 +3255,8 @@ The refresh stops the targets as before, and takes `base` of the stopped fleet, 
 - the pools cannot be read, or the read gives anything but one driver name per line. The refresh reads them once, with `incus storage list --format csv --columns D`.
 - the hold of the nested Gateway's queue writes or the save of its queues fails.
 - a fleet rule or file differed on the running fleet. The rules are written with the three stopped.
-- a [shrink](#the-inner-machines-stay-small) is due. The relink and the dedupe need the three stopped.
+
+A due [shrink](#the-inner-machines-stay-small) never stops the fleet: it runs after the refresh.
 
 The result says which way ran: `base_mode` is `running`, `stopped`, or `none` when `base` stays.
 
@@ -3341,36 +3352,62 @@ The gate and the runner take the tools as ready only when the venv holds `.compl
 
 #### The inner machines stay small
 
-The three nested containers hold their root disks on the inner pool. A refresh keeps them small in the window where it retakes `base`, with the three stopped, the old `base` deleted and the new one not yet taken. So the new `base` and the seed hold the small form. The step is `swamp/ansible/instance_fleet_shrink.py`, run as root in the outer container. It has three parts, in this order.
+The three nested containers hold their root disks on the inner pool. The shrink keeps them small. The step is `swamp/ansible/instance_fleet_shrink.py`, run as root in the outer container. It has three parts, in this order.
 
-The first part is the relink. Ubuntu's `rust-coreutils` ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in `/usr/lib/cargo/bin/coreutils/`. The step reads the package's dpkg digests. Each file with the digest of `/usr/bin/coreutils` is linked back to that file. It must also have the same bytes, owner and mode. Other files of one digest, such as the package's empty locale files, are separate files in the package, so they stay separate. Each link replaces its path atomically: a new link beside it, then a rename over it.
+It runs outside the refresh's `base` step, on the running fleet. A due shrink once forced the stopped `base`: in the refresh of Instance 2454 after release 2162 (Operation 29505), `base` took 163 s instead of about 10 s, because `btrfs-progs` had just been installed on `nested-app-dev`. That happens at every release that changes a nested package.
+
+So the refresh checks the shrink and takes `base` of the running fleet on btrfs. A due shrink makes `base` due for all three. A changed package means a nested container's disk changed, and no converge needs to report it: a package installed by hand on `nested-app-dev` is one. The check does not name the container, so `base` of all three holds the new package, and a reset onto it keeps it. Only the shrink waits. After the tools step the refresh starts it as the transient unit `orbit-fleet-shrink` in the outer container. The result says `shrink: started`.
+
+The shrink runs on after the refresh's Operation ends, while the three run. Its record says that `base` does not hold it yet. The next refresh finds the check `shrunk`. It retakes `base` of all three on the running fleet, so `base` holds the small form. Then it records that.
+
+Each refresh first stops an `orbit-fleet-shrink` that still runs, before its first write to a nested disk. So no shrink runs while a refresh holds `base`. A stopped shrink writes no record and starts again after that refresh's `base`. A restore of the old seed stops the outer container, and with it the unit. The unit lives in `/run`, so no seed holds it. It has 900 s (`RuntimeMaxSec`).
+
+The relink and the dedupe are safe on running root disks:
+
+- The relink replaces a file only by a link to an identical file. It swaps the two names in one atomic step. A reader never finds a missing or partial path.
+- A package may replace the file after the compare. Then the step swaps it back and skips it.
+- The step opens each folder on the way from the one above it. It follows no symlink and holds the folder open. So a swapped folder never leads it outside the root disk.
+- The kernel compares the bytes before `duperemove` shares them, so no file changes.
+- The step compares the dpkg status before and after the run. A package that changed in between leaves no record, so the shrink runs again.
+- Each nested container's own `apt-get clean` empties its archives. A held apt lock leaves them for a later shrink.
+
+apt needs a package it fetched until dpkg unpacked it, and holds the archives' lock over that time. `apt-get clean` takes the same lock without waiting. While an apt run holds it, the clean fails and its error goes to the unit's journal.
+
+The seed stays consistent. A seed is a snapshot of the outer container and its inner volume, taken at one point in time. A seed taken while the shrink runs holds whole files, some relinked or shared and some not. Its `base` snapshots are those of the refresh before, which the shrink never touches. A seed copy (`instance.seed_copy`) pushes such a seed, so it never pushes a half-written `base`. Until the next refresh, `base` and the seed hold the old blocks: larger, but whole.
+
+The first part is the relink. Ubuntu's `rust-coreutils` ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in `/usr/lib/cargo/bin/coreutils/`. The step reads the package's dpkg digests. Each file with the digest of `/usr/bin/coreutils` is linked back to that file. It must also have the same bytes, owner and mode. Other files of one digest, such as the package's empty locale files, are separate files in the package, so they stay separate. Each link replaces its path atomically: a new link beside it, then one swap of the two names.
 
 The digests and paths come from the nested container's own dpkg files, which its root controls. So every path stays inside that container's root disk: an absolute path, a `..` part, or a symlink at any level below the root disk is skipped and never followed. A path that cannot be linked, such as a name too long for the temporary link, is skipped too; it never fails the step. This includes `/usr/bin/coreutils` and its folders, the dpkg files themselves and the cache folders.
 
 Each machine's count of skipped paths goes to the step's standard error; the result counts only the relinked paths. A root disk that is itself a symlink fails the run (`shrink: failed`), and a dpkg status that is no regular file inside the root disk makes the check `unreadable`. `duperemove` gets only the three root disk paths, which the outer side names, and its walk follows no symlink.
 
-The second part is the caches. The step removes the `.deb` files in each nested container's `/var/cache/apt/archives` and its `partial` folder. apt keeps no new ones (the size files of [Fleet rules](#fleet-rules)), and the egress proxy serves a package again when apt needs it. It follows no symlink out of the disk. The journals are trimmed by journald itself, at its start after `base`, so the next `base` retake holds the 64 MiB form.
+The second part is the caches. The step runs `apt-get clean` in each nested container, through `incus exec`. It removes the `.deb` files in `/var/cache/apt/archives` and its `partial` folder. apt keeps no new ones (the size files of [Fleet rules](#fleet-rules)), and the egress proxy serves a package again when apt needs it. The clean runs as the nested root, so it reaches no path of the outer side. The journals are trimmed by journald itself, at its start after `base`, so the next `base` retake holds the 64 MiB form.
 
 The third part is the dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent. The kernel compares the bytes before it shares them, so no file changes. It needs a btrfs pool and `duperemove`. [The pinned shape tools](#the-pinned-shape-tools) step keeps `duperemove` in the container.
 
-The shrink is due when no shrink is recorded, or when a nested container's dpkg status changed since the last one: a package was installed, removed or upgraded. A record of an older rule of the step counts as no record, so a new rule runs once. The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due shrink makes `base` due for all three, so the dedupe shares blocks across them.
+The shrink is due when no shrink is recorded, or when a nested container's dpkg status changed since the last one: a package was installed, removed or upgraded. A record of an older rule of the step counts as no record, so a new rule runs once.
 
-| Case | What the step does | Result |
+The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status, and `base: false` while `base` does not hold the shrink yet. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due check makes `base` due for all three: `record` and `packages` so that `base` holds the changed packages, `shrunk` so that every `base` holds the shared blocks.
+
+| Case | What the refresh does | Result |
 | --- | --- | --- |
 | No package changed since the last shrink | Checks only | `shrink: skipped`, `shrink_reason: current` |
-| No record, or a dpkg status changed | Relinks, empties the archives and dedupes; writes the record; `base` of all three | `shrink: ran`, `shrink_reason: record` or `packages` |
-| `duperemove` is not installed yet | Relinks and empties the archives; writes no record, so the next refresh runs it again | `shrink: relinked` |
-| The inner pool is a directory pool | All but the dedupe (none on a directory pool); writes the record | `shrink: ran` |
+| No record, or a dpkg status changed | `base` of all three, of the running fleet; starts the shrink after `base`: it relinks, empties the archives, dedupes and writes the record with `base: false` | `shrink: started`, `shrink_reason: record` or `packages` |
+| A shrink ran after the last `base` | `base` of all three, of the running fleet; records that `base` holds the shrink | `shrink: skipped`, `shrink_reason: shrunk` |
+| The unit does not start | Nothing more; the next refresh starts it again | `shrink: failed` |
 | The check cannot read | Nothing; `base` is decided as before | `shrink: skipped`, `shrink_reason: unreadable` |
-| The run fails or times out (600 s) | Writes no record; the refresh goes on | `shrink: failed` |
+
+What the shrink itself did goes to the unit's journal in the outer container, as its last line (`journalctl -u orbit-fleet-shrink`). Without `duperemove` it relinks and empties the archives and writes no record, so the next refresh starts it again. On a directory pool it does all but the dedupe and writes the record. A run that fails, times out or is stopped writes no record.
 
 The first nested fleet held 116 separate copies of the coreutils binary in each machine, 1.26 GiB each. Its three machines shared no blocks. On a copy of it the shrink took the inner pool from 11.8 GiB to 3.7 GiB in 36 s, with the fleet stopped. The inner volume's own size went from 10.3 GiB to 3.2 GiB. The machines ran again, and `dpkg --verify rust-coreutils` was clean.
 
+In task copy 3777 on 2026-11-19, a package was installed on `nested-app-dev`. The old stopped path took 292 s for `base`: stop 72 s, shrink 199 s. The running `base` took 14 s. The shrink then ran for 166 s as `orbit-fleet-shrink`, with the fleet running and Doctor healthy. The next `base` of the running fleet took 18 s.
+
 The links were lost in that fleet's one-time hand move to the inner volume (14 November 2026). The Incus paths of a new default keep them. Each was checked: an image unpack on the btrfs pool, a start that shifts the IDs, and a move between a directory pool and a btrfs pool, with or without a snapshot. An export and import, and a snapshot restore, keep them too.
 
-A nested container's own package updates count as a change: the next refresh runs the shrink and retakes `base` of all three. A shrink that fails at every refresh costs its run and a `base` retake at every refresh; the result names it each time.
+A nested container's own package updates count as a change: the next refresh starts the shrink, and the one after it retakes `base` of all three. A shrink that fails at every refresh costs its run after every refresh, outside the Operation, and no `base` retake.
 
-A default whose tools step has not yet installed `duperemove` gets `shrink: relinked` at its first such refresh; the tools step after `base` installs `duperemove`, and the next refresh runs the whole shrink and retakes `base` once more.
+The tools step runs before the shrink starts, so a default whose tools step installs `duperemove` in that refresh runs the whole shrink.
 
 The Operation's result has `fleet_refresh`. It holds these fields:
 
@@ -3378,7 +3415,7 @@ The Operation's result has `fleet_refresh`. It holds these fields:
 - `converge`: `ran` or `skipped`. `converge_reasons`: each nested Node's reason, as [above](#what-a-refresh-skips). `converge_nodes`: the Nodes the converge ran for. `changed`: the tasks the converges changed.
 - `tokens`: `reminted`, `young` or `skipped`. `tokens_reason`: `age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`.
 - `tools`: `present`, `built` or `failed`. `tools_reason`: see [The pinned shape tools](#the-pinned-shape-tools).
-- `shrink`: `ran`, `relinked`, `failed` or `skipped`. `shrink_reason`: `record`, `packages`, `current` or `unreadable`. See [The inner machines stay small](#the-inner-machines-stay-small).
+- `shrink`: `started`, `failed` or `skipped`. `shrink_reason`: `record`, `packages`, `shrunk`, `current` or `unreadable`. See [The inner machines stay small](#the-inner-machines-stay-small).
 - `swamp`: `installed`, `pinned` or `skipped`. `swamp_reason`: `changed`, `unreadable`, `pinned` or `no_key`. `swamp_version`: the release that the refresh read in the recipe (null without a read). See [The pinned Swamp](#the-pinned-swamp).
 - `base`: `retaken` or `kept`. `base_containers`: the containers whose `base` was retaken.
 - `record`: `present`, `missing` or `unreadable`. `seconds`: the seconds of each part.

@@ -370,6 +370,8 @@ const serviceRead = "incus exec nested-gateway -- systemctl is-active orbit-gate
   swampServices.join(" ");
 const recordWrite = `sh -c mkdir -p "\${1%/*}" && cat > "$1.tmp" && chown root:root "$1.tmp" && chmod 0644 "$1.tmp" && mv -f "$1.tmp" "$1" sh ${record}`;
 const recordRemove = `rm -f ${record}`;
+/** Every refresh first stops a shrink that a refresh started and that still runs. */
+const shrinkStop = "systemctl stop orbit-fleet-shrink.service";
 const readyCalls = [
   "incus list --format csv --columns ns",
   "ping -c 1 -W 2 10.45.0.1",
@@ -730,6 +732,7 @@ Deno.test({
       assertEquals(calls, [
         `test -s ${clubKey}`,
         ...recordReads,
+        shrinkStop,
         recordRemove,
         // With the Club key the nested Gateway's Swamp state mounts must be up too: the grants are written there.
         exec("nested-gateway", `systemctl is-active ${mounts} ${swampMounts}`),
@@ -1538,12 +1541,13 @@ Deno.test({
       const again = f.run("refresh");
       assert(again.ok, again.output);
       const calls = f.calls();
-      // What still runs: the Club key test, the record and digests, the mount wait, the two Swamp reads, one read of the services, the converge decision, the
+      // What still runs: the Club key test, the record and digests, the stop of a running shrink, the mount wait, the two Swamp reads, one read of the services, the converge decision, the
       // devices and keys, the snapshots, one readiness wait, the tools read and the record (instance-fleet-refresh.yml).
       assertEquals(calls, [
         `test -s ${clubKey}`,
         ...recordReads,
         hostCodeRead,
+        shrinkStop,
         recordRemove,
         ...mountReads,
         ...swampReads,
@@ -1772,36 +1776,42 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current",
+  name: "a due shrink retakes base of all three of the running fleet and starts after it; the next refresh stops none, retakes base again and is then current",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
     try {
       const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
-      // A nested container's package changed since the last shrink, and duperemove is not there yet: only the relink runs.
+      const unit = (calls: string[]) => calls.filter((call) => call.startsWith("systemd-run --unit orbit-fleet-shrink "));
+      // A package was installed on nested-app-dev since the last shrink, and no converge or other writer reports a change. The pool
+      // is btrfs: `base` of all three is of the running fleet, so the first seed holds the new package, and nothing stops.
       f.change((state) => {
+        state.poolDriver = "btrfs";
         state.shrink = { due: true, reason: "packages" };
-        state.shrinkResult = { shrink: "relinked", relinked: 345, dedupe: "missing" };
       });
       f.calls();
-      const relinked = f.run("refresh");
-      assert(relinked.ok, relinked.output);
+      const deferred = f.run("refresh");
+      assert(deferred.ok, deferred.output);
       let calls = f.calls();
-      assert(!ran(calls, parts.converge), calls.join("\n"));
-      const run = calls.indexOf(shrinkCall + "run " + shrinkArgs);
-      const deletes = calls.flatMap((call, index) => call.startsWith("incus snapshot delete ") ? [index] : []);
-      assertEquals(deletes.length, 3, calls.join("\n"));
-      assert(run > Math.max(...deletes) && run < calls.indexOf(takes(calls)[0]), calls.join("\n"));
-      assertEquals(takes(calls).length, 3);
-      for (const name of names) assertEquals(f.state().containers[name].status, "Running");
-      assertEquals(shrunk(f.refreshed()), ["retaken", "relinked", "packages"]);
+      let result = f.refreshed();
+      assert(!ran(calls, parts.stop), calls.join("\n"));
+      assertEquals([result?.base_mode, takes(calls)], ["running", names.map((name) => `incus snapshot create ${name} base`)]);
+      // The shrink starts as its own unit after base and the tools step, and runs on after the refresh.
+      assertEquals(unit(calls), [
+        "systemd-run --unit orbit-fleet-shrink --collect --quiet --property TimeoutStopSec=30 --property RuntimeMaxSec=900 python3 -I -c <instance_fleet_shrink.py> run " + shrinkArgs,
+      ]);
+      assert(calls.indexOf(unit(calls)[0]) > calls.indexOf(toolsCall) && calls.indexOf(unit(calls)[0]) > calls.indexOf(takes(calls).at(-1)!), calls.join("\n"));
+      assertEquals(shrunk(result), ["retaken", "started", "packages"]);
 
-      // Without its dedupe the shrink is due again, and with duperemove both parts run: base of all three again.
-      f.change((state) => delete state.shrinkResult);
+      // The shrink ran after that base: the next refresh retakes base of all three of the running fleet, so it holds the small form,
+      // and records that.
       assert(f.run("refresh").ok);
       calls = f.calls();
-      assertEquals(takes(calls).length, 3);
-      assertEquals(shrunk(f.refreshed()), ["retaken", "ran", "packages"]);
+      result = f.refreshed();
+      assertEquals([takes(calls).length, result?.base_mode], [3, "running"]);
+      assert(calls.includes(shrinkCall + "based " + shrinkArgs), calls.join("\n"));
+      assertEquals(unit(calls), []);
+      assertEquals(shrunk(result), ["retaken", "skipped", "shrunk"]);
 
       // The next refresh finds it current: one check, no run, and base stays.
       const before = structuredClone(f.state().containers);
@@ -1818,24 +1828,38 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named",
+  name: "a shrink that still runs stops before the refresh writes anything; a check that fails keeps base and a start that fails is named",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
     try {
-      f.change((state) => state.shrinkExit = 124);
+      // A shrink that a refresh started still runs: the next refresh stops it before it removes its record, so no shrink runs while
+      // it holds base. Without a record that shrink is due again and starts again after base.
+      f.change((state) => {
+        state.shrinkRuns = true;
+        state.shrinkUnit = "running";
+        state.shrink = { due: true, reason: "packages" };
+      });
       f.calls();
+      assert(f.run("refresh").ok);
+      const calls = f.calls();
+      assertEquals([f.state().shrinkStopped, f.state().shrinkUnit], [1, "running"]);
+      assert(calls.indexOf(shrinkStop) < calls.indexOf(recordRemove), calls.join("\n"));
+      f.change((state) => {
+        delete state.shrinkRuns;
+        delete state.shrinkUnit;
+        state.shrinkExit = 124;
+      });
       assert(f.run("refresh").ok);
       assertEquals(f.calls().filter((call) => call.startsWith("incus snapshot create ")), []);
       assertEquals(shrunk(f.refreshed()), ["kept", "skipped", "unreadable"]);
       f.change((state) => {
         delete state.shrinkExit;
-        state.shrink = { due: true, reason: "record" };
-        state.shrinkResult = { shrink: "failed", relinked: 0, dedupe: "failed" };
+        state.shrinkStartFails = true;
       });
       const failed = f.run("refresh");
       assert(failed.ok, failed.output);
-      assertEquals(shrunk(f.refreshed()), ["retaken", "failed", "record"]);
+      assertEquals(shrunk(f.refreshed()), ["retaken", "failed", "packages"]);
     } finally {
       f.cleanup();
     }
@@ -2817,7 +2841,6 @@ Deno.test({
 for (const [why, edit] of [
   ["a directory pool", (state: Record<string, unknown>) => state.poolDriver = "dir"],
   ["an unreadable pool read", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", poolsUnreadable: true })],
-  ["a due shrink", (state: Record<string, unknown>) => Object.assign(state, { poolDriver: "btrfs", shrink: { due: true, reason: "packages" } })],
 ] as [string, (state: Record<string, unknown>) => void][]) {
   Deno.test({
     name: `${why} takes base with the fleet stopped`,

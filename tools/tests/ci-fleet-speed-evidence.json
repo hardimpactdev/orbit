@@ -35,14 +35,14 @@
       "change": "Select shipped Swamp pin callers and their three result expressions."
     },
     {
-      "name": "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current",
+      "name": "a due shrink retakes base of all three of the running fleet and starts after it; the next refresh stops none, retakes base again and is then current",
       "hosted_run": "43998762978",
       "hosted_unit": "swamp/tests/ansible_instance_fleet_test.ts#40/76",
       "hosted_source_sha256": "964c4f885e346981ce970acb54f40f2ab2991cfffb3d709ac3895ccf71e72f5b",
       "hosted_seconds": 113.876,
       "before_seconds": 43.167,
-      "after_seconds": 39.196,
-      "change": "Preserve all three shrink/base transitions; pipeline local Ansible modules."
+      "after_seconds": 35.566,
+      "change": "Preserve all three shrink/base transitions; pipeline local Ansible modules. The deferred shrink replaced this case: after_seconds is 39.196 s scaled by the new case over the replaced one, run back to back on task copy 5975 (65.544 s / 72.234 s)."
     },
     {
       "name": "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",

@@ -53,10 +53,12 @@
     # The refresh record (instance-fleet-refresh.yml): the digests of the parts the last passed refresh did, on the container's own
     # disk, so a seed holds the record of the fleet it holds. Absent while a refresh runs. Root-owned, in a root-owned folder.
     fleet_record: /var/lib/orbit/fleet-refresh.json
-    # The shrink record (instance_fleet_shrink.py): the dpkg status digest of each nested container when the refresh last relinked and
-    # deduplicated their root disks, on the container's own disk beside the refresh record; and the inner Incus's storage folder.
+    # The shrink record (instance_fleet_shrink.py): the dpkg status digest of each nested container when a shrink last relinked and
+    # deduplicated their root disks, and whether `base` holds it, on the container's own disk beside the refresh record; and the inner Incus's storage folder.
     fleet_shrink_record: /var/lib/orbit/fleet-shrink.json
     fleet_inner_pools: /var/lib/incus/storage-pools
+    # The transient unit that runs a due shrink after the refresh (instance-fleet-refresh.yml).
+    fleet_shrink_unit: orbit-fleet-shrink
     # The transient timer that thaws a fleet frozen for `base` when the refresh's controller is lost (instance-fleet-refresh.yml).
     fleet_thaw_unit: orbit-fleet-thaw
     fleet_tunnel: wg-nested

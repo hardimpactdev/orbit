@@ -1232,7 +1232,7 @@ contexts:
     fleet_tokens_read:
       rc: 0
       stdout: 'Error: the token store is locked'
-  # instance_shape_tools.py in the outer container: one JSON line on standard output, its programs' output on standard error.
+  # instance_shape_tools.py in the outer container: one JSON line on standard output, its programs' output on standard error. Its run starts as a unit after the refresh, which reads no output of it.
   fleet-tools-present:
     fleet_tools_read:
       rc: 0
@@ -1252,7 +1252,7 @@ contexts:
       rc: 0
       stdout_lines:
       - '{"tools": "built", "reason": "missing", "venv": "venv-4f0'
-  # instance_fleet_shrink.py in the outer container: one JSON line on standard output, its programs' output on standard error.
+  # instance_fleet_shrink.py in the outer container: one JSON line on standard output, its programs' output on standard error. The refresh starts its run as a unit that runs on after it and reads none of its output.
   fleet-shrink-due:
     fleet_shrink_read:
       rc: 0
@@ -1272,27 +1272,6 @@ contexts:
       rc: 0
       stdout_lines:
       - '{"due": true, "rea'
-  fleet-shrink-ran:
-    fleet_shrink_run:
-      rc: 0
-      changed: true
-      stdout_lines:
-      - '{"shrink": "ran", "relinked": 345, "dedupe": "ran"}'
-  fleet-shrink-relinked:
-    fleet_shrink_run:
-      rc: 0
-      changed: true
-      stdout_lines:
-      - '{"shrink": "relinked", "relinked": 345, "dedupe": "missing"}'
-  fleet-shrink-run-timeout:
-    fleet_shrink_run:
-      rc: 124
-      changed: false
-      stdout_lines: []
-  fleet-shrink-skipped:
-    fleet_shrink_run:
-      skipped: true
-      changed: false
   # A recorded converge time that is no number: that Node is stale, never a failed refresh. app-dev has no recorded digest: changed.
   fleet-converged-malformed:
     fleet_roles: [gateway, app-dev]
@@ -2736,26 +2715,6 @@ cases:
     due: false
     reason: unreadable
 - file: tasks/instance-fleet-refresh.yml
-  task: Read what the shrink did
-  field: ansible.builtin.set_fact.fleet_shrink
-  context: fleet-shrink-ran
-  expected: ran
-- file: tasks/instance-fleet-refresh.yml
-  task: Read what the shrink did
-  field: ansible.builtin.set_fact.fleet_shrink
-  context: fleet-shrink-relinked
-  expected: relinked
-- file: tasks/instance-fleet-refresh.yml
-  task: Read what the shrink did
-  field: ansible.builtin.set_fact.fleet_shrink
-  context: fleet-shrink-run-timeout
-  expected: failed
-- file: tasks/instance-fleet-refresh.yml
-  task: Read what the shrink did
-  field: ansible.builtin.set_fact.fleet_shrink
-  context: fleet-shrink-skipped
-  expected: skipped
-- file: tasks/instance-fleet-refresh.yml
   task: Name the due parts
   field: vars.fleet_tokens_recorded
   context: fleet-tokens-recorded-young
@@ -3321,6 +3280,10 @@ non_command_output:
   task: Remove the certificate folders
   field: vars.caddy_folders
   reason: Prefixes admitted certificate scopes.
+- file: route-withdraw.yml
+  task: Write the withdrawal refusal
+  field: ansible.builtin.copy.content
+  reason: Selects the public error code of the orbit_route_withdraw module's failure metadata.
 - file: tasks/fleet-reboot-read.yml
   task: Keep the boot state
   field: ansible.builtin.set_fact.boot.newest_kernel
