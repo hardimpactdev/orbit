@@ -28,11 +28,11 @@ final readonly class NodeExecutorInput
 
     /**
      * The families each role enables. The no-op `proof` and sleep/wake/discard `power` families ship on app-dev; `clone` joins with its slice
-     * (`app-prod` gets `power` when ADR 0265 brings sleep to production).
+     * (`app-prod` gets `power` when ADR 0265 brings sleep to production). A VPN Node places the private DNS records (`dns`).
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof', 'route']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof', 'route'], RoleName::Vpn->value => ['dns']];
 
     /**
      * The first agent delivery whose executor knows each newer family. An older executor refuses to start on an unknown family,
@@ -40,7 +40,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, string>
      */
-    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0'];
+    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0'];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
@@ -54,8 +54,9 @@ final readonly class NodeExecutorInput
 
         // The machine bus (ADR 0271): only the Gateway's address, and the guard that lets only root reach it. A Node holds no bus
         // credential; the Gateway admits it by its WireGuard address. Without the engine's key both files are removed, and the
-        // executor serves its socket alone.
-        $guard = NodeBusAccess::guard();
+        // executor serves its socket alone. On the Gateway's own host the guard also admits the Gateway's runtime user, whose
+        // processes join with the Gateway's key; any other user there stays out.
+        $guard = NodeBusAccess::guard(in_array(RoleName::Gateway, $roles, true) ? $node->user : null);
 
         return $intent === null ? null : [...$intent, 'unit' => self::unit($guard !== null), 'bus_url' => NodeBusAccess::url(),
             'bus_path' => NodeBusAccess::Path, 'bus_guard' => $guard, 'bus_guard_path' => NodeBusAccess::GuardPath];

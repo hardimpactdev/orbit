@@ -3,6 +3,16 @@
   ansible.builtin.systemd: { name: incus.service, state: started, enabled: true }
   when:
     - not ci_check_only
+# The marked CI pool on ZFS or btrfs beside the Node's Instance pool, by the agent's rule (ci-host-pool.py). A dir or unmarked pool,
+# or a Node without a ZFS or btrfs Instance pool, refuses. The host `default` pool is never touched.
+- name: Keep the CI pool on ZFS or btrfs
+  ansible.builtin.script:
+    cmd: >-
+      files/ci-host-pool.py {{ 'check' if ci_check_only else 'pool' }} {{ plans.ci.project | quote }} {{ plans.ci.pool | quote }}
+      {{ plans.ci.sourcePool | quote }} {{ plans.ci.poolOwner | quote }}
+    executable: /usr/bin/python3
+  register: ci_pool
+  changed_when: (ci_pool.stdout | from_json).changed
 - name: Read CI collections
   ansible.builtin.command:
     argv:
@@ -10,13 +20,6 @@
       - query
       - /1.0/{{ item.collection }}
   loop:
-    - collection: storage-pools
-      name: "{{ plans.ci.pool }}"
-      create:
-        - storage
-        - create
-        - "{{ plans.ci.pool }}"
-        - dir
     - collection: projects
       name: "{{ plans.ci.project }}"
       create:
@@ -71,6 +74,17 @@
       - /1.0/profiles/default?project={{ plans.ci.project }}
   register: ci_profile
   changed_when: false
+# A runner on another pool, such as the old `default`, keeps it through its own root device before the profile root moves;
+# tools/ci-runners/setup.sh move moves it while idle.
+- name: Pin each runner on another pool before the CI profile root moves
+  when: not ci_check_only
+  ansible.builtin.script:
+    cmd: >-
+      files/ci-host-pool.py pin {{ plans.ci.project | quote }} {{ plans.ci.pool | quote }}
+      {{ plans.ci.sourcePool | quote }} {{ plans.ci.poolOwner | quote }}
+    executable: /usr/bin/python3
+  register: ci_pins
+  changed_when: (ci_pins.stdout | from_json).changed
 - name: Apply the CI profile
   ansible.builtin.command:
     argv:

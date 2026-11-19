@@ -3,7 +3,7 @@
   when: production.nested
   ansible.builtin.include_tasks: instance-fleet-node.yml
   vars:
-    instances: { pool: orbit-releases, driver: dir, incus: "{{ production.incus }}" }
+    instances: { pool: orbit-releases, incus: "{{ production.incus }}" }
 - name: Install the pinned Incus package
   when: not production.nested
   ansible.builtin.include_tasks: incus-install.yml

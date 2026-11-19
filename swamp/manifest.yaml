@@ -16,6 +16,7 @@ additionalFiles:
   - ansible/proof-observer-facts.php
   - ansible/tasks/incus-install.yml
   - ansible/tasks/instance-fleet-node.yml
+  - ansible/files/fleet-node-pool.py
   - ansible/tasks/proof-gateway-release.yml
   - proof/cli-release.json
   - ansible/library/orbit_route_withdraw.py
@@ -202,6 +203,7 @@ additionalFiles:
   - ansible/tasks/firewall-port.yml
   - ansible/tasks/firewall.yml
   - ansible/tasks/ci.yml
+  - ansible/files/ci-host-pool.py
   - ansible/task-host-firewall-remove.yml
   - ansible/tasks/task-host-firewall-remove.yml
   - ansible/tasks/task-container-host-system.yml

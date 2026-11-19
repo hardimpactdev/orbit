@@ -12,6 +12,7 @@
 #   tools/ci-runners/setup.sh hook NAME              # job-started hook that resets the checkout; restart only when idle
 #   tools/ci-runners/setup.sh proof_hook             # the same hook for the orbit-proof runner on this host (sudo)
 #   tools/ci-runners/setup.sh verify NAME            # egress and loopback probes from inside the container
+#   tools/ci-runners/setup.sh move NAME              # drain the runner on GitHub (gh), move it onto the orbit-ci pool
 #
 # A registration token comes from `gh api -X POST orgs/hardimpactdev/actions/runners/registration-token --jq .token`
 # and expires after an hour. The script never stores or prints it. Prefer ORBIT_RUNNER_TOKEN: an argument shows in
@@ -25,6 +26,8 @@ set -euo pipefail
 
 REPOSITORY=$(cd "$(dirname "$0")/../.." && pwd)
 PROJECT=orbit-ci
+# The role's ZFS or btrfs pool (ci-runner.host); the project's default profile roots a new runner on it.
+POOL=orbit-ci
 IMAGE=images:ubuntu/26.04
 RUNNER_VERSION=2.338.0
 RUNNER_SHA256=af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
@@ -310,6 +313,126 @@ register() {
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
 }
 
+# One exact runner: its root pool, whether it pins that pool in its own devices, its status, and whether `move`
+# stopped it. Any failed read fails the caller.
+runner_state() {
+  local state
+  state=$(incus query "/1.0/instances/$1?project=$PROJECT") || return 1
+  python3 -c 'import json,sys; i=json.loads(sys.argv[1]); print(i["expanded_devices"]["root"]["pool"], "root" in i["devices"],
+    i["status"], i["config"].get("user.orbit.ci-move-running") == "true")' "$state"
+}
+
+# The role's pool must be the marked ZFS or btrfs pool (ci-runner.host); a runner never moves onto another one.
+pool_ready() {
+  local pool
+  pool=$(incus query "/1.0/storage-pools/$POOL") || { echo "the $POOL pool is missing or unreadable; converge the ci-runner role first" >&2; return 1; }
+  python3 -c 'import json,sys; p=json.loads(sys.argv[1]); sys.exit(0 if p["driver"] in ("zfs", "btrfs")
+    and p["config"].get("user.orbit.ci-runner") == "true" else 1)' "$pool" ||
+    { echo "the $POOL pool is not the CI role's zfs or btrfs pool" >&2; return 1; }
+}
+
+# Every CI job asks for these custom labels (runs-on in .github/workflows); without them GitHub routes no job to the runner.
+# self-hosted, Linux and X64 are GitHub's own labels and cannot be removed.
+ROUTING=(hardimpact orbit-shard)
+RUNNERS_API=orgs/hardimpactdev/actions/runners
+# How long a drained runner may take to finish the job it holds, and how often GitHub is asked.
+MOVE_WAIT=${ORBIT_CI_MOVE_WAIT:-900}
+MOVE_POLL=${ORBIT_CI_MOVE_POLL:-10}
+
+# The GitHub id of the runner registered under this exact name.
+runner_id() {
+  local id
+  id=$(gh api --paginate "$RUNNERS_API?per_page=100" --jq ".runners[] | select(.name == \"$1\") | .id") || return 1
+  [[ "$id" =~ ^[0-9]+$ ]] || return 1
+  echo "$id"
+}
+
+# Sets the runner's custom labels: none drains it, ROUTING routes it again. Both repeat safely.
+labels() {
+  local id=$1
+  shift
+  python3 -c 'import json,sys; print(json.dumps({"labels": sys.argv[1:]}))' "$@" |
+    gh api -X PUT "$RUNNERS_API/$id/labels" --input - >/dev/null
+}
+drain() { labels "$1"; }
+route() { labels "$1" "${ROUTING[@]}"; }
+
+# Starts the runner unless it already runs.
+start_runner() {
+  local state
+  state=$(runner_state "$1") || return 1
+  [ "$(cut -d' ' -f3 <<<"$state")" = Running ] || incus start "$1" --project "$PROJECT"
+}
+
+# Waits until GitHub reports the runner idle on two reads one poll apart: a job it accepted before the drain ends first.
+# Answers 1 on timeout and 2 when GitHub cannot be read.
+wait_idle() {
+  local id=$1 deadline=$((SECONDS + MOVE_WAIT)) busy idle=0
+  while :; do
+    busy=$(gh api "$RUNNERS_API/$id" --jq .busy) || return 2
+    case $busy in
+      false) idle=$((idle + 1)); [ "$idle" -ge 2 ] && return 0 ;;
+      true) idle=0 ;;
+      *) return 2 ;;
+    esac
+    [ "$SECONDS" -lt "$deadline" ] || return 1
+    sleep "$MOVE_POLL"
+  done
+}
+
+# A runner made before the role's pool keeps its old pool through a root device that ci-runner.host pinned. Incus moves
+# a root only while the instance is stopped. The move never touches the guest: for a running runner it marks it first,
+# removes the routing labels on GitHub, so no new job comes, waits until GitHub reports it idle, stops it, moves the root,
+# drops the pin, starts it and restores the labels. A failure after a change restores what changed: labels, running
+# state and pin. The mark goes only after both the start and the labels succeeded; a rerun with the mark finishes them.
+# A runner that was stopped before stays stopped. Exit 75 means busy or unreadable: try again later. The registration moves with the root.
+move() {
+  local name=$1 state pool pinned status marked id= waited
+  state=$(runner_state "$name") || { echo "$name: cannot read the runner; try again later" >&2; return 75; }
+  read -r pool pinned status marked <<<"$state"
+  pool_ready || return 1
+  # Only a runner this command drains, or drained before an interruption, needs its GitHub id.
+  if { [ "$pool" != "$POOL" ] && [ "$status" = Running ]; } || [ "$marked" = True ]; then
+    id=$(runner_id "$name") || { echo "$name: cannot find its GitHub runner; try again later" >&2; return 75; }
+  fi
+  # Starts the runner and routes it again, then clears the mark. The mark stays until both succeeded, so a rerun
+  # finishes them.
+  finish() {
+    start_runner "$name" || { echo "$name: cannot start it; run move again" >&2; return 1; }
+    route "$id" || { echo "$name: cannot restore its labels ${ROUTING[*]}; run move again" >&2; return 1; }
+    incus config unset "$name" user.orbit.ci-move-running --project "$PROJECT"
+  }
+  if [ "$pool" != "$POOL" ]; then
+    if [ "$status" = Running ]; then
+      # The mark comes before any change: it says the runner ran and may be drained. If it cannot be written, nothing
+      # has changed.
+      incus config set "$name" user.orbit.ci-move-running=true --project "$PROJECT" || return 1
+      marked=True
+      drain "$id" || { finish; echo "$name: cannot remove its routing labels; try again later" >&2; return 75; }
+      waited=0
+      wait_idle "$id" || waited=$?
+      [ "$waited" = 0 ] || { finish; echo "$name: still busy or unreadable on GitHub; try again later" >&2; return 75; }
+      incus stop "$name" --project "$PROJECT" || { finish; return 1; }
+    fi
+    if ! incus move "$name" --project "$PROJECT" --storage "$POOL"; then
+      [ "$marked" = False ] || finish
+      echo "$name: the move failed; it stays on $pool" >&2
+      return 1
+    fi
+    state=$(runner_state "$name") || { [ "$marked" = False ] || finish; return 1; }
+    read -r pool pinned status marked <<<"$state"
+    [ "$pool" = "$POOL" ] || { [ "$marked" = False ] || finish; echo "$name: still on $pool" >&2; return 1; }
+  fi
+  # The project's default profile gives the same root on the pool.
+  if [ "$pinned" = True ]; then
+    incus config device remove "$name" root --project "$PROJECT" >/dev/null || { [ "$marked" = False ] || finish; return 1; }
+  fi
+  if [ "$marked" = True ]; then
+    finish || return 1
+  fi
+  echo "$name: on $POOL"
+}
+
 user_manager() {
   local name=$1
   # Apply only this prerequisite to existing runners; no packages or listener restart.
@@ -340,5 +463,6 @@ verify() {
 
 case "${1:-}" in
   runtime_device | container | actions | hook | proof_hook | register | user_manager | verify) "$@" ;;
-  *) sed -n '2,20p' "$0" >&2; exit 2 ;;
+  move) "$@" ;;
+  *) sed -n '2,21p' "$0" >&2; exit 2 ;;
 esac
