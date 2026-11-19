@@ -52,9 +52,13 @@ final readonly class NodeExecutorInput
         $intent = self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,
             $delivery->artifacts(), is_array($keys) ? array_values(array_filter($keys, is_string(...))) : [], $delivery->version());
 
-        // The machine bus (ADR 0271): only the Gateway's address. A Node holds no bus credential; the Gateway admits it by its
-        // WireGuard address. Without the engine's key the file is removed, and the executor serves its socket alone.
-        return $intent === null ? null : [...$intent, 'bus_url' => NodeBusAccess::url(), 'bus_path' => NodeBusAccess::Path];
+        // The machine bus (ADR 0271): only the Gateway's address, and the guard that lets only root reach it. A Node holds no bus
+        // credential; the Gateway admits it by its WireGuard address. Without the engine's key both files are removed, and the
+        // executor serves its socket alone.
+        $guard = NodeBusAccess::guard();
+
+        return $intent === null ? null : [...$intent, 'unit' => self::unit($guard !== null), 'bus_url' => NodeBusAccess::url(),
+            'bus_path' => NodeBusAccess::Path, 'bus_guard' => $guard, 'bus_guard_path' => NodeBusAccess::GuardPath];
     }
 
     /**
@@ -108,11 +112,15 @@ final readonly class NodeExecutorInput
         ];
     }
 
-    /** A plain service: systemd only starts the executor at boot and restarts it after a crash; nothing else runs on its path. */
-    public static function unit(): string
+    /**
+     * A plain service: systemd only starts the executor at boot and restarts it after a crash. With the machine bus, each start
+     * first loads the bus guard, so the guard is in place whenever the executor can join the bus.
+     */
+    public static function unit(bool $busGuard = false): string
     {
         return "[Unit]\nDescription=Orbit executor: Gateway-signed Node actions (ADR 0266)\n\n"
-            ."[Service]\nExecStart=".self::Binary." serve\nRestart=always\nRestartSec=1\nStateDirectory=orbit/executor\nStateDirectoryMode=0700\n\n"
+            ."[Service]\n".($busGuard ? 'ExecStartPre=/usr/sbin/nft -f '.NodeBusAccess::GuardPath."\n" : '')
+            .'ExecStart='.self::Binary." serve\nRestart=always\nRestartSec=1\nStateDirectory=orbit/executor\nStateDirectoryMode=0700\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";
     }
 }

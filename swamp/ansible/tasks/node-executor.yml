@@ -50,21 +50,25 @@
         - { path: /etc/systemd/system/orbit-executor.service, content: "{{ intent.executor.unit }}" }
       loop_control: { label: "{{ item.path }}" }
       register: executor_files
-    # The machine bus (ADR 0271): the Gateway's NATS address only; the Gateway admits the Node by its WireGuard address.
-    # A changed file restarts the executor.
-    - name: Reconcile the executor's bus settings
-      ansible.builtin.copy:
-        dest: "{{ intent.executor.bus_path }}"
-        content: "{{ {'url': intent.executor.bus_url} | to_json }}\n"
-        owner: root
-        group: root
-        mode: "0644"
+    # The machine bus (ADR 0271): the Gateway's NATS address, and the nftables guard that lets only root reach it. The
+    # Gateway admits the Node by its WireGuard address; the unit loads the guard before each start. A change restarts the executor.
+    - name: Reconcile the executor's bus settings and guard
+      ansible.builtin.copy: { dest: "{{ item.path }}", content: "{{ item.content }}", owner: root, group: root, mode: "0644" }
+      loop:
+        - { path: "{{ intent.executor.bus_path }}", content: "{{ {'url': intent.executor.bus_url} | to_json }}\n" }
+        - { path: "{{ intent.executor.bus_guard_path }}", content: "{{ intent.executor.bus_guard }}" }
+      loop_control: { label: "{{ item.path }}" }
       when: intent.executor.bus_url is string
       register: executor_bus_present
-    - name: Remove the executor's bus settings when the Gateway has no engine key
-      ansible.builtin.file: { path: "{{ intent.executor.bus_path }}", state: absent }
+    - name: Remove the executor's bus settings and guard when the Gateway has no engine key
+      ansible.builtin.file: { path: "{{ item }}", state: absent }
+      loop: ["{{ intent.executor.bus_path }}", "{{ intent.executor.bus_guard_path }}"]
       when: intent.executor.bus_url is not string
       register: executor_bus_absent
+    - name: Drop the loaded bus guard with its file
+      ansible.builtin.command: nft destroy table inet orbit_bus_guard
+      when: executor_bus_absent is changed
+      changed_when: true
     - name: Allow the Node user the one relay command
       ansible.builtin.copy:
         dest: /etc/sudoers.d/orbit-executor-relay

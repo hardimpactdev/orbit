@@ -16,10 +16,15 @@ use Carbon\Carbon;
  * Node holds no bus credential. `nats-server` hands each Node connection to the Gateway's auth callout, which applies the
  * Gateway API's rule: the connection's WireGuard address must belong to an active Node. The answer is a user JWT that may use
  * only that Node's subjects and lasts an hour; the client's reconnect then asks again, so a removed Node loses the bus.
+ *
+ * Every process on a Node shares its WireGuard address, so the address alone would admit an app or an agent shell as the
+ * Node's executor. The guard on each Node therefore lets only root reach the bus: the boundary is root on the Node.
  */
 final readonly class NodeBusAccess
 {
     public const string Path = '/etc/orbit/executor/nats.json';
+
+    public const string GuardPath = '/etc/orbit/executor/bus-guard.nft';
 
     /** The account every Node user joins: the one that holds the streams. */
     public const string Account = 'ORBIT';
@@ -39,6 +44,26 @@ final readonly class NodeBusAccess
         $port = config('orbit.engine.nats.port');
 
         return 'nats://'.$gateway.':'.(is_int($port) ? $port : 4222);
+    }
+
+    /**
+     * The Node's nftables guard for the bus, or null without a bus: only root may open a connection to the Gateway's NATS port.
+     * The executor's unit loads it before every start, replacing the previous table.
+     */
+    public static function guard(): ?string
+    {
+        $url = self::url();
+        if ($url === null) {
+            return null;
+        }
+        $parts = parse_url($url);
+        $host = is_array($parts) ? ($parts['host'] ?? '') : '';
+        $port = is_array($parts) ? ($parts['port'] ?? 4222) : 4222;
+
+        return "# Managed by Orbit: only root may reach the machine bus (ADR 0271; docs/reference/gateway-engine.md#authentication).\n"
+            ."destroy table inet orbit_bus_guard\ntable inet orbit_bus_guard {\n  chain output {\n"
+            ."    type filter hook output priority 0; policy accept;\n"
+            ."    ip daddr {$host} tcp dport {$port} meta skuid != 0 reject with tcp reset\n  }\n}\n";
     }
 
     /**

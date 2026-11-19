@@ -124,9 +124,11 @@ Every other connection goes to the auth callout. `nats-server` sends an authoriz
 
 An address with no active Node gets a refusal with `peer.identity_unknown`.
 
-WireGuard binds each address to one peer key, so a Node cannot connect with another Node's address. When the user expires, the server closes the connection, and the client reconnects and asks again. A removed Node therefore loses the bus within an hour, and at once when its WireGuard peer goes. Replacing the seed changes nothing on the Nodes.
+WireGuard binds each address to one peer key, so a Node cannot connect with another Node's address. When the user expires, the server closes the connection, and the client reconnects and asks again. A removed Node therefore loses the bus within an hour. When its WireGuard peer goes, its connection also ends once the server's pings go unanswered. Replacing the seed changes nothing on the Nodes.
 
-The callout runs in the consumer process. While that process is down, new Node connections fail and retry; connected Nodes keep their users until they expire.
+Every process on a Node shares the Node's WireGuard address. So each Node also runs a guard: an nftables table, `orbit_bus_guard`, that rejects a connection to the Gateway's NATS port from any user but root. The bus boundary is therefore root on the Node. An app or an agent shell on the Node cannot join as its executor.
+
+The callout runs in the consumer process, between receipts and events. While that process is down, new Node connections fail and retry; connected Nodes keep their users until they expire.
 
 A Node's user may publish only:
 
@@ -139,7 +141,12 @@ It may subscribe only to its own inbox prefix, `_INBOX.node-<id>.>`, so it never
 
 ### Delivery to a Node
 
-The Node converge writes `/etc/orbit/executor/nats.json` with the bus URL only, from the executor intent. Without the engine's key the converge removes the file, and the executor serves its socket alone.
+The Node converge writes two files from the executor intent:
+
+- `/etc/orbit/executor/nats.json` with the bus URL only;
+- `/etc/orbit/executor/bus-guard.nft`, the guard, which `orbit-executor.service` loads before each start.
+
+Without the engine's key the converge removes both files and drops the guard table, and the executor serves its socket alone.
 
 ## Install
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Engine\NodeBusAccess;
+use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
@@ -48,6 +49,7 @@ it('gives an executor no bus address while the Gateway has no engine key', funct
     config(['orbit.engine.nats.seed' => null]);
 
     expect(NodeBusAccess::url())->toBeNull()
+        ->and(NodeBusAccess::guard())->toBeNull()
         ->and(GatewayBus::config())->toBeNull();
 });
 
@@ -95,3 +97,10 @@ it('refuses an address that is no active Node', function (string $host): void {
 it('answers nothing to a request it cannot read', function (string $request): void {
     expect(NodeBusAccess::authorize($request))->toBe('');
 })->with(['not a JWT' => 'garbage', 'no connection key' => busAuthRequest('10.44.0.2', userKey: '')]);
+
+it('lets only root on a Node reach the bus, with the guard loaded before every executor start', function (): void {
+    expect(NodeBusAccess::guard())->toContain("destroy table inet orbit_bus_guard\n")
+        ->toContain("ip daddr 10.44.0.1 tcp dport 4222 meta skuid != 0 reject with tcp reset\n")
+        ->and(NodeExecutorInput::unit(busGuard: true))
+        ->toContain("[Service]\nExecStartPre=/usr/sbin/nft -f /etc/orbit/executor/bus-guard.nft\nExecStart=/usr/local/libexec/orbit-executor serve\n");
+});

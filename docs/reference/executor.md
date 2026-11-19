@@ -27,6 +27,7 @@ The converge writes:
 | `/etc/orbit/executor/node` | The Node id |
 | `/etc/orbit/executor/enabled` | The enabled families, one per line |
 | `/etc/orbit/executor/nats.json` | The [machine bus](#the-machine-bus) URL. Only when the Gateway runs the bus |
+| `/etc/orbit/executor/bus-guard.nft` | The nftables guard that lets only root reach the machine bus. The unit loads it before each start. Only when the Gateway runs the bus |
 | `/etc/orbit/executor/restore-threads` | The [restore pool](#rust-wake)'s size, 32; the executor refuses fewer than 16 |
 | `/etc/systemd/system/orbit-executor.service` | A plain service that runs `orbit-executor serve`, with `Restart=always` |
 | `/etc/sudoers.d/orbit-executor-relay` | The Node user may run exactly `orbit-executor relay` as `orbit-executor-relay` |
