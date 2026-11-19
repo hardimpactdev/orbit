@@ -262,11 +262,25 @@ jobs:
 - name: edge
   dependsOn: [{job: caddy, condition: {type: succeeded}}]
   steps:
+    # The hop the target's sites use: an HTTPS HEAD request to the Router address the Ingress renderer picked, per public app
+    # Route, with the system bundle that holds the Orbit root and the public roots. Any HTTP answer passes; a refused
+    # connection or a bad certificate fails the move before private DNS names the target.
+  - name: 'Probe the Router hop'
+    labels: {role: swamp}
+    forEach: {item: probe, in: '${{ has(inputs.intent.router_probes) ? inputs.intent.router_probes : [] }}'}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ "relocate-router-probe-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
+      methodName: exec
+      globalArgs: *target_ssh
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","20","curl","--silent","--show-error","--output","/dev/null","--max-time","10","--head","--cacert","/etc/ssl/certs/ca-certificates.crt","--resolve",self.probe.domain + ":443:" + self.probe.host,"https://" + self.probe.domain + "/"] }}'}
     # The target must serve a valid public certificate for every public name before private DNS names it and the source
     # withdraws. Caddy asks Let's Encrypt only once public DNS points at the target, so curl's own retry waits at most 300 s
     # (20 tries, 15 s apart); the system roots verify the chain. A failure stops the move with the source still serving.
   - name: 'Check the public certificates'
     labels: {role: swamp}
+    dependsOn: [{step: 'Probe the Router hop', condition: {type: not, condition: {type: failed}}}]
     forEach: {item: name, in: '${{ has(inputs.intent.public_certificates) ? inputs.intent.public_certificates : [] }}'}
     task:
       type: behavior
@@ -274,7 +288,16 @@ jobs:
       behaviorName: '${{ "relocate-public-certificate-" + string(inputs.intent.target_node_id) + "-" + string(self._index) }}'
       methodName: exec
       globalArgs: *target_ssh
-      inputs: {hosts: 'name:target', argv: '${{ ["timeout","330","curl","--silent","--show-error","--output","/dev/null","--max-time","10","--retry","20","--retry-delay","15","--retry-max-time","300","--retry-all-errors","--resolve",self.name + ":443:127.0.0.1","https://" + self.name + "/"] }}'}
+      inputs: {hosts: 'name:target', argv: '${{ ["timeout","330","curl","--silent","--show-error","--output","/dev/null","--max-time","10","--retry","20","--retry-delay","15","--retry-max-time","300","--retry-all-errors","--write-out","%{http_code}","--resolve",self.name + ":443:127.0.0.1","https://" + self.name + "/"] }}'}
+    # curl ends 0 on any HTTP answer once its retries are spent; a 5xx means the target cannot reach the site behind it.
+  - name: 'Check the certificate answers'
+    labels: {role: swamp}
+    dependsOn: [{step: 'Check the public certificates', condition: {type: not, condition: {type: failed}}}]
+    task:
+      type: assert
+      severity: high
+      expr: 'steps.filter(k, k.startsWith("Check the public certificates")).all(k, !steps[k].outputs.stdout.startsWith("5"))'
+      message: node.role_relocate_upstream_failed
 - name: dns
   dependsOn: [{job: edge, condition: {type: succeeded}}]
   steps:

@@ -545,7 +545,11 @@ The same command removes an Ingress whose convergence failed. A failed step leav
 
 ### Ingress relocation
 
-`node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. It can't be the Router or run a target of a public Route, because its public site would then replace that Route's private hop before Let's Encrypt issues the certificate. When the source runs a target of a public Route, the Router must be the source too (reason `source_serves_public_route`). A separate Router would get a hop that trusts only the Orbit certificate, while the source still answers with Let's Encrypt until its removal. Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
+`node:role:relocate TARGET ingress --force` moves the active Ingress of the target's Cluster to the target. The target must already be a member of that Cluster. It can't be the Router or run a target of a public Route, because its public site would then replace that Route's private hop before Let's Encrypt issues the certificate.
+
+When the source runs a target of a public Route, the Router must be the source too (reason `source_serves_public_route`). A separate Router would get a hop that trusts only the Orbit certificate, while the source still answers with Let's Encrypt until its removal.
+
+Every Route keeps its ID, domain and `publication`, and its public edge stays live, because a public Route derives its Ingress from its Cluster.
 
 Admission checks each live [public Process Route](#public-process-hostnames) as Route activation does. The Process Node's recorded firewall must admit the target, and the Process must publish one listener on the address the target selects. Otherwise the move is refused with `route.upstream_firewall_mismatch` or `route.upstream_unresolved`, and nothing is recorded. The listener the target selects must also be the one the Route recorded. `process:update` protects the recorded listener, so a move to another listener is refused with `route.upstream_listener_changed`.
 
@@ -559,8 +563,8 @@ Until private DNS switches, the run prepares the target:
 4. The target builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
 5. A Router on another Node gets its Caddyfile again. Its site trusts the Ingress by where the Ingress runs.
 6. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
-7. The target sends an HTTPS HEAD request to the Router address its sites use, for each public app Route, with the system bundle. A refused connection or a bad certificate fails the move.
-8. The target must serve a valid public certificate for every public name. It asks itself over HTTPS with the system bundle. It retries for at most 300 seconds. An answer of 500 or more after the last try fails the move.
+7. For each public app Route, the target sends an HTTPS HEAD request to the Router address its sites use. A refused connection or a bad certificate fails the move.
+8. The target must serve a valid public certificate for every public name. It asks itself over HTTPS and retries for at most 300 seconds. An answer of 500 or more fails the move.
 
 Then the run switches and cleans up:
 

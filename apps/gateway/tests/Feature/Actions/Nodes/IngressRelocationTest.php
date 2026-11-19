@@ -19,6 +19,7 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
@@ -26,6 +27,7 @@ use App\Models\Process as ManagedProcess;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\SwampNodeFixture;
 
@@ -285,19 +287,54 @@ it('gives the Ingress back to the source when the move fails before private DNS 
         ->and(app(PublicRouteEligibility::class)->servingIngress($source->cluster)?->id)->toBe($source->id);
 });
 
-it('keeps the Ingress on the target once private DNS has switched', function (): void {
+it('keeps the target serving as the active Ingress when only the source removal fails', function (): void {
     Http::preventStrayRequests();
     fakeIngressRelocationDispatch();
-    ['target' => $target, 'assignment' => $assignment] = ingressRelocationFleet();
+    ['target' => $target, 'assignment' => $assignment, 'cluster' => $cluster] = ingressRelocationFleet();
     ingressRelocationGateway();
     $operation = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true);
 
     settleIngressRelocation($operation, ['Publish the role DNS-0' => 'succeeded', 'Remove from the source' => 'failed'], 'Remove from the source');
 
+    // A `remove:` failure on the target would drop its public sites at the next Caddy build, while private DNS names it.
     expect($assignment->refresh()->node_id)->toBe($target->id)
-        ->and($assignment->failed_step)->toBe('remove:Remove from the source')
-        ->and($operation->refresh()->result)->not->toHaveKey('source_kept');
+        ->and($assignment->status)->toBe(LifecycleStatus::Active)
+        ->and($assignment->failed_step)->toBeNull()
+        ->and($operation->refresh()->status->value)->toBe('failed')
+        ->and($operation->result)->toMatchArray(['failed_step' => 'Remove from the source', 'source_cleanup_failed' => true])
+        ->and($operation->result)->not->toHaveKey('source_kept')
+        ->and(app(PublicRouteEligibility::class)->servingIngress($cluster)?->id)->toBe($target->id);
 });
+
+it('never gives the Ingress back to the source in a --from retry, whose earlier run may have switched private DNS', function (): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'assignment' => $assignment, 'cluster' => $cluster] = ingressRelocationFleet();
+    ingressRelocationGateway();
+    $first = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true);
+    settleIngressRelocation($first, ['Publish the role DNS-0' => 'succeeded', 'Let DNS answers expire-0' => 'failed'], 'Let DNS answers expire-0');
+
+    $retry = app(AdmitNodeRoleOperationAction::class)->relocate($target->refresh(), RoleName::Ingress, true, $source);
+    settleIngressRelocation($retry, ['Probe the Process backends-0' => 'failed', 'Publish the role DNS-0' => 'skipped'], 'Probe the Process backends-0');
+
+    expect($retry->refresh()->input['_relocate']['retry'])->toBeTrue()
+        ->and($retry->result)->not->toHaveKey('source_kept')
+        ->and($assignment->refresh()->node_id)->toBe($target->id)
+        ->and(app(PublicRouteEligibility::class)->servingIngress($cluster)?->id)->toBe($target->id);
+});
+
+it('gives the Ingress back to the source when the Router hop or the certificate answers fail', function (string $step): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'assignment' => $assignment] = ingressRelocationFleet();
+    ingressRelocationGateway();
+    $operation = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true);
+
+    settleIngressRelocation($operation, [$step => 'failed', 'Publish the role DNS-0' => 'skipped'], $step);
+
+    expect($assignment->refresh()->node_id)->toBe($source->id)
+        ->and($operation->refresh()->result)->toMatchArray(['source_kept' => true]);
+})->with(['router hop' => 'Probe the Router hop-0', 'certificate answers' => 'Check the certificate answers']);
 
 it('keeps the Ingress on the target when the source removal fails, even with no DNS step to run', function (): void {
     Http::preventStrayRequests();
@@ -323,4 +360,109 @@ it('switches the private DNS of a source that is also a DNS Node with the others
 
     expect(collect($intent['publications'])->pluck('node_id')->all())->toContain($source->id)
         ->and(collect($intent['ingress']['publications'])->pluck('node_id')->all())->not->toContain($source->id);
+});
+
+/** A live public app Route whose workload runs on the given Node. */
+function ingressRelocationAppRoute(Cluster $cluster, Node $workload): Route
+{
+    $workload->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $project = Project::query()->create(['name' => 'shop', 'slug' => 'shop', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => 'main', 'root' => 'public']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $workload->id, 'name' => 'shop',
+        'checkout_path' => '/home/orbit/apps/shop', 'status' => 'active', 'source_layout' => 'worktree', 'root' => 'public',
+        'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'cluster_id' => $cluster->id, 'provenance' => 'explicit',
+        'publication' => 'public', 'domain' => 'shop.example.com', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => 'cleanup']);
+
+    return $route;
+}
+
+it('probes the Router address the target will use for each live public app Route', function (): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'cluster' => $cluster] = ingressRelocationFleet();
+    ingressRelocationGateway();
+    $source->update(['lan_ip' => '192.168.1.4']);
+    ingressRelocationAppRoute($cluster, $source);
+
+    $intent = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true)->refresh()->input['intent'];
+
+    // The renderer picks the Router's recorded LAN address, so the target must reach that one.
+    expect($intent['router_probes'])->toBe([['domain' => 'shop.example.com', 'host' => '192.168.1.4']]);
+});
+
+it('allows the production move from a Node that holds the Router, the Ingress and a public workload', function (): void {
+    Http::preventStrayRequests();
+    $dispatch = fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'cluster' => $cluster] = ingressRelocationFleet();
+    ingressRelocationGateway();
+    ingressRelocationAppRoute($cluster, $source);
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true);
+
+    expect($dispatch->started)->toBe([$operation->id]);
+});
+
+it('refuses an Ingress move from a public Route workload while the Router is another Node', function (): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'cluster' => $cluster, 'assignment' => $assignment] = ingressRelocationFleet();
+    $router = ingressRelocationNode('router', '10.44.0.5', $cluster->id);
+    NodeRole::query()->where('role', RoleName::Router)->update(['node_id' => $router->id]);
+    ingressRelocationAppRoute($cluster, $source);
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true))
+        ->toThrow(fn (NodeRoleValidationException $e) => expect($e->details['reason'] ?? null)->toBe('source_serves_public_route'));
+
+    expect(Operation::query()->count())->toBe(0)
+        ->and($assignment->refresh()->node_id)->toBe($source->id);
+});
+
+it('holds every Node of the Cluster against Route writes for the whole move and frees them at its end', function (): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target] = ingressRelocationFleet();
+    ingressRelocationGateway();
+
+    $operation = app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true);
+
+    expect(DB::table('route_publication_holds')->where('operation_id', $operation->id)->orderBy('node_id')->pluck('node_id')->all())
+        ->toBe([$source->id, $target->id]);
+
+    settleIngressRelocation($operation, ['Apply the Ingress role' => 'failed', 'Publish the role DNS-0' => 'skipped'], 'Apply the Ingress role');
+
+    expect(DB::table('route_publication_holds')->where('operation_id', $operation->id)->count())->toBe(0);
+});
+
+it('refuses an Ingress move while a Route write holds a Node of the Cluster, before it records anything', function (): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'assignment' => $assignment] = ingressRelocationFleet();
+    ingressRelocationGateway();
+    $write = Operation::query()->create(['kind' => 'route.update', 'target_type' => 'route', 'target_id' => 1, 'node_id' => $source->id,
+        'input' => [], 'status' => 'running', 'sequence' => 1, 'attempts' => 1]);
+    DB::table('route_publication_holds')->insert(['node_id' => $source->id, 'operation_id' => $write->id, 'created_at' => now(), 'lease_until' => null]);
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('route.publication_held'));
+
+    expect(Operation::query()->where('kind', 'node.role_relocate')->count())->toBe(0)
+        ->and($assignment->refresh()->node_id)->toBe($source->id);
+});
+
+it('refuses an Ingress move that would reach a public Process on another listener than the recorded one', function (): void {
+    Http::preventStrayRequests();
+    fakeIngressRelocationDispatch();
+    ['source' => $source, 'target' => $target, 'assignment' => $assignment] = ingressRelocationFleet();
+    $route = ingressRelocationProcessRoute($source, $target, admitTarget: true);
+    // The target sits on another LAN, so it selects the WireGuard listener; process:update protects only the recorded LAN one.
+    $target->update(['lan_ip' => '192.168.2.41']);
+    $route->customProxy->process->update(['runtime_config' => ['image' => 'nginx:alpine', 'ports' => ['192.168.1.4:18080:8080/tcp', '10.44.0.4:18081:8080/tcp']]]);
+
+    expect(fn () => app(AdmitNodeRoleOperationAction::class)->relocate($target, RoleName::Ingress, true))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('route.upstream_listener_changed'));
+
+    expect(Operation::query()->count())->toBe(0)
+        ->and($assignment->refresh()->node_id)->toBe($source->id);
 });

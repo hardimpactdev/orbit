@@ -40,7 +40,8 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
     public const string DnsStep = 'Publish the role DNS';
 
     /** Ingress steps that run before private DNS switches; the source still serves alone when one of them fails. */
-    public const array IngressPreparationSteps = ['Probe the Process backends', 'Apply the Ingress role', 'Publish the Caddy sites', 'Check the public certificates'];
+    public const array IngressPreparationSteps = ['Probe the Process backends', 'Apply the Ingress role', 'Publish the Caddy sites', 'Probe the Router hop',
+        'Check the public certificates', 'Check the certificate answers'];
 
     /** The role's secrets go to the vault as execution copies; the inputs carry only their names. */
     public function input(Operation $operation): array
@@ -97,13 +98,19 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
             if (is_string($intent['metrics_converge'] ?? null)) {
                 $followUps[] = "Metrics still scrapes the former sites. Run `orbit node:role:add {$intent['metrics_converge']} metrics --converge`.";
             }
+            $ingress = $intent['role'] === RoleName::Ingress->value;
             // An Ingress move that failed before private DNS switched never sent traffic to the target, and the source still serves.
-            $restored = ! $succeeded && $intent['role'] === RoleName::Ingress->value && ! $this->dnsSwitched($raw)
+            // A retry never restores: its earlier run may have switched private DNS to the target already.
+            $retry = (ValidatedData::object($operation->input['_relocate'] ?? [])['retry'] ?? false) === true;
+            $restored = ! $succeeded && $ingress && ! $retry && ! $this->dnsSwitched($raw)
                 && array_any(self::IngressPreparationSteps, static fn (string $step): bool => str_starts_with($failedStep, $step));
+            // After private DNS switched, a failed source removal leaves the target serving: it stays the active Ingress.
+            $cleanupFailed = ! $succeeded && $ingress && $failedStep === self::SourceStep;
             $result = $succeeded
                 ? ['node_id' => $intent['target_node_id'], 'source_node_id' => $intent['source_node_id'], 'role' => $intent['role'], 'relocated' => true,
                     ...($followUps === [] ? [] : ['follow_up' => implode(' ', $followUps)])]
-                : ['failed_step' => $failedStep, 'error_code' => $errorCode, ...($restored ? ['source_kept' => true] : [])];
+                : ['failed_step' => $failedStep, 'error_code' => $errorCode, ...($restored ? ['source_kept' => true] : []),
+                    ...($cleanupFailed ? ['source_cleanup_failed' => true] : [])];
             $projected = app(DirectOperation::class)->project($operation, $data, $result);
             if ($terminal) {
                 return $projected;
@@ -120,6 +127,8 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
                 $assignment->markConvergenceActive();
                 $target = ValidatedData::integer($intent['target_node_id']);
                 app(RecordEventBroadcaster::class)->broadcast(RecordEventType::NodeUpdated, $target, NodeData::fromModel(Node::query()->findOrFail($target))->toArray());
+            } elseif ($cleanupFailed) {
+                $assignment->markConvergenceActive();
             } else {
                 $assignment->update(['status' => LifecycleStatus::Failed,
                     'failed_step' => ($failedStep === self::SourceStep ? 'remove:' : 'converge:').$failedStep, 'error_code' => $errorCode]);

@@ -1332,7 +1332,8 @@ One native assert, `Confirm the move`, ends the run. The Gateway records the res
 - On success the target assignment becomes active. The certificate and serving state follow the move.
 - The Gateway forgets the source's transferred settings.
 - A failed step marks the assignment `failed` with `converge:STEP`, or `remove:Remove from the source`.
-- An `ingress` move whose probe, child, Caddy or certificate step fails before `Publish the role DNS` ran gives the assignment back to the source, `active`, with `source_kept: true` in the result. A `--from` retry never does.
+- An `ingress` move that fails before `Publish the role DNS` ran gives the assignment back to the source. The result has `source_kept: true`.
+- A `--from` retry of an `ingress` move never gives the assignment back.
 - An `ingress` move whose source removal fails keeps the target `active` and reports `source_cleanup_failed: true`.
 - A role that was already `active` stays `active` when `node:role:add --converge` fails. The failure stays on the Operation.
 

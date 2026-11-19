@@ -20,6 +20,7 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\NodeRoleFirewallInput;
+use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Infrastructure\Routes\PublicProcessRouteFirewall;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\WebSocket\WebSocketServiceUnitRenderer;
@@ -92,6 +93,7 @@ final readonly class NativeNodeRoleRelocateInput
             'metrics' => $role === RoleName::Metrics ? $this->metrics($assignment, $before['dns']) : null,
             'websocket' => $websocket, 'gateway' => $role === RoleName::Gateway ? $this->gateway($target) : null, 'ingress' => $ingress,
             'process_probes' => $role === RoleName::Ingress ? $this->processProbes($target) : [],
+            'router_probes' => $role === RoleName::Ingress ? $this->routerProbes($target) : [],
             'public_certificates' => $role === RoleName::Ingress ? $this->publicHostnames($target) : [],
             'certificates' => $child ? ['leaves' => [], 'withdrawals' => []] : $this->certificates($target, $plan),
             'firewall' => $firewall, 'publications' => $publications,
@@ -179,10 +181,47 @@ final readonly class NativeNodeRoleRelocateInput
                     "The Process Node firewall does not admit the new Ingress for [{$route->domain}].", 409);
             }
             $upstream = new CustomProxyProcessListener()->resolvePublic($process, $target);
+            // process:update protects the listener the Route recorded; the target must use that one, or a later update could remove it.
+            $recorded = $route->customProxy->upstream;
+            if ($upstream->url() !== $recorded) {
+                throw new ResourceOperationException('route.upstream_listener_changed',
+                    "The new Ingress would reach [{$route->domain}] on [{$upstream->url()}], not on the recorded [{$recorded}].", 409,
+                    details: ['route_id' => $route->id, 'domain' => $route->domain, 'selected' => $upstream->url(), 'recorded' => $recorded]);
+            }
             $probes[] = ['domain' => $route->domain, 'host' => $upstream->host, 'port' => $upstream->port];
         }
 
         return $probes;
+    }
+
+    /** Each live public app Route with the Router address the target's site will use, as the Ingress renderer picks it.
+     * The run asks that address over HTTPS from the target before private DNS switches.
+     *
+     * @return list<array{domain:string,host:string}>
+     */
+    private function routerProbes(Node $target): array
+    {
+        $probes = [];
+        $routes = Route::query()->where('cluster_id', $target->cluster_id)->where('publication', RoutePublication::Public)->orderBy('id')->get()
+            ->filter(static fn (Route $route): bool => ! $route->isCustomProxy() && app(PublicRouteEligibility::class)->publicEdgeIsLive($route));
+        foreach ($routes as $route) {
+            $site = app(IngressSiteRepository::class)->forRoute($route);
+            if ($site->ingressNodeId !== $target->id) {
+                throw new ResourceOperationException('operation.execution_forbidden', 'The relocated Ingress must serve every public Route.', 422);
+            }
+            $probes[] = ['domain' => $route->domain, 'host' => $site->routerUpstream];
+        }
+
+        return $probes;
+    }
+
+    /** Every Node of the target's Cluster: the move holds them against Route writes for its whole run.
+     * @return list<int>
+     */
+    public static function heldNodes(Node $target): array
+    {
+        return array_values(Node::query()->where('cluster_id', $target->cluster_id)->orderBy('id')->pluck('id')
+            ->map(static fn (mixed $id): int => ValidatedData::integer($id))->all());
     }
 
     /** Every name the target serves on its public listener once it holds the Ingress.

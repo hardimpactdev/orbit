@@ -56,6 +56,9 @@ final readonly class NodeRoleRelocateInput
             || (! $holder->is($target) && ! $holder->is($source))) {
             throw new NodeRoleValidationException('The source does not own this singleton transfer.', ['field' => 'from', 'role' => $role->value]);
         }
+        if ($role === RoleName::Ingress) {
+            $this->guardIngressSource($source, ValidatedData::integer($target->cluster_id));
+        }
         $this->assign->preflightTransfer($target, $role);
         foreach ([$source, $target] as $node) {
             if (! app(ManagedNodeEligibility::class)->allows($node)) {
@@ -105,6 +108,27 @@ final readonly class NodeRoleRelocateInput
     }
 
     /**
+     * A source that runs a target of a public Route answers for it with its Let's Encrypt certificate until its removal. A Router on
+     * another Node is published again when the Ingress moves, with a hop that trusts the Orbit certificate the source serves only
+     * after its removal, so that Route would fail in between. A Router on the source keeps its own sites until then.
+     */
+    private function guardIngressSource(Node $source, int $cluster): void
+    {
+        if (NodeRole::query()->where('cluster_id', $cluster)->where('role', RoleName::Router)->where('node_id', $source->id)->exists()
+            || ! $this->servesPublicRoute($source, $cluster)) {
+            return;
+        }
+        throw new NodeRoleValidationException('Role [ingress] relocates from a Node that runs a target of a public Route only when that Node is the Router too.',
+            ['field' => 'from', 'role' => RoleName::Ingress->value, 'reason' => 'source_serves_public_route']);
+    }
+
+    private function servesPublicRoute(Node $node, int $cluster): bool
+    {
+        return Route::query()->where('cluster_id', $cluster)->where('publication', RoutePublication::Public)
+            ->whereHas('targets.instance', static fn ($query) => $query->where('node_id', $node->id))->exists();
+    }
+
+    /**
      * The target's Caddyfile changes when it takes the Ingress. A Router or a workload of a public Route then serves that
      * Route's private hop from its public site, whose Let's Encrypt certificate exists only once public DNS names the
      * target, so the hop would fail until then. Such a target needs a staged move; a dedicated Ingress Node does not.
@@ -113,8 +137,7 @@ final readonly class NodeRoleRelocateInput
     {
         $reason = match (true) {
             NodeRole::query()->where('node_id', $target->id)->where('role', RoleName::Router)->exists() => 'target_is_router',
-            Route::query()->where('cluster_id', $target->cluster_id)->where('publication', RoutePublication::Public)
-                ->whereHas('targets.instance', static fn ($query) => $query->where('node_id', $target->id))->exists() => 'target_serves_public_route',
+            $this->servesPublicRoute($target, ValidatedData::integer($target->cluster_id)) => 'target_serves_public_route',
             default => null,
         };
         if ($reason !== null) {
