@@ -327,9 +327,14 @@ Operation notices are saved with the change and relayed to `operations-prompt` a
 | Case | End |
 | --- | --- |
 | A receipt arrives | The receipt decides ([R1](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#four-rules-for-every-signed-outcome)). |
-| The publish to Reverb fails | The Operation fails at once with `executor.publish_failed` and frees its lock. |
-| No `accepted` line and no result by the six-second completion deadline | The order expired five seconds after signing, so no Node can act on it. The Operation fails with `executor.not_accepted` and frees its lock. |
-| `accepted`, but no result by the deadline | The executor may have acted. The Operation ends `interrupted` with `executor.result_unknown` and keeps its lock until a late receipt settles it. |
+| No result by the six-second completion deadline | The Gateway reads the Node's journal for the order, as below. |
+
+The deadline case covers a publish that threw, an order with no `accepted` line and a lost result. None of them proves what the Node did, so the Gateway reads the Node's executor journal for the order over SSH. The read is read-only and sends no order ([Reconcile by the journal](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#reconcile-by-the-journal)):
+
+- A `done` record decides like a receipt.
+- No record after the order expired on the Node fails the Operation with `executor.publish_failed` or `executor.not_accepted` and frees its lock.
+- An open record waits for the next pass.
+- A Node that cannot be read ends the Operation `interrupted` with `executor.result_unknown`. It keeps its lock, and the Gateway reads again every 10 s.
 
 A visitor's held request sees a failed Operation and gets the plain `503`.
 
@@ -337,7 +342,7 @@ One receipt continues in Swamp: a wake that fails with `instance.container_stopp
 
 Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting later result.
 
-A delivered action cannot be cancelled. If the Operation ends without a terminal executor receipt after the executor accepted, the Gateway reports an interruption and keeps the Instance fenced; verify the Node's outcome before clearing that hold. A signing or publish failure, or an order that expired without `accepted`, needs no hold.
+A delivered action cannot be cancelled. If the Operation ends without a terminal executor receipt, the Gateway reports an interruption, keeps the Instance fenced and reads the Node's journal again until it answers. Only a signing failure needs no hold: no order left the Gateway.
 
 The signed `power_check` is `route` for a sleep with a published Route, `no_web` for a wake with no web unit, or `resume` for the resume of a deploy or start, whose workflow owns readiness and the marker. Any other pairing of check and action refuses with `bad_payload`. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 

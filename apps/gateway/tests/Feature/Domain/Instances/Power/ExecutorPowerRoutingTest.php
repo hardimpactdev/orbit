@@ -21,8 +21,11 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Executor\ExecutorJournalLookup;
 use App\Infrastructure\Executor\ExecutorReply;
 use App\Infrastructure\Executor\ExecutorResults;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Jobs\Operations\BroadcastOperationNotice;
@@ -55,6 +58,48 @@ function powerLine(ExecutorOrderBroadcast $event, array $line): void
 {
     $reply = ExecutorReply::fromEvent(['operation' => $event->order->operation, 'line' => json_encode($line, JSON_THROW_ON_ERROR)]);
     test()->results->receive($event->nodeId, $reply ?? throw new LogicException('Invalid fixture receipt'));
+}
+
+/**
+ * The Node's answer to the read-only journal lookup: its clock, then the journal lines for the order. Each call takes the next answer;
+ * a null answer is an unreachable Node. Collects every remote command so a test can show that no order was sent.
+ *
+ * @param  list<list<array<string, mixed>>|null>  $answers
+ * @return ArrayObject<int, list<string>>
+ */
+function journalAnswers(array $answers, int $aheadMs = 60_000): ArrayObject
+{
+    $commands = new ArrayObject;
+    test()->mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function ($connection, RemoteCommand $command) use (&$answers, $commands, $aheadMs): CommandResult {
+        $commands->append($command->arguments);
+        $records = array_shift($answers);
+        if ($records === null) {
+            return new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: No route to host', 3, false);
+        }
+
+        return new CommandResult(0, implode("\n", [(string) (now()->getTimestampMs() + $aheadMs),
+            ...array_map(static fn (array $record): string => json_encode($record, JSON_THROW_ON_ERROR), $records)])."\n", '', 3, false);
+    });
+
+    return $commands;
+}
+
+/**
+ * @param  array<string, mixed>|null  $outcome
+ * @return array<string, mixed>
+ */
+function journalRecord(Operation $operation, string $action, string $record, ?array $outcome = null): array
+{
+    return ['record' => $record, 'nonce' => str_repeat('a', 32), 'operation' => (string) $operation->id, 'action' => $action,
+        'target' => (string) $operation->target_id, ...($outcome === null ? ['expires_ms' => 1] : ['outcome' => $outcome, 'at_ms' => 1])];
+}
+
+/** @param ArrayObject<int, list<string>> $commands */
+function onlyJournalReads(ArrayObject $commands): void
+{
+    foreach ($commands as $arguments) {
+        expect($arguments)->toContain(ExecutorJournalLookup::Path)->not->toContain('relay');
+    }
 }
 
 it('projects a signed sleep and keeps its engine for the wake after disabling new admissions', function (): void {
@@ -103,28 +148,66 @@ it('projects the residual-memory safety stop as stopped, with no frozen plan for
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
-it('fails a wake the Node never accepted once its order expires, with no SSH relay and no Swamp run', function (): void {
+it('fails a wake the Node never accepted once its journal shows no record after expiry, with no relay and no Swamp run', function (): void {
     $instance = managedPowerFixture();
     $this->travelTo(now()->startOfSecond());
-    $this->mock(SshExecutor::class)->shouldNotReceive('execute');
     $wake = app(InstanceWake::class)->start($instance, 'cli', null);
     Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
     expect($wake->refresh())->status->toBe(OperationStatus::Running)->executor_accepted_us->toBeNull();
 
     $this->travel(6)->seconds();
+    $commands = journalAnswers([[]]);
     (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
 
     expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.not_accepted')->lock_key->toBeNull();
+    expect($commands)->toHaveCount(1);
+    onlyJournalReads($commands);
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
 });
 
-it('fails a wake at once when the Gateway cannot publish its order', function (): void {
+it('keeps the fence while the Node clock has not passed the order expiry', function (): void {
     $instance = managedPowerFixture();
-    $this->mock(SshExecutor::class)->shouldNotReceive('execute');
+    $this->travelTo(now()->startOfSecond());
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    $this->travel(6)->seconds();
+    journalAnswers([[]], aheadMs: -3_000);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Running)->lock_key->not->toBeNull();
+});
+
+it('reads the journal after a publish that threw, and takes the result the Node recorded', function (): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
+    $this->publisher->publishing = fn () => throw new RuntimeException('The old WebSocket server closed after delivery.');
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+    expect($wake->refresh())->status->toBe(OperationStatus::Running)->lock_key->not->toBeNull();
+    expect(fn () => app(InstanceSleep::class)->start($instance, 'cli', null))->toThrow(ResourceOperationException::class);
+
+    $this->travel(6)->seconds();
+    $commands = journalAnswers([[journalRecord($wake, 'wake', 'open'), journalRecord($wake, 'wake', 'done', ['status' => 'done'])]]);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
+
+    expect($wake->refresh())->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull();
+    expect($wake->executor_result)->toMatchArray(['status' => 'done', 'delivery' => 'journal']);
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
+    onlyJournalReads($commands);
+});
+
+it('fails a wake whose publish threw once the journal shows the Node never acted', function (): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
     $this->publisher->publishing = fn () => throw new RuntimeException('No websocket role is active.');
     $wake = app(InstanceWake::class)->start($instance, 'cli', null);
     Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+
+    $this->travel(6)->seconds();
+    journalAnswers([[]]);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
 
     expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.publish_failed')->lock_key->toBeNull();
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
@@ -373,15 +456,48 @@ it('rejects a successful signed resume wrapper with no successful executor recei
     expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
 })->with(['refused' => ['refused', 'executor.order_refused'], 'missing' => [null, 'executor.result_unproven']]);
 
-it('interrupts an accepted action with no receipt at its deadline and keeps its fence, with no Swamp recovery', function (): void {
+it('interrupts an accepted sleep under its fence while the Node is unreachable, then projects its lost reply from the Node journal', function (): void {
     $instance = managedPowerFixture();
-    $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
-    $wake->forceFill(['status' => OperationStatus::Running, 'attempts' => 1, 'executor_accepted_us' => (int) now()->format('Uu'),
-        'state' => [...$wake->state, ExecutorWake::PublishedAt => now()->subSeconds(7)->getTimestampMs()]])->save();
-    app(ExecutorWake::class)->completeHandoff($wake);
+    $instance->runtime()->update(['power_state' => InstanceRuntimePowerState::Running]);
+    $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => powerLine($event, ['status' => 'accepted']);
+    $sleep = app(InstanceSleep::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+    expect($sleep->refresh())->status->toBe(OperationStatus::Running)->executor_accepted_us->not->toBeNull();
 
-    expect($wake->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')->lock_key->not->toBeNull();
+    $this->travel(7)->seconds();
+    $commands = journalAnswers([null, [journalRecord($sleep, 'sleep', 'done', ['status' => 'slept',
+        'receipt' => ['sleep' => 'frozen', 'plan' => 'ready', 'processes' => 12, 'swap_subtree' => 3]])]]);
+    app(ExecutorWake::class)->completeHandoff($sleep);
+    expect($sleep->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown')
+        ->lock_key->not->toBeNull()->executor_result->toBeNull();
+    expect(fn () => app(InstanceWake::class)->start($instance, 'cli', null))->toThrow(ResourceOperationException::class);
+
+    $this->travel(10)->seconds();
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(1);
+    expect($sleep->refresh())->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull();
+    expect($sleep->result)->toMatchArray(['sleep' => 'frozen', 'power_state' => 'stopped']);
+    expect($instance->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+    expect($commands)->toHaveCount(2);
+    onlyJournalReads($commands);
     Queue::assertNotPushed(StartAdmittedSwampRun::class);
+});
+
+it('frees an interrupted wake once the reachable journal shows the Node never acted', function (): void {
+    $instance = managedPowerFixture();
+    $this->travelTo(now()->startOfSecond());
+    $wake = app(InstanceWake::class)->start($instance, 'cli', null);
+    Queue::pushed(DispatchExecutorWake::class)->sole()->handle(app(ExecutorWake::class));
+    $this->travel(6)->seconds();
+    $commands = journalAnswers([null, []]);
+    (new CompleteExecutorWake($wake->id))->handle(app(ExecutorWake::class));
+    expect($wake->refresh())->status->toBe(OperationStatus::Interrupted)->lock_key->not->toBeNull();
+
+    expect(app(ExecutorWake::class)->recoverPendingCompletions())->toBe(0);
+    $this->travel(10)->seconds();
+    app(ExecutorWake::class)->recoverPendingCompletions();
+    expect($wake->refresh())->status->toBe(OperationStatus::Failed)->error_code->toBe('executor.not_accepted')->lock_key->toBeNull();
+    expect($commands)->toHaveCount(2);
+    onlyJournalReads($commands);
 });
 
 it('interrupts rather than releasing the target when recovery ends without a receipt', function (): void {

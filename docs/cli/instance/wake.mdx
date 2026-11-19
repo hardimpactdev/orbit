@@ -34,7 +34,7 @@ Orbit resumes a frozen container: its processes continue where they stopped, and
 
 The Gateway setting `ORBIT_EXECUTOR_WAKE_ENABLED`, off by default, selects the [executor wake](/reference/executor#the-wake-inside-the-request) for container Instances. When enabled, Orbit records or joins the wake before sending its signed order. A Route visit waits for that wake, as above. Background work finishes the Operation without a deferred wake or Python/SSH path.
 
-With [signed power routing](/reference/executor#signed-power-delivery), the WebSocket is the only way the order reaches the Node. If the Node has not accepted the order after 6 s, the order has expired and the wake fails with `executor.not_accepted`. If the Node accepted it but sent no result, the wake ends `interrupted` with `executor.result_unknown`. A known frozen Instance wakes through the engine that froze it, even if the settings change. The Node-level Process wake keeps its existing behavior.
+With [signed power routing](/reference/executor#signed-power-delivery), the WebSocket is the only way the order reaches the Node. If no result arrives within 6 s, the Gateway reads the Node's executor journal for the order, without sending it again. A result there decides the wake. No record after the order expired fails it with `executor.not_accepted`. If the Node cannot be read, the wake ends `interrupted` with `executor.result_unknown`. A known frozen Instance wakes through the engine that froze it, even if the settings change. The Node-level Process wake keeps its existing behavior.
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 
@@ -89,6 +89,6 @@ For a nested-fleet clone:
 | `executor.wake_failed` | Executor wakes are enabled and the Node reported a failure. The Operation keeps the executor result. |
 | `executor.wake_timeout` | No executor result confirmed the wake before its queued completion. The Node may still finish; a later result does not reopen the Operation. |
 | `executor.sign_failed` | The Gateway could not sign an order. Nothing was sent. |
-| `executor.publish_failed` | The Gateway could not send the signed order. Nothing reached the Node, and the Instance is free for a new wake. |
-| `executor.not_accepted` | The Node did not accept the signed order before it expired. It cannot act any more, and the Instance is free for a new wake. |
-| `executor.result_unknown` | The Node accepted the order but sent no result within 6 seconds. The Operation ends `interrupted`, and the Instance stays locked until a late result settles it. |
+| `executor.publish_failed` | The Gateway could not send the signed order, and the Node's journal shows it never arrived. Nothing changed, and the Instance is free for a new wake. |
+| `executor.not_accepted` | The Node's journal has no record of the signed order after it expired. The Node never acted, and the Instance is free for a new wake. |
+| `executor.result_unknown` | No result arrived within 6 seconds, and the Gateway could not read the Node's journal. The Operation ends `interrupted`. The Instance stays locked, and the Gateway reads the journal again every 10 seconds until it settles the Operation. |

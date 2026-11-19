@@ -66,6 +66,6 @@ The command uses [signed power routing](/reference/executor#signed-power-deliver
 | `instance.container_freeze_failed` | The container could not be frozen, the stop after a full swap failed, or swap could not take a nested-fleet Instance's memory. The marker is gone when the container still runs. |
 | `instance.container_sleep_incomplete` | The signed sleep failed after the Instance became unavailable. The executor keeps the marker and saved swap limits so it can wake the Instance. |
 | `executor.sign_failed` | The Gateway could not sign an order. Nothing was sent. |
-| `executor.publish_failed` | The Gateway could not send the signed order. Nothing reached the Node, and the Instance is free. |
-| `executor.not_accepted` | The Node did not accept the signed order before it expired. It cannot act any more, and the Instance is free. |
-| `executor.result_unknown` | The Node accepted the order but sent no result within 6 seconds. The Operation ends `interrupted`, and the Instance stays locked until a late result settles it. |
+| `executor.publish_failed` | The Gateway could not send the signed order, and the Node's journal shows it never arrived. Nothing changed, and the Instance is free. |
+| `executor.not_accepted` | The Node's journal has no record of the signed order after it expired. The Node never acted, and the Instance is free. |
+| `executor.result_unknown` | No result arrived within 6 seconds, and the Gateway could not read the Node's journal. The Operation ends `interrupted`. The Instance stays locked, and the Gateway reads the journal again every 10 seconds until it settles the Operation. |

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Power;
 
-use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -20,6 +19,9 @@ final class ExecutorFence
 {
     /** Set in the transaction that signs an order for the Operation, before the order leaves the Gateway. */
     public const string Issued = 'executor_order_issued';
+
+    /** Set when the Node's journal proved that the expired order never acted (ExecutorWake::reconcile). */
+    public const string Absent = 'executor_order_absent';
 
     /** @param array<string, mixed>|null $state
      * @return array<string, mixed>
@@ -38,20 +40,12 @@ final class ExecutorFence
     }
 
     /**
-     * R2: an issued order without a recorded receipt. Its Operation cannot be cancelled, and its end keeps the lock. A signed power order
-     * that expired without an `accepted` line can no longer act on any Node, so it holds nothing: its Operation fails and frees the lock.
+     * R2: an issued order without a recorded receipt. Its Operation cannot be cancelled, and its end keeps the lock. Only the Node's
+     * journal frees an issued order without a receipt: it shows no record of the order after the order expired there (`Absent`).
      */
     public static function holds(Operation $operation): bool
     {
-        return self::issued($operation) && $operation->executor_result === null && ! self::expiredUnaccepted($operation);
-    }
-
-    private static function expiredUnaccepted(Operation $operation): bool
-    {
-        $published = $operation->state[ExecutorWake::PublishedAt] ?? null;
-
-        return ExecutorWake::owns($operation) && ExecutorPowerIntent::managed($operation) && $operation->executor_accepted_us === null
-            && ! isset($operation->state[ExecutorWake::Recovery]) && is_int($published) && now()->getTimestampMs() >= $published + ExecutorOrderSigner::ExpiresAfterMs;
+        return self::issued($operation) && $operation->executor_result === null && ($operation->state[self::Absent] ?? false) !== true;
     }
 
     /**

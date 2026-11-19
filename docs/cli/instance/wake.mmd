@@ -92,20 +92,25 @@ sequenceDiagram
         %%> - R3: the engine that froze the container wakes it; a later cancelled or failed sleep and the current settings change nothing
         SW-->>GW: Return result<br/>terminal projection
       end
-    else the publish fails
-      %% path: publish-failed
-      Note over GW: Fail, free the lock<br/>executor.publish_failed
-      %%> - no Node received the order; the Operation fails at once
-    else no accepted line by 6 s
-      %% path: not-accepted
-      Note over GW: Fail, free the lock<br/>executor.not_accepted
-      %%> - the order expired 5 s after signing, so it can act on no Node; nothing holds the fence (R2)
-      %%> - a held visit sees the failed Operation and gets the plain `503`; a reload admits a new wake
-    else accepted, no result by 6 s
-      %% path: result-unknown
-      Note over GW: Interrupted, keep lock<br/>executor.result_unknown
-      %%> - R2: the executor may have acted, so the Instance lock stays and cancel is refused until a late receipt settles the Operation
-      %%> - no Swamp run starts
+    else no result by 6 s
+      %% path: journal
+      GW->>N: Read the order's journal record<br/>SSH · read-only
+      %%> - covers a publish that threw, no `accepted` line and a lost result; none proves what the Node did, so the lock never goes on silence
+      %%> - the command prints the Node's clock and the journal lines for this Operation, action and target; it sends no order and cannot act
+      alt a done record
+        Note over GW: Project it as the receipt<br/>delivery journal
+        %%> - R1: the record is the wake's outcome, success or failure, and the lock goes with it
+      else no record, order expired on the Node
+        %% path: not-accepted
+        Note over GW: Fail, free the lock<br/>executor.not_accepted
+        %%> - the Node never acted and never will; `executor.publish_failed` when the publish threw
+        %%> - a held visit sees the failed Operation and gets the plain `503`; a reload admits a new wake
+      else the Node cannot be read
+        %% path: result-unknown
+        Note over GW: Interrupted, keep lock<br/>executor.result_unknown
+        %%> - R2: the executor may have acted, so the lock stays and cancel is refused; the Gateway reads the journal again every 10 s until a record or its absence settles it
+        %%> - no Swamp run starts
+      end
     end
   else Python wake admitted
   opt Caddy, for a development visit

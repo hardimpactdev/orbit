@@ -67,7 +67,7 @@ final readonly class ExecutorResults
             $this->log->warning('The executor reported a failed order.', ['node_id' => $nodeId, 'operation_id' => $reply->operation, 'code' => $reply->reason]);
         }
 
-        if ($route === 'ssh') {
+        if ($route !== 'websocket') {
             return;
         }
 

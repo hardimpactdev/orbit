@@ -60,18 +60,23 @@ sequenceDiagram
       %%> - R1: a recorded `done` receipt is the sleep's outcome even when a later transport fails; the Operation succeeds and records asleep
       %%> - R3: the freezing engine owns the freeze; a cancelled or failed later sleep does not hand it to the other engine
       %%> - More than 32 MiB of anonymous RAM after reclaim takes the same stop rule as Python for a plain container. Report `sleep: stopped`, `prepared_restore: skipped`, reason `stopped` and the residual counters. The CLI says the next wake boots without restoring memory.
-    else the publish fails
-      %% path: publish-failed
-      Note over GW: Fail, free the lock<br/>executor.publish_failed
-      %%> - No Node received the order; the Operation fails at once.
-    else no accepted line by 6 s
-      %% path: not-accepted
-      Note over GW: Fail, free the lock<br/>executor.not_accepted
-      %%> - The order expired 5 s after signing, so it can act on no Node; nothing holds the fence (R2).
-    else accepted, no result by 6 s
-      %% path: result-unknown
-      Note over GW: Interrupted, keep lock<br/>executor.result_unknown
-      %%> - R2: the executor may have frozen the container, so the Instance lock stays and cancel is refused until a late receipt settles the Operation.
+    else no result by 6 s
+      %% path: journal
+      GW->>N: Read the order's journal record<br/>SSH · read-only
+      %%> - covers a publish that threw, no `accepted` line and a lost result; none proves what the Node did, so the lock never goes on silence
+      %%> - the command prints the Node's clock and the journal lines for this Operation, action and target; it sends no order and cannot act
+      alt a done record
+        Note over GW: Project it as the receipt<br/>delivery journal
+        %%> - R1: the record is the sleep's outcome, success or failure, and the lock goes with it
+      else no record, order expired on the Node
+        %% path: not-accepted
+        Note over GW: Fail, free the lock<br/>executor.not_accepted
+        %%> - the Node never acted and never will; `executor.publish_failed` when the publish threw
+      else the Node cannot be read
+        %% path: result-unknown
+        Note over GW: Interrupted, keep lock<br/>executor.result_unknown
+        %%> - R2: the executor may have frozen the container, so the lock stays and cancel is refused; the Gateway reads the journal again every 10 s until a record or its absence settles it
+      end
     end
   else signed power disabled at admission
   GW->>SW: Start run, full intent<br/>operation-instance-sleep

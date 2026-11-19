@@ -10,6 +10,8 @@ use App\Domain\Executor\ExecutorOrderSigner;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Infrastructure\Executor\ExecutorJournalLookup;
+use App\Infrastructure\Executor\ExecutorReply;
 use App\Infrastructure\Executor\ExecutorResults;
 use App\Infrastructure\Executor\ExecutorResultWait;
 use App\Infrastructure\Executor\ExecutorWaitStatus;
@@ -44,6 +46,12 @@ final readonly class ExecutorWake
 
     public const string Recovery = 'executor_swamp_recovery';
 
+    private const string PublishFailed = 'executor_publish_failed';
+
+    private const string JournalReadAt = 'executor_journal_read_at';
+
+    private const int JournalRereadSeconds = 10;
+
     private const string NativeStart = 'executor_native_swamp_start';
 
     private const string RecoveryQueued = 'executor_recovery_queued_at';
@@ -52,7 +60,8 @@ final readonly class ExecutorWake
 
     private const int BatchSize = 50;
 
-    public function __construct(private ExecutorOrderPublisher $publisher, private ExecutorResultWait $wait, private OperationStore $operations, private ExecutorWakeLock $lock) {}
+    public function __construct(private ExecutorOrderPublisher $publisher, private ExecutorResultWait $wait, private OperationStore $operations, private ExecutorWakeLock $lock,
+        private ExecutorJournalLookup $journal, private ExecutorResults $results) {}
 
     public static function enabled(): bool
     {
@@ -194,10 +203,9 @@ final readonly class ExecutorWake
                 if (! $managed) {
                     throw $exception;
                 }
-                Log::warning('The executor order could not be published; the Operation fails.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
-                $this->failUnpublished($operation, $budget);
-
-                return false;
+                // A publish can deliver and still throw, so the order may act: the completion reads the Node's journal after expiry.
+                Log::warning('The executor order publish failed; its completion reads the Node journal.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                $this->markUnpublished($operation, $budget);
             }
             if ($managed) {
                 return true;
@@ -228,23 +236,20 @@ final readonly class ExecutorWake
             && ($operation->state[self::State] ?? false) === true;
     }
 
-    /** The publish refused the order before it left the Gateway: no Node can act on it, so the fence lifts and the Operation fails. */
-    private function failUnpublished(Operation $operation, ExecutorWakeBudget $budget): void
+    private function markUnpublished(Operation $operation, ExecutorWakeBudget $budget): void
     {
-        $settle = fn () => DB::transaction(function () use ($operation): void {
+        $mark = static fn () => DB::transaction(static function () use ($operation): void {
             $operation->refresh();
-            $state = $operation->state ?? [];
-            unset($state[ExecutorFence::Issued], $state[self::PublishedAt]);
-            $operation->forceFill(['state' => $state])->save();
-            $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
-                'error_code' => 'executor.publish_failed', 'lock_key' => null], onlyWhileOpen: true);
+            if (! $operation->status->terminal()) {
+                $operation->forceFill(['state' => [...($operation->state ?? []), self::PublishFailed => true]])->save();
+            }
         });
-        if ($budget->write(static function () use ($settle): bool {
-            $settle();
+        if ($budget->write(static function () use ($mark): bool {
+            $mark();
 
             return true;
         }) === null) {
-            \Illuminate\Support\defer($settle, always: true);
+            \Illuminate\Support\defer($mark, always: true);
         }
     }
 
@@ -276,7 +281,7 @@ final readonly class ExecutorWake
             $power = $sleep ? app(InstanceSleep::class) : app(InstanceWake::class);
             $incompleteFreeze = $sleep && InstanceSleep::isIncompleteFreeze($line);
             if ($managed) {
-                $code = $line === null ? 'executor.not_accepted' : ExecutorResults::failureCode($line);
+                $code = $line === null ? self::unacceptedCode($operation) : ExecutorResults::failureCode($line);
                 if ($sleep && $success && ! InstanceSleep::hasSleepOutcome($line)) {
                     $success = false;
                     $code = 'executor.sleep_receipt_missing';
@@ -300,10 +305,97 @@ final readonly class ExecutorWake
 
     public function completeHandoff(Operation $operation): void
     {
+        if (! $this->reconcile($operation)) {
+            return;
+        }
         $this->complete($operation, expire: true);
         if ($operation->status->terminal() && $operation->kind === InstanceWake::Kind && ExecutorPowerIntent::managed($operation)) {
             app(ExecutorWakeNotices::class)->relay($operation->id);
         }
+    }
+
+    /**
+     * R1/R2 for a signed order with no result by its deadline: the Node's journal decides (ADR 0266, "Reconcile by the journal"). A done
+     * record is the result. No record after the order expired on the Node proves it never acted, so the fence lifts. While the order is
+     * still open there, the Operation keeps running and the next completion pass reads again. A Node that cannot be read ends the
+     * Operation interrupted under its fence (`executor.result_unknown`); the reconcile pass reads again until the journal answers.
+     * False keeps the Operation as it is.
+     */
+    private function reconcile(Operation $operation): bool
+    {
+        $operation->refresh();
+        $published = $operation->state[self::PublishedAt] ?? null;
+        if (! ExecutorPowerIntent::managed($operation) || $operation->executor_result !== null || isset($operation->state[self::Recovery])
+            || ! is_int($published) || ! ($operation->status === OperationStatus::Running || self::unknown($operation))) {
+            return true;
+        }
+        try {
+            $found = $this->journal->find($operation, ExecutorPowerIntent::action($operation) ?? 'wake', $published);
+        } catch (Throwable $exception) {
+            Log::warning('The Node executor journal could not be read; the Operation stays fenced and the reconcile pass reads it again.',
+                ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+            $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
+                'state' => [...($operation->state ?? []), self::JournalReadAt => now()->getTimestamp()]], onlyWhileOpen: true);
+
+            return false;
+        }
+        if ($found === ExecutorJournalLookup::Open) {
+            return false;
+        }
+        if ($found === ExecutorJournalLookup::Absent) {
+            DB::transaction(function () use ($operation): void {
+                $operation->refresh();
+                if ($operation->executor_result !== null) {
+                    return;
+                }
+                $operation->forceFill(['state' => [...($operation->state ?? []), ExecutorFence::Absent => true]])->save();
+                if (self::unknown($operation)) {
+                    $this->operations->change($operation, ['status' => OperationStatus::Failed, 'finished_at' => now(),
+                        'error_code' => self::unacceptedCode($operation), 'lock_key' => null]);
+                }
+            });
+
+            return true;
+        }
+        $reply = ExecutorReply::fromEvent(['operation' => (string) $operation->id, 'line' => json_encode($found, JSON_THROW_ON_ERROR)]);
+        if ($reply !== null && $operation->node_id !== null) {
+            $this->results->receive($operation->node_id, $reply, 'journal');
+        }
+        $operation->refresh();
+
+        return $operation->executor_result !== null;
+    }
+
+    /** An Operation that ended under its fence because no result was known (ExecutorFence::settle). */
+    private static function unknown(Operation $operation): bool
+    {
+        return $operation->status === OperationStatus::Interrupted && $operation->lock_key !== null && $operation->error_code === 'executor.result_unknown';
+    }
+
+    private static function unacceptedCode(Operation $operation): string
+    {
+        return ($operation->state[self::PublishFailed] ?? false) === true ? 'executor.publish_failed' : 'executor.not_accepted';
+    }
+
+    /** @return Builder<Operation> */
+    private function unknowns(): Builder
+    {
+        return Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
+            ->where('state->'.self::State, true)->where('status', OperationStatus::Interrupted)->where('error_code', 'executor.result_unknown')
+            ->whereNotNull('lock_key')->whereNull('executor_result')->whereNotNull('state->'.self::PublishedAt)
+            ->where(fn ($query) => $query->whereNull('state->'.self::JournalReadAt)
+                ->orWhere('state->'.self::JournalReadAt, '<=', now()->getTimestamp() - self::JournalRereadSeconds));
+    }
+
+    private function rereadJournal(int $operationId): bool
+    {
+        $operation = $this->unknowns()->whereKey($operationId)->first();
+        if ($operation === null) {
+            return false;
+        }
+        $operation->forceFill(['state' => [...($operation->state ?? []), self::JournalReadAt => now()->getTimestamp()]])->save();
+
+        return $this->reconcile($operation);
     }
 
     private function recoverInSwamp(Operation $operation): void
@@ -318,7 +410,7 @@ final readonly class ExecutorWake
 
     public function hasHandoffs(): bool
     {
-        return $this->completions()->exists() || $this->hooks()->exists() || $this->recoveryStarts()->exists();
+        return $this->completions()->exists() || $this->hooks()->exists() || $this->recoveryStarts()->exists() || $this->unknowns()->exists();
     }
 
     /** Recovers abandoned publication as well as lost completion jobs. */
@@ -329,7 +421,8 @@ final readonly class ExecutorWake
             ->orderByRaw('coalesce(started_at, created_at)');
 
         return $this->recover($completions, $this->continueHandoff(...), 'completion')
-            + $this->recover($this->recoveryStarts(), $this->retryRecoveryStart(...), 'Swamp start');
+            + $this->recover($this->recoveryStarts(), $this->retryRecoveryStart(...), 'Swamp start')
+            + $this->recover($this->unknowns(), $this->rereadJournal(...), 'journal');
     }
 
     /** @return Builder<Operation> */
