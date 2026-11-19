@@ -13,7 +13,7 @@ use SensitiveParameter;
 /**
  * Builds and signs one executor order (ADR 0266 "The order", docs/reference/executor.md#the-order). The payload holds
  * `action`, `node`, `target`, `operation`, `nonce` (128 random bits, hex) and `expires_ms` (Gateway time plus 5 s), then
- * `power_check` when the order carries one, then `input` for an engine step (ADR 0271). The
+ * `power_check` when the order carries one, then `input` for an engine step (ADR 0271) or a wake's readiness bound. The
  * secret key is the Gateway setting `orbit.executor.signing_key`; it never leaves this class.
  */
 final readonly class ExecutorOrderSigner
@@ -61,13 +61,14 @@ final readonly class ExecutorOrderSigner
      * @throws InvalidArgumentException when the Operation has no id or `node_id`, the action is unknown, the target is not the
      *                                  executor's form, or the order passes 4 KB.
      */
-    public function sign(Operation $operation, string $action, string $target, ?string $powerCheck = null): SignedExecutorOrder
+    /** @param array<string, mixed> $input */
+    public function sign(Operation $operation, string $action, string $target, ?string $powerCheck = null, array $input = []): SignedExecutorOrder
     {
         $node = self::nodeOf($operation);
         $id = self::idOf($operation);
         $nonce = bin2hex(random_bytes(16));
         $expiresMs = (int) Carbon::now()->getTimestampMs() + self::ExpiresAfterMs;
-        $payload = self::payload($action, (string) $node, $target, $id, $nonce, $expiresMs, $powerCheck);
+        $payload = self::payload($action, (string) $node, $target, $id, $nonce, $expiresMs, $powerCheck, $input);
         $wire = base64_encode($payload).'.'.base64_encode(sodium_crypto_sign_detached($payload, $this->secretKey));
         if (strlen($wire) > self::MaxWireBytes) {
             throw new InvalidArgumentException('An executor order may not pass '.self::MaxWireBytes.' bytes.');
