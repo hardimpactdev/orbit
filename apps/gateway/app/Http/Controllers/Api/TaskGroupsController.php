@@ -29,6 +29,7 @@ use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskStatus;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -167,6 +168,11 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function storeComment(StoreTaskCommentRequest $request, Task $task, StoreTaskCommentAction $action, StoreTaskGroupCommentAction $parentAction): JsonResponse
     {
+        // A task with no subtask takes a comment on its open work, as a subtask does (docs/reference/tasks.md#a-task-with-no-subtask).
+        $work = $task->parent_id === null ? $task->work()->first() : null;
+        if ($work instanceof Task && ! in_array($work->status, [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled], true)) {
+            $task = $work;
+        }
         $comment = $task->parent_id === null
             ? $parentAction->execute($task, StoreTaskGroupCommentData::from($request->validated()), $request->attributes->getString('orbit.request_id'))
             : $action->execute($task, $request->validated(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
@@ -177,7 +183,8 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function comments(ListTaskCommentsRequest $request, Task $task): JsonResponse
     {
-        $comments = $task->comments()->latest('posted_at');
+        // A task with no subtask lists its own comments and those of its work.
+        $comments = TaskComment::query()->whereIn('task_id', [$task->id, ...$task->parent_id === null ? $task->work()->pluck('id')->all() : []])->latest('posted_at');
 
         if ($request->type() !== null) {
             $comments->where('type', $request->type());

@@ -516,8 +516,21 @@ Such a task takes, by its own ID, the calls that a subtask takes:
 | `task:turn` | The implementer and reviewer turns |
 | `task:check:cancel` | Cancels the running check |
 | `task:update` with `deliverables` | Replaces the deliverables, with the [corrections of a started subtask](#correct-the-deliverables-of-a-started-subtask) and their `reason`. Such an update takes no other field |
+| `task:update` with `status` `completed` or `failed` | Ends the task's work, as on a subtask. The task stays open. Such an update takes no other field |
+| `task:comment:create` | A comment on the task's open work, as on a subtask. Once the work ended, a comment goes to the task |
+| `task:comment:list` | The task's comments and its work's comments |
 
-Its turn prompt holds the task's brief once and the task's deliverables, with no subtask part. A started task with no subtask takes no subtask: subtask create answers `409` with `tasks.own_work`. Record an outcome found during the task as a new task.
+An `assistance_requested` comment on the work opens a [question](#questions) with the task's ID as `task_id` and the work's ID as `subtask_id`. A `resolution` comment resolves it.
+
+Its turn prompt holds the task's brief once and the task's deliverables, with no subtask part.
+
+Review, publish and completion follow the rules of a task with subtasks, with the work as its one and last subtask:
+
+- A reviewer turn by the task's ID reviews a passed handoff check of the work. Its prompt names the task, not a subtask.
+- `task:update <task> --status=completed` after that turn is the approval that [the done rule](#when-the-work-is-done) reads. Other statuses, such as `running`, stay statuses of the task.
+- `task:publish` and the automatic publish of `pr_when_done` publish the done check. A conflict with main starts the [merge round](#the-merge-round) on the work: it reopens and completes the work as it does the last subtask.
+- `task:complete` completes the task and ends its open work.
+- [Task insights](#task-insights) count the work once, as one subtask. A started task with no subtask takes no subtask: subtask create answers `409` with `tasks.own_work`. Record an outcome found during the task as a new task.
 
 In `backlog`, a task without subtasks takes its own deliverables by `task:update`, also after its last subtask was destroyed. A task with subtasks takes none: the update answers `422` with `validation.failed`. In `backlog`, a task whose own deliverables are empty takes a subtask: the first subtask create replaces its own empty work. While it holds deliverables, subtask create answers `409` with `tasks.own_work`; clear them first to split the task.
 
@@ -1737,6 +1750,8 @@ Durations and token counts are medians. Shares are between 0 and 1. A number is 
 | `tokens_per_hundred_lines` | The tokens of merged tasks divided by their added and deleted lines, times 100 |
 
 A replaced implementer thread is one whose subtask has a newer implementer thread. Its tokens bought nothing that shipped.
+
+The work of a [task with no subtask](#a-task-with-no-subtask) counts as one subtask in each subtask number.
 
 ### Trend and breakdown
 

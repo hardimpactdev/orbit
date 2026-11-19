@@ -33,7 +33,7 @@ final class UpdateTaskGroupRequest extends FormRequest
     public function rules(): array
     {
         if ($this->addressesWork()) {
-            return array_filter((new UpdateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables') || $field === 'reason', ARRAY_FILTER_USE_KEY);
+            return array_filter((new UpdateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables') || in_array($field, ['reason', 'status'], true), ARRAY_FILTER_USE_KEY);
         }
         if ($this->route('task') instanceof Task && $this->route('task')->parent_id !== null) {
             return (new UpdateTaskRequest)->rules();
@@ -60,7 +60,7 @@ final class UpdateTaskGroupRequest extends FormRequest
     {
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), match (true) {
-                $this->addressesWork() => ['deliverables', 'reason'],
+                $this->addressesWork() => ['deliverables', 'status', 'reason'],
                 $this->route('task') instanceof Task && $this->route('task')->parent_id !== null => ['title', 'brief', 'position', 'deliverables', 'topology', 'status', 'reason'],
                 default => ['title', 'brief', 'status', 'preview', 'pr_mode', 'reason', ...TaskAgent::fields()],
             });
@@ -70,16 +70,21 @@ final class UpdateTaskGroupRequest extends FormRequest
     }
 
     /**
-     * Whether the request sets the deliverables of a task's own work: it names `deliverables`, and then only a `reason`, on a task
-     * that has its work or no subtask (docs/reference/tasks.md#a-task-with-no-subtask).
+     * Whether the request changes a task's own work (docs/reference/tasks.md#a-task-with-no-subtask). It sets the deliverables: it names
+     * `deliverables`, on a task that has its work or no subtask. Or it ends the work: a task with its work takes `completed` and
+     * `failed`, which no task update takes. Either takes only the work's fields.
      */
     public function addressesWork(): bool
     {
         $task = $this->route('task');
         $body = json_decode($this->getContent(), true);
-
-        return $task instanceof Task && $task->parent_id === null && is_array($body) && array_key_exists('deliverables', $body)
-            && ($task->work()->exists() || ! Task::query()->where('parent_id', $task->id)->exists());
+        if (! $task instanceof Task || $task->parent_id !== null || ! is_array($body)) {
+            return false;
+        }
+        if (array_key_exists('deliverables', $body)) {
+            return $task->work()->exists() || ! Task::query()->where('parent_id', $task->id)->exists();
+        }
+        return in_array($body['status'] ?? null, [TaskStatus::Completed->value, TaskStatus::Failed->value], true) && $task->work()->exists();
     }
 
     public function parentPayload(): UpdateTaskGroupData
