@@ -80,6 +80,23 @@ if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
   done({ changed });
 }
 if (command[0] === "systemctl" && command[1] === "try-restart") done();
+// The refresh's best-effort resume of each target: a frozen one runs again, any other stays as it is.
+if (command[0] === "sh" && command[1] === "-c" && command[2] === 'for n do incus resume "$n" || true; done' && command[3] === "sh") {
+  for (const name of command.slice(4)) if (state.containers[name]?.status === "Frozen") state.containers[name].status = "Running";
+  state.resumedLate = command.slice(4);
+  done();
+}
+// The thaw timer of a running `base` (instance-fleet-refresh.yml): `thawArmed` holds the names it would resume, until a stop of its timer.
+if (command[0] === "systemd-run" && command[1] === "--unit" && command[2] === "orbit-fleet-thaw") {
+  if (state.thawArmed) fail("Unit orbit-fleet-thaw.timer was already loaded or has a fragment file.");
+  state.thawArmed = command.slice(command.indexOf("sh", command.indexOf("-c")) + 1);
+  state.thawArmedTimes = (state.thawArmedTimes ?? 0) + 1;
+  done();
+}
+if (command[0] === "systemctl" && command[1] === "stop" && command[2] === "orbit-fleet-thaw.timer") {
+  delete state.thawArmed;
+  done();
+}
 
 // instance_fleet_shrink.py in the Instance container: `check` answers `shrink` (by default not due), `run` answers `shrinkResult` (by
 // default both parts ran) and makes the next check current; `shrinkExit` ends either with that code and no result line.
@@ -234,6 +251,12 @@ if (command[0] === "incus") {
     Object.assign(state.network.config, pairs(inner.slice(3)));
     done();
   }
+  // The drivers of the inner storage pools, one per line: `poolDriver` is the one pool's (a directory pool unless a test says
+  // otherwise); `poolsUnreadable` makes the read fail, and `poolsOutput` is printed as it is with exit 0.
+  if (inner.join(" ") === "storage list --format csv --columns D") {
+    if (state.poolsUnreadable) fail("Failed to list storage pools");
+    done(state.poolsOutput ?? state.poolDriver ?? "dir");
+  }
   if (inner[0] === "query") {
     const [route, query] = inner[1].slice("/1.0/instances/".length).split("?");
     const [name, part] = route.split("/");
@@ -262,6 +285,17 @@ if (command[0] === "incus") {
       else found.status = "Running";
     }
     if (errors.length > 0) fail(errors.join("; "));
+    done();
+  }
+  // `pause` freezes running containers and `resume` thaws frozen ones, several in one call, as in Incus.
+  if (inner[0] === "pause" || inner[0] === "resume") {
+    const found = inner.slice(1).map(container);
+    if (found.length === 0) fail("No instance named");
+    const from = inner[0] === "pause" ? "Running" : "Frozen";
+    // `pauseDelay`: seconds a freeze stalls before it takes effect; a caller's `timeout` that ends it first leaves nothing frozen.
+    if (inner[0] === "pause" && state.pauseDelay) await new Promise((resolve) => setTimeout(resolve, state.pauseDelay * 1000));
+    if (found.some((value) => value.status !== from)) fail(inner[0] === "pause" ? "The instance isn't running" : "The instance isn't frozen");
+    for (const value of found) value.status = inner[0] === "pause" ? "Frozen" : "Running";
     done();
   }
   if (inner[0] === "start" || inner[0] === "stop") {
@@ -304,6 +338,8 @@ if (command[0] === "incus") {
     found.files ??= {};
     if (verb === "create") {
       if (found.snapshots[snapshot]) fail("Snapshot already exists");
+      // `failSnapshot`: the names whose snapshot fails.
+      if (state.failSnapshot?.includes(name)) fail("Failed to create snapshot");
       found.snapshots[snapshot] = { config: copy(found.config), devices: copy(found.devices), files: copy(found.files), links: copy(found.links ?? {}), taken: found.status };
     } else if (verb === "delete") {
       if (!found.snapshots[snapshot]) fail("Snapshot not found");
@@ -349,6 +385,26 @@ if (command[0] === "incus") {
     const asOrbit = rest[0] === "runuser" && rest[1] === "-u" && rest[2] === "orbit" && rest[3] === "--";
     if ((rest[0] === "install" || rest[0] === "php") && !asOrbit) fail(`${rest[0]} as root: the app user runs it`);
     if (asOrbit) rest = rest.slice(4);
+    // The nested Gateway's Valkey: `CLIENT PAUSE <ms> WRITE` holds the writes (`queuePaused`) unless `queuePauseFails`, `CLIENT UNPAUSE`
+    // lets them go; `SAVE` answers OK unless `queueSaveFails`, and counts in `queueSaved` with the writes held or not (`queueSavedHeld`).
+    if (name === "nested-gateway" && rest[0] === "valkey-cli") {
+      const verb = rest.slice(1).join(" ");
+      if (/^CLIENT PAUSE [0-9]+ WRITE$/.test(verb)) {
+        if (state.queuePauseFails) fail("ERR timeout is not an integer or out of range");
+        state.queuePaused = Number(rest[3]);
+        done("OK");
+      }
+      if (verb === "CLIENT UNPAUSE") {
+        delete state.queuePaused;
+        done("OK");
+      }
+      if (verb === "SAVE") {
+        if (state.queueSaveFails) fail("ERR Background save already in progress");
+        state.queueSaved = (state.queueSaved ?? 0) + 1;
+        if (state.queuePaused) state.queueSavedHeld = (state.queueSavedHeld ?? 0) + 1;
+        done("OK");
+      }
+    }
     if (rest.join(" ") === "php artisan list --raw --no-interaction") {
       if (!asOrbit || name !== "nested-gateway" || !inner.includes("/home/orbit/orbit/apps/gateway")) fail("Wrong command-list context");
       if (state.failCommandList) fail("Gateway command list unavailable");

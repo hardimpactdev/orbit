@@ -82,6 +82,7 @@ run_phase retire
 if ! run_phase cleanup "--before=$generations"; then
   echo 'Gateway is serving; document cleanup remains paused.' >&2
 fi
-run_phase cleanup-versions
+# Cleanup Tasks can only wait for the next release; their failure never fails the move.
+run_phase cleanup-versions || echo 'Gateway is serving; cleanup Tasks wait for the next verified release.' >&2
 trap - EXIT
 printf 'Gateway %s is serving in its release container. Automatic releases remain disabled.\n' "$sha"

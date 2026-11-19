@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Operations;
 
+use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -19,6 +21,25 @@ final readonly class OperationVersionCleanup
         DB::transaction(fn () => $this->fence($this->direct->dependencyGraph()), 3);
 
         return ['fenced' => true];
+    }
+
+    /**
+     * Whether this process runs the release that serves traffic. A host Gateway always does. In a release container,
+     * marked by its runtime, the host inventory must be readable and name this checkout as live; a draining outgoing
+     * release then no longer writes its own policy into the fence from a check. The switch's pre-publication fence is
+     * the exception: the release about to serve owns the fence from its switch on.
+     */
+    public function serves(): bool
+    {
+        if (! config()->boolean('orbit.gateway_container')) {
+            return true;
+        }
+        $layout = GatewayReleaseLayout::fromConfig();
+        try {
+            return $layout->usesContainers() && ! $layout->observe($layout->applicationPath)->superseded;
+        } catch (GatewayReleaseException) {
+            return false;
+        }
     }
 
     /** @param array<string,array<int,array<string,int>>> $graph */
@@ -61,7 +82,9 @@ final readonly class OperationVersionCleanup
         $graph = $this->direct->dependencyGraph();
 
         return DB::transaction(function () use ($graph): array {
-            $this->fence($graph);
+            if ($this->serves()) {
+                $this->fence($graph);
+            }
             $counts = [];
             foreach (DB::table('deprecated_operation_versions')->orderBy('kind')->orderBy('version')->get() as $row) {
                 $counts[$row->kind.'@'.$row->version] = ['kind' => (string) $row->kind, 'version' => (int) $row->version, 'eligible' => true, 'outstanding' => 0];

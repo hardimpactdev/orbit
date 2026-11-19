@@ -207,6 +207,9 @@ def stub(name, args):
             if any(arg.endswith("/bin/gateway-horizon-ready") for arg in command):
                 event("Horizon readiness " + machine)
                 return 1 if (state / "broken-heartbeat").exists() else 0
+            if "operations:repair-fence" in command:
+                event("repair " + machine)
+                return 1 if (state / "broken-repair").exists() else 0
             if "operations:check-cleanup" in command:
                 if "--fence-only" in command:
                     event("fence " + machine)
@@ -586,9 +589,64 @@ class GatewayReleaseRecovery(GatewayReleaseFixture):
         self.assert_ok(self.run_script(self.console, "--recover"))
         self.assertEqual((self.state / "events").read_text().count("fence " + self.candidate), 3)
 
+    def test_the_serving_release_repairs_the_fence_right_after_it_publishes_on_switch_and_recover(self):
+        self.serving_former()
+        (self.state / "broken-repair").touch()
+        # A failed repair never fails the switch; the scheduler repairs later.
+        self.assert_ok(self.switch())
+        events = (self.state / "events").read_text()
+        self.assertLess(events.index("site container"), events.index("repair " + self.candidate))
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
+        (self.state / "broken-repair").unlink()
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assertEqual((self.state / "events").read_text().count("repair " + self.candidate), 2)
+
+    def test_cleanup_refuses_a_replayed_receipt_of_an_earlier_handover_of_the_same_commit(self):
+        self.released()
+        cleanup = lambda operation: self.run_script(self.phase, "cleanup-versions", self.sha, operation)
+        self.assert_ok(cleanup(OPERATION))
+        # A later handover of the same commit records its own Operation; the first receipt no longer speaks for live.
+        (self.journal / "last-operation").write_text("99\n")
+        before = (self.state / "events").read_text()
+        replayed = cleanup(OPERATION)
+        self.assertNotEqual(replayed.returncode, 0)
+        self.assertIn("earlier handover", replayed.stderr)
+        self.assertNotIn("checked", replayed.stdout)
+        self.assertEqual((self.state / "events").read_text(), before)
+
+    def test_the_handover_marker_holds_from_the_fence_until_the_inventory_names_the_candidate(self):
+        marker = self.home / ".orbit/gateway-handover"
+        self.serving_former()
+        # A switch whose fence fails before routing leaves the outgoing release live and removes the marker.
+        (self.state / "broken-fence").touch()
+        self.assertNotEqual(self.switch().returncode, 0)
+        self.assertIn("fence " + self.candidate, (self.state / "events").read_text())
+        self.assertFalse(marker.exists())
+        (self.state / "broken-fence").unlink()
+        # Routed, inventory not yet written: the marker stays while the inventory still names the outgoing release.
+        self.assertEqual(self.switch(interrupt="after container switch").returncode, -signal.SIGKILL)
+        self.assertEqual(marker.read_text().split(), [OPERATION, self.sha])
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
+        # A --recover whose fence fails keeps the marker that the routed switch left.
+        (self.state / "broken-fence").touch()
+        self.assertNotEqual(self.run_script(self.console, "--recover").returncode, 0)
+        self.assertEqual(marker.read_text().split(), [OPERATION, self.sha])
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.old)
+        (self.state / "broken-fence").unlink()
+        # A successful --recover publishes the inventory naming the candidate, then removes the marker and repairs.
+        self.assert_ok(self.run_script(self.console, "--recover"))
+        self.assertFalse(marker.exists())
+        events = (self.state / "events").read_text()
+        self.assertEqual(json.loads(self.inventory.read_text())["live"], self.sha)
+        self.assertIn("repair " + self.candidate, events)
+
     def test_cleanup_reports_deferred_and_propagates_other_failures(self):
-        self.assert_ok(self.run_move())
         code = self.state / "cleanup-exit"
+        # A failed cleanup check only defers cleanup Tasks; it never fails the first move after traffic switched.
+        code.write_text("31")
+        moved = self.run_move()
+        self.assert_ok(moved)
+        self.assertIn("cleanup Tasks wait for the next verified release", moved.stderr)
         code.write_text("75")
         result = self.run_script(self.phase, "cleanup-versions", self.sha, OPERATION)
         self.assert_ok(result)
