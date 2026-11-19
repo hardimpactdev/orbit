@@ -160,11 +160,76 @@ class RouteWithdrawTest(unittest.TestCase):
         self.withdraw(plan(7))
         self.assertEqual(self.caddy.read_text(), caddyfile(edited))
 
-    def test_an_edited_own_site_is_a_revision_conflict(self):
+    def test_an_own_site_in_another_form_is_still_withdrawn(self):
         self.caddy.write_text(caddyfile(site(7).replace("8080", "9090"), PRODUCTION))
+        self.withdraw(plan(7))
+        self.assertEqual(self.caddy.read_text(), caddyfile(PRODUCTION))
+
+    def beast_3713(self):
+        """Beast's live Caddyfile of task-5888 (Instance 3713, 2026-11-19), published before #4020, and the plan that today's rendering
+        captures for Route 1439: the same four groups, with the hibernation wake in the `route { forward_auth @orbit_asleep }` form."""
+        live = (Path(__file__).parent / "fixtures/route-withdraw/beast-3713-live.caddy").read_text()
+        today = live.replace("handle @orbit_asleep {\n    forward_auth https://gateway.orbit {",
+                             "route {\n    forward_auth @orbit_asleep https://gateway.orbit {")
+        self.assertNotEqual(today, live)
+        header, _ = WITHDRAW.caddy_sections(live)
+        value = plan(3713)
+        value["caddy"]["chain"] = [today, header, header, header]
+        return live, header, value
+
+    def test_the_beast_3713_blocks_rendered_by_an_older_orbit_are_withdrawn(self):
+        live, header, value = self.beast_3713()
+        self.caddy.write_text(live + "\n" + PRODUCTION)
+        result = self.withdraw(value)
+        self.assertTrue(result["caddy"])
+        self.assertEqual(self.caddy.read_text(), header + "\n" + PRODUCTION)
+
+    def test_the_beast_3713_blocks_without_the_dev_bridge_group_are_withdrawn(self):
+        live, header, value = self.beast_3713()
+        self.caddy.write_text(live[:live.index("\n# orbit: app-dev app-instance-3713-dev-bridge")] + "\n\n" + PRODUCTION)
+        self.withdraw(value)
+        self.assertEqual(self.caddy.read_text(), header + "\n" + PRODUCTION)
+
+    def test_a_group_of_the_withdrawn_scope_that_the_plan_does_not_name_is_withdrawn(self):
+        """An older rendering may hold a group of the scope under a name today's rendering no longer captures."""
+        live, header, value = self.beast_3713()
+        value["caddy"]["chain"][0] = value["caddy"]["chain"][0][:value["caddy"]["chain"][0].index("\n# orbit: app-dev app-instance-3713-bridge")]
+        other = "# orbit: app-dev app-instance-37130-bridge\nhttps://other.test {\n    reverse_proxy 10.253.0.9:8080\n}\n"
+        self.caddy.write_text(live + "\n" + other)
+        self.withdraw(value)
+        self.assertEqual(self.caddy.read_text(), header + "\n" + other)
+
+    def test_a_withdrawal_after_a_node_converge_rebuilt_the_global_options_keeps_them(self):
+        live, header, value = self.beast_3713()
+        rebuilt = header.replace("    order abort first\n", "    order abort first\n    servers {\n        trusted_proxies static private_ranges\n    }\n")
+        self.caddy.write_text(rebuilt + live[len(header):])
+        self.withdraw(value)
+        self.assertEqual(self.caddy.read_text(), rebuilt)
+
+    def test_a_retry_after_the_route_is_gone_changes_nothing(self):
+        live, header, value = self.beast_3713()
+        self.caddy.write_text(live + "\n" + PRODUCTION)
+        self.withdraw(value)
+        tools = Tools()
+        self.assertFalse(self.withdraw(value, tools)["changed"])
+        self.assertEqual(self.caddy.read_text(), header + "\n" + PRODUCTION)
+        self.assertFalse(any("reload" in argv for argv in tools.calls))
+
+    def test_a_concurrent_change_to_a_foreign_site_still_refuses_and_touches_nothing(self):
+        live, _, value = self.beast_3713()
+        self.caddy.write_text(live + "\n" + PRODUCTION)
+        edited = (live + "\n" + PRODUCTION).replace("10.44.0.12", "10.44.0.99")
+        tools = Tools()
+
+        def run(argv, **kwargs):
+            if "validate" in argv:
+                self.caddy.write_text(edited)
+            return tools(argv, **kwargs)
+
         with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
-            self.withdraw(plan(7))
-        self.assertEqual(refused.exception.code, "caddy.owned_revision_conflict")
+            WITHDRAW.withdraw(value, run, root=str(self.root), wait=10)
+        self.assertEqual(refused.exception.code, "route.live_changed")
+        self.assertEqual(self.caddy.read_text(), edited)
 
     def test_a_failed_validation_leaves_every_file(self):
         self.pool.write_text(pool(7).replace("__ORBIT_NODE_GROUP__", "1000").replace("/__ORBIT_NODE_HOME__", "/home/orbit") + pool(9))

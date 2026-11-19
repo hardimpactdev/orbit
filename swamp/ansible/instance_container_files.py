@@ -67,6 +67,35 @@ def incus(*args, stdin=None, ok=(0,), timeout=None):
     return result
 
 
+def confirmed_state(project, name):
+    """The container's state as Incus answers it when asked again: "gone", its status (such as "Running", "Stopped" or "Frozen"), or
+    None when Incus gives no answer to rely on. A removal is admitted beside a role converge (NodeWorkAdmission), and a removal or an
+    idle sleep stops a container, so a container listed at the start of a pass can be stopped or deleted before the pass reaches it.
+    Only Incus's own not-found answer means gone; a failed read of any other kind is no proof, and the failure stands."""
+    result = subprocess.run(["incus", "query", f"/1.0/instances/{name}?project={project}"], capture_output=True, text=True,
+                            errors="surrogateescape", check=False, timeout=30)
+    if result.returncode != 0:
+        missing = re.fullmatch(
+            rf'Error: (?:Failed to fetch instance "{re.escape(name)}" in project "{re.escape(project)}": )?Instance not found',
+            result.stderr.strip())
+        return "gone" if missing else None
+    try:
+        status = json.loads(result.stdout).get("status")
+    except (ValueError, AttributeError):
+        return None
+    return status if isinstance(status, str) else None
+
+
+def gone(project, name):
+    """Whether Incus confirms, when asked again, that the container no longer exists."""
+    return confirmed_state(project, name) == "gone"
+
+
+# Work that only a running container takes (`incus exec`); a container that Incus confirms is no longer running gets the work of its
+# state instead, as if the listing had named that state.
+NOT_RUNNING = ("Stopped", "Frozen")
+
+
 def subject_hash(pem):
     """OpenSSL's hashed name of a certificate, or None for text that is not one."""
     result = subprocess.run(["openssl", "x509", "-noout", "-subject_hash"], input=pem, capture_output=True, text=True, check=False)
@@ -241,6 +270,15 @@ def container(project, row, files, trust, browser, libraries, names, libraries_c
         if presented is not None:
             machine_name(project, name, status, label, presented, code, summary)
     except IncusFailure as failure:
+        state = confirmed_state(project, name)
+        if state == "gone":
+            summary["gone"].append(label)
+            return
+        if status == "Running" and state in NOT_RUNNING:
+            # Stopped or frozen since the listing: its files and links again, and the cache or frozen work of its state.
+            container(project, {**row, "status": state}, files, trust, browser, libraries, names, libraries_changed, summary,
+                      presented, code)
+            return
         summary["failed"].append(f"{label}: {failure}")
     browser_trust(project, name, status, label, browser, summary)
 
@@ -251,7 +289,7 @@ def converge(projects, files, trust_spec, browser, libraries, state, machine_nam
     state_file = Path(state)
     libraries_changed = (state_file.read_text().strip() if state_file.is_file() else "") != digest
     summary = {"written": [], "removed": [], "ldconfig": [], "ca_bundle": [], "cache_dropped": [], "frozen": [], "skipped": [],
-               "browser_trust": [], "failed": []}
+               "browser_trust": [], "gone": [], "failed": []}
     try:
         pem = Path(trust_spec["source"]).read_text()
     except OSError:
@@ -286,12 +324,47 @@ def converge(projects, files, trust_spec, browser, libraries, state, machine_nam
     return 0
 
 
+def t3_entry(entry, project, name, label, status, pending, state_file, summary):
+    """One container's drop-ins in `status`. A container listed as running that Incus confirms has stopped or frozen since gets the
+    work of that state; a confirmed-gone one is skipped."""
+    try:
+        changed = False
+        for file in entry["files"]:
+            if pull_named(project, name, file["path"]) == file["content"]:
+                continue
+            incus("file", "push", "--project", project, "--create-dirs", "--uid", "0", "--gid", "0", "--mode", file["mode"], "-",
+                  name + file["path"], stdin=file["content"])
+            summary["written"].append(label + file["path"])
+            changed = True
+        # A running unit that systemd has not reloaded since its drop-in changed: a container that was frozen at the write, or a
+        # run that failed between the write and the reload. It gets the reload and the restart now.
+        if not changed and status == "Running":
+            changed = incus("exec", "--project", project, name, "--", "systemctl", "show", "-p", "NeedDaemonReload", "--value",
+                            "t3.service").stdout.strip() == "yes"
+        if changed and status == "Running":
+            incus("exec", "--project", project, name, "--", "systemctl", "daemon-reload")
+            if {"project": project, "name": name} not in pending:
+                pending.append({"project": project, "name": name})
+                state_file.parent.mkdir(parents=True, exist_ok=True)
+                state_file.write_text(json.dumps(pending) + "\n")
+        elif changed and status == "Frozen":
+            summary["frozen"].append(label)
+    except IncusFailure as failure:
+        state = confirmed_state(project, name)
+        if state == "gone":
+            summary["gone"].append(label)
+        elif status == "Running" and state in NOT_RUNNING:
+            t3_entry(entry, project, name, label, state, pending, state_file, summary)
+        else:
+            summary["failed"].append(f"{label}: {failure}")
+
+
 def t3_files(entries, state):
     """The T3 unit drop-ins of each container the Gateway names (`t3` mode). Prints the summary; a failed Incus call fails the run after
     every other container had its turn."""
     state_file = Path(state)
     pending = json.loads(state_file.read_text()) if state_file.is_file() else []
-    summary = {"written": [], "reload": [], "frozen": [], "skipped": [], "failed": []}
+    summary = {"written": [], "reload": [], "frozen": [], "skipped": [], "gone": [], "failed": []}
     rows = {(row.get("project"), row["name"]): row["status"]
             for row in json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)} if entries or pending else {}
     existing = [entry for entry in pending if (entry["project"], entry["name"]) in rows]
@@ -307,30 +380,7 @@ def t3_files(entries, state):
         if status not in ("Running", "Stopped", "Frozen"):
             summary["skipped"].append(f"{label}: {status or 'missing'}")
             continue
-        try:
-            changed = False
-            for file in entry["files"]:
-                if pull_named(project, name, file["path"]) == file["content"]:
-                    continue
-                incus("file", "push", "--project", project, "--create-dirs", "--uid", "0", "--gid", "0", "--mode", file["mode"], "-",
-                      name + file["path"], stdin=file["content"])
-                summary["written"].append(label + file["path"])
-                changed = True
-            # A running unit that systemd has not reloaded since its drop-in changed: a container that was frozen at the write, or a
-            # run that failed between the write and the reload. It gets the reload and the restart now.
-            if not changed and status == "Running":
-                changed = incus("exec", "--project", project, name, "--", "systemctl", "show", "-p", "NeedDaemonReload", "--value",
-                                "t3.service").stdout.strip() == "yes"
-            if changed and status == "Running":
-                incus("exec", "--project", project, name, "--", "systemctl", "daemon-reload")
-                if {"project": project, "name": name} not in pending:
-                    pending.append({"project": project, "name": name})
-                    state_file.parent.mkdir(parents=True, exist_ok=True)
-                    state_file.write_text(json.dumps(pending) + "\n")
-            elif changed and status == "Frozen":
-                summary["frozen"].append(label)
-        except IncusFailure as failure:
-            summary["failed"].append(f"{label}: {failure}")
+        t3_entry(entry, project, name, label, status, pending, state_file, summary)
     summary["reload"] = pending
     if summary["failed"]:
         print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
@@ -359,6 +409,9 @@ process.stdout.write(JSON.stringify(runs));
 """
 
 
+T3_UNREAD = "T3 is active and its open runs could not be read"
+
+
 def t3_busy(project, name, program):
     """Why T3 in the running container must not restart now, or None: an open run of any thread, or a read that failed while its unit is
     active."""
@@ -371,7 +424,7 @@ def t3_busy(project, name, program):
                        "/usr/bin/timeout", "60", "node", "-", json.dumps(T3_OPEN), program, stdin=T3_OPEN_RUNS, timeout=90)
         runs = json.loads(listed.stdout)
     except (IncusFailure, subprocess.TimeoutExpired, ValueError) as failure:
-        return f"T3 is active and its open runs could not be read: {str(failure)[:200]}"
+        return f"{T3_UNREAD}: {str(failure)[:200]}"
     open_turns = sorted({run.get("threadId", "?") for run in runs if run.get("status") in T3_OPEN})
     return f"open turn in {', '.join(open_turns)}" if open_turns else None
 
@@ -383,7 +436,7 @@ def t3_restart(targets, t3_files, state):
     state_file = Path(state)
     pending = json.loads(state_file.read_text()) if state_file.is_file() else []
     programs = {(entry["project"], entry["container"]): entry["program"] for entry in t3_files}
-    summary = {"restarted": [], "deferred": [], "failed": []}
+    summary = {"restarted": [], "deferred": [], "stopped": [], "gone": [], "failed": []}
     for target in targets:
         project, name = target["project"], target["name"]
         entry = {"project": project, "name": name}
@@ -396,7 +449,23 @@ def t3_restart(targets, t3_files, state):
                 pending = [held for held in pending if held != entry]
                 continue
             except IncusFailure as failure:
-                summary["failed"].append(f"{project}/{name}: {failure}")
+                state = confirmed_state(project, name)
+                if state == "gone":
+                    summary["gone"].append(entry)
+                    pending = [held for held in pending if held != entry]
+                    continue
+                if state == "Stopped":
+                    # Stopped since the listing: T3 starts with its drop-ins at the next start; it stays on the list as a stopped one does.
+                    summary["stopped"].append(entry)
+                else:
+                    summary["failed"].append(f"{project}/{name}: {failure}")
+        elif reason.startswith(T3_UNREAD) and (state := confirmed_state(project, name)) in ("gone", "Stopped"):
+            # Its open runs could not be read because it was deleted or stopped: nothing runs that needs the restart now.
+            if state == "gone":
+                summary["gone"].append(entry)
+                pending = [held for held in pending if held != entry]
+                continue
+            summary["stopped"].append(entry)
         else:
             summary["deferred"].append({**entry, "reason": reason})
         if entry not in pending:

@@ -70,7 +70,7 @@
         quiet: true
       tags: [input]
     - name: Require the recorded CLI pin only for a CLI caller
-      when: intent.cli != None and not (intent.release_roles_only | default(false))
+      when: intent.cli != None and not (intent.release_roles_only | default(false) or intent.automatic | default(false))
       ansible.builtin.assert:
         that:
           - intent.cli.skip_reason == None
@@ -167,7 +167,7 @@
       changed_when: false
       tags: [check]
     - name: Check the recorded CLI artifact
-      when: intent.cli != None and not (intent.release_roles_only | default(false))
+      when: intent.cli != None and not (intent.release_roles_only | default(false) or intent.automatic | default(false))
       tags: [check]
       block:
         - name: Read the selected CLI checksum
@@ -178,7 +178,7 @@
             that: cli_check.stat.checksum | default('') == intent.cli.release.sha256
             quiet: true
     - name: Check the retired CLI files without changing the Node
-      when: intent.cli == None and not (intent.release_roles_only | default(false))
+      when: intent.cli == None and not (intent.release_roles_only | default(false) or intent.automatic | default(false))
       ansible.builtin.import_tasks: tasks/node-converge-cli-absent.yml
       vars: { cli_remove: false }
       tags: [check]

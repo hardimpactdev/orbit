@@ -26,9 +26,15 @@ final readonly class StartNodeConvergeAction
 {
     public function __construct(private ManagedNodeEligibility $eligibility, private StartOperationAction $operations) {}
 
-    /** @param list<string>|null $roles */
-    public function execute(Node $node, bool $base = false, ?array $roles = null, ?string $requestId = null, bool $full = false, bool $release = false): Operation
+    /**
+     * A release converge applies only the roles with changed inputs. An automatic converge, a release converge or the full converge
+     * the release pass starts for changed host inputs, is admitted by NodeWorkAdmission's rules for automatic work.
+     *
+     * @param  list<string>|null  $roles
+     */
+    public function execute(Node $node, bool $base = false, ?array $roles = null, ?string $requestId = null, bool $full = false, bool $release = false, bool $automatic = false): Operation
     {
+        $automatic = $automatic || $release;
         $verifier = $node->agent_secret_hash;
         if (! $this->eligibility->allows($node) || ! is_string($verifier) || preg_match('/\A[0-9a-f]{64}\z/D', $verifier) !== 1) {
             throw new ResourceOperationException('node.converge_unsupported', 'Only an active, managed Linux Node can converge.', 422);
@@ -41,12 +47,12 @@ final readonly class StartNodeConvergeAction
             return $existing;
         }
 
-        return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full, $release): Operation {
+        return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full, $release, $automatic): Operation {
             // Read before the admission clears the record; a holder refuses this admission, so nothing writes it in between.
             // Release admission already compares its public role digest, including the workflow and materializer.
             $recorded = app(NodeConvergePhaseDigest::class)->recorded($node->fresh() ?? $node, $full || $release);
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
-                ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release]],
+                ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release, 'automatic' => $automatic]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
                 'operator', $requestId, lockKey: OperationStore::lockKey('node', $node->id));
             if ($operation->wasRecentlyCreated) {
@@ -70,6 +76,7 @@ final readonly class StartNodeConvergeAction
                     }
                     $snapshot['intent'] = $intent;
                 }
+                $snapshot['intent'] = [...$snapshot['intent'], 'automatic' => $automatic];
                 $snapshot['release_inputs'] = [
                     'roles' => array_map(static fn (array $role): string => $role['digest'], $roleInputs),
                     'host' => ! $release && ! $base && $roles === null ? $inputs->host(node: $node) : null,

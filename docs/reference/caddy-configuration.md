@@ -23,7 +23,9 @@ The manual `orbit:caddy-build` command submits `route.caddy_converge`. Gateway r
 
 Publication first writes a candidate beside `/etc/caddy/Caddyfile`, with the live file's owner and restricted mode, before content is written. Caddy validates that candidate as the `caddy` user. Keeping both files in the same directory gives relative imports the same base. Only successful validation permits renaming that same candidate inode over the live file, then reload. No owner or mode repair happens on the live path after publication. Route TLS probes still follow reload.
 
-Withdrawal also checks its composed-from checksum and holds a Node lock through validation, rename and reload. See [coordinate publication](/reference/routes#coordinate-publication) for its refusal codes, lock bounds and the writers covered by this guard. A container clone's create publishes its site under the same lock: it puts only the Route's own groups into the live file and validates before the rename ([publish a development site](/reference/routes#publish-a-development-site)).
+Withdrawal also checks its composed-from checksum and holds a Node lock through validation, rename and reload. See [coordinate publication](/reference/routes#coordinate-publication) for its refusal codes, lock bounds and the writers covered by this guard.
+
+A withdrawal removes the Route's own site groups whatever their bytes, because an older build may have rendered them in another form and a Node converge does not rewrite them. It keeps global options it does not change as the Node holds them, and refuses only a change to a site that is not the Route's own. A container clone's create publishes its site under the same lock: it puts only the Route's own groups into the live file and validates before the rename ([publish a development site](/reference/routes#publish-a-development-site)).
 
 ### Failed publication
 
