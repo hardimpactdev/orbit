@@ -19,7 +19,7 @@ sequenceDiagram
   %%> - a `ci-runner` add or role converge of a Node that offers proof places passes, or a `node:converge` of such a Node whose roles phase passed: a Node behind the seed catches up after any passed converge
   %%> - a seed copy ends, only when the default's seed moved during it (all Nodes behind the new seed), or for Nodes that no seed copy has tried at the same seed (a Node that became a target while the copy held the lock, or one that the run's target limit left out)
   %%> Never started by:
-  %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for its own converge, so lasting failures do not repeat, also not two Nodes for each other
+  %%> - the end of a copy for a Node that any seed copy has tried at the same seed: it waits for the next seed or for a passed converge of a CI Node (that admission takes every Node behind the seed), so lasting failures do not repeat, also not two Nodes for each other
   %%> Requirements:
   %%> - the proof Project's default is active and has a seed; a seed is its commit and the time the default took it
   %%> - targets: every Node that offers proof places (`ci-runner`, CI places, with or without `app-dev`), other than the default's Node, whose recorded seed is not that seed (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node), and whose seed listener is ready: its `nodes.seed_sender_id` names the default's Node; with none, nothing is admitted
@@ -44,6 +44,7 @@ sequenceDiagram
     %%> On failure:
     %%> - no listener: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
     %%> - the Node is unreachable: this target fails with the SSH error as its detail, in this phase and in each later one; the copy and the check do nothing for a target that failed
+    %%> - the Node goes away in the middle of this phase: the phase leaves no certificate and no result, so the copy step fails the target as `The certificate phase ended without a result` and does nothing else for it
   end
   loop each CI Node, one at a time
     SW->>N: Copy the seed<br/>Ansible · tags copy
@@ -91,7 +92,7 @@ sequenceDiagram
     %%> Result:
     %%> - the failed Node keeps its recorded seed and offers no proof places until a copy passes; copies made earlier keep running
     %%> - the Activity row `instance.seed_copy_failed` names the Node, the Operation and the detail
-    %%> - the release and the default are unchanged; the next seed or the Node's own converge copies again, and a rerun is safe
+    %%> - the release and the default are unchanged; the next seed or a passed converge of a CI Node copies again, and a rerun is safe
   end
   opt seed moved, or new targets
     Note over GW: Admit the next copy<br/>Nodes not at the seed

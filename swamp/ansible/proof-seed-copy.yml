@@ -32,6 +32,23 @@
     - name: Skip a target that failed in an earlier phase
       ansible.builtin.meta: end_play
       when: seed_outcome.stat.exists and 'release' not in ansible_run_tags
+    # A phase that loses its Node in the middle of a task ends without an outcome: Ansible runs no rescue for an unreachable host.
+    # The certificate phase leaves the certificate or an outcome. With neither, the target failed there, and the later phases must
+    # not run and report an error of their own.
+    - name: Look for the certificate of the first phase
+      ansible.builtin.stat: { path: "{{ run }}/certificate-{{ target.node_id }}.pem" }
+      register: seed_certificate
+      when: ansible_run_tags | intersect(['copy', 'check']) | length > 0
+    - name: Fail a target whose certificate phase ended without a result
+      ansible.builtin.copy:
+        content: "{{ {'status': 'failed', 'failed_phase': 'certificate',
+          'detail': 'The certificate phase ended without a result: the Node was unreachable, or the phase was cut'} | to_json }}"
+        dest: "{{ run }}/target-{{ target.node_id }}.json"
+        mode: "0600"
+      when: seed_certificate.stat is defined and not seed_certificate.stat.exists
+    - name: Skip that target
+      ansible.builtin.meta: end_play
+      when: seed_certificate.stat is defined and not seed_certificate.stat.exists
     - name: Pin the host keys of both Nodes
       ansible.builtin.known_hosts:
         path: "{{ run }}/known_hosts"
