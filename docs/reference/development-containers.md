@@ -3342,7 +3342,7 @@ The three nested containers hold their root disks on the inner pool. The shrink 
 
 It runs outside the refresh's `base` step, on the running fleet. A due shrink once forced the stopped `base`: in the refresh of Instance 2454 after release 2162 (Operation 29505), `base` took 163 s instead of about 10 s, because `btrfs-progs` had just been installed on `nested-app-dev`. That happens at every release that changes a nested package.
 
-So the refresh checks the shrink and takes `base` as it would without one: of the running fleet on btrfs. After the tools step it starts the shrink as the transient unit `orbit-fleet-shrink` in the outer container. The result says `shrink: started`.
+So the refresh checks the shrink and takes `base` of the running fleet on btrfs. A due shrink makes `base` due for all three. A changed package means a nested container's disk changed, and no converge needs to report it: a package installed by hand on `nested-app-dev` is one. The check does not name the container, so `base` of all three holds the new package, and a reset onto it keeps it. Only the shrink waits. After the tools step the refresh starts it as the transient unit `orbit-fleet-shrink` in the outer container. The result says `shrink: started`.
 
 The shrink runs on after the refresh's Operation ends, while the three run. Its record says that `base` does not hold it yet. The next refresh finds the check `shrunk`. It retakes `base` of all three on the running fleet, so `base` holds the small form. Then it records that.
 
@@ -3355,6 +3355,9 @@ The relink and the dedupe are safe on running root disks:
 - The step opens each folder on the way from the one above it. It follows no symlink and holds the folder open. So a swapped folder never leads it outside the root disk.
 - The kernel compares the bytes before `duperemove` shares them, so no file changes.
 - The step compares the dpkg status before and after the run. A package that changed in between leaves no record, so the shrink runs again.
+- The step takes APT's locks, without waiting, to empty a nested container's archives. A held lock leaves them for a later shrink.
+
+apt needs a package it fetched until dpkg unpacked it, and holds two locks over that time: dpkg's `lock-frontend` and the archives' `lock`. The step takes the same two. When apt holds one, or a lock file is missing, those archives keep their files.
 
 The seed stays consistent. A seed is a snapshot of the outer container and its inner volume, taken at one point in time. A seed taken while the shrink runs holds whole files, some relinked or shared and some not. Its `base` snapshots are those of the refresh before, which the shrink never touches. A seed copy (`instance.seed_copy`) pushes such a seed, so it never pushes a half-written `base`. Until the next refresh, `base` and the seed hold the old blocks: larger, but whole.
 
@@ -3370,12 +3373,12 @@ The third part is the dedupe. `duperemove -dr` over the three root disks makes i
 
 The shrink is due when no shrink is recorded, or when a nested container's dpkg status changed since the last one: a package was installed, removed or upgraded. A record of an older rule of the step counts as no record, so a new rule runs once.
 
-The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status, and `base: false` while `base` does not hold the shrink yet. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due shrink adds no container to `base`. The check `shrunk` makes `base` due for all three, so every `base` holds the shared blocks.
+The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status, and `base: false` while `base` does not hold the shrink yet. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due check makes `base` due for all three: `record` and `packages` so that `base` holds the changed packages, `shrunk` so that every `base` holds the shared blocks.
 
 | Case | What the refresh does | Result |
 | --- | --- | --- |
 | No package changed since the last shrink | Checks only | `shrink: skipped`, `shrink_reason: current` |
-| No record, or a dpkg status changed | Starts the shrink after `base`: it relinks, empties the archives, dedupes and writes the record with `base: false` | `shrink: started`, `shrink_reason: record` or `packages` |
+| No record, or a dpkg status changed | `base` of all three, of the running fleet; starts the shrink after `base`: it relinks, empties the archives, dedupes and writes the record with `base: false` | `shrink: started`, `shrink_reason: record` or `packages` |
 | A shrink ran after the last `base` | `base` of all three, of the running fleet; records that `base` holds the shrink | `shrink: skipped`, `shrink_reason: shrunk` |
 | The unit does not start | Nothing more; the next refresh starts it again | `shrink: failed` |
 | The check cannot read | Nothing; `base` is decided as before | `shrink: skipped`, `shrink_reason: unreadable` |

@@ -19,7 +19,9 @@ Three parts, in this order:
   standard error; the result counts only the paths it relinked.
 - Caches. The `.deb` files in each nested container's apt archives go (CACHES): apt keeps no new ones (the fleet file
   91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. No path that leaves the disk through
-  a symlink is followed (`inside`).
+  a symlink is followed (`inside`). The containers run, so they go only while the shrink holds APT's locks (APT_LOCKS), taken
+  without waiting: when apt holds one, the archive it fetched may not be unpacked yet, and that cache keeps its files for a later
+  shrink.
 - Dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent (the kernel
   compares the bytes before it shares them, so a file never changes). It needs a btrfs pool and the `duperemove` package, which
   instance_shape_tools.py keeps in the container; without it the first two parts run. Its arguments are the three root disks, named
@@ -42,6 +44,7 @@ It never fails: its last line on standard output is one JSON object. `check`: {"
 Everything its programs print goes to standard error.
 """
 import ctypes
+import fcntl
 import hashlib
 import json
 import os
@@ -58,6 +61,9 @@ RULE = '2'
 # Caches of a nested container that the shrink empties: apt's downloaded package files. apt keeps no new ones (the fleet file
 # 91orbit-nested-package-files); the egress proxy serves them again when apt needs one.
 CACHES = ('var/cache/apt/archives',)
+# APT's locks, in the order apt-get takes them: dpkg's frontend lock, then the archive lock. The containers run, so an apt run may
+# have fetched a package into the cache that dpkg has not unpacked yet; the cache is emptied only while the shrink holds both.
+APT_LOCKS = ('var/lib/dpkg/lock-frontend', 'var/cache/apt/archives/lock')
 
 
 def inside(disk, relative, kind):
@@ -240,8 +246,41 @@ def relink(disk):
     return replaced, skipped
 
 
+def apt_locks(disk):
+    """Take APT's locks of `disk` without waiting (APT_LOCKS, in apt's order): the open lock files, or None when one is held, missing or
+    no regular file. apt-get holds both from before its download to after dpkg unpacked the archives, so a held lock means an apt run
+    may still need a `.deb` in the cache. The caller closes the files, which ends the locks."""
+    held = []
+    for relative in APT_LOCKS:
+        path = walk(disk, relative)
+        if path is None:
+            break
+        folder, name = path
+        try:
+            # No O_CREAT: a lock file that the outer root made would belong to an id the nested root cannot open, and apt would fail.
+            lock = os.open(name, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
+        except OSError:
+            break
+        finally:
+            os.close(folder)
+        held.append(lock)
+        try:
+            if not stat.S_ISREG(os.fstat(lock).st_mode):
+                break
+            # The same fcntl write lock apt takes; the nested container shares this kernel, so the two locks meet on one inode.
+            fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            break
+    else:
+        return held
+    for lock in held:
+        os.close(lock)
+    return None
+
+
 def empty_caches(disk):
-    """Remove the package files in each cache folder of `disk`, following no symlink."""
+    """Remove the package files in each cache folder of `disk`, following no symlink, while it holds APT's locks (`apt_locks`). A
+    cache with a package file whose locks it cannot take keeps its files for a later shrink."""
     for cache in CACHES:
         for relative in (cache, f'{cache}/partial'):
             path = walk(disk, relative)
@@ -256,10 +295,22 @@ def empty_caches(disk):
                 continue
             os.close(folder)
             try:
-                for name in os.listdir(held):
-                    found = regular(held, name)
-                    if name.endswith('.deb') and found is not None and stat.S_ISREG(found.st_mode):
-                        os.unlink(name, dir_fd=held)
+                packages = [name for name in os.listdir(held) if name.endswith('.deb') and (found := regular(held, name)) is not None
+                            and stat.S_ISREG(found.st_mode)]
+                if not packages:
+                    continue
+                locks = apt_locks(disk)
+                if locks is None:
+                    print(f'{disk}: apt holds its locks, so {relative} keeps its {len(packages)} package files', file=sys.stderr)
+                    continue
+                try:
+                    for name in packages:
+                        found = regular(held, name)
+                        if found is not None and stat.S_ISREG(found.st_mode):
+                            os.unlink(name, dir_fd=held)
+                finally:
+                    for lock in locks:
+                        os.close(lock)
             finally:
                 os.close(held)
 

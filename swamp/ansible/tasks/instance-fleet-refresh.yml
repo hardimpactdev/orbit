@@ -504,8 +504,10 @@
 # - a converge that changed a Node: that Node's `base` and the nested Gateway's, whose database records the converge;
 # - a missing `base`: that container's;
 # - a missing or unreadable record, or a fleet rule or file that differed: all three, with the rules applied on a stopped fleet;
-# - a shrink that ran after the last `base` (`shrunk`): all three, so every `base` holds the small form. A due shrink adds nothing: it
-#   starts after this `base`, and its `base` follows at the next refresh.
+# - a due shrink check (`record`, `packages`, `shrunk`): all three. `packages` and `record` say a nested container's packages changed
+#   since the last shrink, which no converge need report (a package installed by hand on nested-app-dev), and the check names no
+#   container; `shrunk` says a shrink ran after the last `base`, so every `base` holds the small form. Only the shrink itself waits: it
+#   starts after this `base`, and the `base` of its small form follows at the next refresh.
 # The other containers keep running. Their agents lose the nested Gateway while it stops and connect again after its start, as after
 # the restart above; the start after `base` starts what stopped and waits for readiness.
 - name: Work out which base is due
@@ -527,7 +529,7 @@
          + (['gateway'] if fleet_converge_changed_roles | length > 0 else []) }}
   ansible.builtin.set_fact:
     fleet_base_targets: >-
-      {{ fleet_names if fleet_record_state != 'present' or fleet_drift_found | length > 0 or fleet_shrink_check.reason == 'shrunk'
+      {{ fleet_names if fleet_record_state != 'present' or fleet_drift_found | length > 0 or fleet_shrink_check.due
          else fleet_names | select('in', fleet_base_missing + (fleet_changed_roles | map('extract', intent.fleet.guests) | list)) | list }}
 
 # A retake of `base` needs the fleet files compared, because a partly stopped fleet only compares its rules and a running one is not

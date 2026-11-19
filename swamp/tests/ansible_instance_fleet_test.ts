@@ -1755,17 +1755,16 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a due shrink keeps base of the running fleet and starts after it; the next refresh stops none, retakes base of all three and is then current",
+  name: "a due shrink retakes base of all three of the running fleet and starts after it; the next refresh stops none, retakes base again and is then current",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
     try {
       const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
       const unit = (calls: string[]) => calls.filter((call) => call.startsWith("systemd-run --unit orbit-fleet-shrink "));
-      // A nested container's package changed since the last shrink, and a release reloads the grants. The pool is btrfs, so `base`
-      // of the nested Gateway is of the running fleet: the due shrink adds no container and stops nothing.
+      // A package was installed on nested-app-dev since the last shrink, and no converge or other writer reports a change. The pool
+      // is btrfs: `base` of all three is of the running fleet, so the first seed holds the new package, and nothing stops.
       f.change((state) => {
-        grantsDue(state);
         state.poolDriver = "btrfs";
         state.shrink = { due: true, reason: "packages" };
       });
@@ -1775,7 +1774,7 @@ Deno.test({
       let calls = f.calls();
       let result = f.refreshed();
       assert(!ran(calls, parts.stop), calls.join("\n"));
-      assertEquals([result?.base_mode, takes(calls)], ["running", ["incus snapshot create nested-gateway base"]]);
+      assertEquals([result?.base_mode, takes(calls)], ["running", names.map((name) => `incus snapshot create ${name} base`)]);
       // The shrink starts as its own unit after base and the tools step, and runs on after the refresh.
       assertEquals(unit(calls), [
         "systemd-run --unit orbit-fleet-shrink --collect --quiet --property TimeoutStopSec=30 --property RuntimeMaxSec=900 python3 -I -c <instance_fleet_shrink.py> run " + shrinkArgs,
@@ -1839,7 +1838,7 @@ Deno.test({
       });
       const failed = f.run("refresh");
       assert(failed.ok, failed.output);
-      assertEquals(shrunk(f.refreshed()), ["kept", "failed", "packages"]);
+      assertEquals(shrunk(f.refreshed()), ["retaken", "failed", "packages"]);
     } finally {
       f.cleanup();
     }

@@ -6,6 +6,7 @@ links were separate copies. `incus` and `duperemove` are stubs on PATH: `incus q
 `duperemove` records its arguments.
 """
 
+import fcntl
 import hashlib
 import json
 import os
@@ -59,6 +60,7 @@ class FleetShrinkTest(unittest.TestCase):
         info = disk / 'var/lib/dpkg/info'
         info.mkdir(parents=True)
         (info / 'rust-coreutils.md5sums').write_text('\n'.join(lines) + '\n')
+        (disk / 'var/lib/dpkg/lock-frontend').write_bytes(b'')
         (disk / 'var/lib/dpkg/status').write_text('Package: rust-coreutils\nStatus: install ok installed\nVersion: 0.10.0-1ubuntu2\n')
         archives = disk / 'var/cache/apt/archives'
         (archives / 'partial').mkdir(parents=True)
@@ -114,6 +116,21 @@ class FleetShrinkTest(unittest.TestCase):
         for name in NAMES:
             archives = self.disk(name) / 'var/cache/apt/archives'
             self.assertEqual(sorted(str(path.relative_to(archives)) for path in archives.rglob('*')), ['lock', 'partial'])
+
+    def test_a_cache_keeps_its_package_files_while_apt_holds_a_lock_or_a_lock_file_is_missing(self):
+        # apt-get on nested-app-dev holds the archive lock between its download and dpkg's unpack: its fetched archive must stay.
+        with open(self.disk('nested-app-dev') / 'var/cache/apt/archives/lock', 'r+b') as held:
+            fcntl.lockf(held, fcntl.LOCK_EX)
+            frontend = self.disk('nested-app-prod') / 'var/lib/dpkg/lock-frontend'
+            frontend.unlink()
+            self.assertEqual(self.shrink('run')['shrink'], 'ran')
+        archives = {name: self.disk(name) / 'var/cache/apt/archives' for name in NAMES}
+        self.assertEqual([len(list(archives[name].rglob('*.deb'))) for name in NAMES], [0, 2, 2])
+        # The locks went with the run: apt takes them again.
+        with open(archives['nested-app-dev'] / 'lock', 'r+b') as lock:
+            fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # The shrink never made the missing lock file: one of the outer root would block the nested apt.
+        self.assertFalse(frontend.exists())
 
     def test_the_cache_removal_follows_no_symlink_out_of_the_disk(self):
         outside = self.folder / 'outside'
