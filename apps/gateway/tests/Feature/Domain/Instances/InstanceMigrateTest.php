@@ -2255,6 +2255,8 @@ it('recovers an uncertain unbound migrate after expiry through only the reconcil
 })->with(['expires in this pass' => false, 'expired before this pass' => true]);
 
 it('refuses the legacy input GET for a full-input migrate without any Swamp call', function (): void {
+    // The row is compared whole, timestamps included: one clock value for the test, so a second boundary cannot differ.
+    $this->freezeTime();
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $operation = migrateStart($instance);
     $run = '77eb3d91-e9b9-42f9-8c35-e1e5837042b2';

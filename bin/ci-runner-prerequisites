@@ -21,6 +21,18 @@ if have_tools; then
     exit 0
 fi
 
+# ORBIT_CI_APT_ARCHIVES names a folder of packages that an earlier install on this runner image downloaded. With them
+# the install needs no mirror. A package set that no longer installs falls through to the mirrors.
+archives=${ORBIT_CI_APT_ARCHIVES:-}
+if [[ -n "$archives" ]] && compgen -G "$archives/*.deb" >/dev/null; then
+    echo "Installing $package from the cached packages in $archives"
+    if sudo -n dpkg --install "$archives"/*.deb && have_tools; then
+        echo "Verified $package prerequisites: ${tools[*]}"
+        exit 0
+    fi
+    echo "Could not supply $package from the cached packages" >&2
+fi
+
 scratch=$(mktemp -d -t orbit-ci-apt.XXXXXXXX)
 trap 'sudo -n rm -rf -- "$scratch"' EXIT
 chmod 755 "$scratch"
@@ -29,13 +41,15 @@ for mirror in azure.archive.ubuntu.com mirrors.edge.kernel.org; do
     budget=$primary_budget
     if [[ "$mirror" == mirrors.edge.kernel.org ]]; then budget=20; fi
     attempt="$scratch/$mirror"
-    mkdir -m 755 "$attempt" "$attempt/lists"
+    mkdir -m 755 "$attempt" "$attempt/lists" "$attempt/archives"
     # The caller uses ubuntu-26.04. Only the base main index is needed for these packages.
     echo "deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://$mirror/ubuntu resolute main" > "$attempt/ubuntu.list"
     options=(
         -o "Dir::Etc::sourcelist=$attempt/ubuntu.list"
         -o 'Dir::Etc::sourceparts=-'
         -o "Dir::State::lists=$attempt/lists"
+        -o "Dir::Cache::archives=$attempt/archives"
+        -o 'APT::Keep-Downloaded-Packages=true'
         -o 'Acquire::Languages=none'
         -o 'Acquire::Retries=0'
         -o 'Acquire::http::Timeout=3'
@@ -80,6 +94,12 @@ PYTHON
             continue
         fi
         echo "Verified $package prerequisites: ${tools[*]}"
+        if [[ -n "$archives" ]] && compgen -G "$attempt/archives/*.deb" >/dev/null; then
+            # The packages this install downloaded are the whole set a later run on this image needs.
+            mkdir -p "$archives"
+            rm -f -- "$archives"/*.deb
+            cp -- "$attempt"/archives/*.deb "$archives"/
+        fi
         exit 0
     fi
     echo "Could not supply $package from $mirror" >&2

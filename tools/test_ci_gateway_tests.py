@@ -230,9 +230,9 @@ class GatewayRealClientsPolicyTest(unittest.TestCase):
         self.assertNotIn('continue-on-error', job)
         steps = job['steps']
         commands = '\n'.join(step.get('run', '') for step in steps)
-        for prerequisite in ('bin/ci-runner-prerequisites valkey-server', 'docker info',
-                             'docker pull postgres:18', 'docker pull mysql:8.4',
-                             'command -v valkey-server', 'command -v valkey-cli'):
+        # Valkey comes from the shared action, which tools/test_ci_runner_prerequisites.py binds.
+        self.assertIn({'uses': './.github/actions/valkey-server'}, steps)
+        for prerequisite in ('docker info', 'docker pull postgres:18', 'docker pull mysql:8.4'):
             self.assertIn(prerequisite, commands)
         install = next(i for i, step in enumerate(steps) if 'composer install ' in step.get('run', ''))
         test = next(step for step in steps if 'vendor/bin/pest ' in step.get('run', ''))

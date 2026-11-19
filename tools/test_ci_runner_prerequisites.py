@@ -168,6 +168,89 @@ if operation == 'install' and mode != 'no-tools':
             self.assertIn(f"vendor/bin/pest --group privileged {path} --filter 'on a real kernel'", gateway)
         self.assertEqual(gateway.count("ORBIT_REAL_KERNEL_TESTS: '1'"), 2)
 
+    def cached(self, mode='ok'):
+        (self.bin / 'cp').symlink_to(shutil.which('cp'))
+        self.command('dpkg', '''
+import json, os, pathlib, sys
+with open(os.environ['FIXTURE_LOG'], 'a') as log:
+    log.write(json.dumps({'dpkg': sys.argv[1:]}) + '\\n')
+if os.environ.get('FIXTURE_DPKG') == 'fail':
+    sys.exit(1)
+for name in ('valkey-server', 'valkey-cli'):
+    path = pathlib.Path(os.environ['FIXTURE_BIN']) / name
+    path.write_text('#!/bin/bash\\necho fixture-version\\n')
+    path.chmod(0o755)
+''')
+        archives = self.root / 'archives'
+        self.env.update(ORBIT_CI_APT_ARCHIVES=str(archives), FIXTURE_DPKG=mode)
+        return archives
+
+    def test_cached_packages_install_without_a_mirror(self):
+        archives = self.cached()
+        archives.mkdir()
+        for name in ('valkey-server_9.deb', 'valkey-tools_9.deb'):
+            (archives / name).write_text('package')
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.apt, [])
+        self.assertEqual([call['dpkg'] for call in self.calls if 'dpkg' in call],
+                         [['--install', str(archives / 'valkey-server_9.deb'), str(archives / 'valkey-tools_9.deb')]])
+        self.assertIn('from the cached packages', result.stdout)
+
+    def test_cached_packages_that_do_not_install_fall_through_to_the_mirror_and_are_replaced(self):
+        archives = self.cached('fail')
+        archives.mkdir()
+        (archives / 'stale_1.deb').write_text('stale')
+        self.fresh_packages()
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Could not supply valkey-server from the cached packages', result.stderr)
+        self.assertEqual([(call['mirror'], call['operation']) for call in self.apt], [('primary', 'update'), ('primary', 'install')])
+        self.assertEqual(sorted(path.name for path in archives.iterdir()), ['valkey-server_9.deb', 'valkey-tools_9.deb'])
+
+    def test_a_first_install_saves_what_it_downloaded_and_nothing_is_saved_without_the_folder(self):
+        archives = self.cached()
+        self.fresh_packages()
+        result = self.run_helper('valkey-server')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any('dpkg' in call for call in self.calls))
+        install = next(call for call in self.apt if call['operation'] == 'install')
+        self.assertIn('APT::Keep-Downloaded-Packages=true', install['args'])
+        self.assertEqual(sorted(path.name for path in archives.iterdir()), ['valkey-server_9.deb', 'valkey-tools_9.deb'])
+        for name in ('valkey-server', 'valkey-cli'):
+            (self.bin / name).unlink()
+        shutil.rmtree(archives)
+        del self.env['ORBIT_CI_APT_ARCHIVES']
+        self.log.unlink()
+        self.assertEqual(self.run_helper('valkey-server').returncode, 0)
+        self.assertFalse(archives.exists())
+
+    def fresh_packages(self):
+        # The apt stand-in leaves the packages it "downloaded" in the archive folder of its options.
+        body = (self.bin / 'apt-get').read_text()
+        self.command('apt-get', body.split('\n', 1)[1] + '''
+if operation == 'install':
+    target = pathlib.Path(next(a.split('=', 1)[1] for a in args if a.startswith('Dir::Cache::archives=')))
+    for name in ('valkey-server_9.deb', 'valkey-tools_9.deb'):
+        (target / name).write_text('package')
+''')
+
+    def test_the_real_clients_job_and_the_job_on_main_share_one_cached_install(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+        action = yaml.safe_load((ROOT / '.github/actions/valkey-server/action.yml').read_text())['runs']['steps']
+        for job in ('gateway-real-clients', 'gateway-test-caches'):
+            self.assertEqual(1, sum(step.get('uses') == './.github/actions/valkey-server' for step in workflow[job]['steps']), job)
+            self.assertNotIn('ci-runner-prerequisites', json.dumps(workflow[job]))
+        cache = next(step for step in action if step.get('uses', '').startswith('actions/cache@'))
+        # The key holds the runner image: its packages are the dependencies that image lacks.
+        self.assertEqual(cache['with']['key'], 'ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}')
+        self.assertNotIn('restore-keys', cache['with'])
+        run = action[-1]['run']
+        self.assertIn('ORBIT_CI_APT_ARCHIVES="$HOME/' + cache['with']['path'].removeprefix('~/') + '" bin/ci-runner-prerequisites valkey-server', run)
+        for tool in ('valkey-server', 'valkey-cli'):
+            self.assertIn(f'command -v {tool}', run)
+
     def test_valkey_requires_both_server_and_client(self):
         self.command('valkey-server', "print('fixture-version')\n")
         result = self.run_helper('valkey-server')

@@ -159,6 +159,8 @@ Gateway static analysis checks `nft --version` before its two real-kernel cases.
 
 Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for `nftables` on Azure and twenty-five seconds for `valkey-server`, which also configures a service. The fallback has twenty seconds for either package.
 
+The Valkey install keeps the packages it downloaded in the Actions cache, keyed by the runner image, and the job on main that warms the Gateway test caches saves that cache. A later run on the same image installs those packages with `dpkg` and needs no mirror, so a mirror that times out no longer fails the real-client job. A package set that no longer installs falls through to the two mirrors and is replaced.
+
 Apt suspends `needrestart` on the disposable runner so unrelated service scans and restarts do not consume the install deadline. At the deadline, the helper identifies the timed-out operation and kills its process group. It verifies the installed commands and fails if neither attempt supplies them. Gateway static analysis keeps its two-minute job limit; the real-client job has four minutes.
 
 The required CI policy job runs alongside input selection and fixture execution, so its tests do not delay fixture startup. Its failure fails Required checks; main does not run it again. The CI policy tests run actionlint on every tracked file under `.github/workflows` to check Actions syntax, types and context availability. The checker defaults to the same tracked files; explicit file arguments limit the check to those files. It downloads pinned actionlint 1.7.12 and verifies its archive's SHA-256 before extraction, including cache hits. Its runner-label catalog predates `ubuntu-26.04`, so the actionlint configuration adds that label explicitly.
@@ -985,6 +987,8 @@ The check name remains `Required checks` so branch protection, task handoff CI a
 ### Gateway test time limits
 
 Gateway uses stock PHPUnit per-test limits: `enforceTimeLimit="true"`, `defaultTimeLimit="5"`, `failOnRisky="true"`, and `stopOnRisky="true"` in `apps/gateway/phpunit.xml`. That file owns the five-second default for plain `composer test`, CI and `bin/task-check`. Tests remain unsized except for reviewed cases that need a real deadline, kernel age or private database initialization.
+
+The CLI suite has the same five-second default in `apps/cli/phpunit.xml.dist`. Its former two seconds cut tests whose cleanup waited on the runner's disk.
 
 CI's Gateway suite and privileged cases inherit the project default without a command-line override. The task check reads the same default when CI passes no override. All retain failure and stop-on-risky behavior. Fixtures for large row limits insert batches that fit SQLite's parameter limit while still storing every row up to the production limit.
 

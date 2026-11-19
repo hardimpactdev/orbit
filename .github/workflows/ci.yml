@@ -162,6 +162,7 @@ jobs:
         with:
           coverage: none
       - uses: ./.github/actions/gateway-test-dependencies
+      - uses: ./.github/actions/valkey-server
 
   cli:
     name: CLI build
@@ -288,11 +289,9 @@ jobs:
           key: gateway-real-clients-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.json', 'apps/gateway/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
       - name: Install Gateway dev dependencies
         run: composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
+      - uses: ./.github/actions/valkey-server
       - name: Provision real database servers and clients
         run: |
-          bin/ci-runner-prerequisites valkey-server
-          command -v valkey-server
-          command -v valkey-cli
           docker info
           sudo -n docker info
           docker pull postgres:18
