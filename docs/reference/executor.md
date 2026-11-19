@@ -264,7 +264,15 @@ Each order runs in its own task outside the observer's supervised tasks, because
 
 ## Journal and recovery
 
-The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. When the executor accepts an order, before the order waits for its target lock, it writes a `seen` record for its nonce. Before the action it writes an `open` record, and after it a `done` record. An order that expired while it waited for the lock gets a `done` record with `executor.order_expired` and does not act. At start the executor creates the marker `journal.accepts` beside the journal; the Gateway reads it to know that a missing record proves the order never arrived. The same read reports when `orbit-executor.service` started its running process: an order that expired before then can no longer act under any executor build.
+The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. The executor writes these records for each order:
+
+| Record | When |
+| --- | --- |
+| `seen` | It accepts the order, before the order waits for its target lock |
+| `open` | Before the action |
+| `done` | After the action. An order that expired while it waited for the lock gets `executor.order_expired` and does not act |
+
+At start the executor creates the marker `journal.accepts` beside the journal; the Gateway reads it to know that a missing record proves the order never arrived. The same read reports when `orbit-executor.service` started its running process. An order that expired before that start never acts under any executor build.
 
 One writer thread appends. Each connection thread hands it a record and waits until the record is written, so the `open` record is on file before the action runs. No record waits for a disk sync: a separate syncer thread syncs the file once a second. The page cache survives an executor crash, and a Node reboot expires every order.
 
@@ -365,7 +373,8 @@ The deadline case covers a publish that threw, an order with no `accepted` line 
 - No record after the order expired on the Node fails the Operation with `executor.publish_failed` or `executor.not_accepted` and frees its lock.
 - A `seen` or `open` record is read again after 1 s, and every 10 s after the first 30 s.
 - A Node that cannot be read ends the Operation `interrupted` with `executor.result_unknown`. It keeps its lock, and the Gateway queues a new read every 10 s. At most one read per Operation waits or runs at a time.
-- A journal that cannot prove absence ends the same way: the order is older than 24 hours, or its executor has no `journal.accepts` marker and its process started before the order expired. Once a new process runs, such as after the rollout of a new build, the next read settles the Operation.
+- A journal that cannot prove absence ends the same way. The order is older than 24 hours, or the executor has no `journal.accepts` marker and started before the order expired.
+- After the executor restarts, as the rollout of a new build does, the next read settles such an Operation.
 - Each read again is its own job on the `operations` queue, with a 2 s connect timeout. One unreachable Node delays neither another Instance's recovery nor a wake's completion.
 
 A visitor's held request sees a failed Operation and gets the plain `503`.
