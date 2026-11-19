@@ -20,6 +20,7 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Domain\Instances\NestedFleetRefresh;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\ResourceOperationException;
@@ -138,6 +139,7 @@ final readonly class ContinueReleaseFleetAction
                 return null;
             }
             unset($phase['error_code']);
+            $failed = false;
             foreach ($members as $node) {
                 $row = &$rows[$node->id];
                 if ($row['status'] === 'failed') {
@@ -146,6 +148,13 @@ final readonly class ContinueReleaseFleetAction
                         if ($previous !== null && ($previous->status !== OperationStatus::Succeeded
                             || ($key === 'delivery_operation_id' && ($row['agent'] ?? null) === 'failed'))) {
                             if ($previous->finished_at?->gt(now()->subSeconds(FleetReleaseLag::RetryAfterSeconds))) {
+                                if ($key === 'role_operation_id') {
+                                    // A failed role converge never holds back the Nodes after it.
+                                    $failed = true;
+
+                                    continue 2;
+                                }
+
                                 return FleetReleaseLag::RetryAfterSeconds;
                             }
                             unset($row[$key]);
@@ -168,9 +177,13 @@ final readonly class ContinueReleaseFleetAction
                     }
                     $row['error_code'] = $failure->errorCode;
                     $row['status'] = 'failed';
-                    $this->save($release, $phase, 'failed');
+                    $failed = true;
+                    // A failed delivery or a refused Node stops the pass; a failed role converge lets the next Node go.
+                    if (! in_array('failed', (array) ($row['roles'] ?? []), true)) {
+                        $this->save($release, $phase, 'failed');
 
-                    return null;
+                        return null;
+                    }
                 } catch (Throwable) {
                     $row['error_code'] = 'fleet.inputs_unavailable';
                     $row['status'] = 'failed';
@@ -179,7 +192,7 @@ final readonly class ContinueReleaseFleetAction
                     return null;
                 }
             }
-            $this->save($release, $phase, 'current');
+            $this->save($release, $phase, $failed ? 'failed' : 'current');
 
             return null;
         });
@@ -294,7 +307,8 @@ final readonly class ContinueReleaseFleetAction
         if ($row['status'] === 'current' && $changed === [] && ! $needsDelivery($recorded)) {
             return null;
         }
-        if ($row['status'] === 'current') {
+        $revisit = $row['status'] === 'current';
+        if ($revisit) {
             // A previously completed visit cannot certify this new work.
             unset($row['delivery_operation_id'], $row['role_operation_id'], $row['agent']);
             $deliveryOperation = $roleOperation = null;
@@ -355,6 +369,15 @@ final readonly class ContinueReleaseFleetAction
                 }
             }
         }
+        // On the first visit, a role converge that succeeded under this release's code, the pass's own or one run by hand, applied
+        // the role. Instance work on the Node moves its digest on while it waits, so the recorded digest alone never settles it.
+        $converged = $revisit ? [] : $this->convergedRoles($release, $node);
+        foreach ($changed as $id => $role) {
+            if (in_array($role['role'], $converged, true)) {
+                $row['roles'][$role['role']] = 'converged';
+                unset($changed[$id]);
+            }
+        }
         if ($needsDelivery($recorded)) {
             if ($cli !== null && ! $cli->isAvailable()) {
                 if ($cliUnavailable) {
@@ -370,13 +393,46 @@ final readonly class ContinueReleaseFleetAction
         }
         $row['agent'] ??= 'unchanged';
         if ($changed !== []) {
-            $row['role_operation_id'] = app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true)->id;
+            $admission = app(NodeWorkAdmission::class);
+            try {
+                $row['role_operation_id'] = app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true)->id;
+            } catch (ResourceOperationException $refusal) {
+                if ($refusal->errorCode === 'operation.target_busy') {
+                    // New Instance and task work queues behind this converge until the Operations that hold the Node end.
+                    $admission->wait($node->id);
+                }
+
+                throw $refusal;
+            }
+            $admission->stopWaiting($node->id);
 
             return 10;
         }
         $row['status'] = 'current';
 
         return null;
+    }
+
+    /**
+     * Roles that a succeeded, not T3-deferred `node.converge` of the Node applied after the release was verified.
+     *
+     * @return list<string>
+     */
+    private function convergedRoles(GatewayRelease $release, Node $node): array
+    {
+        $verified = $release->created_at?->copy()->addMilliseconds((int) $release->duration_ms);
+        if ($verified === null) {
+            return [];
+        }
+        $roles = [];
+        foreach (Operation::query()->where('kind', 'node.converge')->where('node_id', $node->id)
+            ->where('status', OperationStatus::Succeeded->value)->where('created_at', '>=', $verified)->cursor() as $operation) {
+            if (($operation->result['t3_restart_deferred'] ?? []) === []) {
+                array_push($roles, ...ValidatedData::stringList(data_get($operation->input, '_converge.intent.selected_roles', [])));
+            }
+        }
+
+        return array_values(array_unique($roles));
     }
 
     /** @param array<string,mixed> $row */

@@ -602,3 +602,96 @@ it('keeps the release pending on a deferred T3 receipt and schedules a new role 
         ->and($retry->kind)->toBe('node.converge')
         ->and($retry->input['_converge']['intent']['selected_roles'])->toBe(['app-prod']);
 });
+
+/** A verified release whose fleet pass holds one row for the target Node. */
+function releaseWithRow(array $row): GatewayRelease
+{
+    $commit = str_repeat('a', 40);
+    config(['app.version' => $commit, 'orbit.gateway_checkout' => base_path()]);
+
+    return GatewayRelease::query()->create(['sha' => $commit, 'trigger' => 'auto', 'outcome' => 'verified', 'duration_ms' => 0,
+        'phases' => ['fleet' => ['status' => 'pending', 'nodes' => [test()->node->id => ['node_id' => test()->node->id,
+            'name' => test()->node->name, ...$row]]]]]);
+}
+
+it('queues a busy-refused release role converge ahead of new Instance work and admits it once the holder ends', function (): void {
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host(), 'agent' => app(AgentDelivery::class)->pin($this->node)]])->save();
+    $admit = fn (): Operation => app(OperationStore::class)->create('instance.deploy', 'instance', 99, $this->node->id,
+        ['participant_node_ids' => [$this->node->id]], 'test', null);
+    $holder = $admit();
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['status'])->toBe('pending');
+    // The waiting converge refuses new work on the Node, so the holder that ends is the last one before it.
+    expect($admit)->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    $holder->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id]['role_operation_id'])->toBe($converge->id);
+    $converge->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    // Once admitted, the converge no longer holds new Instance work back.
+    expect($admit()->status)->toBe(OperationStatus::Queued);
+});
+
+it('marks the Node current once its role converge succeeds, even when Instance work moved the role digest on', function (): void {
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host(), 'agent' => app(AgentDelivery::class)->pin($this->node)]])->save();
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    $converge->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    // The projection did not record the digest the pass now wants: the role's inputs changed while it ran.
+    $this->node->forceFill(['release_inputs' => [...$this->node->fresh()->release_inputs, 'roles' => []]])->save();
+
+    expect($fleet->execute($release))->toBeNull();
+    $row = $release->refresh()->phases['fleet']['nodes'][$this->node->id];
+    expect($row['status'])->toBe('current')
+        ->and($row['roles']['app-prod'])->toBe('converged')
+        ->and($release->phases['fleet']['status'])->toBe('current')
+        ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(1);
+});
+
+it('counts a role converge run by hand after the release as the pass\'s own', function (): void {
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host(), 'agent' => app(AgentDelivery::class)->pin($this->node)]])->save();
+    $release = releaseWithRow(['status' => 'pending']);
+    $this->travel(1)->seconds();
+    $hand = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod']);
+    $hand->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet']['status'])->toBe('current')
+        ->and($release->phases['fleet']['nodes'][$this->node->id]['roles']['app-prod'])->toBe('converged')
+        ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(1);
+});
+
+it('marks a Node whose role converge failed and goes on to the next Node', function (): void {
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $this->node->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host(), 'agent' => app(AgentDelivery::class)->pin($this->node)]])->save();
+    $next = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'next', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '10.44.0.8', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned']));
+    $next->forceFill(['ssh_host_fingerprint' => 'SHA256:pinned', 'agent_secret_hash' => hash('sha256', 'private-test-agent-secret')])->save();
+    $next->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $next->forceFill(['release_inputs' => ['host' => app(ReleaseNodeInputs::class)->host(), 'agent' => app(AgentDelivery::class)->pin($next)]])->save();
+    $failed = app(StartNodeConvergeAction::class)->execute($this->node, roles: ['app-prod'], release: true);
+    $failed->update(['status' => OperationStatus::Failed, 'lock_key' => null, 'finished_at' => now(), 'error_code' => 'node.converge_failed']);
+    $release = releaseWithRow(['status' => 'running', 'role_operation_id' => $failed->id]);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(10);
+    $nextConverge = Operation::query()->where('kind', 'node.converge')->latest('id')->firstOrFail();
+    expect($nextConverge->node_id)->toBe($next->id)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['status'])->toBe('failed')
+        ->and($release->phases['fleet']['nodes'][$this->node->id]['error_code'])->toBe('node.converge_failed');
+    $nextConverge->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+
+    expect($fleet->execute($release))->toBeNull()
+        ->and($release->refresh()->phases['fleet']['nodes'][$next->id]['status'])->toBe('current')
+        ->and($release->phases['fleet']['status'])->toBe('failed')
+        ->and(Operation::query()->where('kind', 'node.converge')->count())->toBe(2);
+});

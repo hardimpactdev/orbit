@@ -10,11 +10,29 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /** Serializes automatic role convergence with Instance and task work on the Nodes they share. */
 final readonly class NodeWorkAdmission
 {
+    /** A refused automatic role converge holds its place this long; the release pass renews it on each retry. */
+    public const int WaitSeconds = 60;
+
+    /**
+     * Queues an automatic role converge that open work refused: new Instance and task work on the Node waits behind it,
+     * so it starts once the current holders end instead of losing the Node to each new Operation.
+     */
+    public function wait(int $nodeId): void
+    {
+        Cache::put(self::waitKey($nodeId), true, self::WaitSeconds);
+    }
+
+    public function stopWaiting(int $nodeId): void
+    {
+        Cache::forget(self::waitKey($nodeId));
+    }
+
     /** @param array<string,mixed> $input */
     public function check(string $kind, int $nodeId, array $input): void
     {
@@ -26,6 +44,9 @@ final readonly class NodeWorkAdmission
 
         $nodes = $roles ? [$nodeId] : array_values(array_unique([$nodeId, ...ValidatedData::integerList($input['participant_node_ids'] ?? [])]));
         Node::query()->whereKey($nodes)->orderBy('id')->lockForUpdate()->get();
+        if (! $roles && array_any($nodes, static fn (int $id): bool => Cache::has(self::waitKey($id)))) {
+            throw new ResourceOperationException('operation.target_busy', 'An automatic role converge waits for this Node.', 409);
+        }
         $open = Operation::query()->where(static fn (Builder $query) => $query
             ->whereNotIn('status', OperationStatus::terminalValues())
             ->orWhereNotNull('lock_key')
@@ -47,5 +68,10 @@ final readonly class NodeWorkAdmission
             || $operation->lock_key !== null || $cancel->awaitsForwarding($operation))) {
             throw new ResourceOperationException('operation.target_busy', 'Automatic role convergence and Instance or task work share a Node.', 409);
         }
+    }
+
+    private static function waitKey(int $nodeId): string
+    {
+        return 'node-work-admission:role-wait:'.$nodeId;
     }
 }
