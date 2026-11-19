@@ -186,6 +186,10 @@ it('sends a new order for an order that expired while waiting, and ignores a rep
     expect($this->bus->orders)->toHaveCount(2)
         ->and($this->bus->payload(1)['nonce'])->not->toBe($this->bus->payload(0)['nonce'])
         ->and($operation->refresh()->status)->toBe(OperationStatus::Running);
+
+    ($this->receipt)($operation, ['status' => 'failed', 'code' => 'executor.order_expired']);
+    expect($this->bus->orders)->toHaveCount(3)
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Running);
 });
 
 it('puts a step whose publish failed back to pending and throws, so the event is delivered again', function (): void {
