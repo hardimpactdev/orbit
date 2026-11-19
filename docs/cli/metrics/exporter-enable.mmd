@@ -60,7 +60,7 @@ sequenceDiagram
   %%> - runs beside the install step; neither needs the other
   SW->>N: Check the endpoints<br/>both answer on WireGuard
   %%> What it does:
-  %%> - checks once that both exporters answer on their ports
+  %%> - checks that both exporters answer on their ports, retrying for up to 30 seconds while a restarted exporter starts (cAdvisor takes about 5 seconds)
   SW->>M: Publish the config<br/>validate, reload Prometheus
   %%> What it does:
   %%> - validates the new Prometheus configuration with `promtool` before using it
