@@ -227,6 +227,8 @@ Other `ORBIT_` keys belong to one feature, and the page for that feature documen
 
 The fleet-owned `instances.mailpit` configuration names the main Docker Node Process and SMTP port. It needs no Gateway environment key or contributor setting; [development mail](/reference/development-containers#development-mail) applies only on a Node with that active publication.
 
+The fleet-owned `instances.fleet_projection` configuration names the folder where a Gateway in a release container reads the host's nested-fleet files; it defaults to `/opt/orbit-gateway-environment`. It needs no Gateway environment key. A Gateway on the host reads `/etc/orbit/instance-fleet` and the egress proxy in `/etc/environment` itself. A Gateway in a release container reads the copies `instance-fleet` and `instance-fleet-environment` in this read-only folder instead, and its units load the proxy settings from `instance-fleet-proxy.env` there. `orbit-gateway-environment` on the host writes both, as [Move the Gateway to release containers](/reference/gateway-recovery#move-the-gateway-to-release-containers) describes.
+
 Containers need no environment opt-in or allow list. See [Container-only admission](/reference/development-containers#container-only-admission).
 
 `ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set allow list of nested-fleet Projects, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. List only the Orbit Project, whose container holds an inner fleet, and disposable trial Projects.

@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -260,6 +261,63 @@ class BootstrapTest(unittest.TestCase):
             source.chmod(0o644)
             with self.assertRaisesRegex(ValueError, "private file"):
                 environment.publish(projection, source)
+
+    def test_env_projection_carries_the_hosts_fleet_files_only_on_a_nested_fleet_host(self):
+        with tempfile.TemporaryDirectory() as root:
+            shared = Path(root)
+            source, projection = shared / "gateway.env", shared / ".view"
+            source.write_text("APP_ENV=production")
+            source.chmod(0o600)
+            marker, hosts = shared / "instance-fleet", shared / "environment"
+            hosts.write_text('PATH="/usr/bin"\nHTTPS_PROXY="http://10.253.0.1:3128"\nLANG="C.UTF-8"\n'
+                             'no_proxy="localhost,.orbit"')
+            fleet = {"instance-fleet-environment": hosts, "instance-fleet-proxy.env": hosts, "instance-fleet": marker}
+            environment.publish(projection, source, fleet)
+            self.assertEqual([p.name for p in projection.iterdir()], ["gateway.env"])
+            marker.write_text("")
+            environment.publish(projection, source, fleet)
+            self.assertEqual(sorted(p.name for p in projection.iterdir()),
+                             ["gateway.env", "instance-fleet", "instance-fleet-environment", "instance-fleet-proxy.env"])
+            self.assertEqual((projection / "instance-fleet-environment").read_text(), hosts.read_text())
+            # The units' copy holds the proxy settings alone: no PATH or other line of /etc/environment.
+            self.assertEqual((projection / "instance-fleet-proxy.env").read_text(),
+                             'HTTPS_PROXY="http://10.253.0.1:3128"\nno_proxy="localhost,.orbit"')
+            self.assertEqual(stat.S_IMODE((projection / "instance-fleet").stat().st_mode), 0o600)
+            hosts.write_text('HTTPS_PROXY="http://10.253.4.1:3128"\n')
+            environment.publish(projection, source, fleet)
+            self.assertEqual((projection / "instance-fleet-environment").read_text(), hosts.read_text())
+            self.assertEqual((projection / "instance-fleet-proxy.env").read_text(), hosts.read_text())
+            # The environment lands before the marker, and the marker leaves first.
+            order = []
+            real = environment.os.replace
+            with patch.object(environment.os, "replace", side_effect=lambda a, b, **kw: (order.append(b), real(a, b, **kw))):
+                environment.publish(projection, source, fleet)
+            self.assertEqual(order, ["gateway.env", "instance-fleet-environment", "instance-fleet-proxy.env", "instance-fleet"])
+            removed = []
+            real_unlink = environment.os.unlink
+            marker.unlink()
+            with patch.object(environment.os, "unlink", side_effect=lambda a, **kw: (removed.append(a), real_unlink(a, **kw))):
+                environment.publish(projection, source, fleet)
+            self.assertEqual([name for name in removed if name in fleet], ["instance-fleet", "instance-fleet-proxy.env", "instance-fleet-environment"])
+            self.assertEqual([p.name for p in projection.iterdir()], ["gateway.env"])
+
+    def test_each_release_gives_the_gateway_units_the_published_proxy_settings(self):
+        dropin = (ROOT / "swamp/ansible/files/gateway-web/orbit-fleet-proxy.conf").read_text()
+        directives = [line for line in dropin.splitlines() if line and not line.startswith("#")]
+        # Optional: an outer Gateway's host publishes no file, so its units get no proxy setting.
+        self.assertEqual(directives, ["[Service]", f"EnvironmentFile=-{guest.ENV_DIR}/instance-fleet-proxy.env"])
+        self.assertIn("instance-fleet-proxy.env", environment.FLEET)
+        script = (ROOT / "swamp/scripts/gateway-release-container.sh").read_text()
+        prepare = script[script.index("orbit-gateway-web.service\" /etc/systemd/system/"):script.index("cache_config \"$prep\"")]
+        self.assertIn("for dropin in orbit-gateway-.service.d orbit-process-.service.d; do", prepare)
+        self.assertIn('gateway-web/orbit-fleet-proxy.conf" "/etc/systemd/system/$dropin/50-orbit-fleet-proxy.conf"', prepare)
+        self.assertLess(prepare.index("orbit-fleet-proxy.conf"), prepare.index("systemctl daemon-reload"))
+        # The prefixes cover every unit the release container runs for the Gateway, and nothing else of Orbit's.
+        units = ["orbit-gateway-web.service", "orbit-gateway-horizon.service", "orbit-gateway-schedule.service",
+                 "orbit-process-7-horizon.service", "orbit-process-7-schedule-work.service"]
+        prefixes = ("orbit-gateway-", "orbit-process-")
+        self.assertTrue(all(unit.startswith(prefixes) for unit in units))
+        self.assertFalse(any(unit.startswith(prefixes) for unit in ("orbit-agent-view.service", "orbit-runtime-hibernator.service")))
 
 
 if __name__ == "__main__":

@@ -61,13 +61,13 @@ Run the deterministic impact check for the group's start commit and every planne
 bin/docs-impact --base <start-commit> --paths <planned-path>
 ```
 
-The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. Every Orbit group starts with this docs subtask, as required by the [Orbit Tasks policy](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md). A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: hand off the complete JSON report as evidence. The reviewer confirms the planned paths and report are complete before implementation starts.
+The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. In Orbit Tasks, the subtask that changes the behaviour also changes its pages, as the [Orbit Tasks policy](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) describes. A `docs_required` report means that subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: no page changes.
 
 The report, not an agent's opinion, is the mechanical evidence. A machine `no_docs_change` verdict is not semantic approval: the reviewer still checks meaning, completeness, surface ownership, and waivers.
 
 
 
-A person who contributes outside Orbit Tasks has no docs subtask. That person can still run the check to find the affected pages, as [What you can skip](/first-contribution#what-you-can-skip) explains.
+A person who contributes outside Orbit Tasks can still run the check to find the affected pages, as [What you can skip](/first-contribution#what-you-can-skip) explains.
 
 The impact checker maps each CLI family to `docs/cli/<family>/index.mdx`. Register a new family in `DocsImpact::CLI_FAMILIES` and add its reference page in the same change.
 
