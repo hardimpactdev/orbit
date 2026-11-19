@@ -98,6 +98,8 @@ A visitable development `default` serves its web root from its checkout, which e
 
 A successful update of a development Instance's authoritative Route clears its pending publication marker. This completion belongs to the Route, so a default whose seed already matches its branch needs no automatic-deploy policy run to settle it.
 
+On a containerized AppProd Instance, the Node’s Caddy site routes to the Instance’s selected release. Deploying or rolling back one Instance preserves its sibling Routes on the Node. See [production containers](/reference/production-containers#switch).
+
 ## Route record
 
 The Gateway stores these fields for each Route. `route:show` returns them.

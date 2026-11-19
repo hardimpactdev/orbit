@@ -6,6 +6,7 @@ namespace App\Jobs\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Gateway\GatewayQueue;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Shared\ResourceOperationException;
@@ -47,6 +48,12 @@ final class StartAdmittedSwampRun implements ShouldQueue
         if ($operation->status !== OperationStatus::Queued) {
             return;
         }
+        if (app(DirectOperation::class)->definition($operation) === null) {
+            // A retained worker may not ship the new handler. Leave the work for a compatible worker.
+            Bus::dispatch((new self($operation->id))->delay(now()->addSeconds(15)));
+
+            return;
+        }
         $release = app(ProofChildStarts::class)->release($operation);
         if ($release instanceof CarbonImmutable) {
             Bus::dispatch((new self($operation->id))->delay($release));
@@ -65,7 +72,7 @@ final class StartAdmittedSwampRun implements ShouldQueue
     public function failed(?Throwable $exception): void
     {
         $operation = Operation::query()->find($this->operationId);
-        if ($operation === null) {
+        if ($operation === null || app(DirectOperation::class)->definition($operation) === null) {
             return;
         }
         if ($operation->status->terminal() || isset($operation->state['swamp_run_id'])) {

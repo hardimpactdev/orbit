@@ -34,7 +34,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\SwampNodeFixture;
-use Tests\Support\TaskCopyDoneFixture;
+use Tests\Support\TaskDoneFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -65,7 +65,7 @@ function whenDoneEndPublish(Task $group, string $code = TaskDonePublication::Loc
 }
 
 it('publishes the done check of a pr_when_done group by itself, as a ready pull request with the reviewer\'s title and body', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
 
     $results = whenDoneTick();
@@ -75,17 +75,17 @@ it('publishes the done check of a pr_when_done group by itself, as a ready pull 
         ->and($operation->idempotency_key)->toBe('pr-when-done:'.$world->group->id.':'.$world->check->id)
         ->and($operation->triggered_by)->toBe('gateway:pr-when-done')
         ->and($operation->input['check'])->toBe($world->check->id)
-        ->and($operation->input['commit'])->toBe(TaskCopyDoneFixture::Commit)
+        ->and($operation->input['commit'])->toBe(TaskDoneFixture::Commit)
         // The reviewer's text alone: no brief, no subtask list, no check id of Orbit's own.
-        ->and(data_get($operation->input, 'pull_request.title'))->toBe(TaskCopyDoneFixture::Title)
+        ->and(data_get($operation->input, 'pull_request.title'))->toBe(TaskDoneFixture::Title)
         ->and(data_get($operation->input, 'pull_request.draft'))->toBeFalse()
-        ->and(data_get($operation->input, 'pull_request.body'))->toBe(TaskCopyDoneFixture::Body)
+        ->and(data_get($operation->input, 'pull_request.body'))->toBe(TaskDoneFixture::Body)
         ->and(isset($operation->input['workspace']))->toBeTrue()
         ->and(app(OperationIdempotency::class)->key)->toBeNull();
 });
 
 it('never starts the publish of the same done check twice, also after its run failed on anything but a lock timeout', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     whenDoneTick();
     $operation = Operation::query()->where('kind', OperationKinds::TasksPublish)->sole();
@@ -98,7 +98,7 @@ it('never starts the publish of the same done check twice, also after its run fa
 });
 
 it('leaves a done check whose publish conflicted with main to the merge round, which starts its sync once', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     whenDoneTick();
     $conflicted = whenDoneEndPublish($world->group, RunTaskMergeRoundAction::ConflictCode);
@@ -117,7 +117,7 @@ it('leaves a done check whose publish conflicted with main to the merge round, w
 });
 
 it('leaves a group waiting while its mode or the mode its done check recorded is review_before_pr', function (?TaskPrMode $group, ?TaskPrMode $project, ?TaskPrMode $recorded): void {
-    $world = TaskCopyDoneFixture::make($recorded);
+    $world = TaskDoneFixture::make($recorded);
     $world->group->update(['pr_mode' => $group]);
     $world->group->project->update(['task_pr_mode' => $project]);
 
@@ -131,7 +131,7 @@ it('leaves a group waiting while its mode or the mode its done check recorded is
 ]);
 
 it('ignores a group whose work is not done', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     $world->turn->update(['result' => ['state' => 'asking_for_input', 'ended' => true]]);
 
@@ -139,7 +139,7 @@ it('ignores a group whose work is not done', function (): void {
 });
 
 it('keeps a refused admission on the group with its code, keeps the copy, and does not try the same check again', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     config(['orbit.tasks.copy_publish_projects' => []]);
 
@@ -157,7 +157,7 @@ it('keeps a refused admission on the group with its code, keeps the copy, and do
 });
 
 it('refuses the tick\'s publish of the done check it read with tasks.not_done once a todo subtask was added', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     $publication = TaskDonePublication::for($world->group, $world->check);
     Task::query()->create(['parent_id' => $world->group->id, 'position' => 2, 'title' => 'Add the header row', 'brief' => 'Add it.', 'status' => TaskStatus::Todo]);
@@ -171,7 +171,7 @@ it('refuses the tick\'s publish of the done check it read with tasks.not_done on
 });
 
 it('tries again for a new done check and clears the refusal once a publish is admitted', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone, 'publish_refusal' => ['code' => 'tasks.copy_publish_held', 'check_id' => $world->check->id - 1, 'at' => now()->toIso8601String()]]);
 
     expect(whenDoneTick()[0]['result'])->toBe('admitted')->and($world->group->refresh()->publish_refusal)->toBeNull();
@@ -184,7 +184,7 @@ it('registers the tick on the Gateway schedule every minute', function (): void 
 });
 
 it('prints one JSON object per tick and does nothing while the extension is off', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     app(TaskExtensionState::class)->disable();
 
@@ -196,7 +196,7 @@ it('prints one JSON object per tick and does nothing while the extension is off'
 });
 
 it('releases a waiting group\'s done check without --check, with the same title and body and a ready pull request', function (): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->group->update(['publish_refusal' => ['code' => 'tasks.copy_publish_held', 'check_id' => $world->check->id, 'at' => now()->toIso8601String()]]);
 
     $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
@@ -209,7 +209,7 @@ it('releases a waiting group\'s done check without --check, with the same title 
 });
 
 it('refuses the release while the work is not done', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->turn->update(['result' => ['state' => 'asking_for_input', 'ended' => true]]);
 
     expect(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null))
@@ -220,7 +220,7 @@ it('refuses the release while the work is not done', function (): void {
 });
 
 it('replays a repeated release once the group is published', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $release = fn (): Operation => app(OperationIdempotency::class)->under('tasks.publish', 'release-1', 'fingerprint-1',
         fn (): Operation => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null));
     $first = $release();
@@ -230,24 +230,24 @@ it('replays a repeated release once the group is published', function (): void {
 });
 
 it('opens the pull request in the one publish of a named check that is the reviewed done check, with the reviewer\'s text, as the release does', function (): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->group->update(['pr_mode' => TaskPrMode::ReviewBeforePr]);
 
     $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($world->check->id), 'person', null);
 
     expect($operation->input['check'])->toBe($world->check->id)
-        ->and($operation->input['pull_request'])->toBe(['title' => TaskCopyDoneFixture::Title, 'body' => TaskCopyDoneFixture::Body, 'draft' => false])
+        ->and($operation->input['pull_request'])->toBe(['title' => TaskDoneFixture::Title, 'body' => TaskDoneFixture::Body, 'draft' => false])
         ->and($operation->input)->not->toHaveKey(TaskPublishProjection::Withheld)
         ->and(whenDonePublishes($world->group))->toBe(1);
 });
 
 it('only pushes a named check that is not the reviewed done check, and the Operation says why no pull request opened', function (string $case, string $reason): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr, text: $case !== 'no text');
-    $check = $case === 'newer check' ? TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr) : $world->check;
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr, text: $case !== 'no text');
+    $check = $case === 'newer check' ? TaskDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr) : $world->check;
     if ($case === 'older check') {
         // The reviewer approved a newer check, which is now the done check.
-        $done = TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr);
-        TaskCopyDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, str_repeat('c', 40), now()->subMinute());
+        $done = TaskDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr);
+        TaskDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, str_repeat('c', 40), now()->subMinute());
         $reason = str_replace('{done}', (string) $done->id, $reason);
     }
 
@@ -268,9 +268,9 @@ it('only pushes a named check that is not the reviewed done check, and the Opera
 ]);
 
 it('refuses a bare republish while the newest check of a group that has its pull request is not the reviewed one', function (): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
-    TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr);
+    TaskDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr);
 
     expect(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null))
         ->toThrow(function (ResourceOperationException $exception): void {
@@ -280,10 +280,10 @@ it('refuses a bare republish while the newest check of a group that has its pull
 });
 
 it('republishes the done check of a group that has its pull request as a push only when the reviewer\'s newest turn sent no text', function (bool $named): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
     // A newer reviewer turn on the same check that sent nothing: the text of the older turn no longer counts.
-    TaskCopyDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, TaskCopyDoneFixture::Commit, now()->subSecond());
+    TaskDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, TaskDoneFixture::Commit, now()->subSecond());
 
     $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($named ? $world->check->id : null), 'person', null);
 
@@ -294,9 +294,9 @@ it('republishes the done check of a group that has its pull request as a push on
 })->with(['a bare publish' => [false], 'a publish that names the done check' => [true]]);
 
 it('only pushes a named check that is not the done check of a group that has its pull request', function (): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
-    $newer = TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr);
+    $newer = TaskDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40), TaskPrMode::ReviewBeforePr);
 
     $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData($newer->id), 'person', null);
 
@@ -304,7 +304,7 @@ it('only pushes a named check that is not the done check of a group that has its
 });
 
 it('stores a stopped copy as a refusal the group shows, and does not try that check again', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     InstanceRuntime::query()->where('instance_id', $world->instance->id)->update(['power_state' => 'stopped']);
 
@@ -321,10 +321,10 @@ it('stores a stopped copy as a refusal the group shows, and does not try that ch
 });
 
 it('shows a cancelled publish of the done check, or one that failed on anything but a lock timeout, as refused, whoever started it, and the tick does not start it again', function (string $caller, OperationStatus $status, ?string $code, string $shown): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     $publish = Operation::query()->create(['kind' => OperationKinds::TasksPublish, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $world->group->id, 'node_id' => null,
-        'input' => ['check' => $world->check->id, 'commit' => TaskCopyDoneFixture::Commit], 'status' => $status, 'error_code' => $code, 'triggered_by' => $caller,
+        'input' => ['check' => $world->check->id, 'commit' => TaskDoneFixture::Commit], 'status' => $status, 'error_code' => $code, 'triggered_by' => $caller,
         'sequence' => 1, 'attempts' => 1, 'finished_at' => now()]);
 
     $results = whenDoneTick();
@@ -340,7 +340,7 @@ it('shows a cancelled publish of the done check, or one that failed on anything 
 ]);
 
 it('skips a busy group quietly and stores nothing', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     app()->instance(TaskExecutionLock::class, new class implements TaskExecutionLock
     {
@@ -357,7 +357,7 @@ it('skips a busy group quietly and stores nothing', function (): void {
 });
 
 it('reads done again under the group lock and refuses tasks.not_done when it changed', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $publication = TaskDonePublication::for($world->group, $world->check);
     Task::query()->create(['parent_id' => $world->group->id, 'position' => 2, 'title' => 'More', 'brief' => 'More.', 'status' => 'todo']);
 
@@ -370,8 +370,8 @@ it('reads done again under the group lock and refuses tasks.not_done when it cha
 
 it('reports a fault of one group, shows it as refused, and goes on with the next', function (): void {
     Exceptions::fake();
-    $broken = TaskCopyDoneFixture::make();
-    $healthy = TaskCopyDoneFixture::make();
+    $broken = TaskDoneFixture::make();
+    $healthy = TaskDoneFixture::make();
     Task::topLevel()->whereIn('id', [$broken->group->id, $healthy->group->id])->update(['pr_mode' => TaskPrMode::PrWhenDone->value]);
     Operation::creating(static function (Operation $operation) use ($broken): void {
         if ($operation->target_id === $broken->group->id) {
@@ -390,7 +390,7 @@ it('reports a fault of one group, shows it as refused, and goes on with the next
 });
 
 it('keeps the validation error for a release of a group without a task copy', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['taskable_type' => null, 'taskable_id' => null]);
 
     expect(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null))
@@ -400,7 +400,7 @@ it('keeps the validation error for a release of a group without a task copy', fu
 });
 
 it('closes the group\'s issue: Closes #n at the end of the body, unless the body closes it already', function (?int $issue, string $sent, string $published): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['issue_number' => $issue]);
 
     expect(TaskDonePublication::closing($world->group->refresh(), $sent))->toBe($published);
@@ -413,7 +413,7 @@ it('closes the group\'s issue: Closes #n at the end of the body, unless the body
 ]);
 
 it('closes the issue in every publish with a text: the tick\'s with the reviewer\'s, and a person\'s with its own', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone, 'issue_number' => 9]);
 
     whenDoneTick();
@@ -422,12 +422,12 @@ it('closes the issue in every publish with a text: the tick\'s with the reviewer
     $person = app(StartTaskPublishAction::class)->execute($world->group->refresh(),
         new StartTaskPublishData($world->check->id, ['title' => 'By hand', 'body' => 'Written by a person.']), 'person', null);
 
-    expect(data_get($tick->input, 'pull_request.body'))->toBe(TaskCopyDoneFixture::Body."\n\nCloses #9")
+    expect(data_get($tick->input, 'pull_request.body'))->toBe(TaskDoneFixture::Body."\n\nCloses #9")
         ->and(data_get($person->input, 'pull_request.body'))->toBe("Written by a person.\n\nCloses #9");
 });
 
 it('keeps the longest reviewer body with its closing line within the publish limit', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['issue_number' => 2147483647]);
     $body = TaskDonePublication::closing($world->group->refresh(), str_repeat('é', TaskDonePublication::ReviewerBodyLimit));
 
@@ -436,7 +436,7 @@ it('keeps the longest reviewer body with its closing line within the publish lim
 });
 
 it('waits for the reviewer\'s text: the tick admits and stores nothing, and the release refuses tasks.pr_text_missing', function (): void {
-    $world = TaskCopyDoneFixture::make(text: false);
+    $world = TaskDoneFixture::make(text: false);
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
 
     expect(whenDoneTick())->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'waiting', 'code' => 'tasks.pr_text_missing', 'operation' => null]])
@@ -449,9 +449,9 @@ it('waits for the reviewer\'s text: the tick admits and stores nothing, and the 
 });
 
 it('counts only the text of the reviewer thread\'s newest turn: a later turn on the same check that sent none leaves the group waiting', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
-    TaskCopyDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, TaskCopyDoneFixture::Commit, now()->subMinute());
+    TaskDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, TaskDoneFixture::Commit, now()->subMinute());
 
     expect(whenDoneTick()[0]['code'])->toBe('tasks.pr_text_missing')->and(whenDonePublishes($world->group))->toBe(0);
 });
@@ -473,7 +473,7 @@ function whenDoneLockWith(Closure $between): void
 }
 
 it('re-reads the mode under the row lock for the tick and refuses tasks.not_done when the group left pr_when_done', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::ReviewBeforePr]);
 
     expect(fn () => app(TaskPublishIntent::class)->start($world->group->refresh(), TaskDonePublication::for($world->group, $world->check), RunTaskPublishWhenDoneAction::Caller, null, $world->check->id, byItself: true))
@@ -482,7 +482,7 @@ it('re-reads the mode under the row lock for the tick and refuses tasks.not_done
 });
 
 it('skips a group quietly when the re-check under the lock finds it no longer done, and publishes once the extra subtask is cancelled', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     $extra = null;
     whenDoneLockWith(function (int $group) use (&$extra): void {
@@ -497,7 +497,7 @@ it('skips a group quietly when the re-check under the lock finds it no longer do
 });
 
 it('does not store a refusal over a publish that was admitted in between', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     app()->instance(TaskExecutionLock::class, new class implements TaskExecutionLock
     {
@@ -532,7 +532,7 @@ it('takes a raw empty JSON object over HTTP as the release, and keeps the 422 on
     ]));
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $post = fn (Task $group, string $key) => $this->call('POST', '/api/v1/tasks/'.$group->id.'/publish', [], [], [],
         ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'HTTP_IDEMPOTENCY_KEY' => $key], '{}');
 
@@ -544,7 +544,7 @@ it('takes a raw empty JSON object over HTTP as the release, and keeps the 422 on
 });
 
 it('starts a done check again after its publish timed out on a lock, under the key of its attempt, and shows it publishing until the third', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     $base = 'pr-when-done:'.$world->group->id.':'.$world->check->id;
     whenDoneTick();
@@ -577,7 +577,7 @@ it('starts a done check again after its publish timed out on a lock, under the k
 });
 
 it('starts no retry while the earlier publish of the group still runs', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     whenDoneTick();
     $first = whenDoneEndPublish($world->group);
@@ -599,7 +599,7 @@ it('starts no retry while the earlier publish of the group still runs', function
 });
 
 it('admits a hand publish of a done check whose publish timed out on a lock, before and after the last retry', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     whenDoneTick();
     whenDoneEndPublish($world->group);
@@ -617,7 +617,7 @@ it('admits a hand publish of a done check whose publish timed out on a lock, bef
 });
 
 it('keeps a refusal after a lock timeout a refusal: the tick does not start that check again', function (string $code): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     whenDoneTick();
     whenDoneEndPublish($world->group);
@@ -631,7 +631,7 @@ it('keeps a refusal after a lock timeout a refusal: the tick does not start that
 })->with(['tasks.publish_secret_content', 'tasks.push_failed', 'tasks.publish_failed']);
 
 it('keeps a refused check refused when a later publish of it timed out on a lock', function (): void {
-    $world = TaskCopyDoneFixture::make();
+    $world = TaskDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     whenDoneTick();
     $refused = whenDoneEndPublish($world->group, 'tasks.publish_secret_content');
@@ -645,7 +645,7 @@ it('keeps a refused check refused when a later publish of it timed out on a lock
 });
 
 it('shows a lock timeout of a group that the tick does not publish as refused at once', function (): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
     $timedOut = whenDoneEndPublish($world->group);
 

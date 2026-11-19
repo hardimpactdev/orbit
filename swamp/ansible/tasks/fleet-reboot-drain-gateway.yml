@@ -3,9 +3,19 @@
 # Horizon unit drains on stop and never kills a job (GatewayHorizon::stopDirectives); after the budget the reboot ends what
 # is left, and Laravel runs a cut job again after `retry_after`.
 - name: Stop the Gateway scheduler
+  when: target.gateway.release is not defined
   ansible.builtin.systemd_service: { name: "{{ target.gateway.scheduler }}", state: stopped }
+- name: Stop the serving container's scheduler
+  when: target.gateway.release is defined
+  ansible.builtin.command:
+    argv: [/usr/local/libexec/orbit-gateway-unit, "{{ target.gateway.release }}", drain, "{{ target.gateway.scheduler }}"]
+  changed_when: true
 - name: Drain Horizon within the budget
-  ansible.builtin.command: { argv: [timeout, "{{ intent.drain_seconds }}", systemctl, stop, "{{ target.gateway.horizon }}"] }
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', intent.drain_seconds | string] +
+         (['/usr/local/libexec/orbit-gateway-unit', target.gateway.release] if target.gateway.release is defined else ['systemctl']) +
+         [('drain' if target.gateway.release is defined else 'stop'), target.gateway.horizon] }}
   register: horizon
   changed_when: true
   failed_when: horizon.rc not in [0, 124]

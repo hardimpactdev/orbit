@@ -20,5 +20,6 @@ final readonly class GatewayReleaseInventory
         public array $commits,
         public array $incomplete,
         public array $retained,
+        public bool $hostRetired = false,
     ) {}
 }

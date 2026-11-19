@@ -9,7 +9,7 @@ namespace App\Infrastructure\Ssh;
  * (docs/reference/node-provisioning.md#ssh-connections). The master of a shared connection stays in the control group of the
  * process that started it, and systemd kills that group when its unit ends: a oneshot such as the runtime hibernator, a
  * restart of the scheduler, an SSH shell that logs out. A command that rides the master then fails at once, without a packet
- * to the Node. So only PHP-FPM, whose group outlives every request, starts a master. Horizon's jobs open connections of their
+ * to the Node. So only a Gateway web service whose group outlives every request starts a master. Horizon's jobs open connections of their
  * own: a release drains Horizon by stopping its unit and waiting for the whole group to empty.
  */
 final readonly class SshControlGroup
@@ -23,7 +23,7 @@ final readonly class SshControlGroup
 
         return match (true) {
             $inside('~-horizon\.service$~') => SshMultiplexing::Alone,
-            $inside('~/php[0-9.]*-fpm\.service$~') => SshMultiplexing::Master,
+            $inside('~/(?:php[0-9.]*-fpm|orbit-gateway-web)\.service$~') => SshMultiplexing::Master,
             default => SshMultiplexing::Ride,
         };
     }

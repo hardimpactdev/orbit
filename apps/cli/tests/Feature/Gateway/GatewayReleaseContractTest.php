@@ -87,6 +87,12 @@ describe('gateway release contract', function (): void {
         $mock->assertSent(static fn ($request): bool => $request instanceof ShowGatewayReleaseRequest && $request->resolveEndpoint() === '/api/v1/gateway/releases/1');
     });
 
+    it('sends an explicit reconciliation request for the full serving commit', function (): void {
+        $mock = gateway_release_follow('gateway-releases/gateway-release-deploy/queued', ['gateway-releases/gateway-release-show/verified'], 'gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET, '--reconcile' => true, '--json' => true], 'gateway-releases/gateway-release-deploy/verified.json', 0);
+
+        $mock->assertSent(static fn ($request): bool => $request instanceof DeployGatewayReleaseRequest && $request->body()->all() === ['commit' => GATEWAY_RELEASE_TARGET, 'reconcile' => true]);
+    });
+
     it('fails when the followed release switched back or paused', function (): void {
         gateway_release_follow('gateway-releases/gateway-release-deploy/queued', ['gateway-releases/gateway-release-show/running', 'gateway-releases/gateway-release-show/switched-back'], 'gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET], 'gateway-releases/gateway-release-deploy/switched-back.human.txt', 1);
         gateway_release_follow('gateway-releases/gateway-release-deploy/queued', ['gateway-releases/gateway-release-show/switched-back'], 'gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET, '--json' => true], 'gateway-releases/gateway-release-deploy/switched-back.json', 1);
@@ -151,6 +157,19 @@ describe('gateway release contract', function (): void {
         expect(Artisan::call('gateway:release:deploy', ['commit' => $commit, '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('gateway.release_commit_invalid');
     })->with(['branch' => ['main'], 'short SHA' => ['fedcba9']]);
+
+    it('exits successfully after reconciling the serving revision', function (): void {
+        $fixture = gateway_fixture('gateway-releases/gateway-release-show/verified');
+        $body = json_decode($fixture['body'], true, flags: JSON_THROW_ON_ERROR);
+        $body['data']['trigger'] = 'reconcile';
+        $body['data']['outcome'] = 'reconciled';
+        MockClient::global([
+            ...gateway_fixture_mock(),
+            DeployGatewayReleaseRequest::class => MockResponse::make($body, 202, ['Content-Type' => 'application/json']),
+        ]);
+        expect(Artisan::call('gateway:release:deploy', ['commit' => GATEWAY_RELEASE_TARGET, '--reconcile' => true, '--json' => true]))
+            ->toBe(0)->and(Artisan::output())->toContain('reconciled');
+    });
 
     it('rolls back with consent and follows the rollback', function (): void {
         $mock = gateway_release_follow('gateway-releases/gateway-release-rollback/queued', ['gateway-releases/gateway-release-show/rolled-back'], 'gateway:release:rollback', ['release' => 'fedcba987654', '--yes' => true], 'gateway-releases/gateway-release-rollback/rolled-back.human.txt', 0);

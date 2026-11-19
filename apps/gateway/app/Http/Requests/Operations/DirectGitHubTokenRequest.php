@@ -18,7 +18,7 @@ final class DirectGitHubTokenRequest extends OperationPeerRequest
     {
         $operation = $this->route('operation');
         $caller = $this->peerNodeId();
-        $issuer = $operation instanceof Operation ? (app(DirectOperation::class)->definition($operation->kind)['github_token_issuer'] ?? null) : null;
+        $issuer = $operation instanceof Operation ? (app(DirectOperation::class)->definition($operation)['github_token_issuer'] ?? null) : null;
         $nativeIssuer = $issuer !== null;
         if (! $operation instanceof Operation || ($caller !== $operation->node_id && ! ($caller === SwampNode::id() && $nativeIssuer))) {
             throw new ResourceOperationException('operation.executor_forbidden', 'This Node cannot mint for this Operation.', 403);

@@ -11,8 +11,8 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
-use App\Domain\Tasks\TaskCopyKey;
-use App\Domain\Tasks\TaskCopyStart;
+use App\Domain\Tasks\TaskKey;
+use App\Domain\Tasks\TaskStart;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\CurrentRecipe;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
@@ -466,7 +466,7 @@ final readonly class InstanceContainer
         $origin = 'http://'.Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0]
             .':'.InstanceHostIntent::ModelForwarderPort;
         $copy = Instance::query()->whereKey($runtime->instance_id)->value('task_workspace_owner_id') === null ? ''
-            : 'ORBIT_COPY_KEY='.TaskCopyKey::mint($runtime)."\nORBIT_COPY_API={$origin}".TaskCopyKey::Path."\n";
+            : 'ORBIT_COPY_KEY='.TaskKey::mint($runtime)."\nORBIT_COPY_API={$origin}".TaskKey::Path."\n";
 
         return "ANTHROPIC_BASE_URL={$origin}\nANTHROPIC_AUTH_TOKEN={$key}\nORBIT_MODEL_KEY={$key}\n{$copy}"
             ."CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nDISABLE_TELEMETRY=1\nDISABLE_ERROR_REPORTING=1\n";
@@ -485,7 +485,7 @@ final readonly class InstanceContainer
         $source = $runtime->clone_source_instance_id === null ? null
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
-        $seed = $source === null ? null : TaskCopyStart::seed($source, $node);
+        $seed = $source === null ? null : TaskStart::seed($source, $node);
         // The seed carries the default's proxy bypass: a remote Node service host, or the private name of its websocket app.
         $resetProxy = $source !== null && (InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
             ->where('node_id', '!=', $source->node_id)->exists()
@@ -499,7 +499,7 @@ final readonly class InstanceContainer
             ."wire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"{$workspace}\"]\ntrust_level = \"trusted\"\n";
 
         return [
-            // The seed of the copy's own Node (TaskCopyStart::seed): the default's pair on its Node, else that Node's seed holder. A new
+            // The seed of the copy's own Node (TaskStart::seed): the default's pair on its Node, else that Node's seed holder. A new
             // branch at the seed's commit comes from the seed's own repository, so the clone names no mirror of the default: a CI Node
             // keeps none (docs/reference/development-containers.md#create).
             ...($seed === null ? [] : ['source' => $seed['source'], 'snapshot' => $seed['snapshot'], 'seed_commit' => $seed['seed_commit'],

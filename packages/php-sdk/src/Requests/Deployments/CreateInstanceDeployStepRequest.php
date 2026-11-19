@@ -28,6 +28,7 @@ final class CreateInstanceDeployStepRequest extends GatewayRequest implements Ha
         private readonly ?int $timeoutSeconds = null,
         private readonly ?string $before = null,
         private readonly ?string $after = null,
+        private readonly ?bool $required = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -45,10 +46,11 @@ final class CreateInstanceDeployStepRequest extends GatewayRequest implements Ha
             is_string($data['command'] ?? null) ? $data['command'] : '',
             is_int($data['timeout_seconds'] ?? null) ? $data['timeout_seconds'] : 0,
             $this->successRequestId($response),
+            ($data['required'] ?? true) !== false,
         );
     }
 
-    /** @return array<string, int|string> */
+    /** @return array<string, bool|int|string> */
     protected function defaultBody(): array
     {
         $body = [
@@ -70,6 +72,10 @@ final class CreateInstanceDeployStepRequest extends GatewayRequest implements Ha
 
         if ($this->after !== null) {
             $body['after'] = $this->after;
+        }
+
+        if ($this->required !== null) {
+            $body['required'] = $this->required;
         }
 
         return $body;

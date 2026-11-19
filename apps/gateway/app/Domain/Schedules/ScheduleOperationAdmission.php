@@ -57,13 +57,17 @@ final readonly class ScheduleOperationAdmission
         };
         $input = ['id' => $schedule->id, 'node_id' => $target->node->id, 'caller_node_id' => $caller?->id, 'created' => $created];
         $input += $this->specification->input($schedule, $target);
-        if ($target->container !== null && in_array($verb, ['create', 'destroy'], true)) {
+        if ($target->container !== null && ! isset($target->container['release']) && in_array($verb, ['create', 'destroy'], true)) {
             // The Node timer only requests a run; its cwd must exist on the Node rather than inside the container.
             $input['working_directory'] = '/';
         }
         $input['command_hash'] = hash('sha256', $schedule->command);
         if ($target->container !== null) {
-            $input['container'] = $target->container;
+            if (isset($target->container['release'])) {
+                $input['production_control'] = $target->container;
+            } else {
+                $input['container'] = $target->container;
+            }
         }
         $input['command'] = ['$secret' => 'schedule.command', 'id' => $schedule->target_id];
         if ($verb === 'run') {

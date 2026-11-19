@@ -28,7 +28,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
-use Tests\Support\TaskCopyDoneFixture;
+use Tests\Support\TaskDoneFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -47,11 +47,11 @@ beforeEach(function (): void {
  * their own title and body or as a push only.
  *
  * @param  array{title: string, body: string}|null  $text
- * @return array{TaskCopyDoneFixture, Operation}
+ * @return array{TaskDoneFixture, Operation}
  */
 function mergeRoundWorld(TaskPrMode $mode = TaskPrMode::ReviewBeforePr, bool $done = true, ?array $text = null): array
 {
-    $world = TaskCopyDoneFixture::make($mode);
+    $world = TaskDoneFixture::make($mode);
     $world->group->update(['pr_mode' => $mode]);
     if (! $done) {
         $world->subtask->update(['status' => TaskStatus::Running]);
@@ -68,9 +68,9 @@ function mergeRoundWorld(TaskPrMode $mode = TaskPrMode::ReviewBeforePr, bool $do
  * The copy's T3 runtime and the implementer thread of the world's subtask, then the publish that `$admit` starts, ended as a conflict.
  *
  * @param  Closure(): Operation  $admit
- * @return array{TaskCopyDoneFixture, Operation}
+ * @return array{TaskDoneFixture, Operation}
  */
-function mergeRoundWorldFrom(TaskCopyDoneFixture $world, Closure $admit): array
+function mergeRoundWorldFrom(TaskDoneFixture $world, Closure $admit): array
 {
     // A turn runs through the copy's T3, which a runtime records only as it is made.
     $runtime = InstanceRuntime::query()->where('instance_id', $world->instance->id)->sole();
@@ -119,7 +119,7 @@ function mergeRoundEnd(Operation $operation, OperationStatus $status = Operation
 function mergeRoundSynced(Task $group, Operation $publish): Operation
 {
     return mergeRoundEnd(mergeRoundStep($group, $publish, 'sync'), result: ['default_branch' => 'main', 'default_commit' => MergeRoundHead, 'branch' => 'task-'.$group->id,
-        'branch_commit' => TaskCopyDoneFixture::Commit, 'behind_by' => 3, 'start' => str_repeat('a', 40)]);
+        'branch_commit' => TaskDoneFixture::Commit, 'behind_by' => 3, 'start' => str_repeat('a', 40)]);
 }
 
 function mergeRoundTurnEnded(Operation $turn, string $state = 'done', OperationStatus $status = OperationStatus::Succeeded): Operation
@@ -132,7 +132,7 @@ function mergeRoundChecked(Task $group, Operation $publish, TaskCheckStatus $sta
 {
     $operation = mergeRoundStep($group, $publish, 'check');
     $check = TaskCheck::query()->findOrFail(ValidatedData::integer($operation->input['check_id']));
-    $check->update(['status' => $status, 'pid' => 1, 'process_started' => 'x', 'head_before' => TaskCopyDoneFixture::Commit, 'tree_before' => str_repeat('4', 40),
+    $check->update(['status' => $status, 'pid' => 1, 'process_started' => 'x', 'head_before' => TaskDoneFixture::Commit, 'tree_before' => str_repeat('4', 40),
         'head_after' => MergeRoundMerged, 'tree_after' => str_repeat('5', 40), 'commit_sha' => MergeRoundMerged, 'exit_code' => $status === TaskCheckStatus::Passed ? 0 : 1,
         'finished_at' => now(), 'pr_mode' => $group->pr_mode]);
     mergeRoundEnd($operation, result: ['outcome' => $status === TaskCheckStatus::Passed ? 'passed' : 'failed', 'check_id' => $check->id, 'commit' => MergeRoundMerged,
@@ -247,7 +247,7 @@ describe('a done review_before_pr group whose release conflicted', function (): 
             ->and($review->input['check'])->toBe($c1->id)
             ->and($review->input['candidate'])->toBe(MergeRoundMerged)
             ->and($review->input['thread_id'])->toBe($world->reviewer->id)
-            ->and($review->input['prompt'])->toContain('git log --merges '.TaskCopyDoneFixture::Commit.'..'.MergeRoundMerged)
+            ->and($review->input['prompt'])->toContain('git log --merges '.TaskDoneFixture::Commit.'..'.MergeRoundMerged)
             ->and($review->input['prompt'])->toContain('git show --remerge-diff <merge>')
             ->and($review->input['prompt'])->toContain('Review ONLY the merge\'s own change')
             ->and($review->input['prompt'])->toContain('send the pull request text again');
@@ -362,7 +362,7 @@ it('f. treats a person\'s publish of an open subtask\'s check with their own tex
 });
 
 it('d. runs a done-check republish without the reviewer\'s text on a group with its pull request as a done-check round', function (): void {
-    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world = TaskDoneFixture::make(TaskPrMode::ReviewBeforePr);
     $world->check->update(['pr_title' => null, 'pr_body' => null, 'pr_text_operation_id' => null]);
     $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
     [, $publish] = mergeRoundWorldFrom($world, fn (): Operation => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null));

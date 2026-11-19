@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
+use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\DirectOperationWorkflowChoice;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Schedule;
@@ -19,14 +23,48 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Safe admitted input and bounded Schedule domain projection only. */
-final readonly class ScheduleControlProjection implements DirectOperationProjection
+final readonly class ScheduleControlProjection implements DirectOperationProjection, DirectOperationWorkflowChoice
 {
     public function __construct(private DirectOperation $direct, private ScheduleOperationCompletion $completion) {}
+
+    public function workflow(Operation $operation): string
+    {
+        if (isset($operation->input['production_control']) && $operation->kind !== 'schedule.run') {
+            return 'production-schedule-control';
+        }
+
+        return match ($operation->kind) {
+            'schedule.create' => 'operation-schedule-create',
+            'schedule.destroy' => 'operation-schedule-destroy',
+            'schedule.run' => 'task-command-run',
+            default => 'operation-schedule-control',
+        };
+    }
 
     public function input(Operation $operation): array
     {
         if (! $operation->status->terminal() && ! Schedule::query()->whereKey($operation->input['id'])->exists()) {
             throw new ResourceOperationException('schedule.target_unavailable', 'The admitted Schedule no longer exists.', 404);
+        }
+
+        if ($operation->target_type === 'instance_schedules') {
+            $instance = Instance::query()->findOrFail($operation->target_id);
+            $target = ProductionContainerRelease::target($instance);
+            if (($operation->input['production_control'] ?? null) != $target) {
+                throw new ResourceOperationException('schedule.target_unavailable', 'The Schedule target changed after admission.', 409);
+            }
+            if ($target !== null && $operation->kind !== 'schedule.run') {
+                $id = ValidatedData::string($operation->input['id']);
+                $schedule = Schedule::query()->whereIn('target_type', Instance::morphTypes())->where('target_id', $instance->id)
+                    ->whereKey($id)->firstOrFail();
+                $action = substr($operation->kind, strlen('schedule.'));
+                $units = $action === 'create' ? array_values(array_filter(app(ProductionContainerUnits::class)->forInstance($instance)['units'],
+                    fn (array $u): bool => in_array($u['name'], ['orbit-schedule-'.$id.'.service', 'orbit-schedule-'.$id.'.timer'], true))) : [];
+                $plan = ['instance_id' => $instance->id, 'release' => $target['release'], 'id' => $schedule->id, 'action' => $action, 'units' => $units];
+
+                return ['intent' => ['target' => $target, 'id' => $id, 'action' => $action, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node)],
+                    'execution_secrets' => ['control' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs', 'schedule-control-operation-'.$operation->id, json_encode($plan, JSON_THROW_ON_ERROR))]];
+            }
         }
 
         if ($operation->kind === 'schedule.enable') {
@@ -53,7 +91,7 @@ final readonly class ScheduleControlProjection implements DirectOperationProject
 
             return ['intent' => ['schedule' => [...Arr::only($operation->input, ['id', 'command_hash', 'user', 'login_shell', 'timeout_seconds']),
                 'working_directory' => $operation->input['working_directory'] ?? '', 'shell' => $operation->input['shell'] ?? ''],
-                'ssh_execution' => $ssh, ...Arr::only($operation->input, ['container'])],
+                'ssh_execution' => $ssh, ...Arr::only($operation->input, ['container', 'production_control'])],
                 'execution_secrets' => ['command' => app(SwampCommandStep::class)->executionCopy(
                     'orbit-control-inputs', 'schedule-run-operation-'.$operation->id, ValidatedData::string($command->value),
                 )]];

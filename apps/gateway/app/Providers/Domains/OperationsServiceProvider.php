@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers\Domains;
 
+use App\Console\Commands\CheckOperationCleanupCommand;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
@@ -20,6 +21,7 @@ final class OperationsServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        $this->commands([CheckOperationCleanupCommand::class]);
         Queue::before(static function (): void {
             app(SwampConnection::class)->releaseIdle();
         });

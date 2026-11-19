@@ -85,6 +85,9 @@ sequenceDiagram
     %%> Publishes the Vite environment before its unit starts.
   end
   alt systemd
+  opt Gateway scheduler or Horizon runs in a release container
+    SW->>N: Apply the Gateway Process<br/>store and apply the unit
+  end
     SW->>N: Apply the unit<br/>cfgmgmt/systemd.apply
     %%> Publishes unitFile, reloads on content change, and applies the admitted boot and active state.
     opt previous activation is pending

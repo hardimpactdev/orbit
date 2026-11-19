@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Operations\OperationBudgetTable;
 use App\Infrastructure\Shared\ShutdownFastStop;
 
@@ -122,7 +123,7 @@ final class SwampRoleUnits
             ." --auth-mode token --admins user:nckrtl --club-api-key-file {$config}/api-key"
             .' --trusted-hosts swamp.orbit --trust-proxy --dispatch-env-allow=,'
             .' --max-concurrent-scheduled-runs '.self::ScheduledRuns.' --shutdown-drain-timeout 5m'
-            .' --max-run-duration '.OperationBudgetTable::longestFixedSeconds()
+            .' --max-run-duration '.max(OperationBudgetTable::longestFixedSeconds(), 2 * ProductionContainerRelease::MaximumPhaseSeconds + ProductionContainerRelease::HandoverBudgetSeconds)
             ." --remote-only --hot-reload\n"
             ."Restart=on-failure\nRestartSec=2\nTimeoutStopSec=360\n".ShutdownFastStop::Directive."\n\n"
             ."[Install]\nWantedBy=multi-user.target\n";

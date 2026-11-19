@@ -1,0 +1,132 @@
+---
+- name: Prepare a nested proof Node
+  when: production.nested
+  ansible.builtin.include_tasks: instance-fleet-node.yml
+  vars:
+    instances: { pool: orbit-releases, incus: "{{ production.incus }}" }
+- name: Install the pinned Incus package
+  when: not production.nested
+  ansible.builtin.include_tasks: incus-install.yml
+  vars: { container_host: { incus: "{{ production.incus }}" } }
+- name: Enable Incus
+  ansible.builtin.systemd_service: { name: incus.socket, enabled: true, state: started }
+- name: Create production release directories
+  ansible.builtin.file: { path: "{{ item }}", state: directory, owner: root, group: root, mode: "0755" }
+  loop: [/usr/local/libexec, /var/lib/orbit/production, /etc/orbit, /opt/orbit-production-runtime]
+- name: Prepare the release pool and project
+  ansible.builtin.script:
+    cmd: "files/production-release-host.py {{ 'nested' if production.nested else 'host' }} {{ production.cidr | quote }}"
+    executable: /usr/bin/python3
+  register: production_host
+  changed_when: (production_host.stdout | from_json).changed
+- name: Allow lease requests on the release bridge
+  ansible.builtin.command:
+    argv: [ufw, allow, in, "on", orbitinst0, to, any, port, '67', proto, udp, comment, "orbit:production-dhcp"]
+  register: production_dhcp
+  changed_when: "'Skipping' not in production_dhcp.stdout"
+- name: Provide the Instance egress proxy
+  ansible.builtin.include_tasks: instance-egress.yml
+  vars:
+    instances: "{{ production }}"
+- name: Reconcile the production stock image
+  orbit_incus_images:
+    project: orbit-releases
+    alias: ubuntu-26.04-instance-stock
+    archive_directory: "{{ (production_host.stdout | from_json).directory }}/images"
+    socket: "{{ (production_host.stdout | from_json).directory }}/unix.socket"
+    failure_code: deployment.node_runtime_missing
+- name: Verify the selected production runtime root and digest
+  ansible.builtin.assert:
+    that:
+      - production.folder.path == '/opt/orbit-production-runtime'
+      - production.folder.version is match('^[0-9a-f]{12,64}$')
+    quiet: true
+- name: Read the immutable production runtime
+  ansible.builtin.stat:
+    path: "{{ production.folder.path }}/{{ production.folder.version }}"
+    follow: false
+    get_checksum: false
+    get_mime: false
+  register: production_runtime
+- name: Require an owned, complete runtime directory
+  when: production_runtime.stat.exists
+  ansible.builtin.assert:
+    that:
+      - production_runtime.stat.isdir and not production_runtime.stat.islnk
+      - production_runtime.stat.uid == 0 and not production_runtime.stat.wgrp and not production_runtime.stat.woth
+    quiet: true
+- name: Build and publish the missing immutable runtime
+  when: not production_runtime.stat.exists
+  vars:
+    production_build_root: "{{ production.folder.path }}/.build/{{ production.folder.version }}"
+  block:
+    - name: Create the private runtime build directory
+      ansible.builtin.file: { path: "{{ production.folder.path }}/.build", state: directory, owner: root, group: root, mode: "0700" }
+    # The shared builder owns current and pruning only inside this digest's private area.
+    # Absolute Vite+ paths are built in their permanent home outside that area.
+    - name: Build the selected runtime with the Instance folder recipe
+      ansible.builtin.include_tasks: instance-folder.yml
+      vars:
+        folder: "{{ production.folder | combine({'path': production_build_root}) }}"
+        folder_name: runtime
+    - name: Publish the complete runtime on the same filesystem
+      ansible.builtin.command:
+        argv: [mv, -T, --, "{{ production_build_root }}/{{ production.folder.version }}", "{{ production.folder.path }}/{{ production.folder.version }}"]
+      changed_when: true
+- name: Remove the completed digest's private build area
+  ansible.builtin.file:
+    path: "{{ production.folder.path }}/.build/{{ production.folder.version }}"
+    state: absent
+- name: Bundle the shared Vite+ selection rules on the Swamp Node
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/deno
+      - bundle
+      - --quiet
+      - --platform=browser
+      - --external=node:*
+      - --minify
+      - "{{ playbook_dir }}/files/instance-release-vp.ts"
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: production_vp_bundle
+- name: Install the offline guest Vite+ selection helper
+  ansible.builtin.copy:
+    content: "{{ production_vp_bundle.stdout }}\n"
+    dest: /usr/local/libexec/orbit-instance-release-vp.mjs
+    owner: root
+    group: root
+    mode: "0644"
+- name: Install the production release controller
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/usr/local/libexec/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - {src: "{{ playbook_dir }}/../scripts/production-release-phase", name: orbit-production-release-phase}
+    - {src: "{{ playbook_dir }}/../scripts/release-container.py", name: orbit-release-container}
+    - {src: files/instance-release-phase.py, name: orbit-instance-release-phase}
+    - {src: files/instance-release-control.py, name: orbit-instance-release-control}
+    - {src: files/instance-control-process.py, name: orbit-instance-control-process}
+    - {src: files/instance-control-schedule.py, name: orbit-instance-control-schedule}
+    - {src: files/instance-legacy-schedule.py, name: orbit-instance-legacy-schedule}
+    - {src: files/instance-control-environment.py, name: orbit-instance-control-environment}
+    - {src: files/instance-release-sql.py, name: orbit-instance-release-sql}
+    - {src: files/instance-release-guest.py, name: orbit-instance-release-guest}
+    - {src: files/instance-release-prepare.py, name: orbit-instance-release-prepare}
+    - {src: "{{ playbook_dir }}/module_utils/orbit_route_withdraw.py", name: orbit_route_withdraw.py}
+    - {src: files/instance-release-routes.py, name: orbit-instance-release-routes}
+- name: Install the swap-backed release power service
+  ansible.builtin.include_tasks: instance-power-helper.yml
+- name: Write the Node identity and pinned runtime for new preparations
+  ansible.builtin.copy:
+    dest: /etc/orbit/production-release.json
+    content: >-
+      {{ {'node_id': production.node_id, 'pool': 'orbit-releases', 'network': 'orbitinst0',
+          'proxy': production.egress.origin, 'runtime': production.folder.path ~ '/' ~ production.folder.version} | to_json }}
+    owner: root
+    group: root
+    mode: "0644"
