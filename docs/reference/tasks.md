@@ -240,13 +240,13 @@ The implementer's last message is the handoff note, which the reviewer gets. The
 
 To ask, the implementer uses its question tool. Asking ends the turn, and the answer comes as the next turn.
 
-The reviewer's text names the check that the turn reviews, its commit and the base that the check judged against. The checkout holds that commit, detached, and Orbit discards every change in it after the turn. Each deliverable line gives its result in that check: `passed`, `failed` or `not_checked`. A deliverable that the check holds no result for reads `not_checked`.
+The reviewer's text names the check that the turn reviews, its commit and the base that the check compared against. When the check [merged main first](#the-handoff-check-merges-main-first), that base is the subtask's start with the default head merged in. The text names it as the tree of `git merge-tree --write-tree START HEAD`, so the default branch's own changes are not in the reviewer's diff. Otherwise the base is the start. The checkout holds that commit, detached, and Orbit discards every change in it after the turn. Each deliverable line gives its result in that check: `passed`, `failed` or `not_checked`. A deliverable that the check holds no result for reads `not_checked`.
 
 The reviewer also gets the implementer's handoff note in `<handoff_note>`, with two lines that tell it to check each claim. The note is the reply of the latest finished implementer turn on the subtask that did not end in a question, as the Gateway stores it, cut at 16,384 characters with its marker. Without such a reply, the block and its two lines are left out.
 
 The [reviewer rule](#the-reviewer-rule) follows in `<review_rules>`, then the [pull request text](#the-reviewers-pull-request-text) rule word for word, then the turn.
 
-The first reviewer turn on a subtask is the first review. Every later one is a re-review. It names its round and the commit that the latest finished reviewer turn on the subtask reviewed. A finished turn ended its Operation as `succeeded` and not in a question. A reviewer turn that failed, was cancelled or asked does not count. The round is one more than the number of finished reviewer turns.
+The first reviewer turn on a subtask is the first review. Every later one is a re-review. It names its round and the commit that the latest finished reviewer turn on the subtask reviewed. A finished turn ended its Operation as `succeeded` and not in a question. A reviewer turn that failed or was cancelled does not count. A reviewer turn that ended in a question finished no review, so it does not count either: the turn that answers it is still the first review, or the same round. The round is one more than the number of finished reviewer turns.
 
 The reviewer thread serves the whole group. Orbit composes each turn's text from the records, so a thread that started under an older prompt gets a valid prompt on its next turn.
 

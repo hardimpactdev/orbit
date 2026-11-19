@@ -85,7 +85,7 @@ final readonly class TaskTurnPrompt
     {
         $first = $review->previous === null;
         $opening = "You review one subtask of an Orbit task in its task copy.\n"
-            .($first ? "This is the first review of this subtask: check {$review->check}, commit {$review->sha}, against base {$review->base}.\n"
+            .($first ? "This is the first review of this subtask: check {$review->check}, commit {$review->sha}, against base {$review->base()}.\n"
                 : "This is review round {$review->round} of this subtask: check {$review->check}, commit {$review->sha}. You last reviewed commit {$review->previous}.\n")
             ."The checkout holds the commit, detached. Leave it as it is: Orbit discards\nevery change in the checkout after this turn.";
         $note = $review->note === null ? [] : ["<handoff_note>\n{$review->note}\n</handoff_note>\nThe handoff note holds the implementer's claims. Use it to find the evidence,\nand check each claim yourself."];
@@ -109,7 +109,7 @@ final readonly class TaskTurnPrompt
         $report = $first ? "- each outcome or deliverable that is not met, and one line on what you\n  checked and found met;\n" : "- each earlier finding: closed or open;\n";
         $rules = <<<TEXT
             <review_rules>
-            Scope: the briefs, the deliverables, the diff of {$review->sha} against {$review->base}, and what
+            Scope: the briefs, the deliverables, the diff of {$review->sha} against {$review->base()}, and what
             that diff directly affects. Report nothing outside it: no ideas, refactors or
             redesigns beyond the task. Ask for a change outside the files the task touches
             only when a blocking finding forces it, and name that finding.

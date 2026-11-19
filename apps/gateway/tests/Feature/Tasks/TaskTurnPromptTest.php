@@ -18,6 +18,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Symfony\Component\Process\Process;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -44,11 +45,16 @@ function promptDeliverables(): array
     ];
 }
 
-/** A first review of check 12 on commit c… against base b…, the handoff note given. */
-function promptReview(?string $previous = null, int $round = 1, ?string $note = "Commit cccc.\n- tests: met, tests/Feature/DenyTest.php."): TaskTurnReview
+/** A review of check 12 on commit c… against the start b…, with the default head MERGED into it, the handoff note given. */
+function promptReview(?string $previous = null, int $round = 1, ?string $note = "Commit cccc.\n- tests: met, tests/Feature/DenyTest.php.", ?string $merged = null): TaskTurnReview
 {
-    return new TaskTurnReview(12, str_repeat('c', 40), str_repeat('b', 40), $round, $previous, ['chart' => 'passed', 'tests' => 'passed', 'bar' => 'not_checked'], $note);
+    return new TaskTurnReview(12, str_repeat('c', 40), str_repeat('b', 40), $merged, $round, $previous, ['chart' => 'passed', 'tests' => 'passed', 'bar' => 'not_checked'], $note);
 }
+
+/** The pull request text rule as it is today, word for word: written out here so that a change of the production text fails. */
+const PromptPrText = <<<'TEXT'
+If you approve this commit, write its pull request: a title of one line, and a body in Markdown in a file such as pr-body.md. Send them before this turn ends: . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" --form-string "title=$TITLE" -F 'body=<pr-body.md' "$ORBIT_COPY_API/pull-request" (set TITLE to the title first). A second send replaces the text. Orbit opens the pull request with it once the work is done; when the pull request is open already, the next publish of this check updates its title and body with it. If you do not approve, send nothing.
+TEXT;
 
 const PromptBriefs = <<<'TEXT'
 <task_brief title="Firewall rules">
@@ -234,7 +240,7 @@ it('gives the first reviewer turn the first-review lines, each deliverable\'s re
     </review_rules>
 
 
-    TEXT.TaskTurn::PrTextRule.<<<'TEXT'
+    TEXT.PromptPrText.<<<'TEXT'
 
 
     <turn>
@@ -246,38 +252,99 @@ it('gives the first reviewer turn the first-review lines, each deliverable\'s re
     TEXT);
 });
 
-it('gives a later reviewer turn the re-review lines with its round and the commit it last reviewed', function (): void {
+it('gives a later reviewer turn the re-review lines with its round, the commit it last reviewed and the base the check compared against', function (): void {
     $previous = str_repeat('a', 40);
     $c = str_repeat('c', 40);
-    $text = TaskTurnPrompt::reviewer(promptSubtask(promptDeliverables()), promptReview($previous, 3), 'Check the fix.', promptStart());
+    $b = str_repeat('b', 40);
+    $d = str_repeat('d', 40);
+    $text = TaskTurnPrompt::reviewer(promptSubtask(promptDeliverables()), promptReview($previous, 3, merged: $d), 'Check the fix.', promptStart());
 
-    expect($text)->toStartWith("You review one subtask of an Orbit task in its task copy.\n"
-        ."This is review round 3 of this subtask: check 12, commit {$c}. You last reviewed commit {$previous}.\n"
-        ."The checkout holds the commit, detached. Leave it as it is: Orbit discards\nevery change in the checkout after this turn.\n\n<task_brief")
-        ->and($text)->toContain(PromptReviewBar.<<<TEXT
+    expect($text)->toBe(<<<TEXT
+    You review one subtask of an Orbit task in its task copy.
+    This is review round 3 of this subtask: check 12, commit {$c}. You last reviewed commit {$previous}.
+    The checkout holds the commit, detached. Leave it as it is: Orbit discards
+    every change in the checkout after this turn.
 
+    <task_brief title="Firewall rules">
+    Add a firewall rule set.
+    Allow and deny share one shape.
+    </task_brief>
 
-        Re-review. Check only:
-        - your earlier blocking findings: closed or still open, and why;
-        - the changes since {$previous} and what they directly affect. Changes that
-          the base brought in are not the task's changes;
-        - new evidence or an owner decision in this turn.
-        Do not review unchanged code again. One exception: if you meet harm of the
-        first kind above in unchanged code, report it and mark it "missed in the first
-        review".
+    <subtask_brief title="Add the deny rule">
+    Add `firewall:deny`.
+    Keep the shape of allow.
+    </subtask_brief>
 
-        For each blocking finding give:
-        TEXT)
-        ->and($text)->toContain(<<<'TEXT'
-        Report:
-        - each earlier finding: closed or open;
-        - blocking findings;
-        - follow-ups, if any;
-        - last line, exactly: VERDICT: APPROVE or VERDICT: CHANGES
-        With no blocking finding, approve.
-        </review_rules>
-        TEXT)
-        ->and($text)->not->toContain('first review of this subtask')->not->toContain('First review.')->not->toContain('found met');
+    <deliverables>
+    - chart (file: docs/cli/firewall/deny.mmd, created): The chart exists. Result: passed.
+    - tests (command: `vendor/bin/pest tests/Feature/DenyTest.php` in apps/gateway): The tests pass. Result: passed.
+    - bar (review: confirmed by the reviewer): The bar holds. Result: not_checked.
+    </deliverables>
+
+    <handoff_note>
+    Commit cccc.
+    - tests: met, tests/Feature/DenyTest.php.
+    </handoff_note>
+    The handoff note holds the implementer's claims. Use it to find the evidence,
+    and check each claim yourself.
+
+    <review_rules>
+    Scope: the briefs, the deliverables, the diff of {$c} against the tree of `git merge-tree --write-tree {$b} {$d}`, and what
+    that diff directly affects. Report nothing outside it: no ideas, refactors or
+    redesigns beyond the task. Ask for a change outside the files the task touches
+    only when a blocking finding forces it, and name that finding.
+
+    A finding blocks only if:
+    - a normal run, or a likely failure (a crash, a reboot or a network loss at one
+      step), would stop or delete something live, break live requests or
+      user-visible behaviour, lose or corrupt data, produce a wrong result that the
+      briefs ask for, or add a security hole; or
+    - a deliverable is missed or not proven, or a test that the briefs ask for is
+      missing or broken.
+
+    These do not block. List them as short follow-ups for the pull request body:
+    - what the briefs accept as a limit;
+    - rare interleavings, races that need several unlikely events, hardening and
+      defence in depth. Ask for no new recovery state, marker or retry path for
+      them. Prefer removing a state over hardening it;
+    - in code behind a flag that is off by default, a finding that matters only
+      with the flag on. Put it on a "before the flag goes on" list.
+
+    Re-review. Check only:
+    - your earlier blocking findings: closed or still open, and why;
+    - the changes since {$previous} and what they directly affect. Changes that
+      the base brought in are not the task's changes;
+    - new evidence or an owner decision in this turn.
+    Do not review unchanged code again. One exception: if you meet harm of the
+    first kind above in unchanged code, report it and mark it "missed in the first
+    review".
+
+    For each blocking finding give: the file and line, the failing case and its
+    consequence, the rule that a fix must satisfy, and every case of that rule you
+    found.
+
+    Run commands in the foreground and let them finish. Run single test files by
+    path. Remove what you created outside the checkout: records, processes,
+    Instances and temporary files. Never print an environment file, a token, a key
+    or a session value.
+
+    Report:
+    - each earlier finding: closed or open;
+    - blocking findings;
+    - follow-ups, if any;
+    - last line, exactly: VERDICT: APPROVE or VERDICT: CHANGES
+    With no blocking finding, approve.
+    </review_rules>
+
+    If you approve this commit, write its pull request: a title of one line, and a body in Markdown in a file such as pr-body.md. Send them before this turn ends: . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer \$ORBIT_COPY_KEY" --form-string "title=\$TITLE" -F 'body=<pr-body.md' "\$ORBIT_COPY_API/pull-request" (set TITLE to the title first). A second send replaces the text. Orbit opens the pull request with it once the work is done; when the pull request is open already, the next publish of this check updates its title and body with it. If you do not approve, send nothing.
+
+    <turn>
+    Check the fix.
+    </turn>
+
+    Orbit ends this turn at 2026-11-16T11:00:00Z. Send the pull request text and your verdict
+    before then.
+    TEXT);
 });
 
 it('leaves the handoff note and its two lines out when there is none, and the deliverables block out without deliverables', function (): void {
@@ -293,7 +360,7 @@ it('gives no role a rule that only the other role has', function (): void {
     $reviewer = TaskTurnPrompt::reviewer(promptSubtask(promptDeliverables()), promptReview(), 'Go.', promptStart());
 
     expect($reviewer)->not->toContain('Commit your work')->not->toContain('question tool')->not->toContain('bin/task-check')->not->toContain('Build and prove')
-        ->and($implementer)->not->toContain('VERDICT')->not->toContain('blocks only if')->not->toContain(TaskTurn::PrTextRule)->not->toContain('Result:');
+        ->and($implementer)->not->toContain('VERDICT')->not->toContain('blocks only if')->not->toContain(PromptPrText)->not->toContain('Result:');
 });
 
 it('names nothing of one Project in the fixed text but the task check command', function (): void {
@@ -302,9 +369,8 @@ it('names nothing of one Project in the fixed text but the task check command', 
     }
 });
 
-it('tells the reviewer that its text opens the pull request, and updates one that is open already on the next publish', function (): void {
-    expect(TaskTurn::PrTextRule)->toContain('Orbit opens the pull request with it once the work is done; when the pull request is open already, '
-        .'the next publish of this check updates its title and body with it.');
+it('keeps the pull request text rule word for word: the text opens the pull request, or updates one that is open already', function (): void {
+    expect(TaskTurn::PrTextRule)->toBe(PromptPrText);
 });
 
 it('refuses a composed prompt that the turn workflow would reject', function (Closure $compose): void {
@@ -354,7 +420,7 @@ describe('the values of a reviewer turn', function (): void {
     it('names the check, its commit, the base it judged against and each deliverable\'s result in it', function (): void {
         $review = TaskTurnReview::of($this->group, $this->subtask, $this->check, $this->owner);
 
-        expect([$review->check, $review->sha, $review->base, $review->results])
+        expect([$review->check, $review->sha, $review->base(), $review->results])
             ->toBe([$this->check->id, str_repeat('c', 40), str_repeat('b', 40), ['chart' => 'passed', 'bar' => 'not_checked']])
             // A deliverable that the check holds no result for reads as not checked.
             ->and(TaskTurnPrompt::reviewer($this->subtask->setRelation('parent', $this->group)->fill(['deliverables' => [
@@ -400,5 +466,60 @@ describe('the values of a reviewer turn', function (): void {
         promptTurn($this->subtask, 'implementer', OperationStatus::Succeeded);
 
         expect(TaskTurnReview::of($this->group, $this->subtask, $this->check, $this->owner)->note)->toBeNull();
+    });
+
+    it('names the start with the default head merged in when the check brought one in, as the check compared, and the bare start otherwise', function (): void {
+        $d = str_repeat('d', 40);
+        $merged = fn (array $input, array $result): string => TaskTurnReview::of($this->group, $this->subtask, $this->check,
+            tap($this->owner)->update(['input' => [...$this->owner->input, ...$input], 'result' => [...$this->owner->result, ...$result]]))->base();
+
+        expect($merged([], ['base' => 'current', 'default_commit' => $d, 'merged_default' => $d]))
+            ->toBe('the tree of `git merge-tree --write-tree '.str_repeat('b', 40).' '.$d.'`')
+            // HEAD held the default head already: the check still compares with the start plus that head.
+            ->and($merged([], ['base' => 'current', 'default_commit' => $d, 'merged_default' => null]))->toBe('the tree of `git merge-tree --write-tree '.str_repeat('b', 40).' '.$d.'`')
+            // A base phase that failed brought in no head, and a check without a start merges none.
+            ->and($merged([], ['base' => 'unavailable', 'default_commit' => null]))->toBe(str_repeat('b', 40))
+            ->and($merged(['base' => ''], ['base' => 'current', 'default_commit' => $d]))->toBe('');
+    });
+
+    it('names a base whose diff to the checked commit holds the subtask\'s work and no change that only the default branch made', function (): void {
+        $repository = sys_get_temp_dir().'/orbit-review-base-'.bin2hex(random_bytes(4));
+        mkdir($repository);
+        $git = static function (string ...$arguments) use ($repository): string {
+            $process = new Process(['git', '-c', 'user.name=Orbit', '-c', 'user.email=orbit@example.test', '-c', 'init.defaultBranch=task', ...$arguments], $repository);
+            $process->mustRun();
+
+            return trim($process->getOutput());
+        };
+        try {
+            $git('init', '-q');
+            file_put_contents($repository.'/readme.md', "start\n");
+            $git('add', '.');
+            $git('commit', '-q', '-m', 'Start');
+            $start = $git('rev-parse', 'HEAD');
+            $git('checkout', '-q', '-b', 'main');
+            file_put_contents($repository.'/upstream.md', "only on main\n");
+            $git('add', '.');
+            $git('commit', '-q', '-m', 'Upstream');
+            $default = $git('rev-parse', 'HEAD');
+            $git('checkout', '-q', 'task');
+            file_put_contents($repository.'/work.md', "the subtask\n");
+            $git('add', '.');
+            $git('commit', '-q', '-m', 'Work');
+            // The handoff check merges the default head first and checks that tree.
+            $git('merge', '-q', '--no-edit', $default);
+            $checked = $git('rev-parse', 'HEAD');
+            $this->owner->update(['input' => [...$this->owner->input, 'base' => $start], 'result' => [...$this->owner->result, 'base' => 'current', 'default_commit' => $default, 'merged_default' => $default]]);
+
+            $base = TaskTurnReview::of($this->group, $this->subtask, $this->check, $this->owner)->base();
+            preg_match('/`git (merge-tree [^`]+)`/', $base, $command);
+            $tree = $git(...explode(' ', $command[1]));
+
+            expect($git('diff', '--name-only', $tree, $checked))->toBe('work.md')
+                // The bare start would count the default branch's own change as the subtask's.
+                ->and($git('diff', '--name-only', $start, $checked))->toBe("upstream.md\nwork.md");
+        } finally {
+            (new Process(['rm', '-rf', $repository]))->mustRun();
+        }
     });
 });
