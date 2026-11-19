@@ -50,7 +50,7 @@ final readonly class OperationStore
         }
         try {
             $operation = DB::transaction(function () use ($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $gatewayJob, $lockKey, $parent): Operation {
-                app(NodeWorkAdmission::class)->check($kind, $nodeId, $input);
+                app(NodeWorkAdmission::class)->check($kind, $nodeId, $input, $parent?->id);
                 $direct = app(DirectOperation::class);
                 $version = $parent === null ? OperationVersions::admit($kind) : $this->childVersion($parent, $kind, $input);
                 $definition = $gatewayJob ? [] : ($direct->definition($kind, $version) ?? throw new ResourceOperationException('operation.version_unavailable', 'This Gateway does not have the pinned Operation handler.', 503));

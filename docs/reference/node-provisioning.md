@@ -592,7 +592,7 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 On Linux app-dev Nodes, Orbit manages `/etc/tmpfiles.d/orbit.conf`. At boot, systemd creates `/dev/shm/orbit/hibernation` with owner `root:caddy` and mode `0755`. Removing the app-dev role withdraws the file.
 
-A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses host-wide inputs.
+A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses changed host inputs, per Node: the Gateway runtime (`gateway-runtime.yml` and its rendered files) counts only for a Node with the `gateway` role, so a change to it holds only that Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
 
 [Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
 
@@ -640,7 +640,9 @@ A phase digest is the SHA-256 of the phase name and of what the phases read. Swa
 
 For Node converge, preparation stages the shipped Ansible files and Tool helper in the private run folder.
 
-Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
+Preparation also stages the role files outside `ansible/` at the same paths beside it: the production release controllers in `scripts/` and the Vite+ selection rules that `ansible/files/instance-release-vp.ts` imports from `extensions/`. They count in the phases' code digest, and in a role Operation's, which reads them from the worker's bundle.
+
+The Gateway's `app-prod` release digest covers the same files, `production-release-host.yml` and every file it installs, so a change to any of them schedules the release role converge. Any Swamp worker on the same Node can run a later phase from that folder after the worker that prepared it renews and clears its cache. The terminal step removes the staged files with the rest of the run folder.
 
 The converge variables hold the attempt's intent and the values of its execution secrets. The intent holds the scope, the role plans, the recipe and runtime pins, the agent and CLI pins, the Tools and the network. `plans.json` holds the CI host spec and the ClickHouse files that the roles phase applies.
 
