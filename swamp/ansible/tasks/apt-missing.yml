@@ -1,0 +1,31 @@
+---
+# Which of the packages in `apt_wanted` an apt install still has to bring. A name with `=version` wants that version. One dpkg-query
+# reads them all, so a task that installs them reads the package index (`update_cache`) only when one misses: the index read goes out
+# through the Node's proxies and takes minutes when the lists are old, while every package is often there already.
+# A package counts as there when dpkg has it installed, held or not, at its pinned version when it names one.
+- name: Read the wanted packages
+  when: apt_wanted | length > 0
+  ansible.builtin.command:
+    argv: >-
+      {{ ['dpkg-query', '--show', '--showformat=${Package}\t${Version}\t${db:Status-Abbrev}\n', '--']
+      + apt_wanted | map('regex_replace', '=.*$', '') | list }}
+  register: apt_wanted_read
+  changed_when: false
+  failed_when: apt_wanted_read.rc not in [0, 1]
+- name: Name the missing packages
+  ansible.builtin.set_fact:
+    apt_missing: >-
+      {%- set ns = namespace(installed={}, out=[]) -%}
+      {%- for line in apt_wanted_read.stdout_lines | default([]) -%}
+        {%- set field = line.split('\t') -%}
+        {%- if field | length == 3 and field[2][1:2] == 'i' -%}
+          {%- set ns.installed = ns.installed | combine({field[0]: field[1]}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- for wanted in apt_wanted -%}
+        {%- set name = wanted.split('=')[0] -%}
+        {%- if name not in ns.installed or ('=' in wanted and ns.installed[name] != wanted.split('=', 1)[1]) -%}
+          {%- set ns.out = ns.out + [wanted] -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.out }}

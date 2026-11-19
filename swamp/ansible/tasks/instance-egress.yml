@@ -7,7 +7,11 @@
   ansible.builtin.file: { src: /dev/null, dest: /etc/systemd/system/squid.service, state: link, force: true }
   register: egress_mask
 
+- name: Find Squid
+  ansible.builtin.import_tasks: apt-missing.yml
+  vars: { apt_wanted: [squid] }
 - name: Install Squid
+  when: apt_missing | length > 0
   ansible.builtin.apt: { name: squid, state: present, install_recommends: false, update_cache: true, cache_valid_time: 3600 }
 
 - name: Make the folder of the proxy

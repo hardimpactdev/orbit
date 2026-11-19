@@ -899,6 +899,10 @@ Not every role can be added the same way.
 
 A role installs its packages from the Ubuntu archive, except PHP and Caddy.
 
+An archive install reads the package index (`apt update`) only when one of its packages is missing. Before the install, one `dpkg-query` reads every package it names (`swamp/ansible/tasks/apt-missing.yml`). A package counts as there when dpkg has it installed, held or not, at its version when the task pins one. When every package is there, the install task is skipped and reports no change.
+
+Otherwise it runs as before: index read, install, same lock timeout. This covers the base packages of `node:add`, the role prerequisites, the update tools, Squid of the Instance egress and `btrfs-progs` on an Instance fleet Node. It never upgrades a package; the [update policy](#update-policy) does that. The index read goes through the Node's proxies, so with old lists it took 134 s for an installed Squid on a nested `app-prod` Node in one refresh.
+
 | Package | Source | Files Orbit owns |
 | --- | --- | --- |
 | PHP | The Sury `.deb` files that the [recipe's PHP build](/reference/compute-drivers#php-build) pins, from Orbit's mirror or Sury | `/var/cache/orbit/php-packages`, every pinned and repacked file, kept for a rollback |
