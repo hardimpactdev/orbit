@@ -1074,6 +1074,14 @@ contexts:
     fleet_record_read:
       rc: 1
       stdout: ''
+  fleet-converge-admitted-all:
+    fleet_api: https://hub.orbit.test/api/v1
+    fleet_curl: [curl, -sSk]
+    fleet_converge_admitted: [[gateway, '206'], [app-prod, '207'], [app-dev, '208']]
+  fleet-converge-admitted-one-refused:
+    fleet_api: https://hub.orbit.test/api/v1
+    fleet_curl: [curl, -sSk]
+    fleet_converge_admitted: [[app-dev, '208']]
   fleet-intents-read:
     fleet_roles: [gateway, app-dev, app-prod]
     fleet_intents_read:
@@ -2294,6 +2302,17 @@ cases:
   field: vars.fleet_host_read
   context: fleet-intents-host
   expected: '4444444444444444444444444444444444444444444444444444444444444444'
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: ansible.builtin.command.argv
+  context: fleet-converge-admitted-all
+  expected: [timeout, '90', curl, -sSk, --fail, -w, '\n', https://hub.orbit.test/api/v1/operations/206,
+    https://hub.orbit.test/api/v1/operations/207, https://hub.orbit.test/api/v1/operations/208]
+- file: tasks/instance-fleet-converge-node.yml
+  task: Wait for the converges of the due nested Nodes
+  field: ansible.builtin.command.argv
+  context: fleet-converge-admitted-one-refused
+  expected: [timeout, '90', curl, -sSk, --fail, -w, '\n', https://hub.orbit.test/api/v1/operations/208]
 - file: tasks/instance-fleet-refresh.yml
   task: Choose how base is taken
   field: vars.fleet_pool_drivers
