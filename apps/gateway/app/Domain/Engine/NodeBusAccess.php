@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Engine;
 
-use App\Domain\Nodes\RoleName;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
