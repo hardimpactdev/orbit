@@ -1722,7 +1722,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(Str::isUuid($turn->input['turn']['message_id']))->toBeTrue()
             ->and($turn->input['turn']['prompt'])->toBe(TaskTurnPrompt::implementer($group->tasks()->firstOrFail(), $group->project->taskCheckCommand(),
                 'Run Doctor and commit a note.', CarbonImmutable::parse('2026-11-16T10:00:00Z')))
-            ->and($turn->input['turn']['prompt'])->toStartWith("You implement one subtask of an Orbit task in its task copy.")
+            ->and($turn->input['turn']['prompt'])->toStartWith('You implement one subtask of an Orbit task in its task copy.')
             ->and($turn->input['turn']['prompt'])->toContain("<task_brief title=\"Group\">\nBrief\n</task_brief>\n\n<subtask_brief title=\"Step\">\nDo it\n</subtask_brief>")
             ->and($turn->input['turn']['prompt'])->toEndWith("<turn>\nRun Doctor and commit a note.\n</turn>\n\nOrbit ends this turn at 2026-11-16T11:00:00Z. Commit your work before then.")
             ->and($thread->only(['driver', 'role', 'model', 'effort', 'provider_instance', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
