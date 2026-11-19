@@ -2971,6 +2971,10 @@ cases:
   - /etc/wireguard/orbit-peers.d/3.conf
   - /etc/sysctl.d/99-orbit-forwarding.conf
 non_command_output:
+- file: tasks/apt-missing.yml
+  task: Read the wanted packages
+  field: ansible.builtin.command.argv
+  reason: Strips the pinned `=version` from each wanted package name before dpkg-query reads it; it parses no command output.
 - file: tasks/production-release-host.yml
   task: Verify the selected production runtime root and digest
   field: ansible.builtin.assert.that[1]

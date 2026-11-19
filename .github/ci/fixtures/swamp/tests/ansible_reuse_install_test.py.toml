@@ -1,9 +1,5 @@
 order = 1540
 cases = [
-  "test_an_installed_squid_skips_apt",
-  "test_squid_removed_with_its_config_files_left_installs_again",
-  "test_an_unknown_squid_package_installs",
-  "test_a_failed_squid_read_runs_apt",
   "test_a_release_that_verifies_at_the_ref_is_reused",
   "test_a_missing_release_is_checked_out_and_installed",
   "test_a_checkout_at_another_ref_is_checked_out_again",
@@ -26,6 +22,5 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
-  "swamp/ansible/tasks/instance-egress.yml",
   "swamp/ansible/tasks/websocket.yml",
 ]
