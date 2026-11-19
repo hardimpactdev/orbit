@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Domain/Nodes/{NodeNetworkConvergeInput,NodeNetworkInput,NodeNetworkParticipantInput,NodeWireGuardInput,NodeWireGuardHubInput}.php
   - apps/gateway/app/Infrastructure/Nodes/NodeVpnConfigurationSource.php
   - apps/gateway/database/migrations/2027_02_02_000000_drop_node_wireguard_endpoint_override.php
-  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-peers,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers,node-converge-hub-filter-absent}.yml
+  - swamp/ansible/tasks/{node-hub-lan-proof,node-converge-hub,node-hub-source,node-converge-handshake,node-converge-hub-peers,node-converge-hub-switch,node-converge-hub-move,node-add-hub-peers,node-converge-hub-filter-absent,managed-files-check}.yml
   - apps/gateway/app/Domain/Nodes/NodeLanAddress.php
 ---
 
@@ -190,10 +190,10 @@ One file per peer lets a run that adds one Node, such as `node.add`, write only 
 The converge's Ansible `network` phase reaches the hub over SSH as root:
 
 1. It reads the live peers: those with a handshake in the last 120 seconds, so an idle one still has a handshake for the wait in step 7.
-2. It writes `orbit.conf` and each peer file (0600, root).
+2. One read checks `orbit.conf`, each peer file and the forwarding file, and it writes only the files that differ (0600, root; [one read](/reference/node-provisioning#check-many-files-in-one-read)).
 3. The prune deletes the peer files of Nodes that are gone or being removed. Every other Node keeps its file.
 4. It runs `wg syncconf` on input it composes on the Node: `PrivateKey` read from `orbit.key`, the port and the mark, then every peer file.
-5. The source unit is written, restarted on change or drift, and checked.
+5. The source unit's files are checked in one read and only the ones that differ are written. The unit restarts on such a change or on drift, and is checked.
 6. It requires every recorded peer on the interface, or fails with the assertion `vpn.hub_peer_missing`.
 7. It waits up to a minute for each peer that was live in step 1 to have a handshake in the last 180 seconds.
 
