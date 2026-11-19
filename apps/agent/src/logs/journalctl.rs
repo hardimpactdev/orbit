@@ -985,19 +985,28 @@ exec sleep 600
             run("orbit-process-999999-none.service".into(), &mut sink).await
         });
         let stream = Stream { queue, task };
-        // Keep the real observation intervals: a real journal has no fixture barrier.
-        let mut empty_batches = 0;
-        for _ in 0..2 {
-            tokio::time::sleep(Duration::from_millis(700)).await;
+        // A real journal has no fixture barrier, so the first batch is awaited up to a deadline: on a slow machine
+        // journalctl starts later than any fixed interval.
+        let observe = |empty_batches: &mut usize| {
             let flush = stream.queue.flush("c", Instant::now()).unwrap();
-            // The empty first batch says only that the first lines are complete, and it comes once.
+            // The empty first batch says only that the first lines are complete.
             for frame in &flush.frames {
                 assert_eq!(frame.data["lines"], serde_json::json!([]), "{frame:?}");
                 assert_eq!(frame.data["first_done"], true, "{frame:?}");
-                empty_batches += 1;
+                *empty_batches += 1;
             }
             assert!(!stream.task.is_finished());
+        };
+        let mut empty_batches = 0;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while empty_batches == 0 {
+            assert!(Instant::now() < deadline, "no first batch");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            observe(&mut empty_batches);
         }
+        // It comes once: a later observation at the real interval holds no second one.
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        observe(&mut empty_batches);
         assert_eq!(empty_batches, 1);
         stream.task.abort();
     }
