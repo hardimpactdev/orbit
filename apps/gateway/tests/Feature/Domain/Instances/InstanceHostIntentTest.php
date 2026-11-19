@@ -340,6 +340,18 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($host->refresh()->instance_bridge)->toBe($bridge);
     });
 
+    it('gives an app-prod Node the runtime folder with its headless Chrome and the browser files of its preparation containers', function (): void {
+        $prod = instanceHostNode('prod-browser', '10.44.0.13', appDev: false);
+        $assignment = $prod->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        app(InstanceHostIntent::class)->prepare($prod, [RoleName::AppProd->value]);
+
+        $releases = app(NativeNodeRoleRuntimeInput::class)->capture($prod->refresh(), $assignment, [], new Operation)['intent']['production_releases'];
+        expect($releases['browser_files'])->toBe(InstanceImage::browser())
+            ->and(array_column($releases['browser_files'], 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf'])
+            ->and(array_column($releases['folder']['parts'], 'name'))->toContain('chrome-headless-shell')
+            ->and(array_column(InstanceImage::shared(), 'content', 'path'))->toMatchArray(array_column(InstanceImage::browser(), 'content', 'path'));
+    });
+
     it('makes a new app-dev Node with the instance_host opt-in and no runtime or bridge health a host, with its bridge and input rules', function (): void {
         $node = instanceHostNode('fresh', '10.44.0.21');
         NodeFact::query()->where('node_id', $node->id)->delete();

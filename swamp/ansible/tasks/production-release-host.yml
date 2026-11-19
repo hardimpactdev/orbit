@@ -126,7 +126,8 @@
     dest: /etc/orbit/production-release.json
     content: >-
       {{ {'node_id': production.node_id, 'pool': 'orbit-releases', 'network': 'orbitinst0',
-          'proxy': production.egress.origin, 'runtime': production.folder.path ~ '/' ~ production.folder.version} | to_json }}
+          'proxy': production.egress.origin, 'runtime': production.folder.path ~ '/' ~ production.folder.version,
+          'browser_files': production.browser_files} | to_json }}
     owner: root
     group: root
     mode: "0644"

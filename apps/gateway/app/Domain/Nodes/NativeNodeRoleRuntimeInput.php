@@ -11,6 +11,7 @@ use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceFleetGateway;
 use App\Domain\Instances\InstanceFolderPlan;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\NestedFleetLayout;
 use App\Domain\Metrics\MetricsContainerPlan;
@@ -123,6 +124,7 @@ final readonly class NativeNodeRoleRuntimeInput
                 'nested' => $nested,
                 'incus' => $incus,
                 'folder' => InstanceFolderPlan::for($recipe->instances, InstanceFolderPlan::shift($node), '/opt/orbit-production-runtime')['runtime'],
+                'browser_files' => InstanceImage::browser(),
             ];
         }
         if ($instances !== null) {

@@ -98,6 +98,16 @@ def refresh_image(machine, target, image, info):
     return refreshed
 
 
+def install_browser_files(machine, files):
+    """The runtime's headless Chrome finds its libraries and fonts as in a development container (InstanceImage::browser).
+    Every release clones this preparer, so its linker cache already lists the mounted runtime's libraries."""
+    for item in files:
+        if not re.fullmatch(r"/etc/(?:ld[.]so[.]conf[.]d/zz-orbit-browser[.]conf|fonts/fonts[.]conf)", item["path"]):
+            raise ValueError("Unexpected browser file")
+        guest(machine, "sh", "-ec", 'install -d -m 0755 "${1%/*}" && cat >"$1" && chmod 0644 "$1"', "sh", item["path"], stdin=item["content"])
+    guest(machine, "ldconfig")
+
+
 def prepare(instance, php):
     target = f"instance-{instance}"
     machine = "prepare-" + target
@@ -168,6 +178,7 @@ def prepare(instance, php):
     # Apply the distro's pending updates only in the off-traffic preparer. Retained releases keep their packages.
     guest(machine, "env", "DEBIAN_FRONTEND=noninteractive", "sh", "-ec",
           'apt-get -qq -o Acquire::Retries=2 update && apt-get -qq -y -o Dpkg::Options::=--force-confold upgrade', timeout=1200)
+    install_browser_files(machine, config["browser_files"])
     # Default installation never enables the unit. Candidate readiness and the first verified switch own its service lifecycle.
     guest(machine, "sh", "-ec", 'cat >/etc/systemd/system/orbit-frankenphp.service && systemctl daemon-reload', stdin=UNIT.replace("@PHP@", php))
     guest(machine, "sh", "-ec", 'test -x /opt/orbit-runtime/current/php/"$1"/bin/frankenphp && install -d -o orbit -g orbit -m 0750 /srv/workspace /srv/shared', "sh", php)

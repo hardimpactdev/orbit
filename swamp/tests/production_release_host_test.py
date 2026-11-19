@@ -41,6 +41,21 @@ class ProductionReleaseHostTest(unittest.TestCase):
             self.assertIs(helper("prepare-instance-4", "instance-4", "b" * 64, original), updated)
             self.assertEqual(calls, [("rebuild", "b" * 64, "prepare-instance-4", "--force")])
 
+    def test_preparer_gets_the_browser_files_and_a_fresh_linker_cache(self):
+        module = runpy.run_path(str(ROOT / "ansible/files/instance-release-prepare.py"))
+        install = module["install_browser_files"]
+        calls = []
+        install.__globals__["guest"] = lambda name, *args, **kwargs: calls.append((name, args, kwargs.get("stdin")))
+        files = [{"path": "/etc/ld.so.conf.d/zz-orbit-browser.conf", "content": "/opt/orbit-runtime/current/lib\n"},
+                 {"path": "/etc/fonts/fonts.conf", "content": "<fontconfig/>\n"}]
+        install("prepare-instance-4", files)
+        self.assertEqual([(call[1][-1], call[2]) for call in calls[:2]], [(item["path"], item["content"]) for item in files])
+        self.assertEqual(calls[-1], ("prepare-instance-4", ("ldconfig",), None))
+        calls.clear()
+        with self.assertRaises(ValueError):
+            install("prepare-instance-4", [{"path": "/etc/sudoers.d/x", "content": "x"}])
+        self.assertEqual(calls, [])
+
     def test_public_and_private_routes_bind_to_the_same_approved_instance(self):
         private = site("app-prod", "app-instance-19", "https://one.test", "/home/orbit-app-2")
         public = site("ingress", "route-14-ingress", "one.test", "/home/orbit-app-2")
