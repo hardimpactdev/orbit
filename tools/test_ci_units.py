@@ -905,11 +905,152 @@ class ExecutionTest(unittest.TestCase):
             with patch.object(units, 'prepare', return_value=(os.environ.copy(), Path('/collections'))), \
                     patch.object(units, 'fixture_steps', return_value=steps), \
                     contextlib.redirect_stdout(io.StringIO()) as output:
-                self.assertEqual(units.run(list(steps), budget, fixtures, folder / 'times.json'), 1)
+                # A slow check never gates: the units are cut, named, and the shard passes.
+                self.assertEqual(units.run(list(steps), budget, fixtures, folder / 'times.json'), 0)
             results = json.loads((folder / 'times.json').read_text())
             self.assertEqual([r['status'] for r in results], ['OVER BUDGET', 'NOT RUN', 'NOT RUN'])
             self.assertIn('shard deadline', output.getvalue())
+            self.assertIn('**Over budget, not run to the end: 3 fixture units.**', output.getvalue())
+            for name in steps:
+                self.assertIn(f'::warning title=Fixture unit over budget::{name} was not run to the end', output.getvalue())
             self.assertLess(sum(r['seconds'] for r in results), 3)
+
+    def test_a_cut_unit_does_not_gate_but_a_failed_assertion_or_a_failed_unit_does(self):
+        row = lambda unit, status, *cases: {'unit': unit, 'status': status, 'seconds': 180.1, 'declared_seconds': 96,
+                                            'cases': [{'name': name, 'status': state} for name, state in cases]}
+        cut = row('swamp/slow.ts#1/2', 'OVER BUDGET', ('a slow case', 'CENSORED'))
+        queued = row('swamp/queued.ts', 'NOT RUN', ('a queued case', 'NOT RUN'))
+        # A case that failed before the cut is a failed assertion: the unit gates.
+        broken = row('swamp/broken.py', 'OVER BUDGET', ('fails first', 'FAILED'), ('then hangs', 'CENSORED'))
+        failed = row('swamp/failed.ts', 'FAILED', ('wrong', 'FAILED'))
+        passed = row('swamp/pass.ts', 'passed', ('fine', 'passed'))
+        printed = {**row('swamp/printed.py', 'OVER BUDGET', ('fails first', 'NOT RUN')), 'failed_before_cut': True}
+        self.assertEqual(units.cut_units([cut, queued, broken, printed, failed, passed]), [cut, queued])
+        report = units.cut_report([cut, queued])
+        self.assertIn('**Over budget, not run to the end: 2 fixture units.** They do not fail Required checks.', report)
+        self.assertIn('| `swamp/slow.ts#1/2` | cut at 180 s | 180.1 | 96 | a slow case |', report)
+        self.assertIn('| `swamp/queued.ts` | not started |', report)
+        self.assertNotIn('broken', report)
+        self.assertEqual('', units.cut_report([]))
+        # The shard's result: a cut alone passes; a failed unit beside it fails.
+        with tempfile.TemporaryDirectory() as scratch:
+            folder = Path(scratch)
+            script = {'swamp/pass.py': '', 'swamp/slow.py': 'import signal; signal.pause()', 'swamp/failed.py': 'raise SystemExit(1)'}
+            steps = {name: units.gate.Step('shape', name, [sys.executable, '-c', code]) for name, code in script.items()}
+            budget = {**BUDGET, 'shard_workers': 3, 'unit_ceiling_seconds': .5}
+
+            (folder / 'bin').mkdir()
+            (folder / 'bin/deno').write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
+            (folder / 'bin/deno').chmod(0o755)
+            environment = {**os.environ, 'PATH': f"{folder / 'bin'}{os.pathsep}{os.environ['PATH']}"}
+
+            def code(names):
+                with patch.object(units, 'prepare', return_value=(environment, Path('/collections'))), \
+                        patch.object(units, 'fixture_steps', return_value=steps), contextlib.redirect_stdout(io.StringIO()):
+                    return units.run(names, budget, {name: fixture(name) for name in names}, folder / 'times.json')
+
+            self.assertEqual(0, code(['swamp/pass.py', 'swamp/slow.py']))
+            self.assertEqual([None, True], [r.get('cut') for r in json.loads((folder / 'times.json').read_text())])
+            self.assertEqual(1, code(['swamp/pass.py', 'swamp/slow.py', 'swamp/failed.py']))
+            # A unittest failure before the cut gates, whatever the unit printed: the recorder marks it at once.
+            suite = '''import signal, sys, unittest
+class Fixture(unittest.TestCase):
+    def test_a(self):
+        sys.stderr.write('working'); sys.stderr.flush()
+        {first}
+    def test_b(self):
+        signal.pause()
+if __name__ == '__main__':
+    unittest.main()
+'''
+            for name, first, gates in (('fail', 'self.assertEqual(1, 2)', True),
+                                       ('subtest', 'with self.subTest(): raise RuntimeError()', True),
+                                       ('fine', "sys.stderr.write('\\nEntering setup\\nFatal is a word\\n')", False)):
+                with self.subTest(name=name):
+                    file = folder / f'{name}_test.py'
+                    file.write_text(suite.format(first=first))
+                    steps[f'swamp/{name}.py'] = units.gate.Step('shape', name, ['python3', '-I', str(file)])
+                    self.assertEqual(int(gates), code([f'swamp/{name}.py']))
+                    row = json.loads((folder / 'times.json').read_text())[0]
+                    self.assertEqual(('OVER BUDGET', gates, not gates), (row['status'], row.get('failed_before_cut', False), row.get('cut', False)))
+            # The recorder leaves a passing file as it was: the exit code and unittest's own output.
+            file = folder / 'pass_test.py'
+            file.write_text(suite.format(first='pass').replace('signal.pause()', 'pass'))
+            steps['swamp/passes.py'] = units.gate.Step('shape', 'passes', ['python3', str(file)])
+            self.assertEqual(0, code(['swamp/passes.py']))
+            # The recorder runs a file as `python3 file` does: `__file__` is absolute and argv keeps the given path.
+            file = folder / 'paths_test.py'
+            file.write_text('import os, sys\nassert os.path.isabs(__file__), __file__\nassert sys.argv[0] == ' + repr('paths_test.py')
+                            + ', sys.argv\nassert __name__ == "__main__"\n')
+            for flags in ([], ['-I']):
+                done = subprocess.run([sys.executable, *flags, str(ROOT / 'tools/ci_unit_failures.py'), 'paths_test.py'],
+                                      cwd=folder, capture_output=True, text=True)
+                self.assertEqual((0, ''), (done.returncode, done.stderr))
+            self.assertIn('tools/ci_unit_failures.py', units.MACHINERY)
+            # A failed Deno case or step in the receipt gates, and so does one that Deno printed.
+            for case in ({'name': 'outer', 'status': 'CENSORED', 'failed_step': True}, {'name': 'outer', 'status': 'FAILED'}):
+                self.assertEqual([], units.cut_units([{'unit': 'swamp/x.ts', 'status': 'OVER BUDGET', 'seconds': 1, 'cases': [case]}]))
+            hang = 'import sys, signal; sys.stderr.write({!r}); sys.stderr.flush(); signal.pause()'
+            for name, text, gates in (('swamp/step.ts', 'outer ...\n  first step ... FAILED (3ms)\n', True),
+                                      ('swamp/fine.ts', 'outer ...\n  first step ... ok (3ms)\n', False)):
+                with self.subTest(name=name), contextlib.redirect_stdout(io.StringIO()):
+                    result = units.run_unit(units.gate.Step('shape', name, ['deno', '-c', hang.format(text)]), environment, .5)
+                    self.assertEqual(('OVER BUDGET', gates), (result['status'], result.get('failed_before_cut', False)))
+            # The report command reads the times of every shard and prints nothing without a cut.
+            (folder / 'times.json').unlink()
+            (folder / 'shard').mkdir()
+            # Only rows that a run marked as cut are reported: the rows of a failed tool setup carry no mark.
+            for present, rows in ((True, [{**cut, 'cut': True}, passed]), (False, [cut, queued, passed])):
+                (folder / 'shard/ci-unit-times.json').write_text(json.dumps(rows))
+                output = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), 'cuts', '--times', str(folder)],
+                                        capture_output=True, text=True, check=True).stdout
+                self.assertEqual(present, 'swamp/slow.ts#1/2' in output)
+                self.assertEqual(present, bool(output))
+
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_the_step_wrapper_records_a_failed_step_and_leaves_passing_shapes_alone(self):
+        source = '''import { assert, assertEquals } from "jsr:@std/assert@1";
+const loose = { sanitizeOps: false, sanitizeResources: false, sanitizeExit: false };
+Deno.test("shapes pass", async (t) => {
+  assert(await t.step(function namedStep() {}));
+  const reused = { name: "ignored", ignore: true, fn: () => {} };
+  const ignored = t.step(reused);
+  reused.ignore = false;
+  assertEquals(await ignored, false);
+  await t.step("inner", async (inner) => {
+    assert(inner.parent === t);
+    assertEquals(inner.name, "inner");
+    assert(await inner.step("deep", () => {}));
+  });
+});
+Deno.test("a step through parent fails beside a hang", async (t) => {
+  const slow = t.step({ name: "slow", fn: () => new Promise(() => {}), ...loose });
+  await t.step({ name: "via parent", ...loose, fn: async (inner) => {
+    await inner.parent!.step({ name: "fails", fn: () => { throw new Error("x"); }, ...loose });
+  } });
+  await slow;
+});
+'''
+        with tempfile.TemporaryDirectory() as scratch:
+            file, receipt = Path(scratch) / 'steps_test.ts', Path(scratch) / 'receipt.json'
+            file.write_text(source)
+            subprocess.run(['deno', 'test', '-A', '--preload', str(ROOT / units.PRELOAD), str(file)], capture_output=True, timeout=60,
+                           env={**os.environ, 'ORBIT_TEST_TIMING_FILE': str(receipt), 'ORBIT_TEST_STARTED_AT_MS': '0'})
+            cases = {row['name']: row for row in json.loads(receipt.read_text())['cases']}
+        self.assertEqual(('passed', None), (cases['shapes pass']['status'], cases['shapes pass'].get('failed_step')))
+        self.assertTrue(cases['a step through parent fails beside a hang'].get('failed_step'))
+
+    def test_required_names_the_cut_units_without_changing_the_gate(self):
+        import yaml
+        job = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']['required']
+        step = next(step for step in job['steps'] if step.get('name') == 'Report over-budget fixture units')
+        self.assertEqual((step['if'], step['continue-on-error']), ('always()', True))
+        self.assertEqual(job['permissions']['pull-requests'], 'write')
+        for text in ("gh run download \"$GITHUB_RUN_ID\" --pattern 'ci-unit-times-*'", 'bin/ci-units cuts --times',
+                     'gh pr comment "$number" --body-file'):
+            self.assertIn(text, step['run'])
+        # The gate ran before: the report cannot turn a failed gate into a pass.
+        self.assertLess(next(i for i, s in enumerate(job['steps']) if 'ci-delivery' in s.get('run', '')), job['steps'].index(step))
 
     def test_shard_deadline_counts_from_the_job_start(self):
         with tempfile.TemporaryDirectory() as scratch:
