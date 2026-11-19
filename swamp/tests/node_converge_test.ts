@@ -655,8 +655,10 @@ Deno.test("a role Operation's digests skip every role phase only when its writte
         assertEquals((await role(first.digests)).unchanged, []);
     } finally { await Deno.remove(code, { recursive: true }); }
     // The plan of the Tool Managers runs after the digest, so its code is part of it.
+    // So are the role's files outside ansible/, which a role Operation reads from the worker's bundle (release 2159).
     assertEquals(rolePhaseCode("/x/ansible/build_vars.py", "/x/ext/ansible-input/converge_tool.ts"),
-        ["/x/ansible", "/x/ext/ansible-input/converge_tool.ts", "/x/ext/tools", "/x/ext/ansible-input/role_add_plans.ts"]);
+        ["/x/ansible", "/x/ext/ansible-input/converge_tool.ts", "/x/ext/tools", "/x/ext/ansible-input/role_add_plans.ts",
+            ...roleSiblings.map((path) => `/x/${path}`)]);
 });
 
 Deno.test("a node:add role run compares with the empty record its enrollment intent carries, and an intent with no record is refused", async () => {
@@ -715,4 +717,29 @@ Deno.test("every file the converge's roles read outside ansible/ is staged besid
     const manifest = parse(await Deno.readTextFile(new URL("manifest.yaml", root))) as Record<string, unknown>;
     const shipped = JSON.stringify(manifest);
     for (const path of roleSiblings) assertEquals(shipped.includes(`"${path}"`), true, `${path} is not in swamp/manifest.yaml`);
+});
+
+Deno.test("a changed release controller moves every role phase digest", async () => {
+    const tree = await Deno.makeTempDir();
+    const folder = await Deno.makeTempDir();
+    try {
+        const operations = `${tree}/extensions/behaviors/operations`;
+        for (const path of ["ansible/build_vars.py", "extensions/behaviors/operations/ansible-input/converge_tool.ts",
+            "extensions/behaviors/operations/ansible-input/role_add_plans.ts", "extensions/behaviors/operations/tools/native.ts", ...roleSiblings]) {
+            await Deno.mkdir(`${tree}/${path.slice(0, path.lastIndexOf("/"))}`, { recursive: true });
+            await Deno.writeTextFile(`${tree}/${path}`, path);
+        }
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ role: "app-prod", recorded_digests: {} }));
+        await Deno.writeTextFile(`${folder}/vars.yml`, "kind: node.role_converge\n");
+        await Deno.writeTextFile(`${folder}/inventory.yml`, "{}");
+        const code = rolePhaseCode(`${tree}/ansible/build_vars.py`, `${operations}/ansible-input/converge_tool.ts`);
+        const first = await roleDigests(folder, 7, code);
+        await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify({ role: "app-prod", recorded_digests: first.digests }));
+        assertEquals((await roleDigests(folder, 8, code)).unchanged, [...roleSkippable]);
+        await Deno.writeTextFile(`${tree}/scripts/production-release-phase`, "changed");
+        assertEquals((await roleDigests(folder, 9, code)).unchanged, []);
+    } finally {
+        await Deno.remove(tree, { recursive: true });
+        await Deno.remove(folder, { recursive: true });
+    }
 });

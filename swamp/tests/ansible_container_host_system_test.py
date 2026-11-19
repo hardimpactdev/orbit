@@ -14,7 +14,7 @@ SYSTEM = Path(__file__).resolve().parents[1] / 'ansible/tasks/incus-install.yml'
 
 
 class ContainerHostPackageTest(unittest.TestCase):
-    def probe(self, status, package_name='incus-base', others=()):
+    def probe(self, status, package_name='incus-base', others=(), required=None):
         """Keep the shipped query and guard; record installation at the package mutation boundary."""
         source = {task['name']: task for task in yaml.safe_load(SYSTEM.read_text())}
         read = copy.deepcopy(source['Read the installed Incus package'])
@@ -37,7 +37,9 @@ class ContainerHostPackageTest(unittest.TestCase):
                 'dest': str(marker), 'content': 'installed', 'mode': '0600'}}]
             play = root / 'probe.yml'
             play.write_text(yaml.safe_dump([{'name': 'Check the package state', 'hosts': 'localhost', 'gather_facts': False,
-                                            'vars': {'container_host': {'incus': {'packages': []}}}, 'tasks': [read, install]}]))
+                                            'vars': {'container_host': {'incus': {'packages': []}},
+                                                     **({'incus_install_package': required} if required else {})},
+                                            'tasks': [read, install]}]))
             result = subprocess.run([command, '-i', 'localhost,', '-c', 'local', str(play)],
                                     check=False, capture_output=True, text=True, timeout=30,
                                     env={**os.environ, 'ANSIBLE_STDOUT_CALLBACK': 'default',
@@ -68,6 +70,13 @@ class ContainerHostPackageTest(unittest.TestCase):
 
     def test_the_metapackage_alone_does_not_count_as_incus(self):
         result, installed, _abbrev = self.probe(None, others=[('incus', 'install ok installed')])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(installed)
+
+    def test_a_caller_that_needs_the_metapackage_gets_the_set(self):
+        # The Gateway release host checks the version of all three packages after the install.
+        result, installed, _abbrev = self.probe(None, package_name='incus', required='incus',
+                                                others=[('incus-base', 'install ok installed'), ('incus-client', 'install ok installed')])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(installed)
 

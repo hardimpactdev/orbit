@@ -29,7 +29,7 @@ async function sha256(text: string | Uint8Array): Promise<string> {
 /** The files outside `ansible/` that a converge's roles read beside the playbook, by path from the bundle root: the release controllers
  * that production-release-host.yml copies from `{{ playbook_dir }}/../scripts`, and the selection rules that `ansible/files/instance-release-vp.ts`
  * imports from `../../extensions`. A converge stages only `ansible/` from the worker's cache (write.ts), so it stages these at the same paths
- * beside it, and they are part of the phases' code. */
+ * beside it. A role Operation reads them from the worker's bundle. Both count them in the phases' code. */
 export const roleSiblings = [
     "extensions/behaviors/operations/instance-deploy/vp_requirements.ts",
     "extensions/behaviors/operations/instance-vp-command/requirements.ts",
@@ -113,7 +113,9 @@ export async function phaseDigests<Phase extends typeof skippable[number] | type
 
 /** A role Operation's code: the converge's, and the plan of its Tool Managers beside the Tool helper, which runs after the digest. */
 export function rolePhaseCode(builder: string, toolHelper: string): string[] {
-    return [...phaseCode(builder, toolHelper), `${toolHelper.slice(0, toolHelper.lastIndexOf("/"))}/role_add_plans.ts`];
+    const root = builder.slice(0, builder.lastIndexOf("/ansible/"));
+    return [...phaseCode(builder, toolHelper), `${toolHelper.slice(0, toolHelper.lastIndexOf("/"))}/role_add_plans.ts`,
+        ...roleSiblings.map((path) => `${root}/${path}`)];
 }
 
 /** A role Operation's digests, after its playbook input is written; the Gateway records them after a succeeded run. */

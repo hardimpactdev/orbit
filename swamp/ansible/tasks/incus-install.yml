@@ -6,8 +6,9 @@
 # without it, such as the image of a nested fleet or a host set up by hand from another build of the line, is still a running Incus, and
 # the pinned set would downgrade its `incus-base` and `incus-client`, which apt refuses (rc 100).
 # The package's state is independent of its selection: an installed package may be held. Config files left after removal do not count.
+# A caller that needs the whole pinned set, such as the Gateway release host (gateway-container-prepare.yml), names `incus` instead.
 - name: Read the installed Incus package
-  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Status}", incus-base] }
+  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Status}", "{{ incus_install_package | default('incus-base') }}"] }
   register: container_incus_package
   changed_when: false
   failed_when: container_incus_package.rc not in [0, 1]
