@@ -94,7 +94,7 @@ final class EngineBus implements MachineBus
             'allow_msg_schedules' => true]);
         $this->stream('KV_CONTENT', [...$limits, 'subjects' => ['$KV.CONTENT.>'], 'retention' => 'limits', 'max_age' => 3600 * self::Second,
             'max_msgs_per_subject' => 1, 'max_msg_size' => 1024 * 1024, 'discard' => 'old', 'allow_direct' => true, 'allow_rollup_hdrs' => true]);
-        // What each Node's executor reports when it joins: its primitives. Kept until the Node reports again.
+        // What each Node's executor reports when it connects, also before it has a consumer: its primitives.
         // A report lasts five minutes: executors refresh it every minute, so a stopped executor stops receiving kinds. No rollup:
         // a Node's rollup header would purge every Node's report.
         $this->stream('KV_NODES', [...$limits, 'subjects' => ['$KV.NODES.>'], 'retention' => 'limits', 'max_msgs_per_subject' => 1,
@@ -155,7 +155,7 @@ final class EngineBus implements MachineBus
     }
 
     /**
-     * The primitives a Node's executor reported when it joined the bus (KV `NODES`, key `n<node>`); empty when it never did.
+     * The primitives a Node's executor last reported (KV `NODES`, key `n<node>`); empty when no report is under five minutes old.
      *
      * @return list<string>
      */
