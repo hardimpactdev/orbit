@@ -27,6 +27,11 @@ pub enum Action {
     /// Converge one ufw rule to its desired state (ADR 0271). Its target is the Node itself, so the Node's firewall
     /// changes run one at a time.
     UfwEnsureRule,
+    /// Make a Route leaf's key once and answer a certificate request for it (ADR 0271). Its target is the Node.
+    TlsEnsureCsr,
+    /// Place one Node's part of a Route: access, environment, PHP-FPM pools, certificates and the Caddyfile (ADR 0271).
+    /// Its target is the Node, so the Node's Route publications run one at a time.
+    RoutePublishSite,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -41,7 +46,8 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 5] = [Self::ProofNoop, Self::Sleep, Self::Wake, Self::Discard, Self::UfwEnsureRule];
+    pub const ALL: [Self; 7] =
+        [Self::ProofNoop, Self::Sleep, Self::Wake, Self::Discard, Self::UfwEnsureRule, Self::TlsEnsureCsr, Self::RoutePublishSite];
 
     /// The family whose crate holds this action, and which a role enables.
     pub fn family(self) -> Family {
@@ -49,13 +55,14 @@ impl Action {
             Self::ProofNoop => Family::Proof,
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
             Self::UfwEnsureRule => Family::Firewall,
+            Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
         }
     }
 
     /// What the action's target names.
     pub fn target_kind(self) -> TargetKind {
         match self {
-            Self::ProofNoop | Self::UfwEnsureRule => TargetKind::Node,
+            Self::ProofNoop | Self::UfwEnsureRule | Self::TlsEnsureCsr | Self::RoutePublishSite => TargetKind::Node,
             Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
         }
     }
@@ -68,6 +75,8 @@ impl Action {
             Self::Wake => "wake",
             Self::Discard => "discard",
             Self::UfwEnsureRule => "ufw.ensure_rule",
+            Self::TlsEnsureCsr => "tls.ensure_csr",
+            Self::RoutePublishSite => "route.publish_site",
         }
     }
 }
@@ -87,6 +96,8 @@ impl FromStr for Action {
             "wake" => Ok(Self::Wake),
             "discard" => Ok(Self::Discard),
             "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
+            "tls.ensure_csr" => Ok(Self::TlsEnsureCsr),
+            "route.publish_site" => Ok(Self::RoutePublishSite),
             _ => Err(UnknownActionError),
         }
     }
@@ -122,6 +133,8 @@ pub enum Family {
     Power,
     /// Desired-state firewall rules (ADR 0271).
     Firewall,
+    /// Route certificates and site publication (ADR 0271).
+    Route,
 }
 
 /// The family name is unknown to this executor.
@@ -138,6 +151,7 @@ impl Family {
             "proof" => Some(Self::Proof),
             "power" => Some(Self::Power),
             "firewall" => Some(Self::Firewall),
+            "route" => Some(Self::Route),
             _ => None,
         }
     }

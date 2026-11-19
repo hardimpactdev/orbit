@@ -2,7 +2,7 @@
 title: "Gateway engine"
 description: "How the Gateway runs an Operation kind as an event-driven state machine over NATS JetStream: routing a kind off Swamp, steps and receipts, deadlines, the machine bus, how Nodes join it and its install."
 covers:
-  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php}
+  - apps/gateway/app/{Domain/Engine/**,Infrastructure/Engine/**,Domain/Firewall/FirewallEngineFlow.php,Domain/Routes/RouteEngineFlow.php}
   - apps/gateway/app/Console/Commands/{EngineConsumeCommand.php,EngineSetupCommand.php,EngineKeysCommand.php}
   - apps/gateway/database/migrations/2027_03_10_000000_create_operation_engine_steps_table.php
   - apps/agent/contract/fixtures/ufw-ensure-rule-input.json
@@ -13,7 +13,7 @@ covers:
 
 The Gateway engine runs an Operation as a state machine in the Gateway. Each step is a typed primitive that the [executor](/reference/executor) runs on its Node. NATS JetStream carries the orders, the receipts and the engine's own events. [ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) records why.
 
-Operation kinds move off Swamp one at a time. A kind runs entirely on the engine or entirely on Swamp, never half on each.
+Operation kinds move off Swamp one at a time, per Operation ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N4). Each Operation runs entirely on the engine or entirely on Swamp, never half on each. Once the switch for a kind is proven, a separate pull request removes the kind's Swamp workflows.
 
 ## Which kinds run on the engine
 
@@ -21,7 +21,8 @@ A kind runs on the engine when all of these hold:
 
 - the engine has a definition for the kind (`EngineKinds`);
 - the kind is listed in `ORBIT_ENGINE_KINDS`, a comma-separated list in the Gateway environment;
-- every Node that one of its steps targets has reported the step's primitive.
+- every Node that one of its steps targets has reported the step's primitive;
+- the kind's definition can run this Operation's intent: a definition that meets a part it does not run yet throws `EngineUnsupported`.
 
 Otherwise the kind starts its Swamp workflow as before. `StartSwampRun` makes this choice after it admits the Operation, so admission, locks and the API stay the same for both paths.
 
@@ -30,10 +31,24 @@ Kinds with a definition today:
 | Kind | Steps | Primitive |
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
+| `route.create` | `csr-<i>` on each leaf's Node, `sign-<i>` on the Gateway, `site-<node>` on each Node with Route work, `probe-<i>` on the Gateway | `tls.ensure_csr`, `route.publish_site` |
+
+### route.create
+
+The engine runs the plan the Gateway admitted (`route_create`). Route holds work as before, and so does the refresh of a waiting create's Caddyfiles at its start. The steps:
+
+1. `csr-<i>`: the leaf's Node makes its key once and answers a certificate request. The key never leaves the Node.
+2. `sign-<i>`: the Gateway signs the request through the action that `operation:direct:certificate-sign` uses. That action checks the admitted leaf, the root and the run. It refuses once a cancel is pending.
+3. `site-<node>`: `route.publish_site` places the Node's part: Caddy access, `APP_URL`, links, PHP-FPM pools, the leaf and its account copy, the Orbit root's trust, and the Caddyfile.
+4. `probe-<i>`: the Gateway makes a TLS handshake with each serving Node, by its WireGuard address and the Route's name, trusting the Orbit root alone.
+
+A failed step records the chart's step name, such as `Install cert, publish site-3`, so the Route gets the same `failed_step` and error code as on Swamp.
+
+A Route that needs private DNS, the Ingress edge, a LAN rule for a Cluster Router, a production `.env` or awake markers starts on Swamp. So does one whose access commands or PHP-FPM pools differ from the shapes the executor rebuilds. Today only `app-dev` Nodes run the executor, so a Route on another Node also stays on Swamp. The other kinds that publish Routes, such as `instance.create` and `route.update`, keep their Swamp flows.
 
 An executor reports its primitives when it joins the bus, and again every minute: it writes `{actions, version}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
 
-Today only `app-dev` Nodes enable the `firewall` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
+Today only `app-dev` Nodes enable the `firewall` and `route` families, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, and `route` from 0.17.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
 ## Steps and transitions
 
@@ -65,7 +80,13 @@ An engine order expires 8 seconds after signing. The executor refuses an expiry 
 
 The engine takes a receipt's Node from its subject, `orbit.receipts.<node>`, never from its body, and applies it only to a step on that Node. A receipt it cannot read is terminated, so it never comes back.
 
+A receipt with `output` carries public text a later step reads, such as a certificate request. The engine keeps it as the step's output.
+
 A receipt with `applied` reports how many changes the primitive made. For a firewall kind, zero changes records the result as skipped with `firewall.rule_exists`.
+
+### Content
+
+An order is at most 4 KB. Larger or secret content, such as a Caddyfile or a certificate, travels as a blob: a step's input names `{"blob": {"content": …}}`, and `EngineContent` puts the content into the Node's own content key `$KV.CONTENT.n<node>.<sha256>` before the order is signed. The order then names only `{"blob": {"sha256": …}}`. The executor reads each blob its order names into a root-only cache and checks its hash before the primitive runs. Only that Node may read its content keys.
 
 ### Deadlines
 
