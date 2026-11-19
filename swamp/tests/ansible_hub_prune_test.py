@@ -53,7 +53,8 @@ class HubPruneTest(unittest.TestCase):
             self.assertEqual((code, changed), (0, 0), output)
 
     def test_the_hub_converge_runs_this_prune(self):
-        tasks = {task['name']: task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())}
+        tasks = {task['name']: task for top in yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())
+                 for task in [top, *top.get('block', [])]}
         self.assertEqual(tasks['Prune only removed peers']['ansible.builtin.import_tasks'], 'node-converge-hub-prune.yml')
 
     def test_node_add_loads_the_peer_files_the_hub_has_when_it_applies(self):
@@ -245,7 +246,8 @@ class HubFilterAbsentTest(unittest.TestCase):
         self.assertEqual([call for call in calls if call.startswith('ufw')], ['ufw status numbered'])
 
     def test_the_hub_converge_removes_the_filter(self):
-        tasks = {task['name']: task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())}
+        tasks = {task['name']: task for top in yaml.safe_load((ANSIBLE / 'tasks/node-converge-hub.yml').read_text())
+                 for task in [top, *top.get('block', [])]}
         self.assertEqual(tasks['Remove the task VM hub filter']['ansible.builtin.import_tasks'], 'node-converge-hub-filter-absent.yml')
         # The vpn Node's own converge reaches the hub tasks through its network phase in hub mode.
         network = {task['name']: task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())}
