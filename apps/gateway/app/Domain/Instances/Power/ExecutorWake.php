@@ -7,7 +7,6 @@ namespace App\Domain\Instances\Power;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Executor\ExecutorOrderPublisher;
 use App\Domain\Executor\ExecutorOrderSigner;
-use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -21,6 +20,7 @@ use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\CompleteExecutorWake;
 use App\Jobs\Operations\DispatchExecutorWake;
 use App\Jobs\Operations\ProjectExecutorWake;
+use App\Jobs\Operations\RereadExecutorJournal;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
@@ -421,8 +421,8 @@ final readonly class ExecutorWake
         }
         $operation->forceFill(['state' => [...($operation->state ?? []), self::JournalReadAt => now()->getTimestamp()]])->save();
         // Each read runs in its own job, off the prompt queue, so an unreachable Node holds up neither other Operations nor wake
-        // completions and hooks.
-        Bus::dispatch((new CompleteExecutorWake($operationId))->onQueue(GatewayQueue::Operations->value));
+        // completions and hooks. The job is unique per Operation: while one read waits or runs, the next pass queues none.
+        RereadExecutorJournal::dispatch($operationId);
 
         return true;
     }
