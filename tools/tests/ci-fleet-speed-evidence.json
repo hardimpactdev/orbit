@@ -85,7 +85,7 @@
       "change": "Preserve full saved-boundary producer and exact state comparison; pipeline local Ansible modules."
     },
     {
-      "name": "a refresh applies the checkout, converges the three Nodes one at a time, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
+      "name": "a refresh applies the checkout, converges the nested Gateway and then the app Nodes side by side, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
       "hosted_run": "43998762978",
       "hosted_unit": "swamp/tests/ansible_instance_fleet_test.ts#6/76",
       "hosted_source_sha256": "964c4f885e346981ce970acb54f40f2ab2991cfffb3d709ac3895ccf71e72f5b",
