@@ -1,6 +1,8 @@
 //! `ci-runner.host`: the CI role's reserved Incus host resources (ADR 0213): the `orbit-ci` project, the `orbitci0`
-//! bridge with its egress ACL, and the project's default profile. It never creates, registers, changes, or deletes a
-//! runner. Removal refuses while the project holds any instance, stopped ones included.
+//! bridge with its egress ACL, the `orbit-ci` ZFS or btrfs pool, and the project's default profile rooted on it. It never
+//! creates, registers, moves, or deletes a runner: a runner on another pool keeps it through a pinned root device until
+//! `tools/ci-runners/setup.sh move` moves it while idle. Removal refuses while the project holds any instance, stopped
+//! ones included.
 
 use super::incus::{bounded, Output};
 use crate::command::{Command, Context, Platform, Privilege};
@@ -12,7 +14,10 @@ use std::time::{Duration, Instant};
 const PROJECT: &str = "orbit-ci";
 const NETWORK: &str = "orbitci0";
 const ACL: &str = "orbit-ci-egress";
-const POOL: &str = "default";
+const POOL: &str = "orbit-ci";
+/// The Node's approved Instance pool; its driver and ZFS pool select the CI pool's storage.
+const SOURCE_POOL: &str = "orbit-instances";
+const OWNER: &str = "user.orbit.ci-runner";
 
 const PROJECT_CONFIG: [(&str, &str); 14] = [
     ("features.images", "true"),
@@ -181,12 +186,14 @@ fn matches(host: &mut impl Host) -> Result<bool, CiHostError> {
             return Ok(false);
         }
     }
+    let pool = query(host, &format!("/1.0/storage-pools/{POOL}"))?;
     let project = query(host, &format!("/1.0/projects/{PROJECT}"))?;
     let network = query(host, &default_path("networks", Some(NETWORK)))?;
     let acl = query(host, &default_path("network-acls", Some(ACL)))?;
     let profile_now = query(host, &format!("/1.0/profiles/default?project={PROJECT}"))?;
     let expected = profile();
-    Ok(includes(&project["config"], &PROJECT_CONFIG)
+    Ok(owned_pool(&pool).is_ok()
+        && includes(&project["config"], &PROJECT_CONFIG)
         && network["type"] == "bridge"
         && network["managed"] == true
         && !matches!(
@@ -202,10 +209,95 @@ fn matches(host: &mut impl Host) -> Result<bool, CiHostError> {
         && profile_now["devices"] == expected["devices"])
 }
 
+/// A CI pool is ZFS or btrfs, so a runner is never a copied folder, and carries the role's owner key.
+fn owned_pool(pool: &Value) -> Result<(), CiHostError> {
+    let driver = pool["driver"].as_str().unwrap_or_default();
+    if !matches!(driver, "zfs" | "btrfs") {
+        return Err(failed(format!(
+            "the {POOL} pool is {driver}; CI runners need a zfs or btrfs pool"
+        )));
+    }
+    if pool["config"].get(OWNER).and_then(Value::as_str) != Some("true") {
+        return Err(failed(format!(
+            "the {POOL} pool is not owned by the CI role"
+        )));
+    }
+    Ok(())
+}
+
+/// Creates the CI pool beside the Node's Instance pool: a child dataset of its ZFS pool, or btrfs on a btrfs Node.
+fn create_pool(host: &mut impl Host) -> Result<(), CiHostError> {
+    let unavailable = || {
+        failed(format!(
+            "the CI pool needs the Node's {SOURCE_POOL} pool on zfs or btrfs"
+        ))
+    };
+    if !exists(host, "storage-pools", SOURCE_POOL)? {
+        return Err(unavailable());
+    }
+    let source = query(host, &format!("/1.0/storage-pools/{SOURCE_POOL}"))?;
+    let owner = format!("{OWNER}=true");
+    let location = match source["driver"].as_str() {
+        Some("zfs") => {
+            let zpool = source["config"]
+                .get("source")
+                .and_then(Value::as_str)
+                .and_then(|dataset| dataset.split('/').next())
+                .filter(|zpool| {
+                    zpool.starts_with(|c: char| c.is_ascii_alphanumeric())
+                        && zpool
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || "_.:-".contains(c))
+                })
+                .ok_or_else(unavailable)?;
+            ("zfs", format!("source={zpool}/{POOL}"))
+        }
+        Some("btrfs") => (
+            "btrfs",
+            format!("source=/var/lib/incus/storage-pools/{POOL}"),
+        ),
+        _ => return Err(unavailable()),
+    };
+    // Incus creates the missing dataset and refuses one that already holds data.
+    incus(
+        host,
+        &["storage", "create", POOL, location.0, &location.1, &owner],
+        None,
+    )?;
+    Ok(())
+}
+
+/// The root pool of each runner whose root comes from the profile and lies on another pool. Pinning it keeps a runner
+/// where it is when the profile moves to the CI pool.
+fn unpinned(host: &mut impl Host) -> Result<Vec<(String, String)>, CiHostError> {
+    let mut found = vec![];
+    for path in query(host, &format!("/1.0/instances?project={PROJECT}"))?
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let name = path
+            .split('?')
+            .next()
+            .and_then(|path| path.strip_prefix("/1.0/instances/"))
+            .ok_or_else(|| failed("incus answered an unexpected instance path"))?;
+        let instance = query(host, &format!("/1.0/instances/{name}?project={PROJECT}"))?;
+        let pool = instance["expanded_devices"]["root"]["pool"]
+            .as_str()
+            .unwrap_or_default();
+        if instance["devices"].get("root").is_none() && !pool.is_empty() && pool != POOL {
+            found.push((name.to_string(), pool.to_string()));
+        }
+    }
+    Ok(found)
+}
+
 fn converge(host: &mut impl Host) -> Result<&'static str, CiHostError> {
     if !exists(host, "storage-pools", POOL)? {
-        incus(host, &["storage", "create", POOL, "dir"], None)?;
+        create_pool(host)?;
     }
+    owned_pool(&query(host, &format!("/1.0/storage-pools/{POOL}"))?)?;
     if !exists(host, "projects", PROJECT)? {
         let features: Vec<String> = PROJECT_CONFIG
             .iter()
@@ -267,6 +359,25 @@ fn converge(host: &mut impl Host) -> Result<&'static str, CiHostError> {
     let mut arguments = vec!["network", "set", NETWORK];
     arguments.extend(settings.iter().map(String::as_str));
     incus(host, &arguments, None)?;
+    for (name, pool) in unpinned(host)? {
+        let pool = format!("pool={pool}");
+        incus(
+            host,
+            &[
+                "config",
+                "device",
+                "add",
+                &name,
+                "root",
+                "disk",
+                "path=/",
+                &pool,
+                "--project",
+                PROJECT,
+            ],
+            None,
+        )?;
+    }
     incus(
         host,
         &["profile", "edit", "default", "--project", PROJECT],

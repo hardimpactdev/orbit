@@ -236,7 +236,19 @@ The role installs Incus, and the agent's `ci-runner.host` prepares the restricte
 
 The project permits one host disk path, the Node's runtime folder `/opt/orbit-runtime` (`restricted.devices.disk=allow`, `restricted.devices.disk.paths=/opt/orbit-runtime`). Each runner mounts it read-only and without `shift`: Incus refuses `shift` on a restricted source path, and the folder's files are root's with mode 755, so the runner user can read and run them.
 
-The role uses the existing `default` storage pool, or creates a directory pool when it is absent. It never changes an existing pool or bridge IPv4 subnet. Incus chooses a subnet for a new bridge.
+The role keeps runners on its own `orbit-ci` storage pool, on ZFS or btrfs, so no runner is a copied folder. It creates the pool beside the Node's `orbit-instances` pool: on ZFS as the child dataset `<zpool>/orbit-ci` of that pool's zpool, on btrfs under `/var/lib/incus/storage-pools/orbit-ci`. It marks the pool `user.orbit.ci-runner=true`.
+
+It refuses a Node whose `orbit-instances` pool is missing or on another driver, and an `orbit-ci` pool that is on another driver or not marked. It never creates a `dir` pool and never changes the host's `default` pool.
+
+The role playbook (`swamp/ansible/tasks/ci.yml` with `ci-host-pool.py`) and the agent's `ci-runner.host` apply this one rule with the same names, refusals and pins. The role never changes an existing bridge IPv4 subnet; Incus chooses a subnet for a new bridge.
+
+A runner whose root lies on another pool, such as one made on the old `default` pool, keeps it: before the profile root moves to `orbit-ci`, convergence pins that runner's root disk to its current pool, without stopping it.
+
+`tools/ci-runners/setup.sh move NAME` then moves one runner onto `orbit-ci`. It needs `gh` with the organization's runner administration. It first checks that `orbit-ci` is the role's marked ZFS or btrfs pool, on every path. It never runs anything inside the runner. For a running runner it first marks the runner, then drains it on GitHub: it removes the custom labels `hardimpact` and `orbit-shard` that every CI job asks for, so GitHub routes it no new job. It waits until GitHub reports the runner idle on two reads, for at most 15 minutes.
+
+It then stops the runner, moves its root with `incus move --storage`, drops the pin, starts it and restores the labels. The mark goes only after both the start and the labels succeeded.
+
+A runner that was stopped before stays stopped and needs no GitHub call. Any failure after a change restores the labels, the running state and the pin. A failed read, a runner still busy at the deadline or a GitHub error answers 75: try again later. A rerun with the mark, after an interruption or a failed start or label restore, finishes the move and starts and routes the runner. The GitHub registration lives in the root, so the runner keeps it.
 
 The ACL permits public IPv4 egress and rejects private, CGNAT, loopback, link-local, multicast, reserved IPv4, and all IPv6. Incus permits bridge DNS and DHCP before the ACL; this boundary does not claim to block those services. The normal managed firewall catalog owns the routed allowance on `orbitci0`, including adoption of the existing `orbit-ci-runners` comment. Role convergence repairs the project, profile, ACL, bridge settings, and managed firewall rule. Doctor checks their projection, packages, service, and firewall. Task VM stray checks recognize the role's project without an `operator_owned` entry.
 
@@ -513,7 +525,7 @@ A failure keeps an existing Node's earlier recorded identity, settings and statu
 
 ### Instance containers on an app-dev Node
 
-Every app-dev Node gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. The Node must provide the Incus storage pool `orbit-instances`, of the ZFS driver; any other driver refuses with `instance.host_unavailable`. The one exception is the nested fleet's `app-dev` Node: its own converge creates a btrfs pool ([Instance host in the fleet](/reference/development-containers#instance-host-in-the-fleet)). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
+Every app-dev Node gets the container setup with each role converge: Incus, the project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the [egress proxy](/reference/development-containers#egress-and-dns), the container image and the two shared folders. The Node must provide the Incus storage pool `orbit-instances`, of the ZFS driver; any other driver refuses with `instance.host_unavailable`. The one exception is the nested fleet's `app-dev` Node: its own converge creates a btrfs pool, as the nested `app-prod` Node's converge does for its release pool `orbit-releases`. Both move an older `dir` pool to btrfs ([Instance host in the fleet](/reference/development-containers#instance-host-in-the-fleet)). [Prepare an Instance container host](/reference/compute-drivers#prepare-an-instance-container-host) has the steps.
 
 Each such converge also writes every Instance container's [presented machine name](/reference/development-containers#the-machine-name) into its `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts`, through the Incus file API, whether the container runs, is stopped or is frozen. Nothing restarts: the kernel hostname follows at the container's next start, and T3's label at T3's next start.
 

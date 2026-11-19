@@ -1,0 +1,16 @@
+file = "swamp/tests/ci_host_pool_test.py"
+cost = 1
+inputs = [
+  "swamp/ansible/files/ci-host-pool.py",
+  "swamp/ansible/tasks/ci.yml",
+  "swamp/extensions/behaviors/operations/node/ci_host_spec.ts",
+  "apps/agent/src/commands/ci_runner.rs",
+]
+cases = [
+  "test_creates_the_marked_pool_beside_the_instance_pool_and_repeats_without_change",
+  "test_refuses_a_node_without_a_zfs_or_btrfs_instance_pool_and_never_creates_a_dir_pool",
+  "test_refuses_a_dir_unmarked_or_missing_ci_pool_before_any_change",
+  "test_pins_each_runner_on_another_pool_once",
+  "test_the_cli_refuses_unknown_modes",
+  "test_the_playbook_and_the_agent_share_one_pool_rule",
+]
