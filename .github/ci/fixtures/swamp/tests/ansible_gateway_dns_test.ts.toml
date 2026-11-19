@@ -3,6 +3,7 @@ cases = [
   "local Gateway DNS fails with a named error before activation when dig is missing",
   "local Gateway DNS fails with a named error before activation when dig is missing in check mode",
   "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved",
+  "drifted release files alone are rewritten, restart the listener and pass the DNS proof",
   "production Gateway vars from main create no listener or catalog and change no resolver",
   "local Gateway DNS check mode skips activation and readiness without retries or mutation",
   "a recorded local listener is disabled and its stale catalog removed after routing to a separate VPN",
@@ -12,8 +13,8 @@ cases = [
   "conservative DNS ownership can withdraw after not-started",
 ]
 file = "swamp/tests/ansible_gateway_dns_test.ts"
-cost = 464
-slices = 10
+cost = 549
+slices = 11
 inputs = [
   "apps/gateway/tests/Fixtures/production-gateway-converge-main.json",
   "apps/gateway/app/Infrastructure/AppDev/PrivateDns*.php",
@@ -37,6 +38,7 @@ inputs = [
   "local Gateway DNS fails with a named error before activation when dig is missing" = 2 # completed body 1.642s, run 43010311414
   "local Gateway DNS fails with a named error before activation when dig is missing in check mode" = 2 # completed body 1.890s, run 43010311414
   "an already-running local listener is reused with zero changes and peer-managed Gateway DNS is preserved" = 68 # completed body 67.121s, run 43010311414
+  "drifted release files alone are rewritten, restart the listener and pass the DNS proof" = 85 # local body 85s, task 5934
   "production Gateway vars from main create no listener or catalog and change no resolver" = 5 # completed body 4.012s, run 43010311414
   "local Gateway DNS check mode skips activation and readiness without retries or mutation" = 29 # CENSORED lower bound 28.766s, run 43010311414
   "a recorded local listener is disabled and its stale catalog removed after routing to a separate VPN" = 42 # CENSORED lower bound 41.562s, run 43010311414

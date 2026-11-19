@@ -1,7 +1,9 @@
 """The shared, test-free harness of the WireGuard hub LAN fixtures (ADR 0251): it runs task files on this machine with
 stand-in `ip`, `ssh-keyscan`, `ssh-keygen` and `systemctl`."""
+import grp
 import json
 import os
+import pwd
 import shutil
 import subprocess
 import sys
@@ -84,14 +86,25 @@ def without_owner(node):
     return node
 
 
-def peer_block():
+def managed_files_check():
+    """The one-read file check expects root ownership; on this machine it expects the test user's, which the stand-in copy leaves."""
+    tasks = yaml.safe_load((ANSIBLE / 'tasks/managed-files-check.yml').read_text())
+    tasks[0]['ansible.builtin.command']['argv'][-2:] = [pwd.getpwuid(os.getuid()).pw_name, grp.getgrgid(os.getgid()).gr_name]
+    return yaml.safe_dump(tasks)
+
+
+def peer_task():
     return next(task for task in yaml.safe_load((ANSIBLE / 'tasks/node-converge-network.yml').read_text())
-                if task['name'] == 'Reconcile the peer after its hub has completed')['block']
+                if task['name'] == 'Reconcile the peer after its hub has completed')
+
+
+def peer_block():
+    return peer_task()['block']
 
 
 @NEEDS_ANSIBLE
 class HubLanHarness(unittest.TestCase):
-    def run_tasks(self, task_file, variables, files, after=(), loaded=None):
+    def run_tasks(self, task_file, variables, files, after=(), loaded=None, modes=None):
         """Run one task file, or the `loaded` tasks under its name, on this machine; returns the exit code, the output and the
         logged calls."""
         with tempfile.TemporaryDirectory() as folder:
@@ -108,6 +121,9 @@ class HubLanHarness(unittest.TestCase):
                     (folder / name).chmod(0o755)
             if (folder / 'etc/hub-source').exists():
                 (folder / 'etc/hub-source').chmod(0o700)
+            for name, mode in (modes or {}).items():
+                (folder / name).chmod(mode)
+            (folder / 'managed-files-check.yml').write_text(managed_files_check())
             tasks = folder / task_file
             loaded = yaml.safe_load((ANSIBLE / 'tasks' / task_file).read_text()) if loaded is None else loaded
             tasks.write_text(yaml.safe_dump(without_owner(loaded)).replace('@DIR@', str(folder)))
@@ -136,7 +152,8 @@ class HubLanHarness(unittest.TestCase):
 
     HUB_PRINTS = f'256 {HUB_KEY} 10.0.0.2 (ED25519)\n3072 SHA256:rsaKeyPrint 10.0.0.2 (RSA)\n'
 
-    def source(self, rules, source, local='2: eth0    inet 94.237.124.160/32 scope global eth0\n', script='#!/bin/sh\n', installed=None):
+    def source(self, rules, source, local='2: eth0    inet 94.237.124.160/32 scope global eth0\n', script='#!/bin/sh\n', installed=None,
+               modes=None):
         hub_source = {'address': '94.237.124.160', 'mark': 51820, 'priorities': [31820, 31821], 'rules': RULES, 'script': script,
                       'unit': '[Unit]\n', 'networkd_path': '@DIR@/etc/networkd/orbit-hub-source.conf', 'networkd': '[Network]\n',
                       'script_path': '@DIR@/etc/hub-source', 'unit_path': '@DIR@/etc/orbit-hub-source.service',
@@ -144,7 +161,7 @@ class HubLanHarness(unittest.TestCase):
         return self.run_tasks('node-hub-source.yml', {'hub_source': hub_source, 'hub_source_owner': OWNER, 'hub_lan_ssh_argv': LAN_SSH,
                                                       'hub_peer_forwarding_argv': FORWARDING}, {
             'local.txt': local, 'rules.json': rules, 'rules.applied.json': LIVE, 'source.txt': source, 'source.applied.txt': RIGHT,
-            **(installed or {})})
+            **(installed or {})}, modes=modes)
 
     INSTALLED: ClassVar[dict] = {'etc/hub-source': '#!/bin/sh\n', 'etc/orbit-hub-source.service': '[Unit]\n',
                                  'etc/networkd/orbit-hub-source.conf': '[Network]\n',

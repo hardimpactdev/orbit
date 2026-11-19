@@ -8,7 +8,7 @@
   ansible.builtin.import_tasks: node-converge-apt.yml
 - name: Hold every recipe package at its pin
   ansible.builtin.dpkg_selections: { name: "{{ item.package }}", selection: hold }
-  loop: "{{ ubuntu_tools }}"
+  loop: "{{ ubuntu_tools | selectattr('package', 'in', package_holds_unheld) | list }}"
   loop_control: { label: "{{ item.name }}" }
 - name: Reconcile selected JavaScript pins
   when: "'vp' in tool_by_name"

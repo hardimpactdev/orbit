@@ -10,6 +10,12 @@ const text = (result: Deno.CommandOutput) =>
     new TextDecoder().decode(result.stdout) +
     new TextDecoder().decode(result.stderr);
 
+const fixtureOwner = ["-un", "-gn"].map((flag) =>
+    new TextDecoder().decode(
+        new Deno.Command("id", { args: [flag] }).outputSync().stdout,
+    ).trim()
+);
+
 /** Map filesystem ownership and the service-manager boundary only; all task conditions and module calls stay real. */
 function sandbox(task: Task, folder: string): Task {
     for (const part of ["block", "always", "rescue"]) {
@@ -25,6 +31,11 @@ function sandbox(task: Task, folder: string): Task {
             delete args.owner;
             delete args.group;
         }
+    }
+    // The release file check expects the copy owner, which the fixture user replaces.
+    const check = task["ansible.builtin.command"] as Task | undefined;
+    if (task.name === "Check the private DNS release files" && check) {
+        (check.argv as string[]).splice(-2, 2, ...fixtureOwner);
     }
     if (
         task["ansible.builtin.systemd"] ||
@@ -415,6 +426,55 @@ export async function freshGatewayDnsCheck() {
         return {
             status: Deno.readTextFileSync(`${folder}/role-2.status`),
             output: Deno.readTextFileSync(`${folder}/role-2.output`),
+        };
+    } finally {
+        cleanupStockRoles(folder);
+        Deno.removeSync(folder, { recursive: true });
+    }
+}
+
+/** Install the listener, drift release files in each way the check compares, then converge twice more. */
+export async function driftedGatewayDns() {
+    const folder = Deno.makeTempDirSync();
+    try {
+        Deno.mkdirSync(`${folder}/bin`);
+        prepareStockRoles(folder);
+        await operation(folder);
+        const firstStatus = Deno.readTextFileSync(`${folder}/role-2.status`);
+        const files = JSON.parse(
+            Deno.readTextFileSync(`${folder}/dns-runtime.json`),
+        ).listener.files.map((file: { path: string }) => file.path);
+        const [content, mode, missing, link] = files;
+        Deno.writeTextFileSync(content, "drift\n", { append: true });
+        Deno.chmodSync(mode, 0o600);
+        Deno.removeSync(missing);
+        const linked = Deno.readTextFileSync(link);
+        Deno.removeSync(link);
+        Deno.writeTextFileSync(`${folder}/linked`, linked);
+        Deno.symlinkSync(`${folder}/linked`, link);
+        Deno.writeTextFileSync(`${folder}/systemd.jsonl`, "");
+        await operation(folder);
+        const repair = Deno.readTextFileSync(`${folder}/role-2.output`);
+        const repairStatus = Deno.readTextFileSync(`${folder}/role-2.status`);
+        const repairCalls = Deno.readTextFileSync(`${folder}/systemd.jsonl`)
+            .trim().split("\n").map((line) => JSON.parse(line));
+        const repaired = [content, mode, missing, link].map((path) => {
+            const found = Deno.lstatSync(path);
+            return found.isFile && (found.mode! & 0o777) === 0o644;
+        });
+        Deno.writeTextFileSync(`${folder}/systemd.jsonl`, "");
+        await operation(folder);
+        return {
+            firstStatus,
+            repair,
+            repairStatus,
+            repairCalls,
+            repaired,
+            drifted: [content, mode, missing, link],
+            again: Deno.readTextFileSync(`${folder}/role-2.output`),
+            againStatus: Deno.readTextFileSync(`${folder}/role-2.status`),
+            againCalls: Deno.readTextFileSync(`${folder}/systemd.jsonl`)
+                .trim().split("\n").map((line) => JSON.parse(line)),
         };
     } finally {
         cleanupStockRoles(folder);
