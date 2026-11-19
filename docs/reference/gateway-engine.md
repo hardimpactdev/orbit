@@ -40,15 +40,16 @@ The engine runs the plan the Gateway admitted (`route_create`). Route holds work
 1. `csr-<i>`: the leaf's Node makes its key once and answers a certificate request. The key never leaves the Node.
 2. `sign-<i>`: the Gateway signs the request through the action that `operation:direct:certificate-sign` uses. That action checks the admitted leaf, the root and the run. It refuses once a cancel is pending.
 3. `site-<node>`: `route.publish_site` places the Node's part: Caddy access, `APP_URL`, links, PHP-FPM pools, the leaf and its account copy, the Orbit root's trust, and the Caddyfile.
-4. `probe-<i>`: the Gateway makes a TLS handshake with each serving Node, by its WireGuard address and the Route's name, trusting the Orbit root alone.
+   `dns-<i>`: when the private DNS records change, `dns.publish_records` places them on each VPN Node, beside the sites.
+4. `probe-<i>`: after the sites, the Gateway makes a TLS handshake with each serving Node, by its WireGuard address and the Route's name, trusting the Orbit root alone.
 
 A failed step records the chart's step name, such as `Install cert, publish site-3`, so the Route gets the same `failed_step` and error code as on Swamp.
 
-A Route that needs private DNS, the Ingress edge, a LAN rule for a Cluster Router, a production `.env` or awake markers starts on Swamp. So does one whose access commands or PHP-FPM pools differ from the shapes the executor rebuilds. Today only `app-dev` Nodes run the executor, so a Route on another Node also stays on Swamp. The other kinds that publish Routes, such as `instance.create` and `route.update`, keep their Swamp flows.
+A Route that needs the Ingress edge, a LAN rule for a Cluster Router, a production `.env` or awake markers starts on Swamp. So does one whose access commands or PHP-FPM pools differ from the shapes the executor rebuilds. Today only `app-dev` and `vpn` Nodes run the executor, so a Route on another Node also stays on Swamp. The other kinds that publish Routes, such as `instance.create` and `route.update`, keep their Swamp flows.
 
 An executor reports its primitives when it joins the bus, and again every minute: it writes `{actions, version}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
 
-Today only `app-dev` Nodes enable the `firewall` and `route` families, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, and `route` from 0.17.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
+Today `app-dev` Nodes enable the `firewall` and `route` families and `vpn` Nodes the `dns` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer, `route` from 0.17.0 and `dns` from 0.18.0: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
 ## Steps and transitions
 

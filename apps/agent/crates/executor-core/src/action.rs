@@ -32,6 +32,9 @@ pub enum Action {
     /// Place one Node's part of a Route: access, environment, PHP-FPM pools, certificates and the Caddyfile (ADR 0271).
     /// Its target is the Node, so the Node's Route publications run one at a time.
     RoutePublishSite,
+    /// Place a VPN Node's private DNS records and catalog, then restart dnsmasq and the listener (ADR 0271). Its target
+    /// is the Node, so the Node's DNS publications run one at a time.
+    DnsPublishRecords,
 }
 
 /// How the executor proves that an action's target exists on this Node.
@@ -46,8 +49,16 @@ pub enum TargetKind {
 
 impl Action {
     /// Every action this executor knows, for the list a Node reports to the Gateway (ADR 0271).
-    pub const ALL: [Self; 7] =
-        [Self::ProofNoop, Self::Sleep, Self::Wake, Self::Discard, Self::UfwEnsureRule, Self::TlsEnsureCsr, Self::RoutePublishSite];
+    pub const ALL: [Self; 8] = [
+        Self::ProofNoop,
+        Self::Sleep,
+        Self::Wake,
+        Self::Discard,
+        Self::UfwEnsureRule,
+        Self::TlsEnsureCsr,
+        Self::RoutePublishSite,
+        Self::DnsPublishRecords,
+    ];
 
     /// The family whose crate holds this action, and which a role enables.
     pub fn family(self) -> Family {
@@ -56,13 +67,16 @@ impl Action {
             Self::Sleep | Self::Wake | Self::Discard => Family::Power,
             Self::UfwEnsureRule => Family::Firewall,
             Self::TlsEnsureCsr | Self::RoutePublishSite => Family::Route,
+            Self::DnsPublishRecords => Family::Dns,
         }
     }
 
     /// What the action's target names.
     pub fn target_kind(self) -> TargetKind {
         match self {
-            Self::ProofNoop | Self::UfwEnsureRule | Self::TlsEnsureCsr | Self::RoutePublishSite => TargetKind::Node,
+            Self::ProofNoop | Self::UfwEnsureRule | Self::TlsEnsureCsr | Self::RoutePublishSite | Self::DnsPublishRecords => {
+                TargetKind::Node
+            }
             Self::Sleep | Self::Wake | Self::Discard => TargetKind::Instance,
         }
     }
@@ -77,6 +91,7 @@ impl Action {
             Self::UfwEnsureRule => "ufw.ensure_rule",
             Self::TlsEnsureCsr => "tls.ensure_csr",
             Self::RoutePublishSite => "route.publish_site",
+            Self::DnsPublishRecords => "dns.publish_records",
         }
     }
 }
@@ -98,6 +113,7 @@ impl FromStr for Action {
             "ufw.ensure_rule" => Ok(Self::UfwEnsureRule),
             "tls.ensure_csr" => Ok(Self::TlsEnsureCsr),
             "route.publish_site" => Ok(Self::RoutePublishSite),
+            "dns.publish_records" => Ok(Self::DnsPublishRecords),
             _ => Err(UnknownActionError),
         }
     }
@@ -135,6 +151,8 @@ pub enum Family {
     Firewall,
     /// Route certificates and site publication (ADR 0271).
     Route,
+    /// A VPN Node's private DNS records (ADR 0271).
+    Dns,
 }
 
 /// The family name is unknown to this executor.
@@ -152,6 +170,7 @@ impl Family {
             "power" => Some(Self::Power),
             "firewall" => Some(Self::Firewall),
             "route" => Some(Self::Route),
+            "dns" => Some(Self::Dns),
             _ => None,
         }
     }

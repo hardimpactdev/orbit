@@ -28,11 +28,11 @@ final readonly class NodeExecutorInput
 
     /**
      * The families each role enables. The no-op `proof` and sleep/wake/discard `power` families ship on app-dev; `clone` joins with its slice
-     * (`app-prod` gets `power` when ADR 0265 brings sleep to production).
+     * (`app-prod` gets `power` when ADR 0265 brings sleep to production). A VPN Node places the private DNS records (`dns`).
      *
      * @var array<string, list<string>>
      */
-    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof', 'route']];
+    public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof', 'route'], RoleName::Vpn->value => ['dns']];
 
     /**
      * The first agent delivery whose executor knows each newer family. An older executor refuses to start on an unknown family,
@@ -40,7 +40,7 @@ final readonly class NodeExecutorInput
      *
      * @var array<string, string>
      */
-    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0'];
+    public const array FamilySince = ['firewall' => '0.16.0', 'route' => '0.17.0', 'dns' => '0.18.0'];
 
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array

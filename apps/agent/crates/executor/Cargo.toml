@@ -19,6 +19,7 @@ orbit-executor-core = { path = "../executor-core" }
 orbit-executor-power = { path = "../power" }
 orbit-executor-firewall = { path = "../firewall" }
 orbit-executor-route = { path = "../route" }
+orbit-executor-dns = { path = "../dns" }
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 base64 = "0.22"

@@ -45,7 +45,7 @@ A converge skips the executor install until the Gateway has both parts it needs.
 - `executor.release_missing`: the Gateway's pinned agent delivery has no `executor-linux-x86_64` artifact.
 - `executor.keys_missing`: `ORBIT_EXECUTOR_PUBLIC_KEYS` is empty.
 
-A family newer than the pinned delivery stays off: `NodeExecutorInput::FamilySince` names the first agent version that knows it, such as `firewall` from 0.16.0 and `route` from 0.17.0. An older executor refuses to start on an unknown family.
+A family newer than the pinned delivery stays off: `NodeExecutorInput::FamilySince` names the first agent version that knows it, such as `firewall` from 0.16.0, `route` from 0.17.0 and `dns` from 0.18.0. An older executor refuses to start on an unknown family.
 
 Roll out in this order:
 
@@ -167,7 +167,7 @@ The wire form is `base64(payload).base64(signature)`, at most 4 KB. The payload 
 
 ### Targets
 
-The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr` and `route.publish_site`. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
+The Node itself is the target of `proof.noop`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site` and `dns.publish_records`. Sleep targets must exist in the local Incus. Discard accepts a numeric Instance id after its container is gone.
 
 The log line of a `replayed_nonce` refusal ends in `first=<status>`, the status of the first result it carried, or `first=none` before that result exists.
 
@@ -225,11 +225,19 @@ Every publication reloads a running pool unit and starts a stopped one. Caddy al
 
 Content comes as blobs. It answers `applied` with the number of changed files and units; ACL commands do not count. Codes: `route.input_invalid`, `route.content_missing`, `route.publish_failed`.
 
+### dns.publish_records
+
+`dns.publish_records` (family `dns`, enabled by the `vpn` role) places a VPN Node's private DNS: dnsmasq's records in `/etc/dnsmasq.d/orbit-records.conf` and the listener's catalog in `/var/lib/orbit/private-dns/catalog.json`. Both come as blobs. Each file is written root-owned with mode 0644, only when it differs; a link in its place is replaced, never followed.
+
+Then `dnsmasq --test` checks the configuration, and `dnsmasq.service` and `orbit-private-dns.service` restart. They restart on every publication, as the Swamp phase did, so a repeat after a crash still loads the files. A failed check restarts nothing, so dnsmasq keeps the records it loaded last.
+
+It answers `applied` with the number of changed files. Codes: `dns.input_invalid`, `dns.content_missing`, `dns.write_failed`, `dns.check_failed`, `dns.restart_failed`.
+
 ## The Gateway signer and the event
 
 `App\Domain\Executor\ExecutorOrderSigner` builds and signs one order for an Operation. The order's `node` is the Operation's `node_id` and its `operation` the Operation's id as a numeric string; the signer refuses an Operation without an id or a `node_id`. The payload holds the six fields above, in that order, as compact JSON, then `power_check` when the order carries one ([Signed power delivery](#signed-power-delivery) explains the values), then `input` when the order carries one. `signStep` signs one step of an engine Operation: its `operation` is `<id>:<step>`, it names the step's Node and target, and it carries the primitive's input ([Gateway engine](/reference/gateway-engine#orders-and-receipts)).
 
-The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
+The nonce is 16 random bytes in lowercase hex, and `expires_ms` is the Gateway's clock plus 5 s. An engine step's order expires after 8 s instead, so a late order is refused and re-sent. The signer also refuses an action outside the allowlist (`proof.noop`, `sleep`, `wake`, `discard`, `ufw.ensure_rule`, `tls.ensure_csr`, `route.publish_site`, `dns.publish_records`), a target that is not 1 to 128 characters of `[A-Za-z0-9._:-]`, and a wire form over 4 KB. It reads its key with `ExecutorOrderSigner::fromConfig()` and refuses a missing or malformed one.
 
 `App\Domain\Executor\ExecutorOrderPublisher` takes the Operation and its order. It publishes the order as the server event `executor-order` on `presence-node.{node_id}` of the Operation's Node, and refuses an Operation without a `node_id` or the order of another Operation. It publishes through the Gateway's one Reverb publishing path (`RealtimeConnection`), as the log stream and record events do. Only the Reverb app secret can publish a server event. The event's data is:
 

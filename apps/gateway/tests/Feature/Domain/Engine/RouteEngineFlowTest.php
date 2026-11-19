@@ -53,10 +53,26 @@ it('runs a dev Route as a request, a Gateway signature, the Node\'s site and a G
     ]);
 });
 
+it('publishes private DNS on the VPN Node after the signature, beside the site, and probes after the site alone', function (): void {
+    $plan = routePlan(['dns' => [['node_id' => 1, 'records' => "address=/.test/10.44.0.7\n", 'catalog' => "{}\n"]]]);
+    $steps = app(RouteEngineFlow::class)->steps(routeOperation($plan));
+
+    expect(array_map(static fn ($step): array => [$step->name, $step->node, $step->action, $step->after], $steps))->toBe([
+        ['csr-0', 3, 'tls.ensure_csr', []],
+        ['sign-0', 0, 'certificate.sign', ['csr-0']],
+        ['site-3', 3, 'route.publish_site', ['sign-0']],
+        ['dns-0', 1, 'dns.publish_records', ['sign-0']],
+        ['probe-0', 0, 'route.probe', ['site-3']],
+    ])
+        ->and(app(RouteEngineFlow::class)->input(routeOperation($plan), 'dns-0', new EngineRun(41, [], 0, null)))->toBe([
+            'records' => ['blob' => ['content' => "address=/.test/10.44.0.7\n"]], 'catalog' => ['blob' => ['content' => "{}\n"]],
+        ])
+        ->and(RouteEngineFlow::chartStep('dns-0'))->toBe('Publish private DNS-0');
+});
+
 it('leaves a Route that needs a part the engine does not run to Swamp', function (string $list, array $row): void {
     app(RouteEngineFlow::class)->steps(routeOperation(routePlan([$list => [$row]])));
 })->throws(EngineUnsupported::class)->with([
-    'private DNS' => ['dns', ['node_id' => 5]],
     'the Ingress edge' => ['ingress', ['node_id' => 6]],
     'Ingress ports' => ['ingress_ports', ['node_id' => 6, 'port' => 443, 'ensure' => 'present']],
     'a LAN rule' => ['lan', ['node_id' => 3]],
