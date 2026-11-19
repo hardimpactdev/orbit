@@ -176,7 +176,12 @@ The foundation was proven in a task copy's nested fleet:
 - the first Operation after that restart ran on Swamp, since its capability read failed, and succeeded;
 - a Node whose executor did not report `ufw.ensure_rule` ran its firewall Operations on Swamp, in 2.8–7.8 seconds each;
 - the consumer process stopped for 5 seconds: the start event waited in its durable consumer and ran on restart.
-- the executor joined with no credential; a connection from a non-Node address was refused, and so was the Node while marked `removing`;
+
+The authentication was proven there too:
+
+- the executor joined with no credential;
+- a connection from a non-Node address was refused;
+- the Node was refused while marked `removing`;
 - the Node could publish its own receipts but not another Node's;
 - with the guard loaded, root on the Node reached the bus and the `orbit` user was refused.
 
