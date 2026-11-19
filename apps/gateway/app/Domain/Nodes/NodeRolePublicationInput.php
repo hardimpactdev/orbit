@@ -37,7 +37,8 @@ final readonly class NodeRolePublicationInput
             $caddy = [...$caddy, ...array_map(static fn ($assignment): int => $assignment->node_id, CaddySiteRoles::serving(RoleName::WebSocket))];
         }
         $php = in_array($role, [RoleName::AppDev, RoleName::AppProd], true) ? [$node->id] : [];
-        $dns = in_array($role, [RoleName::Gateway, RoleName::AppDev, RoleName::Metrics, RoleName::WebSocket, RoleName::Analytics], true)
+        // Private DNS answers the Cluster's public names with its Ingress, so an Ingress change republishes it.
+        $dns = in_array($role, [RoleName::Gateway, RoleName::Ingress, RoleName::AppDev, RoleName::Metrics, RoleName::WebSocket, RoleName::Analytics], true)
             ? PrivateDnsPublicationNodes::query()->pluck('id')->all() : [];
         $ordered = static function (array $ids): array {
             $ids = array_values(array_unique($ids));

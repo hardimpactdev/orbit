@@ -8,6 +8,7 @@ use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Metrics\MetricsRoleInput;
 use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
+use App\Domain\Routes\RouteExecutionProof;
 use App\Domain\Routes\RouteRenderContext;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -19,6 +20,7 @@ use App\Infrastructure\WebSocket\WebSocketServiceUnitRenderer;
 use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Support\ValidatedData;
 
 /**
@@ -51,10 +53,11 @@ final readonly class NativeNodeRoleRelocateInput
      * @param  array{target:list<array<string,mixed>>,source:list<array<string,mixed>>,dns:array<int,array<string,mixed>>}  $before
      * @return array<string,mixed>
      */
-    public function capture(Node $target, Node $source, NodeRole $assignment, array $before): array
+    public function capture(Node $target, Node $source, NodeRole $assignment, array $before, ?Operation $operation = null): array
     {
         $role = $assignment->role;
-        if ($assignment->node_id !== $target->id || $source->is($target) || ! in_array($role, [RoleName::Gateway, RoleName::WebSocket, RoleName::Metrics], true)) {
+        if ($assignment->node_id !== $target->id || $source->is($target) || ! in_array($role, [RoleName::Gateway, RoleName::WebSocket, RoleName::Metrics, RoleName::Ingress], true)
+            || ($role === RoleName::Ingress && ($operation === null || $assignment->cluster_id !== $target->cluster_id))) {
             throw new ResourceOperationException('operation.execution_forbidden', 'The relocated assignment must name its admitted target.', 422);
         }
         $ghost = new NodeRole(['node_id' => $source->id, 'role' => $role, 'status' => LifecycleStatus::Removing]);
@@ -62,20 +65,25 @@ final readonly class NativeNodeRoleRelocateInput
         $ghost->setRelation('node', $source);
         $ssh = $this->ssh->forNode($target);
         $plan = app(NodeRoleCertificateInput::class)->capture($target, $role, $source);
+        // The Ingress role child owns every target effect, as the Metrics child does: Caddy and the Orbit root, sites, rules and DNS.
+        $child = in_array($role, [RoleName::Metrics, RoleName::Ingress], true);
         // Render as the run leaves it: the target holds its new certificate and the source has withdrawn its own.
         [$publications, $removal] = app(RouteRenderContext::class)->renderRoleCertificates($plan, fn (): array => [
-            $role === RoleName::Metrics ? [] : $this->publications($target, $source, $role, $before['target']),
+            $child ? [] : $this->publications($target, $source, $role, $before['target']),
             $this->removal->capture($source, $ghost, $before['source'], desiredAssignment: $assignment)]);
         $websocket = $role === RoleName::WebSocket ? $this->websocket($target) : null;
-        $firewall = $role === RoleName::Metrics ? ['desired' => [], 'remove' => []] : app(NodeRoleFirewallInput::class)->convergeCommands($target, $role);
+        $firewall = $child ? ['desired' => [], 'remove' => []] : app(NodeRoleFirewallInput::class)->convergeCommands($target, $role);
+        $ingress = $role === RoleName::Ingress && $operation !== null ? $this->ingress($target, $assignment, $before['target'], $operation) : null;
 
         return ['schema_version' => 1, 'role' => $role->value, 'assignment_id' => $assignment->id,
             'target_node_id' => $target->id, 'source_node_id' => $source->id, 'ssh' => $ssh,
             'metrics' => $role === RoleName::Metrics ? $this->metrics($assignment, $before['dns']) : null,
-            'websocket' => $websocket, 'gateway' => $role === RoleName::Gateway ? $this->gateway($target) : null,
-            'certificates' => $role === RoleName::Metrics ? ['leaves' => [], 'withdrawals' => []] : $this->certificates($target, $plan),
+            'websocket' => $websocket, 'gateway' => $role === RoleName::Gateway ? $this->gateway($target) : null, 'ingress' => $ingress,
+            'certificates' => $child ? ['leaves' => [], 'withdrawals' => []] : $this->certificates($target, $plan),
             'firewall' => $firewall, 'publications' => $publications,
-            'grace' => $websocket !== null && array_any($publications, static fn (array $p): bool => ValidatedData::object($p['after'])['dns'] !== null)
+            // Private clients that hold the source's answer reach its sites until the answer expires.
+            'grace' => ($websocket !== null && array_any($publications, static fn (array $p): bool => ValidatedData::object($p['after'])['dns'] !== null))
+                || ($ingress !== null && array_any(RouteExecutionProof::objects($ingress['publications']), static fn (array $p): bool => ValidatedData::object($p['after'])['dns'] !== null))
                 ? [['seconds' => PrivateDnsAnswerExpiry::WithdrawalGraceSeconds]] : [],
             'source' => $removal,
             // Metrics follows its own lifecycle: its converge rebuilds the scrape configuration for the moved sites.
@@ -103,6 +111,22 @@ final readonly class NativeNodeRoleRelocateInput
         }
 
         return $result;
+    }
+
+    /** The role child's intent as `node:role:add TARGET ingress --converge` builds it. The relocation leaves Metrics to its follow_up, so no
+     * fleet runtime or private material enters the child; the Ingress has no role certificate or execution secret.
+     * @param  list<array<string,mixed>>  $before
+     * @return array<string,mixed>
+     */
+    private function ingress(Node $target, NodeRole $assignment, array $before, Operation $operation): array
+    {
+        $snapshot = [...app(NodeRoleDirectInput::class)->capture($target, $assignment, false, includeCli: false), 'metrics_fleet' => null];
+        $native = app(NativeNodeRoleAddInput::class)->capture($target, $assignment, $snapshot, $before, $operation, true);
+        if ($native['execution_secrets'] !== [] || RouteExecutionProof::objects(ValidatedData::object($snapshot['certificates'])['leaves']) !== []) {
+            throw new ResourceOperationException('operation.execution_forbidden', 'The Ingress relocation carries no role secret or certificate.', 422);
+        }
+
+        return app(NodeConvergePhaseDigest::class)->stamp($native['intent'], []);
     }
 
     /** @return array<string,mixed> */

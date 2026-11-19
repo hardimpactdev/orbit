@@ -35,9 +35,17 @@ final readonly class NodeRoleRelocateInput
             throw new NodeRoleValidationException('Use --force to relocate this node role.',
                 ['field' => 'force', 'reason' => 'destructive_consent_required', 'role' => $role->value, 'dependents' => []]);
         }
-        $assignment = NodeRole::query()->with('node')->where('role', $role)->first();
+        // A Cluster has one Ingress; the target's Cluster names the one that moves, and the move keeps that Cluster.
+        $query = NodeRole::query()->with('node')->where('role', $role);
+        if ($role === RoleName::Ingress) {
+            if (! is_int($target->cluster_id)) {
+                throw new NodeRoleValidationException('Role [ingress] relocates only to a member of its Cluster.', ['field' => 'node', 'role' => $role->value]);
+            }
+            $query->where('cluster_id', $target->cluster_id);
+        }
+        $assignment = $query->first();
         if (! $assignment instanceof NodeRole) {
-            throw new NodeRoleValidationException("Role [{$role->value}] is not assigned.", ['field' => 'role', 'role' => $role->value]);
+            throw new NodeRoleValidationException("Role [{$role->value}] is not assigned.", ['field' => $role === RoleName::Ingress ? 'node' : 'role', 'role' => $role->value]);
         }
         $holder = $assignment->node;
         $source = $from ?? $holder;

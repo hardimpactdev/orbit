@@ -250,7 +250,7 @@ final readonly class AdmitNodeRoleOperationAction
                 app(GrantGatewayRoleAccessAction::class)->execute($target);
             }
             app(NodeRoleRuntimeInput::class)->prepare($target, $assignment);
-            $intent = $native->capture($target->refresh(), $source, $assignment, $before);
+            $intent = $native->capture($target->refresh(), $source, $assignment, $before, $operation);
             $this->store->change($operation, ['input' => [...$operation->input, 'intent' => $intent,
                 '_relocate' => ['assignment_id' => $assignment->id, 'role' => $role->value,
                     'source_node_id' => $source->id, 'target_node_id' => $target->id]]]);

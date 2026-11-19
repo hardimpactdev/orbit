@@ -9,6 +9,7 @@ use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Models\Cluster;
+use App\Models\Process as ManagedProcess;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
@@ -81,4 +82,21 @@ it('names a Route that a removal has marked retiring while the fleet before the 
 
     expect($namesBefore)->toContain('kept.create-bench.test', 'gone.create-bench.test')
         ->and($namesAfter)->toContain('kept.create-bench.test')->not->toContain('gone.create-bench.test');
+});
+
+it('never answers a public Process Route with the Router LAN address, because only the Ingress serves it', function (): void {
+    [$router] = routerClusterWithRoutes();
+    $router->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $router->cluster_id]);
+    $process = ManagedProcess::query()->create([
+        'owner_type' => Node::class, 'owner_id' => $router->id, 'name' => 'sync',
+        'runtime' => 'docker', 'runtime_config' => ['image' => 'nginx:alpine', 'ports' => ['10.44.0.7:18080:8080/tcp']],
+        'desired_state' => 'running', 'status' => 'active',
+    ]);
+    $route = Route::query()->create(['kind' => 'custom_proxy', 'cluster_id' => $router->cluster_id, 'provenance' => 'explicit', 'publication' => 'public',
+        'domain' => 'sync.example.com', 'status' => 'pending']);
+    $route->customProxy()->create(['node_id' => $router->id, 'process_id' => $process->id, 'upstream' => 'http://10.44.0.7:18080']);
+    $route->update(['status' => 'active', 'sites_published' => true, 'replacement_step' => 'cleanup']);
+
+    expect(routerNames())->toContain('kept.create-bench.test')
+        ->and(routerNames())->not->toContain('sync.example.com');
 });

@@ -1,7 +1,7 @@
 id: d2be694e-4085-427c-8492-37f72528d97b
 name: operation-node-role-relocate
 autoContinue: false
-description: Move gateway, websocket or metrics to another Node from 209 with pinned SSH argv, the metrics:enable workflow and the node:role:remove workflow; one native end check.
+description: Move gateway, websocket, metrics or a Cluster's ingress to another Node from 209 with pinned SSH argv, the metrics:enable and node:role:add workflows and the node:role:remove workflow; one native end check.
 vaults: [orbit-control-inputs]
 queueTimeout: 30
 inputs:
@@ -27,6 +27,15 @@ jobs:
       type: workflow
       workflowIdOrName: operation-metrics-enable
       inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.target_node_id }}', kind: '${{ inputs.kind }}', intent: '${{ inputs.intent.metrics }}', execution_secrets: '${{ inputs.execution_secrets }}'}
+    # The node:role:add --converge workflow: Caddy and the Orbit root, the target's public sites, the Ingress rules and private DNS.
+    # The source keeps serving until 'Remove from the source'.
+  - name: 'Apply the Ingress role'
+    labels: {role: swamp}
+    guard: '${{ !has(inputs.intent.ingress) || inputs.intent.ingress == null }}'
+    task:
+      type: workflow
+      workflowIdOrName: operation-node-role-add
+      inputs: {operation_id: '${{ inputs.operation_id }}', node_id: '${{ inputs.intent.target_node_id }}', kind: node.role_converge, intent: '${{ inputs.intent.ingress }}', execution_secrets: {}, parent_run_id: '${{ run.id }}'}
     # The releases folder and the new release, owned by the role's user.
   - name: 'Make the release folder'
     labels: {role: swamp}

@@ -321,6 +321,10 @@ final readonly class ClusterRouterDnsSelection
         }
 
         foreach ($routes as $route) {
+            // A public Process Route is served by the Ingress alone, never by the Router, so its LAN answer is not the Router's.
+            if ($route->isCustomProxy()) {
+                continue;
+            }
             $names[] = $this->normalizeName($route->domain);
         }
 
