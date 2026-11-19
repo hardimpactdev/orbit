@@ -1,6 +1,6 @@
 # Orbit Monorepo
 
-This file is a map. Each project folder's `AGENTS.md` loads when you read a file there. `bin/docs-impact --paths <path>` names the page that owns a path; read the section that covers the behaviour you change.
+This file is a map. Read the `AGENTS.md` in the folder of the project you change. `bin/docs-impact --paths <path>` names the page that owns a path; read the section that covers the behaviour you change.
 
 | Change | Folder and rules | One test |
 | --- | --- | --- |
