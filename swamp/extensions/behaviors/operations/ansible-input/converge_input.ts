@@ -26,6 +26,17 @@ async function sha256(text: string | Uint8Array): Promise<string> {
     return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes as BufferSource)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** The files outside `ansible/` that a converge's roles read beside the playbook, by path from the bundle root: the release controllers
+ * that production-release-host.yml copies from `{{ playbook_dir }}/../scripts`, and the selection rules that `ansible/files/instance-release-vp.ts`
+ * imports from `../../extensions`. A converge stages only `ansible/` from the worker's cache (write.ts), so it stages these at the same paths
+ * beside it, and they are part of the phases' code. */
+export const roleSiblings = [
+    "extensions/behaviors/operations/instance-deploy/vp_requirements.ts",
+    "extensions/behaviors/operations/instance-vp-command/requirements.ts",
+    "scripts/production-release-phase",
+    "scripts/release-container.py",
+] as const;
+
 /** The files and folders the phases run beside their written input: the Ansible bundle, which also builds each role's variables, the
  * Tool helper and the shipped Tool files it imports. The input behaviour is bundled on a worker; its output is in the written files. */
 export function phaseCode(builder: string, toolHelper: string): [string, string, string] {

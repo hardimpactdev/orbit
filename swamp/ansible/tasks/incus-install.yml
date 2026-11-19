@@ -1,10 +1,13 @@
 ---
 # Install Incus from the recipe's pinned packages on a host without it (docs/reference/compute-drivers.md#the-host-system): the system part of a
 # container host (task-container-host-system.yml), and first of all on an Instance fleet Node (instance-fleet-node.yml). `container_host.incus`
-# names the packages. It never upgrades a running Incus.
+# names the packages. It never upgrades or downgrades a running Incus.
+# A host has Incus when it has the daemon's package, `incus-base`. The metapackage `incus` only adds the VM tools: an Incus installed
+# without it, such as the image of a nested fleet or a host set up by hand from another build of the line, is still a running Incus, and
+# the pinned set would downgrade its `incus-base` and `incus-client`, which apt refuses (rc 100).
 # The package's state is independent of its selection: an installed package may be held. Config files left after removal do not count.
 - name: Read the installed Incus package
-  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Status}", incus] }
+  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Status}", incus-base] }
   register: container_incus_package
   changed_when: false
   failed_when: container_incus_package.rc not in [0, 1]
