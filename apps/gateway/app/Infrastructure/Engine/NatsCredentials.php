@@ -77,8 +77,12 @@ final readonly class NatsCredentials
         $parts = explode('.', $jwt);
         $json = count($parts) === 3 ? base64_decode(strtr($parts[1], '-_', '+/'), true) : false;
         $claims = is_string($json) ? json_decode($json, true) : null;
+        if (! is_array($claims) || array_is_list($claims)) {
+            return null;
+        }
 
-        return is_array($claims) && ! array_is_list($claims) ? $claims : null;
+        /** @var array<string, mixed> $claims a decoded JSON object */
+        return $claims;
     }
 
     /** @param array<string, mixed> $claims */

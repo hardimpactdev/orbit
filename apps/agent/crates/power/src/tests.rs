@@ -264,7 +264,9 @@ impl orbit_executor_core::executor::Run for Runner {
                     .wake_with(self.api.as_ref(), order.target().as_str())
                     .expect("power wake");
             }
-            orbit_executor_core::action::Action::ProofNoop => panic!("power actions only"),
+            orbit_executor_core::action::Action::ProofNoop | orbit_executor_core::action::Action::UfwEnsureRule => {
+                panic!("power actions only")
+            }
         }
         orbit_executor_core::journal::Outcome::Done
     }
