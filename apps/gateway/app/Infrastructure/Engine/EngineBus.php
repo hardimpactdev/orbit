@@ -75,15 +75,13 @@ final class EngineBus implements MachineBus
     /** A connection of its own, so a subscription never shares a socket with publishes made inside its handler. */
     public static function connect(): Client
     {
-        $nats = config('orbit.engine.nats');
-        $host = is_array($nats) ? ($nats['host'] ?? null) : null;
-        $port = is_array($nats) ? ($nats['port'] ?? null) : null;
-        if (! is_string($host) || ! is_int($port) || ! GatewayBus::enabled()) {
+        $host = GatewayBus::address();
+        if ($host === null) {
             throw new RuntimeException('engine.bus_unconfigured');
         }
 
         // The Gateway's own nkey user skips the auth callout and may use every subject of the account.
-        return new Client(new Configuration(host: $host, port: $port, nkey: GatewayBus::gatewaySeed(), timeout: 2));
+        return new Client(new Configuration(host: $host, port: GatewayBus::port(), nkey: GatewayBus::gatewaySeed(), timeout: 2));
     }
 
     /** The streams; idempotent. Work queues keep nothing once acknowledged, and every stream ages out. */
