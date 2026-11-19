@@ -72,7 +72,7 @@ An explicit start or restart of the preset on a checkout Instance runs one prepa
 
 A [wake](/reference/app-dev-runtime-hibernation#wake) uses only the recorded port and publishes nothing. If that port is unavailable, the wake and its retries fail without changing the assignment. Use [`process:start`](/cli/process/start) to recheck and publish the assignment.
 
-Explicit starts retry with a new port when another listener takes it between the check and bind. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:restart` of the preset, the next HTTP request goes through the wake page. An explicit `process:start` marks the site awake after readiness. An automatic start preserves the awake marker only when its owned endpoint is already ready; a start that must prepare Vite suspends traffic and may clear the marker. When Vite does not become ready, the start fails with `vite.not_ready`.
+Explicit starts retry with a new port when another listener takes it between the check and bind. It makes at most three attempts within the deadline. Another startup error does not change the port. After `process:restart` of the preset, the next HTTP request waits for a wake. An explicit `process:start` marks the site awake after readiness. An automatic start preserves the awake marker only when its owned endpoint is already ready; a start that must prepare Vite suspends traffic and may clear the marker. When Vite does not become ready, the start fails with `vite.not_ready`.
 
 ## Application setup
 

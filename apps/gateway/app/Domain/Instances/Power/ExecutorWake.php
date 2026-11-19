@@ -116,9 +116,13 @@ final readonly class ExecutorWake
             $durable = function () use ($operation, $budget): ?array {
                 $operation->refresh();
                 $receipt = $operation->executor_result_received_us;
+                $line = $receipt !== null && $receipt <= $budget->receiptDeadline ? $operation->executor_result : null;
+                // A failed receipt or an ended Operation ends the wait at once: a held visit gets its error without waiting out the budget.
+                if (in_array($operation->status, [OperationStatus::Failed, OperationStatus::Cancelled, OperationStatus::Interrupted], true)) {
+                    return ['status' => 'failed'];
+                }
 
-                return $receipt !== null && $receipt <= $budget->receiptDeadline && ! in_array($operation->status, [OperationStatus::Failed, OperationStatus::Cancelled, OperationStatus::Interrupted], true)
-                    ? $operation->executor_result : null;
+                return $line;
             };
             if (ExecutorPowerIntent::managed($operation)) {
                 $operation->refresh();

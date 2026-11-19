@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0261, ADR 0266 slice 6, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container wakes by the same rule, and Caddy holds its visitor instead of the progress page.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, ADR 0266 slice 6, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container wakes by the same rule, and its visitor is held as a development visitor is.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -41,9 +41,10 @@ sequenceDiagram
   %%> - planned: a production Instance's live release container; the wake is admitted beside an open deploy or rollback, which changes live only after its switch; the switch and the wake take the Instance's power lock
   %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd), and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
-  %%> - an open wake of the Instance is joined: a second caller gets the same Operation; Caddy waits within the bound for a signed wake and otherwise gets the progress page
+  %%> - an open wake of the Instance is joined: a second caller gets the same Operation; a visit that joins is held on it too
+  %%> - Caddy's visit is held while the wake runs, up to 30 s (`ORBIT_VISIT_WAKE_WAIT_SECONDS`): then 200 and the app's own page, or a plain `503` text with no page, script or reload (Nick 2026-11-19; supersedes the 2026-11-15 rule "wake spinner shows at once; never hold the request")
   %%> - a join to a Conn launch's wake records shared use while locking the wake Operation. If launch cleanup already cancelled the queued wake, a new request admits a new wake
-  %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
+  %%> - after a failed wake, the next visit admits a new wake; only an interrupted wake under its fence (R2) keeps answering its failure
   %%> On failure:
   %%> - no container, a non-development Instance, a nested-fleet Instance that cannot take the wake or its start, or other lifecycle work admits no wake
   alt signed wake admitted
@@ -62,26 +63,26 @@ sequenceDiagram
       %%> - The relay and observer can race. A replay without a terminal result does not prove failure or success.
     end
     opt Caddy, for a visit
-      GW->>GW: Wait within the bound<br/>ExecutorResultWait · 500 ms
+      GW->>GW: Hold the visit<br/>ExecutorResultWait · 30 s
       %%> Result:
       %%> - check the listener's subsecond receipt while time remains, because another waiter may have consumed its Valkey copy
       %%> - keep the observer's reply order; a bare replay refusal is not a result, and a late result cannot authorize the original request
-      alt done or partial within the bound
+      alt done or partial
         GW-->>CL: 200, continue request<br/>original method, URI and body
         %%> Result:
         %%> - Caddy passes the original request to the app in the same exchange; the response is the app's own
         %%> - the Operation succeeds and records the runtime running
-      else no successful result in time
-        %% path: executor-pending
-        GW-->>CL: 401 progress page<br/>activation state pending
+      else failed, refused or no result in 30 s
+        %% path: executor-failed
+        GW-->>CL: 503 plain text<br/>wake failed or still waking
         %%> Result:
-        %%> - the existing page polls every 250 ms and loads the app when the marker goes
+        %%> - a failed or refused receipt, or an ended Operation, answers at once with its code; a reload admits a new wake
       end
     end
     Note over GW: Project the receipt<br/>end the Operation
     %%> - R1: the matching receipt decides; done or partial succeeds, refused or failed fails with the receipt's code; a transport failure never overrides a recorded receipt
     %%> - R2: once an order was signed, no receipt ends interrupted with `executor.result_unknown` and keeps the Instance lock; cancel is refused
-    %%> - R4: Caddy shows a failed or interrupted wake as failed with Try again; a retry under the held lock shows the same failure
+    %%> - R4: a visit answers a failed wake with a plain `503` and its code; under an interrupted wake's held lock every visit gets the same failure
     %%> - the worker sends the Operation's notices without waiting for the sweep
     %%> - the job after 6 s still recovers an absent result and finishes a known result if the immediate job did not run
     %%> - a background worker runs the lifecycle hook after success without holding a database writer, and records it once per Operation
@@ -96,16 +97,18 @@ sequenceDiagram
     end
   else Python wake admitted
   opt Caddy, for a development visit
-    GW-->>CL: 401 progress page, at once<br/>spinner only
+    Note over GW: Hold the visit<br/>up to 30 s
     %%> Result:
-    %%> - the visitor never waits for the wake: the Gateway admits or joins it and answers before any Node call or run start
+    %%> - the Gateway admits or joins the wake, runs the Node's resume below within the visit, and waits for the Operation to end; 200 continues the request to the app, otherwise a plain `503`
+    %%> Why:
+    %%> - a container that Python froze wakes in 14–19 s until its next executor sleep; 30 s covers it without a second state
   end
   opt the last sleep froze it, not a nested fleet
     %% path: resume
     GW->>N: Write the wake request<br/>agent · hibernation.marker
     %%> What it does:
     %%> - the Operation is recorded without its run; the Node calls run after its commit
-    %%> - a command caller waits for these calls; Caddy's activation call does not: the Gateway answers the progress page first and makes the calls after the answer went
+    %%> - a command caller and Caddy's held visit both wait for these calls
     %%> - the frozen agent's `hibernation.marker` writes `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`; only root writes in that folder; the name carries the Operation, so no earlier wake's outcome can answer this one
     %%> When:
     %%> - the Node has the worker template `/etc/systemd/system/orbit-instance-wake@.service`, which only the role's convergence installs; the first read asks for it, and a Node without it skips this path for 10 minutes
@@ -132,12 +135,12 @@ sequenceDiagram
     %%> Result:
     %%> - `.done` with one `.ready-*`: the Operation succeeds here with `wake: resumed`, `trigger_seconds`, `confirm_seconds`, `restore_mode`, `ready_at` from the ready file's time (`ready_at_resolution_seconds` 1) and `prepared_restore.status`; `power_state` is `running`; Conn's renewal below runs as after a run
     %%> - after the projection, the Gateway removes this Operation's request and outcome files off the visitor's path
-    %%> - Caddy already has the progress page: its poll, every 250 ms, finds the marker gone and loads the app
-    %%> - an API caller gets 202 with the ended Operation; a command caller who joins waits up to the bound; a visit that joins gets the progress page at once
+    %%> - Caddy's held visit gets 200 and the app's own page
+    %%> - an API caller gets 202 with the ended Operation; a command caller who joins waits up to the bound; a visit that joins is held until the wake ends
     %%> On failure:
     %%> - `.failed`, an agent call that failed or the bound: the Gateway removes the request, and the same Operation starts the run below; the run takes the same lock, so it waits for a worker still at work and goes on from the state the Node reached
     %%> - a Gateway worker that dies here: a delayed start runs the same Operation's run 15 s later
-    %%> - a cancel between Caddy's answer and the Node calls: the Gateway makes no Node call; a cancel during the resume keeps the Operation cancelled, and a late outcome never overwrites it
+    %%> - a cancel during the resume keeps the Operation cancelled, and a late outcome never overwrites it
   end
   opt Caddy, for a production visit, planned
     GW-->>CL: Admitted, at once<br/>Caddy holds · bound 10 s
@@ -147,7 +150,7 @@ sequenceDiagram
     %%> - a person, an API client or a webhook sees only a slower first answer; targets about 1.5 s with the prepared restore, 2.4 s without
     %%> - the wake reads the live link after the power lock and acts only on that container; after a switch it finds no marker, `wake: already_running`
     %%> Why:
-    %%> - a progress page with status 401 breaks an API client and a webhook (ADR 0265)
+    %%> - a page instead of the app's answer breaks an API client and a webhook (ADR 0265)
     %%> On failure:
     %%> - after 10 s, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance; the wake goes on
     %%> - a failure is stored as in development; while it is stored, the Gateway says so and Caddy answers `503` with `Retry-After: 30` and the same page at once
@@ -191,7 +194,7 @@ sequenceDiagram
     %%> - the runtime's `power_state` is `running`; the Conn layer shows the T3 server awake
     %%> - the result names the path, `marker_found`, and a resume's `resume_seconds` and `web_probe_seconds`
     %%> - `restore_mode` (`prepared` or `ordinary`), `prepared_restore` with its status and reason, and `ready_at`, when the marker went (`ready_at_resolution_seconds` 0.001); Operation list and show return them
-    %%> - the progress page loads the original path
+    %%> - a held visit gets 200 and the app answers its original path
     opt the Gateway session ends within 7 days or has ended
       Note over GW: Admit the renewal<br/>conn.environment_renew
       %%> When:
@@ -227,9 +230,9 @@ sequenceDiagram
     %% path: failed
     SW--xGW: Run failed<br/>failed step, error_code
     %%> Result:
-    %%> - the asleep marker stays; the Route shows the failure page with Try again
+    %%> - the asleep marker stays; a held visit gets a plain `503`: the wake failed, with its code
     %%> Retry:
-    %%> - Try again or the same command; a start of a running container changes nothing
+    %%> - a reload of the page or the same command; a start of a running container changes nothing
     %%> - planned, a production live: the first visit 30 s or more after the failure starts one new wake by itself; until then Caddy answers `503` with `Retry-After: 30`
   end
   end

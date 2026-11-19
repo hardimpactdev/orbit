@@ -16,7 +16,7 @@ The API listens on HTTPS on the Gateway's WireGuard address. Orbit private DNS r
 
 The Gateway presents a certificate from the Orbit root certificate authority (CA). `GET /api/v1/ca/root` returns that certificate and its fingerprint without authentication so a new client can pin it; `orbit gateway:add` and `orbit gateway:trust` do this for you and install the certificate in the operating-system trust store. A client that already trusts the certificate passes it as its CA bundle, for example with `curl --cacert`.
 
-Redirects are never followed. The Gateway answers JSON for every endpoint except the runtime activation page, which answers HTML for Caddy.
+Redirects are never followed. The Gateway answers JSON for every endpoint except the runtime activation check, which answers an empty `200` or a plain-text `503` for Caddy.
 
 ## Identify the caller
 
@@ -24,7 +24,7 @@ There is no token. The Gateway identifies a caller by the WireGuard address that
 
 The identified Node must also hold Node access to the Node that the request acts on. A Node always has access to itself; an operator grants other edges with [`node:access:add`](/cli/node/access-add). A request without the required edge receives HTTP 403 with `node_access.required` and, in `details`, the consumer and serving Node identities. Collection endpoints such as `GET /api/v1/nodes` return only the records the caller may address.
 
-Three endpoints are called by Nodes and Caddy rather than operators: the Schedule completion callback, the Grafana authorization check, and the app-dev runtime activation page. The API sidebar groups them under Node callbacks.
+Three endpoints are called by Nodes and Caddy rather than operators: the Schedule completion callback, the Grafana authorization check, and the app-dev runtime activation check. The API sidebar groups them under Node callbacks.
 
 ## Send a request
 

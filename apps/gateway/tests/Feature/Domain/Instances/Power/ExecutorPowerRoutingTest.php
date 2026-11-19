@@ -588,14 +588,14 @@ it('R3: keeps the freeze with its engine past a cancelled later sleep', function
     expect(ExecutorPowerIntent::managed(app(InstanceWake::class)->admitDeferred($instance, 'cli', null)))->toBeTrue();
 });
 
-it('R4: shows an interrupted wake as failed to a visit and to a retry under its fence', function (): void {
+it('R4: shows an interrupted wake as failed to a visit and to its reload under its fence', function (): void {
     $instance = managedPowerFixture();
     $wake = app(InstanceWake::class)->admitDeferred($instance, 'cli', null);
     $run = inRecoveryRun($wake);
     app(InstanceWake::class)->apply($wake, runEnded($run, ['error_code' => 'executor.relay_transport']));
     expect($wake->refresh())->status->toBe(OperationStatus::Interrupted)->error_code->toBe('executor.result_unknown');
-    foreach ([false, true] as $retry) {
-        expect(app(InstanceWake::class)->activate($instance, $retry, 'node'))->toContain('executor.result_unknown');
+    foreach (['visit', 'reload'] as $visit) {
+        expect(app(InstanceWake::class)->activate($instance, 'node'))->toContain('executor.result_unknown');
     }
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
 });
@@ -655,7 +655,7 @@ it('R1: takes a failed lifecycle receipt code when the start wrapper failed too'
     expect([$start->refresh()->executor_result['code'], $start->error_code])->toBe(['instance.container_frozen_unmanaged', 'instance.container_frozen_unmanaged']);
 });
 
-it('R4: shows a held nested clone start as a failed wake on the visit and its retry', function (): void {
+it('R4: shows a held nested clone start as a failed wake on the visit and its reload', function (): void {
     $default = managedPowerFixture();
     $node = $default->node;
     $node->update(['settings' => [...($node->settings ?? []), 'nested_fleet' => true]]);
@@ -668,9 +668,10 @@ it('R4: shows a held nested clone start as a failed wake on the visit and its re
     [$start, $run] = signedLifecycleStart($instance, 'boot');
     app(InstanceStart::class)->apply($start, runEnded($run, ['error_code' => 'executor.relay_transport']));
     expect($start->refresh()->error_code)->toBe('executor.result_unknown');
-    $visit = app(InstanceWake::class)->activate($instance, false, 'node');
-    $retry = app(InstanceWake::class)->activate($instance, true, 'node');
-    expect([$visit, $retry])->toBe(['The wake failed (executor.result_unknown). Try again.', 'The wake failed (executor.result_unknown). Try again.']);
+    $visit = app(InstanceWake::class)->activate($instance, 'node');
+    $reload = app(InstanceWake::class)->activate($instance, 'node');
+    expect([$visit, $reload])->toBe(['The wake failed (executor.result_unknown). Reload the page to try again.', 'The wake failed (executor.result_unknown). Reload the page to try again.'])
+        ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(0);
 });
 
 it('R4: shows a wake that failed before its visit returned on that response', function (): void {
@@ -680,7 +681,7 @@ it('R4: shows a wake that failed before its visit returned on that response', fu
         executorWakeReply($operation, ['status' => 'failed', 'code' => 'instance.web_unready']);
         app(ExecutorWake::class)->completeHandoff($operation);
     };
-    $visit = app(InstanceWake::class)->activate($instance, false, 'node');
+    $visit = app(InstanceWake::class)->activate($instance, 'node');
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->error_code)->toBe('instance.web_unready');
     expect($visit)->toBeString()->toContain('instance.web_unready');
 });

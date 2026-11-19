@@ -83,6 +83,8 @@ return [
         'signing_key' => env('ORBIT_EXECUTOR_SIGNING_KEY'),
         // The shared publish-and-wait budget of a container wake request (ADR 0266 slice 6). Valkey needs hz 100.
         'wait_ms' => (int) env('ORBIT_EXECUTOR_WAIT_MS', 500),
+        // A visit to a sleeping Instance is held while it wakes. 30 s covers the 14–19 s resume of a container the old Python path froze.
+        'visit_wait_seconds' => (float) env('ORBIT_VISIT_WAKE_WAIT_SECONDS', 30),
     ],
 
     // The Gateway state machine and its machine bus (ADR 0271; docs/reference/gateway-engine.md).

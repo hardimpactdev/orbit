@@ -8,14 +8,12 @@ use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
-use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
-use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
 use App\Infrastructure\Hibernation\RemoteInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteInstanceRuntimeReadiness;
@@ -28,7 +26,6 @@ final class HibernationServiceProvider extends ServiceProvider
     public array $bindings = [
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         InstanceCheckoutInspector::class => RemoteInstanceCheckoutInspector::class,
-        HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
     ];
 
     public function register(): void

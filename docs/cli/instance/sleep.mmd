@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): freeze a development container, record the pages its processes had resident, move its memory to swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container sleeps by the same rule on its app-prod Node, and never takes the stop.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): freeze a development container, record the pages its processes had resident, move its memory to swap and leave its Route to wake it on the next visit. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once. Planned (ADR 0265, docs/reference/production-containers.md#sleep-and-wake): a production Instance's live release container sleeps by the same rule on its app-prod Node, and never takes the stop.
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
@@ -74,7 +74,7 @@ sequenceDiagram
   %%> What it does:
   %%> - one phase: first installs the power helper from this commit when it differs and probes it, so a failed install changes nothing a visitor sees
   %%> - checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`; an Instance without a published Route has no site and nothing to check; the intent's `route` says which
-  %%> - writes the asleep marker, so each request from now on gets the wake page
+  %%> - writes the asleep marker, so each request from now on waits while the Instance wakes
   %%> - runs `orbit-instance-power prepare` as the unit `orbit-instance-power-<id>`, the Instance's lock; a busy lock is retried 0.25 s apart, 40 times
   %%> - prepare reads the state from Incus first; running: removes the earlier plan and `sleep.json`, writes `max` to `memory.swap.max` of every cgroup of the subtree that holds 0 and records them in `limits.json` before the pause; `incus pause`
   %%> - prepare, frozen: lists `cgroup.procs` of the whole subtree, every process alike, and records each one's identity and the resident pages of its readable mappings; publishes the plan atomically; one `memory.reclaim`
@@ -84,7 +84,7 @@ sequenceDiagram
   %%> - a nested-fleet Instance gets no plan: `skipped`, `placement_unproven`
   %%> Why:
   %%> - one phase: each Ansible start costs about 4 s
-  %%> - the marker comes before the freeze: a request during the freeze gets the wake page, not a hang
+  %%> - the marker comes before the freeze: a request during the freeze goes to the activation check, not to a frozen app
   %%> - the plan is taken frozen, so it is exact; the reclaim follows it, so nothing stays in RAM by design
   %%> - with only the outer cgroup open, 1,531 MiB of a nested default stayed in RAM: a cgroup with 0 keeps its pages
   %%> - a cgroup swaps only as far as its ancestors allow, and Incus writes 0 unless `limits.memory.swap` is a byte size: a nested-fleet container has it equal to its memory, so its own cgroup never caps the swap of its fleet's Instances

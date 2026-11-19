@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Signed power stays off by default.** The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) sections record the earlier swap-backed clone measurements. Slice 6 added [the wake inside the request](#the-wake-inside-the-request). Slice 7 adds [signed power delivery](#signed-power-delivery) through the observer, the SSH relay, and Swamp recovery.
+> **Signed power stays off by default.** The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) sections record the earlier swap-backed clone measurements. Slice 6 added [the wake inside the request](#the-wake-inside-the-request); since 2026-11-19 the visit is held until the wake ends, with no progress page. Slice 7 adds [signed power delivery](#signed-power-delivery) through the observer, the SSH relay, and Swamp recovery.
 
 ## Where it runs
 
@@ -280,9 +280,13 @@ Two Pest files in `apps/gateway/tests/Feature/Infrastructure/Executor` test this
 
 `ORBIT_EXECUTOR_WAKE_ENABLED` defaults to `false`. With both this setting and signed power routing off, the activation endpoint and `instance:wake` keep the Python/SSH wake. Either setting selects a signed `wake` order with the Instance id as its target. The Gateway records or joins `instance.wake` under the Instance lock before signing and sends the order through the observer to the Operation's Node.
 
-The visitor uses one monotonic `ORBIT_EXECUTOR_WAIT_MS` budget, default 500 ms, for admission, publishing, waiting, and recording an in-bound success. The Gateway caps SQLite writer waits and Reverb HTTP calls by the remaining budget and checks the recorded receipt between short Valkey waits. A sibling can consume the Valkey copy without losing the result. The visitor only continues if it observes `done` or `partial` and sees the wake committed as succeeded while time remains. System scheduling, Valkey timeout ticks and the rest of the HTTP exchange are not part of a 500 ms response guarantee.
+The Gateway holds the visitor's request while the wake runs. One monotonic budget of `ORBIT_VISIT_WAKE_WAIT_SECONDS`, default 30 s, covers admission, publishing, waiting, and recording the success. The Gateway caps SQLite writer waits and Reverb HTTP calls by the remaining budget and checks the recorded receipt between short Valkey waits. A sibling can consume the Valkey copy without losing the result. `instance:wake` and other callers keep the `ORBIT_EXECUTOR_WAIT_MS` bound, default 500 ms.
 
-Caddy runs `forward_auth` before the app handlers in one ordered route. A 200 continues the original method, URI, query and body; the response is the app's own. Otherwise a slow wake, busy admission, refusal, failure or transport error shows the existing 401 page with `X-Orbit-Runtime-Activation-State: pending`. The page polls until the asleep marker goes. If SQLite could not admit the wake while the writer was busy, a later poll can admit it.
+Caddy runs `forward_auth` before the app handlers in one ordered route. A 200 continues the original method, URI, query and body; the response is the app's own. A failed or refused result answers at once with `503` and one plain sentence that names the code. So does an Operation that ended without success. An example is `The wake failed (instance.container_start_failed). Reload the page to try again.`
+
+A wake that has not ended within the budget answers `503` with `The Instance is still waking. Reload the page in a moment.` There is no progress page, script or reload; a reload is a new visit that joins or admits the wake. While other lifecycle work holds the Instance, the visit tries the admission again every 250 ms within the budget.
+
+A container that the Python path froze is held too: the Node's resume runs within the visit, and its workflow if that resume fails. Subtask 6003 proved it on the nested fleet with container default Instance 2 (`webtest.nested-dev`), frozen by Python. The visit got the app's own page, `200`, in 2.07 s. With the app's web unit masked, the wake failed, and the visit got the plain `503` `The wake failed (instance.container_start_failed)` in 23.9 s.
 
 ### Wake handoff recovery
 

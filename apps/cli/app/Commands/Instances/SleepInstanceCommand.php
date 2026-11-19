@@ -22,7 +22,7 @@ final class SleepInstanceCommand extends GatewayCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Stop a development container Instance now; its Route shows a wake page. Does not check T3: a running agent turn is cut.';
+    protected $description = 'Stop a development container Instance now; the next visit to its Route wakes it. Does not check T3: a running agent turn is cut.';
 
     protected function writeOperationResult(OperationResponse $operation): void
     {

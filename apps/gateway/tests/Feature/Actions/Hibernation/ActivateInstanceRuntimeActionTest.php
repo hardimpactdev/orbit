@@ -6,7 +6,6 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\AppDev\ViteProcessLifecycle;
-use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\VpDevPreset;
@@ -114,98 +113,45 @@ function assertRecordedWakePort(Instance $instance): void
 }
 
 describe('host-checkout Vite wake', function (): void {
-    it('starts Vite on its recorded port and writes the awake marker without publication', function (): void {
+    it('holds the visit, starts Vite on its recorded port and writes the awake marker without publication', function (): void {
         [$instance, $state] = hibernatedViteCheckout();
         // The automatic-deploy projection mark is independent of wake and must stay untouched.
         expect($instance->refresh()->development_projection_pending)->toBeTrue();
 
-        viteWakePoll($instance)->assertUnauthorized()->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
+        viteWakePoll($instance)->assertOk()->assertContent('');
 
         expect($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
         expect($instance->refresh()->development_projection_pending)->toBeTrue();
-        expect(app(HibernationWakeFailureStore::class)->get($instance->id))->toBeNull();
         assertRecordedWakePort($instance);
     });
 
-    it('keeps an unavailable recorded port asleep and preserves the same failure on retry', function (): void {
+    it('answers a plain 503 and keeps the recorded port when it is taken, startup is refused or readiness fails', function (string $failure): void {
         [$instance, $state] = hibernatedViteCheckout();
-        $state->busy = true;
-        viteWakePoll($instance)->assertUnauthorized();
-
-        viteWakePoll($instance)->assertServiceUnavailable()->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
-            ->assertSee('The recorded port 5173 is not available');
-        expect($state->started)->toBeFalse()->and($state->awake)->toBeFalse();
-        assertRecordedWakePort($instance);
-
-        viteWakePoll($instance, '/?orbit-wake-retry=1')->assertUnauthorized();
-        test()->travel(121)->seconds();
-        viteWakePoll($instance)->assertServiceUnavailable()->assertSee('The recorded port 5173 is not available');
-        expect($state->started)->toBeFalse()->and($state->awake)->toBeFalse();
-        assertRecordedWakePort($instance);
-    });
-
-    it('keeps the recorded port when strict-port startup or readiness fails', function (string $failure): void {
-        [$instance, $state] = hibernatedViteCheckout();
+        $state->busy = $failure === 'busy';
         $state->startRefused = $failure === 'start';
         $state->ready = $failure !== 'readiness';
-        viteWakePoll($instance)->assertUnauthorized();
 
-        viteWakePoll($instance)->assertServiceUnavailable()->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
-            ->assertSee('The recorded port 5173 is not available');
+        viteWakePoll($instance)->assertServiceUnavailable()->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
+            ->assertSee('The recorded port 5173 is not available')->assertDontSee('<script', false);
 
         expect($state->started)->toBeFalse()->and($state->awake)->toBeFalse();
         assertRecordedWakePort($instance);
-    })->with(['start', 'readiness']);
 
-    it('shows an unexpected wake exception as a persistent failure without exposing its details', function (string $command): void {
+        $state->busy = false;
+        $state->startRefused = false;
+        $state->ready = true;
+        viteWakePoll($instance)->assertOk();
+        expect($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
+    })->with(['busy', 'start', 'readiness']);
+
+    it('answers a plain 503 for an unexpected wake exception without exposing its details', function (string $command): void {
         [$instance, $state] = hibernatedViteCheckout();
         $state->throwOn = $command;
-        viteWakePoll($instance)->assertUnauthorized();
 
-        viteWakePoll($instance)->assertServiceUnavailable()->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
+        viteWakePoll($instance)->assertServiceUnavailable()->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
             ->assertSee('The runtime wake failed')->assertDontSee('private runtime detail');
-        viteWakePoll($instance)->assertServiceUnavailable();
 
         expect($state->awake)->toBeFalse();
         assertRecordedWakePort($instance);
     })->with(['vite.check-listener', 'vite.select-port', 'vite.set-traffic', 'process.control', 'process.status']);
-
-    it('shows only the spinner while waking, polls every 250 ms and keeps the status, headers and failure page', function (): void {
-        [$instance, $state] = hibernatedViteCheckout();
-        // The recorded port is taken, so the wake that the first poll starts fails and the next poll gets the failure page.
-        $state->busy = true;
-
-        $page = viteWakePoll($instance)->assertUnauthorized()->assertHeader('Retry-After', '1')
-            ->assertHeader('X-Orbit-Runtime-Activation-State', 'pending')
-            ->assertSee('aria-label="Orbit"', false);
-        expect($page->getContent())->toContain('const intervalMs = 250;')
-            ->and(waitingPageText($page))->toBe('');
-
-        viteWakePoll($instance)->assertServiceUnavailable()->assertHeader('X-Orbit-Runtime-Activation-State', 'failed')
-            ->assertSee('The recorded port 5173 is not available')->assertHeaderMissing('Retry-After')->assertSee('Try again');
-    });
-
-    it('removes the explicit retry flag from subsequent page polls', function (): void {
-        [$instance, $state] = hibernatedViteCheckout();
-        $state->busy = true;
-        viteWakePoll($instance)->assertUnauthorized();
-        viteWakePoll($instance)->assertServiceUnavailable();
-        $state->busy = false;
-
-        $page = viteWakePoll($instance, '/work?tab=one&orbit-wake-retry=1');
-
-        $page->assertUnauthorized();
-        preg_match('/const uri = (.+);/', $page->getContent(), $match);
-        expect(json_decode($match[1], true, flags: JSON_THROW_ON_ERROR))->toBe('/work?tab=one');
-        expect($state->started)->toBeTrue()->and($state->awake)->toBeTrue();
-        assertRecordedWakePort($instance);
-    });
 });
-
-/** The visible text of a page's body: the waiting page holds none beyond its spinner. */
-function waitingPageText(TestResponse $page): string
-{
-    $body = (string) preg_replace('/^.*<body>|<\/body>.*$/s', '', $page->getContent());
-
-    return trim((string) preg_replace('/\s+/', ' ', strip_tags($body)));
-}
