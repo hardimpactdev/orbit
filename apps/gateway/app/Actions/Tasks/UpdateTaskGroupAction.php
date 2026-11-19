@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskStatusMoves;
 use App\Models\Task;
+use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -82,18 +83,25 @@ final readonly class UpdateTaskGroupAction
     }
 
     /**
-     * The work of a task with no subtask. A task in backlog with no subtask and no work opens its work here, with no
-     * deliverables yet (docs/reference/tasks.md#a-task-with-no-subtask).
+     * Applies UPDATE to the work of a task with no subtask. A task in backlog with no subtask and no work opens its work here, in
+     * one transaction with UPDATE, so a refused update leaves the task as it was (docs/reference/tasks.md#a-task-with-no-subtask).
+     *
+     * @param  Closure(Task): Task  $update
      */
-    public function work(Task $group): Task
+    public function work(Task $group, Closure $update): Task
     {
         $this->requireExtension->execute();
+        // An existing work takes its update as a subtask does, with its repository reads outside any transaction.
+        $existing = $group->work()->first();
+        if ($existing instanceof Task) {
+            return $update($existing);
+        }
 
-        return DB::transaction(static function () use ($group): Task {
+        return DB::transaction(static function () use ($group, $update): Task {
             $locked = Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
             $work = $locked->work()->first();
             if ($work instanceof Task) {
-                return $work;
+                return $update($work);
             }
             if ($locked->status !== TaskGroupStatus::Backlog) {
                 throw TaskGroupGuard::notInBacklog();
@@ -102,7 +110,7 @@ final readonly class UpdateTaskGroupAction
                 throw TaskGroupGuard::deliverablesLocked();
             }
 
-            return CreateTaskGroupAction::openWork($locked, []);
+            return $update(CreateTaskGroupAction::openWork($locked, []));
         });
     }
 

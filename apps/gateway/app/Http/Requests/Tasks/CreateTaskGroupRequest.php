@@ -86,7 +86,7 @@ final class CreateTaskGroupRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->has('parent_id')
+            $body = app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->has('parent_id')
                 ? ['parent_id', 'project_id', 'title', 'brief', 'deliverables', 'topology']
                 : [
                     'project_id',
@@ -106,15 +106,18 @@ final class CreateTaskGroupRequest extends FormRequest
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
+        // The body chooses the shape: subtasks, or the task's own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
+        // Both are refused here, before any rule or repository read.
+        if (array_key_exists('deliverables', $body) && array_key_exists('subtasks', $body)) {
+            throw ValidationException::withMessages(['subtasks' => ['A task takes either subtasks or its own deliverables, not both.']]);
+        }
+
+        return $body;
     }
 
     public function parentPayload(): CreateTaskGroupData
     {
-        // The body chooses the shape: subtasks, or the task's own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
         $body = $this->validationData();
-        if (array_key_exists('deliverables', $body) && array_key_exists('subtasks', $body)) {
-            throw ValidationException::withMessages(['subtasks' => ['A task takes either subtasks or its own deliverables, not both.']]);
-        }
         $tasks = [];
         $validatedTasks = $this->validated('subtasks');
 

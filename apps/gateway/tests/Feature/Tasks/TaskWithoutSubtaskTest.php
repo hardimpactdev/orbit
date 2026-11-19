@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -208,8 +209,21 @@ it('corrects the deliverables of a task with no subtask in backlog by the task\'
         ->assertJsonPath('data.status', 'todo')->assertJsonPath('data.work.title', 'Add the notes')->assertJsonPath('data.work.brief', 'Write them.');
 });
 
-it('refuses both shapes in one create before it writes anything, and reads the shape from the body alone', function (array $shape): void {
+it('refuses both shapes in one create before it writes anything or reads the repository, and reads the shape from the body alone', function (array $shape): void {
     $project = soloProject();
+    // The repository is unavailable: a create that reached the path check would answer tasks.deliverable_base_unavailable.
+    app()->instance(DeliverablePathRepository::class, new class implements DeliverablePathRepository
+    {
+        public function defaultBranchCommit(Project $project): string
+        {
+            throw new RuntimeException('The repository was read.');
+        }
+
+        public function files(Project $project, string $commit): array
+        {
+            throw new RuntimeException('The repository was read.');
+        }
+    });
 
     $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Add the note', 'brief' => 'Write it.', ...$shape])
         ->assertUnprocessable()->assertJsonPath('error.details.subtasks.0', 'A task takes either subtasks or its own deliverables, not both.');
@@ -219,6 +233,8 @@ it('refuses both shapes in one create before it writes anything, and reads the s
     expect(Task::topLevel()->pluck('id')->all())->toBe([$id])
         ->and(Task::query()->count())->toBe(0);
 })->with([
+    'a modified file at the top level' => [['deliverables' => [['id' => 'doc', 'type' => 'file', 'description' => 'Changed.', 'path' => 'README.md', 'change' => 'modified']], 'subtasks' => []]],
+    'a modified file in a subtask' => [['deliverables' => [], 'subtasks' => [['title' => 'A', 'brief' => 'B', 'deliverables' => [['id' => 'doc', 'type' => 'file', 'description' => 'Changed.', 'path' => 'README.md', 'change' => 'modified']]]]]],
     'two subtasks and no deliverables' => [['subtasks' => [['title' => 'A', 'brief' => 'B'], ['title' => 'C', 'brief' => 'D']], 'deliverables' => []]],
     'deliverables and a subtask' => [['deliverables' => soloDeliverables(), 'subtasks' => [['title' => 'A', 'brief' => 'B']]]],
     'two empty lists' => [['deliverables' => [], 'subtasks' => []]],
@@ -294,4 +310,25 @@ it('refuses a todo task without deliverables, and a subtask added to a started t
         ->assertJsonPath('error.message', 'A started task with no subtask takes no subtask. Create a new task for the new outcome.');
 
     expect(Task::query()->where('parent_id', $id)->count())->toBe(1);
+});
+
+it('leaves a draft as it was when an edit of its work is refused or fails', function (): void {
+    $project = soloProject();
+    $draft = $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Plan', 'brief' => 'Plan it.'])->assertCreated()->json('data.id');
+
+    // The first deliverables with a reason that no correction takes: refused, and the draft opens no work.
+    $this->patchJson("/api/v1/tasks/{$draft}", ['deliverables' => soloDeliverables(), 'reason' => 'No check failed.'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'tasks.reason_unexpected');
+    $this->getJson("/api/v1/tasks/{$draft}")->assertOk()->assertJsonPath('data.work', null);
+    expect(Task::query()->where('parent_id', $draft)->count())->toBe(0);
+
+    // The first subtask of a draft with empty work fails to insert: the empty work stays.
+    $empty = $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Empty', 'brief' => 'Empty.', 'deliverables' => []])->assertCreated()->json('data.id');
+    $work = Task::query()->where('parent_id', $empty)->sole();
+    Task::creating(static function (Task $task): void {
+        throw new RuntimeException('The subtask was not written.');
+    });
+    $this->postJson('/api/v1/tasks', ['parent_id' => $empty, 'title' => 'First', 'brief' => 'First part.'])->assertServerError();
+
+    expect(Task::query()->where('parent_id', $empty)->pluck('id')->all())->toBe([$work->id]);
 });

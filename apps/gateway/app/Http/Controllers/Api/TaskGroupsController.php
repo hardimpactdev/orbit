@@ -131,7 +131,7 @@ final class TaskGroupsController extends Controller
     public function update(UpdateTaskGroupRequest $request, Task $task, UpdateTaskGroupAction $action, UpdateTaskAction $childAction): JsonResponse
     {
         if ($request->addressesWork()) {
-            $childAction->execute($task, $action->work($task), $request->childPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
+            $action->work($task, fn (Task $work): Task => $childAction->execute($task, $work, $request->childPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id')));
 
             return response()->json(['data' => TaskGroupData::fromModel($task->refresh())->toArray(), 'meta' => $this->meta($request)]);
         }
