@@ -59,7 +59,7 @@ cases = [
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base",
   "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended",
-  "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout",
+  "the Instance host is due only for code the app-dev converge can load, not for another Operation's playbook, nor converges on an unreadable checkout",
   "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s",
   "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only",
   "a fleet without worker c remints at once and names it incomplete",
@@ -195,7 +195,7 @@ parsed_yaml_inputs = ["swamp/ansible/tasks/instance-fleet.yml"]
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh keeps the recorded Instance host, and a changed host digest converges nested-app-dev's app-dev role with its base" = 32 # ESTIMATE: local 14.518s x 2.1, rounded up, plus 1s; ci-fleet-speed-evidence.json
   "the window's first refresh with all three Nodes and the host due admits nested-app-dev's role converge only after the base converges ended" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
-  "the Instance host ignores exact housekeeping paths but converges for new paths or an unreadable checkout" = 90 # ESTIMATE: local 42s x 2.1 plus startup allowance
+  "the Instance host is due only for code the app-dev converge can load, not for another Operation's playbook, nor converges on an unreadable checkout" = 109 # ESTIMATE: local 51s x 2.1, rounded up, plus 1s
   "a moved Instance host intent, such as another image package, rebuilds the host, and that converge is awaited up to 1800 s" = 25 # ESTIMATE: short pending sequence, local 11.33s x 2.1, rounded up, plus 1s
   "a default below 2,000,000 builds no Instance host: the refresh names skipped_idmap_small and converges nested-app-dev's base only" = 31 # ESTIMATE: local 14s x 2.1, rounded up, plus 1s
   "a fleet without worker c remints at once and names it incomplete" = 22 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
