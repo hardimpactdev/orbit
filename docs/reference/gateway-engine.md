@@ -76,7 +76,7 @@ The engine mirrors its steps into `state.native_progress`, so `operation:show` s
 
 Each step is one signed order. Its `operation` is `<id>:<step>`, so each step has its own journal record on the Node. Its `target` is the real resource the primitive changes. For `ufw.ensure_rule` that is the Node, so firewall changes on one Node run one at a time.
 
-An engine order expires 8 seconds after signing. The executor refuses an expiry more than 10 seconds ahead. A receipt with `refused` and `expired` puts the step back to pending, and the next transition sends a new order. A `replayed_nonce` receipt counts with the first order's result it carries; without one it changes nothing.
+An engine order expires 8 seconds after signing. The executor refuses an expiry more than 10 seconds ahead. A receipt with `refused` and `expired` puts the step back to pending, and the next transition sends a new order. So does a `failed` receipt with `executor.order_expired`: the order expired while it waited for the executor's lock, so it never acted. A `replayed_nonce` receipt counts with the first order's result it carries; without one it changes nothing.
 
 The engine takes a receipt's Node from its subject, `orbit.receipts.<node>`, never from its body, and applies it only to a step on that Node. A receipt it cannot read is terminated, so it never comes back.
 
@@ -102,7 +102,7 @@ A start or an order can be lost when the Gateway stops between a commit and its 
 
 ## The machine bus
 
-`nats-server` runs on the Gateway and listens on port 4222. The Gateway firewall allows that port on the WireGuard interface only. JetStream keeps these streams; `orbit:engine-setup` and the consumer make them, and both are idempotent:
+`nats-server` runs on the Gateway and listens on port 4222 of the Gateway's WireGuard address only, so the bus is never reachable from the Internet, even on a Gateway host without a firewall. The Gateway's own client, and every executor, connect to that address. JetStream keeps these streams; `orbit:engine-setup` and the consumer make them, and both are idempotent:
 
 | Stream | Subjects | Retention | Consumers |
 | --- | --- | --- | --- |
@@ -175,7 +175,7 @@ The Gateway role converge installs the bus when the Gateway holds the key:
 
 - `gateway-nats.yml` makes the `nats` user and installs the pinned `nats-server` release, checked by SHA-256;
 - `GatewayRuntimeFiles` writes `/etc/nats/nats.conf`, `nats-server.service` and `orbit-gateway-engine.service`;
-- `NodeFirewallRuleCatalog` adds the rule `orbit:gateway-nats` for port 4222 on the `orbit` interface.
+- `NodeFirewallRuleCatalog` adds the rule `orbit:gateway-nats` for port 4222 on the `orbit` interface, for a host whose firewall is on.
 
 To turn the engine on for a fleet:
 
