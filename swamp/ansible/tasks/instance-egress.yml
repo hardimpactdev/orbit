@@ -7,7 +7,18 @@
   ansible.builtin.file: { src: /dev/null, dest: /etc/systemd/system/squid.service, state: link, force: true }
   register: egress_mask
 
+# Squid has no pinned version: the host's updates upgrade it. One read of its package state replaces apt's cache refresh and package
+# check on every converge. Only a read that succeeds and prints `installed` skips apt; a package that is not installed (config files
+# left after removal included) and a failed read run it.
+- name: Read the installed Squid package
+  ansible.builtin.command: { argv: [dpkg-query, --show, --showformat, "${db:Status-Status}", squid] }
+  register: egress_package
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
 - name: Install Squid
+  when: egress_package.rc != 0 or egress_package.stdout != 'installed'
   ansible.builtin.apt: { name: squid, state: present, install_recommends: false, update_cache: true, cache_valid_time: 3600 }
 
 - name: Make the folder of the proxy
