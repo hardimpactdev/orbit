@@ -50,7 +50,10 @@ final readonly class StartNodeConvergeAction
         return app(NodeNetworkReservation::class)->hold($node, $base, function (?Node $hub) use ($node, $base, $roles, $selected, $requestId, $full, $release, $automatic): Operation {
             // Read before the admission clears the record; a holder refuses this admission, so nothing writes it in between.
             // Release admission already compares its public role digest, including the workflow and materializer.
-            $recorded = app(NodeConvergePhaseDigest::class)->recorded($node->fresh() ?? $node, $full || $release);
+            $fresh = $node->fresh() ?? $node;
+            $recorded = app(NodeConvergePhaseDigest::class)->recorded($fresh, $full || $release);
+            // A scoped converge keeps the full-scope record it holds now (NodeConvergePhaseDigest::held()).
+            $held = $base || $roles !== null ? app(NodeConvergePhaseDigest::class)->recorded($fresh, false) : null;
             $operation = $this->operations->execute('node.converge', 'node', $node->id, $node->id,
                 ['_converge' => ['network' => ['hub_id' => $hub?->id, 'base' => $base], 'intent' => ['release_roles_only' => $release, 'automatic' => $automatic]],
                     'participant_node_ids' => array_values(array_unique([$node->id, $hub->id ?? $node->id]))],
@@ -82,6 +85,9 @@ final readonly class StartNodeConvergeAction
                     'host' => ! $release && ! $base && $roles === null ? $inputs->host(node: $node) : null,
                 ];
                 $snapshot['intent'] = app(NodeConvergePhaseDigest::class)->stamp($snapshot['intent'], $recorded);
+                if ($held !== null) {
+                    $snapshot['held_digests'] = $held;
+                }
                 // Dispatch is deferred until this reservation transaction commits.
                 $operation->input = [...$operation->input, '_converge' => [
                     ...$snapshot, 'network' => ['hub_id' => $hub?->id, 'base' => $base],

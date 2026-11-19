@@ -727,7 +727,11 @@ The first converge of each Node after this rule shipped finds every code digest 
 
 Swamp compares each digest with the digest that the Node records for that phase, and skips the phase only when they are equal. A skipped phase does not connect to the Node and does not read its state.
 
-A succeeded `node:converge`, role addition or role convergence records the digest of each of its phases on the Node (`nodes.converge_digests`), whether the phase ran or skipped. It replaces the whole record. Nothing else writes the record. The admission of any Operation that takes the Node's Operation admission lock clears it after it reads it: a converge, a role addition, convergence or removal, an enrollment or an agent rekey. So these run a phase in full:
+A succeeded full `node:converge`, role addition or role convergence records the digest of each of its phases on the Node (`nodes.converge_digests`), whether the phase ran or skipped. It replaces the whole record. Nothing else writes the record.
+
+A scoped converge, with `--base`, `--roles` or as a release's role converge, reads a partial intent, so its digests never equal those of a full converge. It keeps the record that it held at admission instead. It drops each phase that reported a change, because that phase's record describes the Node before the change.
+
+So after a release that changed only the agent pins, the next full converge runs only the agent phase. A scoped converge compares its own digests with the full record, so it runs every phase. The admission of any Operation that takes the Node's Operation admission lock clears it after it reads it: a converge, a role addition, convergence or removal, an enrollment or an agent rekey. So these run a phase in full:
 
 - a changed digest: a changed intent, secret value or release;
 - no record: the first converge, or a converge after a failed or interrupted converge;

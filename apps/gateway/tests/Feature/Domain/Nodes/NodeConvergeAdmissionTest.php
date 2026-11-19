@@ -556,6 +556,7 @@ it('sends the recorded phase digests and clears the record', function (bool $ful
     $first = Operation::query()->sole();
     $intent = $first->input['_converge']['intent'];
     expect($intent['recorded_digests'])->toBe($full ? [] : $recorded)
+        ->and($first->input['_converge']['held_digests'])->toBe($recorded)
         ->and($this->node->refresh()->converge_digests)->toBeNull();
 
     $first->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
@@ -563,6 +564,18 @@ it('sends the recorded phase digests and clears the record', function (bool $ful
     $second = Operation::query()->whereKeyNot($first->id)->sole();
     expect($second->input['_converge']['intent']['recorded_digests'])->toBe([]);
 })->with(['recorded' => false, 'full' => true]);
+
+it('holds the full-scope record for a scoped converge only', function (array $scope, bool $held): void {
+    // docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change: a full converge records its own digests.
+    $recorded = ['agent' => str_repeat('a', 64)];
+    Node::query()->whereKey($this->node->id)->update(['converge_digests' => json_encode($recorded)]);
+
+    $this->postJson($this->url, $scope)->assertAccepted();
+
+    $capture = Operation::query()->sole()->input['_converge'];
+    expect($held ? $capture['held_digests'] : $capture)->toBe($held ? $recorded : $capture)
+        ->and(array_key_exists('held_digests', $capture))->toBe($held);
+})->with(['full scope' => [[], false], 'base' => [['base' => true], true]]);
 
 it('compares with no recorded digest while the Node records a failed agent pin', function (): void {
     // An agent command records the pin outside any admission lock; the converge that repairs it must run the agent phase.
@@ -617,6 +630,7 @@ it('limits an automatic converge to active selected roles under the Node lock', 
     expect($operation->lock_key)->toBe('node:'.$this->node->id)
         ->and($capture['intent']['release_roles_only'])->toBeTrue()
         ->and($capture['intent']['recorded_digests'])->toBe([])
+        ->and($capture['held_digests'])->toBe(['roles' => str_repeat('1', 64)])
         ->and($capture['intent']['selected_roles'])->toBe(['app-prod'])
         ->and($capture['intent']['role_units'])->toBe([])
         ->and($capture['intent']['tools'])->toBe([])

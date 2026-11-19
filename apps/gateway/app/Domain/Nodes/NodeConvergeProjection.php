@@ -80,7 +80,9 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
             $rolesPassed = is_array($phases) && NodeConvergeResult::passed($phases[3]);
             self::recordCiRunner($operation, $intent, $rolesPassed);
             if ($result['outcome'] === 'succeeded') {
-                $digests = ValidatedData::object($result['digests']);
+                $digests = array_key_exists('held_digests', $snapshot)
+                    ? app(NodeConvergePhaseDigest::class)->held(array_map(ValidatedData::string(...), ValidatedData::object($snapshot['held_digests'])), array_map(ValidatedData::object(...), is_array($phases) ? $phases : []))
+                    : ValidatedData::object($result['digests']);
                 $restartDeferred = ($result['t3_restart_deferred'] ?? []) !== [];
                 if ($restartDeferred) {
                     unset($digests['roles']);

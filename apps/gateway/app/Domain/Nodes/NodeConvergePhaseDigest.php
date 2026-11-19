@@ -37,6 +37,22 @@ final readonly class NodeConvergePhaseDigest
     }
 
     /**
+     * What a succeeded scoped converge (the base, a role subset or a release) records: its own digests read a partial intent that no full
+     * converge reads, so they would make the next full converge run every phase. It keeps the record it held at admission instead, without
+     * each phase that reported a change: that phase's record describes the Node before it.
+     *
+     * @param  array<string,string>  $held
+     * @param  array<array<string,mixed>>  $phases
+     * @return array<string,string>
+     */
+    public function held(array $held, array $phases): array
+    {
+        $changed = array_map(static fn (array $phase): string => ValidatedData::string($phase['name']), array_filter($phases, static fn (array $phase): bool => $phase['changed'] !== 0));
+
+        return array_diff_key($held, array_flip($changed));
+    }
+
+    /**
      * After a succeeded converge: the digest of each phase in its scope, whether it ran or was unchanged.
      *
      * @param  array<string,mixed>  $digests
