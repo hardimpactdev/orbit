@@ -634,19 +634,22 @@ function prepareReleaseTarget(): void
 
 it('queues a busy-refused release role converge ahead of new work, lets the holder finish, and admits it once the holder ends', function (): void {
     prepareReleaseTarget();
-    $admit = fn (string $kind, int $instance, ?Operation $parent = null): Operation => app(OperationStore::class)->create($kind, 'instance', $instance,
-        $this->node->id, ['participant_node_ids' => [$this->node->id]], 'test', null, parent: $parent);
+    $admit = fn (string $kind, int $instance, array $input = []): Operation => app(OperationStore::class)->create($kind, 'instance', $instance,
+        $this->node->id, ['participant_node_ids' => [$this->node->id], ...$input], 'test', null);
     $holder = $admit('instance.create', 99);
     $release = releaseWithRow(['status' => 'pending']);
     $fleet = app(ContinueReleaseFleetAction::class);
 
     expect($fleet->execute($release))->toBe(15)
         ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['status'])->toBe('pending');
-    // New work on another target waits behind the converge.
-    expect(fn () => $admit('instance.deploy', 100))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
-    // The holder's own work goes on: the create hands off to its completion, which holds the Node in turn.
+    // New work waits behind the converge, on another target and on the holder's own target alike.
+    foreach ([100, 99] as $instance) {
+        expect(fn () => $admit('instance.deploy', $instance))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    }
+    // Only the holder's own continuation goes on: the create hands off to its completion, which holds the Node in turn.
     $holder->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
-    $completion = $admit('instance.complete', 99);
+    expect(fn () => $admit('instance.deploy', 99))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'));
+    $completion = $admit('instance.complete', 99, ['create_operation_id' => $holder->id]);
     expect($fleet->execute($release))->toBe(15);
     $completion->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
 

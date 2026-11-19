@@ -31,6 +31,7 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-create.yaml",
   "swamp/workflows/workflow-operation-instance-complete.yaml",
   "swamp/ansible/tasks/production-release-host.yml",
+  "swamp/ansible/production-release-host-files.json",
   "swamp/ansible/files/instance-release-vp.ts",
   "swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts",
   "swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts",

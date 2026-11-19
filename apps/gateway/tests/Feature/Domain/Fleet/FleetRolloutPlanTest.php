@@ -338,6 +338,55 @@ it('holds only the Node whose host inputs changed, before its delivery or role c
         ->and(Operation::query()->count())->toBe(0);
 });
 
+it('recognizes a Node\'s approval of an earlier release tree, and still holds it when its own host inputs changed since', function (string $changed, bool $held): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    // The previous release's tree, which differs from this one in one host input.
+    $previous = $this->base.'/releases/bbbbbbbbbbbb';
+    copyRolloutHostTree($previous);
+    file_put_contents($previous.'/'.$changed, "\n# the previous release\n", FILE_APPEND);
+    $inputs = app(ReleaseNodeInputs::class);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    expect($inputs->legacyHost($previous))->not->toBe($inputs->legacyHost());
+    $dev->forceFill(['release_inputs' => ['host' => $inputs->legacyHost($previous)]])->save();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    // Past the host check, the Node stops at its delivery admission: this fixture has no serving Gateway Node.
+    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe($held ? 'fleet.host_inputs_changed' : 'fleet.rollout_not_ready')
+        ->and($dev->refresh()->release_inputs['host'])->toBe($held ? $inputs->legacyHost($previous) : $inputs->host(node: $dev));
+})->with([
+    'a Gateway-only change' => ['swamp/ansible/tasks/gateway-runtime.yml', false],
+    'a shared host input change' => ['swamp/ansible/tasks/node-kernel-policy.yml', true],
+]);
+
+it('schedules app-prod when any file its production release host reads changes, the staged files beside the Ansible tree included', function (): void {
+    $root = $this->base.'/tree';
+    $repository = dirname(base_path(), 2);
+    copyRolloutHostTree($root);
+    foreach (['swamp/ansible', 'swamp/scripts', 'swamp/extensions/behaviors/operations'] as $folder) {
+        File::copyDirectory($repository.'/'.$folder, $root.'/'.$folder);
+    }
+    $tasks = (string) file_get_contents($root.'/swamp/ansible/tasks/production-release-host.yml');
+    preg_match_all('~(?<![\w/.-])files/[\w.-]+~', $tasks, $files);
+    preg_match_all('~\{\{ playbook_dir \}\}/((?:module_utils|files)/[\w.-]+)~', $tasks, $modules);
+    $read = [...array_map(static fn (string $file): string => 'swamp/ansible/'.$file, [...$files[0], ...$modules[1]]),
+        'swamp/ansible/tasks/production-release-host.yml',
+        ...array_map(static fn (string $file): string => 'swamp/'.$file,
+            json_decode((string) file_get_contents($root.'/swamp/ansible/production-release-host-files.json'), true, flags: JSON_THROW_ON_ERROR))];
+    expect($read)->toContain('swamp/scripts/production-release-phase', 'swamp/ansible/files/instance-release-vp.ts');
+    $inputs = app(ReleaseNodeInputs::class);
+    $prod = Node::query()->findOrFail($this->nodes['prod']);
+    $before = $inputs->roles($prod, root: $root);
+
+    foreach (array_unique($read) as $file) {
+        $original = (string) file_get_contents($root.'/'.$file);
+        file_put_contents($root.'/'.$file, "\n# changed\n", FILE_APPEND);
+        expect($inputs->roles($prod, root: $root))->not->toBe($before, $file);
+        file_put_contents($root.'/'.$file, $original);
+    }
+});
+
 it('counts the Gateway runtime only as a host input of the Gateway Node', function (): void {
     $root = $this->base.'/tree';
     copyRolloutHostTree($root);

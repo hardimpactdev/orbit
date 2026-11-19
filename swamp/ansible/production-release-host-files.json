@@ -1,0 +1,6 @@
+[
+  "extensions/behaviors/operations/instance-deploy/vp_requirements.ts",
+  "extensions/behaviors/operations/instance-vp-command/requirements.ts",
+  "scripts/production-release-phase",
+  "scripts/release-container.py"
+]

@@ -3,7 +3,9 @@ import { parse } from "jsr:@std/yaml@1.0.12";
 import { convergeResult, phases } from "../extensions/behaviors/operations/ansible-input/converge_result.ts";
 import { codeDigest, convergeInput, phaseCode, phaseDigests, roleDigests, rolePhaseCode, roleSkippable, skippable, unsafeYaml } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { toolState } from "../extensions/behaviors/operations/ansible-input/converge_tool.ts";
-import { behavior as extension, ReleaseHostFiles } from "../extensions/behaviors/operations/ansible-input/write.ts";
+import { behavior as extension, ReleaseHostFilesList } from "../extensions/behaviors/operations/ansible-input/write.ts";
+
+const ReleaseHostFiles: string[] = JSON.parse(Deno.readTextFileSync(new URL(`../${ReleaseHostFilesList}`, import.meta.url)));
 
 /** The digest fields a converge intent carries (docs/reference/node-provisioning.md#skip-a-phase-whose-input-did-not-change). */
 const digestFixture = { recorded_digests: [] };
@@ -146,6 +148,7 @@ Deno.test("converge keeps the staged phase files after worker cache removal and 
             await Deno.mkdir(`${cache}/${file.slice(0, file.lastIndexOf("/"))}`, { recursive: true });
             await Deno.writeTextFile(`${cache}/${file}`, file);
         }
+        await Deno.writeTextFile(`${cache}/${ReleaseHostFilesList}`, JSON.stringify(ReleaseHostFiles));
         const [first, second] = folders;
         const prepared = await prepare(first, 41, {});
         const { digests } = JSON.parse(await Deno.readTextFile(`${first}/digests.json`));

@@ -21,13 +21,12 @@ final readonly class NodeWorkAdmission
 
     /**
      * A refused automatic role converge queues: new Instance and task work on the Node waits behind it, so it starts once the
-     * current holders end. The holders' own work goes on: a child Operation, or work on a target that a holder held, such as
-     * the completion of a create.
+     * current holders end. Only a holder's own continuation goes on: its child Operation, or an Operation whose input names it as
+     * its predecessor (`*_operation_id`), such as the completion of a create. New work on a holder's target waits like any other.
      *
      * @param  array<string,mixed>  $input
-     * @param  string|null  $target  `type:id` of the Operation being admitted
      */
-    public function check(string $kind, int $nodeId, array $input, ?string $target = null, bool $child = false): void
+    public function check(string $kind, int $nodeId, array $input, ?int $parentId = null): void
     {
         $patterns = [...WaitForGatewayReleaseIdleAction::BlockingKindPatterns, 'instance.transfer', 'tasks.%'];
         $roles = $kind === 'node.converge' && data_get($input, '_converge.intent.release_roles_only') === true;
@@ -37,8 +36,11 @@ final readonly class NodeWorkAdmission
 
         $nodes = $roles ? [$nodeId] : array_values(array_unique([$nodeId, ...ValidatedData::integerList($input['participant_node_ids'] ?? [])]));
         Node::query()->whereKey($nodes)->orderBy('id')->lockForUpdate()->get();
-        if (! $roles && ! $child && array_any($nodes, static fn (int $id): bool => ($holders = Cache::get(self::waitKey($id))) !== null
-            && ! in_array($target, (array) $holders, true))) {
+        $predecessors = array_values(array_filter([$parentId, ...array_values(array_filter($input,
+            static fn (mixed $value, int|string $key): bool => str_ends_with((string) $key, '_operation_id') && is_int($value),
+            ARRAY_FILTER_USE_BOTH))]));
+        if (! $roles && array_any($nodes, static fn (int $id): bool => ($holders = Cache::get(self::waitKey($id))) !== null
+            && array_intersect($predecessors, ValidatedData::integerList($holders)) === [])) {
             throw new ResourceOperationException('operation.target_busy', 'An automatic role converge waits for this Node.', 409);
         }
         $open = Operation::query()->where(static fn (Builder $query) => $query
@@ -62,8 +64,8 @@ final readonly class NodeWorkAdmission
             || $operation->lock_key !== null || $cancel->awaitsForwarding($operation));
         if ($roles) {
             $holders->isEmpty() ? Cache::forget(self::waitKey($nodeId)) : Cache::put(self::waitKey($nodeId), array_values(array_unique([
-                ...ValidatedData::stringList(Cache::get(self::waitKey($nodeId), [])),
-                ...$holders->map(static fn (Operation $operation): string => $operation->target_type.':'.$operation->target_id),
+                ...ValidatedData::integerList(Cache::get(self::waitKey($nodeId), [])),
+                ...$holders->map(static fn (Operation $operation): int => $operation->id),
             ])), self::WaitSeconds);
         }
         if ($holders->isNotEmpty()) {

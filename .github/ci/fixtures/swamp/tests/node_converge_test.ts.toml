@@ -71,6 +71,7 @@ cases = [
 file = "swamp/tests/node_converge_test.ts"
 cost = 4
 inputs = [
+  "swamp/ansible/production-release-host-files.json",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/build_vars.py",

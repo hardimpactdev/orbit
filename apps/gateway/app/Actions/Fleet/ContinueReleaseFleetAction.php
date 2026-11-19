@@ -140,7 +140,7 @@ final readonly class ContinueReleaseFleetAction
             }
             $inputs = app(ReleaseNodeInputs::class);
             try {
-                $legacyHost = $inputs->legacyHost();
+                $legacyHosts = $this->legacyHosts($inputs);
             } catch (Throwable) {
                 $this->save($release, [...$phase, 'error_code' => 'fleet.inputs_unavailable'], 'failed');
 
@@ -158,7 +158,7 @@ final readonly class ContinueReleaseFleetAction
                     continue;
                 }
                 try {
-                    $delay = $this->visit($release, $node, $row, $inputs, $legacyHost, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
+                    $delay = $this->visit($release, $node, $row, $inputs, $legacyHosts, $cli, $cliUnavailable, Carbon::parse(ValidatedData::string($phase['started_at'])));
                     if ($delay !== null) {
                         $this->save($release, $phase, 'pending');
 
@@ -277,13 +277,43 @@ final readonly class ContinueReleaseFleetAction
         });
     }
 
-    /** @param array<string,mixed> $row */
-    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, string $legacyHost, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
+    /**
+     * The digest before host inputs were classified by Node, of this tree and of each release tree on disk, mapped to the tree.
+     * Drop after one release.
+     *
+     * @return array<string, string|null>
+     */
+    private function legacyHosts(ReleaseNodeInputs $inputs): array
+    {
+        $trees = [$inputs->legacyHost() => null];
+        try {
+            $releases = glob(GatewayReleaseLayout::fromConfig()->releasesPath().'/*', GLOB_ONLYDIR) ?: [];
+        } catch (Throwable) {
+            $releases = [];
+        }
+        foreach ($releases as $root) {
+            try {
+                $trees[$inputs->legacyHost($root)] ??= $root;
+            } catch (Throwable) {
+                // A tree without readable host inputs approved nothing this pass can recognize.
+            }
+        }
+
+        return $trees;
+    }
+
+    /**
+     * @param  array<string,mixed>  $row
+     * @param  array<string, string|null>  $legacyHosts
+     */
+    private function visit(GatewayRelease $release, Node $node, array &$row, ReleaseNodeInputs $inputs, array $legacyHosts, ?DesiredCliReleaseData $cli, bool $cliUnavailable, Carbon $passStarted): ?int
     {
         $recorded = $node->release_inputs ?? [];
         $host = $inputs->host(node: $node);
-        if (($recorded['host'] ?? null) === $legacyHost && $legacyHost !== $host) {
-            // A baseline recorded before host inputs were classified by Node approved this tree. Drop after one release.
+        $approved = is_string($recorded['host'] ?? null) && array_key_exists($recorded['host'], $legacyHosts) ? $recorded['host'] : null;
+        if ($approved !== null && $approved !== $host && $inputs->host($legacyHosts[$approved], $node) === $host) {
+            // A baseline recorded before host inputs were classified by Node approved a tree whose inputs for this Node are the same
+            // as this release's. Drop after one release.
             $locked = Node::query()->whereKey($node->id)->lockForUpdate()->firstOrFail();
             $recorded = [...($locked->release_inputs ?? []), 'host' => $host];
             $locked->forceFill(['release_inputs' => $recorded])->save();

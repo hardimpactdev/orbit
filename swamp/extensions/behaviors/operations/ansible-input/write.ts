@@ -8,13 +8,8 @@ import { convergeResult, ReportInput } from "./converge_result.ts";
 import { fleetRebootResult, FleetRebootResultInput } from "./fleet_reboot_result.ts";
 import { convergeInput, phaseCode, roleDigests, rolePhaseCode, roleSkippable } from "./converge_input.ts";
 
-/** Files outside the Ansible tree that the app-prod host tasks read by their path beside it (production-release-host.yml). */
-export const ReleaseHostFiles = [
-    "extensions/behaviors/operations/instance-deploy/vp_requirements.ts",
-    "extensions/behaviors/operations/instance-vp-command/requirements.ts",
-    "scripts/production-release-phase",
-    "scripts/release-container.py",
-];
+/** Lists the files outside the Ansible tree that production-release-host.yml reads beside it; the Gateway's app-prod digest reads it too. */
+export const ReleaseHostFilesList = "ansible/production-release-host-files.json";
 
 const Path = z.string().regex(
     /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/intent\.json$/,
@@ -154,7 +149,7 @@ export const behavior = {
                 // files on the Swamp Node even if this worker drains and clears its cache.
                 await Deno.mkdir(`${operations}/ansible-input`, { recursive: true, mode: 0o700 });
                 await copy(ansible, `${assets}/ansible`);
-                for (const file of ReleaseHostFiles) {
+                for (const file of z.array(z.string()).parse(JSON.parse(await Deno.readTextFile(ctx.extensionFile(ReleaseHostFilesList))))) {
                     await Deno.mkdir(`${assets}/${file.slice(0, file.lastIndexOf("/"))}`, { recursive: true, mode: 0o700 });
                     await copy(ctx.extensionFile(file), `${assets}/${file}`);
                 }
