@@ -262,6 +262,8 @@ Orbit does not change session, cookie, or encryption settings when it builds a p
 
 An Instance in a container is served by FrankenPHP in the container. Its Route's site proxies to port 8080 of the container's bridge address, with no PHP pool or checkout access on the Node. See [the default Instance](/reference/development-containers#the-default-instance). The site of a development container first checks the Instance's asleep marker; a request that finds it goes to the runtime activation endpoint, as [Sleep and wake](/reference/development-containers#sleep-and-wake) describes. The site also writes an access log, whose time is the Instance's HTTP activity for the idle sleep; a probe and a request that meets the marker are not logged.
 
+The activation endpoint holds the request while the Instance wakes. A woken Instance answers 307 to the visitor's own path and query, which the awake app then serves. A failed or late wake answers a plain-text 503. Caddy returns either answer to the visitor unchanged.
+
 The activation proxy takes its upstream, its method (GET) and its `Host` from `DevelopmentCaddyConfigRenderer::activationTarget()`. `orbit:executor-parity` checks each Node's loaded config against it ([Activation proxy](/reference/executor#activation-proxy)).
 
 A private Route of a clone also gets a development site on port 444 of the Node's WireGuard address. The Node redirects WireGuard connections to its free ports from 1024 to this site, which proxies to the port the client named in the container, such as `https://<domain>:5173`. A public Route gets none. See [Agent development servers](/reference/development-containers#agent-development-servers).

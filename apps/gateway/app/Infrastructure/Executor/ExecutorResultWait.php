@@ -12,7 +12,7 @@ use Throwable;
 /**
  * The waiting request's side of the executor hand-off (ADR 0266 "The path", step 5): `BLPOP` on the Operation's
  * reply list within a bound. It also takes the `accepted` line, so the caller knows when the executor accepted
- * the order (slice 7 falls back to the SSH relay without it).
+ * the order.
  */
 final readonly class ExecutorResultWait
 {

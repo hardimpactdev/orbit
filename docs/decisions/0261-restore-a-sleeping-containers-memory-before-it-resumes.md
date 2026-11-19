@@ -90,6 +90,8 @@ The role installs a path unit. It hands each request to a systemd template worke
 
 Removing the visible loader is a separate contract.
 
+2026-11-19: the visit is now held while the Instance wakes, and the progress page is gone; see [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor).
+
 ## Rejected alternatives
 
 - Route training, calibration requests or app hooks: they couple preparation to an app and a route list. The generic scan restored every tested route without them.
