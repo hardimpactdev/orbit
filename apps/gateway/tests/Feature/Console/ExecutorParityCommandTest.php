@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\Executor\ExecutorParity;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -22,6 +23,7 @@ use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Process\Process;
 
 require_once __DIR__.'/../Domain/Instances/ContainerInstanceHelpers.php';
 
@@ -69,8 +71,8 @@ afterEach(function (): void {
 });
 
 it('passes when every app-dev Node runs the pinned executor build, and reads no other Node', function (): void {
-    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity', ['--json' => true])
         ->expectsOutputToContain('"ok":true')
@@ -78,14 +80,14 @@ it('passes when every app-dev Node runs the pinned executor build, and reads no 
 });
 
 it('refuses and names each Node that runs another build, lacks the executor or is unreachable', function (): void {
-    $this->reports = ['10.45.0.2' => new CommandResult(0, str_repeat('d', 64)."\n".str_repeat('d', 64)."\nactive\nfrozen:\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "\n\ninactive\nfrozen:\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, str_repeat('d', 64)."\n".str_repeat('d', 64)."\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        '10.45.0.4' => new CommandResult(0, "\n\ninactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.build_differs, app-dev-2 (#{$this->second->id}): executor.missing")
         ->assertFailed();
 
-    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n\nfailed\nfrozen:\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n\nfailed\nfrozen:\ncaddy:\n", '', 1, false)];
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.inactive, app-dev-2 (#{$this->second->id}): executor.node_unreachable")
         ->assertFailed();
@@ -100,8 +102,8 @@ it('refuses while the converge would skip the install', function (): void {
 });
 
 it('refuses a Node whose service still runs another build than the installed pinned binary', function (): void {
-    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n".str_repeat('d', 64)."\nactive\nfrozen:\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n", '', 1, false)];
+    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n".str_repeat('d', 64)."\nactive\nfrozen:\ncaddy:\n", '', 1, false),
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.running_build_differs")
@@ -129,9 +131,9 @@ it('refuses a frozen container whose Instance the Gateway does not record asleep
     $runtime->update(['power_state' => 'running']);
     $sleep = Operation::query()->create(['kind' => InstanceSleep::Kind, 'target_type' => 'instance', 'target_id' => $instance->id,
         'node_id' => $this->first->id, 'status' => OperationStatus::Failed, 'error_code' => 'instance.power_helper_failed', 'input' => []]);
-    $frozen = "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n{$runtime->container_name}\n";
+    $frozen = "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n{$runtime->container_name}\ncaddy:\n";
     $this->reports = ['10.45.0.2' => new CommandResult(0, $frozen, '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): instance.frozen_unrecorded (Instance {$instance->id}). Keep ORBIT_EXECUTOR_WAKE_ENABLED"
@@ -146,7 +148,60 @@ it('refuses a frozen container whose Instance the Gateway does not record asleep
 
 it('refuses a Node whose Incus list failed, rather than passing it unread', function (): void {
     $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\n", '', 1, false),
-        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n", '', 1, false)];
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
 
     $this->artisan('orbit:executor-parity')->expectsOutputToContain("app-dev-1 (#{$this->first->id}): executor.node_unreachable")->assertFailed();
+});
+
+/** An activation proxy as the nested `app-dev` Node's Caddy loads it for Instance 2, with the address its upstream resolves to. */
+function parityProxy(array $change = []): string
+{
+    return json_encode(array_replace_recursive(['handler' => 'reverse_proxy', 'headers' => ['request' => ['set' => ['Host' => ['gateway.orbit'],
+        'X-Forwarded-Method' => ['{http.request.method}'], 'X-Forwarded-Uri' => ['{http.request.uri}']]]], 'resolved' => ['10.45.0.1'],
+        'rewrite' => ['method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/2'], 'transport' => ['protocol' => 'http',
+            'tls' => ['root_ca_pem_files' => ['/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'], 'server_name' => 'gateway.orbit']],
+        'upstreams' => [['dial' => 'gateway.orbit:443']]], $change), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+}
+
+it('passes an activation proxy that reaches this Gateway as the route renderer draws it, and names each wrong one', function (): void {
+    parityNode('gateway', '10.45.0.1', RoleName::Gateway);
+    $report = fn (string ...$proxies): CommandResult => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n".implode("\n", $proxies)."\n", '', 1, false);
+    $this->reports = ['10.45.0.2' => $report(parityProxy()), '10.45.0.4' => $report()];
+    $this->artisan('orbit:executor-parity', ['--json' => true])->expectsOutputToContain('"ok":true')->assertSuccessful();
+
+    $this->reports['10.45.0.2'] = $report(parityProxy(['rewrite' => ['method' => 'POST']]));
+    $this->artisan('orbit:executor-parity')
+        ->expectsOutputToContain("app-dev-1 (#{$this->first->id}): caddy.activation_proxy_wrong (Instance 2: method \"POST\"). Keep")
+        ->assertFailed();
+
+    // Another Gateway: a literal upstream, or the right name resolving elsewhere on the Node.
+    $this->reports['10.45.0.2'] = $report(parityProxy(['upstreams' => [['dial' => '10.45.0.9:443']], 'resolved' => ['10.45.0.9']]));
+    $this->artisan('orbit:executor-parity')
+        ->expectsOutputToContain('(Instance 2: resolves to ["10.45.0.9"]; Instance 2: upstream ["10.45.0.9:443"])')
+        ->assertFailed();
+    $this->reports['10.45.0.2'] = $report(parityProxy(['resolved' => ['10.45.0.9']]), parityProxy(['rewrite' => ['uri' => '/api/v1/runtime-activations/app-instance/3']]));
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2: resolves to ["10.45.0.9"])')->assertFailed();
+});
+
+it('refuses a Node whose loaded Caddy config it could not read', function (): void {
+    $this->reports = ['10.45.0.2' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\n", '', 1, false),
+        '10.45.0.4' => new CommandResult(0, "{$this->pinned}\n{$this->pinned}\nactive\nfrozen:\ncaddy:\n", '', 1, false)];
+
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain("app-dev-1 (#{$this->first->id}): caddy.config_unreadable")->assertFailed();
+});
+
+it('reads only the activation proxies of a loaded Caddy config on the Node', function (): void {
+    $proxy = ['handler' => 'reverse_proxy', 'rewrite' => ['method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/2'],
+        'upstreams' => [['dial' => '127.0.0.1:443']], 'handle_response' => [['routes' => []]]];
+    $config = ['apps' => ['http' => ['servers' => ['srv0' => ['routes' => [['handle' => [['handler' => 'subroute', 'routes' => [
+        ['handle' => [['handler' => 'vars', 'log_skip' => true]]],
+        ['handle' => [['handler' => 'subroute', 'routes' => [['handle' => [$proxy]]]]]],
+        ['handle' => [['handler' => 'reverse_proxy', 'upstreams' => [['dial' => 'unix//run/php.sock']]]]],
+    ]]]]]]]]]];
+    $process = new Process(['python3', '-I', '-c', (new ReflectionClassConstant(ExecutorParity::class, 'Proxies'))->getValue()]);
+    $process->setInput(json_encode($config, JSON_THROW_ON_ERROR))->mustRun();
+
+    unset($proxy['handle_response']);
+    expect(array_map(static fn (string $line): mixed => json_decode($line, true), explode("\n", trim($process->getOutput()))))
+        ->toEqual([[...$proxy, 'resolved' => ['127.0.0.1']]]);
 });

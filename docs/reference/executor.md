@@ -75,11 +75,11 @@ Every executor Node must run the build that the Gateway pins before `ORBIT_EXECU
 php artisan orbit:executor-parity [--json]
 ```
 
-For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`).
+For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`). It also reads the Node's [activation proxies](#activation-proxy) from Caddy's loaded config.
 
 A frozen container is fine when the Gateway records its Instance asleep, with a sleep that owns the freeze. A frozen container without such a record fails the Node with `instance.frozen_unrecorded`, and the check names each such Instance. A failed Python sleep can leave one: Incus holds the container frozen while the Gateway still records it running. No engine owns that freeze, so the settings alone would pick the engine for its wake ([Switching engines](#switching-engines)).
 
-It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active and no unrecorded freeze. A Node whose Incus list fails counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
+It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active, no unrecorded freeze and only right activation proxies. A Node whose Incus list fails counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
 
 | Problem | Meaning | Fix |
 | --- | --- | --- |
@@ -90,9 +90,28 @@ It exits 0 when it checked at least one such Node, and every one runs the pinned
 | `executor.node_unreachable` | The SSH read failed | Repair the Node's access |
 | `executor.node_unmanaged` | The Node has no verified SSH management | Finish its enrollment |
 | `instance.frozen_unrecorded` | A container is frozen, but the Gateway does not record its Instance asleep | With the settings still off, `orbit instance:wake <id>` for each listed Instance, then check again |
+| `caddy.config_unreadable` | Caddy's admin API did not answer with its config, or the Node could not read it | Check `caddy.service` on the Node, then `orbit node:converge <node>` |
+| `caddy.activation_proxy_wrong` | An activation proxy does not reach this Gateway as the route renderer draws it. The check names each Instance and the wrong field | `orbit node:converge <node>`, then check again |
 | `executor.release_missing`, `executor.keys_missing`, `executor.release_invalid`, `executor.keys_invalid` | The converge would skip or refuse the install ([Rollout](#rollout)) | Fix the pin or the keys |
 
-The flag switch runs this check first and changes no flag while it fails. A plain converge whose input did not change skips the executor phase, so it does not repair a binary changed by hand; `--full` does.
+The flag switch runs this check first and changes no flag while it fails ([Switching engines](#switching-engines)). A plain converge whose input did not change skips the executor phase, so it does not repair a binary changed by hand; `--full` does.
+
+#### Activation proxy
+
+A visit to a sleeping Instance reaches the Gateway through its site's activation proxy: Caddy's `forward_auth`, a `reverse_proxy` that rewrites the visit to a GET of `/api/v1/runtime-activations/app-instance/<id>` ([The wake inside the request](#the-wake-inside-the-request)). The executor's own Caddy guard checks only that the asleep marker's first handler is that proxy with that URI. It does not check where the proxy goes or with which method.
+
+So the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python reduces it to each `reverse_proxy` whose rewrite targets a runtime activation, and resolves each upstream's host name there. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
+
+| Field | Expected today |
+| --- | --- |
+| Upstream | `gateway.orbit:443`, the host and port of the Gateway origin |
+| Method | `GET`: `forward_auth` sends every activation as a GET |
+| `Host` header and TLS server name | `gateway.orbit` |
+| Address the upstream resolves to on the Node | This Gateway's WireGuard address: the active Node with the active `gateway` role |
+
+Each difference fails the Node with `caddy.activation_proxy_wrong`, for example `Instance 2: method "POST"` or `Instance 2: resolves to ["10.45.0.9"]`. A Node with no sleep-capable site has no activation proxy and passes this part.
+
+Subtask 5912 proved it on the nested fleet, against the loaded config of container default Instance 2's route on `nested-app-dev`. The check passed. With the route's activation method changed to POST through Caddy's admin API, it failed with `caddy.activation_proxy_wrong (Instance 2: method "POST")`. With the upstream changed to the app-prod Node's address, it failed with `Instance 2: resolves to ["10.45.0.3"]; Instance 2: upstream ["10.45.0.3:443"]`. With the original config loaded again, byte for byte, it passed.
 
 systemd only starts the executor at boot and restarts it after a crash. No systemd call, script, path unit or socket unit sits on an action's path.
 
@@ -260,9 +279,9 @@ A frozen Instance belongs to the engine whose sleep froze it ([ADR 0266, R3](/de
 
 A freeze with no record has no owner. A failed Python sleep can leave the container frozen while the Gateway records it running. So the switch goes in this order:
 
-1. Run [`orbit:executor-parity`](#build-parity) with the settings off.
-2. Wake each Instance it lists as `instance.frozen_unrecorded`. With the settings off, the wake goes through Python and resumes it.
-3. Run the check again. Change the settings only when it passes.
+1. Run [`orbit:executor-parity`](#build-parity) with the settings off. It is the one check before the switch. It covers build parity, unrecorded freezes and [activation proxies](#activation-proxy).
+2. Wake each Instance it lists as `instance.frozen_unrecorded`. With the settings off, Python wakes it. Fix every other problem by its row in the table.
+3. Run the check again. Turn on `ORBIT_EXECUTOR_WAKE_ENABLED` and `ORBIT_EXECUTOR_POWER_ENABLED` only when it passes.
 
 When the settings go on, Instances that Python froze still wake through Python as they are used. Every sleep after the switch is signed, including the idle sweep's.
 

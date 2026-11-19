@@ -9,8 +9,9 @@ use Illuminate\Console\Command;
 
 /**
  * The check before the signed power flags go on (ADR 0266; docs/reference/executor.md#build-parity). It fails, and names each
- * Node, while any executor Node runs another build than this Gateway pins, or holds a frozen container whose Instance the Gateway
- * does not record asleep. The switch step runs it and changes no flag on a failure.
+ * Node, while any executor Node runs another build than this Gateway pins, holds a frozen container whose Instance the Gateway
+ * does not record asleep, or loads an activation proxy that does not reach this Gateway as the route renderer draws it. The switch
+ * step runs it and changes no flag on a failure.
  */
 final class ExecutorParityCommand extends Command
 {
@@ -18,7 +19,7 @@ final class ExecutorParityCommand extends Command
     protected $signature = 'orbit:executor-parity {--json : Print the rows as JSON}';
 
     #[\Override]
-    protected $description = 'Check that every app-dev Node runs the executor build this Gateway pins and holds no unrecorded freeze.';
+    protected $description = 'Check that every app-dev Node runs the executor build this Gateway pins, holds no unrecorded freeze and proxies activations to this Gateway.';
 
     public function handle(ExecutorParity $parity): int
     {
@@ -30,9 +31,10 @@ final class ExecutorParityCommand extends Command
 
             return $ok ? self::SUCCESS : self::FAILURE;
         }
-        $this->table(['Node', 'Name', 'Pinned', 'Installed', 'Running', 'Service', 'Frozen, unrecorded', 'Problem'], array_map(static fn (array $row): array => [
+        $this->table(['Node', 'Name', 'Pinned', 'Installed', 'Running', 'Service', 'Frozen, unrecorded', 'Activation proxy', 'Problem'], array_map(static fn (array $row): array => [
             $row['node_id'], $row['node'], substr((string) $row['expected'], 0, 16), substr((string) $row['reported'], 0, 16),
-            substr((string) $row['running'], 0, 16), $row['state'] ?? '', implode(', ', $row['frozen_unrecorded']), $row['problem'] ?? '',
+            substr((string) $row['running'], 0, 16), $row['state'] ?? '', implode(', ', $row['frozen_unrecorded']), implode('; ', $row['activation_wrong']),
+            $row['problem'] ?? '',
         ], $rows));
         if ($rows === []) {
             $this->error('Executor parity checked no executor Node. Keep ORBIT_EXECUTOR_WAKE_ENABLED and ORBIT_EXECUTOR_POWER_ENABLED off.');
@@ -41,13 +43,17 @@ final class ExecutorParityCommand extends Command
         }
         if ($differ !== []) {
             $this->error('Executor parity fails on '.implode(', ', array_map(static fn (array $row): string => "{$row['node']} (#{$row['node_id']}): {$row['problem']}"
-                .($row['problem'] === 'instance.frozen_unrecorded' ? ' (Instance '.implode(', ', $row['frozen_unrecorded']).')' : ''), $differ))
+                .match ($row['problem']) {
+                    'instance.frozen_unrecorded' => ' (Instance '.implode(', ', $row['frozen_unrecorded']).')',
+                    'caddy.activation_proxy_wrong' => ' ('.implode('; ', $row['activation_wrong']).')',
+                    default => '',
+                }, $differ))
                 .'. Keep ORBIT_EXECUTOR_WAKE_ENABLED and ORBIT_EXECUTOR_POWER_ENABLED off.'
                 .(in_array('instance.frozen_unrecorded', array_column($differ, 'problem'), true) ? ' Wake each listed Instance with the flags off, then check again.' : ''));
 
             return self::FAILURE;
         }
-        $this->info('Every executor Node runs the pinned build.');
+        $this->info('Every executor Node runs the pinned build and proxies activations to this Gateway.');
 
         return self::SUCCESS;
     }
