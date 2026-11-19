@@ -56,7 +56,7 @@ Container host preparation applies to every `app-dev` Node with the Incus pool `
 The Gateway reads no pool, so it counts an `app-dev` Node as an Instance container host when one of these holds:
 
 - The operator set its [Instance host opt-in](/reference/node-settings#instance-host-opt-in), `instance_host`. A new host needs it before its first converge.
-- It is the `app-dev` Node of a nested Instance fleet, whose converge creates a directory pool.
+- It is the `app-dev` Node of a nested Instance fleet, whose converge creates a btrfs pool.
 - It records an Instance runtime.
 - Its agent reports the Instance bridge's health, which only a converged container branch writes.
 
@@ -1174,9 +1174,11 @@ The proof Project's default can keep one older pair as the base of the next [see
 
 Every older `base-` pair goes first, so the default keeps at most one base. Without `seed_base`, the old pair goes as before. A clone and a restore never read a `base-` pair. A rename keeps the snapshot's creation time, and it needs no free ID range. So a retake still needs only one free range, for a moment.
 
-A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the step before the copy, `clone-seed-wait`, asks the Node's Incus API for the admitted seed with curl's own retry: every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first request.
+A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the copy step, `clone-container`, reads the default's snapshots, and while the admitted seed is missing and its `next-` snapshot is there, it reads them again every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first read and waits not at all; no step of its own stands before the copy.
 
-Then the copy reads the default's snapshots once. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
+The same 120 seconds also cover a restart of the Node's Incus. When a read before the copy fails or stalls and the local Incus API does not answer, the step waits for the API, again every 2 seconds, and reads once more. An answer of Incus, such as an unreadable ACL, is never retried and is never taken for a missing ACL. Each request of a wait ends after 5 seconds, so an API that accepts and never replies cannot hold the wait past its bound. The step's budget is 420 seconds: the 120-second wait, then the copy's 300 seconds of work.
+
+Then, however the wait ended, the copy decides from one more read. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
 
 #### The seed hold
 
@@ -1442,6 +1444,8 @@ An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no
 Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
 
 The container, checkout and T3 phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, ID map, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part, T3's first answer and its sessions check. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The create's result carries them as `timings`: names and seconds only.
+
+T3's files (`t3_files_seconds`) go in beside the boot files, and the branch beside the ID map step and the start. Their seconds overlap the other parts' seconds.
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
@@ -2830,9 +2834,15 @@ The [fleet rules](#fleet-rules) give `nested-app-dev` the nesting keys. A nested
 4. It writes the marker `/etc/orbit/instance-fleet-node`.
 5. It runs the rest of the branch as on any `app-dev` Node: project, bridge, folders, egress proxy and the Instance image.
 
-A Node made before the btrfs pool has a directory pool `orbit-instances`. The container branch replaces it only when nothing uses it but the root device of the managed `default` profile in an Instance project. Any Instance, volume, other profile or other device refuses with `instance.host_unavailable` and names it, before anything changes. Otherwise the branch removes that root device, deletes the pool and creates the btrfs pool with `source=/var/lib/incus/storage-pools/orbit-instances`. Step 5 writes the profile's root device again. A rerun after a break goes on from where it stopped. There is no directory fallback.
+A fleet Node pool is always btrfs; no Incus layer keeps a `dir` pool. The converge (`files/fleet-node-pool.py`) moves the directory pool of a Node made before the btrfs pool to btrfs, with no hand step. It stops each instance on the pool and records the state it had, moves every instance and custom volume to the btrfs pool `<pool>-move`, and points the profiles there.
 
-The nested proof Node `nested-app-prod` runs the same first part for its release pool `orbit-releases`, which holds its release containers. Its release host names the directory driver for that pool, so the branch creates it as a directory pool when it is missing and never replaces it.
+It then deletes the directory pool, creates it again as btrfs, moves everything back and returns each instance to its state.
+
+Every disk at `/` of an instance or of a profile on the pool loses its `size` before it reaches btrfs. The btrfs pool `<pool>-move` and each stopped instance record the pool they belong to in `user.orbit.pool-move`. A run touches only those, so a converge stopped part way finishes on the next run.
+
+Before it stops anything, the move refuses with `instance.host_unavailable` and names the resource when the pool holds Incus backups, an ephemeral instance, or a volume that something off the pool or a profile uses. A create is killed after 120 s, and the task runs the script once more. Any other driver refuses with `instance.host_unavailable` before anything changes.
+
+The nested proof Node `nested-app-prod` runs the same first part for its release pool `orbit-releases`, which holds its release containers. So that pool is btrfs too, and its release root devices carry no `size`. A production Node keeps `orbit-releases` on ZFS ([Production containers](/reference/production-containers)).
 
 Fleet start appends the managed user `orbit` to `incus-admin` on every nested Node marked as an Instance host by `/etc/orbit/instance-fleet-node`. The Gateway's direct workspace and runtime reads call Incus as that user, without sudo. The account already has passwordless sudo, so this adds no authority. The fleet builds its own Nodes; their account setup belongs to fleet start. Every copy start repairs missing membership, including a copy of an existing seed, with no converge or seed refresh. Other groups remain unchanged, and a current membership reports no change.
 

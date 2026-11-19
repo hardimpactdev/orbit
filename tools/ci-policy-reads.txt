@@ -4,8 +4,8 @@
 # module ran alone with CI's discovery command, while inotify watched every tracked folder outside those three trees.
 # A folder whose every tracked file the run opened is listed as folder/**.
 # A read that this run did not show, such as a test added later, is left to CI, which runs the full suite on every PR.
-.agents/skills/swamp/**
-.agents/skills/swamp-getting-started/**
+.agents/swamp-upstream/skills/swamp/**
+.agents/swamp-upstream/skills/swamp-getting-started/**
 apps/cli/tests/Feature/**
 apps/cli/tests/Helpers/**
 apps/cli/tests/Support/**
@@ -13,7 +13,7 @@ apps/cli/tests/Unit/**
 apps/gateway/resources/ci-runner/**
 apps/gateway/resources/machine-software/**
 apps/gateway/tests/.pest/**
-.agents/skills/swamp-source.json
+.agents/swamp-upstream/swamp-source.json
 apps/agent/Cargo.toml
 apps/agent/scripts/build-delivery
 apps/agent/src/commands/ci_runner.rs
@@ -70,6 +70,7 @@ swamp/tests/caddy_candidate_test.py
 swamp/tests/fixtures/fleet-reboot-ssh.py
 swamp/tests/fixtures/host-image-boundaries.json
 swamp/tests/fixtures/task-instance-workspace.json
+swamp/tests/fleet_node_pool_test.py
 swamp/tests/gateway_release_cold_rollback_test.py
 swamp/tests/gateway_release_drain_test.py
 swamp/tests/gateway_release_horizons_test.py
@@ -165,7 +166,6 @@ swamp/tests/ansible_instance_container_destroy_test.ts
 swamp/tests/ansible_instance_container_power_test.ts
 swamp/tests/ansible_instance_container_test.ts
 swamp/tests/ansible_instance_egress_test.py
-swamp/tests/ansible_instance_fleet_node_pool_test.ts
 swamp/tests/ansible_instance_host_browser_test.ts
 swamp/tests/ansible_instance_host_image_test.ts
 swamp/tests/ansible_instance_host_runtime_test.ts

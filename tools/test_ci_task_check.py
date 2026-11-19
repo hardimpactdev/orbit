@@ -554,7 +554,7 @@ class CiPolicyTest(unittest.TestCase):
     def test_a_file_that_a_policy_test_reads_runs_policy_tests_and_names_it(self):
         ran = []
         jobs = {**JOBS, 'docs': False, 'api-reference': False, 'swamp': False}
-        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['.agents/skills/swamp/SKILL.md']),
+        stubs = {'changes': lambda _root, _base: (True, 'a' * 40, 'origin/main', ['.agents/swamp-upstream/skills/swamp/SKILL.md']),
                  'candidate_head': lambda _committed: 'HEAD', 'policy_paths': lambda _base, _committed, paths: paths, 'ci_plan': lambda _base, _head: (jobs, {'shards': [], 'self_hosted_shards': [], 'unmapped': []}, ''),
                  'run': lambda argv, *_args, **_kwargs: ran.append(argv) or (0, '')}
         output = io.StringIO()
@@ -563,7 +563,7 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual(ran, check['CI_POLICY'])
         self.assertEqual(code, 0)
         self.assertIn('  passed       ci-policy (', output.getvalue())
-        self.assertIn('selected by .agents/skills/swamp/SKILL.md, which a policy test reads', output.getvalue())
+        self.assertIn('selected by .agents/swamp-upstream/skills/swamp/SKILL.md, which a policy test reads', output.getvalue())
 
     def test_a_docs_page_that_no_policy_test_reads_leaves_the_part_to_ci(self):
         ran = []
@@ -583,7 +583,7 @@ class CiPolicyTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}; {trees}')
         # Opened in the recorded run, or checked for existence by a policy test.
-        for path in ('swamp/ansible/tasks/instance-fleet.yml', '.agents/skills/swamp-getting-started/references/tracks.md',
+        for path in ('swamp/ansible/tasks/instance-fleet.yml', '.agents/swamp-upstream/skills/swamp-getting-started/references/tracks.md',
                      'apps/agent/src/commands/ci_runner.rs', 'apps/cli/design/Flows/node-add.json',
                      'apps/docs/composer.json', 'docs/reference/compute-drivers.md',
                      'apps/gateway/tests/.pest/shards.json', 'apps/cli/tests/Feature/CommandSurfaceTest.php',

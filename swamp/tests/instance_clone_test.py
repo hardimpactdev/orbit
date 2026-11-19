@@ -14,6 +14,7 @@ import stat
 import struct
 import subprocess
 import tempfile
+import threading
 import unittest
 import urllib.parse
 from pathlib import Path
@@ -315,7 +316,7 @@ class IdmapTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None, stdin="PRIVATE-INPUT", before_start=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None, stdin="PRIVATE-INPUT", before_start=None, on_call=None):
         calls = []
         self.inputs = {}
         self.decoding = {}
@@ -371,9 +372,13 @@ class CloneTest(unittest.TestCase):
             files = container.setdefault("fixture_files", {})
             templates = {"/etc/hosts": ["create", "copy"]} if container.get("fixture_hosts_template", True) else {}
             copied = []
+            incus = {"down": container.get("fixture_incus_down", False)}
 
             def command(argv, **kwargs):
                 nonlocal read
+                # `on_call`: a test's view of each command as it begins, before it is recorded; it may hold the command back.
+                if on_call:
+                    on_call(argv)
                 calls.append(argv)
                 self.inputs[id(argv)] = kwargs.get("input")
                 self.decoding[id(argv)] = kwargs.get("errors")
@@ -419,6 +424,21 @@ class CloneTest(unittest.TestCase):
                     held = held if isinstance(held, dict) else {"content": held}
                     headers = {"type": "file", "uid": "0", "gid": "0", "mode": "0644", **held}
                     return subprocess.CompletedProcess(argv, 0, held["content"], "200 {type} {uid} {gid} {mode}".format(**headers))
+                if argv[0] == "curl" and "--retry" in argv:
+                    # The wait for Incus or the seed: curl's exit only, which the copy does not read. `fixture_wait_stalls`: curl
+                    # outlives its bound. A wait for the API brings a restarted Incus back, unless it stays down past the bound.
+                    if container.get("fixture_wait_stalls"):
+                        raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+                    if argv[-1] == "http://incus/1.0" and incus["down"] != "stays":
+                        incus["down"] = False
+                    return subprocess.CompletedProcess(argv, 22 if incus["down"] else 0, "", "")
+                if argv[0] == "curl" and argv[-1] == "http://incus/1.0":
+                    # Whether the Node's Incus API answers at all.
+                    return subprocess.CompletedProcess(argv, 7 if incus["down"] else 0, "", "")
+                if argv[0] == "incus" and incus["down"]:
+                    # `fixture_incus_down`: a restart of Incus; its socket refuses every command until a wait brings it back.
+                    return subprocess.CompletedProcess(argv, 1, "", 'Error: Get "http://unix.socket/1.0": dial unix /var/lib/incus/unix.socket: '
+                                                                    "connect: connection refused")
                 if argv[0] == "curl":
                     # The files API's type header, read from the copy's real root file system; a link is never followed.
                     local = root / urllib.parse.unquote(argv[-1].split("&path=", 1)[1]).lstrip("/")
@@ -487,7 +507,10 @@ class CloneTest(unittest.TestCase):
                     elif argv[2] == "/1.0/instances/instance-1?project=orbit-instances":
                         output = json.dumps({"config": {"volatile.last_state.idmap": json.dumps(container.get("fixture_source_idmap", []))}})
                     elif "snapshots?" in argv[2]:
-                        output = json.dumps(container.get("fixture_snapshots", [{"name": "seed-abc"}]))
+                        # `fixture_snapshot_reads`: what each read returns in turn, the last one again after the list ends.
+                        reads = container.get("fixture_snapshot_reads")
+                        output = json.dumps(reads.pop(0) if reads and len(reads) > 1 else reads[0] if reads
+                                            else container.get("fixture_snapshots", [{"name": "seed-abc"}]))
                     elif "sockets.target.wants" in argv[2]:
                         output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "orbit-node-service-3308.socket", "project.socket"])
                     elif "timers.target.wants" in argv[2]:
@@ -641,7 +664,11 @@ class CloneTest(unittest.TestCase):
                     self.assertEqual(len(chowns), 2)
 
     def test_a_stripped_idmap_on_another_pool_driver_refuses_before_start(self):
-        for driver in ("zfs", "dir"):
+        # A dir root pool refuses before any copy, whatever the idmap.
+        calls, _, error = self.clone(overrides={"fixture_pool_driver": "dir"})
+        self.assertEqual(error, "instance.pool_driver_unsupported\n")
+        self.assertFalse(any("copy" in call for call in calls))
+        for driver in ("zfs",):
             with self.subTest(driver=driver):
                 calls, _, error = self.clone(overrides={"fixture_source_idmap": IdmapTest.MAP, "fixture_pool_driver": driver})
                 self.assertEqual(error, "instance.clone_idmap_unshift_unsupported\n")
@@ -672,13 +699,68 @@ class CloneTest(unittest.TestCase):
         self.assertIn("instance.default_seed_missing", error)
         self.assertFalse(any("copy" in call for call in calls))
 
+    SEED_WAIT = ["curl", "--unix-socket", "/var/lib/incus/unix.socket", "--fail", "--silent", "--show-error", "--output", "/dev/null",
+                 "--max-time", "5", "--retry", "60", "--retry-all-errors", "--retry-delay", "2", "--retry-max-time", "120",
+                 "http://incus/1.0/instances/instance-1/snapshots/seed-abc?project=orbit-instances"]
+
+    def waits(self, calls):
+        """Each wait of the copy, with its bound: the seconds left of the one 120 s bound, here within a second of it."""
+        held = [list(call) for call in calls if "--retry" in call]
+        for call in held:
+            self.assertIn(int(call[call.index("--retry-max-time") + 1]), (119, 120))
+            call[call.index("--retry-max-time") + 1] = "120"
+        return held
+
     def test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved(self):
-        # The wait step's bound passed between the retake's delete and its rename: the admitted seed's `next-` is still there.
+        # The wait's bound passed between the retake's delete and its rename: the admitted seed's `next-` is still there.
         for snapshots in ([{"name": "next-abc"}], [{"name": "next-abc"}, {"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"}]):
             calls, _, error = self.clone(overrides={"fixture_snapshots": snapshots})
             self.assertIn("instance.default_seed_moved", error)
             self.assertFalse(any("copy" in call for call in calls))
             self.assertIsNone(self.seed_commit)
+            # It waited once by curl's own retry, every 2 s for at most 120 s, read the snapshots again, then refused.
+            self.assertEqual(self.waits(calls), [self.SEED_WAIT])
+            self.assertEqual(sum(call[:2] == ["incus", "query"] and "/snapshots?" in call[2] for call in calls), 2)
+        # A retake that ends within the wait: `seed-abc` is gone, and after the wait its `next-abc` has the name again.
+        calls, _, error = self.clone(overrides={"fixture_snapshot_reads": [[{"name": "next-abc"}], [{"name": "seed-abc"}]]})
+        self.assertEqual(error, "")
+        self.assertEqual(self.waits(calls), [self.SEED_WAIT])
+        self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
+        self.assertIsNone(self.seed_commit)
+
+    def test_a_seed_wait_that_outlives_its_bound_still_reads_the_snapshots_and_decides_each_case(self):
+        # curl stalls on an API that accepts and never answers, and the copy stops it at the bound: the final read still decides.
+        for reads, copied, code, commit in (
+            ([[{"name": "next-abc"}], [{"name": "seed-abc"}]], "instance-1/seed-abc", "", None),
+            ([[{"name": "next-abc"}], [{"name": "seed-def", "created_at": "2026-11-17T03:10:00Z"}]], "instance-1/seed-def", "", "def\n"),
+            ([[{"name": "next-abc"}], [{"name": "next-abc"}, {"name": "seed-old", "created_at": "2026-11-16T03:00:00Z"}]], None,
+             "instance.default_seed_moved", None),
+            ([[{"name": "next-abc"}], [{"name": "other"}]], None, "instance.default_seed_missing", None),
+        ):
+            with self.subTest(reads=reads[-1]):
+                calls, _, error = self.clone(overrides={"fixture_snapshot_reads": reads, "fixture_wait_stalls": True})
+                self.assertEqual(sum(call[:2] == ["incus", "query"] and "/snapshots?" in call[2] for call in calls), 2)
+                self.assertEqual([call[4] for call in calls if call[3:4] == ["copy"]], [copied] if copied else [])
+                self.assertIn(code, error) if code else self.assertEqual(error, "")
+                self.assertEqual(self.seed_commit, commit)
+
+    def test_a_restart_of_incus_before_the_copy_waits_for_the_api_within_the_bound(self):
+        # The local API is down at the first read: the copy waits for it by curl's retry, reads again, and clones as before.
+        calls, _, error = self.clone(overrides={"fixture_incus_down": True})
+        self.assertEqual(error, "")
+        self.assertEqual(self.waits(calls), [self.SEED_WAIT[:-1] + ["http://incus/1.0"]])
+        copy = next(i for i, call in enumerate(calls) if call[3:4] == ["copy"])
+        reads = [call for call in calls[:copy] if call[:2] == ["incus", "query"] and call[2] == "/1.0/instances/instance-7?project=orbit-instances"]
+        self.assertEqual(len(reads), 2)
+        self.assertEqual([call[4] for call in calls if call[3:4] == ["copy"]], ["instance-1/seed-abc"])
+        # Incus still down at the bound: the unreadable ACL refuses before the copy and is never taken for a missing one.
+        calls, _, error = self.clone(overrides={"fixture_incus_down": "stays"})
+        self.assertTrue(error.startswith("instance.container_container_failed: command incus exited 1 (incus query /1.0/network-acls/"), error)
+        self.assertFalse(any(call[3:4] == ["copy"] or call[:3] == ["incus", "network", "acl"] for call in calls))
+        # A healthy copy and a refusal by an answering Incus wait not at all.
+        for overrides in ({}, {"fixture_acl": "error"}):
+            calls, _, _ = self.clone(overrides=overrides)
+            self.assertFalse(any("--retry" in call for call in calls))
 
     def test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit(self):
         # The retake took a seed at another commit and deleted the admitted one: the copy takes the new seed and records its commit.
@@ -693,6 +775,7 @@ class CloneTest(unittest.TestCase):
 
     def test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing(self):
         calls, _, error = self.clone()
+        self.assertFalse(any("--retry" in call for call in calls))
         self.assertEqual(len([call for call in calls if call[:2] == ["incus", "query"] and "/instances/instance-1/snapshots?" in call[2]]), 1)
         self.assertEqual([call for call in calls if call[3:4] == ["copy"]][0][4], "instance-1/seed-abc")
         self.assertIsNone(self.seed_commit)
@@ -876,6 +959,46 @@ class CloneTest(unittest.TestCase):
         self.assertFalse(any("PLACEHOLDER" in " ".join(call) for call in calls))
         self.assertEqual([call for call in calls if "PLACEHOLDER" in str(self.inputs.get(id(call)))], [writes[0]])
         self.assertEqual(json.loads(transcript[0].strip().splitlines()[-1])["timings"]["t3_files"], 1)
+
+    def test_t3_files_go_in_beside_the_boot_files_and_before_the_proxy_drop_ins(self):
+        # The machine ID push, the first boot file, waits until a T3 file push begins: only a T3 push beside the boot files lets it go on.
+        t3_push, beside = threading.Event(), []
+
+        def on_call(argv):
+            if argv[3:5] == ["file", "push"] and argv[-1] == "instance-7/home/agent/.config/orbit/model.env":
+                t3_push.set()
+            if argv[3:5] == ["file", "push"] and argv[-1] == "instance-7/etc/machine-id":
+                beside.append(t3_push.wait(5))
+
+        proxy = {"NO_PROXY": "localhost", "no_proxy": "localhost"}
+        calls, _, error = self.clone_with({**self.T3_FILES, "proxy_environment": proxy}, rootfs=self.T3_ROOT, on_call=on_call,
+                                          stdin="https://x-access-token:PRIVATE@github.com\n" + self.FRAME + "\n" + self.MODEL)
+        self.assertEqual(error, "")
+        self.assertEqual(beside, [True])
+        writes = self.t3_writes(calls)
+        drop_ins = [call for call in self.pushes(calls) if call[-1].startswith("instance-7/etc/profile.d/")]
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertTrue(drop_ins)
+        # T3's own drop-in folder may be the proxy's: its files are all in before a proxy drop-in, and everything before the start.
+        self.assertLess(max(calls.index(call) for call in writes), min(calls.index(call) for call in drop_ins))
+        self.assertLess(max(calls.index(call) for call in writes + drop_ins), start)
+
+    def test_the_branch_is_read_on_the_node_beside_the_start(self):
+        # The start waits until the branch's read on the Node begins: only a read beside the start lets it go on.
+        read, beside = threading.Event(), []
+
+        def on_call(argv):
+            if "ls-remote" in argv:
+                read.set()
+            if argv[3:4] == ["start"]:
+                beside.append(read.wait(5))
+
+        calls, _, error = self.clone()
+        self.assertEqual(error, "")
+        self.assertTrue(any("ls-remote" in call for call in calls))
+        calls, _, error = self.clone(on_call=on_call)
+        self.assertEqual(error, "")
+        self.assertEqual(beside, [True])
 
     def test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line(self):
         held = {"content": '{"projectSettingsFolded":true}\n', "uid": "2750", "gid": "2750", "mode": "0600"}

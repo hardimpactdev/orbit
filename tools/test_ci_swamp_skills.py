@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SwampSkillsTest(unittest.TestCase):
     def test_bundled_skills_match_pinned_runtime(self):
-        skills = ROOT / '.agents/skills'
-        manifest = json.loads((skills / 'swamp-source.json').read_text())
+        skills = ROOT / '.agents/swamp-upstream/skills'
+        manifest = json.loads((skills.parent / 'swamp-source.json').read_text())
         version = re.search(r'^swampVersion: (\S+)$', (ROOT / 'swamp/.swamp.yaml').read_text(), re.M)[1]
         refresh = 'Refresh both bundled skills and swamp-source.json; see docs/contributor-guide.md#refresh-the-bundled-swamp-skills'
         self.assertEqual(manifest['swampVersion'], version, refresh)

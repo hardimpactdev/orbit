@@ -353,10 +353,12 @@ def pool_info(record):
 
 
 def datasets(record):
-    """The ZFS pool dataset behind an instance's root disk, or None when the pool uses another driver."""
+    """The ZFS pool dataset behind an instance's root disk, or None on the btrfs pool of a nested proof Node. No pool is dir."""
     info = pool_info(record)
-    if info["driver"] != "zfs":
+    if info["driver"] == "btrfs":
         return None
+    if info["driver"] != "zfs":
+        raise ValueError(f"release.pool_driver_unsupported: the release pool uses the {info['driver']} driver; move it to zfs, or btrfs on a nested Node")
     return info["config"].get("zfs.pool_name") or info["config"]["source"]
 
 
@@ -506,6 +508,8 @@ def candidate(target, operation, commit, artifact):
         if prep["status"] != "Frozen":
             raise ValueError("release.preparation_not_frozen")
     if existing is None:
+        # A dir release pool refuses before the snapshot and the copy.
+        datasets(prep)
         if not sealed:
             if target != "gateway":
                 if prep["status"] != "Running" or prep["config"].get(PREFIX + "operation") != operation:

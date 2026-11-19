@@ -37,7 +37,8 @@ fn default_scope_applies_to_networks_and_acls_only() {
 const PROJECT_PATH: &str = "/1.0/projects/orbit-ci";
 const NETWORK_PATH: &str = "/1.0/networks/orbitci0?project=default";
 const ACL_PATH: &str = "/1.0/network-acls/orbit-ci-egress?project=default";
-const POOL_PATH: &str = "/1.0/storage-pools/default";
+const POOL_PATH: &str = "/1.0/storage-pools/orbit-ci";
+const SOURCE_PATH: &str = "/1.0/storage-pools/orbit-instances";
 const PROFILE_PATH: &str = "/1.0/profiles/default?project=orbit-ci";
 const INSTANCES_PATH: &str = "/1.0/instances?project=orbit-ci";
 
@@ -108,9 +109,21 @@ impl Host for Incus {
         assert_eq!(argv[..2], ["--project", "default"], "{argv:?}");
         let document = || serde_json::from_str::<Value>(input.unwrap()).unwrap();
         match &argv[2..] {
-            ["storage", "create", _, driver] => {
-                self.objects
-                    .insert(POOL_PATH.into(), json!({ "driver": driver }));
+            ["storage", "create", name, driver, rest @ ..] => {
+                self.objects.insert(
+                    format!("/1.0/storage-pools/{name}"),
+                    json!({ "driver": driver, "config": settings(rest) }),
+                );
+            }
+            ["config", "device", "add", name, "root", "disk", "path=/", pool, "--project", "orbit-ci"] =>
+            {
+                let instance = self
+                    .objects
+                    .get_mut(&format!("/1.0/instances/{name}?project=orbit-ci"))
+                    .unwrap();
+                let root = json!({"type": "disk", "path": "/", "pool": pool.strip_prefix("pool=").unwrap()});
+                instance["devices"]["root"] = root.clone();
+                instance["expanded_devices"]["root"] = root;
             }
             ["project", "create", _, rest @ ..] => {
                 let items: Vec<&str> = rest.iter().copied().filter(|s| *s != "-c").collect();
@@ -167,8 +180,18 @@ fn act_on(incus: &mut Incus, action: &str) -> Result<&'static str, CiHostError> 
     act(incus, &input).map(|outcome| outcome.outcome)
 }
 
-fn converged() -> Incus {
+/// A Node whose Instance pool is `orbit-instances` on `driver`.
+fn node(driver: &str, source: &str) -> Incus {
     let mut incus = Incus::default();
+    incus.objects.insert(
+        SOURCE_PATH.into(),
+        json!({"driver": driver, "config": {"source": source}}),
+    );
+    incus
+}
+
+fn converged() -> Incus {
+    let mut incus = node("zfs", "orbit-tasks/orbit-instances");
     assert_eq!(act_on(&mut incus, "converge").unwrap(), "converged");
     incus
 }
@@ -184,6 +207,11 @@ fn changes(incus: &Incus) -> Vec<Vec<String>> {
 }
 
 fn with_instances(incus: &mut Incus, instances: &[(String, &str)]) {
+    with_instances_on(incus, instances, "orbit-ci");
+}
+
+/// Runners whose root comes from the profile and resolves to `pool`.
+fn with_instances_on(incus: &mut Incus, instances: &[(String, &str)], pool: &str) {
     incus.objects.insert(
         INSTANCES_PATH.into(),
         json!(instances
@@ -195,7 +223,8 @@ fn with_instances(incus: &mut Incus, instances: &[(String, &str)]) {
         incus.objects.insert(
             format!("/1.0/instances/{name}?project=orbit-ci"),
             json!({"name": name, "status": status, "profiles": ["default"],
-                   "config": {"volatile.base_image": "cloned-image", "volatile.uuid": name}}),
+                   "config": {"volatile.base_image": "cloned-image", "volatile.uuid": name},
+                   "devices": {}, "expanded_devices": {"root": {"type": "disk", "path": "/", "pool": pool}}}),
         );
     }
 }
@@ -208,7 +237,10 @@ fn converges_a_fresh_host_and_repeats_without_change() {
     assert_eq!(incus.objects, before);
     assert_eq!(act_on(&mut incus, "inspect").unwrap(), "matches");
 
-    assert_eq!(incus.objects[POOL_PATH]["driver"], "dir");
+    assert_eq!(
+        incus.objects[POOL_PATH],
+        json!({"driver": "zfs", "config": {"source": "orbit-tasks/orbit-ci", "user.orbit.ci-runner": "true"}})
+    );
     assert_eq!(incus.objects[INSTANCES_PATH], json!([]));
     let project = &incus.objects[PROJECT_PATH]["config"];
     assert_eq!(project["features.networks"], "false");
@@ -221,6 +253,7 @@ fn converges_a_fresh_host_and_repeats_without_change() {
         "/opt/orbit-runtime"
     );
     let profile = &incus.objects[PROFILE_PATH];
+    assert_eq!(profile["devices"]["root"]["pool"], "orbit-ci");
     assert_eq!(profile["config"]["limits.cpu"], "6");
     assert_eq!(profile["config"]["limits.memory"], "12GiB");
     assert_eq!(profile["devices"]["eth0"]["network"], "orbitci0");
@@ -263,7 +296,7 @@ fn adopts_existing_resources_and_runners_without_changing_subnet_pool_or_instanc
             json!("10.253.2.1/24");
         incus.objects.insert(
             POOL_PATH.into(),
-            json!({"driver": "zfs", "config": {"source": "fast/incus"}}),
+            json!({"driver": "zfs", "config": {"source": "fast/incus", "user.orbit.ci-runner": "true"}}),
         );
         let mut instances: Vec<(String, &str)> = (1..=active)
             .map(|n| (format!("ci-{host}-{n}"), "Running"))
@@ -409,7 +442,7 @@ fn removal_refuses_any_instance_including_a_lone_stopped_one_and_never_deletes_i
 }
 
 #[test]
-fn empty_removal_retains_resources_and_purge_keeps_the_shared_pool_and_repeats() {
+fn empty_removal_retains_resources_and_purge_keeps_the_pool_and_repeats() {
     let mut incus = converged();
     let before = incus.objects.clone();
     assert_eq!(act_on(&mut incus, "remove").unwrap(), "retained");
@@ -493,4 +526,144 @@ fn the_input_refuses_an_unknown_action_or_field() {
     assert!(
         serde_json::from_value::<HostInput>(json!({"action": "converge", "name": "x"})).is_err()
     );
+}
+
+#[test]
+fn creates_the_pool_beside_the_instance_pool_on_btrfs_and_on_a_zfs_dataset() {
+    for (driver, source, created) in [
+        ("zfs", "data/orbit-instances", "data/orbit-ci"),
+        ("zfs", "fast", "fast/orbit-ci"),
+        (
+            "btrfs",
+            "/var/lib/incus/storage-pools/orbit-instances",
+            "/var/lib/incus/storage-pools/orbit-ci",
+        ),
+    ] {
+        let mut incus = node(driver, source);
+        assert_eq!(act_on(&mut incus, "converge").unwrap(), "converged");
+        let create = changes(&incus)
+            .into_iter()
+            .find(|call| call[2..4] == ["storage", "create"])
+            .unwrap();
+        assert_eq!(
+            create[4..],
+            [
+                "orbit-ci",
+                driver,
+                &format!("source={created}"),
+                "user.orbit.ci-runner=true"
+            ]
+        );
+        assert_eq!(act_on(&mut incus, "inspect").unwrap(), "matches");
+    }
+}
+
+#[test]
+fn refuses_a_node_without_a_zfs_or_btrfs_instance_pool_and_never_creates_a_dir_pool() {
+    let mut nodes = vec![
+        Incus::default(),
+        node("dir", "/var/lib/incus/storage-pools/orbit-instances"),
+        node("lvm", "vg"),
+        node("zfs", ""),
+        node("zfs", "-o/x"),
+    ];
+    for incus in &mut nodes {
+        let error = act_on(incus, "converge").unwrap_err();
+        assert_eq!(
+            error,
+            failed("the CI pool needs the Node's orbit-instances pool on zfs or btrfs")
+        );
+        assert!(changes(incus).is_empty());
+    }
+}
+
+#[test]
+fn refuses_a_dir_or_foreign_ci_pool_before_any_change_and_reports_it_as_drift() {
+    for (pool, reason) in [
+        (
+            json!({"driver": "dir", "config": {"user.orbit.ci-runner": "true"}}),
+            "the orbit-ci pool is dir; CI runners need a zfs or btrfs pool",
+        ),
+        (
+            json!({"driver": "zfs", "config": {"source": "data/orbit-ci"}}),
+            "the orbit-ci pool is not owned by the CI role",
+        ),
+    ] {
+        let mut incus = converged();
+        incus.objects.insert(POOL_PATH.into(), pool);
+        let before = incus.objects.clone();
+        incus.calls.clear();
+        assert_eq!(act_on(&mut incus, "inspect").unwrap(), "drift");
+        assert_eq!(act_on(&mut incus, "converge").unwrap_err(), failed(reason));
+        assert_eq!(incus.objects, before);
+        assert!(changes(&incus).is_empty());
+    }
+}
+
+#[test]
+fn pins_each_runner_on_another_pool_before_the_profile_moves_and_repeats_without_change() {
+    let mut incus = converged();
+    // The profile of a host that setup.sh prepared before the role's pool roots on the shared dir pool.
+    incus.objects.get_mut(PROFILE_PATH).unwrap()["devices"]["root"]["pool"] = json!("default");
+    let runners = [
+        ("ci-sabre-1".to_string(), "Running"),
+        ("ci-sabre-2".to_string(), "Stopped"),
+    ];
+    with_instances_on(&mut incus, &runners, "default");
+    with_instances_on(
+        &mut incus,
+        &[("ci-sabre-3".to_string(), "Running")],
+        "orbit-ci",
+    );
+    let mut paths = incus.objects[INSTANCES_PATH].as_array().unwrap().clone();
+    paths.extend([
+        json!("/1.0/instances/ci-sabre-1?project=orbit-ci"),
+        json!("/1.0/instances/ci-sabre-2?project=orbit-ci"),
+    ]);
+    incus
+        .objects
+        .insert(INSTANCES_PATH.into(), Value::Array(paths));
+    incus.calls.clear();
+
+    assert_eq!(act_on(&mut incus, "converge").unwrap(), "converged");
+    let changed = changes(&incus);
+    let pins: Vec<&Vec<String>> = changed.iter().filter(|call| call[2] == "config").collect();
+    assert_eq!(pins.len(), 2);
+    for (name, _) in &runners {
+        let instance = &incus.objects[&format!("/1.0/instances/{name}?project=orbit-ci")];
+        assert_eq!(instance["devices"]["root"]["pool"], "default", "{name}");
+        assert_eq!(
+            instance["status"],
+            if name == "ci-sabre-1" {
+                "Running"
+            } else {
+                "Stopped"
+            }
+        );
+    }
+    assert!(
+        incus.objects["/1.0/instances/ci-sabre-3?project=orbit-ci"]["devices"]
+            .get("root")
+            .is_none()
+    );
+    // Each pin comes before the profile edit that moves the profile root.
+    let profile_edit = changed
+        .iter()
+        .position(|call| call[2] == "profile")
+        .unwrap();
+    assert!(
+        changed
+            .iter()
+            .rposition(|call| call[2] == "config")
+            .unwrap()
+            < profile_edit
+    );
+    assert_eq!(
+        incus.objects[PROFILE_PATH]["devices"]["root"]["pool"],
+        "orbit-ci"
+    );
+
+    incus.calls.clear();
+    assert_eq!(act_on(&mut incus, "converge").unwrap(), "converged");
+    assert!(!changes(&incus).iter().any(|call| call[2] == "config"));
 }

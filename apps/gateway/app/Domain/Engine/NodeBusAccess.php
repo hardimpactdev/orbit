@@ -9,6 +9,7 @@ use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
 use App\Models\Node;
 use Carbon\Carbon;
+use InvalidArgumentException;
 
 /**
  * Which Node a machine bus connection is, and what it may do (ADR 0271; docs/reference/gateway-engine.md#authentication). A
@@ -40,9 +41,10 @@ final readonly class NodeBusAccess
 
     /**
      * The Node's nftables guard for the bus, or null without a bus: only root may open a connection to the Gateway's NATS port.
+     * On the Gateway's own host the Gateway's runtime user may too: its processes join with the Gateway's key, not by address.
      * The executor's unit loads it before every start, replacing the previous table.
      */
-    public static function guard(): ?string
+    public static function guard(?string $gatewayUser = null): ?string
     {
         $url = self::url();
         if ($url === null) {
@@ -51,11 +53,15 @@ final readonly class NodeBusAccess
         $parts = parse_url($url);
         $host = is_array($parts) ? ($parts['host'] ?? '') : '';
         $port = is_array($parts) ? ($parts['port'] ?? 4222) : 4222;
+        if ($gatewayUser !== null && preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $gatewayUser) !== 1) {
+            throw new InvalidArgumentException('The Gateway runtime user is not a plain account name.');
+        }
+        $users = $gatewayUser === null ? '0' : "{ 0, \"{$gatewayUser}\" }";
 
         return "# Managed by Orbit: only root may reach the machine bus (ADR 0271; docs/reference/gateway-engine.md#authentication).\n"
             ."destroy table inet orbit_bus_guard\ntable inet orbit_bus_guard {\n  chain output {\n"
             ."    type filter hook output priority 0; policy accept;\n"
-            ."    ip daddr {$host} tcp dport {$port} meta skuid != 0 reject with tcp reset\n  }\n}\n";
+            ."    ip daddr {$host} tcp dport {$port} meta skuid != {$users} reject with tcp reset\n  }\n}\n";
     }
 
     /**
