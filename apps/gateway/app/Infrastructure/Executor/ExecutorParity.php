@@ -30,10 +30,10 @@ use Throwable;
  * Python sleep that left it frozen while the Gateway records it running, has no owner that R3 could route its wake to: the Node
  * fails with `instance.frozen_unrecorded` until a wake with the flags off resumes it (docs/reference/executor.md#switching-engines).
  *
- * The same read also returns every activation proxy in the Node's loaded Caddy config, from the admin API, with the address its
- * upstream name resolves to on the Node. Each must be what the route renderer draws for its Instance (upstream, GET, Host, TLS
- * name) and must reach this Gateway's WireGuard address; else the Node fails with `caddy.activation_proxy_wrong` and names each
- * Instance (docs/reference/executor.md#activation-proxy). The executor's own guard checks only the handler and its URI.
+ * The same read also returns each Instance's activation proxy in the Node's loaded Caddy config, from the admin API: the handler
+ * that a visit matched by the asleep marker reaches, with every address its upstream resolves to on the Node. Each must be what the
+ * route renderer draws for its Instance (URI, upstream, GET, Host, TLS name) and reach only this Gateway's WireGuard address; else
+ * the Node fails with `caddy.activation_proxy_wrong` and names each Instance (docs/reference/executor.md#activation-proxy).
  */
 final readonly class ExecutorParity
 {
@@ -51,28 +51,46 @@ final readonly class ExecutorParity
         .'&& proxies=$(printf "%s" "$config" | python3 -I -c \''.self::Proxies.'\'); then echo caddy:; printf "%s\n" "$proxies"; fi; true';
 
     /**
-     * Prints, as one JSON line each, every reverse_proxy of the loaded Caddy config whose rewrite targets a runtime activation,
-     * without its response routes, and with `resolved`: the address each upstream's host resolves to on the Node.
+     * Finds each Instance's activation proxy the way the executor's Caddy guard does: by the route renderer's asleep-marker matcher
+     * (`file` with `try_files /app-instance-<id>.asleep`), not by the rewrite. For each Instance it prints one JSON line: the first
+     * handler other than `vars` that a marked visit reaches, without its response routes, with `instance` and `resolved`, every
+     * address its upstreams' hosts resolve to on the Node (null when one does not resolve).
      */
     private const string Proxies = <<<'PY'
-        import json, socket, sys
-        stack = [json.load(sys.stdin)]
-        while stack:
-            value = stack.pop()
+        import json, re, socket, sys
+        handlers = {}
+        def marker(route):
+            for matcher in route.get("match") or []:
+                files = matcher.get("file") if isinstance(matcher, dict) else None
+                for name in (files or {}).get("try_files") or []:
+                    found = re.fullmatch(r"/app-instance-([1-9][0-9]*)\.asleep", str(name))
+                    if found:
+                        return int(found.group(1))
+            return None
+        def walk(value):
             if isinstance(value, dict):
-                rewrite = value.get("rewrite")
-                if value.get("handler") == "reverse_proxy" and isinstance(rewrite, dict) and "/runtime-activations/" in str(rewrite.get("uri")):
-                    proxy = {key: value[key] for key in value if key != "handle_response"}
-                    proxy["resolved"] = []
-                    for upstream in value.get("upstreams") or []:
-                        try:
-                            proxy["resolved"].append(socket.gethostbyname(str(upstream.get("dial")).rsplit(":", 1)[0]))
-                        except (OSError, UnicodeError):
-                            proxy["resolved"].append(None)
-                    print(json.dumps(proxy, sort_keys=True))
-                stack.extend(value.values())
+                instance = marker(value)
+                if instance is not None:
+                    handlers.setdefault(instance, []).extend(value.get("handle") or [])
+                for child in value.values():
+                    walk(child)
             elif isinstance(value, list):
-                stack.extend(value)
+                for child in value:
+                    walk(child)
+        walk(json.load(sys.stdin))
+        for instance, found in sorted(handlers.items()):
+            handler = next((h for h in found if isinstance(h, dict) and h.get("handler") != "vars"), None) or {}
+            proxy = {key: handler[key] for key in handler if key != "handle_response"}
+            proxy["instance"] = instance
+            addresses = set()
+            for upstream in proxy.get("upstreams") or []:
+                try:
+                    host = str(upstream.get("dial")).rsplit(":", 1)[0]
+                    addresses.update(info[4][0] for info in socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP))
+                except (OSError, UnicodeError, AttributeError):
+                    addresses.add(None)
+            proxy["resolved"] = sorted(addresses, key=str)
+            print(json.dumps(proxy, sort_keys=True))
         PY;
 
     public function __construct(
@@ -143,8 +161,8 @@ final readonly class ExecutorParity
     }
 
     /**
-     * Each loaded activation proxy that differs from what the route renderer draws for its Instance, or whose upstream does not
-     * resolve to this Gateway's WireGuard address, as `Instance <id>: <field> <loaded value>`.
+     * Each loaded activation proxy that differs from what the route renderer draws for its Instance, its rewrite included, or
+     * whose upstream resolves to any address but this Gateway's WireGuard address, as `Instance <id>: <field> <loaded value>`.
      *
      * @param  list<array<mixed>>  $proxies
      * @return list<string>
@@ -153,26 +171,25 @@ final readonly class ExecutorParity
     {
         $wrong = [];
         foreach ($proxies as $proxy) {
-            $uri = data_get($proxy, 'rewrite.uri');
-            if (! is_string($uri) || preg_match('#/app-instance/([1-9][0-9]*)\z#', $uri, $matches) !== 1) {
-                continue;
-            }
-            $target = $this->routes->activationTarget((int) $matches[1]);
-            if ($target === null || $target['uri'] !== $uri) {
+            $instance = $proxy['instance'] ?? null;
+            $target = is_int($instance) ? $this->routes->activationTarget($instance) : null;
+            if ($target === null) {
                 continue;
             }
             $loaded = [
+                'handler' => $proxy['handler'] ?? null,
+                'URI' => data_get($proxy, 'rewrite.uri'),
                 'upstream' => array_column(is_array($proxy['upstreams'] ?? null) ? $proxy['upstreams'] : [], 'dial'),
                 'method' => data_get($proxy, 'rewrite.method'),
                 'Host' => data_get($proxy, 'headers.request.set.Host'),
                 'TLS server name' => data_get($proxy, 'transport.tls.server_name'),
                 'resolves to' => $proxy['resolved'] ?? null,
             ];
-            $want = ['upstream' => [$target['dial']], 'method' => $target['method'], 'Host' => [$target['host']],
+            $want = ['handler' => 'reverse_proxy', 'URI' => $target['uri'], 'upstream' => [$target['dial']], 'method' => $target['method'], 'Host' => [$target['host']],
                 'TLS server name' => $target['host'], 'resolves to' => [$gateway]];
             foreach ($want as $field => $value) {
                 if ($loaded[$field] !== $value) {
-                    $wrong[] = "Instance {$matches[1]}: {$field} ".json_encode($loaded[$field], JSON_UNESCAPED_SLASHES);
+                    $wrong[] = "Instance {$instance}: {$field} ".json_encode($loaded[$field], JSON_UNESCAPED_SLASHES);
                 }
             }
         }

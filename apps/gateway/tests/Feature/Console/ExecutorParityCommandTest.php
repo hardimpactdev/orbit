@@ -154,13 +154,16 @@ it('refuses a Node whose Incus list failed, rather than passing it unread', func
 });
 
 /** An activation proxy as the nested `app-dev` Node's Caddy loads it for Instance 2, with the address its upstream resolves to. */
-function parityProxy(array $change = []): string
+function parityProxy(array $change = [], ?string $without = null): string
 {
-    return json_encode(array_replace_recursive(['handler' => 'reverse_proxy', 'headers' => ['request' => ['set' => ['Host' => ['gateway.orbit'],
+    $proxy = array_replace_recursive(['instance' => 2, 'handler' => 'reverse_proxy', 'headers' => ['request' => ['set' => ['Host' => ['gateway.orbit'],
         'X-Forwarded-Method' => ['{http.request.method}'], 'X-Forwarded-Uri' => ['{http.request.uri}']]]], 'resolved' => ['10.45.0.1'],
         'rewrite' => ['method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/2'], 'transport' => ['protocol' => 'http',
             'tls' => ['root_ca_pem_files' => ['/usr/local/share/ca-certificates/orbit-managed-root-ca.crt'], 'server_name' => 'gateway.orbit']],
-        'upstreams' => [['dial' => 'gateway.orbit:443']]], $change), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        'upstreams' => [['dial' => 'gateway.orbit:443']]], $change);
+    unset($proxy[$without]);
+
+    return json_encode($proxy, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
 it('passes an activation proxy that reaches this Gateway as the route renderer draws it, and names each wrong one', function (): void {
@@ -179,8 +182,15 @@ it('passes an activation proxy that reaches this Gateway as the route renderer d
     $this->artisan('orbit:executor-parity')
         ->expectsOutputToContain('(Instance 2: resolves to ["10.45.0.9"]; Instance 2: upstream ["10.45.0.9:443"])')
         ->assertFailed();
-    $this->reports['10.45.0.2'] = $report(parityProxy(['resolved' => ['10.45.0.9']]), parityProxy(['rewrite' => ['uri' => '/api/v1/runtime-activations/app-instance/3']]));
-    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2: resolves to ["10.45.0.9"])')->assertFailed();
+    // Any address but this Gateway's, even beside it, refuses.
+    $this->reports['10.45.0.2'] = $report(parityProxy(['resolved' => ['10.45.0.1', '10.45.0.9']]));
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2: resolves to ["10.45.0.1","10.45.0.9"])')->assertFailed();
+
+    // The asleep-marker route finds the proxy, so a removed or wrong rewrite refuses too.
+    $this->reports['10.45.0.2'] = $report(parityProxy(without: 'rewrite'));
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2: URI null; Instance 2: method null)')->assertFailed();
+    $this->reports['10.45.0.2'] = $report(parityProxy(['rewrite' => ['uri' => '/api/v1/runtime-activations/app-instance/3']]));
+    $this->artisan('orbit:executor-parity')->expectsOutputToContain('(Instance 2: URI "/api/v1/runtime-activations/app-instance/3")')->assertFailed();
 });
 
 it('refuses a Node whose loaded Caddy config it could not read', function (): void {
@@ -190,18 +200,22 @@ it('refuses a Node whose loaded Caddy config it could not read', function (): vo
     $this->artisan('orbit:executor-parity')->expectsOutputToContain("app-dev-1 (#{$this->first->id}): caddy.config_unreadable")->assertFailed();
 });
 
-it('reads only the activation proxies of a loaded Caddy config on the Node', function (): void {
+it('finds the activation proxy of each Instance on the Node by its asleep-marker route, with or without a rewrite', function (): void {
+    $asleep = static fn (int $id): array => [['file' => ['root' => '/data/caddy/orbit/hibernation', 'try_files' => ["/app-instance-{$id}.asleep"]],
+        'not' => [['header' => ['X-Orbit-Probe' => ['1']]]]]];
     $proxy = ['handler' => 'reverse_proxy', 'rewrite' => ['method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/2'],
         'upstreams' => [['dial' => '127.0.0.1:443']], 'handle_response' => [['routes' => []]]];
-    $config = ['apps' => ['http' => ['servers' => ['srv0' => ['routes' => [['handle' => [['handler' => 'subroute', 'routes' => [
-        ['handle' => [['handler' => 'vars', 'log_skip' => true]]],
-        ['handle' => [['handler' => 'subroute', 'routes' => [['handle' => [$proxy]]]]]],
-        ['handle' => [['handler' => 'reverse_proxy', 'upstreams' => [['dial' => 'unix//run/php.sock']]]]],
-    ]]]]]]]]]];
+    $site = static fn (int $id, array $handler): array => ['handle' => [['handler' => 'subroute', 'routes' => [
+        ['match' => $asleep($id), 'handle' => [['handler' => 'vars', 'log_skip' => true]]],
+        ['handle' => [['handler' => 'subroute', 'routes' => [['match' => $asleep($id), 'handle' => [$handler]]]]]],
+        ['handle' => [['handler' => 'reverse_proxy', 'rewrite' => ['uri' => '/api/v1/runtime-activations/app-instance/9'], 'upstreams' => [['dial' => 'unix//run/php.sock']]]]],
+    ]]]];
+    $unrewritten = ['handler' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:443']]];
+    $config = ['apps' => ['http' => ['servers' => ['srv0' => ['routes' => [$site(3, $unrewritten), $site(2, $proxy)]]]]]];
     $process = new Process(['python3', '-I', '-c', (new ReflectionClassConstant(ExecutorParity::class, 'Proxies'))->getValue()]);
     $process->setInput(json_encode($config, JSON_THROW_ON_ERROR))->mustRun();
 
     unset($proxy['handle_response']);
     expect(array_map(static fn (string $line): mixed => json_decode($line, true), explode("\n", trim($process->getOutput()))))
-        ->toEqual([[...$proxy, 'resolved' => ['127.0.0.1']]]);
+        ->toEqual([[...$proxy, 'instance' => 2, 'resolved' => ['127.0.0.1']], [...$unrewritten, 'instance' => 3, 'resolved' => ['127.0.0.1']]]);
 });
