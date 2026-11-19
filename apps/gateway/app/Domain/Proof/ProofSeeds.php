@@ -44,7 +44,7 @@ final readonly class ProofSeeds
 
     /**
      * The bound of one target's copy step, the `timeout` of "Copy the seed" in the workflow: its two pushes, plus 100 s for the
-     * remote and snapshot reads, the renames, the runner pause and the SSH set-up. The steps run side by side but share the default Node's uplink,
+     * remote and snapshot reads, the renames and the SSH set-up. The steps run side by side but share the default Node's uplink,
      * so the run budget still counts one per target (docs/cli/instance/seed-copy.mmd).
      */
     public const int CopySeconds = 2 * self::PushSeconds + 100;

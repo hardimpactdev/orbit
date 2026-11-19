@@ -49,8 +49,7 @@ sequenceDiagram
   loop each CI Node, side by side
     SW->>N: Copy the seed<br/>Ansible · tags copy
     %%> What it does:
-    %%> - pauses the CI Node's runners: a timer on the CI Node that releases the pause after 600 s, then the runner hold script `orbit-ci-runner-hold hold proof-seed 0`, which stops every idle runner; busy runners finish their job (docs/reference/node-provisioning.md#proof-places-on-a-ci-node)
-    %%> - adds the client remote `proof-node-ID` of root when it is missing, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
+    %%> - adds the client remote `proof-node-ID` of root when it is missing, one copy at a time under a lock file, because root's client rewrites one file for all its remotes without a lock and two adds side by side would lose one, and refuses when the certificate that root's client stored for it is not the one read on the CI Node
     %%> - names the base: when the default holds a `base-COMMIT` pair and the holder holds `seed-COMMIT`, renames the holder's pair to `base-COMMIT` through the remote; a rename keeps the creation time, so both sides share that snapshot
     %%> - `incus storage volume copy` of the inner volume to `proof-seed-inner` with `--refresh --mode=push`, then `incus copy DEFAULT proof-node-ID:proof-seed` with the same flags, in `orbit-instances-nested`
     %%> Why push:
@@ -64,12 +63,8 @@ sequenceDiagram
     %%> Why side by side:
     %%> - one push of an incremental seed takes about 30 s; one after the other, the run took the sum, and a slow target delayed the next
     %%> - each push of the default's mounted inner volume freezes its file system (`fsfreeze`) and thaws it at once, before it sends anything; a freeze while the other push holds its own fails with `Failed freezing filesystem`, so the copy tries only that push again, up to five times, 2 s apart
-    %%> Why the pause:
-    %%> - a CI job on the CI Node writes to the same ZFS pool as the receive; Shark's receive of about 800 MB took 130 s beside the merge queue's fixtures and about 26 s without them (Operations 29716, 29515)
-    %%> - only new jobs wait: they run on the other runners of the pool or start when the pause ends
     %%> On failure:
     %%> - this target fails with `instance.seed_copy_failed`; the other targets' copies still run
-    %%> - the CI Node's runners resume after the push, also after a failed one; when the run dies, the timer resumes them; a CI Node without the hold script, or a pause that fails, receives without it
   end
   loop each CI Node, side by side
     SW->>C: Check the holder<br/>Ansible · tags check

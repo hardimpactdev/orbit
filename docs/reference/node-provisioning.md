@@ -369,7 +369,6 @@ The `ci-runner` role installs the script `/usr/local/libexec/orbit-ci-runner-hol
 | --- | --- | --- |
 | `hold <copy> <places>` | In each proof copy's create on the Node, before the copy starts its inner fleet | Records the hold of the copy, then stops idle runner services in `orbit-ci` down to the places left to runners, and records each one. `<places>` is the Node's `ci_places`, which the Gateway passes. |
 | `release <copy>` | In each proof copy's destroy on the Node, also after a failed create | Removes the hold of the copy. When no hold is left, it starts the service of each recorded runner and clears the record |
-| `hold proof-seed 0`, then `release proof-seed` | Around the [seed copy](/reference/development-containers#how-the-seed-moves)'s push to the Node | Stops every idle runner while the Node receives the seed, and starts them again after the push. A timer releases it after 600 s |
 
 The Gateway records the hold script on the Node, in `nodes.ci_hold_digest`, by the same rule and in the same place as `nodes.ci_nested_hosting`: the SHA-256 digest of the script that the Node's last passed `ci-runner` add or role converge installed. A Node offers places to [proof:run](/cli/proof/run#the-run) only while the record is the digest of the script that the running Gateway release installs (`ProofCopyHosts::takesCopies`). So after a release that adds or changes the script, a CI Node offers no place until a `ci-runner` add or converge of the Node passes. The [runner view](/reference/ci-runner-view) uses the same rule: such a Node shows no free place.
 
