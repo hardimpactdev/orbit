@@ -216,7 +216,23 @@
         argv: "{{ ['incus', 'exec', '--project', item.project, item.name, '--', 'systemctl', 'try-restart', 'orbit-*.service'] }}"
       loop: "{{ folder_targets }}"
       loop_control: { label: "{{ item.project }}/{{ item.name }}" }
+      register: folder_restarted
       changed_when: true
+      failed_when: false
+    # A removal admitted beside the converge may delete a listed container before its restart: confirmed gone, it needs none. A
+    # failed restart of a container that still exists fails the run, and the mark stays for the next one.
+    - name: Fail a restart of a container that still exists
+      when: folder_name != 'agent' and folder_restart_failed | length > 0
+      ansible.builtin.include_tasks: instance-containers-gone.yml
+      vars:
+        folder_restart_failed: >-
+          {{ folder_restarted.results | default([]) | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list }}
+        gone_failed: >-
+          {%- set failed = [] -%}
+          {%- for result in folder_restart_failed -%}
+            {%- set _ = failed.append({'project': result.item.project, 'name': result.item.name, 'stderr': result.stderr}) -%}
+          {%- endfor -%}
+          {{ failed }}
     # instance_container_files.py `t3_restart` reads each target's open runs, of every thread, right before its restart. A T3 with an
     # open run, or whose runs cannot be read while it runs, does not restart: it stays on the Node's list, with the frozen, stopped and failed targets,
     # until a converge finds it idle. Restarted targets leave the list; the run fails after every target had its turn if one failed.

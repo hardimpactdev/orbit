@@ -1,0 +1,24 @@
+---
+# After per-container Incus calls of a converge failed: `gone_failed` lists each failed call as {project, name, stderr}. A removal is
+# admitted beside a role converge (NodeWorkAdmission), so a container listed earlier in the run can be deleted before its turn. Incus is
+# asked again for each one; a container it answers with its own not-found text for is already removed, and no failure. A failed call on a
+# container that still exists, or one Incus cannot answer for, fails the converge with `instance.host_unavailable` and the call's stderr.
+- name: Ask Incus again for each container whose call failed
+  ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ item.name }}?project={{ item.project }}"] }
+  loop: "{{ gone_failed }}"
+  loop_control: { label: "{{ item.project }}/{{ item.name }}" }
+  register: gone_reads
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a failed call on a container that still exists
+  ansible.builtin.assert:
+    that: item.rc != 0 and (item.stderr | trim) == gone_answer
+    fail_msg: "instance.host_unavailable: {{ item.item.project }}/{{ item.item.name }}: {{ item.item.stderr | trim }}"
+    quiet: true
+  loop: "{{ gone_reads.results }}"
+  loop_control: { label: "{{ item.item.project }}/{{ item.item.name }}" }
+  vars:
+    # Incus's own answer for a container that does not exist; any other failed read is no proof.
+    gone_answer: >-
+      {{ 'Error: Failed to fetch instance "' ~ item.item.name ~ '" in project "' ~ item.item.project ~ '": Instance not found' }}

@@ -5,4 +5,4 @@ cases = [
 ]
 file = "swamp/tests/instance_network_move_gone_test.py"
 cost = 3
-inputs = ["swamp/ansible/tasks/instance-network-move-nic.yml", "swamp/ansible/requirements.txt"]
+inputs = ["swamp/ansible/tasks/instance-network-move-nic.yml", "swamp/ansible/tasks/instance-containers-gone.yml", "swamp/ansible/requirements.txt"]

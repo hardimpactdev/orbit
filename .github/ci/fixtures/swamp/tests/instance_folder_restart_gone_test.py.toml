@@ -1,0 +1,8 @@
+order = 1394
+cases = [
+  "test_a_container_deleted_after_the_listing_is_skipped_and_the_others_restart",
+  "test_a_failed_restart_of_a_container_that_exists_fails_the_run",
+]
+file = "swamp/tests/instance_folder_restart_gone_test.py"
+cost = 3
+inputs = ["swamp/ansible/tasks/instance-folder.yml", "swamp/ansible/tasks/instance-containers-gone.yml", "swamp/ansible/requirements.txt"]

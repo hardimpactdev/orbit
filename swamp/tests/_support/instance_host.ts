@@ -156,6 +156,7 @@ function writeTasks(folder: string) {
             "instance-network-nic-check.yml",
             "instance-network-move.yml",
             "instance-network-move-nic.yml",
+            "instance-containers-gone.yml",
             "instance-bridge-rules.yml",
             "instance-bridge-refresh.yml",
             "instance-egress.yml",

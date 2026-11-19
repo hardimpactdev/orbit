@@ -18,24 +18,10 @@
   changed_when: true
   failed_when: false
 
-# A removal is admitted beside a role converge, so a container listed above can be deleted before its turn: Incus confirms it is gone,
-# and it is already removed. A failed update of a container that still exists fails the converge.
-- name: Ask Incus again for a container whose NIC update failed
-  when: move_nic.results | default([]) | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list | length > 0
-  ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ move_container.name }}?project={{ move_container.project }}"] }
-  register: move_still
-  changed_when: false
-  failed_when: false
-
-- name: Refuse a failed NIC update on a container that still exists
-  when: move_still is not skipped
-  ansible.builtin.assert:
-    that: move_still.rc != 0 and (move_still.stderr | trim) == move_gone
-    fail_msg: >-
-      instance.host_unavailable: {{ move_container.project }}/{{ move_container.name }}:
-      {{ (move_nic.results | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | first).stderr | default('') | trim }}
-    quiet: true
+# A container listed above may be deleted by a removal before its turn: confirmed gone, it is already removed.
+- name: Fail an update of a container that still exists
+  when: move_failed | length > 0
+  ansible.builtin.include_tasks: instance-containers-gone.yml
   vars:
-    # Incus's own answer for a container that does not exist; any other failed read is no proof.
-    move_gone: >-
-      {{ 'Error: Failed to fetch instance "' ~ move_container.name ~ '" in project "' ~ move_container.project ~ '": Instance not found' }}
+    move_failed: "{{ move_nic.results | default([]) | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list }}"
+    gone_failed: "{{ [{'project': move_container.project, 'name': move_container.name, 'stderr': (move_failed | first).stderr}] }}"
