@@ -37,6 +37,9 @@ use Illuminate\Support\Facades\DB;
 /** Supplies execution copies and records native requests through normal Gateway admission. */
 final readonly class ProjectMaintenanceProjection implements DirectOperationProjection
 {
+    /** The reason that opens the assistance request of a maintenance task refused in backlog. */
+    private const string BacklogRefusal = 'Maintenance task refused in backlog: ';
+
     public function input(Operation $operation): array
     {
         if ($operation->kind === 'project.detect') {
@@ -241,14 +244,20 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                     throw new ResourceOperationException('operation.result_invalid', 'The maintenance intent must name its admitted Project.', 422);
                 }
                 // The task leaves backlog by the rule every task meets, whether this run created it or reuses it. A refused task stays
-                // in backlog and asks for a person (docs/reference/projects.md#maintenance).
+                // in backlog, is not admitted, and asks for a person with the refusal's instruction (docs/reference/projects.md#maintenance).
                 try {
                     UpdateTaskGroupAction::leavesBacklog($group->tasks()->get());
-                    $group->update(['maintenance' => [...$maintenance, 'stage' => 'provision'], 'status' => TaskGroupStatus::Todo]);
-                    DB::afterCommit(fn () => $this->startProvision($group));
                 } catch (ResourceOperationException $exception) {
-                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: 'Maintenance task refused in backlog: '.$exception->errorCode);
+                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: self::BacklogRefusal.$exception->errorCode.'. '.$exception->getMessage());
+
+                    continue;
                 }
+                // A later run admits the task once a person fixed its shape: only that refusal clears, any other request stays.
+                if ($group->assistance_kind === AssistanceKind::Failure && str_starts_with((string) $group->assistance_reason, self::BacklogRefusal)) {
+                    TaskAssistance::apply($group);
+                }
+                $group->update(['maintenance' => [...$maintenance, 'stage' => 'provision'], 'status' => TaskGroupStatus::Todo]);
+                DB::afterCommit(fn () => $this->startProvision($group));
             }
             $admitted[] = $group->id;
             $operation->forceFill(['state' => [...($operation->state ?? []), 'maintenance_group_id' => $group->id]])->save();

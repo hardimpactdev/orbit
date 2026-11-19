@@ -128,6 +128,13 @@ describe('the move of a task out of backlog', function (): void {
         $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => 'todo',
             'subtasks' => [['title' => 'Only', 'brief' => 'Only.', 'deliverables' => $missing]]])
             ->assertStatus(422)->assertJsonPath('error.code', 'tasks.one_subtask');
+        // Deliverables that fail field validation do not hide the shape refusal either.
+        $review = ['id' => 'done', 'type' => 'review', 'description' => 'Done.'];
+        foreach ([[$review, $review], [['id' => 'tests', 'type' => 'command', 'description' => 'The tests pass.']]] as $invalid) {
+            $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Task', 'brief' => 'Brief', 'status' => 'todo',
+                'subtasks' => [['title' => 'Only', 'brief' => 'Only.', 'deliverables' => $invalid]]])
+                ->assertStatus(422)->assertJsonPath('error.code', 'tasks.one_subtask');
+        }
         $id = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Task', 'brief' => 'Brief', 'subtasks' => [['title' => 'Only', 'brief' => 'Only.']]])
             ->assertCreated()->json('data.id');
         $this->patchJson('/api/v1/tasks/'.$id, ['status' => 'todo'])->assertStatus(422)->assertJsonPath('error.code', 'tasks.one_subtask');

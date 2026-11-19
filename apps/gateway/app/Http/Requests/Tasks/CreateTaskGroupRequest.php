@@ -111,6 +111,12 @@ final class CreateTaskGroupRequest extends FormRequest
         if (array_key_exists('deliverables', $body) && array_key_exists('subtasks', $body)) {
             throw ValidationException::withMessages(['subtasks' => ['A task takes either subtasks or its own deliverables, not both.']]);
         }
+        // A create in todo with exactly one subtask is told to fold it before any field of that subtask is validated
+        // (docs/reference/tasks.md#tasks-and-subtasks).
+        if (($body['status'] ?? null) === TaskGroupStatus::Todo->value && is_array($body['subtasks'] ?? null) && array_is_list($body['subtasks'])
+            && count($body['subtasks']) === 1) {
+            throw TaskGroupGuard::oneSubtask();
+        }
 
         return $body;
     }

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerModelRoute;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -398,7 +399,10 @@ it('keeps a maintenance task of one subtask or of no work in backlog, created or
     $group = Task::topLevel()->where('project_id', $project->id)->sole();
     expect($group->status->value)->toBe('backlog')
         ->and($group->assistance_requested)->toBeTrue()
-        ->and($group->assistance_reason)->toBe('Maintenance task refused in backlog: '.$code)
+        ->and($group->assistance_reason)->toStartWith('Maintenance task refused in backlog: '.$code.'. ')
+        ->and($group->assistance_reason)->toContain('at least two')
+        // A refused task is not admitted.
+        ->and(Operation::query()->where('kind', 'project.routine')->sole()->result['admitted_group_ids'])->toBe([])
         ->and($group->taskable_id)->toBeNull()
         ->and(Operation::query()->where('kind', 'instance.create')->count())->toBe($creates);
 })->with([
@@ -427,4 +431,22 @@ it('creates the Horizon baseline task as a task with no subtask, moves it to tod
 
     expect($start->json('data.kind'))->toBe('instance.create')
         ->and(Task::query()->where('parent_id', $id)->sole()->type)->toBe(TaskType::Work);
+});
+
+// A person folds the refused task's one subtask into it; the next run admits it, starts it and clears only that refusal.
+it('admits a refused maintenance task once its subtask is folded into it, and clears that refusal', function (): void {
+    $project = maintenanceSolo();
+    maintenanceRoutine($project, ['tasks' => [['title' => 'Update', 'brief' => 'Update.', 'deliverables' => maintenanceDeliverables()]]]);
+    $group = Task::topLevel()->where('project_id', $project->id)->sole();
+    expect($group->assistance_requested)->toBeTrue();
+
+    Task::query()->where('parent_id', $group->id)->delete();
+    CreateTaskGroupAction::openWork($group, maintenanceDeliverables());
+    maintenanceRoutine($project, ['deliverables' => maintenanceDeliverables()]);
+
+    $group->refresh();
+    expect($group->status->value)->toBe('reserved')
+        ->and($group->assistance_requested)->toBeFalse()
+        ->and($group->assistance_reason)->toBeNull()
+        ->and(Operation::query()->find($group->maintenance['operation_id'] ?? null)?->kind)->toBe('instance.create');
 });
