@@ -92,7 +92,9 @@ Deno.test({
         "a Squid configuration that does not parse never replaces the live one, and the run fails",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture();
+        // A task copy's agent shell has umask 0007. The fixture must build under it: the runner's umask is 022.
+        const umask = Deno.umask(0o007);
+        const f = await fixture().finally(() => Deno.umask(umask));
         try {
             hostTasks(f.folder, ["Run the egress proxy"]);
             let result = await f.run();

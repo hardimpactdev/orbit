@@ -1,0 +1,50 @@
+id: eba5ca32-7b29-4e27-bb82-5221921d4313
+name: gateway-operation-cleanup
+autoContinue: false
+description: Record eligible Operation versions and their source definitions for cleanup Tasks after a Gateway handover.
+queueTimeout: 30
+vaults: []
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    sha: {type: string, pattern: '^[a-f0-9]{40}$'}
+    ssh: {type: object}
+  required: [operation_id, node_id, sha, ssh]
+  additionalProperties: false
+jobs:
+- name: review
+  labels: {role: swamp}
+  steps:
+  - name: Record cleanup candidates
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      methodName: exec
+      behaviorName: '${{ "release-check-versions-gateway" }}'
+      globalArgs:
+        name: '${{ "production-release-ssh-" + string(inputs.node_id) + "-gateway" }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.ssh.target.user }}'
+          port: '${{ inputs.ssh.target.port }}'
+          identityFile: '${{ inputs.ssh.identity_file }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.ssh.target.host }}'
+          transport: {hostKeys: '${{ inputs.ssh.target.host_keys }}'}
+      inputs:
+        hosts: name:target
+        sudo: true
+        timeoutSec: 330
+        argv:
+        - /usr/bin/timeout
+        - "300"
+        - /usr/local/libexec/orbit-production-release-phase
+        - gateway
+        - cleanup-versions
+        - '${{ inputs.sha }}'
+        - '${{ string(inputs.operation_id) }}'

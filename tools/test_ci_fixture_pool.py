@@ -136,7 +136,7 @@ class FixturePoolTest(unittest.TestCase):
         self.assertNotIn('capacity', plan)
         selected = units.planned_units(plan)
         expected = [name for name, _ in units.units_for(fixtures[file], budget)]
-        self.assertEqual(82, len(expected))
+        self.assertEqual(85, len(expected))
         self.assertEqual(set(expected), {name for name in selected if name.split('#')[0] == file})
         self.assertEqual(16, len(plan['shards']) + len(plan['self_hosted_shards']))
         costs = {name: cost for fixture in fixtures.values() for name, cost in units.units_for(fixture, budget)}
@@ -174,7 +174,7 @@ class FixturePoolTest(unittest.TestCase):
         for part in ('-' + phase if phase else '' for phase in phases):
             with self.subTest(part=part):
                 plan = units.plan([f'swamp/ansible/tasks/instance-fleet{part}.yml'], budget, fixtures, defaults)
-                self.assertEqual(82, sum(name.split('#')[0] == fleet for name in units.planned_units(plan)))
+                self.assertEqual(85, sum(name.split('#')[0] == fleet for name in units.planned_units(plan)))
 
     def test_a_host_role_change_with_the_fleet_node_part_and_the_container_fixture_fits_the_shards(self):
         # The changed paths of the btrfs pool change for the nested app-dev Node (17 files, 18 November 2026).
