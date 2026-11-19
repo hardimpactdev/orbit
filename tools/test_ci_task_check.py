@@ -578,7 +578,7 @@ class CiPolicyTest(unittest.TestCase):
         self.assertIn('not selected ci-policy (0.0s; no changed path is read by a policy test', output.getvalue())
 
     def test_each_file_that_a_policy_test_reads_selects_it_and_no_other_does(self):
-        read = {'bin/ci-units': 'tools/test_ci_changed_paths.py', 'tools/test_ci_units.py': 'tools/test_ci_units.py',
+        read = {'bin/ci-units': 'tools/test_ci_changed_paths.py', 'tools/test_ci_units.py': "CI's test discovery",
                 'tools/ci-runners/user-manager.sh': 'tools/ci-runners/test_user_manager.py',
                 # Named only by a script that a policy test runs; built from parts, as below.
                 ''.join(('tools/', 'pest_', 'runtime.py')): 'tools/test_ci_check_processes.py, through bin/pest-plain',

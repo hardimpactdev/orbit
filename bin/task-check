@@ -506,7 +506,7 @@ def ci_policy_input(paths):
     readers = [(reader, units.selection.input_rules(globs)) for reader, globs in CI_POLICY_READS.items()]
     reach = None
     for path in paths:
-        reader = discovered(path)
+        reader = "CI's test discovery" if discovered(path) else None
         reader = reader or next((reader for reader, rules in readers if units.selection.matches(path, rules)), None)
         if reader is None and path.startswith(CI_POLICY_NAMED):
             reach = reach if reach is not None else named_reads(paths)
