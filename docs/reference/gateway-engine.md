@@ -40,7 +40,7 @@ The engine runs the plan the Gateway admitted (`route_create`). Route holds work
 1. `csr-<i>`: the leaf's Node makes its key once and answers a certificate request. The key never leaves the Node.
 2. `sign-<i>`: the Gateway signs the request through the action that `operation:direct:certificate-sign` uses. That action checks the admitted leaf, the root and the run. It refuses once a cancel is pending.
 3. `site-<node>`: `route.publish_site` places the Node's part: Caddy access, `APP_URL`, links, PHP-FPM pools, the leaf and its account copy, the Orbit root's trust, and the Caddyfile.
-4. `dns-<i>`: when the private DNS records change, `dns.publish_records` places them on each VPN Node. It runs beside the sites.
+4. `dns-<i>`: `dns.publish_records` places changed private DNS records on each VPN Node, beside the sites.
 5. `probe-<i>`: the Gateway makes a TLS handshake with each serving Node, by its WireGuard address and the Route's name, trusting the Orbit root alone.
 
 The probes wait for the sites alone: they reach each Node by its WireGuard address, not by DNS.
