@@ -25,6 +25,19 @@ Deno.test("no release step admits a task VM image refresh: the VM refresh trigge
     [{ step: "Load Swamp on Node 209", condition: { type: "succeeded" } }]);
 });
 
+Deno.test("container rollback checks the retained Git object before workflow load", () => {
+  const build = release.find((step) => step.name === "Build the release")!;
+  const argv = build.task.inputs?.argv!;
+  assert(argv[4].includes('exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:6}"'));
+  assertEquals(argv.slice(6, 9), ["build-checked", '${{ inputs.intent.sha }}', '${{ string(inputs.operation_id) }}']);
+  assertEquals(argv[11], '${{ string(has(inputs.intent.retained) && inputs.intent.retained) }}');
+  // The load and activation depend on a successful build, even when retained steps skip.
+  assertEquals(release.find((step) => step.name === "Snapshot the database")?.dependsOn?.[0],
+    { step: build.name, condition: { type: "succeeded" } });
+  assertEquals(release.find((step) => step.name === "Migrate")?.dependsOn?.[0],
+    { step: "Snapshot the database", condition: { type: "succeeded" } });
+});
+
 Deno.test("Swamp load requires the bounded DB busy guard, including forced releases", () => {
   const guard = release.find((step) => step.name === "Wait for active Operations")!;
   assert(guard, "check active Operations before replacing their workflows");
@@ -34,8 +47,10 @@ Deno.test("Swamp load requires the bounded DB busy guard, including forced relea
   const argv = guard.task.inputs?.argv!;
   assertEquals(argv.slice(0, 2), ["/usr/bin/timeout", "630"]);
   assert(argv.join(" ").includes("gateway:release:wait-idle"));
-  assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
+  assertEquals(release.find((step) => step.name === "Check the candidate")?.dependsOn,
     [{ step: "Wait for active Operations", condition: { type: "succeeded" } }]);
+  assertEquals(release.find((step) => step.name === "Load Swamp on Node 209")?.dependsOn,
+    [{ step: "Check the candidate", condition: { type: "succeeded" } }]);
 });
 
 Deno.test("the Gateway check reads the root CA under the private certificate folder as root", () => {
@@ -49,4 +64,199 @@ Deno.test("the nested-fleet refresh is admitted after successful verify and the 
     assert(!step.task.inputs?.argv?.join(" ").includes("instances:refresh-nested-fleets"),
       `${step.name} must leave the refresh to verified release fleet admission`);
   }
+});
+
+Deno.test("the sealed web build precedes clone; sleep can start in parallel with candidate preparation", () => {
+  const clone = release.find((step) => step.name === "Clone the prepared release")!;
+  assertEquals(clone.dependsOn, [{ step: "Install the web build", condition: { type: "succeeded" } }]);
+  assertEquals(release.find((step) => step.name === "Sleep preparation")?.dependsOn,
+    [{ step: clone.name, condition: { type: "always" } }]);
+  assert(release.find((step) => step.name === "Migrate")?.dependsOn?.some(
+    (edge) => edge.step === "Sleep preparation" && edge.condition.type === "succeeded"));
+  assert(release.find((step) => step.name === "Snapshot the database")?.dependsOn?.some((edge) => edge.step === clone.name));
+});
+
+Deno.test("only host PHP-FPM drains Horizon before the switch", async () => {
+  const drain = activate.find((step) => step.name === "Drain Horizon")!;
+  assertEquals(drain.guard, '${{ inputs.intent.horizon_unit == "" }}');
+  assertEquals(activate.find((step) => step.name === "Switch the release")?.dependsOn, [{
+    step: drain.name,
+    condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] },
+  }]);
+  const start = activate.find((step) => step.name === "Start Horizon")!;
+  const scratch = await Deno.makeTempDir();
+  const inventory = `${scratch}/inventory`;
+  const hostDrain = `${scratch}/host-drain.sh`;
+  const unit = "orbit-process-71-horizon.service";
+  try {
+    await Deno.writeTextFile(hostDrain, 'printf "drain %s" "$1"\n');
+    await Deno.writeTextFile(`${scratch}/systemctl`, '#!/bin/sh\nprintf "%s %s" "$1" "$2"\n', { mode: 0o700 });
+    await Deno.writeTextFile(`${scratch}/sudo`, '#!/bin/sh\nprintf "%s" "$3"\n', { mode: 0o700 });
+    async function invoke(step: Step, verified: boolean) {
+      const [shell, option, script, ...args] = step.task.inputs!.argv!;
+      const substitutions = new Map([
+        ["/home/orbit/releases/${{ inputs.intent.id }}/swamp/scripts/gateway-release-drain.sh", hostDrain],
+        ["/usr/bin/systemctl", `${scratch}/systemctl`],
+        ["${{ inputs.intent.horizon_unit }}", unit],
+        ['${{ "Verify the Gateway" in steps && steps["Verify the Gateway"].status == "succeeded" ? "true" : "false" }}', String(verified)],
+      ]);
+      const result = await new Deno.Command(shell, {
+        args: [option, script.replace("/home/orbit/.orbit/gateway-containers.json", inventory),
+          ...args.map((argument) => substitutions.get(argument) ?? argument)],
+        env: { PATH: `${scratch}:${Deno.env.get("PATH")}` },
+      }).output();
+      assertEquals(result.code, 0, new TextDecoder().decode(result.stderr));
+      return new TextDecoder().decode(result.stdout);
+    }
+    assertEquals(await invoke(drain, false), `drain ${unit}`);
+    assertEquals(await invoke(start, false), `start ${unit}`);
+    await Deno.writeTextFile(inventory, "{}");
+    assertEquals(await invoke(drain, false), "");
+    assertEquals(await invoke(start, false), "");
+    assertEquals(await invoke(start, true), "start-horizon");
+  } finally {
+    await Deno.remove(scratch, { recursive: true });
+  }
+});
+
+Deno.test("only a verified public switch retires the former live container; pruning follows the handover", () => {
+  const horizon = activate.find((step) => step.name === "Start Horizon")!;
+  assertEquals(horizon.dependsOn?.map(({ step, condition }) => [step, condition.type]), [
+    ["Drain Horizon", "always"], ["Switch the release", "always"],
+    ["Verify the Gateway", "always"], ["Switch back", "always"],
+  ]);
+  const argv = horizon.task.inputs?.argv!;
+  assert(argv[2].includes('test "$5" != true || exec sudo -n /usr/local/libexec/orbit-gateway-release-phase "${@:1:4}"'));
+  assertEquals(argv[4], "start-horizon");
+  assertEquals(argv[8], '${{ "Verify the Gateway" in steps && steps["Verify the Gateway"].status == "succeeded" ? "true" : "false" }}');
+  assertEquals(argv.slice(-3), ["/usr/bin/systemctl", "start", "${{ inputs.intent.horizon_unit }}"]);
+  const retire = activate.find((step) => step.name === "Retire the previous live")!;
+  assertEquals(retire.allowFailure, undefined);
+  assertEquals(retire.dependsOn, [
+    { step: "Verify the Gateway", condition: { type: "succeeded" } },
+    { step: "Start Horizon", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } },
+  ]);
+  assertEquals(activate.find((step) => step.name === "Prune old releases")?.dependsOn,
+    [{ step: retire.name, condition: { type: "succeeded" } }]);
+});
+
+Deno.test("failure cleanup runs after every handover outcome", () => {
+  assertEquals(release.find((step) => step.name === "Release unused candidate")?.dependsOn,
+    [{ step: "Hand over the release", condition: { type: "always" } }]);
+});
+
+Deno.test("failed web installation cannot migrate even when its clone is skipped", () => {
+  const snapshot = release.find((step) => step.name === "Snapshot the database")!;
+  const installation = snapshot.dependsOn!.find((edge) => edge.step === "Install the web build")!;
+  assertEquals(installation.condition.conditions?.some((entry) => entry.type === "failed"), false);
+  const conditions = Object.fromEntries(snapshot.dependsOn!.map((edge) => [edge.step, edge.condition]));
+  const permits = (name: string, value: string) => {
+    const condition = conditions[name];
+    return condition.type === value || condition.conditions?.some((entry) => entry.type === value);
+  };
+  const reachesSnapshot = (build: string, web: string, clone: string) =>
+    Boolean(permits("Build the release", build) && permits("Install the web build", web) && permits("Clone the prepared release", clone));
+  assertEquals(reachesSnapshot("succeeded", "failed", "skipped"), false);
+  assertEquals(reachesSnapshot("succeeded", "succeeded", "failed"), false);
+  assertEquals(reachesSnapshot("failed", "skipped", "skipped"), false);
+  assertEquals(reachesSnapshot("succeeded", "skipped", "skipped"), true);
+});
+
+Deno.test("cleanup resumes only after scheduler handover or switch-back has ended", () => {
+  const cleanup = activate.find((step) => step.name === "Resume document cleanup")!;
+  assertEquals(cleanup.allowFailure, true);
+  assert(cleanup.dependsOn?.some((edge) => edge.step === "Retire the previous live" && edge.condition.type === "always"));
+  assert(cleanup.dependsOn?.some((edge) => edge.step === "Switch back" && edge.condition.type === "always"));
+});
+
+Deno.test("serving reconciliation brackets the retained workflow load with read-only checks", async () => {
+  const reconcile = await steps("workflow-operation-gateway-reconcile");
+  assertEquals(reconcile.map((step) => step.name), ["Check the serving release", "Reload serving workflows", "Verify the serving release", "Release the serving generation"]);
+  assert(reconcile[0].task.inputs?.argv?.includes("reconcile-begin"));
+  assertEquals(reconcile[1].task.workflowIdOrName, "operation-gateway-swamp-load");
+  assertEquals(reconcile[1].dependsOn, [{ step: reconcile[0].name, condition: { type: "succeeded" } }]);
+  assertEquals(reconcile[2].dependsOn, [{ step: reconcile[1].name, condition: { type: "succeeded" } }]);
+  assert(reconcile[2].task.inputs?.argv?.includes("reconcile-verify"));
+  assert(reconcile[3].task.inputs?.argv?.includes("reconcile-end"));
+});
+
+Deno.test("Gateway and AppProd share the clone, handover, compensation and readback boundaries", async () => {
+  const release = await steps("workflow-production-release");
+  const handover = await steps("workflow-production-release-activate");
+  const find = (steps: Step[], name: string) => {
+    const step = steps.find((step) => step.name === name);
+    assert(step, name);
+    return step;
+  };
+  const clone = find(release, "Clone the prepared release");
+  for (const name of ["Build the release", "Build the Instance release"]) {
+    assert(clone.dependsOn?.some((edge) => edge.step === name));
+  }
+  assertEquals(release.some((step) => step.name === "Snapshot the database"), false);
+  for (const name of ["Sleep preparation", "Migrate", "Check the Instance candidate"]) {
+    assert(find(release, name).dependsOn?.some((edge) => edge.step === clone.name));
+  }
+  assert(find(release, "Migrate").dependsOn?.some((edge) =>
+    edge.step === "Sleep preparation" && edge.condition.type === "succeeded"));
+  const activate = find(release, "Hand over the release");
+  assertEquals(activate.task.workflowIdOrName, "production-release-activate");
+  for (const name of ["Sleep preparation", "Check the candidate", "Check the Instance candidate"]) {
+    assert(activate.dependsOn?.some((edge) => edge.step === name));
+  }
+  const verify = find(handover, "Verify the serving release");
+  assertEquals(find(handover, "Switch back").dependsOn, [{ step: verify.name, condition: { type: "failed" } }]);
+  assertEquals(find(handover, "Switch back").guard, '${{ inputs.kind == "gateway.release" }}');
+  assertEquals(release.some((step) => step.name === "Wait for active Operations"), false);
+  assertEquals(find(handover, "Start Horizon").dependsOn, [
+    { step: "Switch the release", condition: { type: "succeeded" } },
+  ]);
+  // Quiesce stops the former web server; a bounded Ansible wait for queued response bytes runs before retire stops
+  // the container, and a timeout there never blocks retire.
+  const quiesce = find(handover, "Quiesce the previous live");
+  assert(quiesce.dependsOn?.some((edge) => edge.step === verify.name &&
+    edge.condition.conditions?.some((condition) => condition.type === "failed")));
+  const wait = find(handover, "Wait for queued responses");
+  assertEquals(wait.allowFailure, true);
+  assert(JSON.stringify(wait.task).includes("timeout 720"));
+  const retire = find(handover, "Retire the previous live");
+  assertEquals(retire.dependsOn, [
+    { step: quiesce.name, condition: { type: "succeeded" } },
+    { step: "Write the response wait input", condition: { type: "always" } },
+    { step: wait.name, condition: { type: "always" } },
+  ]);
+  const review = find(handover, "Record eligible versions for cleanup Tasks");
+  assertEquals(review.allowFailure, true);
+  assertEquals(review.task.workflowIdOrName, "gateway-operation-cleanup");
+  const record = find(await steps("workflow-gateway-operation-cleanup"), "Record cleanup candidates");
+  assert(record.task.inputs?.argv?.includes("cleanup-versions"));
+  // A failed first public check followed by a passing retire probe fails the confirmation, so nothing is filed.
+  const confirm = find(handover, "Confirm the Gateway handover");
+  assertEquals(review.dependsOn, [
+    { step: confirm.name, condition: { type: "succeeded" } },
+  ]);
+  assert(confirm.dependsOn?.some((edge) => edge.step === retire.name && edge.condition.type === "always"));
+  assert(confirm.dependsOn?.some((edge) => edge.step === verify.name && edge.condition.type === "always"));
+  assert(JSON.stringify(confirm.task).includes('steps[\\"Verify the serving release\\"].status == \\"succeeded\\"'));
+  assert(find(release, "Read the serving release").dependsOn?.every((edge) => edge.condition.type === "always"));
+});
+
+Deno.test("a Gateway rollback starts the stopped old without fetch, web, clone or migration and still checks it", async () => {
+  const release = await steps("workflow-production-release");
+  const find = (name: string) => {
+    const step = release.find((step) => step.name === name);
+    assert(step, name);
+    return step;
+  };
+  const retained = "(has(inputs.intent.retained) && inputs.intent.retained)";
+  for (const name of ["Fetch the commit", "Install the web build", "Clone the prepared release", "Migrate", "Check the migration"]) {
+    assert(find(name).guard?.includes(retained), name);
+  }
+  const build = find("Build the release").task.inputs as unknown as { argv: string };
+  assert(build.argv.includes('string(has(inputs.intent.retained) && inputs.intent.retained)'));
+  // A skipped migration check must not skip the private readiness check of old.
+  assert(find("Check the candidate").dependsOn?.some((edge) => edge.step === "Check the migration" &&
+    edge.condition.conditions?.some((condition) => condition.type === "skipped")));
+  assert(find("Check the candidate").guard?.includes('steps.exists(k, steps[k].status in ["failed", "cancelled"])'));
+  const load = find("Load Swamp on Node 209").task as unknown as { inputs: { intent: { retained: string } } };
+  assertEquals(load.inputs.intent.retained, "${{ has(inputs.intent.retained) && inputs.intent.retained }}");
 });

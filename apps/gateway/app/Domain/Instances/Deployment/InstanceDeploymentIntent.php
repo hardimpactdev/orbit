@@ -109,6 +109,11 @@ final readonly class InstanceDeploymentIntent
     /** @return array{array<string,mixed>|null,array<string,mixed>|null} */
     public function runtimeIntent(Instance $instance, ?Route $activating = null, bool $provisioning = false): array
     {
+        if ($instance->hasProductionRelease()) {
+            ProductionContainerRelease::target($instance);
+
+            return [null, null];
+        }
         if (! is_string($instance->selected_php_version)) {
             return [null, null];
         }

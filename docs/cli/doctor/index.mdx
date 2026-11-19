@@ -15,6 +15,8 @@ Doctor compares current Node and runtime facts with the Gateway's recorded inten
 
 On an Instance host, the Node family also reads the [bridge refresh health](/reference/development-containers#prepare-a-node) from the agent's host fact. `node.instance_bridge_unhealthy` names its error; Docker mapping repair remains the host timer's job. `node.id_ranges_low` warns from the last [isolated ID range](/reference/development-containers#the-doctor-warning) read that the Gateway kept for the Node; Doctor does not read the ranges itself.
 
+On a Gateway that runs in a release container, Doctor checks host Caddy and Incus. Use the Process commands to inspect Horizon and the scheduler inside the serving release.
+
 ## Commands
 
 | Command | Result |

@@ -91,9 +91,9 @@ trait InstanceOutput
     private function writeDeploySteps(array $steps): void
     {
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Name', 'Phase', 'Command', 'Timeout (seconds)'],
+            ['Name', 'Phase', 'Command', 'Timeout (seconds)', 'Required'],
             array_map(static fn (DeploymentStepResponse $step): array => [
-                $step->name, $step->phase, $step->command, $step->timeoutSeconds,
+                $step->name, $step->phase, $step->command, $step->timeoutSeconds, $step->required ? 'yes' : 'no',
             ], $steps),
             'No deploy steps found.',
         ));
@@ -105,6 +105,7 @@ trait InstanceOutput
             'Phase' => $step->phase,
             'Command' => $step->command,
             'Timeout (seconds)' => $step->timeoutSeconds,
+            'Required' => $step->required ? 'yes' : 'no',
             'Request ID' => $step->requestId,
         ]));
     }

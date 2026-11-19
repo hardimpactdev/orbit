@@ -28,7 +28,7 @@ In a terminal, an omitted Instance is chosen from an interactive list. A noninte
 
 A manual production deploy pauses automatic deployment of the Instance as soon as it is admitted, whether it succeeds or fails. See [automatic deployments](/reference/deployments#automatic-deployments).
 
-For a production Instance, Orbit creates a fresh release, fetches the configured branch or the pinned commit, synchronizes the stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, restarts the Processes that opt in, and runs the `after_activation` steps. For an `app-dev` `default` Instance, Orbit fetches the Project's default branch, checks out its newest commit in the default's checkout, and runs the Project's development deploy steps there. It refuses a checkout with uncommitted changes to tracked files, and a local branch with commits that the fetched commit lacks. A failed required step leaves the new commit checked out. A failed best-effort development step is a warning, and the deployment continues. In a container deployment the final lines name it, for example `Warning: best-effort step tia-warm exited 1`, and the Operation result keeps its exit code in `best_effort_steps`. A development step can fail with `deployment.branch_changed` when the checkout does not match the commit after the steps. See [Deploy](/reference/deployments#deploy) for the steps and the Processes that restart.
+For an AppProd Instance, the Gateway holds that Instance and records the commit, environment digest and build configuration. Swamp runs `production-release`, the same workflow used for the Gateway. It deploys into the Instance’s preparation container and verifies an independent clone before moving traffic. Other Instances on the same Node can deploy at the same time.
 
 A `default` Instance in a container deploys in its container ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd)). Orbit starts the container when it is stopped, fetches the commit into the Node's mirror, and pushes it in. The same refusals apply, and a pinned commit off the branch is refused with `deployment.commit_not_on_branch`. The development deploy steps run as `agent`, the workspace's owner ([ADR 0268](/decisions/0268-one-owner-for-the-workspace)), in the workspace. After they pass, Orbit takes the seed snapshot that clones copy. See [the default Instance](/reference/development-containers#the-default-instance).
 
@@ -47,7 +47,7 @@ Pressing Ctrl-C stops following, not the deploy. In human output the CLI prints 
 | The Gateway refused the request. | Nonzero, with the one-line error. |
 | You pressed Ctrl-C. | `130`. The deploy keeps running. |
 
-A failure while fetching the release, synchronizing the environment, or running a `before_activation` step leaves the prior `current` selected. A failure in the activation steps (Caddy access, `current.next` or the swap) leaves the prior `current` selected when the swap did not happen. A failure after the swap leaves the fresh release selected: the PHP cache refresh, installing a Process or a Schedule timer, restarting a Process, or running an `after_activation` step. Orbit undoes no step and no data change, and the new release folder stays until a cleanup. Deploy again after the fix: it is a new task with a new release.
+A failure before cutover leaves the serving release selected. A failure after cutover can leave the new release serving. The Operation records a selection only when the Node confirms it for this Instance and Operation.
 
 Deployment, rollback, deploy-step changes, environment changes and removal share one owner for each Instance. A second production deploy while one is queued or running is refused with `operation.target_busy`. A development `default` in a checkout takes no such hold; one in a container holds its Instance, so a second deployment is refused with `operation.target_busy`. A rollback cancels a deploy that no run has started; see [`instance:rollback`](/cli/instance/rollback).
 
@@ -57,9 +57,9 @@ A container default refreshes its [Project source facts at the deployed commit](
 
 <div className="flow-at" data-chart="instance/deploy"></div>
 
-### Production in containers (planned)
+### Production release containers
 
-This flow is planned by [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) and not built. Hot, a clone of live's release snapshot, builds and migrates the commit while live serves. When hot is ready, one Caddy reload switches the Routes to it, the work moves to it, and the previous live becomes old. See [Production containers](/reference/production-containers#deploy).
+The first move of an existing production checkout uses its recorded serving commit. Run `instance:deploy <id>` to move that commit, then deploy the new revision. A first deploy with a different explicit pin returns `deployment.migration_commit_mismatch`. A new placement without a serving checkout can deploy the requested commit directly. After cutover, the previous live container becomes the rollback and the preparation container sleeps. See [production containers](/reference/production-containers).
 
 <div className="flow-at" data-chart="instance/container/deploy-production"></div>
 

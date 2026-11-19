@@ -1,5 +1,22 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # `ss -tanH '( sport = :8080 )'` inside a draining release (state, Recv-Q, Send-Q, local, peer).
+  response-wait-queued:
+    web_sockets:
+      rc: 0
+      stderr: ""
+      stdout_lines:
+      - "LISTEN     0      4096   10.1.0.3:8080   0.0.0.0:*"
+      - "TIME-WAIT  0      0      10.1.0.3:8080   10.1.0.1:6001"
+      - "FIN-WAIT-1 0      4096   10.1.0.3:8080   10.1.0.1:51234"
+      - "ESTAB      0      0      10.1.0.3:8080   10.1.0.1:51240"
+  response-wait-drained:
+    web_sockets:
+      rc: 0
+      stderr: ""
+      stdout_lines:
+      - "LISTEN     0      4096   10.1.0.3:8080   0.0.0.0:*"
+      - "ESTAB      0      0      10.1.0.3:8080   10.1.0.1:51240"
   executor-route-unready:
     executor_receipt: {status: failed, code: instance.sleep_route_unready}
   executor-unrecognized-failure:
@@ -15,6 +32,16 @@ contexts:
   fleet-command-prefix:
     fleet_gateway_commands:
       stdout: "gateway:known-hosts:sync-other  Another command\n"
+  # `incus storage list --format csv --columns D` of the inner Incus: one driver per line (task copy 3717, 2026-11-18); a default made
+  # before the inner volume has a directory pool; a read that fails prints nothing; an exit 0 with other text is no driver list.
+  fleet-pools-btrfs:
+    fleet_pools_read: {rc: 0, stdout: "btrfs", stdout_lines: [btrfs]}
+  fleet-pools-dir:
+    fleet_pools_read: {rc: 0, stdout: "dir", stdout_lines: [dir]}
+  fleet-pools-unreadable:
+    fleet_pools_read: {rc: 1, stdout: "", stdout_lines: []}
+  fleet-pools-malformed:
+    fleet_pools_read: {rc: 0, stdout: "[{\"driver\": \"btrfs\"", stdout_lines: ["[{\"driver\": \"btrfs\""]}
   # `incus query /1.0/instances/<name>` of a nested-fleet default, cut to its root disk (2026-11-14, Beast).
   root-smaller:
     phase: start
@@ -1264,6 +1291,16 @@ contexts:
     release_volume_snapshots:
       stdout: '[{"name":"inner-41/base-1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"},{"name":"inner-41/seed-40bccaf5d4a88a6ae702b75cd2ae5d56f76e8cac","description":"","config":{},"content_type":"filesystem","created_at":"2026-11-15T09:12:41.20381912Z","expires_at":"0001-01-01T00:00:00Z"}]'
 cases:
+- file: release-response-wait.yml
+  task: Wait for queued response bytes in the former live
+  field: vars.queued
+  context: response-wait-queued
+  expected: 1
+- file: release-response-wait.yml
+  task: Wait for queued response bytes in the former live
+  field: vars.queued
+  context: response-wait-drained
+  expected: 0
 - file: tasks/executor-power-relay.yml
   task: Respect the executor's terminal outcome
   field: ansible.builtin.fail.msg
@@ -2094,6 +2131,26 @@ cases:
   context: fleet-intents-host
   expected: '4444444444444444444444444444444444444444444444444444444444444444'
 - file: tasks/instance-fleet-refresh.yml
+  task: Choose how base is taken
+  field: vars.fleet_pool_drivers
+  context: fleet-pools-btrfs
+  expected: [btrfs]
+- file: tasks/instance-fleet-refresh.yml
+  task: Choose how base is taken
+  field: vars.fleet_pool_drivers
+  context: fleet-pools-dir
+  expected: [dir]
+- file: tasks/instance-fleet-refresh.yml
+  task: Choose how base is taken
+  field: vars.fleet_pool_drivers
+  context: fleet-pools-unreadable
+  expected: []
+- file: tasks/instance-fleet-refresh.yml
+  task: Choose how base is taken
+  field: vars.fleet_pool_drivers
+  context: fleet-pools-malformed
+  expected: []
+- file: tasks/instance-fleet-refresh.yml
   task: Name the due Instance host
   field: vars.fleet_host_read
   context: fleet-intents-host-empty
@@ -2638,6 +2695,14 @@ cases:
   expected: false
 
 non_command_output:
+- file: tasks/production-release-host.yml
+  task: Verify the selected production runtime root and digest
+  field: ansible.builtin.assert.that[1]
+  reason: Validates the runtime digest in the Node's desired configuration.
+- file: tasks/production-container-process.yml
+  task: Check the serving production Instance Process
+  field: ansible.builtin.assert.that[2]
+  reason: Checks that the admitted unit name carries the admitted Process ID.
 - file: tasks/gateway-swamp-pin.yml
   task: Remove the other Swamp releases
   field: loop

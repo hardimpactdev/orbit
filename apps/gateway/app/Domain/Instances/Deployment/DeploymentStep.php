@@ -16,6 +16,7 @@ final readonly class DeploymentStep
         #[\SensitiveParameter]
         public string $command,
         public int $timeoutSeconds = self::DefaultTimeoutSeconds,
+        public bool $required = true,
     ) {
         if (preg_match('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/', $name) !== 1) {
             throw new InvalidArgumentException('The deployment step name is invalid.');
@@ -34,7 +35,7 @@ final readonly class DeploymentStep
         }
     }
 
-    /** @return array{name: string, phase: string, command: string, timeout_seconds: int} */
+    /** @return array{name: string, phase: string, command: string, timeout_seconds: int, required: bool} */
     public function toArray(): array
     {
         return [
@@ -42,6 +43,7 @@ final readonly class DeploymentStep
             'phase' => $this->phase->value,
             'command' => $this->command,
             'timeout_seconds' => $this->timeoutSeconds,
+            'required' => $this->required,
         ];
     }
 }

@@ -16,8 +16,17 @@
 # requests end; it runs only when the pool changed.
 - name: Reload PHP-FPM # noqa no-handler
   when: >-
+    not rt.gateway.container | default(false) and
     rt.gateway.pool in (runtime_files.results | selectattr('changed') | map(attribute='item.path'))
   ansible.builtin.systemd: { name: php8.5-fpm.service, state: reloaded }
+# Only the second container release retires the dedicated Gateway host's FPM build. Its CLI and extensions
+# can still serve another role. The recipe holds its packages, so allow this specific held package to leave.
+- name: Remove the retired Gateway PHP-FPM package
+  when: rt.gateway.retired_fpm | default(false)
+  ansible.builtin.apt:
+    name: php8.5-fpm
+    state: absent
+    allow_change_held_packages: true
 # Settings no code reads any more leave the shared Gateway environment; the release links this file as each release's `.env`.
 - name: Remove retired settings from the Gateway environment
   ansible.builtin.lineinfile:

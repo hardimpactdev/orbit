@@ -707,7 +707,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'gateway:auto-release:enable' => [[], ['json' => false]],
         'gateway:auto-release:resume' => [[], ['json' => false]],
         'gateway:auto-release:status' => [[], ['json' => false]],
-        'gateway:release:deploy' => [['commit'], ['json' => false]],
+        'gateway:release:deploy' => [['commit'], ['reconcile' => false, 'json' => false]],
         'gateway:release:list' => [[], ['json' => false]],
         'gateway:release:rollback' => [['release'], ['yes' => false, 'json' => false]],
         'gateway:release:show' => [['release'], ['json' => false]],
@@ -753,6 +753,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             [
                 'command' => null,
                 'phase' => 'before_activation',
+                'required' => null,
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
@@ -766,6 +767,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             [
                 'command' => null,
                 'phase' => null,
+                'required' => null,
                 'timeout' => null,
                 'before' => null,
                 'after' => null,

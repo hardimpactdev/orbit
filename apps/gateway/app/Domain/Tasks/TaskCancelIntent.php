@@ -38,10 +38,10 @@ final readonly class TaskCancelIntent
         if (($replay = $this->keys->replay($kind)) !== null) {
             return $replay;
         }
-        // A group that owns a task copy ends through the copy's destroy (TaskCopyEnd); the read of its workspace runs before any lock.
+        // A group that owns a task copy ends through the copy's destroy (TaskEnd); the read of its workspace runs before any lock.
         // The copy and its read travel as one pair, so no check on the read can be skipped while the destroy still runs.
         $workspace = $kind === 'tasks.cancel' ? TaskInstanceWorkspace::forGroup($group) : null;
-        $copy = $workspace === null ? null : ['instance' => $workspace->instance, 'read' => app(TaskCopyEnd::class)->workspace($group, $workspace->instance)];
+        $copy = $workspace === null ? null : ['instance' => $workspace->instance, 'read' => app(TaskEnd::class)->workspace($group, $workspace->instance)];
 
         return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $discard): Operation {
             if (($replay = $this->keys->replay($kind)) !== null) {
@@ -61,8 +61,8 @@ final readonly class TaskCancelIntent
                 self::eligible($group->refresh(), $kind);
                 $this->review->assertOnOrigin($group);
                 if ($copy !== null) {
-                    TaskCopyEnd::assertFree($copy['instance']);
-                    TaskCopyEnd::assertDiscardable($copy['read'], $discard);
+                    TaskEnd::assertFree($copy['instance']);
+                    TaskEnd::assertDiscardable($copy['read'], $discard);
                 } else {
                     self::refuseWorkspace($group);
                 }
@@ -74,7 +74,7 @@ final readonly class TaskCancelIntent
                     throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
                 }
                 if ($copy !== null) {
-                    return app(TaskCopyEnd::class)->cancel($group, $copy['instance'], $copy['read'], $caller, $request);
+                    return app(TaskEnd::class)->cancel($group, $copy['instance'], $copy['read'], $caller, $request);
                 }
             } elseif (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {

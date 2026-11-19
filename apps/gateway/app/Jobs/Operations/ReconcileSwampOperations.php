@@ -133,7 +133,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     public function settleOne(int $operationId, SwampCommandStep $step, ExpireOperationAction $expire): void
     {
         $kinds = array_keys(app(DirectOperation::class)->definitions());
-        $operation = $kinds === [] ? null : self::open($kinds)->whereKey($operationId)->first();
+        $operation = $kinds === [] ? null : self::open($kinds, includeReleasedTimeouts: true)->whereKey($operationId)->first();
         if (! $operation instanceof Operation) {
             return;
         }
@@ -156,6 +156,9 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
      */
     private function settle(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire, OperationReconcileHealth $health): Operation
     {
+        if (app(DirectOperation::class)->definition($operation) === null) {
+            return $operation;
+        }
         $completedAt = null;
         $settled = true;
         $onTerminal = static function (CarbonImmutable $at) use (&$completedAt): void {
@@ -191,17 +194,21 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 
     /**
      * Unfinished Operations, those the Gateway timed out while Swamp has not proven their run ended, and timed-out ones with a
-     * cancel request Swamp has not confirmed.
+     * cancel request Swamp has not confirmed. While a version drains, read released native timeouts as well:
+     * a parent can still own work on a closed child version after its own target hold expires.
      *
-     * @param  list<string>  $kinds
+     * @param  list<string>|null  $kinds
      * @return Builder<Operation>
      */
-    private static function open(array $kinds): Builder
+    public static function open(?array $kinds = null, bool $includeReleasedTimeouts = false): Builder
     {
-        return Operation::query()->whereIn('kind', $kinds)->where(fn ($query) => $query
+        return Operation::query()->when($kinds !== null, fn ($query) => $query->whereIn('kind', $kinds ?? []))->where(fn ($query) => $query
             ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
             ->orWhere(fn ($query) => $query->where('status', OperationStatus::Failed)->where('error_code', 'operation.timed_out')->whereNotNull('lock_key'))
-            ->orWhere(fn ($query) => $query->where('kind', 'instance.migrate')->where('status', OperationStatus::Failed)
+            ->orWhere(fn ($query) => $query->when(! $includeReleasedTimeouts, fn ($query) => $query->where(fn ($query) => $query
+                ->where('kind', 'instance.migrate')->orWhereExists(fn ($closed) => $closed->selectRaw('1')
+                ->from('deprecated_operation_versions')->whereNull('eligible_at'))))
+                ->whereNotNull('state->native_timeout')->where('status', OperationStatus::Failed)
                 ->where('error_code', 'operation.timed_out')->whereNull('state->native_timeout->no_run_verified_at')
                 ->where(fn ($query) => $query->whereNull('state->native_timeout->native_terminal_status')
                     ->orWhere('state->native_timeout->native_terminal_status', 'unproven')))
@@ -214,7 +221,9 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
     private function reconcile(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire, Closure $onTerminal): Operation
     {
         $direct = app(DirectOperation::class);
-        $selector = $direct->definition($operation->kind)['terminal_result'] ?? null;
+        $definition = $direct->definition($operation);
+        $alternates = $definition['alternate_results'] ?? [];
+        $selector = $alternates[$direct->workflowFor($operation) ?? ''] ?? $definition['terminal_result'] ?? null;
         if ($selector === null || ! $direct->usesNativeTerminal($operation)) {
             return $expire->execute($operation);
         }
@@ -232,7 +241,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         }
         if (! isset($operation->state['swamp_run_id'])) {
             $operation = $expire->execute($operation)->refresh();
-            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::awaitsSettlement($operation) || InstanceMigrateProjection::unsettled($operation)) {
+            if ($operation->error_code === 'swamp.start_uncertain' || ExpireOperationAction::needsTerminalReceipt($operation) || InstanceMigrateProjection::unsettled($operation)) {
                 $step->recoverUnbound($operation);
                 $operation->refresh();
             }

@@ -8,7 +8,7 @@ use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskCopyAgent;
+use App\Domain\Tasks\TaskAgent;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -56,12 +56,12 @@ final readonly class CreateTaskGroupAction
             'status' => $data->status,
             'preview' => $data->preview,
             'current_recipe' => $data->currentRecipe,
-            ...TaskCopyAgent::groupColumns($data->agents),
+            ...TaskAgent::groupColumns($data->agents),
         ]);
         // The task VM columns are not null, and a release before the copy turn agent reads them: each holds the model its role
         // resolves to now. A copy turn never reads them.
-        $group->implementer_model = TaskCopyAgent::resolve($group, TaskThreadRole::Implementer)['model']['value'];
-        $group->reviewer_model = TaskCopyAgent::resolve($group, TaskThreadRole::Reviewer)['model']['value'];
+        $group->implementer_model = TaskAgent::resolve($group, TaskThreadRole::Implementer)['model']['value'];
+        $group->reviewer_model = TaskAgent::resolve($group, TaskThreadRole::Reviewer)['model']['value'];
         $group->save();
 
         foreach ($data->tasks as $index => $task) {

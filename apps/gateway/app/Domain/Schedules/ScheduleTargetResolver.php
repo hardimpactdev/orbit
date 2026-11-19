@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
+use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceState;
@@ -53,7 +55,7 @@ final readonly class ScheduleTargetResolver
                 ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id), lookup: false),
                 ScheduleTargetType::Instance => $this->instance(Instance::query()->with('node')->findOrFail($id), lookup: false),
             };
-            if ($target->container !== null && ! $allowContainer) {
+            if ($target->container !== null && ! isset($target->container['release']) && ! $allowContainer) {
                 throw new ResourceOperationException('schedule.target_unsupported',
                     'Creating container Schedules is not available yet; migrated Schedules support list, show and logs.', 409);
             }
@@ -201,6 +203,13 @@ final readonly class ScheduleTargetResolver
                 || $instance->provisioning_step !== 'active')
         ) {
             $this->unavailable();
+        }
+
+        $production = ProductionContainerRelease::target($instance);
+        if ($production !== null) {
+            return new ScheduleTarget(node: $instance->node, user: 'orbit', group: 'orbit', home: '/home/orbit',
+                workingDirectory: ProductionContainerUnits::directory($instance), shell: '/bin/bash', loginShell: true,
+                instance: $instance, container: $production);
         }
 
         $runtime = $instance->runtime()->first();

@@ -24,13 +24,13 @@ final readonly class TaskFinalReview
 {
     public const string FixupProblem = 'final-review';
 
-    public function __construct(private GitHubApi $github, private RepositoryPullRequestAccess $access, private TaskCopyWork $work) {}
+    public function __construct(private GitHubApi $github, private RepositoryPullRequestAccess $access, private TaskWork $work) {}
 
     /**
      * Refuses with `tasks.approved_work_unpublished` and changes nothing while the group holds a workspace and origin's task
      * branch does not reach its latest approved commit. Only when GitHub answers that the branch does not exist and the group's pull
      * request merged does that pull request's head stand in for it. For a task copy, the default branch holding the approved commit's
-     * work by content counts too, as the copy's content read finds it (TaskCopyWork). Every failed GitHub read refuses too.
+     * work by content counts too, as the copy's content read finds it (TaskWork). Every failed GitHub read refuses too.
      */
     public function assertOnOrigin(Task $group): void
     {

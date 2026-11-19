@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Processes;
 
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Deployment\ProductionContainerRelease;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Logs\LogReadLimit;
@@ -27,14 +29,14 @@ final readonly class ContainerProcessInspection
 {
     public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts) {}
 
-    public function logs(Instance $instance, Process $process, int $lines): string
+    public function logs(Instance|Node $instance, Process $process, int $lines): string
     {
         if ($lines < 1 || $lines > 1000) {
             $this->unavailable();
         }
         try {
             $pair = $this->pair($instance, $process);
-            $result = $this->execute($instance->node, ['logs', (string) $lines, ...$pair], LogReadLimit::Bytes);
+            $result = $this->execute($instance instanceof Node ? $instance : $instance->node, ['logs', (string) $lines, ...$pair], LogReadLimit::Bytes);
             if (! $result->succeeded()) {
                 $this->unavailable();
             }
@@ -50,7 +52,7 @@ final readonly class ContainerProcessInspection
     /**
      * One SSH call per Node. Only resolved resource records enter this reader, never command names or caller-supplied targets.
      *
-     * @param  list<array{instance: Instance, process: Process}>  $pairs
+     * @param  list<array{instance: Instance|Node, process: Process}>  $pairs
      * @return array<int, array{runtime_status: string, observed_at: ?string, runtime_error_code: ?string}>
      */
     public function states(array $pairs): array
@@ -60,7 +62,8 @@ final readonly class ContainerProcessInspection
         foreach ($pairs as ['instance' => $instance, 'process' => $process]) {
             try {
                 $arguments = $this->pair($instance, $process);
-                $groups[$instance->node_id][] = [$instance, $process, $arguments];
+                $node = $instance instanceof Node ? $instance : $instance->node;
+                $groups[$node->id][] = [$node, $process, $arguments];
             } catch (Throwable $error) {
                 $observations[$process->id] = self::observation('unknown', $error instanceof ResourceOperationException ? $error->errorCode : 'process.target_unavailable', null);
             }
@@ -71,7 +74,7 @@ final readonly class ContainerProcessInspection
                 foreach ($group as [, , $pair]) {
                     array_push($arguments, ...$pair);
                 }
-                $result = $this->execute($group[0][0]->node, $arguments, count($group) * 256);
+                $result = $this->execute($group[0][0], $arguments, count($group) * 256);
                 $states = $result->succeeded() ? json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR) : null;
                 if (! is_array($states) || ! array_is_list($states) || count($states) !== count($group)) {
                     $this->unavailable();
@@ -93,9 +96,25 @@ final readonly class ContainerProcessInspection
     }
 
     /** @return list<string> */
-    private function pair(Instance $instance, Process $process): array
+    private function pair(Instance|Node $instance, Process $process): array
     {
+        if ($instance instanceof Node) {
+            $target = GatewayReleaseHost::target($instance);
+            if ($target === null || ! GatewayReleaseHost::hasProcess($process) || $process->owner_id !== $instance->id) {
+                $this->unavailable();
+            }
+
+            return [$target['project'], $target['release'], app(SystemdProcessRenderer::class)->unitName($process)];
+        }
         InstanceMigration::assertSettled($instance);
+        $target = ProductionContainerRelease::target($instance);
+        if ($target !== null) {
+            if (! Instance::isMorphType($process->owner_type) || $process->owner_id !== $instance->id || $process->runtime !== ProcessRuntime::Systemd) {
+                $this->unavailable();
+            }
+
+            return [$target['project'], $target['node_id'].'/'.$target['instance_id'].'/'.$target['release'], app(SystemdProcessRenderer::class)->unitName($process)];
+        }
         $runtime = $instance->runtime;
         if ($instance->id < 1 || ! Instance::isMorphType($process->owner_type) || $process->owner_id !== $instance->id
             || $process->runtime !== ProcessRuntime::Systemd || $instance->node->status !== LifecycleStatus::Active

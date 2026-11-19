@@ -1,7 +1,7 @@
 sequenceDiagram
   %% Target design: docs/reference/feature-flow.md section 6, one Swamp workflow per Gateway release, manual or automatic.
-  %% A failed check switches back; migrations are expand and contract. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
-  %% status: draft
+  %% Container releases keep the former live stopped as old for rollback; migrations are expand-only. docs/reference/gateway-recovery.md#release-as-a-swamp-run.
+  %% status: migrated
   %% command: gateway:release:deploy
   %% kind: gateway.release
   %% behavior name: gateway-release-<step>-209 (fixed)
@@ -16,6 +16,15 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant AC as Activate run<br/>child · new commit
   participant GN as Gateway Node<br/>Node 14
+  alt Reload serving workflows
+    TR->>GW: gateway:release:deploy<br/>--reconcile · exact serving SHA
+    GW->>SW: Start reconciliation
+    SW->>GN: Check the serving release
+    SW->>SW: Reload serving workflows
+    SW->>GN: Verify the serving release
+    SW->>GN: Release the serving<br/>generation
+    SW-->>GW: Reconciled release record
+  else Deploy a release
   TR->>GW: gateway:release:deploy<br/>full sha
   %%> Command:
   %%> - `orbit gateway:release:deploy <full sha>`; the automatic tick admits the newest green commit the same way
@@ -25,92 +34,101 @@ sequenceDiagram
   %%> - the agent pin passes its Sigstore check; CI published the commit's web build
   %%> Result:
   %%> - a running release record; the pin, artifact, Horizon unit and SSH targets frozen as inputs
-  GW->>SW: Start run, full intent<br/>operation-gateway-release
+  GW->>SW: Start release workflow<br/>shared or legacy selection
   %%> What it does:
-  %%> - at run start, mints one read token (contents, actions) into the vault
+  %%> - Container releases select production-release. The host release path selects operation-gateway-release.
+  %%> - At run start, the Gateway writes the scoped read token to the vault.
   GW-->>TR: 202 Accepted<br/>running release record
+  opt Container release
+    Note over SW: Check release ownership
+  end
   SW->>GN: Fetch the commit<br/>shared repository
   %%> What it does:
   %%> - fetches the commit with the read token when the shared repository lacks it; the token reaches git only in its environment
   %%> Decided by the orchestrator, for review:
   %%> - the fetch is its own step, so that the build runs its script from the commit being released, not from the live release
-  SW->>GN: Build the release<br/>worktree · composer · REVISION
+  SW->>GN: Build the release<br/>wake and update preparation
   %%> What it does:
-  %%> - refuses a commit that does not descend from the current release
-  %%> - links shared env and storage, installs dependencies, seals with `REVISION` and a cached config
-  %%> - a sealed release of the commit is reused
+  %%> - refuses a commit that does not descend from the current release on a container Gateway
+  %%> - on a container Gateway, checks the target commit's activation workflow and recovery script before waking it or loading its Swamp workflows
+  %%> - checks out the exact commit and installs dependencies in the preparation container; its workers and scheduler stay disabled
+  %%> - a retry after an incomplete build starts from a clean checkout and discards partial build output
   %%> On failure:
-  %%> - a new build refuses with `gateway.release_disk_low` before it writes, when the free space and the snapshots that may go cannot hold the build, a database copy and the floor
+  %%> - the host PHP-FPM build checks disk space for the build and database copy
   SW->>GN: Install the web build<br/>artifact · digest · rename
-  SW->>GN: Snapshot the database<br/>VACUUM INTO
+  alt Container release
+    SW->>GN: Clone the prepared release<br/>seal · promote preparation
+    SW->>GN: Sleep preparation<br/>before migration
+  else Host PHP-FPM release
+    SW->>GN: Snapshot the database<br/>VACUUM INTO
+    %%> What it does:
+    %%> - keeps the newest two snapshots and any snapshot named by a pause
+    %%> On failure:
+    %%> - refuses before the copy when it would breach the disk floor
+  end
+  SW->>GN: Migrate<br/>artisan migrate --isolated=1
   %%> What it does:
-  %%> - keeps the floor of Doctor's `node.disk_low`: 2 GiB and 10 % of the disk stay free after the copy
-  %%> - removes older snapshots before the copy when the floor needs it; keeps the newest two after it, and always the one a pause names
-  %%> On failure:
-  %%> - refuses with `gateway.release_disk_low` before the copy; nothing migrated, the old release stays live
-  SW->>GN: Migrate<br/>artisan migrate --isolated
-  %%> What it does:
+  %%> - the container candidate applies pending migrations to the shared production database
   %%> - prints the end of the migration's output and its exit code; a failed exec would keep no output
   Note over SW: Check the migration<br/>assert the exit code
   %%> On failure:
-  %%> - from here until the switch, the release pauses with the old release live
+  %%> - a failed container migration leaves the current release serving
   %%> - the record's message ends with the migration's output
-  SW->>GN: Wait for active Operations<br/>Gateway DB · at most 10 minutes
-  %%> When:
-  %%> - before Swamp load, while the old release and Horizon serve
-  %%> - every 5 seconds while queued, running or waiting Operations covered by the [release idle guard](/reference/gateway-recovery#release-idle-guard) remain
-  %%> Why:
-  %%> - admitted execution input can still depend on the running Gateway code
-  %%> On failure:
-  %%> - refuses with `gateway.release_busy` and the blocking Operation IDs; the old release and Horizon stay live, and automatic releases pause because migrations ran
-  alt Operations still active after 10 minutes
-    SW--xGW: gateway.release_busy<br/>blocking Operation IDs
-  else idle
+  opt Host PHP-FPM release
+    SW->>GN: Wait for active Operations<br/>before loading workflows
+  end
+    SW->>GN: Check the candidate<br/>FrankenPHP · health · commit
+    %%> On failure:
+    %%> - discard the candidate; live keeps serving and the Swamp load does not start
     Note over SW: Load Swamp on Node 209<br/>operation-gateway-swamp-load
     %%> What it does:
-    %%> - the load child: checkout, grants the new release rendered, serve reload
-    Note over SW: Hand over the release<br/>gateway-release-activate
-    %%> Why:
-    %%> - the child runs from the definition the load installed, so the switch runs the new commit's steps
-    AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
-    %%> What it does:
-    %%> - waits until the unit's whole control group is empty, as long as the drain allows; Horizon's jobs open SSH connections of their own, so no shared connection master stays in the group, and the wait covers any other process a job leaves
-    %%> - refuses to stop a unit that lacks the stop policy (`KillMode=mixed`, `SendSIGKILL=no`), because it would kill a running job
-    %%> On failure:
-    %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time; Horizon is started again below
-    AC->>GN: Switch the release<br/>gateway-rollback · Horizon
-    %%> Why:
-    %%> - the same script an operator rolls back with: links, PHP-FPM reload, running services restart
-    AC->>GN: Verify the Gateway<br/>/up · status version
-    %%> What it does:
-    %%> - reads `/up` and the status version with sudo: the pinned root CA sits in the private certificate folder, `root:caddy 0750`
-    opt the check failed
-      AC->>GN: Switch back<br/>gateway-rollback previous
+    %%> - the load child checks the target on the Gateway Node before updating the checkout, grants and loaded workflows
+    Note over SW: Hand over the release<br/>run the selected child
+    opt the Gateway serves through host PHP-FPM
+      AC->>GN: Drain Horizon<br/>systemctl stop · SIGTERM only
+      %%> What it does:
+      %%> - waits for the unit's whole control group to empty, up to the drain limit
+      %%> On failure:
+      %%> - the run fails with `gateway.release_horizon_unit_stale` for a unit without the stop policy, or `gateway.release_horizon_not_drained` when the unit did not stop in time
     end
-    AC->>GN: Start Horizon<br/>always · also after a failure
-    %%> Why:
-    %%> - the release drained Horizon, so every end of the run leaves it running: the old release after a failed drain or a switch back, the new one after a verified switch
-    %%> - starting a running unit changes nothing
-    %%> Decided by the orchestrator, for review:
-    %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
-    AC->>GN: Resume document cleanup<br/>best effort
-    %%> Why:
-    %%> - the scheduler restart paused the release cleanups; one that stays paused never fails the release
-    AC->>GN: Prune old releases<br/>best effort
+    AC->>GN: Switch the release<br/>commit · publish upstream
+    par Public readiness
+      AC->>GN: Verify the Gateway<br/>health and serving SHA
+      %%> - reads `/up` and the status version with sudo: the pinned root CA sits in the private certificate folder, `root:caddy 0750`
+    and Container workers
+      AC->>GN: Start Horizon<br/>on the selected release
+    end
+    opt Container Gateway
+      AC->>GN: Quiesce the previous live<br/>drain HTTP and Horizon
+      AC->>GN: Wait for queued responses<br/>Ansible retries · bounded
+      AC->>GN: Retire the previous live<br/>stop it as old
+      AC->>GN: Recreate preparation<br/>clone · promote
+      AC->>GN: Record eligible versions<br/>file cleanup Tasks
+    end
+    opt Failed host PHP-FPM check
+      AC->>GN: Switch back<br/>restore host release
+    end
+    AC->>GN: Resume document cleanup
     alt every step succeeded
       SW-->>GW: Run succeeded<br/>terminal result
       Note over GW: Record verified<br/>fleet rollout follows
+      %%> - the cleanup step files Tasks for earlier releases' versions once a later verified release has deleted the stopped old that held the earlier code
       %%> Next:
       %%> - the Gateway queues the existing fleet admission job; it follows each Node’s delivery and scoped role converge in order
-      %%> - once `phases.fleet.status` is `current` the Gateway admits nested-fleet refresh
+      %%> - when enabled, nested-fleet refresh follows the first transition to `current`; with fleet rollout disabled it follows verification
     else a step before Migrate fails
       SW--xGW: Run failed<br/>failed step
       Note over GW: Mark failed<br/>nothing changed · rerun safe
-    else the check failed, switched back
+    else the host switched back
       SW--xGW: Run failed<br/>failed step
       Note over GW: Record switched back<br/>alert · next commit releases
-    else another step from Migrate on fails
+    else a container check fails
+      SW--xGW: Report failed phase
+      Note over GW: Roll back to old<br/>or deploy a fix
+    else a host migration or later step fails
       SW--xGW: Run failed<br/>failed step
-      Note over GW: Pause automatic releases<br/>snapshot named · alert
+      Note over GW: Pause automatic releases<br/>failed step · alert
     end
+  SW->>GN: Release unused candidate<br/>after handover or failure
+  %%> Returns a candidate of this Operation that never served to the preparation slot. The selected release, old and a pending drain remain protected.
   end

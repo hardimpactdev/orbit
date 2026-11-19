@@ -12,8 +12,8 @@ final readonly class ProcessTarget
     public string $defaultWorkingDirectory;
 
     /**
-     * @param  array{instance_id:int,project:string,name:string}|null  $container  The Incus container of a container Instance: its
-     *                                                                             Processes are `orbit` units in it, not on the Node.
+     * @param  array{instance_id:int,project:string,name:string,release?:string,node_id?:int}|null  $container  The Incus container of a container Instance: its
+     *                                                                                                          Processes are `orbit` units in it, not on the Node.
      */
     public function __construct(
         public Node $node,

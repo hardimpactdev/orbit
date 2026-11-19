@@ -58,6 +58,7 @@ final readonly class InstanceDeployStepStore
         bool $hasCommand,
         bool $hasPhase,
         bool $hasTimeout,
+        ?bool $required = null,
     ): DeploymentStep {
         $existing = $this->ordered($instance);
         $index = $this->indexByName($existing, $name);
@@ -70,6 +71,7 @@ final readonly class InstanceDeployStepStore
                 $phase ?? $current->phase,
                 $hasCommand ? (string) $command : $current->command,
                 $hasTimeout ? (int) $timeoutSeconds : $current->timeoutSeconds,
+                $required ?? $current->required,
             );
         } catch (InvalidArgumentException) {
             $this->invalid('A deployment step is invalid.');
@@ -218,6 +220,7 @@ final readonly class InstanceDeployStepStore
                     'phase' => $step->phase->value,
                     'command' => $step->command,
                     'timeout_seconds' => $step->timeoutSeconds,
+                    'required' => $step->required,
                     'position' => $positions[$step->phase->value],
                 ]);
                 $positions[$step->phase->value]++;
@@ -232,6 +235,7 @@ final readonly class InstanceDeployStepStore
             DeploymentPhase::from($row->phase),
             $row->command,
             $row->timeout_seconds,
+            $row->required,
         );
     }
 

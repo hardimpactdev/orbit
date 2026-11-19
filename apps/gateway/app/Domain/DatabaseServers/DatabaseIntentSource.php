@@ -47,7 +47,7 @@ final readonly class DatabaseIntentSource implements OperationSecretSource
         }
         $intent = DatabaseExecutionIntent::recorded($id);
         if ($key === '' && DirectOperation::owns($operation)
-            && (app(DirectOperation::class)->definition($operation->kind)['private_material'][$parameter] ?? null) === $this->name()) {
+            && (app(DirectOperation::class)->definition($operation)['private_material'][$parameter] ?? null) === $this->name()) {
             app(DirectOperation::class)->projection($operation)->input($operation);
             $key = 'database-apply';
         }

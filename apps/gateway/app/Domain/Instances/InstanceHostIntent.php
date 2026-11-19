@@ -132,10 +132,15 @@ final readonly class InstanceHostIntent
         private PeerDnsPolicy $privateDns,
     ) {}
 
-    /** Allocates the Node's bridge in the admission transaction of a role add or converge, before the intent is captured. */
-    public function prepare(Node $node): void
+    /** Allocate the Node's bridge before capturing any selected application host role.
+     *
+     * @param  list<string>|null  $roles
+     */
+    public function prepare(Node $node, ?array $roles = null): void
     {
-        if ($this->role($node) !== null) {
+        $development = $this->role($node);
+        if (in_array(RoleName::AppProd->value, $roles ?? [], true) || ($development !== null
+            && ($roles === null || in_array($development->value, $roles, true)))) {
             $this->bridges->execute($node);
         }
     }

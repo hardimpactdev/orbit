@@ -1,0 +1,40 @@
+---
+- name: Materialize an immutable Gateway runtime
+  hosts: localhost
+  gather_facts: false
+  vars:
+    cache: /var/cache/orbit/gateway-runtime
+  tasks:
+    - name: Create the runtime and cache directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+      loop: ["{{ cache }}", /opt/orbit-gateway-runtime]
+
+    - name: Fetch the pinned PHP build and Composer
+      ansible.builtin.include_tasks: tasks/artifact-fetch.yml
+      vars:
+        artifact:
+          urls: ["{{ item.url }}"]
+          path: "{{ cache }}/{{ item.sha256 }}"
+          sha256: "{{ item.sha256 }}"
+      loop: "{{ [release_host.php, release_host.composer] }}"
+      loop_control: { label: "{{ item.sha256 }}" }
+
+    - name: Publish an immutable runtime directory
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          umask 022
+          temp=$(mktemp -d /opt/orbit-gateway-runtime/.build.XXXXXXXX)
+          trap 'rm -rf -- "$temp"' EXIT
+          mkdir -p "$temp/php/8.5" "$temp/bin"
+          tar -xzf "{{ cache }}/{{ release_host.php.sha256 }}" --no-same-owner -C "$temp/php/8.5"
+          test -x "$temp/php/8.5/bin/php" && test -x "$temp/php/8.5/bin/frankenphp"
+          install -m 0755 "{{ cache }}/{{ release_host.composer.sha256 }}" "$temp/bin/composer"
+          chmod 0755 "$temp"
+          mv -T "$temp" "{{ release_host.runtime_dir }}"
+        creates: "{{ release_host.runtime_dir }}"

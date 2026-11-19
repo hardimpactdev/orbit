@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# The host checks the same Laravel endpoints before and after a traffic switch.
+set -euo pipefail
+sha=$1 address=${2:-}
+[[ $sha =~ ^[0-9a-f]{40}$ ]] || exit 64
+opts=(--noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 15 --retry 5 --retry-delay 2 --retry-all-errors)
+if [[ -n $address ]]; then
+  [[ $address =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 64
+  url=http://$address:8080
+  opts+=(-H 'Host: gateway.orbit')
+else
+  url=https://gateway.orbit
+  opts+=(--cacert /etc/caddy/orbit-cert-current/root-ca.pem)
+fi
+curl "${opts[@]}" "$url/up" >/dev/null
+curl "${opts[@]}" "$url/api/v1/gateway/status" |
+  jq -e --arg sha "$sha" '(.data // .) | .status == "ok" and (.version == $sha or .version == $sha[0:12])' >/dev/null

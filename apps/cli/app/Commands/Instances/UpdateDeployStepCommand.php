@@ -20,6 +20,7 @@ final class UpdateDeployStepCommand extends GatewayCommand
         {name : Deploy step name}
         {--command= : Command the Gateway runs}
         {--phase= : before_activation or after_activation}
+        {--required= : true for required or false for best effort}
         {--timeout= : Timeout in seconds}
         {--before= : Place before this step in the same phase}
         {--after= : Place after this step in the same phase}
@@ -60,6 +61,11 @@ final class UpdateDeployStepCommand extends GatewayCommand
             }
         }
 
+        $required = $this->option('required');
+        if ($required !== null && ! in_array($required, ['true', 'false'], true)) {
+            return $this->renderGatewayFailure('deploy_step.required_invalid', 'Required must be true or false.');
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -69,6 +75,7 @@ final class UpdateDeployStepCommand extends GatewayCommand
         $response = $this->sendWithProgress($connector, new UpdateInstanceDeployStepRequest(
             instanceId: $instanceId,
             name: $name,
+            required: $required === null ? null : $required === 'true',
             hasCommand: $hasCommand,
             command: $hasCommand ? (string) $this->option('command') : null,
             hasPhase: $hasPhase,

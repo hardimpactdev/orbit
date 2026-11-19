@@ -63,6 +63,7 @@ final readonly class DevelopmentSite
          * runtime activation endpoint (docs/reference/development-containers.md#sleep-and-wake).
          */
         public ?string $asleepMarker = null,
+        public ?int $productionInstanceId = null,
     ) {}
 
     public function withWebSocket(string $key, string $websocketAppId): self

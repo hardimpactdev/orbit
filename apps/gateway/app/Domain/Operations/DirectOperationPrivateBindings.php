@@ -118,7 +118,7 @@ final readonly class DirectOperationPrivateBindings
     /** @return list<string> */
     private function fields(Operation $operation): array
     {
-        $definition = $this->direct->definition($operation->kind);
+        $definition = $this->direct->definition($operation);
 
         return array_values(array_unique([...array_keys($definition['private_material'] ?? []), ...array_keys($definition['secret_outputs'] ?? [])]));
     }

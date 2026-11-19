@@ -28,7 +28,7 @@ final readonly class TaskTurnPrompt
         ."- Commit your work before this turn ends.\n"
         .'- Never print an environment file, a token, a key or a session value.';
 
-    /** @param  CarbonInterface  $started  the admission's time: the turn's clock starts there and Orbit cuts it TaskCopyTurn::TurnSeconds later */
+    /** @param  CarbonInterface  $started  the admission's time: the turn's clock starts there and Orbit cuts it TaskTurn::TurnSeconds later */
     public static function compose(Task $subtask, string $prompt, CarbonInterface $started): string
     {
         $group = $subtask->parent ?? throw new LogicException('A turn prompt needs the group of its subtask.');
@@ -40,7 +40,7 @@ final readonly class TaskTurnPrompt
         $parts[] = self::CopyRules;
         $started = $started->toImmutable()->utc();
         $parts[] = 'This turn started at '.$started->toIso8601ZuluString().' and Orbit ends it at '
-            .$started->addSeconds(TaskCopyTurn::TurnSeconds)->toIso8601ZuluString().'. Commit your work before then.';
+            .$started->addSeconds(TaskTurn::TurnSeconds)->toIso8601ZuluString().'. Commit your work before then.';
         $parts[] = "Prompt of this turn:\n".$prompt;
         $text = implode("\n\n", $parts);
         if (strlen(mb_convert_encoding($text, 'UTF-16LE', 'UTF-8')) / 2 > self::Limit) {

@@ -10,13 +10,13 @@ use App\Domain\Tasks\DeliverableCorrectionKind;
 use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskStatusMoves;
+use App\Domain\Tasks\TaskTurn;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Task;
@@ -81,7 +81,7 @@ final readonly class UpdateTaskAction
                 TaskStatusMoves::subtask($locked, $task, $data->status);
                 $reopen = TaskStatusMoves::reopens($locked, $task, $data->status);
                 if (($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) || $reopen) {
-                    TaskCopyTurn::refuseSubtaskMoveWhileRunning($locked);
+                    TaskTurn::refuseSubtaskMoveWhileRunning($locked);
                 }
                 if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
                     TaskAssistance::resolveExternalSubtask($task, $locked);

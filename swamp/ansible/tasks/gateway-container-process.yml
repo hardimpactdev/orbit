@@ -1,0 +1,55 @@
+---
+- name: Check the serving Gateway Process
+  ansible.builtin.assert:
+    that:
+      - container.project == 'orbit-releases'
+      - container.name == 'gateway-' ~ container.release[:12]
+      - intent.control.name in ['orbit-process-' ~ intent.control.process_id ~ '-horizon.service', 'orbit-process-' ~ intent.control.process_id ~ '-schedule-work.service']
+      - action in ['create', 'update', 'start', 'stop', 'restart', 'destroy']
+    fail_msg: process.target_unsupported
+  vars: { action: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') }}" }
+
+# The existing private file writer staged the environment in root's tmpfs. Consume it
+# once here. The retained definition below is sufficient for retries after an apply.
+- name: Read and remove the Gateway Process environment
+  when: intent.installation is defined and intent.installation.has_environment
+  vars: { staged: "{{ '/run/orbit-gateway-process-' ~ (intent.gateway_operation | int) ~ '.env' }}" }
+  block:
+    - name: Read the root-only environment
+      ansible.builtin.slurp: { src: "{{ staged }}" }
+      register: gateway_process_environment
+      no_log: true
+  always:
+    - name: Remove the staged environment
+      ansible.builtin.file: { path: "{{ staged }}", state: absent }
+
+- name: Apply the Gateway Process action
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/orbit-gateway-unit
+      - "{{ container.release }}"
+      - "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') }}"
+      - "{{ intent.control.name }}"
+    stdin: >-
+      {{ {'unit': intent.installation.unit, 'environment': (gateway_process_environment.content | b64decode)
+          if intent.installation.has_environment else '', 'environment_path': intent.installation.environment_path, 'desired': intent.installation.desired,
+          'mounts': intent.installation.required_mount_paths | default([])} | to_json if intent.installation is defined else
+         ({'fallback_unit': container.fallback_unit} | to_json if container.fallback_unit is defined else omit) }}
+  no_log: true
+  changed_when: true
+
+- name: Read the serving Gateway Process state
+  ansible.builtin.command: { argv: [/usr/local/libexec/orbit-gateway-unit, "{{ container.release }}", is-active, "{{ intent.control.name }}"] }
+  when: lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') != 'destroy'
+  register: gateway_process_state
+  changed_when: false
+  failed_when: false
+  until: >-
+    (gateway_process_state.stdout | trim) == ('inactive' if lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') in ['stop', 'destroy']
+      or (intent.installation is defined and intent.installation.desired == 'stopped') else 'active')
+  retries: 10
+  delay: 1
+
+- name: Report the serving Gateway Process state
+  ansible.builtin.set_fact:
+    process_result: { state: "{{ 'removed' if lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') == 'destroy' else gateway_process_state.stdout | trim }}", output: "" }

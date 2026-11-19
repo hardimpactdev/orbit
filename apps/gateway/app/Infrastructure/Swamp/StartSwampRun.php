@@ -62,6 +62,9 @@ final readonly class StartSwampRun
 
     public function start(Operation $operation, ?float $jobStarted = null): void
     {
+        if (app(DirectOperation::class)->definition($operation) === null) {
+            return;
+        }
         $jobStarted ??= microtime(true);
         $started = ($this->clock)();
         $outcome = 'unavailable';
@@ -81,10 +84,6 @@ final readonly class StartSwampRun
                 $outcome = 'started';
 
                 return;
-            }
-            $declaration = app(DirectOperation::class)->definition($operation->kind);
-            if ($declaration === null) {
-                throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
             }
             $endpoint = $this->endpoint();
             // The run-time execution copies and the start share one connection: one serve handshake per start.
