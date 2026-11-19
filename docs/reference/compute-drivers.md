@@ -199,7 +199,7 @@ A settings-only change validates every active PHP-FPM master, including dedicate
 
 Merging this mitigation does not change the recipe identity, so it starts no fleet rollout or image rebuild. A Node receives the file at its next PHP installer run: an Instance PHP step. Task VM base images and topology seeds receive it at their next rebuild through the same installer.
 
-The recipe pins PHP 8.4.27 and 8.5.13. Both fix CVE-2026-109618 and CVE-2026-109619. PHP 8.5.13 fixes 18 further CVEs. Four of them allow remote code execution:
+The recipe pins PHP 8.4.28 and 8.5.13, the security releases of both branches. Both fix CVE-2026-109618 and CVE-2026-109619. PHP 8.5.13 fixes 18 further CVEs. Four of them allow remote code execution:
 
 | CVE | Advisory | Flaw |
 | --- | --- | --- |
