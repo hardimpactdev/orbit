@@ -13,16 +13,44 @@ Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behaviour i
 
 - Build and prove the whole feature in the group's copy before its pull request: [Build a feature in one copy](../../../docs/reference/tasks.md#build-a-feature-in-one-copy).
 - Plan at most five subtasks. When a feature needs more, ask the operator before you split it into groups. Never split it into groups whose pull requests each wait for a release to find the next problem.
-- Give each subtask one goal that one implementation session can finish and verify, with at most five deliverables. Split a subtask when its acceptance would likely need another session.
+- Give each subtask one goal that one implementation session can finish and verify, with at most five deliverables.
 - Prefer a narrow vertical slice that a reviewer can verify end to end. Put a prefactoring step first. For a wide refactor, add the new form, move the callers, then remove the old form.
 - Keep CI, release, and deployment work apart from product code.
 - Subtasks carry no proof scripts. Behaviour tests and the review accept a subtask.
-- Do not add a subtask that only runs the final gate or prepares the pull request. Every handoff runs the task check, and the last approval proposes the pull request.
 - Never create a group to rebase a task branch or merge `main` into it. Orbit repairs a conflicting pull request with a fixup subtask.
 
-### Documentation first
+### Split into subtasks
 
-Every group starts with a docs subtask. Run `bin/docs-impact --base <start-commit>` once, with one `--paths` for each planned path, including paths that do not exist yet; the start commit follows [its one rule](../../../docs/reference/tasks.md#start-commit). The docs subtask updates the impacted pages, or delivers the JSON report when nothing is impacted. The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report. The handoff check runs the impact check again on every later subtask. For a page that needs no update, follow [Docs-impact waivers in a copy](../../../docs/reference/tasks.md#docs-impact-waivers-in-a-copy). The reviewer confirms the reason. Orbit's publish copies the same lines into the PR body; for a pull request opened another way, copy them before READY. Private Git notes cannot waive the gate.
+Plan one subtask unless a reason below calls for more. Split when:
+
+- a later part builds on an earlier part that can be checked on its own;
+- a finding or a decision must come first, and it can change what follows;
+- the work is more than one session can finish and check.
+
+Results that depend on each other, or that touch the same files, are subtasks of one group. Results that can ship alone and touch different files are separate groups.
+
+An outcome found during the task becomes an appended subtask when it must ship in the same pull request, and a new group when it can ship alone.
+
+The last subtask owns the full proof. These are never a subtask: the final gate, the pull request preparation, a merge of `main`, and a split by file or by layer. Every handoff runs the task check, and the last approval proposes the pull request.
+
+### Choose the deliverables
+
+Each deliverable checks one expected outcome. The [tasks reference](../../../docs/reference/tasks.md#deliverables) defines `file`, `command`, and `review`.
+
+| Result | Deliverable |
+| --- | --- |
+| A bug that a test can reproduce | `command` with `fails_on_base` on one test file |
+| A feature or an optimization | `command` that runs its tests, without `fails_on_base` |
+| A reference page that must change | `file` |
+| A real run, a timing, or a live proof | `review` that says what the receipt must show |
+
+Never use a `file` deliverable on a doc page as a stand-in for a real run. A deliverable may name a test file: the file is the check, not the design. An investigation result that a command can print is a `command` deliverable, so the handoff check records its output.
+
+### Documentation
+
+No group starts with a fixed docs subtask. When you know the page that must change, give the subtask that changes the behaviour a `file` deliverable for it. Otherwise the docs-impact part of the handoff check names the page. To find the pages while you plan, run `bin/docs-impact --base <start-commit>` with one `--paths` for each planned path, including paths that do not exist yet; the start commit follows [its one rule](../../../docs/reference/tasks.md#start-commit). The [contributor guide](../../../docs/contributor-guide.md#2-write-the-documentation) defines the report.
+
+The handoff check runs the impact check on every subtask. For a page that needs no update, follow [Docs-impact waivers in a copy](../../../docs/reference/tasks.md#docs-impact-waivers-in-a-copy). The reviewer confirms the reason. Orbit's publish copies the same lines into the PR body; for a pull request opened another way, copy them before READY. Private Git notes cannot waive the gate.
 
 Record a significant decision in an ADR with the status `In progress.`, as the [ADR guide](../../../docs/decisions/README.md) describes. The last subtask that completes a decision absorbs the ADR into its owning page; give that subtask a `file` deliverable for the page. An implementer absorbs an ADR only when its deliverables name that page.
 
@@ -44,27 +72,78 @@ When no command can reproduce the bug, say so in the brief and add a `review` de
 
 ## Write the briefs
 
-Use this shape for every subtask brief:
+A brief states the problem and the outcome the group must reach. The implementer derives the code from the repository. [Brief examples](references/brief-examples.md) shows real groups in this shape.
+
+### Group brief
+
+The title states the outcome. Problem, Expected outcome and Guardrails are always there. Open question is there only when the cause is not known. Proof is there only when tests cannot show the outcome.
 
 ```markdown
-**Goal:** the behaviour this subtask makes work, in one or two sentences.
+**Problem:** What is wrong or missing, and why it matters now.
 
-**Evidence:** what shows the problem or the need, with file:line references and data.
+**Expected outcome:**
+1. A rule that holds in every case.
 
-**Read first:** the ADR sections and reference pages it implements, with anchors.
+**Guardrails:**
+- Decided: a choice that is already made or proven.
+- Must hold: what must never break.
+- Accepted limits: what the reviewer must not block on, and why.
+- Out of scope: what the group must not touch.
 
-**Risk:** what this change could break, for the reviewer to check first.
+**Open question:** what is not known yet, and what the handoff note must name.
 
-**Acceptance:** the tests that must fail on the start commit and pass after the change, and the checks that must pass.
-
-**Out of scope:** what this subtask must not touch.
+**Proof:** the entry point, the starting state, the final observation, the
+cases that would expose a wrong answer, what must be real, what may be a
+stand-in, and the subtask that owns the full proof.
 ```
 
-Name implementation paths only where the contract fixes them. Express each promised result as a typed deliverable; the [tasks reference](../../../docs/reference/tasks.md#deliverables) defines `file`, `command`, and `review`. A measurement or investigation result is a `command` deliverable, so the handoff check records its output.
+Guardrails holds only those four kinds of line.
+
+### Subtask brief
+
+Repeat nothing from the group brief. With one subtask in the group, the brief is one line:
+
+```markdown
+All expected outcomes of the group. Read first: <paths>.
+```
+
+With several subtasks:
+
+```markdown
+**Slice:** Expected outcomes <numbers>. Builds on <subtask>. After this
+subtask, <what works>.
+
+**Read first:** <paths>
+
+**Guardrails:** <only what is specific to this slice>
+```
+
+Leave out the slice Guardrails when the slice has none.
+
+### Writing rules
+
+1. State the problem and the expected outcome, not the fix.
+2. Put in a design only when it is already decided or proven, under Decided.
+3. Problem holds facts: Operation IDs, times, numbers, and what ran at that moment. Label a guess as a guess.
+4. Write each expected outcome as a rule that holds in every case, not as one transition.
+5. What must keep working is an expected outcome too.
+6. Give a number with its source and its two end points, such as "from the wake request to `ready_at`".
+7. Put everything the implementer needs inline or in the repository. Name no path on another machine or in another repository.
+8. Accepted limits say what the reviewer must not block on, with the reason.
+9. Say what the implementer does with another bug found on the way: report it and commit no fix. If it blocks the proof, ask.
+10. Leave out a section that has nothing to say.
+
+Name implementation paths only where the contract fixes them.
+
+### Turn prompts
+
+A turn prompt carries review findings, new evidence, and corrections inside the agreed outcome. It adds no outcome and restates neither the brief nor these rules. One exception holds until the copy rules name the task check: the owner may tell the implementer to run the Project task check before it hands off.
 
 ## Agree and create the group
 
-Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, its goal, and its deliverables. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
+A task that the outer loop filed arrives in Backlog with a docs subtask and a placeholder test deliverable. Its owner rewrites it into the shape above before Todo.
+
+Before you move the group to Todo, show the operator a numbered list: each subtask's title, what it builds on, the expected outcomes it owns, and the deliverable that would disprove success. Ask whether the granularity and the dependencies are right, and revise until the operator approves.
 
 Create the parent in Backlog with `task-create` and `project_id` for the Orbit Project. Create its subtasks with the same tool and `parent_id`. Select either level by its existing Task ID. Moving the parent to Todo changes board state only. `task-start` creates a [task copy](../../../docs/reference/tasks.md#task-copy) of the Project's default container Instance. Follow that contract for start failures and removal, and [Task Instance workspace phases](../../../docs/reference/task-instance-workspace.md) for workspace checks and export. Select a child directly for `task-check` and `task-turn`.
 
@@ -78,6 +157,6 @@ Every task read uses [recorded Gateway state](../../../docs/reference/tasks.md#r
 
 ## Review a subtask
 
-Check the risk that the brief names first, then the quality bar. The [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule) decides what blocks. When you write the reviewer prompt for `task-turn`, do not widen that bar: the rule sets the reviewer's scope.
+Judge the work against the group's expected outcomes and guardrails, then the quality bar. Do not block on an accepted limit. This does not widen the [reviewer rule](../../../docs/reference/tasks.md#the-reviewer-rule): it still decides what blocks. When you write the reviewer prompt for `task-turn`, do not widen that bar: the rule sets the reviewer's scope.
 
 The reviewer whose approval opens the pull request puts any open follow-up that users must know about into the receipt's `pull_request.summary`. The operator decides which follow-ups become a later group.

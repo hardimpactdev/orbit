@@ -248,7 +248,7 @@ Conn Server API.
 - May be a stand-in: a minimal prompt for the turn.
 - Keep receipts under `.orbit-artifacts/`: thread, run and command IDs with
   timings.
-- Subtask 2 owns this proof.
+- Subtask 3 owns the full proof.
 ```
 
 Subtask 1 of 3: **The Gateway issues and revokes the task worker grant**
@@ -282,7 +282,8 @@ Subtask 2 of 3: **Prove the RPC path live in one copy**
 
 ```markdown
 **Slice:** Expected outcomes 3 and 4, shown live. Builds on subtask 1. After
-this subtask the proof exists. Swamp's driver still uses the CLI.
+this subtask the RPC path is shown to hold. Swamp's driver still uses the CLI.
+A failed case here can change subtask 3.
 
 **Read first:** `docs/reference/development-containers.md` ("Task-copy RPC
 (target)"), `swamp/ansible/t3_copy_rpc.mjs`.
@@ -301,9 +302,9 @@ the copy before you hand off.
 Subtask 3 of 3: **Swamp's task driver uses the RPC path for Rust Conn targets**
 
 ```markdown
-**Slice:** Expected outcomes 5 and 6. Builds on subtask 2. After this subtask
-a copy turn on a Rust Conn target runs through the RPC, and the old path is
-removed for those targets.
+**Slice:** Expected outcomes 5 and 6, and the full proof. Builds on subtask 2.
+After this subtask a copy turn on a Rust Conn target runs through the RPC, and
+the old path is removed for those targets.
 
 **Read first:** `swamp/ansible/t3_copy_rpc.mjs`,
 `swamp/tests/t3_copy_rpc_test.ts`,
@@ -320,7 +321,9 @@ removed for those targets.
    "description": "Which parts of the old path remain for stock T3, and why",
    "path": "docs/reference/development-containers.md"},
   {"id": "old-path-removed", "type": "review",
-   "description": "For Rust Conn targets no code parses task CLI output, looks a thread up by title, or opens a CLI session; the durable-launch caller still works"}
+   "description": "For Rust Conn targets no code parses task CLI output, looks a thread up by title, or opens a CLI session; the durable-launch caller still works"},
+  {"id": "full-proof", "type": "review",
+   "description": "The group's proof through Swamp's driver: launch, continue, question and answer, and the fence after revocation, each with IDs and timings"}
 ]
 ```
 
@@ -328,5 +331,5 @@ What to notice:
 
 - The group brief holds every outcome once. Each subtask names its outcomes by number.
 - Each subtask builds on the one before it and can be checked on its own. That is why this is three subtasks and not three groups.
-- Subtask 2 is a live proof. Its deliverable is a `review`, not a `file` on a doc page.
-- The proof names the subtask that owns it.
+- Subtask 2 is a finding that must come first: if the RPC path fails a case, subtask 3 changes. Its deliverable is a `review`, not a `file` on a doc page.
+- The last subtask owns the full proof, and the proof names it.
