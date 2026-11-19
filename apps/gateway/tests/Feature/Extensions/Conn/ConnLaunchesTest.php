@@ -26,10 +26,12 @@ use App\Domain\Instances\Power\InstanceStart;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Instances\Power\NodeFileTimes;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationSecrets;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\OperationVersionCleanup;
 use App\Domain\Operations\OperationVersions;
 use App\Domain\Shared\ResourceOperationException;
@@ -295,6 +297,43 @@ beforeEach(function (): void {
     $this->key = (string) Str::uuid();
     $this->body = launchBody($this->phone, $this->profile);
 });
+
+it('completes a clone launch whose create an automatic role converge was admitted beside at its wait limit', function (bool $convergeEnded): void {
+    $default = launchFixtureDefault();
+    Operation::query()->where('kind', 'instance.create')->where('target_id', $default->id)->firstOrFail()
+        ->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    $body = $this->body;
+    $body['target'] = ['kind' => 'new', 'name' => 'long-clone'];
+    $id = callLaunchApi($this->phone, 'POST', 'conn/launches', $body, $this->key)->assertAccepted()->json('data.id');
+    $create = launchFixtureCreate($id, 'long-clone');
+    // The clone outlasts the converge's wait: the converge is refused, renewed every 15 s, and admitted beside the create at the limit.
+    $intent = ['_converge' => ['intent' => ['release_roles_only' => true]]];
+    $admit = fn (): Operation => app(OperationStore::class)->create('node.converge', 'node', $this->host->id, $this->host->id, $intent, 'test', null);
+    for ($waited = 0; $waited < NodeWorkAdmission::WaitLimitSeconds; $waited += 15) {
+        expect($admit)->toThrow(ResourceOperationException::class, 'Automatic role convergence and Instance work share a Node.');
+        $this->travel(15)->seconds();
+    }
+    $converge = $admit();
+    expect($converge->state['admitted_beside'])->toContain($create->id);
+    $converge->update(['status' => $convergeEnded ? OperationStatus::Succeeded : OperationStatus::Running]);
+    $create->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now(),
+        'result' => ['t3' => ['environment_id' => $this->environment->environment_id]]]);
+    $instance = Instance::query()->findOrFail($create->target_id);
+    $instance->update(['status' => InstanceState::SourceResolved, 'starting_commit' => str_repeat('c', 40)]);
+    $instance->runtime()->update(['power_state' => InstanceRuntimePowerState::Running]);
+    $this->environment->forceFill(['instance_id' => $instance->id])->save();
+
+    // The create's completion continues it, so the converge it runs beside never refuses it; new Instance work still waits.
+    app(ConnLaunchSettlement::class)->sweep();
+
+    $launch = Operation::query()->findOrFail($id);
+    expect(ConnLaunchChild::Completion->operation($launch))->not->toBeNull()
+        ->and($launch->state['launch_phase'] ?? null)->not->toBe('needs_retry');
+    if (! $convergeEnded) {
+        expect(fn () => app(OperationStore::class)->create('instance.deploy', 'instance', $default->id, $this->host->id, [], 'test', null))
+            ->toThrow(fn (ResourceOperationException $refusal) => expect($refusal->details['operation_ids'])->toBe([$converge->id]));
+    }
+})->with(['the converge already ended' => true, 'the converge still runs' => false]);
 
 describe('launch admission', function (): void {
     it('records one encrypted intent and returns the same safe snapshot on replay', function (): void {

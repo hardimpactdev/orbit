@@ -24,30 +24,33 @@ final readonly class NodeWorkAdmission
     /** The longest a refused automatic role converge waits for its holders. Then it is admitted beside them, as a hand converge is. */
     public const int WaitLimitSeconds = 300;
 
+    /** How many steps back a continuation is traced to a holder. */
+    private const int MaxLineage = 4;
+
     /**
      * A refused automatic role converge queues: new Instance, Conn and Process work on the Node waits behind it, so it starts once the
-     * current holders end. A removal goes on, and so does a holder's own continuation: its child Operation, or an Operation whose
-     * input names it as its predecessor (`*_operation_id`), such as the completion of a create. New work on a holder's target waits
-     * like any other. The wait is bounded: after WaitLimitSeconds the converge is admitted beside the holders and the queue ends.
-     * Task work (`tasks.*`: copy turns, checks, publishes, syncs, cancels) runs inside its copy and neither waits nor holds.
+     * current holders end. A removal goes on, and so does a holder's continuation: an Operation whose parent, or whose input
+     * `*_operation_id` (such as the completion of a create), leads back to a holder, step by step. New work on a holder's target waits
+     * like any other. The wait is bounded: after WaitLimitSeconds the converge is admitted beside the holders, and it records them in
+     * its state as `admitted_beside`, so their continuations go on while it runs. Task work (`tasks.*`: copy turns, checks,
+     * publishes, syncs, cancels) runs inside its copy and neither waits nor holds.
      *
      * @param  array<string,mixed>  $input
+     * @return list<int> the holders an automatic role converge is admitted beside, for its `admitted_beside` state
      */
-    public function check(string $kind, int $nodeId, array $input, ?int $parentId = null): void
+    public function check(string $kind, int $nodeId, array $input, ?int $parentId = null): array
     {
         $patterns = [...WaitForGatewayReleaseIdleAction::BlockingKindPatterns, 'instance.transfer'];
         $roles = $kind === 'node.converge' && data_get($input, '_converge.intent.release_roles_only') === true;
         if (! $roles && ! Str::is(array_map(static fn (string $pattern): string => str_replace('%', '*', $pattern), $patterns), $kind)) {
-            return;
+            return [];
         }
 
         $nodes = $roles ? [$nodeId] : array_values(array_unique([$nodeId, ...ValidatedData::integerList($input['participant_node_ids'] ?? [])]));
         Node::query()->whereKey($nodes)->orderBy('id')->lockForUpdate()->get();
-        $predecessors = array_values(array_filter([$parentId, ...array_values(array_filter($input,
-            static fn (mixed $value, int|string $key): bool => str_ends_with((string) $key, '_operation_id') && is_int($value),
-            ARRAY_FILTER_USE_BOTH))]));
+        $lineage = $roles ? [] : self::lineage($parentId, $input);
         if (! $roles && ! InstanceDestroyKind::removes($kind) && array_any($nodes, static fn (int $id): bool => ($wait = self::wait($id)) !== null
-            && array_intersect($predecessors, $wait['holders']) === [])) {
+            && array_intersect($lineage, $wait['holders']) === [])) {
             throw new ResourceOperationException('operation.target_busy', 'An automatic role converge waits for this Node.', 409);
         }
         $open = Operation::query()->where(static fn (Builder $query) => $query
@@ -67,16 +70,18 @@ final readonly class NodeWorkAdmission
             $open->whereIn('node_id', $nodes)->where('kind', 'node.converge')->where('input->_converge->intent->release_roles_only', true);
         }
         $cancel = app(NativeRunCancellation::class);
-        $holders = $open->get()->filter(static fn (Operation $operation): bool => ! $operation->status->terminal()
-            || $operation->lock_key !== null || $cancel->awaitsForwarding($operation));
-        $ids = $holders->map(static fn (Operation $operation): int => $operation->id)->values()->all();
+        // A running converge admitted beside a holder lets that holder's continuation finish, as the wait did.
+        $holders = $open->get()->filter(static fn (Operation $operation): bool => (! $operation->status->terminal()
+            || $operation->lock_key !== null || $cancel->awaitsForwarding($operation))
+            && ($roles || array_intersect($lineage, ValidatedData::integerList($operation->state['admitted_beside'] ?? [])) === []));
+        $ids = array_values($holders->map(static fn (Operation $operation): int => $operation->id)->all());
         if ($roles) {
             $wait = self::mark($nodeId);
             $since = $wait === null ? now() : Carbon::parse($wait['since']);
             if ($holders->isEmpty() || $since->lte(now()->subSeconds(self::WaitLimitSeconds))) {
                 Cache::forget(self::waitKey($nodeId));
 
-                return;
+                return $ids;
             }
             Cache::put(self::waitKey($nodeId), ['since' => $since->toISOString(),
                 'holders' => array_values(array_unique([...($wait['holders'] ?? []), ...$ids]))], self::WaitSeconds);
@@ -85,6 +90,42 @@ final readonly class NodeWorkAdmission
             throw new ResourceOperationException('operation.target_busy', 'Automatic role convergence and Instance work share a Node.', 409,
                 details: ['operation_ids' => $ids]);
         }
+
+        return [];
+    }
+
+    /**
+     * The Operations that new work continues: its parent and the Operations its input names (`*_operation_id`), then theirs, up to
+     * MaxLineage steps, such as a deploy after the completion of a create.
+     *
+     * @param  array<string,mixed>  $input
+     * @return list<int>
+     */
+    private static function lineage(?int $parentId, array $input): array
+    {
+        $lineage = [];
+        $next = self::predecessors($parentId, $input);
+        for ($step = 0; $next !== [] && $step < self::MaxLineage; $step++) {
+            $lineage = [...$lineage, ...$next];
+            $next = [];
+            foreach (Operation::query()->whereKey(array_values(array_unique($lineage)))->get(['id', 'parent_operation_id', 'input']) as $operation) {
+                $next = [...$next, ...self::predecessors($operation->parent_operation_id, (array) $operation->input)];
+            }
+            $next = array_values(array_diff(array_unique($next), $lineage));
+        }
+
+        return array_values(array_unique($lineage));
+    }
+
+    /**
+     * @param  array<array-key,mixed>  $input
+     * @return list<int>
+     */
+    private static function predecessors(?int $parentId, array $input): array
+    {
+        return array_values(array_filter([$parentId, ...array_values(array_filter($input,
+            static fn (mixed $value, int|string $key): bool => str_ends_with((string) $key, '_operation_id') && is_int($value),
+            ARRAY_FILTER_USE_BOTH))]));
     }
 
     /**

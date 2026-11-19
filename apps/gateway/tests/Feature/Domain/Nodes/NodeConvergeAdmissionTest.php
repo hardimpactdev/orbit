@@ -757,6 +757,28 @@ it('bounds a queued role converge: removals pass the wait, and after the wait li
         ->and($holder->refresh()->status)->toBe(OperationStatus::Queued);
 });
 
+it('lets every continuation of a holder the converge was admitted beside finish while it runs, and holds new work back', function (): void {
+    prepareReleaseTarget();
+    $store = app(OperationStore::class);
+    $admit = fn (string $kind, int $instance, array $input = []): Operation => $store->create($kind, 'instance', $instance, $this->node->id, $input, 'test', null);
+    $create = $admit('instance.create', 99);
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+    for ($waited = 0; $waited < NodeWorkAdmission::WaitLimitSeconds; $waited += 15) {
+        expect($fleet->execute($release))->toBe(15);
+        $this->travel(15)->seconds();
+    }
+    expect($fleet->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($converge->state['admitted_beside'])->toBe([$create->id]);
+
+    $create->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
+    // The completion names the create; a step after the completion names the completion. Both go on beside the running converge.
+    $complete = $admit('instance.complete', 99, ['create_operation_id' => $create->id]);
+    expect($admit('instance.deploy', 99, ['complete_operation_id' => $complete->id])->status)->toBe(OperationStatus::Queued)
+        ->and(fn () => $admit('instance.deploy', 100))->toThrow(fn (ResourceOperationException $error) => expect($error->details['operation_ids'])->toBe([$converge->id]));
+});
+
 it('marks the Node current once its role converge succeeds, even when Instance work moved the role digest on', function (): void {
     prepareReleaseTarget();
     $release = releaseWithRow(['status' => 'pending']);
