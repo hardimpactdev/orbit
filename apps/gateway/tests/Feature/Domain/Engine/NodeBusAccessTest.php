@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Engine\NodeBusAccess;
 use App\Domain\Nodes\NodeExecutorInput;
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
 use App\Models\Node;
@@ -113,4 +114,26 @@ it('lets only root on a Node reach the bus, with the guard loaded before every e
         ->toContain("ip daddr 10.44.0.1 tcp dport 4222 meta skuid != 0 reject with tcp reset\n")
         ->and(NodeExecutorInput::unit(busGuard: true))
         ->toContain("[Service]\nExecStartPre=/usr/sbin/nft -f /etc/orbit/executor/bus-guard.nft\nExecStart=/usr/local/libexec/orbit-executor serve\n");
+});
+
+it('admits the Gateway\'s runtime user beside root on the Gateway\'s own host, and no other user', function (): void {
+    $manifest = tempnam(sys_get_temp_dir(), 'agent-');
+    file_put_contents($manifest, json_encode(['commit' => str_repeat('a', 40), 'version' => '0.18.0', 'artifacts' => [
+        'executor-linux-x86_64' => ['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/executor'],
+    ]], JSON_THROW_ON_ERROR));
+    app()->instance(AgentDelivery::class, new AgentDelivery($manifest, '/unused'));
+    config(['orbit.executor.public_keys' => ['k']]);
+    foreach ([$this->gateway, $this->node] as $node) {
+        $node->forceFill(['architecture' => 'x86_64'])->saveQuietly();
+        $node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    }
+
+    $gateway = NodeExecutorInput::for($this->gateway->refresh());
+    $vpn = NodeExecutorInput::for($this->node->refresh());
+
+    expect($gateway['bus_guard'])->toContain("ip daddr 10.44.0.1 tcp dport 4222 meta skuid != { 0, \"orbit\" } reject with tcp reset\n")
+        ->and($gateway['unit'])->toContain('ExecStartPre=/usr/sbin/nft')
+        ->and($vpn['bus_guard'])->toContain('meta skuid != 0 reject')
+        ->and($vpn['unit'])->toContain('ExecStartPre=/usr/sbin/nft');
+    @unlink($manifest);
 });

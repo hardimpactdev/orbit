@@ -157,6 +157,7 @@ impl Run for Families {
                 }
             },
             Action::TlsEnsureCsr | Action::RoutePublishSite => route(order),
+            Action::DnsPublishRecords => dns(order),
         }
     }
 }
@@ -290,6 +291,19 @@ fn route(order: &VerifiedOrder) -> Outcome {
         log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
         Outcome::Failed { code: failure.code.to_owned() }
     })
+}
+
+/// The dns family (ADR 0271): a VPN Node's private DNS records. A failure's code goes to the Gateway, its detail only to
+/// the log.
+fn dns(order: &VerifiedOrder) -> Outcome {
+    let system = orbit_executor_dns::NodeSystem::new(bus::BLOBS_PATH);
+    orbit_executor_dns::publish_records(&system, order.input()).map_or_else(
+        |failure| {
+            log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+            Outcome::Failed { code: failure.code.to_owned() }
+        },
+        |changes| Outcome::Applied { changes },
+    )
 }
 
 #[cfg(test)]

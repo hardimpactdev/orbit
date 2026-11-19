@@ -53,7 +53,7 @@ On Linux the `orbit-agent` binary also carries the executor ([ADR 0271](/decisio
 - `orbit-agent` with no mode runs the observer, as before.
 - `orbit-agent execute serve` and `orbit-agent execute relay` run the executor ([Executor: One agent binary](/reference/executor#one-agent-binary)).
 
-Until the Gateway pins a delivery with that mode, Nodes still run the executor from the separate `orbit-executor` binary. Since agent 0.16.0 the executor also joins the Gateway's machine bus and runs the `firewall` family ([Executor: The machine bus](/reference/executor#the-machine-bus)). Agent 0.17.0 adds the `route` family: `tls.ensure_csr` and `route.publish_site`.
+Until the Gateway pins a delivery with that mode, Nodes still run the executor from the separate `orbit-executor` binary. Since agent 0.16.0 the executor also joins the Gateway's machine bus and runs the `firewall` family ([Executor: The machine bus](/reference/executor#the-machine-bus)). Agent 0.17.0 adds the `route` family: `tls.ensure_csr` and `route.publish_site`. Agent 0.18.0 adds the `dns` family for VPN Nodes: `dns.publish_records`.
 
 ## What it observes
 
