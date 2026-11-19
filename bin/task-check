@@ -24,6 +24,7 @@ import argparse
 from contextlib import contextmanager
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
+import fnmatch
 import json
 import os
 from pathlib import Path
@@ -102,21 +103,16 @@ CI_POLICY_READS = {
     'tools/test_ci_docs_tests.py': ('apps/docs/composer.json', 'apps/docs/tests/Feature/OpenApiExtensionsTest.php'),
     'tools/test_ci_incus_upgrade_runbook.py': ('docs/reference/compute-drivers.md',),
     'tools/test_ci_policy.py': ('ci-unit-times.json', '**/ci-unit-times.json'),
-    # It runs this command's Pest and PHPStan plans, which read the pin tests, the CLI tests that replay an SDK fixture,
+    # It runs this command's Pest and PHPStan plans, which read the pin tests, the CLI test files that bin/cli-contract scans,
     # the project configs, and whether each path it passes them exists where that decides the plan.
-    'tools/test_ci_task_check.py': ('apps/cli/tests/**', 'apps/*/phpunit.xml', 'apps/*/phpunit.xml.dist',
+    'tools/test_ci_task_check.py': ('apps/cli/tests/**/*.php', 'apps/*/phpunit.xml', 'apps/*/phpunit.xml.dist',
                                     'apps/gateway/phpstan.neon', 'packages/php-sdk/phpunit.xml.dist',
                                     'apps/gateway/tests/Feature/InstanceDestroyRouteHoldReleaseTest.php',
                                     'apps/gateway/app/Domain/Tasks/TaskTurn.php',
                                     *(f'{project}/{file}' for project, files in PIN_TESTS.items() for file in files)),
 }
-# The policy tests and the tooling they run read bin/ and tools/, except these files, which none of them reads.
-CI_POLICY_TOOLING = ('bin/**', 'tools/**')
-CI_POLICY_UNREAD = ('bin/dependency-audit', 'bin/docs-merge-check', 'bin/gateway-container-*', 'bin/gateway-horizon-ready',
-                    'bin/gateway-release-check', 'bin/gateway-release-phase', 'bin/gateway-rollback', 'bin/web-deploy',
-                    'bin/web-verify', 'tools/boost/**', 'tools/check-processes.php', 'tools/combine_agent_delivery.py',
-                    'tools/phpstan/parallel.php', 'tools/swamp-proof-guest/**', 'tools/test_frozen_agent_commands.py',
-                    'tools/test_swamp_import_base.py')
+# The trees where the policy tests and the tooling they run read a file that one of them names.
+CI_POLICY_NAMED = ('bin/', 'tools/', '.github/')
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
@@ -508,11 +504,13 @@ def ci_policy_input(paths):
     entries = (checks['all-checks'], checks['ignored'], *checks['check'].values(), *checks['roots'].values())
     named = {pattern.removeprefix('!') for entry in entries for pattern in entry['inputs'] if not set('*?') & set(pattern)}
     readers = [(reader, units.selection.input_rules(globs)) for reader, globs in CI_POLICY_READS.items()]
-    tooling = units.selection.input_rules((*CI_POLICY_TOOLING, *(f'!{glob}' for glob in CI_POLICY_UNREAD)))
+    reach = None
     for path in paths:
-        reader = next((reader for reader, rules in readers if units.selection.matches(path, rules)), None)
-        if reader is None and units.selection.matches(path, tooling):
-            reader = tooling_reader(path)
+        reader = discovered(path)
+        reader = reader or next((reader for reader, rules in readers if units.selection.matches(path, rules)), None)
+        if reader is None and path.startswith(CI_POLICY_NAMED):
+            reach = reach if reach is not None else named_reads(paths)
+            reader = reach.get(path)
         if reader is None and (path in named or not any(units.selection.matches(path, rules) for _, rules, _ in roots)):
             reader = 'tools/test_ci_table.py'
         if reader:
@@ -520,15 +518,53 @@ def ci_policy_input(paths):
     return None
 
 
-def tooling_reader(path):
-    """The policy test that names a file of bin/ or tools/; a policy test reads itself."""
-    tests = sorted(str(file.relative_to(ROOT)) for command in CI_POLICY
-                   for file in (ROOT / command[command.index('-s') + 1]).glob(command[command.index('-p') + 1]))
-    if path in tests:
-        return path
-    name = Path(path).name
-    return next((test for test in tests if name in (ROOT / test).read_text(errors='replace')),
-                'the tooling that the policy tests run')
+def discovered(path):
+    """The path itself when CI's discovery loads it: a test module that matches its pattern, or a package's
+    __init__.py on the way, inside packages below the start folder. A deleted one counts, as its old tree loaded it."""
+    for command in CI_POLICY:
+        start, pattern = command[command.index('-s') + 1], command[command.index('-p') + 1]
+        parts = Path(path).parts
+        if parts[:len(Path(start).parts)] != Path(start).parts or not path.endswith('.py'):
+            continue
+        folders = parts[len(Path(start).parts):-1]
+        name = parts[-1]
+        if name != '__init__.py' and not fnmatch.fnmatch(name, pattern):
+            continue
+        packages = folders[:-1] if name == '__init__.py' else folders
+        if all((ROOT / start).joinpath(*packages[:depth + 1], '__init__.py').is_file() for depth in range(len(packages))):
+            return path
+    return None
+
+
+def named_reads(changed):
+    """The files of CI_POLICY_NAMED that the policy tests read, each with its reader: the discovered tests, then every
+    file that a read file names by its path or file name, or imports as a module, in turn. Only code that runs names a
+    read: a workflow or data file is read, but what it names is not."""
+    listed = review['git'](ROOT, 'ls-files', '--cached', '--others', '--exclude-standard', '--', *CI_POLICY_NAMED)
+    candidates = set(listed.splitlines()) | {path for path in changed if path.startswith(CI_POLICY_NAMED)}
+    tests = sorted(path for path in candidates if discovered(path) and (ROOT / path).is_file())
+    sources, named_by = {test: test for test in tests}, {}
+    queue = list(tests)
+    while queue:
+        current = queue.pop(0)
+        if current.startswith('.github/') or current.endswith(('.json', '.toml', '.md', '.txt', '.yml', '.yaml')):
+            continue
+        try:
+            text = (ROOT / current).read_text(errors='replace')
+        except OSError:
+            continue
+        tokens = set(re.findall(r'[\w.@+-]+(?:/[\w.@+-]+)*', text))
+        names = {token.rsplit('/', 1)[-1] for token in tokens}
+        for path in candidates - sources.keys():
+            name = path.rsplit('/', 1)[-1]
+            stem = name.removesuffix('.py')
+            if path in tokens or name in names or (name.endswith('.py') and stem in names
+                                                   and re.search(rf'\b(?:import|from) {re.escape(stem)}\b', text)):
+                sources[path] = sources[current]
+                named_by[path] = current
+                queue.append(path)
+    return {path: test if path == test or named_by[path] == test else f'{test}, through {named_by[path]}'
+            for path, test in sources.items()}
 
 
 def policy_paths(base, committed, paths):

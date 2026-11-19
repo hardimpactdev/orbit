@@ -579,6 +579,9 @@ class CiPolicyTest(unittest.TestCase):
 
     def test_each_file_that_a_policy_test_reads_selects_it_and_no_other_does(self):
         read = {'bin/ci-units': 'tools/test_ci_changed_paths.py', 'tools/test_ci_units.py': 'tools/test_ci_units.py',
+                'tools/ci-runners/user-manager.sh': 'tools/ci-runners/test_user_manager.py',
+                # Named only by a script that a policy test runs; built from parts, as below.
+                ''.join(('tools/', 'pest_', 'runtime.py')): 'tools/test_ci_check_processes.py, through bin/pest-plain',
                 'swamp/ansible/tasks/apt-proxy.yml': 'tools/test_ci_units.py',
                 '.github/ci/checks.toml': 'tools/test_ci_table.py',
                 '.github/actionlint.yaml': 'tools/test_ci_workflow.py',
@@ -599,12 +602,34 @@ class CiPolicyTest(unittest.TestCase):
         for path, reader in read.items():
             with self.subTest(path=path):
                 self.assertEqual(check['ci_policy_input']([path]), f'selected by {path}, read by {reader}')
+        # Built from parts: this file is a policy test, and a file name it spells out counts as one it reads.
+        unread = [''.join(parts) for parts in (
+            ('.github/ISSUE_TEMPLATE/', 'bug_report', '.yml'), ('.github/', 'dependabot', '.yml'),
+            ('bin/', 'web-', 'deploy'), ('tools/swamp-proof-guest/', 'ufw-', 'shim.sh'),
+            ('bin/', 'operator-handoff-', 'notes.txt'), ('tools/', 'operator-handoff-', 'notes.txt'))]
         for path in ('docs/reference/tasks.md', 'apps/pi-server/src/main.ts', 'apps/web/src/main.ts',
                      'apps/gateway/app/Domain/Tasks/TaskVms/TaskVm.php', '.agents/skills/orbit-tasks/SKILL.md',
-                     '.github/ISSUE_TEMPLATE/bug_report.yml', '.github/dependabot.yml',
-                     'apps/cli/design/Flows/NodeAddFlowCommand.php', 'bin/web-deploy', 'tools/swamp-proof-guest/ufw-shim.sh'):
+                     'apps/cli/design/Flows/NodeAddFlowCommand.php',
+                     'apps/cli/tests/Expected/database-connections/database-create/postgres.json', *unread):
             with self.subTest(path=path):
                 self.assertIsNone(check['ci_policy_input']([path]))
+
+    def test_a_module_that_cis_discovery_loads_selects_it_in_any_package(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            for folder in ('tools/boost', 'tools/ci-runners/deep'):
+                (root / folder).mkdir(parents=True)
+                (root / folder / '__init__.py').write_text('')
+            (root / 'tools/plain').mkdir()
+            with patch.dict(check['discovered'].__globals__, {'ROOT': root}):
+                for path in ('tools/boost/test_ci_scoped_policy.py', 'tools/boost/__init__.py',
+                             'tools/ci-runners/deep/test_hook.py', 'tools/test_ci_new.py'):
+                    with self.subTest(path=path):
+                        self.assertEqual(check['discovered'](path), path)
+                # Discovery skips a folder that is no package and a module that its pattern does not match.
+                for path in ('tools/plain/test_ci_scoped_policy.py', 'tools/boost/helper.py', 'tools/test_other.py'):
+                    with self.subTest(path=path):
+                        self.assertIsNone(check['discovered'](path))
 
     def test_a_renamed_file_selects_by_its_old_name(self):
         with tempfile.TemporaryDirectory() as scratch:
