@@ -15,6 +15,7 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\OperationEngineStep;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -284,7 +285,7 @@ it('records the end again when its projection failed the first time', function (
     $attributes = $rule->getAttributes();
     $rule->delete();
 
-    expect(fn () => ($this->receipt)($operation, ['status' => 'applied', 'changes' => 1]))->toThrow(Throwable::class);
+    expect(fn () => ($this->receipt)($operation, ['status' => 'applied', 'changes' => 1]))->toThrow(ModelNotFoundException::class);
     expect($operation->refresh()->status)->toBe(OperationStatus::Running);
 
     FirewallRule::query()->insert($attributes);

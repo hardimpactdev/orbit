@@ -49,12 +49,13 @@ final readonly class FirewallEngineFlow implements EngineDefinition
     {
         $absent = (ValidatedData::object($operation->input['firewall'] ?? [])['ensure'] ?? null) === 'absent';
         $failed = $run->failed();
+        // What happened on the Node comes first, as in the engine: a cancel counts only for a step that never ended.
         $data = match (true) {
-            $operation->cancel_requested_at !== null => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
             $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
                 'failure' => ['failed_step' => $failed->name, 'stderr_recorded' => false], 'result' => ['error_code' => $failed->error_code]],
-            default => ['status' => 'succeeded', 'error_code' => null, 'result' => ['backend' => $absent ? 'absent' : 'active',
+            $run->succeeded() => ['status' => 'succeeded', 'error_code' => null, 'result' => ['backend' => $absent ? 'absent' : 'active',
                 ...($run->changes() === 0 ? ['skipped' => $absent ? 'firewall.rule_absent' : 'firewall.rule_exists'] : [])]],
+            default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
     }
