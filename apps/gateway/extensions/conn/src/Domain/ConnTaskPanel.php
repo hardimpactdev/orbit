@@ -118,6 +118,7 @@ final readonly class ConnTaskPanel
             updatedAt: $group->updated_at?->toIso8601String(),
             lastActivityAt: $lastActivity,
             prOpenedAt: $group->pr_opened_at?->toIso8601String(),
+            deployedAt: $group->deployed_at?->toIso8601String(),
         );
     }
 

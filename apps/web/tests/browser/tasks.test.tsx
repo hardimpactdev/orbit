@@ -23,6 +23,8 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         issue: null,
         publication: null,
         last_activity_at: null,
+        deployed_at: null,
+        pr_opened_at: null,
         preview_url: null,
         project: "example-project",
         project_code: "EXA",

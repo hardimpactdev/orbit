@@ -36,5 +36,9 @@ final class TaskInsightsSummaryData extends Data
         public array $questionsByCause,
         public ?float $cacheHit,
         public ?int $tokensPerHundredLines,
+        /** Ready to the first production deploy that carried the merge commit. */
+        public ?int $deliveryTimeMs,
+        /** Merge to that deploy. */
+        public ?int $deployWaitMs,
     ) {}
 }

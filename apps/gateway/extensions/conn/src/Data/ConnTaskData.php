@@ -34,6 +34,7 @@ final class ConnTaskData extends Data
         public ?string $createdAt,
         public ?string $updatedAt,
         public ?string $lastActivityAt,
+        public ?string $deployedAt,
         /** When GitHub opened the task's pull request; null when Orbit has not read it. */
         public ?string $prOpenedAt = null,
     ) {}

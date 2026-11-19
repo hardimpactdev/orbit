@@ -1,5 +1,6 @@
 """Verify target ownership and route recovery at the AppProd publishing boundary."""
 import importlib.util
+import json
 import os
 import runpy
 import shutil
@@ -41,6 +42,52 @@ class ProductionReleaseHostTest(unittest.TestCase):
             self.assertEqual(calls, [])
             self.assertIs(helper("prepare-instance-4", "instance-4", "b" * 64, original), updated)
             self.assertEqual(calls, [("rebuild", "b" * 64, "prepare-instance-4", "--force")])
+
+    def test_the_preparer_refuses_a_dir_release_pool_before_it_creates_a_volume(self):
+        module = runpy.run_path(str(ROOT / "ansible/files/instance-release-prepare.py"))
+        prepare = module["prepare"]
+        with tempfile.TemporaryDirectory() as temp:
+            runtime = Path(temp).resolve() / "runtime"
+            (runtime / "php/8.5/bin").mkdir(parents=True)
+            (runtime / "php/8.5/bin/frankenphp").write_text("")
+            config = Path(temp) / "production-release.json"
+            config.write_text(json.dumps({"pool": "orbit-releases", "runtime": str(runtime), "network": "orbitinst0",
+                                          "proxy": "http://10.0.0.1:3128"}))
+            calls = []
+            real_path = Path
+            prepare.__globals__.update(
+                ROOT=real_path(temp), Path=lambda value: config if value == "/etc/orbit/production-release.json" else real_path(value),
+                query=lambda path, project=None: {"driver": "dir"}, inc=lambda *args, **kwargs: calls.append(args) or "[]")
+            with self.assertRaisesRegex(ValueError, "release.pool_driver_unsupported: the release pool uses the dir driver"):
+                prepare(4, "8.5")
+            self.assertEqual(calls, [])
+
+    def test_the_release_pool_is_btrfs_on_a_nested_node_and_zfs_on_a_host_and_never_dir(self):
+        host = runpy.run_path(str(ROOT / "ansible/files/production-release-host.py"))
+
+        class Admitted(Exception):
+            pass
+
+        def provision(nested, driver):
+            pools = [] if driver is None else [{"name": "orbit-releases", "driver": driver}]
+
+            def incus(*args):
+                if args[:2] == ("storage", "list"):
+                    return json.dumps(pools)
+                if args[0] == "query":
+                    return json.dumps(pools[0])
+                raise Admitted(args)
+            with patch.dict(host["provision"].__globals__, {"incus": incus}), self.assertRaises((Admitted, ValueError)) as caught:
+                host["provision"](nested, "10.253.2.0/24")
+            return caught.exception
+
+        self.assertIsInstance(provision(True, "btrfs"), Admitted)
+        self.assertIsInstance(provision(False, "zfs"), Admitted)
+        for nested, driver, message in ((True, "dir", "require a btrfs pool; move the dir pool orbit-releases to btrfs"),
+                                        (True, "zfs", "require a btrfs pool"), (False, "dir", "require a zfs pool"),
+                                        (False, "btrfs", "require a zfs pool"), (True, None, "creates the nested orbit-releases btrfs pool")):
+            with self.subTest(nested=nested, driver=driver):
+                self.assertIn(message, str(provision(nested, driver)))
 
     @unittest.skipUnless(shutil.which("php"), "needs php")
     def test_release_php_ini_is_the_builds_production_ini_with_the_security_settings(self):

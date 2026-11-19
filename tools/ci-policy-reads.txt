@@ -70,6 +70,7 @@ swamp/tests/caddy_candidate_test.py
 swamp/tests/fixtures/fleet-reboot-ssh.py
 swamp/tests/fixtures/host-image-boundaries.json
 swamp/tests/fixtures/task-instance-workspace.json
+swamp/tests/fleet_node_pool_test.py
 swamp/tests/gateway_release_cold_rollback_test.py
 swamp/tests/gateway_release_drain_test.py
 swamp/tests/gateway_release_horizons_test.py
@@ -165,7 +166,6 @@ swamp/tests/ansible_instance_container_destroy_test.ts
 swamp/tests/ansible_instance_container_power_test.ts
 swamp/tests/ansible_instance_container_test.ts
 swamp/tests/ansible_instance_egress_test.py
-swamp/tests/ansible_instance_fleet_node_pool_test.ts
 swamp/tests/ansible_instance_host_browser_test.ts
 swamp/tests/ansible_instance_host_image_test.ts
 swamp/tests/ansible_instance_host_runtime_test.ts
