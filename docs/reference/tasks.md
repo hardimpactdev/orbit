@@ -1721,9 +1721,11 @@ A replaced implementer thread is one whose subtask has a newer implementer threa
 
 ### Deploy times
 
+A production deploy is a succeeded `deploy` of an app-prod Instance of the Project, or a `verified` [Gateway release](/reference/gateway-recovery) when the Project's repository is the release repository. Orbit's own tasks get their stamp from Gateway releases. The release repository must match the `github.com` owner and name of exactly one Project, ignoring case; otherwise the release stamps nothing and logs a warning. A Gateway release uses its commit and the time it was recorded `verified`.
+
 When a production deploy of a Project succeeds, the Gateway records it first. Then a job on the `tasks` queue compares each merged task of that Project that has no `deployed_at`, merged in the 30 days before the deploy finished, oldest first and at most 200. When GitHub answers that the task's merge commit is the deployed commit or an ancestor of it, the job stamps `deployed_at` with the deploy's finish time. A failed job or GitHub read never fails the deploy; the task stays null, and the next production deploy compares it again.
 
-The merge commit comes from the pull request that set `merged_at`: the watched pull request when the task has one, as [settling](#settling) reads it. Otherwise it is `merged_sha`, and else the merge commit of the published pull request. A rollback and a deploy of a development Instance stamp nothing. A stamp is never moved, so a task keeps the first deploy that carried it.
+The merge commit comes from the pull request that set `merged_at`: the watched pull request when the task has one, as [settling](#settling) reads it. Otherwise it is `merged_sha`, and else the merge commit of the published pull request. A rollback, a failed or paused Gateway release, a reconciliation, and a deploy of a development Instance stamp nothing. A stamp is never moved, so a task keeps the first deploy that carried it.
 
 ### Trend and breakdown
 
