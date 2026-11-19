@@ -6,7 +6,6 @@ links were separate copies. `incus` and `duperemove` are stubs on PATH: `incus q
 `duperemove` records its arguments.
 """
 
-import fcntl
 import hashlib
 import json
 import os
@@ -35,7 +34,13 @@ class FleetShrinkTest(unittest.TestCase):
         self.driver = 'btrfs'
         for name in NAMES:
             self.machine(name)
-        self.stub('incus', 'case "$2" in /1.0/instances/*) echo \'{"expanded_devices": {"root": {"pool": "inner"}}}\';;\n'
+        self.clean_log = self.folder / 'clean.log'
+        self.held = self.folder / 'held'
+        self.held.mkdir()
+        # `incus exec <name> -- apt-get clean` as apt runs it: it fails while an apt run holds the archives' lock, else empties them.
+        self.stub('incus', f'if [ "$1" = exec ]; then echo "$@" >> {self.clean_log}; [ -e "{self.held}/$2" ] && exit 100\n'
+                  f'find "{self.pools}/inner/containers/$2/rootfs/var/cache/apt/archives" -name "*.deb" -delete; exit 0; fi\n'
+                  'case "$2" in /1.0/instances/*) echo \'{"expanded_devices": {"root": {"pool": "inner"}}}\';;\n'
                   '/1.0/storage-pools/inner) echo "{\\"driver\\": \\"$DRIVER\\"}";; *) exit 1;; esac\n')
         self.stub('duperemove', f'echo "$@" >> {self.duperemove_log}\n')
 
@@ -60,7 +65,6 @@ class FleetShrinkTest(unittest.TestCase):
         info = disk / 'var/lib/dpkg/info'
         info.mkdir(parents=True)
         (info / 'rust-coreutils.md5sums').write_text('\n'.join(lines) + '\n')
-        (disk / 'var/lib/dpkg/lock-frontend').write_bytes(b'')
         (disk / 'var/lib/dpkg/status').write_text('Package: rust-coreutils\nStatus: install ok installed\nVersion: 0.10.0-1ubuntu2\n')
         archives = disk / 'var/cache/apt/archives'
         (archives / 'partial').mkdir(parents=True)
@@ -117,38 +121,15 @@ class FleetShrinkTest(unittest.TestCase):
             archives = self.disk(name) / 'var/cache/apt/archives'
             self.assertEqual(sorted(str(path.relative_to(archives)) for path in archives.rglob('*')), ['lock', 'partial'])
 
-    def test_a_cache_keeps_its_package_files_while_apt_holds_a_lock_or_a_lock_file_is_missing(self):
-        # apt-get on nested-app-dev holds the archive lock between its download and dpkg's unpack: its fetched archive must stay.
-        with open(self.disk('nested-app-dev') / 'var/cache/apt/archives/lock', 'r+b') as held:
-            fcntl.lockf(held, fcntl.LOCK_EX)
-            frontend = self.disk('nested-app-prod') / 'var/lib/dpkg/lock-frontend'
-            frontend.unlink()
-            self.assertEqual(self.shrink('run')['shrink'], 'ran')
-        archives = {name: self.disk(name) / 'var/cache/apt/archives' for name in NAMES}
-        self.assertEqual([len(list(archives[name].rglob('*.deb'))) for name in NAMES], [0, 2, 2])
-        # The locks went with the run: apt takes them again.
-        with open(archives['nested-app-dev'] / 'lock', 'r+b') as lock:
-            fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        # The shrink never made the missing lock file: one of the outer root would block the nested apt.
-        self.assertFalse(frontend.exists())
-
-    def test_the_cache_removal_follows_no_symlink_out_of_the_disk(self):
-        outside = self.folder / 'outside'
-        (outside / 'partial').mkdir(parents=True)
-        for name in ['kept.deb', 'partial/kept.deb']:
-            (outside / name).write_bytes(b'x')
-        gateway, dev, prod = (self.disk(name) / 'var/cache/apt' for name in NAMES)
-        # A symlinked parent, a symlinked archives folder and a symlinked package file.
-        subprocess.run(['rm', '-rf', str(gateway)], check=True)
-        (outside / 'apt').mkdir()
-        (outside / 'apt/archives').symlink_to(outside)
-        gateway.symlink_to(outside / 'apt')
-        subprocess.run(['rm', '-rf', str(dev / 'archives')], check=True)
-        (dev / 'archives').symlink_to(outside)
-        (prod / 'archives/linked.deb').symlink_to(outside / 'kept.deb')
-        self.assertEqual(self.shrink('run')['shrink'], 'ran')
-        self.assertEqual(sorted(str(path.relative_to(outside)) for path in outside.rglob('*.deb')), ['kept.deb', 'partial/kept.deb'])
-        self.assertTrue((prod / 'archives/linked.deb').is_symlink())
+    def test_each_nested_apt_cleans_its_own_archives_and_a_held_lock_keeps_them(self):
+        # apt-get on nested-app-dev holds the archives' lock between its download and dpkg's unpack: its clean fails and its files stay.
+        (self.held / 'nested-app-dev').touch()
+        done = subprocess.run([sys.executable, '-I', '-c', SCRIPT.read_text(), 'run', str(self.record), str(self.pools), *NAMES], capture_output=True,
+                              text=True, check=False, env={**os.environ, 'PATH': f'{self.bin}:/usr/bin:/bin', 'DRIVER': self.driver})
+        self.assertEqual(json.loads(done.stdout.splitlines()[-1])['shrink'], 'ran')
+        self.assertIn('nested-app-dev: apt-get clean exited 100', done.stderr)
+        self.assertEqual(self.clean_log.read_text().splitlines(), [f'exec {name} -- apt-get clean' for name in NAMES])
+        self.assertEqual([len(list((self.disk(name) / 'var/cache/apt/archives').rglob('*.deb'))) for name in NAMES], [0, 2, 0])
 
     def outer(self, relative):
         """A file outside every root disk, on the same device, with the bytes, owner and mode of the shipped binary."""

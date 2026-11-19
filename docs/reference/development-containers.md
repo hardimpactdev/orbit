@@ -3355,9 +3355,9 @@ The relink and the dedupe are safe on running root disks:
 - The step opens each folder on the way from the one above it. It follows no symlink and holds the folder open. So a swapped folder never leads it outside the root disk.
 - The kernel compares the bytes before `duperemove` shares them, so no file changes.
 - The step compares the dpkg status before and after the run. A package that changed in between leaves no record, so the shrink runs again.
-- The step takes APT's locks, without waiting, to empty a nested container's archives. A held lock leaves them for a later shrink.
+- Each nested container's own `apt-get clean` empties its archives. A held apt lock leaves them for a later shrink.
 
-apt needs a package it fetched until dpkg unpacked it, and holds two locks over that time: dpkg's `lock-frontend` and the archives' `lock`. The step takes the same two. When apt holds one, or a lock file is missing, those archives keep their files.
+apt needs a package it fetched until dpkg unpacked it, and holds the archives' lock over that time. `apt-get clean` takes the same lock without waiting. While an apt run holds it, the clean fails and its error goes to the unit's journal.
 
 The seed stays consistent. A seed is a snapshot of the outer container and its inner volume, taken at one point in time. A seed taken while the shrink runs holds whole files, some relinked or shared and some not. Its `base` snapshots are those of the refresh before, which the shrink never touches. A seed copy (`instance.seed_copy`) pushes such a seed, so it never pushes a half-written `base`. Until the next refresh, `base` and the seed hold the old blocks: larger, but whole.
 
@@ -3367,7 +3367,7 @@ The digests and paths come from the nested container's own dpkg files, which its
 
 Each machine's count of skipped paths goes to the step's standard error; the result counts only the relinked paths. A root disk that is itself a symlink fails the run (`shrink: failed`), and a dpkg status that is no regular file inside the root disk makes the check `unreadable`. `duperemove` gets only the three root disk paths, which the outer side names, and its walk follows no symlink.
 
-The second part is the caches. The step removes the `.deb` files in each nested container's `/var/cache/apt/archives` and its `partial` folder. apt keeps no new ones (the size files of [Fleet rules](#fleet-rules)), and the egress proxy serves a package again when apt needs it. It follows no symlink out of the disk. The journals are trimmed by journald itself, at its start after `base`, so the next `base` retake holds the 64 MiB form.
+The second part is the caches. The step runs `apt-get clean` in each nested container, through `incus exec`. It removes the `.deb` files in `/var/cache/apt/archives` and its `partial` folder. apt keeps no new ones (the size files of [Fleet rules](#fleet-rules)), and the egress proxy serves a package again when apt needs it. The clean runs as the nested root, so it reaches no path of the outer side. The journals are trimmed by journald itself, at its start after `base`, so the next `base` retake holds the 64 MiB form.
 
 The third part is the dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent. The kernel compares the bytes before it shares them, so no file changes. It needs a btrfs pool and `duperemove`. [The pinned shape tools](#the-pinned-shape-tools) step keeps `duperemove` in the container.
 

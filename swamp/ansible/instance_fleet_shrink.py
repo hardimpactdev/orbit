@@ -17,17 +17,17 @@ Three parts, in this order:
   reader ever finds the path missing or partial. A swapped-out file that a package replaced after the compare is swapped back. The paths come from the nested container's own dpkg files, so each must stay inside its root disk (`inside`):
   an absolute path, a `..` part or a symlink anywhere below the disk is skipped. Each machine's count of skipped paths goes to
   standard error; the result counts only the paths it relinked.
-- Caches. The `.deb` files in each nested container's apt archives go (CACHES): apt keeps no new ones (the fleet file
-  91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. No path that leaves the disk through
-  a symlink is followed (`inside`). The containers run, so they go only while the shrink holds APT's locks (APT_LOCKS), taken
-  without waiting: when apt holds one, the archive it fetched may not be unpacked yet, and that cache keeps its files for a later
-  shrink.
+- Caches. Each nested container's apt archives are emptied by its own `apt-get clean` (`incus exec`): apt keeps no new package files
+  (the fleet file 91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. The containers run,
+  and an apt run needs the package files it fetched until dpkg unpacked them. apt holds the archives' lock over that time, and
+  `apt-get clean` takes the same lock without waiting: while apt holds it, the clean fails, that container keeps its files for a later
+  shrink, and its failure goes to standard error. The clean runs as the nested root, so no path of the outer side is involved.
 - Dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent (the kernel
   compares the bytes before it shares them, so a file never changes). It needs a btrfs pool and the `duperemove` package, which
   instance_shape_tools.py keeps in the container; without it the first two parts run. Its arguments are the three root disks, named
   by the outer side; a root disk that is a symlink fails the run, and duperemove's own walk follows no symlink.
 
-The nested container's root owns the files of a root disk, and the containers run. So every file `run` links or removes is reached
+The nested container's root owns the files of a root disk, and the containers run. So every file `run` links is reached
 through folders it holds open, each opened from the one above with O_NOFOLLOW (`walk`): a folder swapped for a symlink fails the open,
 and the link and the swap happen inside the held folder. A file is linked only over one of the same bytes, owner and mode, so a
 reader finds the old file or the link, never a missing or partial one. The files it only reads (dpkg's status and md5sums) are found
@@ -44,7 +44,6 @@ It never fails: its last line on standard output is one JSON object. `check`: {"
 Everything its programs print goes to standard error.
 """
 import ctypes
-import fcntl
 import hashlib
 import json
 import os
@@ -58,12 +57,8 @@ from pathlib import Path, PurePosixPath
 RELINK = {'rust-coreutils': 'usr/bin/coreutils'}
 # A new rule changes this, so every record is stale once.
 RULE = '2'
-# Caches of a nested container that the shrink empties: apt's downloaded package files. apt keeps no new ones (the fleet file
-# 91orbit-nested-package-files); the egress proxy serves them again when apt needs one.
-CACHES = ('var/cache/apt/archives',)
-# APT's locks, in the order apt-get takes them: dpkg's frontend lock, then the archive lock. The containers run, so an apt run may
-# have fetched a package into the cache that dpkg has not unpacked yet; the cache is emptied only while the shrink holds both.
-APT_LOCKS = ('var/lib/dpkg/lock-frontend', 'var/cache/apt/archives/lock')
+# The cache clean of a nested container, run inside it: apt takes its archives' lock without waiting and fails while an apt run holds it.
+CLEAN = ('apt-get', 'clean')
 
 
 def inside(disk, relative, kind):
@@ -246,73 +241,11 @@ def relink(disk):
     return replaced, skipped
 
 
-def apt_locks(disk):
-    """Take APT's locks of `disk` without waiting (APT_LOCKS, in apt's order): the open lock files, or None when one is held, missing or
-    no regular file. apt-get holds both from before its download to after dpkg unpacked the archives, so a held lock means an apt run
-    may still need a `.deb` in the cache. The caller closes the files, which ends the locks."""
-    held = []
-    for relative in APT_LOCKS:
-        path = walk(disk, relative)
-        if path is None:
-            break
-        folder, name = path
-        try:
-            # No O_CREAT: a lock file that the outer root made would belong to an id the nested root cannot open, and apt would fail.
-            lock = os.open(name, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
-        except OSError:
-            break
-        finally:
-            os.close(folder)
-        held.append(lock)
-        try:
-            if not stat.S_ISREG(os.fstat(lock).st_mode):
-                break
-            # The same fcntl write lock apt takes; the nested container shares this kernel, so the two locks meet on one inode.
-            fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            break
-    else:
-        return held
-    for lock in held:
-        os.close(lock)
-    return None
-
-
-def empty_caches(disk):
-    """Remove the package files in each cache folder of `disk`, following no symlink, while it holds APT's locks (`apt_locks`). A
-    cache with a package file whose locks it cannot take keeps its files for a later shrink."""
-    for cache in CACHES:
-        for relative in (cache, f'{cache}/partial'):
-            path = walk(disk, relative)
-            if path is None:
-                continue
-            folder, name = path
-            try:
-                # The cache folder itself, opened with O_NOFOLLOW too: `walk` opened the folders above it.
-                held = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=folder)
-            except OSError:
-                os.close(folder)
-                continue
-            os.close(folder)
-            try:
-                packages = [name for name in os.listdir(held) if name.endswith('.deb') and (found := regular(held, name)) is not None
-                            and stat.S_ISREG(found.st_mode)]
-                if not packages:
-                    continue
-                locks = apt_locks(disk)
-                if locks is None:
-                    print(f'{disk}: apt holds its locks, so {relative} keeps its {len(packages)} package files', file=sys.stderr)
-                    continue
-                try:
-                    for name in packages:
-                        found = regular(held, name)
-                        if found is not None and stat.S_ISREG(found.st_mode):
-                            os.unlink(name, dir_fd=held)
-                finally:
-                    for lock in locks:
-                        os.close(lock)
-            finally:
-                os.close(held)
+def clean(name):
+    """Empty the apt archives of the running nested container `name` with its own `apt-get clean` (CLEAN); a failed clean is named."""
+    done = subprocess.run(['timeout', '60', 'incus', 'exec', name, '--', *CLEAN], stdout=sys.stderr, check=False)
+    if done.returncode != 0:
+        print(f'{name}: apt-get clean exited {done.returncode}, so its archives keep their package files', file=sys.stderr)
 
 
 def write_record(record, recorded):
@@ -359,8 +292,8 @@ def run(record, pools, names):
         replaced += relinked
         if skipped:
             print(f'{name}: skipped {skipped} paths that are no regular file inside the root disk', file=sys.stderr)
-    for disk, _ in disks.values():
-        empty_caches(disk)
+    for name in disks:
+        clean(name)
     if not all(btrfs for _, btrfs in disks.values()):
         dedupe = 'not_btrfs'
     elif shutil.which('duperemove') is None:
