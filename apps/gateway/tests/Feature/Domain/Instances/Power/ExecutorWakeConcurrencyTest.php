@@ -97,7 +97,7 @@ it('admits two visits and an independent SQLite writer while the handoff queue i
             $response = executorWakeVisit($second, '/two');
             expect($warnings)->toBe([]);
             expect($joined->refresh()->executor_result)->not->toBeNull();
-            $response->assertOk();
+            $response->assertStatus(307)->assertHeader('Location', '/two');
         } catch (Throwable $exception) {
             $callbackFailure = $exception;
             throw $exception;
@@ -130,7 +130,7 @@ it('serializes hook workers across a stale lease without holding the SQLite writ
     });
     $response = executorWakeVisit($instance);
     expect($diagnostic)->toBe([]);
-    $response->assertOk();
+    $response->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     $this->publisher->publishing = null;
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
     $wake = app(ExecutorWake::class);

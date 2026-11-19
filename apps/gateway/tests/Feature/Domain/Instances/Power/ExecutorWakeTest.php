@@ -51,7 +51,7 @@ use Tests\Support\SwampNodeFixture;
 uses(LazilyRefreshDatabase::class);
 require_once __DIR__.'/ExecutorWakeTestHelpers.php';
 
-it('returns 200 for an in-bound wake and records it before signing and publishing', function (string $status): void {
+it('returns 307 to the visit URI for an in-bound wake and records it before signing and publishing', function (string $status): void {
     $instance = executorWakeInstance();
     $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use ($instance, $status): void {
         $operation = Operation::query()->findOrFail((int) $event->order->operation);
@@ -63,7 +63,7 @@ it('returns 200 for an in-bound wake and records it before signing and publishin
         $this->resultQueue->arriving = fn () => executorWakeReply($operation, ['status' => $status]);
     };
 
-    executorWakeVisit($instance)->assertOk()->assertContent('');
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1')->assertContent('');
 
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
     expect($operation)->status->toBe(OperationStatus::Succeeded)->lock_key->toBeNull()
@@ -139,7 +139,7 @@ it('joins two visits to one Operation and publishes only once', function (): voi
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
     $this->resultQueue->arriving = fn () => executorWakeReply($operation, ['status' => 'done']);
 
-    executorWakeVisit($instance, '/second')->assertOk();
+    executorWakeVisit($instance, '/second')->assertStatus(307)->assertHeader('Location', '/second');
 
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
     expect($operation->refresh())->status->toBe(OperationStatus::Succeeded);
@@ -177,7 +177,7 @@ it('commits a Conn launch wake before dispatch and shares it with a visitor thro
         $this->resultQueue->arriving = fn () => executorWakeReply($wake, ['status' => 'done']);
     }
 
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     $job->handle(app(ExecutorWake::class));
     app(OperationStore::class)->change($launch, ['cancel_requested_at' => now()]);
     app(ConnLaunchSettlement::class)->advance($launch->refresh());
@@ -227,7 +227,7 @@ it('lets a joining visit use the durable result after another waiter consumed it
     $this->resultQueue->lists = [];
     $pops = count($this->resultQueue->timeouts);
 
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
 
     expect(count($this->resultQueue->timeouts))->toBe($pops);
     expect($operation->refresh())->status->toBe(OperationStatus::Succeeded);
@@ -345,7 +345,7 @@ it('serves a joined request when another waiter consumes and completes the resul
         $this->resultQueue->lists = [];
     };
 
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
 
     expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1);
     Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
@@ -380,7 +380,7 @@ it('waits past a bare nonce replay for its authoritative wake result', function 
         $this->resultQueue->arriving = fn () => executorWakeReply($operation, ['status' => 'done']);
     };
 
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->executor_result['status'])->toBe('done');
 });
 
@@ -443,7 +443,7 @@ it('returns within 500 ms and queues the slow Conn wake hooks once after success
     $response = executorWakeVisit($instance);
     $elapsedMs = (hrtime(true) - $started) / 1e6;
 
-    $response->assertOk();
+    $response->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     expect($elapsedMs)->toBeLessThan(500);
     expect($socket->puts)->toBe(0);
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
@@ -491,7 +491,7 @@ it('releases the activation worker within 500 ms and delivers its slow notices f
     $response = executorWakeVisit($instance);
     $elapsedMs = (hrtime(true) - $started) / 1e6;
 
-    $response->assertStatus($done ? 200 : 503);
+    $response->assertStatus($done ? 307 : 503);
     expect($elapsedMs)->toBeLessThan(500);
     expect($events->notices)->toBe([]);
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
@@ -530,7 +530,7 @@ it('retries a failed queued wake hook and skips it after successful delivery', f
     app()->tag([InstanceLifecycleContribution::class], InstanceLifecycleContribution::class);
     $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'done']);
 
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     executorWakeSweep();
 
     Queue::assertPushed(ProjectExecutorWake::class, 1);
@@ -559,7 +559,7 @@ it('preserves one hook handoff when enqueueing terminal notices throws', functio
     });
 
     try {
-        executorWakeVisit($instance)->assertOk();
+        executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
         expect($noticeFailures)->toBe(0);
         executorWakeSweep();
     } finally {
@@ -823,7 +823,7 @@ it('keeps an in-bound success authorized without touching the background queue',
     }
     $elapsedMs = (hrtime(true) - $started) / 1e6;
 
-    $response->assertOk();
+    $response->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     expect($elapsedMs)->toBeLessThan(500);
     $operation = Operation::query()->where('kind', InstanceWake::Kind)->sole();
     expect($operation)->status->toBe(OperationStatus::Succeeded);
@@ -1018,7 +1018,7 @@ it('publishes the same missing wake order once before recovering completion acro
 
     executorWakeSweep();
     executorWakeSweep();
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
 
     expect($published)->toBe([$operation->id]);
     Queue::assertPushed(CompleteExecutorWake::class, 1);
@@ -1133,7 +1133,7 @@ it('does not publish twice when a sweep and visit race the publishing handoff an
 
     expect($raced)->toBeTrue();
     expect($operation->refresh()->state)->toHaveKey(ExecutorWake::PublishedAt);
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     Event::assertDispatchedTimes(ExecutorOrderBroadcast::class, 1);
     Queue::assertPushed(CompleteExecutorWake::class, 1);
     expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
@@ -1147,7 +1147,7 @@ it('lets a late visit recover an unpublished order and leaves no duplicate work 
     $this->travel(7)->seconds();
     $this->publisher->publishing = fn (ExecutorOrderBroadcast $event) => executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'done']);
 
-    executorWakeVisit($instance)->assertOk();
+    executorWakeVisit($instance)->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1');
     executorWakeSweep();
     executorWakeSweep();
 
