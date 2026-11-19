@@ -61,6 +61,11 @@
     },
     {
       "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/instance-container-names.yml",
+      "guard": "{{ intent.roles }}"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
       "include": "tasks/node-converge-tool.yml",
       "guard": "{{ intent.tools }}"
     },
