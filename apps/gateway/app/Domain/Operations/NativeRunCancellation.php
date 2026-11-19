@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Operations;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Engine\Engine;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
@@ -46,6 +47,13 @@ final readonly class NativeRunCancellation
      */
     public function request(Operation $operation, bool $again = false, bool $reconcile = true): bool
     {
+        // An engine Operation cancels through the engine (ADR 0271): its next transition sends nothing more and ends it.
+        if (Engine::owns($operation)) {
+            app(Engine::class)->cancel($operation);
+
+            return true;
+        }
+
         // The row as it is under the lock: a step event that landed after the caller loaded the Operation keeps its state keys.
         return DB::transaction(function () use ($operation, $again, $reconcile): bool {
             $operation->setRawAttributes(Operation::query()->whereKey($operation->id)->lockForUpdate()->firstOrFail()->getAttributes(), true);
