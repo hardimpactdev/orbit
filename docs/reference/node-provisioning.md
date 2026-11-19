@@ -780,6 +780,24 @@ The network phase uses it for the WireGuard files. `tasks/managed-files-check.ym
 
 Only the named files go to the existing copy tasks. A rewritten source file still reloads and restarts the source unit. The live WireGuard sync, the address and DNS repairs, and the final ping and handshake check run on every converge, as before.
 
+The check phase reads the same way, but it repairs nothing. `tasks/check-read.yml` reads a list of paths, units and read-only commands in one call. For each path it returns what `ansible.builtin.stat` would: whether it exists, its type, mode, owner, group and, for a regular file, its SHA-256. A path can also be read through its symbolic link. For each unit it returns the exit code and state of `systemctl is-active`. For each command it returns the exit code and output; a missing program gives exit code 127. A path listed twice is read once.
+
+One item that cannot be read does not stop the others. A unit or command also returns its error output, and a program that cannot start gives exit code 126. A path whose stat fails, other than a missing one, fails the check and names that path. A private path's failure is not printed.
+
+Each part of the check makes one call:
+
+- The agent check reads the agent binary, its service and the selected CLI through its link.
+- The software check reads the installed versions with `dpkg-query` instead of `package_facts`, and the JavaScript, browser and Deno versions and the Vite+ runtime.
+- The role check reads a role's services, files, folders, private files, the Prometheus file and the Swamp start cache.
+- The CI check reads the CI collections, project and network settings, profile and ACL.
+- A failed CI read names its item and prints its error output.
+
+A CI apply reads in three stages, as one call per item did. First it reads the CI collections. It reads the settings after it creates missing resources, and the profile and ACL after it applies the settings.
+
+The software check names a package as apt does. A native or `all` package is bare, and a foreign one ends in `:<arch>`. Every dpkg state but `not-installed` and `config-files` has an installed version. A browser or Deno version command must exit 0 and print the pin.
+
+The asserts are the same as before and loop over the same items, so a drift fails the check at the same task and names the same item. A private file's checksum stays out of the output. A read that fails, or prints anything but its JSON document, fails the check.
+
 The same rule covers an install that a converge would otherwise redo. An archive install, such as Squid on an Instance container host, follows [Package sources](#package-sources).
 
 On a `websocket` Node, one read verifies the Reverb release folder, which is named by its repository and ref. The checkout must be at the wanted ref with no tracked change. `vendor/composer/installed.json` must hold each package of `composer.lock` at its locked version, without dev packages. PHP must load `vendor/autoload.php` and find Reverb's service provider. A release that verifies skips Git and Composer. In any other state, a PHP error included, the converge checks out the ref again, discards tracked changes and installs again. The install then reports a change, even when Composer only rewrites the autoloader. A new checkout still restarts Reverb.

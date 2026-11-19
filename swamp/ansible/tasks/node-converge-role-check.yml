@@ -9,12 +9,10 @@
     containers: "{{ scoped_check.containers }}"
     secrets: "{{ scoped_check.secrets }}"
   block:
-    - name: Read selected role services
-      ansible.builtin.command: { argv: [systemctl, is-active, "{{ item.name }}"] }
-      loop: "{{ intent.services + rt.units }}"
-      changed_when: false
-    - name: Check selected role files and folders
+    # One read of the role's services, files and folders; services are judged first, as before.
+    - name: Check selected role services, files and folders
       ansible.builtin.import_tasks: check-files.yml
+      vars: { check_units: "{{ intent.services + rt.units }}" }
     - name: Check selected role identities and units
       ansible.builtin.import_tasks: check-runtime.yml
     - name: Check selected role endpoints
