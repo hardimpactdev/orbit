@@ -963,8 +963,8 @@ class Fixture(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 '''
-            for name, first, gates in (('fail', 'self.assertEqual(1, 2)', True), ('error', 'raise RuntimeError()', True),
-                                       ('subtest', 'with self.subTest(): self.fail()', True),
+            for name, first, gates in (('fail', 'self.assertEqual(1, 2)', True),
+                                       ('subtest', 'with self.subTest(): raise RuntimeError()', True),
                                        ('fine', "sys.stderr.write('\\nEntering setup\\nFatal is a word\\n')", False)):
                 with self.subTest(name=name):
                     file = folder / f'{name}_test.py'
