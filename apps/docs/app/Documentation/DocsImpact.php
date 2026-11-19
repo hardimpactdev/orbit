@@ -46,6 +46,7 @@ final readonly class DocsImpact
         'orbit:desired-fleet-state' => 'docs/reference/self-update.md',
         'orbit:vault-sync' => 'docs/reference/vaultwarden.md',
         'orbit:operations-sweep' => 'docs/reference/operations.md',
+        'operations:repair-fence' => 'docs/reference/operations.md',
         'orbit:agent-view' => 'docs/reference/node-agent.md',
         'orbit:caddy-build' => 'docs/reference/gateway-trust.md',
         'orbit:tasks:jev-report' => 'docs/reference/tasks.md',

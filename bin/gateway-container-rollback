@@ -1,0 +1,51 @@
+#!/usr/bin/python3
+"""Select the installed recovery program while holding the Gateway release lock."""
+import fcntl
+import json
+import os
+import sys
+from pathlib import Path
+
+BASE = Path("/home/orbit")
+JOURNAL = Path("/var/lib/orbit/gateway-release-switch")
+HOST = Path("/usr/local/libexec/orbit-gateway-rollback-host")
+
+
+def implementation(inventory, journal, host, action):
+    if (journal / "operation").exists():
+        if action != "--recover":
+            raise ValueError("finish the interrupted Gateway handover with --recover first")
+        return host
+    if action == "--recover" and not (journal / "rollback").is_file() and not (journal / "prep-owed").is_file() and not (
+            inventory.is_file() and json.loads(inventory.read_text()).get("earlier")):
+        raise ValueError("there is no interrupted Gateway container handover")
+    if action == "--host":
+        raise ValueError("the Gateway returns to its stopped old container, not to the host")
+    # The host program rolls a container Gateway back to its stopped old release, or switches a legacy worktree.
+    return host
+
+
+def main():
+    if os.geteuid() != 0:
+        raise ValueError("run Gateway recovery as root")
+    state = BASE / ".orbit"
+    # The host adapter and phase scripts share descriptor 9 with this process.
+    with (state / "gateway-release.lock").open("r+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        script = implementation(state / "gateway-containers.json", JOURNAL, HOST, next(iter(sys.argv[1:]), ""))
+        info = script.lstat()
+        if not script.is_file() or script.is_symlink() or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError("unexpected Gateway recovery helper ownership or mode")
+        os.dup2(lock.fileno(), 9, inheritable=True)
+        os.set_inheritable(9, True)
+        os.environ["ORBIT_GATEWAY_RELEASE_LOCK_HELD"] = "1"
+        os.execv("/bin/bash", ["bash", str(script), *sys.argv[1:]])
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BlockingIOError:
+        sys.exit("another Gateway release holds the lock")
+    except (OSError, ValueError, KeyError) as error:
+        sys.exit(str(error))

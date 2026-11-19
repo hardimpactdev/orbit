@@ -1,4 +1,30 @@
 ---
+- name: Read the Gateway deployment mode before changing the host runtime
+  ansible.builtin.stat: { path: "{{ rt.gateway.inventory | default('/home/orbit/.orbit/gateway-containers.json') }}" }
+  register: gateway_container_inventory
+
+- name: Refuse a Gateway role intent from before a deployment mode change
+  ansible.builtin.assert:
+    that: gateway_container_inventory.stat.exists == (rt.gateway.container | default(false))
+    fail_msg: gateway.release_changed
+    quiet: true
+# This also fences an intent captured by an earlier Gateway while its second container was still provisional.
+- name: Require a completed container handover before removing any host recovery files or package
+  when: >-
+    rt.gateway.retired_fpm | default(false) or
+    rt.files | selectattr('path', 'equalto', rt.gateway.pool) | selectattr('ensure', 'equalto', 'absent') | list | length > 0
+  ansible.builtin.command:
+    argv:
+      - /bin/sh
+      - -ec
+      - >-
+        test -f "$2" &&
+        jq -e '(.version == 1 or .version == 2) and .host_retired == true and (.live | test("^[0-9a-f]{40}$"))
+        and (if .version == 2 and .old == null then true else ((.old | test("^[0-9a-f]{40}$")) and .old != .live) end)' "$1" >/dev/null
+      - gateway-retirement
+      - "{{ rt.gateway.inventory | default('/home/orbit/.orbit/gateway-containers.json') }}"
+      - /var/lib/orbit/gateway-release-switch/host-retired
+  changed_when: false
 # The scheduler runs the automatic release tick; the release unit's timer stops before its files go.
 - name: Read the release unit files
   ansible.builtin.stat: { path: "/etc/systemd/system/{{ item }}" }

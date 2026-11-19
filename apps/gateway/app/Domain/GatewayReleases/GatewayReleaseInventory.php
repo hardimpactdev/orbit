@@ -12,6 +12,8 @@ final readonly class GatewayReleaseInventory
      * @param  array<string, string>  $commits  the full commit of each prepared release, by id
      * @param  array<string, int>  $incomplete  the modification time of each release directory without `REVISION`, by id
      * @param  list<string>  $retained  the prepared release ids, newest first
+     * @param  list<string>  $parked  the full commits of the stopped container releases that a rollback can start: old and earlier
+     * @param  list<string>  $verified  the full commits of the container releases that passed public verification
      */
     public function __construct(
         public ?string $current,
@@ -20,5 +22,8 @@ final readonly class GatewayReleaseInventory
         public array $commits,
         public array $incomplete,
         public array $retained,
+        public bool $hostRetired = false,
+        public array $parked = [],
+        public array $verified = [],
     ) {}
 }

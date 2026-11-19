@@ -2,23 +2,36 @@
 
 declare(strict_types=1);
 
+use App\Domain\GatewayReleases\GatewayReleaseAutomation;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
 use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
 
+beforeEach(function (): void {
+    $this->releaseHome = sys_get_temp_dir().'/orbit-projection-'.bin2hex(random_bytes(6));
+    mkdir($this->releaseHome, 0700);
+    config(['orbit.home' => $this->releaseHome]);
+});
+
+afterEach(function (): void {
+    File::deleteDirectory($this->releaseHome);
+});
+
 /** Ends one admitted `gateway.release` run with the given native terminal and returns its record. */
-function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = [], string $trigger = 'auto'): GatewayRelease
+function endReleaseRun(string $status, array $result = [], ?string $failedStep = null, string $detail = '', array $steps = [], bool $retained = false, bool $reconcile = false, bool $container = false, ?string $trigger = null): GatewayRelease
 {
     $sha = str_repeat('ab', 20);
-    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => $trigger, 'outcome' => GatewayRelease::Running,
+    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => $trigger ?? ($reconcile ? 'reconcile' : 'auto'), 'outcome' => GatewayRelease::Running,
         'force' => false, 'phases' => [], 'duration_ms' => 0]);
     $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release', 'target_id' => $record->id,
-        'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6)],
+        'node_id' => null, 'status' => 'running', 'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('cd', 6), ...($container ? ['target' => 'gateway'] : []), 'retained' => $retained, 'reconcile' => $reconcile],
         'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'native_progress' => ['steps' => $steps]]]);
     $record->update(['phases' => ['run' => ['operation_id' => $operation->id]]]);
     new GatewayReleaseRunProjection()->apply($operation, ['run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => $status,
@@ -35,6 +48,18 @@ it('records a succeeded run as verified with the version the fleet rollout reads
         ->and($record->snapshot_path)->toBe('/home/orbit/.orbit/backups/pre.sqlite')
         ->and($record->phases['verify'])->toBe(['outcome' => 'passed', 'status' => 'ok', 'version' => str_repeat('ab', 20)]);
 });
+
+it('records a retained rollback without a migration even when an uncertain handover pauses releases', function (string $status, ?string $step, string $outcome): void {
+    $record = endReleaseRun($status, failedStep: $step, retained: true);
+
+    expect($record->outcome)->toBe($outcome)
+        ->and($record->migrations_ran)->toBeFalse()
+        ->and($record->snapshot_path)->toBeNull();
+})->with([
+    ['succeeded', null, 'verified'],
+    ['failed', 'Hand over the release', 'paused'],
+    ['failed', 'Release unused candidate', 'paused'],
+]);
 
 it('commits the manual pin decision with the verified record', function (): void {
     Queue::fake();
@@ -129,3 +154,62 @@ it('pauses a release whose run ended without a readable result as a failed run, 
     'unreadable result' => ['operation.result_unreadable', 'gateway.release_run_failed'],
     'timeout' => ['operation.timed_out', 'gateway.release_run_timed_out'],
 ]);
+
+it('records a recovered serving release without a migration, a fleet rollout or a nested refresh', function (): void {
+    Queue::fake();
+    $record = endReleaseRun('succeeded', reconcile: true);
+    expect($record->outcome)->toBe('reconciled')
+        ->and($record->phases['verify']['version'])->toBe(str_repeat('ab', 20))
+        ->and($record->migrations_ran)->toBeFalse()
+        ->and($record->snapshot_path)->toBeNull()
+        ->and($record->phases)->not->toHaveKey('fleet');
+    Queue::assertNotPushed(AdmitFleetRollout::class);
+});
+
+it('keeps a failed recovery unverified after the serving revision changed', function (): void {
+    $record = endReleaseRun('failed', failedStep: 'Verify the serving release', reconcile: true);
+    expect($record->outcome)->toBe('failed')->and($record->migrations_ran)->toBeFalse()
+        ->and($record->error_code)->toBe('gateway.release_reconcile_not_live');
+});
+
+it('records managed handover and migration failures without a global pause or an unverified switch-back', function (): void {
+    $migration = endReleaseRun('failed', ['migrate' => "failed schema change\nmigrate-exit=1"], 'Check the migration', container: true);
+    expect($migration->outcome)->toBe('failed')->and($migration->migrations_ran)->toBeTrue()
+        ->and($migration->retryable)->toBeFalse()->and($migration->message)->toContain('failed schema change');
+    $handover = endReleaseRun('failed', failedStep: 'Confirm the Gateway handover', detail: 'gateway.release_switched_back: stale result', container: true);
+    expect($handover->outcome)->toBe('failed')->and($handover->error_code)->toBe('gateway.release_verify_failed')
+        ->and($handover->phases)->not->toHaveKey('switch_back')
+        ->and(GatewayRelease::failedShas())->toContain($migration->sha);
+});
+
+it('records the live SHA from the host inventory even when the failed candidate already serves', function (): void {
+    $base = sys_get_temp_dir().'/orbit-serving-record-'.bin2hex(random_bytes(5));
+    config(['orbit.gateway_checkout' => $base.'/orbit/apps/gateway']);
+    $path = GatewayReleaseLayout::fromConfig()->containerInventoryPath();
+    mkdir(dirname($path), 0700, true);
+    try {
+        $sha = str_repeat('ab', 20);
+        file_put_contents($path, json_encode(['version' => 2, 'live' => $sha, 'old' => null]));
+        $record = endReleaseRun('failed', failedStep: 'Hand over the release', container: true);
+        expect($record->phases['serving']['sha'])->toBe($sha);
+        file_put_contents($path, 'unreadable');
+        $unknown = endReleaseRun('failed', failedStep: 'Hand over the release', container: true);
+        expect($unknown->phases)->not->toHaveKey('serving');
+    } finally {
+        unlink($path);
+        rmdir(dirname($path));
+        rmdir($base);
+    }
+});
+
+it('keeps migration failures excluded while a same-live reconciliation preserves the automation pause state', function (): void {
+    $failed = endReleaseRun('failed', failedStep: 'Check the migration', container: true);
+    $automation = app(GatewayReleaseAutomation::class);
+    expect($automation->pause())->toBeNull();
+    $automation->pauseFor('held', $failed);
+    $reconciled = endReleaseRun('succeeded', reconcile: true, container: true);
+    expect($reconciled->outcome)->toBe('reconciled')
+        ->and($automation->pause()['record'])->toBe($failed->id)
+        ->and(GatewayRelease::failedShas())->toContain($failed->sha)
+        ->and(GatewayRelease::query()->where('outcome', 'verified')->exists())->toBeFalse();
+});

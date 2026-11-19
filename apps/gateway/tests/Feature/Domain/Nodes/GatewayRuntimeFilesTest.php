@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\GatewayReleases\GatewayReleaseHost;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Nodes\GatewayPrivateDnsInput;
 use App\Domain\Nodes\GatewayPrivateDnsState;
@@ -15,9 +16,11 @@ use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\NodeRoleDirectInput;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\ProcessOperationAdmission;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Nodes\NodePrivateDnsListenerFootprint;
+use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -304,3 +307,55 @@ it('keeps production Gateway runtime recipe and Ansible vars byte identical to m
     'removing VPN role' => [LifecycleStatus::Active, LifecycleStatus::Removing],
     'provisioning VPN role' => [LifecycleStatus::Active, LifecycleStatus::Provisioning],
 ]);
+
+it('moves only the serving Gateway runtime and keeps FPM through its first host rollback', function (): void {
+    $base = TestOrbitHome::scratch('gateway-release-host');
+    mkdir($base.'/.orbit', 0700, true);
+    config(['orbit.gateway_checkout' => $base.'/orbit/apps/gateway']);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'schedule-work', 'runtime' => 'systemd',
+        'desired_state' => 'running', 'working_directory' => '/home/orbit/orbit/apps/gateway', 'runtime_config' => ['command' => ['php', 'artisan', 'schedule:work']]]);
+    $other = $node->replicate()->forceFill(['name' => 'other', 'wireguard_ip' => '10.44.0.3', 'public_ssh_host' => '192.0.2.3']);
+    $other->saveQuietly();
+    $write = fn (?string $old, bool $retired = false) => file_put_contents($base.'/.orbit/gateway-containers.json', json_encode(
+        ['version' => 1, 'live' => str_repeat('a', 40), 'old' => $old, 'host_retired' => $retired], JSON_THROW_ON_ERROR));
+    $write(null);
+    $files = static fn (): array => array_column(app(GatewayRuntimeFiles::class)->render($node)['files'], 'ensure', 'path');
+    $vpnPackages = static fn (): array => array_column(app(NativeNodeRoleAddInput::class)->nodeResources($node, RoleName::Vpn)['php_packages'], 'name');
+    expect($files())->not->toHaveKey(GatewayRuntimeFiles::Pool)
+        ->and(app(GatewayRuntimeFiles::class)->render($node)['units'])->toBe([])
+        ->and(GatewayReleaseHost::target($node))->toBe(['project' => 'orbit-releases', 'name' => 'gateway-'.str_repeat('a', 12), 'release' => str_repeat('a', 40)])
+        ->and(GatewayReleaseHost::target($other))->toBeNull()
+        ->and(app(NodeRoleServiceCatalog::class)->forRole(RoleName::Gateway, $node))->toBe(['caddy', 'incus'])
+        ->and(app(ProcessOperationAdmission::class)->inputFor($process, 'start')['container'])->toBe(GatewayReleaseHost::target($node))
+        ->and(GatewayReleaseHost::retiredFpm($node))->toBeFalse();
+    $write(str_repeat('b', 40));
+    expect($files())->not->toHaveKey(GatewayRuntimeFiles::Pool)
+        ->and(GatewayReleaseHost::retiredFpm($node))->toBeFalse()
+        ->and($vpnPackages())->toContain('php8.5-fpm');
+    $write(str_repeat('b', 40), true);
+    expect($files()[GatewayRuntimeFiles::Pool])->toBe('absent')
+        ->and($files()['/etc/systemd/system/orbit-process-'.$process->id.'-schedule-work.service'])->toBe('absent')
+        ->and(GatewayReleaseHost::retiredFpm($node))->toBeTrue()
+        ->and($vpnPackages())->not->toContain('php8.5-fpm');
+    $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+    expect(GatewayReleaseHost::retiredFpm($node))->toBeFalse()
+        ->and($vpnPackages())->toContain('php8.5-fpm');
+});
+
+it('refuses unsupported Gateway workload names and stale Horizon receipts before a move', function (string $command, string $name): void {
+    $checkout = '/home/orbit/orbit/apps/gateway';
+    config(['orbit.gateway_checkout' => $checkout]);
+    $node = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'public_ssh_host' => '192.0.2.2', 'wireguard_ip' => '10.44.0.2',
+        'user' => 'orbit', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64']));
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $process = Process::query()->create(['owner_type' => Node::class, 'owner_id' => $node->id, 'name' => 'custom-worker', 'runtime' => 'systemd',
+        'desired_state' => 'stopped', 'working_directory' => $checkout, 'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', $command]]]);
+    expect(GatewayReleaseHost::initialWorkloadProblem())->toContain("Process {$process->id} [custom-worker]", "Recreate it as [{$name}]");
+    $process->update(['name' => $name]);
+    $current = $name === 'horizon' ? "orbit-process-{$process->id}-horizon.service" : '';
+    expect(GatewayReleaseHost::initialWorkloadProblem($current))->toBeNull()
+        ->and(GatewayReleaseHost::initialWorkloadProblem('orbit-process-999-custom-worker.service'))->toContain('Verify a host release');
+})->with([['horizon', 'horizon'], ['schedule:work', 'schedule-work']]);

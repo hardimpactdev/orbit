@@ -2,7 +2,7 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Console/Commands/SyncKnownHostsCommand,Infrastructure/Ssh/KnownHostsStore,Infrastructure/Ssh/KnownHostsRepository,Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Console/Commands/SyncKnownHostsCommand,Infrastructure/Ssh/KnownHostsStore,Infrastructure/Ssh/KnownHostsRepository,Models/ProofSeed,Domain/Proof/ProofSeeds,Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskTurn,Domain/Tasks/TaskTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts,InstanceModelRoute}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target,25_000000_create_proof_seeds,26_000000_add_ci_bridge_to_nodes,26_000001_release_an_unused_instance_bridge,27_000000_add_seed_sender_id_to_nodes,28_000000_allow_a_proof_copy_clone_on_its_seed_node}.php
@@ -59,7 +59,7 @@ The Gateway reads no pool, so it counts an `app-dev` Node as an Instance contain
 - It records an Instance runtime.
 - Its agent reports the Instance bridge's health, which only a converged container branch writes.
 
-Any other `app-dev` Node, such as a services Node without Incus, is no container host. Its converge runs its other roles and no container branch. The Node gets no Instance bridge and no `orbit:instances-*` firewall rules, so Doctor expects none. Its admission releases an Instance bridge that no container uses. A bridge that a container uses always stays.
+Any other `app-dev` Node, such as a services Node without Incus, is no container host. Its converge runs its other roles and no container branch. The Node gets no Instance bridge and no `orbit:instances-*` firewall rules, so Doctor expects none. Its admission releases an Instance bridge that no container uses. A bridge that a container uses always stays, and so does the release bridge of an `app-prod` Node.
 
 The `app-dev` role installs the container setup: the Incus project `orbit-instances` on the Node's pool, the bridge `orbitinst0`, the container image, the [shared folders](#shared-folders), the [egress proxy](#egress-and-dns), the forwarder of the [model route](#model-access) and the firewall rules. It stops installing PHP-FPM and checkout folders once the Node has no checkout Instance. Clones need ZFS, so the pool of a real Node is ZFS; only a nested proof Node uses a directory pool, where a copy is a full copy.
 
@@ -2075,21 +2075,21 @@ Reads need `orchestration:read`. Writes need `orchestration:operate`. Neither sc
 
 #### Admission
 
-`TaskCopyTurn::capture` admits each turn under the group's lock, as it does today. It names the copy, the role's `AgentThread` and the thread's `external_id`:
+`TaskTurn::capture` admits each turn under the group's lock, as it does today. It names the copy, the role's `AgentThread` and the thread's `external_id`:
 
 - **New thread.** Capture sets a UUID as `external_id` and marks it admitted: `external_id_admission` is `admitted`. `thread.create` uses that exact ID. The target must not choose another.
 - **Confirmed.** A turn that reports that same ID back makes it `confirmed`. Capture names the ID as `turn.t3_thread_id` and its standing as `turn.admission`.
 - **Established thread.** The turn uses an admitted `external_id`. The worker never looks a thread up by its title.
 - **Binding.** Before dispatch, the worker confirms the target's environment ID and its one admitted workspace project for `/srv/workspace`. A thread of another environment or project is refused.
 
-Rows made before this contract need one rule. Today `capture` sets a UUID, but `t3_copy_rpc.mjs create` makes its own thread ID. A continued turn finds its thread by title in `thread list`. `TaskCopyTurnProjection::record` then writes the reported ID over the row. So these rows fall in two groups:
+Rows made before this contract need one rule. Today `capture` sets a UUID, but `t3_copy_rpc.mjs create` makes its own thread ID. A continued turn finds its thread by title in `thread list`. `TaskTurnProjection::record` then writes the reported ID over the row. So these rows fall in two groups:
 
 | Row | How to tell | Rule |
 | --- | --- | --- |
 | Provisional | No turn of the thread reported a `t3_thread_id`. The row still holds the UUID that capture set, which T3 never received | The next turn creates the thread with that UUID and marks it admitted |
 | Overwritten | A turn reported a `t3_thread_id` | Refused with `tasks.copy_thread_missing`. The turn launches nothing |
 
-`TaskCopyTurn::admission` reads the standing. A row from before the mark has a null `external_id_admission`; it is `provisional` while no copy turn of the thread reported a `t3_thread_id`, and `overwritten` after. A reported ID that differs from the row's ID, or any report on a row without the mark, sets `overwritten`.
+`TaskTurn::admission` reads the standing. A row from before the mark has a null `external_id_admission`; it is `provisional` while no copy turn of the thread reported a `t3_thread_id`, and `overwritten` after. A reported ID that differs from the row's ID, or any report on a row without the mark, sets `overwritten`.
 
 The provenance of an overwritten ID is not guaranteed. A first turn reports the ID that the helper made, but a continued turn reports the ID of a title match, and a person's thread with the same title passes that match. The row does not say which happened, so every overwritten row is refused, and the caller starts a new thread with `--thread=new`.
 
@@ -2106,7 +2106,7 @@ The worker counts the turn as launched only when `getThreadProjection` shows the
 | Possibly sent, no confirmed run | `true` | `false` | `false` |
 | Confirmed launch | `true` | `true` | As the run went |
 
-`TaskCopyTurnProjection::record` replaces a thread's stored questions only when `launched` is `true`. So a possibly sent answer keeps the questions. `ended: false` keeps the hold through `TaskCopyTurn::unsettled`. A reviewer's turn cut after its detach and before its send holds the group too, as it does today with `tasks.copy_review_unrestored`.
+`TaskTurnProjection::record` replaces a thread's stored questions only when `launched` is `true`. So a possibly sent answer keeps the questions. `ended: false` keeps the hold through `TaskTurn::unsettled`. A reviewer's turn cut after its detach and before its send holds the group too, as it does today with `tasks.copy_review_unrestored`.
 
 #### Recovery of a lost reply
 
@@ -2154,7 +2154,7 @@ A recorded run ID must equal the run that the link finds. Otherwise the earlier 
 
 Settling keeps today's order. First the worker proves that the earlier run ended. Then, for a reviewer's turn whose detach mark is set, it restores the checkout and verifies it, only when the restore is safe as [Hold after a turn that may still run](#hold-after-a-turn-that-may-still-run) says. Only then does it name the turn settled. A reviewer's run that ended over a checkout not yet restored leaves the turn unsettled. A reviewer's turn without the mark is settled once its run is over, as today.
 
-An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskCopyTurnProjection` clears a thread's stored questions when their request IDs are exactly the spent ones. A partial overlap or a superset clears nothing. It does not wait for the earlier Operation, which is not recorded a second time.
+An earlier answer turn may prove launched only at this point: its `answered` list is not empty, its message passes the exact-body check, and the link finds its run. That run used the answer, so its stored questions are spent. The worker names those exact request IDs in its result as `spent`. `TaskTurnProjection` clears a thread's stored questions when their request IDs are exactly the spent ones. A partial overlap or a superset clears nothing. It does not wait for the earlier Operation, which is not recorded a second time.
 
 The current turn froze its prompt at capture, so it may quote those spent questions as the question it answers. When its own `answered` list holds a spent request, it launches nothing and fails with `tasks.copy_question_answered`. The caller sends its prompt again. The next capture composes it without the spent questions.
 
@@ -2217,7 +2217,7 @@ The Operation's result names:
 
 The result never holds a bearer, a WebSocket ticket, a raw projection, a prompt, a transcript or a private argument. Nor do the logs or Activity: Activity records `task:turn` without its `prompt`.
 
-The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds the fixed sentence of its code, and nothing parsed from any text. A turn that has not ended adds a fixed sentence that the group holds. The raw text stays in the run folder. `TaskCopyTurnProjection` enforces this for every result, also an older worker's, and drops any other error field. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
+The result's error holds no text of T3, a provider or the worker, which may quote the prompt. It holds the fixed sentence of its code, and nothing parsed from any text. A turn that has not ended adds a fixed sentence that the group holds. The raw text stays in the run folder. `TaskTurnProjection` enforces this for every result, also an older worker's, and drops any other error field. A code outside the copy turn's codes becomes `tasks.copy_turn_failed`.
 
 One rule names a turn ended, judged on the turn's own run, never on another run of its thread. The first row that applies decides:
 
@@ -2243,7 +2243,7 @@ A question without its owner run is never stored. The turn records `tasks.copy_q
 
 The run folder is the target's guarantee, not yet today's. The CLI driver stages the prompt in the run folder's `intent.json` and the thread's messages in `read.json`. The folder is private to the run: the folder is mode `0700`, `intent.json` is mode `0600`, and its cleanup removes the folder. The RPC worker drops that staging with the CLI calls.
 
-The transcript goes only to the thread's archive, as `TaskCopyTurnProjection` does today. The archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The CLI driver already shapes it so, and the projection drops a user message's text that an older worker still sends. The stock CLI gives no message ID or time: under it, an entry's ID is the run ID and the message's index, and its time is empty. The Gateway already holds the admitted prompt in the Operation's input.
+The transcript goes only to the thread's archive, as `TaskTurnProjection` does today. The archive keeps assistant text, bounded and redacted. A user message appears only by its ID, author and time, because redaction does not catch an ordinary private prompt. The CLI driver already shapes it so, and the projection drops a user message's text that an older worker still sends. The stock CLI gives no message ID or time: under it, an entry's ID is the run ID and the message's index, and its time is empty. The Gateway already holds the admitted prompt in the Operation's input.
 
 #### Proof and removal
 
@@ -3084,11 +3084,11 @@ A refresh always checks fleet readiness. For work it can skip, it compares input
 | Prepare the Instance host | The separate `host` digest | On an eligible `nested-app-dev`, when the host digest differs, is missing from the record, or cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
-| Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
+| Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken after no read or after the converge. See [How `base` is taken](#how-base-is-taken) |
 | Wait for the state mounts, check the nested Gateway's services (one read), read the fleet's devices and keys, readiness | None | Every run |
 | Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens; the record keeps the oldest | With the Club key, when the record's oldest token is missing or older than 20 days. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
 | Install the recipe's Swamp on the nested Gateway, restart Swamp on it | None: every run reads the recipe's release and the binary that serve runs | With the Club key, when serve does not run the recipe's release, or a read fails. See [The pinned Swamp](#the-pinned-swamp) |
-| Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
+| Retake `base`: of the running fleet, or stopped with the rules applied | See below | Only when the fleet's disks changed |
 | Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate`, and four packages | The tools of these pins are not complete, or a package is missing. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
@@ -3161,7 +3161,7 @@ A due converge still prepares inputs and runs its final checks, even when all it
 
 Below the 2,000,000 [ID map size](#instance-host-in-the-fleet), `nested-app-dev` cannot build its Instance image. There the refresh converges it with the base scope, as before, and its software and role state in `base` stay as they were. A proof needs a default at 2,000,000 when its converge or role-add cases run on `nested-app-dev`.
 
-A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
+A reset of a fleet restores `base` of all three containers in seconds. On the directory pool, taking `base` was the slow part: about 32 s for each container, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 
 | What changed | `base` retaken for |
 | --- | --- |
@@ -3169,7 +3169,7 @@ A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `
 | The nested Gateway's tokens were reminted | The nested Gateway, whose disk holds the tokens and `.env` |
 | A converge reported a changed task on a Node | That Node and the nested Gateway, whose database records the converge |
 | A nested container has no `base` | That container |
-| The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three, with the rules applied on the stopped fleet |
+| The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three; after a difference, with the rules applied on the stopped fleet |
 
 The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that reloaded grants comes up on the new grants.
 
@@ -3185,9 +3185,51 @@ The nested Gateway's serve loads the workflows of the checkout as they change, w
 
 Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It holds run records, outputs, an audit log and caches built from the checkout. These are records, not inputs. After a reset, serve builds the caches again.
 
+#### How `base` is taken
+
+A btrfs snapshot of a running container is atomic. So on the btrfs pool `inner` of the [inner volume](#the-inner-volume), the refresh takes `base` of the running fleet. It runs these steps in order:
+
+1. It waits for readiness, the run's one readiness wait, so `base` holds a ready fleet.
+2. It deletes the old `base` of each target.
+3. It holds the writes of the nested Gateway's Valkey clients with `valkey-cli CLIENT PAUSE 30000 WRITE`, then saves the queues with `valkey-cli SAVE`.
+4. It arms a thaw in the Instance container. Only this step runs between the save and the freeze.
+5. It checks that the hold has at least 10 s left, then freezes the targets in one `incus pause`. The freeze may take the hold's time left minus 5 s.
+6. It checks that at least 5 s of the hold are left, then snapshots each target.
+7. It thaws them in one `incus resume`, cancels the armed thaw, and lets the Valkey writes go with `valkey-cli CLIENT UNPAUSE`.
+
+Nothing stops, boots or waits again. The thaw runs also when a snapshot fails; the refresh then fails, and the run restores the old seed.
+
+The armed thaw does not need the controller. It is a transient systemd timer, `orbit-fleet-thaw`, that resumes each target 60 s after it was armed (`fleet_thaw_seconds`). A resume of a running container only fails. So a refresh whose controller is lost while the fleet is frozen leaves it frozen for at most 60 s. In task copy 3717 the controller was killed right after the freeze, and the two containers ran again 60.3 s after the timer was armed.
+
+The snapshot is what a power cut would leave. The nested Gateway's SQLite database recovers from its journal, as after a crash; no other database runs in the three. Valkey keeps the queues in memory, without an append-only file, and writes them only on its save schedule. Without the save, `base` held a `dump.rdb` about 85 s older than the snapshot.
+
+A write acknowledged between the save and the freeze would still be missing from `base`, so the writes are held from before the save until after the thaw. The hold ends by itself after 30 s (`fleet_queue_pause_ms`), so a lost controller cannot hold them longer. A write acknowledged after the hold ended would be missing from `base` too. So right before the freeze, a hold with less than 10 s left is refused: the writes go, the armed thaw is cancelled, and the stopped path takes `base`.
+
+A freeze that fails, runs out of its time, or ends with under 5 s of the hold left is refused the same way, after each target is resumed: no `base` of the running fleet is taken. A hold or a save that fails lets the writes go and takes the stopped path.
+
+In task copy 3717 a writer pushed one list element every 100 ms across a retake of `nested-gateway` and `nested-app-dev`. After a reset from that `base`, all 1,424 elements acknowledged before the freeze were there, and none acknowledged after it. The one write sent during the hold waited 8.7 s, until the writes were let go after the thaw. With the deletion moved before the hold, a second run kept all 1,391 elements acknowledged before the freeze; the freeze came 0.8 s after the hold, and the longest write waited 8.5 s. The median write took 6 ms.
+
+The freeze gives the set one point in time across the containers, as a stop did. It lasts as long as Incus takes to snapshot the targets: about 0.4 s for the freeze and the thaw, plus 1.3 to 2 s for each app container and about 5 s for `nested-gateway`. The btrfs snapshot itself takes 0.04 s. Incus spends the rest of that time in its own snapshot step for each container (measured in task copy 3717 on 2026-11-18).
+
+The refresh stops the targets as before, and takes `base` of the stopped fleet, when:
+
+- an inner pool is not btrfs, such as the directory pool of a default made before the inner volume. There a snapshot of a running container is a file copy.
+- the pools cannot be read, or the read gives anything but one driver name per line. The refresh reads them once, with `incus storage list --format csv --columns D`.
+- the hold of the nested Gateway's queue writes or the save of its queues fails.
+- a fleet rule or file differed on the running fleet. The rules are written with the three stopped.
+- a [shrink](#the-inner-machines-stay-small) is due. The relink and the dedupe need the three stopped.
+
+The result says which way ran: `base_mode` is `running`, `stopped`, or `none` when `base` stays.
+
+A running fleet is not compared again before its snapshot. So a run whose converge ran after it read the fleet files reads them again before `base`, on the running fleet. A file that differs there makes `base` due for all three, with the fleet stopped.
+
+A `base` of the running fleet holds the live pid file of each network of the nested Incus, such as `orbitinst0` on `nested-app-dev`. The [reset](#no-stale-network-pid-file) is the only place that restores `base`. It clears those files after the restore and before the start. Only a `base` of the stopped fleet is cleared before it is taken, so only it holds none.
+
+On the copy that measured it, a refresh that retook `base` of `nested-gateway` and `nested-app-dev` spent 9 to 10 s on `base` against 59 to 66 s with the stop, start and second readiness wait. The whole refresh took 32 s against 89 to 95 s.
+
 With only some containers stopped, the rules only compare. A rule that differs on a running container fails the refresh, so the refresh never writes to a container whose `base` it keeps. Each container to retake stops; the others keep running. While the nested Gateway is stopped, the agents of the other two lose it and connect again after its start, as after the restart of its services.
 
-After `base` the refresh starts what stopped and waits for readiness, its one readiness wait in that case. If nothing changed, the fleet keeps running, `base` stays, and the refresh waits for readiness before the tools.
+The refresh waits for readiness once in every run. After a `base` of the stopped fleet, that wait follows the start of what stopped. After a `base` of the running fleet, or when nothing changed, the fleet keeps running, and the wait comes before `base` and the tools.
 
 If that start fails, the refresh fails and the run restores the old seed. The new `base` snapshots are inside the outer container's disk, so the restore takes them back too. The default then runs on the old seed's commit with the old seed's fleet, as before the run. Existing copies are clones of older seeds and stay as they are. New copies clone the restored seed until the next release.
 
@@ -3435,7 +3477,7 @@ Why `incus copy --refresh`, once per seed and Node:
 
 The cost is one trust between Nodes: each CI Node trusts the default's Node for one Incus project. The listener answers only on the WireGuard address, and the firewall admits its port only from the default's Node.
 
-A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the holder, its snapshot and its volume as the source, in place of the default's container and volume (`TaskCopyStart::seed`).
+A proof copy on a CI Node is a clone with the same [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd). Its intent names the holder, its snapshot and its volume as the source, in place of the default's container and volume (`TaskStart::seed`).
 
 A copy on a Node whose seed is not the default's current seed is refused with `tasks.copy_source_unavailable`. A task copy still goes to the default's Node and clones the default. A proof copy goes to a free [CI place](/cli/proof/run#the-run) on any Node that offers proof places. The fleet start, the Club key and the [reset](#reset) are the same as for a copy on the default's Node. The copy takes the default's [ID map size](#the-id-map-size). The holder does not need to run, as the default does not need to run for a copy on its own Node.
 
@@ -3527,7 +3569,7 @@ An Incus Node keeps the pid file of each managed bridge's dnsmasq on its disk, a
 
 Two copies can hold such a file. The first is the **copied seed**. A task copy starts from a copy of the running default Instance container, which holds the live disks of its nested containers. When the pid file's last write had not reached the disk, the copy holds it empty, and the guest's autostart boots with it.
 
-The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back.
+The second is the **inner `base`**. A clean stop keeps the pid file. A `base` taken from a disk with an empty file holds it too, and each reset brings it back. A `base` of the [running fleet](#how-base-is-taken) holds the live file of the running dnsmasq; after a restore no dnsmasq owns it.
 
 **The fleet start heals each nested Instance host.** After it starts the nested containers, the [fleet start](#the-fleet-step) runs `swamp/ansible/files/incus-network-pid-heal.py` in each nested Node marked as an Instance host, whether it ran already or just started. The run places the heal at `/usr/local/sbin/incus-network-pid-heal`, with the drop-in `incus.service.d/60-network-pid-heal.conf` that runs it as `ExecStartPre` before every later start of Incus.
 
@@ -3545,7 +3587,7 @@ So a daemon restart keeps the live dnsmasq's file, and every other pid file goes
 
 **The host clears stopped disks.** `swamp/ansible/instance_fleet_runtime.py` (`tasks/instance-fleet-runtime.yml`) removes each `dnsmasq.pid` from the root disks of stopped nested containers. It reads each container from the inner Incus and clears only the root disk in the pool of its `root` device. Three steps run it:
 
-- The refresh runs it before it takes `base`, so a new `base` holds no pid file.
+- The refresh runs it before it takes a `base` of the stopped fleet, so such a `base` holds no pid file. A `base` of the [running fleet](#how-base-is-taken) is not cleared.
 - The reset runs it between the restore of `base` and the start. A `base` taken before the heal existed holds neither the heal nor a clean disk, and this clears it before it boots.
 - The reset's rescue runs it, best effort, before it starts the containers again. The reset keeps its own error.
 

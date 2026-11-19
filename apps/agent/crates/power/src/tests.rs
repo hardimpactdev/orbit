@@ -330,6 +330,7 @@ fn operation_idempotency_and_open_journal_recovery_run_real_power_actions() {
                 key,
                 expires_ms: 6000,
                 power_check: orbit_executor_core::order::PowerCheck::Default,
+                input: serde_json::Value::Null,
             })
             .expect("record")
         ),
@@ -997,6 +998,7 @@ fn crash_recovery_after_the_unfreeze_finishes_the_wake_and_a_repeat_returns_it()
                 },
                 expires_ms: 6000,
                 power_check: orbit_executor_core::order::PowerCheck::Default,
+                input: serde_json::Value::Null,
             })
             .expect("record")
         ),

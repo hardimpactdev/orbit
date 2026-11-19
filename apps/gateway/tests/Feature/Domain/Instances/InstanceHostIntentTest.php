@@ -149,6 +149,11 @@ describe('the container branch of the app-dev converge', function (): void {
                 ->and(array_diff_key($unshifted[$name], ['shift' => true, 'version' => true]))->toBe(array_diff_key($shifted[$name], ['version' => true]));
         }
         expect(InstanceFolderPlan::for($folders, true))->toBe($shifted);
+        $production = InstanceFolderPlan::for($folders, false, '/opt/orbit-production-runtime');
+        expect($production['agent'])->toBe($unshifted['agent'])
+            ->and($production['runtime']['version'])->not->toBe($unshifted['runtime']['version'])
+            ->and($production['runtime']['vite_plus']['home'])->toBe('/opt/orbit-production-runtime/vite-plus/'.basename($unshifted['runtime']['vite_plus']['home']))
+            ->and($unshifted['runtime']['vite_plus']['home'])->toStartWith('/opt/orbit-runtime/vite-plus/');
     });
 
     // docs/reference/development-containers.md#instance-host-in-the-fleet: the refresh rebuilds the host when this digest moves.
@@ -317,6 +322,22 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($beast->refresh()->instance_bridge)->toBe('10.253.0.0/24')
             ->and(array_map(static fn ($rule): string => $rule->shape->comment, app(NodeFirewallRuleCatalog::class)->instanceHostInput($beast)))
             ->toBe(NodeFirewallRuleCatalog::InstanceInputComments);
+    });
+
+    it('keeps the release bridge of an app-prod Node, and an Instance host\'s bridge, when a converge selects none of their host roles', function (): void {
+        $prod = instanceHostNode('prod', '10.44.0.12', appDev: false);
+        $prod->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        app(InstanceHostIntent::class)->prepare($prod, [RoleName::AppProd->value]);
+        $host = instanceHostNode();
+        app(InstanceHostIntent::class)->prepare($host);
+        [$release, $bridge] = [$prod->refresh()->instance_bridge, $host->refresh()->instance_bridge];
+
+        app(InstanceHostIntent::class)->prepare($prod, [RoleName::Database->value]);
+        app(InstanceHostIntent::class)->prepare($host, [RoleName::Metrics->value]);
+
+        expect($release)->not->toBeNull()->and($bridge)->not->toBeNull()
+            ->and($prod->refresh()->instance_bridge)->toBe($release)
+            ->and($host->refresh()->instance_bridge)->toBe($bridge);
     });
 
     it('takes an Instance runtime on an app-dev Node as its pool, and never releases a bridge in use', function (): void {

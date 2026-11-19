@@ -17,6 +17,9 @@ use Tests\Support\TestDatabaseGuard;
 
 abstract class TestCase extends BaseTestCase
 {
+    use WithCachedConfig;
+    use WithCachedRoutes;
+
     public function createApplication(): Application
     {
         $app = require Application::inferBasePath().'/bootstrap/app.php';

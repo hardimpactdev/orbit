@@ -24,6 +24,8 @@ Per-minute schedulers on production Instances, such as `laravel-scheduler` and `
 
 An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [observation schedules](/reference/gateway-queue#scheduled-work), including Doctor collection, Horizon health and operation recovery. The Gateway scheduler keeps its own self-maintenance: Activity finalization and cleaning, Horizon metrics snapshots, batch and failed-job pruning, and the minute [reconciler](/reference/swamp-command-steps#reconciler) that settles Operations with their Swamp runs. Hourly `problems:file` stays in the Gateway scheduler with its lock. Every minute the Gateway scheduler also checks the container defaults against their branch heads; it starts a Swamp policy run only for the defaults behind, independently of the production policy schedule and its pause. See [Automatic development defaults](/reference/deployments#automatic-development-defaults).
 
+Every five minutes the scheduler runs `operations:repair-fence` itself, not on the Gateway queue, also when Tasks is disabled. The serving release rewrites the [Operation-version fence](/reference/operations#operation-versions-across-a-gateway-release) from its own policy. Cleanup Tasks are filed only by the release workflow.
+
 The Gateway also checks for [executor wake handoffs](/reference/gateway-queue#scheduled-work) every five seconds. This check does not run an Orbit Schedule or a Swamp workflow.
 
 The shared native `automatic-production-deploy` producer schedules [automatic deployments](/reference/deployments#automatic-development-defaults) at second 30 of each minute, subject to its enabled and paused policy setting. The PHP `orbit:auto-deploy` command and schedule are removed. This producer installs no timer on an app-dev Node. Every hour at minute 41, `automatic-deploy-memory-refresh` keeps that producer's [policy memory](/reference/deployments#automatic-deployments) inside Swamp data retention, also while the producer is paused. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
@@ -45,6 +47,8 @@ The Gateway runs `orbit:vault-sync` every minute without overlap while the `vaul
 The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
 
 The Gateway prunes failed queue jobs, batch metadata, and Activity older than 30 days daily. [Gateway disk retention](/reference/gateway-recovery#disk-retention) describes the configurable cutoffs.
+
+A recurring Schedule for a containerized AppProd Instance resolves its serving release at each fire. A manual change or fire binds to the confirmed release under the same lock as cutover. A queued host fire cannot start on a checkout after migration.
 
 ## Execution
 

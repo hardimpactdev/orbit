@@ -1,0 +1,13 @@
+file = "swamp/tests/production_instance_control_test.py"
+cost = 1
+inputs = [
+  "swamp/ansible/files/instance-control-process.py",
+  "swamp/ansible/files/instance-release-control.py",
+  "swamp/ansible/files/instance-release-phase.py",
+]
+cases = [
+  "test_controls_the_checked_instance_while_the_release_lock_is_held",
+  "test_stale_node_commit_switching_or_wrong_family_cannot_reach_the_guest",
+  "test_only_a_schedule_fire_can_follow_the_current_selection",
+  "test_process_definition_retries_reload_and_restart_the_admitted_unit",
+]

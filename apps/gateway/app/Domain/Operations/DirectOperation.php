@@ -17,56 +17,91 @@ use LogicException;
 /** Fixed family declarations and intent/result projection. Swamp owns execution. */
 final readonly class DirectOperation
 {
-    /** @var array<string, array{workflow: string, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}> */
+    /** @var array<string, array{workflow: string, alternate_workflows?:list<string>, alternate_results?:array<string,array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}>, child_versions?:array<string,int>, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}> */
     private array $definitions;
+
+    /** @var array<string, array<int, array{workflow: string, alternate_workflows?:list<string>, alternate_results?:array<string,array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}>, child_versions?:array<string,int>, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}>> */
+    private array $versions;
 
     /** @param iterable<DirectOperationContribution> $contributions */
     public function __construct(#[Tag(DirectOperationContribution::class)] iterable $contributions = [])
     {
-        $definitions = [];
+        $definitions = $versions = [];
+        $policies = OperationVersions::policies();
         $families = array_map(static fn (string $file): array => require $file, glob(__DIR__.'/../*/direct-operations.php') ?: []);
         foreach ($contributions as $contribution) {
             $families[] = $contribution->definitions();
         }
         foreach ($families as $family) {
-            foreach ($family as $kind => $definition) {
-                if (isset($definitions[$kind]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
-                    || array_diff(array_keys($definition), ['workflow', 'alternate_workflows', 'workflow_inputs', 'execution_copies', 'terminal_result', 'scheduled_result', 'writer_config', 'writer_state', 'projection', 'child_projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token_issuer', 'result_hook']) !== []
-                    || (array_key_exists('workflow_inputs', $definition) && ! is_bool($definition['workflow_inputs']))
-                    || ! is_string($definition['workflow'] ?? null) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $definition['workflow']) !== 1
-                    || (isset($definition['alternate_workflows']) && (! is_array($definition['alternate_workflows']) || ! array_is_list($definition['alternate_workflows'])
-                        || $definition['alternate_workflows'] === [] || array_any($definition['alternate_workflows'], static fn (mixed $name): bool => ! is_string($name) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $name) !== 1 || $name === $definition['workflow'])
-                        || ! is_string($definition['projection'] ?? null) || ! is_a($definition['projection'], DirectOperationWorkflowChoice::class, true)))
-                    || ! isset($definition['projection'])
-                    || (isset($definition['writer_scope']) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
-                    || ! self::validSecretMap($definition['private_material'] ?? []) || ! self::validSecretMap($definition['secret_outputs'] ?? [])
-                    || (isset($definition['github_token_issuer']) && (! is_string($definition['github_token_issuer']) || ! is_a($definition['github_token_issuer'], NativeGitHubTokenIssuer::class, true)))
-                    || (isset($definition['result_hook']) && (! is_string($definition['result_hook']) || ! is_a($definition['result_hook'], DirectOperationResultHook::class, true)))
-                    || ! is_string($definition['projection']) || ! is_a($definition['projection'], DirectOperationProjection::class, true)
-                    || (isset($definition['child_projection']) && (! is_string($definition['child_projection']) || ! is_a($definition['child_projection'], DirectOperationChildProjection::class, true)))
-                    || (isset($definition['primitive']) && (! is_string($definition['primitive']) || ! is_a($definition['primitive'], DirectOperationPrimitive::class, true)))) {
-                    throw new LogicException('A direct Operation needs one fixed family declaration.');
-                }
-                if (array_key_exists('execution_copies', $definition)) {
-                    if (! is_array($definition['execution_copies']) || ! array_is_list($definition['execution_copies'])) {
-                        throw new LogicException('Execution copy intents must be a list.');
+            foreach ($family as $kind => $base) {
+                $policy = $policies[$kind] ?? [];
+                $active = $policy['current'] ?? 1;
+                foreach ([$active => $base] + ($policy['retained'] ?? []) as $version => $definition) {
+                    if (isset($versions[$kind][$version]) || preg_match(OperationKinds::NamePattern, $kind) !== 1
+                        || array_diff(array_keys($definition), ['workflow', 'alternate_workflows', 'alternate_results', 'workflow_inputs', 'execution_copies', 'terminal_result', 'scheduled_result', 'writer_config', 'writer_state', 'projection', 'child_projection', 'primitive', 'writer_scope', 'private_material', 'secret_outputs', 'github_token_issuer', 'result_hook', 'child_versions']) !== []
+                        || (array_key_exists('workflow_inputs', $definition) && ! is_bool($definition['workflow_inputs']))
+                        || ! is_string($definition['workflow'] ?? null) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $definition['workflow']) !== 1
+                        || (isset($definition['alternate_workflows']) && (! is_array($definition['alternate_workflows']) || ! array_is_list($definition['alternate_workflows'])
+                            || $definition['alternate_workflows'] === [] || array_any($definition['alternate_workflows'], static fn (mixed $name): bool => ! is_string($name) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $name) !== 1 || $name === $definition['workflow'])
+                            || ! is_string($definition['projection'] ?? null) || ! is_a($definition['projection'], DirectOperationWorkflowChoice::class, true)))
+                        || ! isset($definition['projection'])
+                        || (isset($definition['writer_scope']) && (! is_array($definition['writer_scope']) || array_any(array_keys($definition['writer_scope']), static fn (mixed $key): bool => ! is_string($key) || preg_match('/\A[a-z][a-z0-9_]*\z/D', $key) !== 1) || array_any($definition['writer_scope'], static fn (mixed $value): bool => ! is_null($value) && ! is_bool($value) && ! is_int($value) && ! is_string($value))))
+                        || ! self::validSecretMap($definition['private_material'] ?? []) || ! self::validSecretMap($definition['secret_outputs'] ?? [])
+                        || (isset($definition['github_token_issuer']) && (! is_string($definition['github_token_issuer']) || ! is_a($definition['github_token_issuer'], NativeGitHubTokenIssuer::class, true)))
+                        || (isset($definition['result_hook']) && (! is_string($definition['result_hook']) || ! is_a($definition['result_hook'], DirectOperationResultHook::class, true)))
+                        || ! is_string($definition['projection']) || ! is_a($definition['projection'], DirectOperationProjection::class, true)
+                        || (isset($definition['child_projection']) && (! is_string($definition['child_projection']) || ! is_a($definition['child_projection'], DirectOperationChildProjection::class, true)))
+                        || (isset($definition['primitive']) && (! is_string($definition['primitive']) || ! is_a($definition['primitive'], DirectOperationPrimitive::class, true)))) {
+                        throw new LogicException('A direct Operation needs one fixed family declaration.');
                     }
-                    foreach ($definition['execution_copies'] as $copy) {
-                        self::executionCopySignature($copy);
+                    if (array_key_exists('execution_copies', $definition)) {
+                        if (! is_array($definition['execution_copies']) || ! array_is_list($definition['execution_copies'])) {
+                            throw new LogicException('Execution copy intents must be a list.');
+                        }
+                        foreach ($definition['execution_copies'] as $copy) {
+                            self::executionCopySignature($copy);
+                        }
                     }
-                }
-                if (array_key_exists('terminal_result', $definition)) {
-                    $definition['terminal_result'] = self::terminalResult($definition['terminal_result']);
-                }
-                if (array_key_exists('scheduled_result', $definition)) {
-                    if (! isset($definition['terminal_result'])) {
-                        throw new LogicException('Scheduled observations require the original terminal result declaration.');
+                    foreach ($definition['alternate_results'] ?? [] as $workflow => $selector) {
+                        if (! in_array($workflow, $definition['alternate_workflows'] ?? [], true)) {
+                            throw new LogicException('A terminal selector must belong to a declared alternate workflow.');
+                        }
+                        $definition['alternate_results'][$workflow] = self::terminalResult($selector);
                     }
-                    $definition['scheduled_result'] = self::scheduledResult($definition['scheduled_result']);
+                    if (isset($definition['child_versions']) && (! is_array($definition['child_versions'])
+                        || array_any(array_keys($definition['child_versions']), static fn ($key): bool => ! is_string($key) || ! preg_match(OperationKinds::NamePattern, $key))
+                        || array_any($definition['child_versions'], static fn ($n): bool => ! is_int($n) || $n < 1))) {
+                        throw new LogicException('Invalid pinned Operation child versions.');
+                    }
+                    if (array_key_exists('terminal_result', $definition)) {
+                        $definition['terminal_result'] = self::terminalResult($definition['terminal_result']);
+                    }
+                    if (array_key_exists('scheduled_result', $definition)) {
+                        if (! isset($definition['terminal_result'])) {
+                            throw new LogicException('Scheduled observations require the original terminal result declaration.');
+                        }
+                        $definition['scheduled_result'] = self::scheduledResult($definition['scheduled_result']);
+                    }
+                    $names = [$definition['workflow'], ...($definition['alternate_workflows'] ?? [])];
+                    foreach ($versions[$kind] ?? [] as $previous) {
+                        if (array_intersect($names, [$previous['workflow'], ...($previous['alternate_workflows'] ?? [])]) !== []) {
+                            throw new LogicException('Each version of an Operation requires distinct native workflow identities.');
+                        }
+                    }
+                    $versions[$kind][$version] = $definition;
                 }
-                $definitions[$kind] = $definition;
+                $definitions[$kind] = $versions[$kind][$active];
             }
         }
+        if (array_filter(array_diff(array_keys($policies), array_keys($definitions)), static fn (string $kind): bool => ! OperationKinds::gatewayJob($kind)) !== []) {
+            throw new LogicException('Versioned Operations require a registered native declaration.');
+        }
+        foreach ($policies as $kind => $policy) {
+            if (OperationKinds::gatewayJob($kind) && ($policy['current'] !== 1 || $policy['retained'] !== [])) {
+                throw new LogicException('A Gateway-owned job requires a versioned handler before it can change version.');
+            }
+        }
+        $this->versions = $versions;
         $this->definitions = $definitions;
         $this->scheduledResultDefinitions();
     }
@@ -89,16 +124,18 @@ final readonly class DirectOperation
     public function scheduledResultDefinitions(): array
     {
         $scheduled = [];
-        foreach ($this->definitions as $definition) {
-            if (! isset($definition['scheduled_result'])) {
-                continue;
+        foreach ($this->versions as $versions) {
+            foreach ($versions as $definition) {
+                if (! isset($definition['scheduled_result'])) {
+                    continue;
+                }
+                $declaration = $definition['scheduled_result'];
+                $id = $declaration['workflow_id'];
+                if (isset($scheduled[$id]) && $scheduled[$id] !== $declaration) {
+                    throw new LogicException('One scheduled workflow must have one fixed result declaration.');
+                }
+                $scheduled[$id] = $declaration;
             }
-            $declaration = $definition['scheduled_result'];
-            $id = $declaration['workflow_id'];
-            if (isset($scheduled[$id]) && $scheduled[$id] !== $declaration) {
-                throw new LogicException('One scheduled workflow must have one fixed result declaration.');
-            }
-            $scheduled[$id] = $declaration;
         }
 
         foreach (glob(__DIR__.'/../*/scheduled-results.php') ?: [] as $file) {
@@ -120,10 +157,57 @@ final readonly class DirectOperation
         return $scheduled;
     }
 
+    /** @return array<string,int> The native child charts this exact parent can still start or observe. */
+    public function childVersions(string $kind, int $version): array
+    {
+        if ($version === 1 && isset(OperationKinds::CoordinatorChildren[$kind])) {
+            return OperationKinds::CoordinatorChildren[$kind];
+        }
+
+        return $this->definition($kind, $version)['child_versions'] ?? [];
+    }
+
+    /** @return array<string,int> */
+    public function pinnedChildVersions(Operation $parent): array
+    {
+        $version = OperationVersions::pinned($parent);
+        $pins = $parent->child_versions;
+        // The earlier v1 Gateway wrote [] for Conn launches before it knew their fixed children.
+        if ($pins === null || ($pins === [] && $parent->kind === OperationKinds::ConnLaunch && $version === 1)) {
+            return $this->childVersions($parent->kind, $version);
+        }
+
+        return $pins;
+    }
+
+    /** @return array<string,array<int,array<string,int>>> */
+    public function dependencyGraph(): array
+    {
+        $graph = array_map(static fn (array $children): array => [1 => $children], OperationKinds::CoordinatorChildren);
+        foreach ($this->versions as $kind => $declarations) {
+            foreach ($declarations as $version => $declaration) {
+                if (($declaration['child_versions'] ?? []) !== []) {
+                    $graph[$kind][$version] = $declaration['child_versions'];
+                }
+            }
+        }
+
+        return $graph;
+    }
+
     /** @return array<string,array{workflow:string,schedule_write?:bool,execution_copies?:list<array{vault:string,key_pattern:string}>}> */
     public function grantDefinitions(): array
     {
         $required = array_map(static fn (array $definition): array => ['workflow' => $definition['workflow'], 'execution_copies' => $definition['execution_copies'] ?? []], $this->definitions);
+        foreach ($this->versions as $kind => $versions) {
+            foreach ($versions as $version => $definition) {
+                if ($definition !== $this->definitions[$kind]) {
+                    foreach ([$definition['workflow'], ...($definition['alternate_workflows'] ?? [])] as $workflow) {
+                        $required[$kind.'@'.$version.':'.$workflow] = ['workflow' => $workflow, 'execution_copies' => $definition['execution_copies'] ?? []];
+                    }
+                }
+            }
+        }
         foreach ($this->scheduledResultDefinitions() as $schedule) {
             $required['schedule:'.$schedule['workflow']] = ['workflow' => $schedule['workflow'], 'schedule_write' => ($schedule['publishes_inputs'] ?? false) === true];
             if (isset($schedule['context_workflow'])) {
@@ -197,7 +281,7 @@ final readonly class DirectOperation
 
     public static function owns(Operation $operation): bool
     {
-        return app(self::class)->definition($operation->kind) !== null;
+        return app(self::class)->definition($operation) !== null;
     }
 
     /** @param array<string, mixed> $input */
@@ -222,10 +306,15 @@ final readonly class DirectOperation
         return $this->definitions;
     }
 
-    /** @return array{workflow: string, alternate_workflows?: list<string>, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
-    public function definition(string $kind): ?array
+    /** @return array{workflow: string, alternate_workflows?:list<string>, alternate_results?:array<string,array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}>, child_versions?:array<string,int>, workflow_inputs?: bool, execution_copies?: list<array{vault:string,key_pattern:string}>, terminal_result?: array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}, scheduled_result?: array{workflow:string,workflow_id:string,terminal_result:array{job:string,step:string,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string},rows:string}, projection: class-string<DirectOperationProjection>, child_projection?: class-string<DirectOperationChildProjection>, primitive?: class-string<DirectOperationPrimitive>, writer_scope?: array<string, bool|int|string|null>, private_material?: array<string,string>, secret_outputs?: array<string,string>, result_hook?: class-string<DirectOperationResultHook>, github_token_issuer?: class-string<NativeGitHubTokenIssuer>}|null */
+    public function definition(string|Operation $kind, ?int $version = null): ?array
     {
-        return $this->definitions[$kind] ?? null;
+        if ($kind instanceof Operation) {
+            $version = OperationVersions::pinned($kind);
+            $kind = $kind->kind;
+        }
+
+        return $version === null ? ($this->definitions[$kind] ?? null) : ($this->versions[$kind][$version] ?? null);
     }
 
     /**
@@ -235,13 +324,17 @@ final readonly class DirectOperation
      */
     public function workflowFor(Operation $operation): ?string
     {
-        $definition = $this->definition($operation->kind);
+        $definition = $this->definition($operation);
         if ($definition === null) {
             return null;
         }
         $start = $operation->state['swamp_start'] ?? null;
         $recorded = is_array($start) ? ($start['workflow'] ?? null) : null;
         if (is_string($recorded) && $recorded !== '') {
+            if (isset(OperationVersions::policies()[$operation->kind]) && ! in_array($recorded, [$definition['workflow'], ...($definition['alternate_workflows'] ?? [])], true)) {
+                throw new ResourceOperationException('operation.version_mismatch', 'The recorded workflow differs from its pinned Operation declaration.', 409);
+            }
+
             return $recorded;
         }
         if (! isset($definition['alternate_workflows'])) {
@@ -273,7 +366,7 @@ final readonly class DirectOperation
             throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
         }
 
-        return app($this->definitions[$operation->kind]['projection']);
+        return app(($this->definition($operation) ?? throw new LogicException('Unsupported pinned Operation version.'))['projection']);
     }
 
     /** Only native submission calls this boundary; stored input may contain secrets.
@@ -281,7 +374,7 @@ final readonly class DirectOperation
      */
     public function workflowInputs(Operation $operation): array
     {
-        $definition = $this->definition($operation->kind);
+        $definition = $this->definition($operation);
         $input = [];
         if (($definition['workflow_inputs'] ?? false) === true) {
             $projection = $this->projection($operation);
@@ -319,7 +412,7 @@ final readonly class DirectOperation
     public function primitive(Operation $operation): DirectOperationPrimitive
     {
         $this->projection($operation);
-        $primitive = $this->definitions[$operation->kind]['primitive'] ?? null;
+        $primitive = $this->definition($operation)['primitive'] ?? null;
         if ($primitive === null) {
             throw new ResourceOperationException('operation.execution_forbidden', 'This intent declares no Gateway primitive.', 422);
         }
@@ -329,7 +422,7 @@ final readonly class DirectOperation
 
     public function usesNativeTerminal(Operation $operation): bool
     {
-        if (! isset($this->definitions[$operation->kind]['terminal_result'])) {
+        if (! isset($this->definition($operation)['terminal_result'])) {
             return false;
         }
         $projection = $this->projection($operation);

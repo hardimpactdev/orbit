@@ -17,8 +17,8 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStart;
 use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\Tasks\TaskWait;
 use App\Jobs\Proof\AdmitProofRun;
@@ -227,7 +227,7 @@ final readonly class ProofRunIntent
         if ($copies->places($project, $placeRead) === []) {
             throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for a free CI place on a CI Node.');
         }
-        $read = app(TaskCopyStart::class)->read($project, array_keys($copies->places($project, $placeRead)));
+        $read = app(TaskStart::class)->read($project, array_keys($copies->places($project, $placeRead)));
         DB::transaction(function () use ($proof, $commit, $intent, $batches, $project, $read, $placeRead, $copies, &$waitStep): void {
             $current = $this->openForAdmission($proof, $waitStep);
             if ($current === null) {
@@ -253,14 +253,14 @@ final readonly class ProofRunIntent
                 $group = app(ProofWarmPool::class)->take($nodeId);
                 $group?->update(self::groupText($commit, $case['command']));
                 $copy = $group !== null ? Instance::query()->findOrFail($group->taskable_id)
-                    : Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group = $this->group($commit, $case['command']), ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
+                    : Instance::query()->findOrFail(app(TaskStart::class)->admitRead($group = $this->group($commit, $case['command']), ProofGroup::Trigger, null, $read, $nodes->get($nodeId))->target_id);
                 $stored = ProofBatchPlan::stored($assignments);
                 $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(StartOperationAction::class)->execute('proof.command', 'task_group', $group->id, $copy->node_id, [
                     'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'], 'copy' => true,
                     'assignments' => $stored, 'run_budget_seconds' => ProofBatchPlan::budget($stored),
                     'caller_node_id' => $proof->input['caller_node_id'] ?? null, 'ci_pool' => ($proof->input['ci_pool'] ?? false) === true,
                     'group_id' => $group->id, 'instance_id' => $copy->id, 'node_id' => $copy->node_id,
-                ], ProofGroup::Trigger, null));
+                ], ProofGroup::Trigger, null, parent: $current));
                 $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'instance_id' => $copy->id, 'operation_id' => $run->id, 'assignments' => $assignments];
             }
             $this->recordRuns($proof, $current, $intent, $runs, $batches);

@@ -14,6 +14,14 @@ use App\Models\InstanceRuntime;
 /** The container identity of the saved removal; no execution. */
 final readonly class ContainerInstanceDestroy
 {
+    public static function assertReleaseRemovalAvailable(Instance $instance): void
+    {
+        if ($instance->hasProductionRelease()) {
+            throw new ResourceOperationException('operation.kind_unavailable',
+                "Instance [{$instance->name}] owns production release containers or storage. Keep its registration until production release teardown is available.", 503);
+        }
+    }
+
     public function assertAvailable(Instance $instance, bool $force): void
     {
         InstanceMigration::assertSettled($instance);

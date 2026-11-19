@@ -20,7 +20,7 @@ The queue connection `gateway` uses the Redis driver. Its Redis server is reache
 | `ORBIT_GATEWAY_QUEUE_CONNECTION` | empty | The slug of the Redis Database connection. Empty keeps the [inline schedule](#without-a-queue) |
 | `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | `1` | The Redis database index of the queue and Horizon. Use an index that no other client of that server uses |
 
-The Gateway reads the host, port, username, and password of that connection from its records when a process first uses Redis. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
+The Gateway reads the host, port, username, and password of that connection from its records when a process first uses Redis. A FrankenPHP web worker reads them once when it starts, into the worker's own configuration, so every request it serves uses that host. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
 
 After [setup](#set-up-the-queue-user), the `valkey` Docker Process on `services` is the Valkey [Database server](/reference/database-servers) `services-valkey`. It listens on the WireGuard address of `services`, so only WireGuard peers reach it. It writes an append-only file (`--appendonly yes`) to the `services-valkey-data` volume, so queued jobs survive a restart. Every client logs in with a password. The queue and Horizon log in as their own [ACL user](#acl-users), `gateway-queue`, through the Database connection of the same name. That user reaches only the queue's keys.
 
@@ -132,6 +132,8 @@ Each release publishes the dashboard's compiled assets during `composer install`
 The Redis server needs `maxmemory-policy noeviction`, so that it never drops a queued job to free memory. `services-valkey` has it. It has no `maxmemory`, so it can use the memory of `services`; a limit for the Gateway's use is a follow-up.
 
 ## Releases
+
+On a Gateway with release containers, the serving container owns Horizon and the scheduler. Handover drains active jobs on that release. A stopped or removed Horizon Process stays stopped across the switch.
 
 The activate child of the [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains Horizon before switching the serving link. The Horizon unit carries the stop policy, so `systemctl stop` blocks until the unit's control group is empty: SIGTERM reaches the master, and systemd never sends SIGKILL. Running jobs finish on the release that started them. The step refuses a unit that lacks `KillMode=mixed` or `SendSIGKILL=no`, then checks that the unit is inactive. A missing Horizon Process needs no drain.
 

@@ -14,6 +14,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\DirectOperationWorkflowChoice;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Tools\VpEnvironment;
@@ -25,7 +26,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Records bounded native facts. All sequencing, runtime checks and effects belong to Swamp. */
-final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowInput, NativeOperationProjection
+final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowChoice, DirectOperationWorkflowInput, NativeOperationProjection
 {
     public const string LockTimeoutCode = 'instance.deploy_lock_timeout';
 
@@ -45,6 +46,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
 
     public function workflowInput(Operation $operation): array
     {
+        if (isset($operation->input['production_release'])) {
+            return app(ProductionContainerRelease::class)->workflowInput($operation);
+        }
         if ($this->development($operation)) {
             $input = app(DevelopmentDeployInput::class)->workflowInput($operation);
 
@@ -57,13 +61,26 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         return [...$input, 'intent' => ['container' => null, ...$input['intent']]];
     }
 
+    public function workflow(Operation $operation): string
+    {
+        return isset($operation->input['production_release']) ? ProductionContainerRelease::Workflow : 'operation-instance-deploy-direct';
+    }
+
     public function input(Operation $operation): array
     {
+        if (isset($operation->input['production_release'])) {
+            return ['intent' => $operation->input['production_release']];
+        }
+
         return $this->intent->admitted($operation);
     }
 
     public function apply(Operation $operation, array $data): Operation
     {
+        if (isset($operation->input['production_release'])) {
+            return app(ProductionContainerRelease::class)->apply($operation, $data);
+        }
+
         return DB::transaction(function () use ($operation, $data): Operation {
             $locked = Operation::query()->lockForUpdate()->findOrFail($operation->id);
             $instance = Instance::query()->with(['node', 'project'])->findOrFail($locked->target_id);
@@ -223,7 +240,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             return;
         }
         $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', ValidatedData::string($operation->error_code),
-            ['release' => $this->development($operation) ? null : InstanceDeploymentIntent::releaseName($operation), 'selected_release' => null,
+            ['release' => isset($operation->input['production_release']) || $this->development($operation) ? null : InstanceDeploymentIntent::releaseName($operation), 'selected_release' => null,
                 'commit' => InstanceDeploymentIntent::commit($operation), 'failed_step' => null]);
     }
 

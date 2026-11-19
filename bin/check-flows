@@ -109,7 +109,10 @@ const stepNames = (yaml, kind) => {
     // A literal leading kind comparison joined by OR makes the whole skip guard true for that kind.
     // Unknown predicates stay in the chart; neither ternaries nor nested expressions are inferred.
     const skip = indent === item + 2 && !line.includes('?') && line.match(/^\s*guard:\s*['"]?\$\{\{\s*inputs(?:\.intent)?\.kind\s*(==|!=)\s*"([\w.]+)"\s*(?:\|\||\}\})/)
-    if ((exclusive && exclusive[1] !== kind) || (skip && (skip[1] === '==' ? kind === skip[2] : kind !== skip[2]))) names.pop()
+    // Skip guards can also end with a top-level literal after the standard failed-step check.
+    const finalKind = indent === item + 2 && line.match(/^\s*guard:\s*['"]?\$\{\{\s*steps\.exists\(k, steps\[k\]\.status in \["failed", "cancelled"\]\) \|\| inputs\.kind (==|!=) "([\w.]+)"\s*\}\}['"]?\s*$/)
+    const comparison = skip || finalKind
+    if ((exclusive && exclusive[1] !== kind) || (comparison && (comparison[1] === '==' ? kind === comparison[2] : kind !== comparison[2]))) names.pop()
   }
   return names
 }
@@ -120,9 +123,13 @@ for (const kind of list(readFileSync(`${dir}/flows-migrated.txt`, 'utf8'))) {
   if (!charts.has(kind)) { fail(`flows-migrated.txt: ${kind} has no chart`); continue }
   const src = readFileSync(`${dir}/${charts.get(kind)}`, 'utf8')
   const swamp = src.match(/^\s*participant (\w+) as Swamp\b/m)?.[1]
-  const labels = [...src.matchAll(/^\s*(?:(\w+)\s*->>\s*\w+|Note over (\w+))\s*:\s*([^<\n]+)/gm)]
-    .filter((m) => (m[1] ?? m[2]) === swamp).map((m) => m[3].trim())
   const names = [...new Set(yaml.flatMap((one) => stepNames(one, kind)))]
+  const labels = [...src.matchAll(/^\s*(?:(\w+)\s*->>\s*\w+|Note over (\w+))\s*:\s*([^<\n]+)(?:<br\/>([^<\n]+))?/gm)]
+    .filter((m) => (m[1] ?? m[2]) === swamp).map((m) => {
+      const title = m[3].trim(), wrapped = title + ' ' + (m[4] ?? '').trim()
+      // A title may wrap at the renderer's line limit. Otherwise line two is its description.
+      return names.includes(wrapped) ? wrapped : title
+    })
   if ([...new Set(labels)].sort().join('\n') !== [...names].sort().join('\n')) fail(`${kind}: chart steps [${labels.join(', ')}] differ from workflow steps [${names.join(', ')}]`)
 }
 // Conn maps these stable clone phases to stage detail (docs/reference/conn.md#threads-in-an-orbit-project).

@@ -134,14 +134,19 @@ final readonly class InstanceHostIntent
     ) {}
 
     /**
-     * Allocates the Node's bridge in the admission transaction of a role add or converge, before the intent is captured. A Node without
-     * the branch releases a bridge that no container uses, such as one an earlier admission gave a Node without the pool.
+     * Allocates the Node's bridge in the admission transaction of a role add or converge, before any selected application host role is
+     * captured. A Node that is neither an Instance container host nor an `app-prod` Node releases a bridge that no container uses, such as
+     * one an earlier admission gave an `app-dev` Node without the pool.
+     *
+     * @param  list<string>|null  $roles
      */
-    public function prepare(Node $node): void
+    public function prepare(Node $node, ?array $roles = null): void
     {
-        if ($this->role($node) !== null) {
+        $development = $this->role($node);
+        if (in_array(RoleName::AppProd->value, $roles ?? [], true) || ($development !== null
+            && ($roles === null || in_array($development->value, $roles, true)))) {
             $this->bridges->execute($node);
-        } else {
+        } elseif ($development === null && ! $node->roles()->where('role', RoleName::AppProd)->exists()) {
             NodeBridges::releaseUnused($node->id);
         }
     }

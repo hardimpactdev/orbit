@@ -1,0 +1,30 @@
+file = "swamp/tests/gateway_release_host_rollback_test.py"
+cost = 104
+inputs = [
+  "bin/gateway-container-move",
+  "bin/gateway-container-rollback",
+  "bin/gateway-container-site",
+  "bin/gateway-release-check",
+  "bin/gateway-release-phase",
+  "bin/gateway-rollback",
+  "swamp/scripts/gateway-release-container.sh",
+  "swamp/scripts/gateway-release-drain.sh",
+  "swamp/scripts/gateway-release-host-check.py",
+  "swamp/scripts/gateway-release-horizons.py",
+  "swamp/scripts/gateway-release-switch.sh",
+  "swamp/workflows/workflow-production-release-activate.yaml",
+  "swamp/tests/gateway_release_recovery_test.py",
+]
+cases = [
+  "test_host_fallback_refuses_after_the_first_move_even_if_php_fpm_is_healthy",
+  "test_first_move_preserves_stopped_registered_processes",
+  "test_move_cannot_race_an_interrupted_forward_handover",
+  "test_first_move_keeps_host_horizon_when_the_new_queue_cannot_start",
+  "test_ordinary_fpm_release_and_rollback",
+]
+[case_costs]
+"test_host_fallback_refuses_after_the_first_move_even_if_php_fpm_is_healthy" = 14
+"test_first_move_preserves_stopped_registered_processes" = 24
+"test_move_cannot_race_an_interrupted_forward_handover" = 29
+"test_ordinary_fpm_release_and_rollback" = 27
+"test_first_move_keeps_host_horizon_when_the_new_queue_cannot_start" = 10

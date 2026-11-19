@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 271,
+      "pages": [
+        "decisions/0271-run-operations-on-a-gateway-state-machine-over-nats"
+      ]
+    }
+  ]
+}

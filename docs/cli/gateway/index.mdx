@@ -14,6 +14,8 @@ Every command that manages remote resources sends its request to the active Gate
 
 [Instance attachment commands](/cli/instance/database-add), [environment commands](/cli/env), and [`node:role:list`](/cli/node/role-list) check required inputs before they load the active Gateway profile. A missing or invalid selector therefore reports the command family's input error even when no Gateway profile exists. Commands that need a numeric ID use the shared positive-integer check. They may add the stable error code to the human explanation without changing the JSON error envelope.
 
+Use `orbit gateway:release:deploy <serving-full-sha> --reconcile` to reload and verify the serving container’s workflows. Deploy a newer commit to correct an application or migration failure.
+
 ## Commands
 
 | Command | Result |
@@ -26,7 +28,7 @@ Every command that manages remote resources sends its request to the active Gate
 | [`gateway:release:list`](/cli/gateway/release-list) | List the Gateway's release records. |
 | [`gateway:release:show`](/cli/gateway/release-show) | Show one release record and its fleet status. |
 | [`gateway:release:deploy`](/cli/gateway/release-deploy) | Release one commit to the Gateway as one Swamp run and follow it. |
-| [`gateway:release:rollback`](/cli/gateway/release-rollback) | Switch the Gateway back to a retained release and follow it. |
+| [`gateway:release:rollback`](/cli/gateway/release-rollback) | Return to the stopped old release container, or to a retained host worktree. |
 | [`gateway:auto-release:status`](/cli/gateway/auto-release-status) | Show the automatic release state. |
 | [`gateway:auto-release:enable`](/cli/gateway/auto-release-enable) | Turn automatic releases on. |
 | [`gateway:auto-release:disable`](/cli/gateway/auto-release-disable) | Turn automatic releases off. |

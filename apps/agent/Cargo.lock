@@ -1483,6 +1483,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bollard",
+ "ed25519-dalek",
  "flate2",
  "futures-util",
  "git2",
@@ -1494,6 +1495,8 @@ dependencies = [
  "orbit-agent-contract",
  "orbit-ai-router-agent",
  "orbit-documents-agent",
+ "orbit-executor",
+ "orbit-executor-core",
  "rand 0.8.8",
  "regex",
  "reqwest",
@@ -1505,6 +1508,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tar",
+ "tempfile",
  "time",
  "tokio",
  "tokio-tungstenite 0.26.2",
@@ -1555,13 +1559,9 @@ dependencies = [
 name = "orbit-executor"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
- "ed25519-dalek",
  "orbit-executor-core",
  "orbit-executor-power",
- "rustix",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]

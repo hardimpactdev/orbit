@@ -13,6 +13,7 @@ use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
+use App\Infrastructure\Tasks\SwampReaderEnvironment;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -205,6 +206,69 @@ describe('the stdin installer', function (): void {
         expect($code)->toBe(0)
             ->and((string) file_get_contents($path))->toContain("ORBIT_NESTED_FLEET_CLUB_API_KEY=fake-nested-club-key-rotated-99\n")
             ->and(substr_count((string) file_get_contents($path), 'ORBIT_NESTED_FLEET_CLUB_API_KEY='))->toBe(1);
+    });
+
+    it('publishes a rotated key to the mounted directory before the next guest run', function (): void {
+        $host = $this->clubEnvironment;
+        $projection = dirname($host).'/.gateway-release-environment';
+        mkdir($projection, 0700);
+        link($host, $projection.'/gateway.env');
+        $guest = new GatewayReleaseLayout(dirname($host, 2).'/guest/current/apps/gateway');
+        mkdir($guest->sharedPath(), 0700, true);
+        symlink($projection.'/gateway.env', $guest->environmentPath());
+        $reader = new SwampReaderEnvironment($guest, $projection);
+
+        [$code, $output] = installClubKey(FakeNestedClubKey);
+        expect($code)->toBe(0)->and($output)->not->toContain(FakeNestedClubKey);
+        app()->instance(GatewayReleaseLayout::class, $guest);
+        app()->instance(SwampReaderEnvironment::class, $reader);
+        $sent = clubVault();
+        $run = NestedFleetClubKey::forRun(['club_key' => NestedFleetClubKey::intent()]);
+        expect($run['container']['club_key']['available'])->toBeTrue()
+            ->and($sent[0]['payload']['value'])->toBe(FakeNestedClubKey)
+            ->and(scandir($projection))->toBe(['.', '..', 'gateway.env'])
+            ->and(fileperms($projection.'/gateway.env') & 07777)->toBe(0600);
+        [$code] = installClubKey('fake-guest-install-must-fail');
+        expect($code)->toBe(1)->and(is_link($guest->environmentPath()))->toBeTrue()
+            ->and(scandir($guest->sharedPath()))->toBe(['.', '..', 'gateway.env']);
+    });
+
+    it('refuses unsafe projection files, directories and links', function (): void {
+        $host = $this->clubEnvironment;
+        $projection = dirname($host).'/.gateway-release-environment';
+        mkdir($projection, 0700);
+        $guest = new GatewayReleaseLayout(dirname($host, 2).'/guest/current/apps/gateway');
+        mkdir($guest->sharedPath(), 0700, true);
+        $reader = new SwampReaderEnvironment($guest, $projection);
+        symlink($host, $guest->environmentPath());
+        expect(fn () => $reader->contents())->toThrow(RuntimeException::class);
+        unlink($guest->environmentPath());
+        symlink($projection.'/gateway.env', $guest->environmentPath());
+        symlink($host, $projection.'/gateway.env');
+        expect(fn () => $reader->contents())->toThrow(RuntimeException::class);
+        unlink($projection.'/gateway.env');
+        copy($host, $projection.'/gateway.env');
+        chmod($projection.'/gateway.env', 0644);
+        expect(fn () => $reader->contents())->toThrow(RuntimeException::class);
+        chmod($projection.'/gateway.env', 0600);
+        chmod($projection, 0755);
+        expect(fn () => $reader->contents())->toThrow(RuntimeException::class);
+        [$code] = installClubKey(FakeNestedClubKey);
+        expect($code)->toBe(1)->and(file_get_contents($host))->not->toContain(FakeNestedClubKey);
+    });
+
+    it('keeps the previous host settings if the serving projection cannot be replaced', function (): void {
+        $host = $this->clubEnvironment;
+        $original = file_get_contents($host);
+        $projection = dirname($host).'/.gateway-release-environment';
+        mkdir($projection, 0700);
+        mkdir($projection.'/gateway.env', 0700);
+
+        [$code, $output] = installClubKey(FakeNestedClubKey);
+        expect($code)->toBe(1)->and($output)->not->toContain(FakeNestedClubKey)
+            ->and(file_get_contents($host))->toBe($original)
+            ->and(fileperms($host) & 07777)->toBe(0600)
+            ->and(glob(dirname($host).'/.gateway.env.swamp-*'))->toBe([]);
     });
 
     it('refuses an empty, short or multi-word value and changes nothing', function (string $stdin): void {

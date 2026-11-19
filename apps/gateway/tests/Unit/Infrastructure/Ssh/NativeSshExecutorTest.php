@@ -11,7 +11,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshControlGroup;
 
 /** The ssh arguments of one command that runs in the control group the file names. */
-function sshArgumentsIn(string $group, bool $share = true, ?string $home = null): array
+function sshArgumentsIn(string $group, bool $share = true, ?string $home = null, ?string $socketRoot = null): array
 {
     // A short path: the socket directory must leave room for a Unix socket name.
     $home ??= '/tmp/ssh'.bin2hex(random_bytes(4));
@@ -30,16 +30,16 @@ function sshArgumentsIn(string $group, bool $share = true, ?string $home = null)
         }
     };
     $connection = new SshConnection('10.44.0.9', 'orbit', 22, $home.'/key', $home.'/known_hosts', shareConnection: $share);
-    (new NativeSshExecutor($runner, new SshControlGroup($home.'/cgroup')))->execute($connection, new RemoteCommand(['true']));
+    new NativeSshExecutor($runner, new SshControlGroup($home.'/cgroup'), $socketRoot)->execute($connection, new RemoteCommand(['true']));
 
     return $runner->arguments;
 }
 
-it('starts the shared connection of the Node only from PHP-FPM, whose control group outlives every request', function (): void {
-    $arguments = sshArgumentsIn("0::/system.slice/php8.5-fpm.service\n");
+it('starts the shared connection in a long-lived Gateway web service', function (string $service): void {
+    $arguments = sshArgumentsIn("0::/system.slice/{$service}.service\n");
 
     expect($arguments)->toContain('ControlMaster=auto')->and($arguments)->toContain('ControlPersist=60s');
-});
+})->with(['php8.5-fpm', 'orbit-gateway-web']);
 
 it('rides a running master or connects alone where the end of the control group kills a master started there', function (string $group): void {
     $arguments = sshArgumentsIn($group);
@@ -71,8 +71,17 @@ it('gives a command in the Horizon unit its own connection, so no master stays i
     $arguments = sshArgumentsIn("0::/system.slice/orbit-process-154-horizon.service\n");
 
     expect(implode(' ', $arguments))->not->toContain('ControlMaster')->and($arguments)->not->toContain('ControlPersist=60s');
-});
+})->with(['php8.5-fpm', 'orbit-gateway-web']);
 
 it('keeps a connection that asked for no sharing unshared', function (): void {
     expect(implode(' ', sshArgumentsIn("0::/system.slice/php8.5-fpm.service\n", share: false)))->not->toContain('ControlMaster');
+});
+
+it('keeps per-identity control sockets within the release container', function (): void {
+    $root = '/tmp/mux'.bin2hex(random_bytes(4));
+    $controlPath = static fn (array $arguments): string => array_find($arguments, static fn (string $arg): bool => str_starts_with($arg, 'ControlPath='));
+    $first = $controlPath(sshArgumentsIn('0::/system.slice/orbit-gateway-web.service', socketRoot: $root));
+    $other = $controlPath(sshArgumentsIn('0::/system.slice/orbit-gateway-web.service', socketRoot: $root));
+
+    expect($first)->toStartWith('ControlPath='.$root.'/')->and($other)->not->toBe($first);
 });
