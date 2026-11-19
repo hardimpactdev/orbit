@@ -27,6 +27,7 @@ use App\Domain\Nodes\CiRunnerStateFiles;
 use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeBridges;
+use App\Domain\Nodes\NodeConvergeProjection;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeRoleRemovalProjection;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
@@ -990,6 +991,42 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ->and($next->input['targets'])->toBe([$first->id, $later->id])
             ->and($next->triggered_by)->toBe('seed');
     });
+
+    it('admits a seed copy for a CI Node behind the seed when its node:converge passes, and none when the roles phase failed', function (?string $failure): void {
+        $default = proofSeedDefault();
+        seedSwampNode();
+        $node = ciNode();
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        seedListening($node);
+        $sender = app(ProofSeeds::class)->defaultNode()->id ?? null;
+        $phases = [];
+        $failed = false;
+        foreach (['input', 'agent', 'software', 'roles', 'tools', 'network', 'check'] as $name) {
+            $phases[] = ['name' => $name, 'status' => $failed ? 'skipped' : ($name === $failure ? 'failed' : 'succeeded'), 'changed' => 0, 'elapsed_seconds' => $failed ? 0 : 1];
+            $failed = $failed || $name === $failure;
+        }
+        $converge = Operation::query()->create(['kind' => 'node.converge', 'target_type' => 'node_footprint', 'target_id' => $node->id,
+            'node_id' => $node->id, 'status' => 'running', 'lock_key' => 'converge-test', 'state' => ['swamp_run_id' => 'run-id'],
+            'input' => ['_converge' => ['intent' => ['tools' => [], 'roles' => [['role' => RoleName::CiRunner->value,
+                'runtime' => ['proof_seed' => ['present' => true, 'sender' => ['node_id' => $sender]]]]]]]]]);
+
+        app(NodeConvergeProjection::class)->apply($converge, ['run_id' => 'run-id', 'status' => $failure === null ? 'succeeded' : 'failed',
+            'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+            'result' => ['outcome' => $failure === null ? 'succeeded' : 'failed', 'phases' => $phases, 'changed' => 0,
+                'elapsed_seconds' => array_sum(array_column($phases, 'elapsed_seconds')), 'tools' => [], 'browser_trust' => [],
+                'cleanup_complete' => true, 'digests' => [],
+                ...($failure === null ? [] : ['failed_phase' => $failure, 'error_code' => 'operation.native_failed'])]]);
+
+        $copy = Operation::query()->where('kind', ProofSeeds::Kind)->first();
+        if ($failure === 'roles') {
+            expect($copy)->toBeNull();
+
+            return;
+        }
+        // A converge that failed after its roles phase still converged the role: the Node is a target.
+        expect($copy)->not->toBeNull()->and($copy->triggered_by)->toBe('node_converge')
+            ->and($copy->input['targets'])->toBe([$node->id])->and($copy->target_id)->toBe($default->id);
+    })->with(['a passed converge' => [null], 'a failed roles phase' => ['roles'], 'a failure after the roles phase' => ['network']]);
 
     it('refuses a seed copy while a deployment holds the default\'s seed, and admits it when the deployment ends (deployment first)', function (string $end): void {
         $default = proofSeedDefault();
