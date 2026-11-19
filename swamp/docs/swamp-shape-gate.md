@@ -44,7 +44,7 @@ including extension contributions, with `config/gateway-workflow-grants.json`.
 covers every workflow. Only a declared schedule input producer has its own exact
 entry, with `run`, `read` and `write`. A missing wildcard, another exact entry,
 other principals or actions, and duplicate or retired entries fail CI.
-Version 2 also checks each kind's public `execution_copies` declarations against the manifest's `vaults` entries. Each entry names one exact vault, an anchored key pattern, and only `write` plus same-key `read`. Missing, broader, duplicate or retired entries fail. The approved patterns cover positive database intent IDs, Vault-sync and Conn-revoke UUIDv4 keys, and the existing exact bootstrap identity key.
+Version 2 also checks each kind's public `execution_copies` declarations against the manifest's `vaults` entries. Each entry names one exact vault, an anchored key pattern, and only `write` plus same-key `read`. Missing, broader, duplicate or retired entries fail. The approved patterns cover positive database intent IDs, Vault-sync and Conn-revoke UUIDv4 keys and the per-Node observer agent secret.
 
 Update the declaration and expected policy together. The check also runs when
 only this manifest changes; other Swamp-only changes keep their existing scope.
