@@ -779,7 +779,7 @@ Inside a selected Pest job, it reuses the file-level mapping that the repository
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
-| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it |
+| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it. When API reference inputs change, `bin/build-api` runs first, as in CI's Docs job, so the ignored OpenAPI document and MCP manifest of an earlier build never read as stale |
 | `check-flows` | Tooling, docs or API reference inputs changed | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
 | `docs-lint` | Tooling, docs or API reference inputs changed | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
