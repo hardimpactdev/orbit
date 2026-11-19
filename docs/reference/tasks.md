@@ -79,6 +79,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `ended_pr_notice_state` | subtask | `pending` or `delivered` |
 | `vm_power` | task | [VM power](/reference/compute-drivers#vm-power): always `null`, because no task VM exists |
 | `ready_at`, `ended_at`, `merged_at` | task | [Lifecycle times](#lifecycle-times): when the task first entered `todo`, when it ended, and when GitHub merged its pull request |
+| `deployed_at` | task | When the first production deploy that carried the merge commit finished. Null until then, and when Orbit cannot tell. See [Deploy times](#deploy-times) |
 | `tokens`, `line_diff`, `lines_added`, `lines_deleted`, `duration_ms` | both | [Settle metrics](#settle-metrics): distinct-thread tokens, per-subtask usage deltas, recorded whole-branch line counts, and duration |
 
 Clearing the assistance flag can keep the last reason.
@@ -1703,6 +1704,8 @@ Durations and token counts are medians. Shares are between 0 and 1. A number is 
 | `queue_ms` | `ready_at` to `started_at` |
 | `work_ms` | `started_at` to `settled_at`, the subtasks up to settling |
 | `merge_wait_ms` | `settled_at` to `merged_at`: review, fixups, and merge |
+| `delivery_time_ms` | `ready_at` to `deployed_at` of each merged task: the same start as `lead_time_ms`, ending at the [deploy](#deploy-times) instead of the merge |
+| `deploy_wait_ms` | `merged_at` to `deployed_at` |
 | `excluded` | Merged tasks that lack a time that `lead_time_ms` needs |
 | `yield` | `merged` divided by `tasks` |
 | `pr_first_pass` | Merged tasks with no fixup subtask, from a [final review](#review-a-subtask) or from [settling](#settling), divided by `merged` |
@@ -1715,6 +1718,12 @@ Durations and token counts are medians. Shares are between 0 and 1. A number is 
 | `tokens_per_hundred_lines` | The tokens of merged tasks divided by their added and deleted lines, times 100 |
 
 A replaced implementer thread is one whose subtask has a newer implementer thread. Its tokens bought nothing that shipped.
+
+### Deploy times
+
+When a production deploy of a Project succeeds, the Gateway records it first. Then a job on the `tasks` queue compares each merged task of that Project that has no `deployed_at`, merged in the 30 days before the deploy finished, oldest first and at most 200. When GitHub answers that the task's merge commit is the deployed commit or an ancestor of it, the job stamps `deployed_at` with the deploy's finish time. A failed job or GitHub read never fails the deploy; the task stays null, and the next production deploy compares it again.
+
+The merge commit comes from the pull request that set `merged_at`: the watched pull request when the task has one, as [settling](#settling) reads it. Otherwise it is `merged_sha`, and else the merge commit of the published pull request. A rollback and a deploy of a development Instance stamp nothing. A stamp is never moved, so a task keeps the first deploy that carried it.
 
 ### Trend and breakdown
 
@@ -1986,7 +1995,7 @@ JSON reads and the browser stream return the same stored snapshot and use the sa
 
 ### Insights come from recorded times
 
-The insights are computed on each read from the task rows, their threads, comments, checks, and questions. There is no snapshot table to fill or repair, and a fixed definition applies to old and new tasks alike. The fleet holds a few hundred tasks a month, so a read stays small.
+The insights are computed on each read from the task rows, their threads, comments, checks, and questions. There is no snapshot table to fill or repair, and a fixed definition applies to old and new tasks alike. A read selects only the columns it counts from. Whole task and thread rows carry briefs, summaries, and errors: twelve weeks of them outgrew the Gateway web runtime's 128 MB memory limit, and the read failed with `gateway.unhandled`.
 
 A task stores its own lifecycle times. `updated_at` moves on any write, and the Activity log samples reads and keeps no record of a task whose state changed. Without the times, lead time would be a guess.
 
