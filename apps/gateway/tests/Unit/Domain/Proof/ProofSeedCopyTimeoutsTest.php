@@ -14,7 +14,7 @@ it('bounds each push and each target\'s copy step by the numbers that the seed c
     preg_match_all("/\\['timeout', '([0-9]+)', 'incus', /", $playbook, $pushes);
 
     expect($copy['task']['inputs']['run'])->toStartWith('timeout '.ProofSeeds::CopySeconds.' ')
-        ->and($copy['concurrency'])->toBe(1)
+        ->and($copy)->not->toHaveKey('concurrency')
         ->and($pushes[1])->toBe([(string) ProofSeeds::PushSeconds, (string) ProofSeeds::PushSeconds])
         ->and(ProofSeeds::CopySeconds)->toBeGreaterThan(2 * ProofSeeds::PushSeconds);
 });

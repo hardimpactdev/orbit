@@ -3507,14 +3507,14 @@ A seed is the commit and the time that the default took it, because a retake at 
 
 ##### How the seed moves
 
-Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for one target at a time:
+Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for every target side by side:
 
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
 
-The copies to the targets never overlap. Each push of the inner volume takes a snapshot of it on the default's Node. The volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) for that snapshot. A second freeze of a frozen file system fails with `Device or resource busy`. So two copies of one source side by side can fail a target.
+The copies to the targets run side by side, so a run with two incremental targets takes about one push, not the sum. Each push of the inner volume starts with a sync of it on the default's Node: the volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) and thaws it at once, before it sends anything. A freeze while the other push holds its own fails with `Device or resource busy`, as `Failed freezing filesystem`. The copy tries only that push again, up to five times, 2 s apart; the other push thaws within a moment.
 
-The certificate reads and the checks run on the CI Nodes, and they still run side by side. Because the copies run one at a time, the run time grows with the number of targets, and the Gateway captures the run budget from it at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
+The certificate reads and the checks run on the CI Nodes, side by side too. The pushes share the default Node's uplink, so the Gateway still captures a run budget that grows with the number of targets at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
 
 A retake of the default never runs beside a seed copy: both take [the seed hold](#the-seed-hold). A deployment of the default still runs its other steps beside a copy, because the seed hold is not the default's Instance lock.
 
@@ -3533,6 +3533,8 @@ The release step first checks that the default still holds a seed with the name 
 A failed release changes no target's result; the next retake deletes the base. The holder mirrors the default, so its next refresh drops the base there too.
 
 Push mode means that the source server sends the data to the target server, and only the target listens on the network (`incus copy --help` of the installed Incus client). So the default's Node gets no Incus listener and no change to its daemon config. Its only change is a client remote of root, `proof-node-<id>`, for each CI Node. The run adds the remote when it is missing. It reads the CI Node's server certificate on that Node first, and fails the target when the certificate that root's client stored for the remote is not that one.
+
+Root's Incus client keeps all its remotes in one file and rewrites that file without a lock. Two adds side by side both pass, but one remote is lost. So the copies, which run side by side, add their remotes one at a time under a lock file, `flock /run/lock/orbit-proof-seed-remotes.lock`.
 
 Each CI Node gets an Incus listener on its WireGuard address and one restricted trust entry: root's Incus client certificate of the default's Node, limited to the project `orbit-instances-nested`. The `ci-runner` converge adds both ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)), and the Gateway records on the Node which Node the listener trusts. So a seed copy can change only that project on a CI Node, and only from the default's Node.
 
