@@ -647,6 +647,10 @@ case "$action" in
     enter "$prep" install -d -m 0755 /etc/orbit/gateway-web
     enter "$prep" install -o root -g root -m 0644 "$checkout/swamp/ansible/files/gateway-web/Caddyfile" /etc/orbit/gateway-web/Caddyfile
     enter "$prep" install -o root -g root -m 0644 "$checkout/swamp/ansible/files/gateway-web/orbit-gateway-web.service" /etc/systemd/system/orbit-gateway-web.service
+    # Prefix drop-ins reach the web, Horizon, schedule and Gateway Process units, also the Process units added later.
+    for dropin in orbit-gateway-.service.d orbit-process-.service.d; do
+      enter "$prep" install -D -o root -g root -m 0644 "$checkout/swamp/ansible/files/gateway-web/orbit-fleet-proxy.conf" "/etc/systemd/system/$dropin/50-orbit-fleet-proxy.conf"
+    done
     enter "$prep" systemctl daemon-reload
     user "$prep" rm -f -- "$root/.gateway-env-digest"
     cache_config "$prep" >/dev/null

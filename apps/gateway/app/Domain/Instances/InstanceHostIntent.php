@@ -242,7 +242,7 @@ final readonly class InstanceHostIntent
         // (docs/reference/development-containers.md#instance-host-in-the-fleet).
         $parent = $fleetNode ? (InstanceFleetGateway::egressProxy()
             ?? throw new ResourceOperationException('instance.fleet_egress_unavailable', 'The nested Gateway reads no egress proxy from HTTPS_PROXY in '
-                .config()->string('instances.fleet_environment').', so the Instance fleet Node\'s egress proxy would have no way out.', 409)) : null;
+                .InstanceFleetGateway::environmentPath().', so the Instance fleet Node\'s egress proxy would have no way out.', 409)) : null;
 
         return [
             'project' => self::Project, 'network' => self::Network, 'nic_acl' => self::NicAcl, 'pool' => self::Pool, 'cidr' => $cidr,
