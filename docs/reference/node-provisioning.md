@@ -111,7 +111,7 @@ Route withdrawal ships a Node module that reads, merges, tests and applies the R
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. An `app-dev` Node needs a TLD or an active Cluster TLD. A Node with Instances cannot be enrolled again, including for a TLD change.
 
-Admission records a provisioning Node and freezes its public resource plan. Bootstrap identity and the new observer secret enter the execution vault; the workflow receives only their key names. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
+Admission records a provisioning Node and freezes its public resource plan. The new observer secret enters the execution vault; the workflow receives only its key name. Every step logs in with Swamp's own SSH key. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
 
 | Stage | Work |
 | --- | --- |
@@ -175,8 +175,6 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 ### Bootstrap identity
 
 A new Linux machine needs only root SSH access with the Swamp control key: authorize the public key in `ORBIT_SWAMP_SSH_PUBLIC_KEY` for root before `node:add`. The Gateway private key never leaves the Gateway; no execution copy of it goes to Swamp.
-
-An older Gateway release still sends a `bootstrap-identity-node-<id>` reference. The workflow schema and the vault grants accept it, and no step reads it, so that Gateway can enroll a Node until its next release.
 
 Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. Every enrollment step, the first host-key read included, logs in with that control key.
 
