@@ -3,13 +3,13 @@ title: "App-dev runtime hibernation"
 description: "How Orbit stops the Processes of idle development Instances, prunes their dependencies after a long idle period, and wakes them on the next HTTP request."
 covers:
   - apps/gateway/app/{Actions,Domain,Infrastructure}/Hibernation/**
-  - apps/gateway/app/Http/Responses/RuntimeActivationPage.php
+  - apps/gateway/app/Http/Controllers/Api/RuntimeActivationsController.php
   - apps/gateway/config/orbit.php
 ---
 
 # App-dev runtime hibernation
 
-A development Instance often runs Processes, such as Vite, long after anyone uses the site. Orbit stops those Processes after an idle hour. After an idle week, it also deletes the dependency directories that lockfiles can rebuild. The next HTTP request shows a progress page, and Orbit restores and starts everything before it lets the request through. An explicit `process:start` for a Vite development Process marks the Instance awake, including when Vite was already listening; an automatic HTTP wake does not turn that temporary wake into a manual one.
+A development Instance often runs Processes, such as Vite, long after anyone uses the site. Orbit stops those Processes after an idle hour. After an idle week, it also deletes the dependency directories that lockfiles can rebuild. The next HTTP request waits while Orbit restores and starts everything, and then reaches the app. An explicit `process:start` for a Vite development Process marks the Instance awake, including when Vite was already listening; an automatic HTTP wake does not turn that temporary wake into a manual one.
 
 Hibernation settings live under the `hibernation` key of [`config/orbit.php`](https://github.com/hardimpactdev/orbit/blob/main/apps/gateway/config/orbit.php).
 
@@ -24,7 +24,7 @@ Hibernation applies to a Process that meets every condition:
 | Desired state | `running`. Orbit leaves a stopped Process stopped. |
 | `keep_alive` | `false`. |
 
-Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. A container sleeps as a whole, through the same sweep: see [Sleep and wake](/reference/development-containers#sleep-and-wake). Its Route uses the same activation endpoint and pages as below.
+Processes in [Instance containers](/reference/development-containers#processes) are excluded from this Node-level policy. A container sleeps as a whole, through the same sweep: see [Sleep and wake](/reference/development-containers#sleep-and-wake). Its Route uses the same activation endpoint as below.
 
 Restart policy does not matter. This Process policy never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths. Planned: a production Instance's live release container sleeps as a whole by the container rule ([ADR 0265](/decisions/0265-sleep-idle-production-containers)); see [Production containers](/reference/production-containers#sleep-and-wake).
 
@@ -87,23 +87,30 @@ Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It dele
 
 Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.
 
-The Gateway answers with a progress page, status 401, headers `X-Orbit-Runtime-Activation-State: pending` and `Retry-After: 1`, and then starts the wake. Caddy shows the page and does not pass the request on. The page shows only the animated Orbit logo; the Instance's name is the page title. It polls the original path every 250 ms and loads it when the state header is gone. That load is the first application request. `Retry-After` stays one second, the smallest whole value HTTP allows, for a client without the page's script.
+The Gateway holds that request while the Instance wakes. When the wake succeeds, it answers `307` to the same path and query. The browser repeats the request, with the same method and body, and the awake app answers it. The visitor gets the app's own page after one extra round trip ([why a redirect](/reference/executor#the-wake-inside-the-request)). Otherwise the Gateway answers `503` with a short `text/plain` sentence that says what failed. The answer has no HTML, script or automatic reload. A reload sends a new request, which starts a new wake.
 
-A container Instance's site calls the same endpoint behind its asleep marker. With `ORBIT_EXECUTOR_WAKE_ENABLED=false` (the default), the Gateway admits or joins the wake and answers the progress page at once. A frozen container's resume through its Node ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)) starts after that answer. The Node first reads the container's recorded pages back from swap, still frozen, then resumes it ([Prepared restore](/reference/prepared-restore)), and the page's poll loads the app once the marker is gone.
+For a Node-level Process wake, the request runs the wake below and answers when it has ended.
 
-`ORBIT_EXECUTOR_POWER_ENABLED` is off by default. When enabled on the Gateway, Orbit records or joins one `instance.wake` Operation before signing and publishing its `wake` order. If it observes a committed `done` or `partial` wake within `ORBIT_EXECUTOR_WAIT_MS` (default 500 ms), Caddy continues the original request to the app, preserving its method, URI and body. Otherwise the endpoint returns the same 401 progress page and `pending` header. This is a wake budget, not a bound on the whole HTTP exchange.
+A container Instance's site calls the same endpoint behind its asleep marker. The Gateway admits or joins the one `instance.wake` Operation and waits for it up to `ORBIT_VISIT_WAKE_WAIT_SECONDS` (default 30 s). A signed executor wake ends in about 0.4 s. A container frozen by the old Python path resumes through its Node inside the request ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)). The Node first reads the container's recorded pages back from swap, still frozen, then resumes it ([Prepared restore](/reference/prepared-restore)). If that resume fails, the Instance's Swamp wake workflow runs in the same Operation while the visit keeps waiting. Such a wake takes 14–19 s.
 
-An admitted signed Operation tries the SSH relay after 150 ms without WebSocket acceptance. If still missing a terminal result after six seconds, Swamp requests a fresh order for the same Operation and calls the relay. A refusal or deterministic failure does not retry as lost transport. A failed wake shows the existing failure page until Try again. If the writer was too busy to admit a wake, a later poll can admit it. A signed wake does not read the Python wake files or use the Python power helper. See [Signed power delivery](/reference/executor#signed-power-delivery) for handback.
+| Outcome | Answer |
+| --- | --- |
+| The wake reached the app | `200`; Caddy continues the original request |
+| The wake failed | `503` `The wake failed (<error_code>). Reload the page to try again.` |
+| The deadline passed during the wake | `503` `The Instance is still waking. Reload the page in a moment.` |
+| Other lifecycle work held the Instance until the deadline | `503` `The Instance is busy with other work. Try again shortly.` |
+
+While other lifecycle work holds the Instance, the visit tries to admit the wake again every 250 ms. Orbit keeps no memory of a failed wake: a reload admits a new one. The exception is an interrupted wake whose order is unknown ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), R2). Its fence admits no second wake, so every visit gets its failure until an operator verifies the Node.
+
+An admitted signed Operation sends its order once, over the Node's WebSocket. A failed publish or an order that expires without `accepted` fails the wake, and the held visit gets the plain `503`. Nothing retries the order. A signed wake does not read the Python wake files or use the Python power helper. See [Signed power delivery](/reference/executor#signed-power-delivery) for handback.
 
 The Gateway records completion, lifecycle and notice handoffs in SQLite. It queues a newly admitted signed wake's delivery after the response; hooks and notices run in the background. [Wake handoff recovery](/reference/executor#wake-handoff-recovery) covers lost jobs and unfinished deliveries without another visit.
 
-The Gateway's Valkey must run with `hz 100` before this path is enabled. At its default `hz 10`, a 200 ms `BLPOP` timeout measured 297 ms, and a 500 ms timeout measured 504–575 ms. The orchestrator applies this host setting; the Gateway change does not configure Valkey.
+The Gateway's Valkey must run with `hz 100` before the signed path is enabled. At its default `hz 10`, a 200 ms `BLPOP` timeout measured 297 ms, and a 500 ms timeout measured 504–575 ms. The orchestrator applies this host setting; the Gateway change does not configure Valkey.
 
-Planned: a production live gets no progress page. The Gateway still answers at once; then the Node's Caddy holds the visitor's request until the asleep marker is gone, up to 10 s, and proxies it to live ([Production containers](/reference/production-containers#sleep-and-wake)).
+Planned: a production live wakes the same way. The Node's Caddy holds the visitor's request until the asleep marker is gone, up to 10 s, and proxies it to live ([Production containers](/reference/production-containers#sleep-and-wake)).
 
-The restore makes the app's first answer faster. The progress page keeps its 250 ms poll on both wake paths. The page polls the visitor's own path and query: control characters are dropped, and a path that starts with `//` or `/\` becomes `/`.
-
-On the swap-backed T3/Vite clone in the [50-visit proof](/reference/executor#slice-6-proof-case), the executor path served 21 visits in the original request; 29 saw the progress page first and then reached the app. The measurements include Caddy and the poll, not just the Gateway's 500 ms wait.
+On the nested fleet, a visit to an Instance frozen by the old Python path got the app's own page in 2.07 s. A forced failed wake got the plain 503 `The wake failed (instance.container_start_failed). Reload the page to try again.` in 23.9 s.
 
 The wake runs in this order:
 
@@ -116,9 +123,9 @@ Any other Process is ready when its runtime reports running. If the recorded Vit
 
 Orbit checks each Process every 0.5 seconds. A fresh Node agent view answers without SSH. Orbit confirms a `failed` answer, or a timeout, over SSH before the wake fails.
 
-An Instance that [moves into a container](/cli/instance/migrate) is the exception: the move removes its awake marker, and the Gateway starts no wake until the move has ended. Requests get the progress page meanwhile, and the move writes the awake marker itself.
+An Instance that [moves into a container](/cli/instance/migrate) is the exception: the move removes its awake marker, and the Gateway starts no wake until the move has ended. Requests get a plain 503 meanwhile, `Instance [<name>] is moving into a container. Try again when the move has ended.` The move writes the awake marker itself.
 
-Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the failure until an explicit retry. Later requests get a failure page, status 503, with state `failed` and a Try again link. They start no new wake. Try again adds `orbit-wake-retry=1` to the path and starts a new wake; subsequent page polls omit that flag. Unexpected exceptions also produce this failure state without exposing their details.
+Every intercepted request runs the wake. Concurrent requests share one Process lock, so one wake runs at a time. A failed wake keeps the cold marker, and the request gets the plain 503 with the failure's message. An unexpected exception gives `The runtime wake failed. Check the Gateway log before retrying.` without exposing its details. The next request starts a new wake.
 
 ### Check a port saved by an earlier failed wake
 
@@ -173,13 +180,13 @@ All development sites of one PHP version share one master, and each pool already
 
 Enabling development units for boot would start every Instance without a request. So units start only on demand.
 
-### The first response is a page
+### The visit waits for the app
 
-A Node-level Process wake returns the progress page because its Processes are not ready yet. The container executor path returns 200 only after a successful readiness result within the bound; Caddy then continues to the app in the same request.
+The Gateway holds the visit until the wake has ended, so the visitor's first answer is the app's own page. A progress page that polls the app was rejected: it delayed the first app request and needed its own state header, retry flag and failure memory.
 
-### One page for both tiers
+### One answer for both tiers
 
-A soft wake and a cold wake show the same progress and failure pages. Separate pages were rejected, because Caddy owns one intercept contract.
+A soft wake and a cold wake give the same answers. Caddy owns one intercept contract.
 
 ### Keep-alive blocks the prune
 

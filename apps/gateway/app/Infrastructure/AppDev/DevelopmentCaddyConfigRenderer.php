@@ -427,7 +427,7 @@ final readonly class DevelopmentCaddyConfigRenderer
         return ['dial' => "{$host}:{$port}", 'host' => $host, 'method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/'.$instanceId];
     }
 
-    /** A 2xx activation continues the original request; any other response is returned unchanged to the visitor. */
+    /** A 2xx activation continues the original request where the app handlers follow it; any other response, such as the Gateway's 307 after a wake, is returned unchanged to the visitor. */
     private function activation(int $instanceId, string $host, ?string $matcher = null): string
     {
         $uri = $this->activationTarget($instanceId)['uri'] ?? '';

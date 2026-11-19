@@ -12,7 +12,7 @@ covers:
 
 `orbit-executor` runs fast Node actions on orders that the Gateway signs ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor), [ADR 0267](/decisions/0267-run-fast-node-actions-in-a-signed-order-executor)). It is one Rust binary from the `apps/agent` Cargo workspace: the `orbit-executor-core` crate holds the shared parts, and each action family gets its own crate.
 
-> **Signed power stays off by default.** The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) sections record the earlier swap-backed clone measurements. Slice 6 added [the wake inside the request](#the-wake-inside-the-request). Slice 7 adds [signed power delivery](#signed-power-delivery) through the observer, the SSH relay, and Swamp recovery.
+> **Signed power stays off by default.** The [sleep](#rust-sleep-and-discard) and [wake](#rust-wake) sections record the earlier swap-backed clone measurements. Slice 6 added [the wake inside the request](#the-wake-inside-the-request); since 2026-11-19 the visit is held until the wake ends, with no progress page. Slice 7 adds [signed power delivery](#signed-power-delivery) through the observer, with the relay as the local caller of Swamp start, deploy and boot phases.
 
 ## Where it runs
 
@@ -71,6 +71,8 @@ From then on the install is required, and a wrong pin fails the converge:
 
 A new executor build reaches the Nodes only this way: a reviewed commit copies the newer release's `manifest.json` into `apps/gateway/resources/agent/frozen-manifest.json` ([Node agent: Delivery](/reference/node-agent#delivery)). The executor's pin is part of each `app-dev` Node's role input, so the next Gateway release's fleet rollout converges every such Node again and installs the new binary. A release that moves only the executor leaves the agent's own digest unchanged.
 
+The executor that writes the accept record and `journal.accepts` reaches the fleet the same way: the first CLI release built after it merges carries it, and a reviewed commit moves the pin to that release. Until the fleet runs it, a lost result can strand an Operation under its fence ([Signed power delivery](#signed-power-delivery)). The executor restart of that rollout settles each such Operation at the next journal read, with no operator action.
+
 ### Build parity
 
 Every executor Node must run the build that the Gateway pins before `ORBIT_EXECUTOR_WAKE_ENABLED` or `ORBIT_EXECUTOR_POWER_ENABLED` goes on ([ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#must-clear-before-the-signed-power-flags-go-on)). Check it on the Gateway, as `orbit`:
@@ -112,7 +114,7 @@ The first executor guard took the first non-`vars` handler. So it accepted only 
 
 Then it ran signed orders on a real Instance in that layout. Container default Instance 2 (`proofapp.nested-dev`) got its site rendered by the pre-#4020 renderer with Vite on and compiled by Caddy. Both settings were on. With the pinned executor, sleep Operation 211 failed with `instance.sleep_route_unready` over the WebSocket, as on production. With the branch executor, sleep 212 froze the container in 475 ms (`done`, `websocket`).
 
-A visit then woke it through Operation 213 (`done`, `websocket`, 56,065 pages read, none failed). In this older layout the waking visit gets an empty 200, because nothing follows the activation inside `handle @orbit_asleep`. The next request reaches the app. The newer layout continues the waking visit to the app.
+A visit then woke it through Operation 213 (`done`, `websocket`, 56,065 pages read, none failed). In this older layout an activation `200` reached the visitor as an empty page, because nothing follows the activation inside `handle @orbit_asleep`. Production's routes still have this layout, so a woken visit now answers `307` to the same URI in both layouts ([the wake inside the request](#the-wake-inside-the-request)).
 
 The guard does not check where the proxy goes, so the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
 
@@ -262,17 +264,25 @@ Each order runs in its own task outside the observer's supervised tasks, because
 
 ## Journal and recovery
 
-The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. Before an action the executor writes an `open` record, and after it a `done` record. A repeat writes a `seen` record for its nonce.
+The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. The executor writes these records for each order:
+
+| Record | When |
+| --- | --- |
+| `seen` | It accepts the order, before the order waits for its target lock |
+| `open` | Before the action |
+| `done` | After the action. An order that expired while it waited for the lock gets `executor.order_expired` and does not act |
+
+At start the executor creates the marker `journal.accepts` beside the journal; the Gateway reads it to know that a missing record proves the order never arrived. The same read reports when `orbit-executor.service` started its running process. An order that expired before that start never acts under any executor build.
 
 One writer thread appends. Each connection thread hands it a record and waits until the record is written, so the `open` record is on file before the action runs. No record waits for a disk sync: a separate syncer thread syncs the file once a second. The page cache survives an executor crash, and a Node reboot expires every order.
 
 The journal keeps only its live records: the nonces that have not expired, every order still open without a result, and the done records of the last 24 hours. The writer compacts the journal to these records every 10 minutes, or after 10,000 new records, while the executor runs. The syncer writes and syncs the compacted file. The writer then adds the records appended meanwhile and renames the file into place. Until that rename every record goes to the old journal, so a crash at any point leaves a complete journal.
 
-At start-up the executor reads the journal, keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
+At start-up the executor reads the journal and ends every order accepted without an `open` record with `executor.order_expired`: a crash ended its wait for the lock, so it never acted. It keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
 
 ## The relay command
 
-`sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` reads one signed order from stdin, at most 4 KB, hands it to the socket, and copies the reply to stdout, at most 64 KB within 10 s. The Gateway's SSH fallback and Swamp steps use it.
+`sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay` reads one signed order from stdin, at most 4 KB, hands it to the socket, and copies the reply to stdout, at most 64 KB within 10 s. Swamp phases on the Node use it: a start or deploy that resumes or discards a signed freeze, and the boot of a container that a signed wake found stopped. The Gateway never calls it.
 
 ## The listener and the hand-off
 
@@ -318,9 +328,19 @@ Two Pest files in `apps/gateway/tests/Feature/Infrastructure/Executor` test this
 
 `ORBIT_EXECUTOR_WAKE_ENABLED` defaults to `false`. With both this setting and signed power routing off, the activation endpoint and `instance:wake` keep the Python/SSH wake. Either setting selects a signed `wake` order with the Instance id as its target. The Gateway records or joins `instance.wake` under the Instance lock before signing and sends the order through the observer to the Operation's Node.
 
-The visitor uses one monotonic `ORBIT_EXECUTOR_WAIT_MS` budget, default 500 ms, for admission, publishing, waiting, and recording an in-bound success. The Gateway caps SQLite writer waits and Reverb HTTP calls by the remaining budget and checks the recorded receipt between short Valkey waits. A sibling can consume the Valkey copy without losing the result. The visitor only continues if it observes `done` or `partial` and sees the wake committed as succeeded while time remains. System scheduling, Valkey timeout ticks and the rest of the HTTP exchange are not part of a 500 ms response guarantee.
+The Gateway holds the visitor's request while the wake runs. One monotonic budget of `ORBIT_VISIT_WAKE_WAIT_SECONDS`, default 30 s, covers admission, publishing, waiting, and recording the success. The Gateway caps SQLite writer waits and Reverb HTTP calls by the remaining budget and checks the recorded receipt between short Valkey waits. A sibling can consume the Valkey copy without losing the result. `instance:wake` and other callers keep the `ORBIT_EXECUTOR_WAIT_MS` bound, default 500 ms.
 
-Caddy runs `forward_auth` before the app handlers in one ordered route. A 200 continues the original method, URI, query and body; the response is the app's own. Otherwise a slow wake, busy admission, refusal, failure or transport error shows the existing 401 page with `X-Orbit-Runtime-Activation-State: pending`. The page polls until the asleep marker goes. If SQLite could not admit the wake while the writer was busy, a later poll can admit it.
+Caddy returns any non-2xx `forward_auth` answer to the visitor unchanged. When the wake succeeds, the Gateway answers `307` with `Location` set to the visitor's own path and query, from `X-Forwarded-Uri`. The browser repeats the request with the same method and body, and the awake app answers it.
+
+A `200` would continue the request only in the newer layout, where the app handlers follow the activation in one ordered route. Production's published routes keep the activation and the app in separate `handle` blocks, where a `200` ends the request as an empty page. The redirect works in both layouts without a route republish, at the cost of one round trip. The Gateway sends only a path on the visitor's own host: any other forwarded URI redirects to `/`.
+
+A failed or refused result answers at once with `503` and one plain sentence that names the code. So does an Operation that ended without success. An example is `The wake failed (instance.container_start_failed). Reload the page to try again.`
+
+A wake that has not ended within the budget answers `503` with `The Instance is still waking. Reload the page in a moment.` There is no progress page, script or reload; a reload is a new visit that joins or admits the wake. While other lifecycle work holds the Instance, the visit tries the admission again every 250 ms within the budget.
+
+A container that the Python path froze is held too: the Node's resume runs within the visit, and its workflow if that resume fails. Subtask 6003 proved it on the nested fleet with container default Instance 2 (`webtest.nested-dev`), frozen by Python. The visit got the app's own page, `200`, in 2.07 s. With the app's web unit masked, the wake failed, and the visit got the plain `503` `The wake failed (instance.container_start_failed)` in 23.9 s.
+
+Then, with the route replaced by the shape of production's `route-50.json` (separate `handle` blocks), a GET got the `307` in 1.5 s and the app's page on the repeat, and a POST with a body reached the app as a POST after the redirect. A visit while a sleep held the Instance, with a 0.2 s budget, got the plain `503` through that route.
 
 ### Wake handoff recovery
 
@@ -340,13 +360,30 @@ Operation notices are saved with the change and relayed to `operations-prompt` a
 
 ### Signed power delivery
 
-`ORBIT_EXECUTOR_POWER_ENABLED` is off by default. When on, sleep and wake use the existing Instance admissions and Operation kinds. The Gateway sends the signed order on the Node's WebSocket. If the Node has not reported `accepted` after 150 ms, the Gateway tries the same order over the fixed SSH relay. If no terminal result arrives within six seconds, the Gateway starts the native Swamp run for that same Operation.
+`ORBIT_EXECUTOR_POWER_ENABLED` is off by default. When on, sleep and wake use the existing Instance admissions and Operation kinds. The Gateway sends the signed order once, on the Node's WebSocket. That is the only delivery: the Gateway has no SSH fallback and starts no Swamp run for a lost result. The Operation then ends in one of these ways:
 
-Swamp requests a fresh signature for the bound run and sends the order on the relay's stdin. The executor journal prevents another physical action for the same Operation and action. A refusal or deterministic failure is not lost transport. A legitimate stopped container can enter the existing boot flow; a nested default still requires deployment.
+| Case | End |
+| --- | --- |
+| A receipt arrives | The receipt decides ([R1](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#four-rules-for-every-signed-outcome)). |
+| No result by the six-second completion deadline | The Gateway reads the Node's journal for the order, as below. |
 
-Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting recovery result.
+The deadline case covers a publish that threw, an order with no `accepted` line and a lost result. None of them proves what the Node did, so the Gateway reads the Node's executor journal for the order over SSH. The read is read-only and sends no order ([Reconcile by the journal](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor#reconcile-by-the-journal)):
 
-The handoff to Swamp does not make a delivered action cancellable. Recovery allows the Node time to finish the action and read its journal. If the run ends without a terminal executor receipt, the Gateway reports an interruption and keeps the Instance fenced; verify the Node's outcome before clearing that hold. A signing failure before delivery does not need a hold.
+- A `done` record decides like a receipt, through the same completion as a result on time, also after the Operation ended `interrupted`.
+- No record after the order expired on the Node fails the Operation with `executor.publish_failed` or `executor.not_accepted` and frees its lock.
+- A `seen` or `open` record is read again after 1 s, and every 10 s after the first 30 s.
+- A Node that cannot be read ends the Operation `interrupted` with `executor.result_unknown`. It keeps its lock, and the Gateway queues a new read every 10 s. At most one read per Operation waits or runs at a time.
+- A journal that cannot prove absence ends the same way. The order is older than 24 hours, or the executor has no `journal.accepts` marker and started before the order expired.
+- After the executor restarts, as the rollout of a new build does, the next read settles such an Operation.
+- Each read again is its own job on the `operations` queue, with a 2 s connect timeout. One unreachable Node delays neither another Instance's recovery nor a wake's completion.
+
+A visitor's held request sees a failed Operation and gets the plain `503`.
+
+One receipt continues in Swamp: a wake that fails with `instance.container_stopped`. The Operation starts its Swamp wake run, which boots the container; a nested default still requires deployment. The run's phase requests a fresh signature for the bound run and sends the order on the relay's stdin. The executor journal returns the first result for the same Operation and action, so it does not act again.
+
+Admission binds a lifecycle phase to resume or discard before signing. Resume for a deploy or start does not probe the old app and leaves the asleep marker for the workflow to remove. A visitor wake still requires its readiness check. A result already recorded on the Operation takes precedence over a conflicting later result.
+
+A delivered action cannot be cancelled. If the Operation ends without a terminal executor receipt, the Gateway reports an interruption, keeps the Instance fenced and reads the Node's journal again until it answers. Only a signing failure needs no hold: no order left the Gateway.
 
 The signed `power_check` is `route` for a sleep with a published Route, `no_web` for a wake with no web unit, or `resume` for the resume of a deploy or start, whose workflow owns readiness and the marker. Any other pairing of check and action refuses with `bad_payload`. A wake otherwise requires the app to answer. The Gateway derives this choice from the admission; the executor keeps it in the open journal record for crash recovery.
 

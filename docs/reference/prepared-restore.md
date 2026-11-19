@@ -334,7 +334,7 @@ A name carries no path, PID, address or shell text. The worker accepts only stri
 
 On any decline or failure it writes `.failed`, keeps the marker, and never writes a ready or done file it did not earn.
 
-**Gateway.** The Gateway records the Operation under the Instance lock before it writes the request. A visit gets the progress page before any Node call. The Gateway reads the request, `.taken`, the outcome files and the worker template every 25 ms, for at most 6 s, with no first wait. On `.done` with exactly one `.ready-*`, the Operation succeeds from that status, with `ready_at` from that file's time.
+**Gateway.** The Gateway records the Operation under the Instance lock before it writes the request. A visit waits in its request while the Gateway reads the request, `.taken`, the outcome files and the worker template every 25 ms, for at most 6 s, with no first wait. On `.done` with exactly one `.ready-*`, the Operation succeeds from that status, with `ready_at` from that file's time.
 
 On `.failed`, or after 6 s, the Gateway removes a request that is still there, and the same Operation starts its run. The run takes the same lock, so it waits for a worker that is still active. It then finds the state the Node reached and continues from there; it reads this Operation's outcome files and reports their facts. The safety net of 15 s stays. A cancelled or finished Operation is never overwritten by a late outcome.
 
@@ -397,7 +397,7 @@ The proof runs the installed helper on a Node that the `app-dev` role converged.
 - helper restart, 30-minute and overnight idle, and 2 and 4 concurrent wakes;
 - missing capability, missing plan and an exhausted bound.
 
-It reports median, p95, min, max, sample count and failures, and it keeps every failure. Before each timed wake it checks that anonymous and file memory are 0. The proof publishes two timing sets: the Node's restore, resume and real app response; and the full HTTPS path through Caddy, Gateway, Operation, Node and the progress page. It names which part of the remaining delay belongs to activation delivery: the progress page, its 250 ms poll and the Gateway's trigger and observation calls.
+It reports median, p95, min, max, sample count and failures, and it keeps every failure. Before each timed wake it checks that anonymous and file memory are 0. The proof publishes two timing sets: the Node's restore, resume and real app response; and the full HTTPS path through Caddy, Gateway, Operation and Node, in the held visit. It names which part of the remaining delay belongs to activation delivery: the Gateway's trigger and observation calls.
 
 The release gates apply to a reference fixture like the spike's: 18 processes and 300–500 MiB recorded.
 

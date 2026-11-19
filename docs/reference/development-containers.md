@@ -1692,7 +1692,7 @@ A sleep opens swap (`max`) for every cgroup of the container's subtree that hold
 
 One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
-> **Default-off signed engine.** [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) routes power through a Rust executor on the Node. With [signed power delivery](/reference/executor#signed-power-delivery) enabled, the Gateway signs orders, and the observer and SSH relay deliver them. The Python helper and fast wake files below remain the disabled-mode path.
+> **Default-off signed engine.** [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) routes power through a Rust executor on the Node. With [signed power delivery](/reference/executor#signed-power-delivery) enabled, the Gateway signs orders and the observer delivers them. Swamp start, deploy and boot phases hand theirs to the executor through the relay command on the Node. The Python helper and fast wake files below remain the disabled-mode path.
 
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers that have no swap size: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
@@ -1740,13 +1740,13 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | Sleep after an idle hour | Built; off until the operator turns it on. See below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
 | The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
-| With executor wakes off, a visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
+| A visit to a frozen container waits while the Instance wakes, then gets the app's own page | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
 | The wake reads the pages that were resident at the freeze back from swap before it resumes | In progress ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)); off for nested-fleet Instances. See [Prepared restore](/reference/prepared-restore) |
 | A long freeze becomes a stop | Planned |
 | A production live sleeps and wakes; Caddy holds its visitor | Planned with production containers ([ADR 0265](/decisions/0265-sleep-idle-production-containers)). See [Production containers](/reference/production-containers#sleep-and-wake) |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
-The Gateway setting `ORBIT_EXECUTOR_POWER_ENABLED`, off by default, selects signed sleep and wake. A successful wake within `ORBIT_EXECUTOR_WAIT_MS` (500 ms by default) lets Caddy pass the original request straight to the app. Otherwise the visitor gets the existing waiting page while the same Operation continues. The Gateway tries the SSH relay after 150 ms without acceptance. Swamp recovers an Operation without a terminal result after six seconds. A frozen Instance keeps the engine that froze it, even after a setting change.
+The Gateway setting `ORBIT_EXECUTOR_POWER_ENABLED`, off by default, selects signed sleep and wake. On either engine, the Gateway holds a visit while the wake runs, up to `ORBIT_VISIT_WAKE_WAIT_SECONDS` (30 s by default); [Wake](/reference/app-dev-runtime-hibernation#wake) lists the answers. The Gateway sends the order only over the Node's WebSocket. With no `accepted` line by the six-second deadline, the order has expired and the Operation fails with `executor.not_accepted`; an accepted order with no result ends `interrupted` with `executor.result_unknown` ([Signed power delivery](/reference/executor#signed-power-delivery)). A frozen Instance keeps the engine that froze it, even after a setting change.
 
 **The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development container to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. A clone, a default and a nested-fleet Instance follow the same rule; no list of names or ids exempts one. `ORBIT_HIBERNATION_CONTAINER_SLEEP` chooses which Instances it acts on:
 
@@ -1804,11 +1804,11 @@ Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-swe
 A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker write nothing: such a request starts a wake, and the wake counts by itself. A Route's TLS probe makes no request. An open browser tab keeps the clone awake while it sends requests; that is intended. Caddy logs a WebSocket, such as Vite's HMR socket, only when it closes, so an open tab that sends nothing else lets the clone sleep. An uptime check without the probe header keeps it awake too.
 
 
-**The Route while asleep.** The Node's Caddy site of a container Instance checks for the asleep marker, `/data/caddy/orbit/hibernation/app-instance-<id>.asleep`. Without it, Caddy serves the request as before; the check is a file test on the Node and calls nothing. With it, Caddy calls the [runtime activation endpoint](/reference/app-dev-runtime-hibernation#wake), which shows the same progress page as for a checkout Instance and starts or joins the Instance's one `instance.wake`. A request with `X-Orbit-Probe: 1` skips the check. A failed wake keeps the marker, and the Route shows the failure page with Try again.
+**The Route while asleep.** The Node's Caddy site of a container Instance checks for the asleep marker, `/data/caddy/orbit/hibernation/app-instance-<id>.asleep`. Without it, Caddy serves the request as before; the check is a file test on the Node and calls nothing. With it, Caddy calls the [runtime activation endpoint](/reference/app-dev-runtime-hibernation#wake), which holds the request while it starts or joins the Instance's one `instance.wake`, as for a checkout Instance. A request with `X-Orbit-Probe: 1` skips the check. A failed wake keeps the marker, and the visit gets a plain-text `503` that names the failure.
 
 The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen state, but not the marker. A sleep writes the marker before it freezes the container.
 
-**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it, it is not a nested-fleet Instance, and its Node's role installed the fast wake's worker template `orbit-instance-wake@.service`, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request named after the Instance and the Operation, `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
+**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it, it is not a nested-fleet Instance, and its Node's role installed the fast wake's worker template `orbit-instance-wake@.service`, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit, within the call that admitted the wake, it writes a wake request named after the Instance and the Operation, `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
 
 The `app-dev` role installs the Node's part: the power helper, a path unit that watches the request folder, and the worker template `orbit-instance-wake@<id>-<opid>.service`.
 
@@ -1816,11 +1816,11 @@ The worker restores the recorded pages and resumes the container through the hel
 
 The Gateway reads the request and the outcome files with the agent's `hibernation.times`, every 25 ms within 6 seconds of the request. When the outcome shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds`, `confirm_seconds`, `ready_at` and `prepared_restore.status`.
 
-The `instance:wake` command waits for this, and a command that joins the wake waits for it too, up to the bound. A visitor never waits for it: Caddy's activation call admits the wake and gets the waiting page at once, and the Gateway writes the request after that answer went. The page polls the visitor's path every 250 ms and loads the app once the marker is gone.
+The `instance:wake` command and a visit both wait for this, up to the bound, and a command or visit that joins the wake waits for it too. A visit gets the app in the same request once the Operation has succeeded.
 
-A request that arrives while the resume runs joins the wake and gets the waiting page at once. A wake cancelled before the Gateway writes the request gets no request.
+A request that arrives while the resume runs joins the wake and waits with it. A wake cancelled before the Gateway writes the request gets no request.
 
-Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node whose role has not installed the worker template (the first read asks for it, and such a Node is skipped for 10 minutes), a worker that declined or failed, a failed agent call, and the bound. The Gateway then removes a request still there.
+Anything else starts the run below, in the same Operation, and a held visit keeps waiting for that run, up to its 30 s deadline. Such a wake takes 14–19 s. That covers a Node whose role has not installed the worker template (the first read asks for it, and such a Node is skipped for 10 minutes), a worker that declined or failed, a failed agent call, and the bound. The Gateway then removes a request still there.
 
 The worker ignores a request older than one second, so a request left behind never wakes the Instance later.
 
@@ -1847,13 +1847,13 @@ The result also gives `resume_seconds` and `web_probe_seconds` for a resume, and
 
 A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
 
-A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, so the visitor does not wait, each wake runs one check in the container: when `ldconfig -p` does not list a soname of `/opt/orbit-runtime/current/lib` at that path, it runs `ldconfig -X`.
+A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, each wake runs one check in the container: when `ldconfig -p` does not list a soname of `/opt/orbit-runtime/current/lib` at that path, it runs `ldconfig -X`.
 
 That is the converge's own rule: only names such as `libasound.so.2` count, not the file `libasound.so.2.0.0`, which the cache never lists. The run does it after its marker removal; the Node's wake script does it after every pending request. A failed check fails nothing, and each rebuild is logged ("rebuilt" in the run's output, "library cache rebuilt" in the journal).
 
 A second check follows for the same reason. The converge keeps each container's Orbit root CA file current through the Incus file API, frozen containers included, but only a command in the container rebuilds the bundle. When `/etc/ssl/certs/ca-certificates.crt` lacks the root that `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` holds, the wake runs `update-ca-certificates`. A container without that file skips the check. It is logged as "refreshed" in the run's output and "CA bundle refreshed" in the journal, and it never fails the wake.
 
-Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
+Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none. T3 gates the end of the Operation, so a held visit waits for it too. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves, and the visit still gets the app. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the visit gets the plain `503` with the failure.
 
 A destroy removes the marker, and the helper's `discard` removes the plan, the limits record and the fast wake's files after any helper call still at work has ended. It also removes the executor's plan, limits record and receipt under `/var/lib/orbit/executor/power`. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
@@ -1881,7 +1881,7 @@ Before downtime, migration resolves the [deploy credential](/reference/github-ap
 
 [`orbit instance:migrate INSTANCE`](/cli/instance/migrate) moves one existing checkout Instance into a container on its Node, with its code. A linked worktree can move first while its owner remains an active host checkout on the same Node. Migration starts from the stock image and copies its own workspace; it consumes no default seed. The owner moves after its last dependent leaves. The command is temporary: [Old paths](/reference/old-paths) lists it until the last checkout Instance has moved.
 
-- **Stop.** Orbit removes the Instance's awake marker, and its Route shows the wake page. The Gateway starts no wake during the move.
+- **Stop.** Orbit removes the Instance's awake marker. The Gateway starts no wake during the move, so a visit gets a plain `503` that says the move runs.
 - **Repository.** Orbit builds a standalone repository in the container; the checkout's `.git` is never copied.
 - **Branch.** The Node's mirror fetches the Instance's branch from the checkout, and Orbit pushes it in.
 - **Files.** Orbit copies the changed, untracked and ignored files, never the checkout's `.git`. It then removes the caches built at the old path ([rule](/cli/instance/migrate)).
