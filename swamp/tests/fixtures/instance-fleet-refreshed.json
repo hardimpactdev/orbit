@@ -6,7 +6,7 @@
       "files": {
         "/etc/wireguard/wg-nested.key": "operator-private-key",
         "/run/orbit-club/swamp-club-api-key": "club-key-value-that-never-leaves-the-file",
-        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"7f16209267853b0c9193b354a27036f27405a9e0ef23dfec07d1e19fa2cfcdfe\",\"converge_app_prod\":\"a343dd2407b0dfc3978071b87c1393da8ec1e7e0b26a2fba9cbbc8703f815027\",\"converge_gateway\":\"e62e71e9d2092f19b8c436a81ed6f5c338bbe1dcf5b63875e3276b4ecc899ce0\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"host\":\"29f51c8241529f270a13511ddadf75ac3ecdfa25ffa281ac2ed9b9f7ac1da8ff\",\"rules\":\"5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1\",\"tokens\":\"@TOKENS@\"}"
+        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"7f16209267853b0c9193b354a27036f27405a9e0ef23dfec07d1e19fa2cfcdfe\",\"converge_app_prod\":\"a343dd2407b0dfc3978071b87c1393da8ec1e7e0b26a2fba9cbbc8703f815027\",\"converge_gateway\":\"e62e71e9d2092f19b8c436a81ed6f5c338bbe1dcf5b63875e3276b4ecc899ce0\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"host\":\"da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c\",\"rules\":\"5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1\",\"tokens\":\"@TOKENS@\"}"
       },
       "modes": {
         "/var/lib/orbit/fleet-refresh.json": "root:root 0644"
@@ -470,7 +470,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
-      "host": "29f51c8241529f270a13511ddadf75ac3ecdfa25ffa281ac2ed9b9f7ac1da8ff",
+      "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
       "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
       "tokens": "@TOKENS@"
     },
@@ -483,7 +483,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "3e570ac3341366ec573092da6c3c9c1ee0b9e120a4f2cfb9076a9b7947379dd2",
-      "host": "29f51c8241529f270a13511ddadf75ac3ecdfa25ffa281ac2ed9b9f7ac1da8ff",
+      "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
       "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
       "tokens": "@TOKENS@"
     },
@@ -496,7 +496,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
-      "host": "29f51c8241529f270a13511ddadf75ac3ecdfa25ffa281ac2ed9b9f7ac1da8ff",
+      "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
       "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
       "tokens": "@TOKENS@"
     },
@@ -509,7 +509,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
-      "host": "29f51c8241529f270a13511ddadf75ac3ecdfa25ffa281ac2ed9b9f7ac1da8ff",
+      "host": "da165d5ea0a0ac475aa8949c0c4210c244a75aab5427abad9f7b18c216ae082c",
       "rules": "5daf0fbd6f5e4d0924d6d7b3d44bd895cbf121892af23cc41d5a0f703da524f1",
       "tokens": "@TOKENS@"
     }

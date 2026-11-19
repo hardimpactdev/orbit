@@ -28,6 +28,14 @@ export const entries: Record<Phase, string[]> = {
     network: ["operation-node-converge.yml"],
 };
 
+/** The tags every node.converge runs besides its skippable phases: `input` writes the run folder and `check` proves the result. Each
+ * loads its own files from the converge playbook; neither skips, so neither has a phase digest. The Instance host's code reads them
+ * (host_code.ts). */
+export const unskipped = { input: ["operation-node-converge.yml"], check: ["operation-node-converge.yml"] } as const;
+export type Tag = Phase | keyof typeof unskipped;
+const tags = [...phases, ...Object.keys(unskipped)] as Tag[];
+const entriesOf = (tag: Tag): readonly string[] => tag in unskipped ? unskipped[tag as keyof typeof unskipped] : entries[tag as Phase];
+
 /** Read by every phase: the configuration Ansible loads, the playbooks it parses whole, and the role materializer that writes each role's
  * variables. Each phase also follows the names in the shared files. */
 export const shared = ["ansible.cfg", "build_vars.py", ...new Set(Object.values(entries).flat())];
@@ -270,7 +278,7 @@ function taskUnresolved(file: string, node: unknown): string | null {
 
 type Task = Record<string, unknown>;
 const tagsOf = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : typeof value === "string" ? value.split(",").map((tag) => tag.trim()) : [];
-const selects = (tags: string[], phase: Phase) => tags.includes(phase) || tags.includes("always");
+const selects = (tags: string[], phase: Tag) => tags.includes(phase) || tags.includes("always");
 
 /** Every tag a task file names, in any `tags` key, including an include's `apply`. A file that does not parse names every tag. */
 function tagsIn(text: string): string[] {
@@ -293,7 +301,7 @@ function tagsIn(text: string): string[] {
 }
 
 /** The YAML text of each task `--tags <phase>` selects in a playbook, and of the play keys every phase parses. */
-function playbookRoots(text: string, phase: Phase): string[] {
+function playbookRoots(text: string, phase: Tag): string[] {
     const plays = parse(text) as Task[];
     if (!Array.isArray(plays)) throw new Error("is no playbook");
     const roots: string[] = [];
@@ -317,6 +325,12 @@ function playbookRoots(text: string, phase: Phase): string[] {
 
 /** Each phase's files, relative to the bundle root, or the whole bundle with the reason. */
 export async function resolvePhases(root: string): Promise<Record<Phase, Resolution>> {
+    const resolved = await resolveTags(root);
+    return Object.fromEntries(phases.map((phase) => [phase, resolved[phase]])) as Record<Phase, Resolution>;
+}
+
+/** The files of each tag a node.converge runs: its skippable phases and the unskipped tags, resolved as a phase is. */
+export async function resolveTags(root: string): Promise<Record<Tag, Resolution>> {
     const { files, texts, byPath, byStem, byDir } = await bundle(root);
     const text = (file: string) => texts.get(file) ?? "";
     // The files the playbooks import statically. Ansible parses each of them for every phase, so a task tagged there runs in that phase.
@@ -331,8 +345,8 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
             if (target) pending.push(target);
         }
     }
-    const reach = {} as Record<Phase, { reached: Set<string>; reason: string | null; outside: string[] }>;
-    for (const phase of phases) {
+    const reach = {} as Record<Tag, { reached: Set<string>; reason: string | null; outside: string[] }>;
+    for (const phase of tags) {
         const reached = new Set<string>(shared);
         const queue: string[] = [];
         const via = new Map<string, string>();
@@ -343,7 +357,7 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
         // A playbook's tasks of other phases are not followed; its play keys and selected tasks are.
         queue.push(...shared.filter((file) => !file.endsWith(".yml")));
         let reason: string | null = null;
-        for (const entry of entries[phase]) {
+        for (const entry of entriesOf(phase)) {
             try {
                 // A selected task or play key of an entry playbook is checked as a task file is.
                 for (const root of playbookRoots(text(entry), phase)) {
@@ -356,7 +370,7 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
             }
         }
         for (const file of statics) {
-            if (entries[phase].includes(file)) continue;
+            if (entriesOf(phase).includes(file)) continue;
             if (tagsIn(text(file)).some((tag) => tag === phase || tag === "always")) visit([file], "static import");
         }
         // The walk goes on after a reason, so the files no phase names are known whatever falls back.
@@ -371,8 +385,8 @@ export async function resolvePhases(root: string): Promise<Record<Phase, Resolut
     }
     const classes = classOf(files, texts, byPath, byStem, byDir, reach);
     const everyPhase = [...classes.b, ...classes.d].sort();
-    const result = {} as Record<Phase, Resolution>;
-    for (const phase of phases) {
+    const result = {} as Record<Tag, Resolution>;
+    for (const phase of tags) {
         const { reached, reason, outside } = reach[phase];
         result[phase] = reason ? { files: null, whole: true, reason, everyPhase, outside }
             : { files: [...new Set([...reached, ...everyPhase])].filter((file) => texts.has(file)).sort(), whole: false, everyPhase, outside };

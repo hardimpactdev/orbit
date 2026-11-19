@@ -24,12 +24,14 @@ cases = [
   "the files the phases name above the shipped bundle are the staged role siblings",
   "a staged sibling that no phase names moves every phase digest",
   "a file named above the bundle that cannot be read gives its phase a digest that always moves, and says why",
+  "the Instance host's code moves with a file the converge's check tag loads, but not with an outer Instance-container play",
 ]
 file = "swamp/tests/phase_code_test.ts"
 cost = 4
 inputs = [
   "swamp/ansible/**",
   "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/host_code.ts",
   "swamp/extensions/behaviors/operations/ansible-input/phase_code.ts",
   "swamp/tests/phase_code_fixture.ts",
 ]

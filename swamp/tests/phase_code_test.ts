@@ -2,6 +2,7 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { fileURLToPath } from "node:url";
 import { phaseCodeDigests, roleSiblings } from "../extensions/behaviors/operations/ansible-input/converge_input.ts";
 import { classify, named, outsideNames, phases, type Resolution, resolvePhases, shared, unresolved } from "../extensions/behaviors/operations/ansible-input/phase_code.ts";
+import { hostCode } from "../extensions/behaviors/operations/ansible-input/host_code.ts";
 import { codeTree } from "./phase_code_fixture.ts";
 
 const shipped = fileURLToPath(new URL("../ansible", import.meta.url));
@@ -408,4 +409,33 @@ Deno.test("a file named above the bundle that cannot be read gives its phase a d
         assertEquals(outsideNames("tasks/a.yml", "- ansible.builtin.copy: { src: ../../scripts/x, dest: /x }\n"), ["../scripts/x"]);
         assertEquals(outsideNames("tasks/a.yml", "- ansible.builtin.copy: { src: ../files/x, dest: /x }\n"), []);
     } finally { await Deno.remove(tree, { recursive: true }); }
+});
+
+// docs/reference/development-containers.md#instance-host-in-the-fleet
+Deno.test("the Instance host's code moves with a file the converge's check tag loads, but not with an outer Instance-container play", async () => {
+    // A copy of the shipped tree that host_code.ts reads: `swamp/` and the machine-software recipe.
+    const repo = fileURLToPath(new URL("../../", import.meta.url));
+    const tree = await Deno.makeTempDir();
+    const copy = async (from: string, to: string): Promise<void> => {
+        await Deno.mkdir(to, { recursive: true });
+        for await (const entry of Deno.readDir(from)) {
+            if (entry.isDirectory && entry.name !== "__pycache__") await copy(`${from}/${entry.name}`, `${to}/${entry.name}`);
+            else if (entry.isFile) await Deno.copyFile(`${from}/${entry.name}`, `${to}/${entry.name}`);
+        }
+    };
+    try {
+        for (const folder of ["swamp/ansible", "swamp/scripts", "swamp/extensions/behaviors/operations", "apps/gateway/resources/machine-software"]) {
+            await copy(`${repo}${folder}`, `${tree}/${folder}`);
+        }
+        const before = await hostCode(tree);
+        const append = (path: string) => Deno.writeTextFile(`${tree}/swamp/ansible/${path}`, "# A comment.\n", { append: true });
+        // Another Operation's playbook (class c): the host stays.
+        await append("instance-container-power.yml");
+        assertEquals(await hostCode(tree), before);
+        // node.converge runs `--tags check` after its phases; it loads the role check of every selected role, app-dev's too.
+        await append("tasks/node-converge-role-check.yml");
+        assertEquals((await hostCode(tree)) === before, false);
+    } finally {
+        await Deno.remove(tree, { recursive: true });
+    }
 });
