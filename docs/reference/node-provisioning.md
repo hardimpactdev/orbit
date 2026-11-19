@@ -662,7 +662,8 @@ A few inputs belong to one `node.converge` phase only, and the other phases leav
 The roles phase reads an Instance host's per-Instance lists (the `app-dev` or `ci-runner` role's `instances`) without the Instances themselves, because Instances come and go between any two converges:
 
 - `machine_names`, each container's presented name, is left out. The clone script, the container phase and every start write a container's name files themselves.
-- `t3_files` counts as its distinct server programs and drop-ins. Every container that runs the same server gets the same drop-ins, so a new or removed Instance does not move the digest, and a changed drop-in does.
+- `t3_files` counts as its distinct server programs and drop-ins. Every container that runs the same server gets the same drop-ins.
+- So a new or removed Instance does not move the roles digest. A changed drop-in still moves it.
 
 The roles phase still gets both lists whole when it runs.
 
