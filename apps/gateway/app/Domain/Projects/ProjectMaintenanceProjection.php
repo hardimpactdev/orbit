@@ -248,12 +248,14 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
                 try {
                     UpdateTaskGroupAction::leavesBacklog($group->tasks()->get());
                 } catch (ResourceOperationException $exception) {
-                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: self::BacklogRefusal.$exception->errorCode.'. '.$exception->getMessage());
+                    // A later refusal replaces an earlier one with its current instruction; any other request stays.
+                    TaskAssistance::apply($group, AssistanceKind::Failure, reason: self::BacklogRefusal.$exception->errorCode.'. '.$exception->getMessage(),
+                        replaceFailure: self::backlogRefused($group));
 
                     continue;
                 }
                 // A later run admits the task once a person fixed its shape: only that refusal clears, any other request stays.
-                if ($group->assistance_kind === AssistanceKind::Failure && str_starts_with((string) $group->assistance_reason, self::BacklogRefusal)) {
+                if (self::backlogRefused($group)) {
                     TaskAssistance::apply($group);
                 }
                 $group->update(['maintenance' => [...$maintenance, 'stage' => 'provision'], 'status' => TaskGroupStatus::Todo]);
@@ -264,6 +266,13 @@ final readonly class ProjectMaintenanceProjection implements DirectOperationProj
         }
 
         return [...$result, 'admitted_group_ids' => $admitted];
+    }
+
+    /** Whether the task's request is the refusal of a maintenance task in backlog, the one request a maintenance run may replace or clear. */
+    private static function backlogRefused(Task $group): bool
+    {
+        return $group->assistance_requested && $group->assistance_kind === AssistanceKind::Failure
+            && str_starts_with((string) $group->assistance_reason, self::BacklogRefusal);
     }
 
     private function startProvision(Task $group): void

@@ -10,7 +10,9 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectMaintenanceProjection;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\DeliverablePathRepository;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -449,4 +451,28 @@ it('admits a refused maintenance task once its subtask is folded into it, and cl
         ->and($group->assistance_requested)->toBeFalse()
         ->and($group->assistance_reason)->toBeNull()
         ->and(Operation::query()->find($group->maintenance['operation_id'] ?? null)?->kind)->toBe('instance.create');
+});
+
+// Each run refuses with the current shape's instruction; a request that is not this refusal stays as it is.
+it('refreshes a maintenance refusal with the current error on each run, and keeps any other request', function (): void {
+    $project = maintenanceSolo();
+    maintenanceRoutine($project, ['tasks' => [['title' => 'Update', 'brief' => 'Update.', 'deliverables' => maintenanceDeliverables()]]]);
+    $group = Task::topLevel()->where('project_id', $project->id)->sole();
+    expect($group->assistance_reason)->toStartWith('Maintenance task refused in backlog: tasks.one_subtask. ');
+
+    Task::query()->where('parent_id', $group->id)->delete();
+    maintenanceRoutine($project, ['deliverables' => maintenanceDeliverables()]);
+    expect($group->refresh()->assistance_reason)->toStartWith('Maintenance task refused in backlog: tasks.no_subtasks. ');
+
+    foreach ([1, 2] as $position) {
+        Task::query()->create(['parent_id' => $group->id, 'position' => $position, 'title' => 'Part '.$position, 'brief' => 'Part.',
+            'deliverables' => $position === 1 ? maintenanceDeliverables() : [], 'status' => TaskStatus::Todo]);
+    }
+    maintenanceRoutine($project, ['deliverables' => maintenanceDeliverables()]);
+    expect($group->refresh()->assistance_reason)->toStartWith('Maintenance task refused in backlog: tasks.subtask_deliverables_missing. ');
+
+    TaskAssistance::apply($group->refresh(), AssistanceKind::Failure, reason: 'Another failure.', replaceFailure: true);
+    maintenanceRoutine($project, ['deliverables' => maintenanceDeliverables()]);
+    expect($group->refresh()->assistance_reason)->toBe('Another failure.')
+        ->and($group->status->value)->toBe('backlog');
 });
