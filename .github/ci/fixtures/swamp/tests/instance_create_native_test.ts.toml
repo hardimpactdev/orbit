@@ -10,7 +10,7 @@ cases = [
   "pinned create: a merge a Node refused leaves the create ready and the address deferred to the completion, with no Route warning",
   "pinned create: a cancel while clone-route runs withdraws the half Route and stops the container",
   "pinned create: a later clone step that fails after the Route published fails the run, keeps the published address and stops the container",
-  "a clone waits for its admitted seed by curl's own retry, at most 120 s, and the copy runs after the wait in every case",
+  "a clone has no seed-wait step: the copy step waits for its seed itself, only during a retake",
 ]
 file = "swamp/tests/instance_create_native_test.ts"
 self_hosted = true

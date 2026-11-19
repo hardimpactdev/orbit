@@ -2,7 +2,7 @@ cases = [
   "every workflow job orders its steps the same under both level rules",
   "the model sees the level throttle: two steps beside a forEach with concurrency 1 run one at a time only under db3f6373",
   "a forEach without concurrency in a throttled level runs one item at a time only under db3f6373",
-  "seed copy: the copies of one source run one target at a time under both engines; the certificates and checks side by side",
+  "seed copy: the copies, the certificates and the checks run their targets side by side under both engines",
   "the workflow simulator reads `not(failed)` as the engine does: a restore without servers republishes, a failed check does not",
   "an empty list moves its dependents up a level: the rules are compared in that shape too",
 ]

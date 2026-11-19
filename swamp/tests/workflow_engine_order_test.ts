@@ -46,11 +46,11 @@ Deno.test("a forEach without concurrency in a throttled level runs one item at a
     assertEquals(engineDifferences(job), []);
 });
 
-Deno.test("seed copy: the copies of one source run one target at a time under both engines; the certificates and checks side by side", () => {
+Deno.test("seed copy: the copies, the certificates and the checks run their targets side by side under both engines", () => {
     const [job] = jobsOf("workflow-operation-instance-seed-copy.yaml");
     for (const rule of ["level", "step"] as const) {
         const { serialIterations } = order(job, rule);
-        assertEquals(["Read its Incus certificate", "Copy the seed", "Check the holder"].map((step) => serialIterations.has(step)), [false, true, false], rule);
+        assertEquals(["Read its Incus certificate", "Copy the seed", "Check the holder"].map((step) => serialIterations.has(step)), [false, false, false], rule);
     }
 });
 

@@ -8,7 +8,7 @@ cases = [
   "metrics exporter: with no files the units reload after the downloads and folders, not before them",
   "destroy: with no Processes, a failed Route release still keeps the teardown steps from running; they run after the release, one at a time",
   "harness: items of a forEach without a limit overlap, so a one-at-a-time check can fail",
-  "seed copy: the copies of two targets never overlap; they run after both certificates and before both checks",
+  "seed copy: the copies of two targets overlap; they run after both certificates and before both checks",
   "firewall: one planned change runs, the others are skipped by their guard, then the result is read and checked",
   "task-check-ci: a tick without a pending check runs only its collect step",
 ]

@@ -23,6 +23,8 @@ cases = [
   "test_unreachable_frozen_commit_fails_without_using_current_tip",
   "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy",
   "test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved",
+  "test_a_seed_wait_that_outlives_its_bound_still_reads_the_snapshots_and_decides_each_case",
+  "test_a_restart_of_incus_before_the_copy_waits_for_the_api_within_the_bound",
   "test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit",
   "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing",
   "test_a_sleeping_default_needs_no_wake_to_read_its_idmap_and_copy_its_snapshot",
@@ -33,6 +35,8 @@ cases = [
   "test_the_container_phase_prints_the_seconds_of_each_part",
   "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
   "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last",
+  "test_t3_files_go_in_beside_the_boot_files_and_before_the_proxy_drop_ins",
+  "test_the_branch_is_read_on_the_node_beside_the_start",
   "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line",
   "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start",
   "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files",
@@ -204,10 +208,10 @@ inputs = [
   "test_a_copy_without_its_private_text_fails_before_any_command" = 1
   "test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start" = 2
   "test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone" = 2
-  "test_a_copy_without_home_agent_gets_no_nss_store" = 2
-  "test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write" = 2
-  "test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create" = 2
-  "test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure" = 2
+  "test_a_copy_without_home_agent_gets_no_nss_store" = 1 # local run 0.15 s (2026-11-19)
+  "test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write" = 1 # local run 0.15 s (2026-11-19)
+  "test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create" = 1 # local run 0.06 s (2026-11-19)
+  "test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure" = 1 # local run 0.08 s (2026-11-19)
   "test_admits_exactly_the_keys_with_incus_own_and_empty_values" = 1 # estimate: local run on Beast, not a CI measurement
   "test_refuses_a_changed_missing_or_added_key_and_names_it" = 1 # estimate: local run on Beast, not a CI measurement
   "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name" = 1 # estimate: local run on Beast, not a CI measurement
@@ -238,6 +242,8 @@ inputs = [
 "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last" = 1
+"test_t3_files_go_in_beside_the_boot_files_and_before_the_proxy_drop_ins" = 1 # local run 0.15 s (2026-11-19)
+"test_the_branch_is_read_on_the_node_beside_the_start" = 1 # two clone runs, local 0.2 s (2026-11-19)
 "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line" = 1
 "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start" = 1
 "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files" = 1
@@ -252,6 +258,8 @@ inputs = [
 "test_the_agent_and_sessions_phases_alone_are_no_steps" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
 "test_a_branch_the_mirror_lacks_starts_at_the_commit_of_the_seed_that_the_copy_took" = 1 # added 2026-11-17 (seed wait); local under 1 s
 "test_a_retake_of_the_admitted_seed_still_running_after_the_wait_refuses_as_moved" = 1 # added 2026-11-17 (seed read once); local under 1 s
+"test_a_seed_wait_that_outlives_its_bound_still_reads_the_snapshots_and_decides_each_case" = 1 # added 2026-11-19 (stalled seed wait); local under 1 s
+"test_a_restart_of_incus_before_the_copy_waits_for_the_api_within_the_bound" = 1 # added 2026-11-19 (Incus restart before the copy); local under 1 s
 "test_a_seed_that_a_deployment_replaced_is_copied_and_the_branch_follows_its_commit" = 1 # added 2026-11-17 (seed read once); local under 1 s
 "test_a_normal_copy_of_its_admitted_seed_reads_the_snapshots_once_and_records_nothing" = 1 # added 2026-11-17 (seed read once); local under 1 s
 "test_a_sleeping_default_needs_no_wake_to_read_its_idmap_and_copy_its_snapshot" = 1 # added 2026-11-17 (a clone reaches the default only through its snapshots); local under 1 s

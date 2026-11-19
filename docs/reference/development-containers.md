@@ -1174,9 +1174,11 @@ The proof Project's default can keep one older pair as the base of the next [see
 
 Every older `base-` pair goes first, so the default keeps at most one base. Without `seed_base`, the old pair goes as before. A clone and a restore never read a `base-` pair. A rename keeps the snapshot's creation time, and it needs no free ID range. So a retake still needs only one free range, for a moment.
 
-A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the step before the copy, `clone-seed-wait`, asks the Node's Incus API for the admitted seed with curl's own retry: every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first request.
+A copy that meets a retake does not fail. A retake at the admitted commit deletes `seed-<commit>` and renames its `next-` snapshot to that name a moment later. So the copy step, `clone-container`, reads the default's snapshots, and while the admitted seed is missing and its `next-` snapshot is there, it reads them again every 2 seconds, for at most 120 seconds, the bound of a deployment's `seed` phase. A normal copy finds its seed at the first read and waits not at all; no step of its own stands before the copy.
 
-Then the copy reads the default's snapshots once. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
+The same 120 seconds also cover a restart of the Node's Incus. When a read before the copy fails or stalls and the local Incus API does not answer, the step waits for the API, again every 2 seconds, and reads once more. An answer of Incus, such as an unreadable ACL, is never retried and is never taken for a missing ACL. Each request of a wait ends after 5 seconds, so an API that accepts and never replies cannot hold the wait past its bound. The step's budget is 420 seconds: the 120-second wait, then the copy's 300 seconds of work.
+
+Then, however the wait ended, the copy decides from one more read. It copies the admitted seed when it is there. When a deployment replaced it by a newer seed, the copy takes the newest `seed-` snapshot, and a branch that the Node's mirror lacks starts at that seed's commit. When the admitted seed's `next-` snapshot is still there, the retake did not end within the wait: the create fails with `instance.default_seed_moved`, before any change.
 
 #### The seed hold
 
@@ -1442,6 +1444,8 @@ An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no
 Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
 
 The container, checkout and T3 phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, ID map, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part, T3's first answer and its sessions check. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The create's result carries them as `timings`: names and seconds only.
+
+T3's files (`t3_files_seconds`) go in beside the boot files, and the branch beside the ID map step and the start. Their seconds overlap the other parts' seconds.
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
@@ -3507,14 +3511,14 @@ A seed is the commit and the time that the default took it, because a retake at 
 
 ##### How the seed moves
 
-Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for one target at a time:
+Incus moves it, from the default's Node straight to each CI Node over WireGuard. On the default's Node, the run calls, as root, for every target side by side:
 
 - `incus copy <default> proof-node-<id>:proof-seed --refresh --mode=push`, in the project `orbit-instances-nested`;
 - `incus storage volume copy` of the default's inner volume to `proof-seed-inner` on the same remote, with `--refresh --mode=push`.
 
-The copies to the targets never overlap. Each push of the inner volume takes a snapshot of it on the default's Node. The volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) for that snapshot. A second freeze of a frozen file system fails with `Device or resource busy`. So two copies of one source side by side can fail a target.
+The copies to the targets run side by side, so a run with two incremental targets takes about one push, not the sum. Each push of the inner volume starts with a sync of it on the default's Node: the volume is mounted in the default, so Incus freezes its file system (`fsfreeze --freeze`) and thaws it at once, before it sends anything. A freeze while the other push holds its own fails with `Device or resource busy`, as `Failed freezing filesystem`. The copy tries only that push again, up to five times, 2 s apart; the other push thaws within a moment.
 
-The certificate reads and the checks run on the CI Nodes, and they still run side by side. Because the copies run one at a time, the run time grows with the number of targets, and the Gateway captures the run budget from it at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
+The certificate reads and the checks run on the CI Nodes, side by side too. The pushes share the default Node's uplink, so the Gateway still captures a run budget that grows with the number of targets at admission. Each `incus` push stops after 1,200 seconds: a first full copy of the seed pair is a few GB over WireGuard, and a refresh is small.
 
 A retake of the default never runs beside a seed copy: both take [the seed hold](#the-seed-hold). A deployment of the default still runs its other steps beside a copy, because the seed hold is not the default's Instance lock.
 
@@ -3533,6 +3537,8 @@ The release step first checks that the default still holds a seed with the name 
 A failed release changes no target's result; the next retake deletes the base. The holder mirrors the default, so its next refresh drops the base there too.
 
 Push mode means that the source server sends the data to the target server, and only the target listens on the network (`incus copy --help` of the installed Incus client). So the default's Node gets no Incus listener and no change to its daemon config. Its only change is a client remote of root, `proof-node-<id>`, for each CI Node. The run adds the remote when it is missing. It reads the CI Node's server certificate on that Node first, and fails the target when the certificate that root's client stored for the remote is not that one.
+
+Root's Incus client keeps all its remotes in one file and rewrites that file without a lock. Two adds side by side both pass, but one remote is lost. So the copies, which run side by side, add their remotes one at a time under a lock file, `flock /run/lock/orbit-proof-seed-remotes.lock`.
 
 Each CI Node gets an Incus listener on its WireGuard address and one restricted trust entry: root's Incus client certificate of the default's Node, limited to the project `orbit-instances-nested`. The `ci-runner` converge adds both ([Proof copies on a CI Node](/reference/node-provisioning#proof-copies-on-a-ci-node)), and the Gateway records on the Node which Node the listener trusts. So a seed copy can change only that project on a CI Node, and only from the default's Node.
 
