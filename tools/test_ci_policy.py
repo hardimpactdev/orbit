@@ -168,7 +168,9 @@ class RequiredGateTest(unittest.TestCase):
         run = installer['run']
         # Cached packages install with apt from the files, with no index refresh; then the browsers install alone.
         offline = run.index('apt-get install --yes --no-install-recommends')
-        self.assertIn('"$archives"/*.deb', run)
+        self.assertIn('--no-download "$archives"/*.deb', run)
+        # With another archive folder apt asked the mirror for packages that the runner's index also names.
+        self.assertNotIn('Dir::Cache::archives=', run)
         self.assertNotIn('apt-get update', run)
         self.assertLess(offline, run.index('bunx playwright install --only-shell webkit chromium'))
         # Without cached packages, or when they do not install, the mirror path of before runs: the last command.

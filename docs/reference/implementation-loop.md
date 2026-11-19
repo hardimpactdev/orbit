@@ -291,7 +291,7 @@ Pull request CI takes at most five minutes from push to result, including queues
 
 The Web job caches the locked Playwright engines and the Ubuntu packages of their system libraries. The package cache holds one entry for each runner image and Playwright version, written by the first run whose install downloaded the whole set.
 
-With cached packages, the job installs the libraries with `apt-get install` from those files: APT orders and configures them, with no index refresh and no download. Then Playwright installs the browsers alone. So a mirror that fails leaves the job unaffected. A cache hit never skips library installation or either test stage.
+With cached packages, the job installs the libraries with `apt-get install` from those files: APT orders and configures them with `--no-download`, and with no index refresh. Then Playwright installs the browsers alone. So a mirror that fails leaves the job unaffected. A cache hit never skips library installation or either test stage.
 
 Without cached packages, or when they fail to install, the job runs `playwright install --with-deps` as before: APT refreshes its signed index and downloads from the mirror. The job on main `Warm the web test caches` runs the same steps, `.github/actions/web-browsers`, and saves both caches for pull requests and the merge queue. Raising the number at the end of the package cache key drops an entry.
 

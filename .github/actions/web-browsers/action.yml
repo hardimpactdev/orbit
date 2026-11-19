@@ -38,9 +38,10 @@ runs:
         archives=/var/cache/orbit-playwright-apt
         if compgen -G "$archives/*.deb" >/dev/null; then
           echo "Installing the system libraries from the cached packages in $archives"
-          # apt orders the files itself. Its own archive folder is another one here, so it reads these files in place.
+          # apt orders the files itself. --no-download: it must not ask a mirror for a package that the runner's own
+          # index also names; a set that lacks something then fails here, and the mirror path below runs.
           if sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1 apt-get install --yes --no-install-recommends \
-              -o Dir::Cache::archives=/var/cache/apt/archives "$archives"/*.deb; then
+              --no-download "$archives"/*.deb; then
             bunx playwright install --only-shell webkit chromium
             exit 0
           fi
