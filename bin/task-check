@@ -76,30 +76,47 @@ PIN_TESTS = {
 # CI runs these on every PR; this local check runs them for a change to a file that one of them reads.
 CI_POLICY = [['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py'],
              ['python3', '-m', 'unittest', 'discover', '-s', 'tools/ci-runners', '-p', 'test_*.py']]
-# What the policy tests read, by reader. Keep a reader's entry beside its read: a new read of a file outside these
-# globs needs its entry here. The trees are read whole: the tests run the tooling of bin/ and tools/, the CI table and
-# workflows of .github/, and Swamp's registry, Deno tests and shape gate over all of swamp/.
+# What the policy tests read, by reader. A test that starts to read a file outside its entry adds it here.
 CI_POLICY_READS = {
-    'tools/test_ci_*.py, tools/ci-runners/test_*.py': ('bin/**', 'tools/**', '.github/**', 'swamp/**'),
+    # The CI table and its fixture registry (bin/ci-build-plan check_table, bin/ci-registry load).
+    'tools/test_ci_table.py': ('.github/ci/**',),
+    # check_ci_workflow.py runs actionlint over every tracked workflow, with its config and the local actions they use.
+    'tools/test_ci_workflow.py': ('.github/workflows/**', '.github/actionlint.yaml', '.github/actions/**'),
+    'tools/test_ci_runner_labels.py': ('.github/workflows/*.yml', '.github/workflows/*.yaml', '.github/actionlint.yaml'),
+    # Swamp's registry, Deno tests and shape gate read all of swamp/.
+    'tools/test_ci_units.py': ('swamp/**',),
     'tools/test_ci_swamp_skills.py': ('.agents/skills/swamp/**', '.agents/skills/swamp-getting-started/**',
                                       '.agents/skills/swamp-source.json'),
     'tools/test_ci_agent_release_cache.py': ('apps/agent/Cargo.toml', 'apps/agent/scripts/build-delivery'),
     'tools/test_ci_runner_project_config.py': ('apps/agent/src/commands/ci_runner.rs',),
-    'tools/test_ci_runner_hold.py, tools/test_ci_runner_state.py': ('apps/gateway/resources/ci-runner/**',),
-    'tools/test_ci_static_php_build.py, tools/test_ci_javascript.py, tools/ci-runners/test_runtime_device.py':
-        ('apps/gateway/resources/machine-software/**', 'apps/gateway/app/Infrastructure/MachineSoftware/StaticPhpBuild.php'),
+    'tools/test_ci_runner_hold.py': ('apps/gateway/resources/ci-runner/hold.py',),
+    'tools/test_ci_runner_state.py': ('apps/gateway/resources/ci-runner/state.py',),
+    'tools/test_ci_static_php_build.py': ('apps/gateway/resources/machine-software/recipe.json',
+                                          'apps/gateway/app/Infrastructure/MachineSoftware/StaticPhpBuild.php'),
+    'tools/test_ci_javascript.py': ('apps/gateway/resources/machine-software/vite-plus-package-lock.json',),
     'tools/test_ci_gateway_tests.py': ('apps/gateway/.env.example', 'apps/gateway/phpunit.xml',
                                        'apps/gateway/tests/.pest/shards.json',
                                        'apps/cli/tests/Fixtures/Console/command-consent.php'),
-    'tools/test_ci_cli_flow.py': ('apps/cli/design/Flows/**',),
+    # bin/cli-flow lists the recorded flows as *.json.
+    'tools/test_ci_cli_flow.py': ('apps/cli/design/Flows/*.json',),
     'tools/test_ci_docs_tests.py': ('apps/docs/composer.json', 'apps/docs/tests/Feature/OpenApiExtensionsTest.php'),
     'tools/test_ci_incus_upgrade_runbook.py': ('docs/reference/compute-drivers.md',),
     'tools/test_ci_policy.py': ('ci-unit-times.json', '**/ci-unit-times.json'),
-    # It runs this command's Pest plan: the pin tests, the CLI tests that replay an SDK fixture, and the Pest configs.
+    # It runs this command's Pest and PHPStan plans, which read the pin tests, the CLI tests that replay an SDK fixture,
+    # the project configs, and whether each path it passes them exists where that decides the plan.
     'tools/test_ci_task_check.py': ('apps/cli/tests/**', 'apps/*/phpunit.xml', 'apps/*/phpunit.xml.dist',
                                     'apps/gateway/phpstan.neon', 'packages/php-sdk/phpunit.xml.dist',
+                                    'apps/gateway/tests/Feature/InstanceDestroyRouteHoldReleaseTest.php',
+                                    'apps/gateway/app/Domain/Tasks/TaskTurn.php',
                                     *(f'{project}/{file}' for project, files in PIN_TESTS.items() for file in files)),
 }
+# The policy tests and the tooling they run read bin/ and tools/, except these files, which none of them reads.
+CI_POLICY_TOOLING = ('bin/**', 'tools/**')
+CI_POLICY_UNREAD = ('bin/dependency-audit', 'bin/docs-merge-check', 'bin/gateway-container-*', 'bin/gateway-horizon-ready',
+                    'bin/gateway-release-check', 'bin/gateway-release-phase', 'bin/gateway-rollback', 'bin/web-deploy',
+                    'bin/web-verify', 'tools/boost/**', 'tools/check-processes.php', 'tools/combine_agent_delivery.py',
+                    'tools/phpstan/parallel.php', 'tools/swamp-proof-guest/**', 'tools/test_frozen_agent_commands.py',
+                    'tools/test_swamp_import_base.py')
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
@@ -491,13 +508,35 @@ def ci_policy_input(paths):
     entries = (checks['all-checks'], checks['ignored'], *checks['check'].values(), *checks['roots'].values())
     named = {pattern.removeprefix('!') for entry in entries for pattern in entry['inputs'] if not set('*?') & set(pattern)}
     readers = [(reader, units.selection.input_rules(globs)) for reader, globs in CI_POLICY_READS.items()]
+    tooling = units.selection.input_rules((*CI_POLICY_TOOLING, *(f'!{glob}' for glob in CI_POLICY_UNREAD)))
     for path in paths:
         reader = next((reader for reader, rules in readers if units.selection.matches(path, rules)), None)
+        if reader is None and units.selection.matches(path, tooling):
+            reader = tooling_reader(path)
         if reader is None and (path in named or not any(units.selection.matches(path, rules) for _, rules, _ in roots)):
             reader = 'tools/test_ci_table.py'
         if reader:
             return f'selected by {path}, read by {reader}'
     return None
+
+
+def tooling_reader(path):
+    """The policy test that names a file of bin/ or tools/; a policy test reads itself."""
+    tests = sorted(str(file.relative_to(ROOT)) for command in CI_POLICY
+                   for file in (ROOT / command[command.index('-s') + 1]).glob(command[command.index('-p') + 1]))
+    if path in tests:
+        return path
+    name = Path(path).name
+    return next((test for test in tests if name in (ROOT / test).read_text(errors='replace')),
+                'the tooling that the policy tests run')
+
+
+def policy_paths(base, committed, paths):
+    """The changed paths with the old name of each renamed file: a test that reads the old name breaks too."""
+    if base is None:
+        return paths
+    renames = review['git'](ROOT, 'diff', '--name-only', '--no-renames', base, *(['HEAD'] if committed else [])).splitlines()
+    return sorted(set(paths) | set(renames))
 
 
 def ci_plan(base, head):
@@ -608,7 +647,7 @@ def main(argv=None):
     # input rules for the expensive checks, including inputs outside docs/ such as apps/docs and charts.
     input_jobs = review['ci_select'](paths)['jobs']
     tooling = any(path.startswith(('bin/', 'tools/', '.github/')) for path in paths)
-    policy_input = ci_policy_input(paths)
+    policy_input = ci_policy_input(policy_paths(base, committed, paths))
     docs_inputs = tooling or input_jobs['docs'] or input_jobs['api-reference']
     if want('docs-impact'):
         common = Path(review['git'](ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
