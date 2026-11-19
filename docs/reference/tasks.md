@@ -206,7 +206,7 @@ No `tasks.provision` Operation starts any more: a task start makes a task copy. 
 
 A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt from one fixed text for each role and records it as the admitted prompt. `TaskTurnPrompt` holds both texts. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
 
-Both texts open with one line on the role and its copy. Then come the group's title and brief in `<task_brief>`, the subtask's title and brief in `<subtask_brief>`, and its deliverables in `<deliverables>`. A subtask without deliverables gets no deliverables block. The caller's prompt comes last, in `<turn>`, and a final line gives the end of the turn's bound: the admission's time plus 3,600 seconds, in UTC. On a thread whose last turn asked, the quoted questions and `Answer:` come first inside `<turn>`.
+Both texts open with one line on the role and its copy. Then come the group's title and brief in `<task_brief>`, the subtask's title and brief in `<subtask_brief>`, and its deliverables in `<deliverables>`. A [task with no subtask](#a-task-with-no-subtask) gets no `<subtask_brief>`: its texts name the task, not a subtask. A subtask without deliverables gets no deliverables block. The caller's prompt comes last, in `<turn>`, and a final line gives the end of the turn's bound: the admission's time plus 3,600 seconds, in UTC. On a thread whose last turn asked, the quoted questions and `Answer:` come first inside `<turn>`.
 
 No role gets a rule of the other role. The texts name nothing of one Project except its task check command.
 
@@ -457,7 +457,7 @@ C1 is published once. The round publishes it only while no publish of C1 exists.
 
 ### Task lifecycle
 
-A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one subtask and a deliverable on every subtask. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
+A group starts in `backlog` or `todo`. Moving it to `todo` requires at least one subtask and a deliverable on every subtask, or, for a [task with no subtask](#a-task-with-no-subtask), at least one deliverable of its own. Provision reserves capacity, then records `running` once the workspace is ready. Swamp chooses subsequent status updates: `running`, `reviewing`, `settling` and `waiting_for_review`. Explicit completion, cancellation or failed provisioning records an ended status. Terminal history and assistance remain readable.
 
 One group uses one task copy and one branch. Subtasks share the workspace in order. The keyed operations enforce workspace ownership and persist results; they never select the next subtask.
 
@@ -506,7 +506,7 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 ### A task with no subtask
 
-A task with no subtask holds its own deliverables and does its own work. Create it with `deliverables` in place of `subtasks`; a create that names both answers `422` with `validation.failed`. The deliverables follow the rules of [Deliverables](#deliverables).
+A task with no subtask holds its own deliverables and does its own work. Create it with `deliverables` in place of `subtasks`; a create that names both, even as empty lists, answers `422` with `validation.failed` and stores nothing. The deliverables follow the rules of [Deliverables](#deliverables).
 
 Such a task takes, by its own ID, the calls that a subtask takes:
 
@@ -519,9 +519,13 @@ Such a task takes, by its own ID, the calls that a subtask takes:
 
 Its turn prompt holds the task's brief once and the task's deliverables, with no subtask part. A started task with no subtask takes no subtask: subtask create answers `409` with `tasks.own_work`. Record an outcome found during the task as a new task.
 
+In `backlog`, a task without subtasks takes its own deliverables by `task:update`, also after its last subtask was destroyed. A task with subtasks takes none: the update answers `422` with `validation.failed`. In `backlog`, a task whose own deliverables are empty takes a subtask: the first subtask create replaces its own empty work. While it holds deliverables, subtask create answers `409` with `tasks.own_work`; clear them first to split the task.
+
+A create writes the task and its work, or its subtasks, in one transaction. The body alone chooses the shape: a query parameter named `deliverables` is no field of it.
+
 Show and list return the task's work as `work`: the fields of a subtask, with its deliverables, latest check and implementer. `subtasks` is then empty, and a list with `parent_id` lists nothing. A task with subtasks has `work: null`.
 
-The Gateway stores the work as one row under the task, of type `work`, with the task's title and brief. The row is the task's current subtask for the check, turn, status and review rules of this page. No read shows it as a subtask.
+The Gateway stores the work as one row under the task, of type `work`, with the task's title and brief. The row is the task's current subtask for the check, turn, status and review rules of this page. No read shows it as a subtask, and its ID in `work.id` is no route member: every route answers `404` for it. Address the work by the task's ID.
 
 ### List tasks
 
@@ -535,7 +539,7 @@ The list reads each row's columns, subtasks, latest checks, reviewed commits, wo
 
 ### Change subtasks
 
-Subtask create appends a `todo` subtask at the next position. It works while the group has not ended. Outside `backlog`, the new subtask needs at least one deliverable.
+Subtask create appends a `todo` subtask at the next position. It works while the group has not ended, except in a [task with no subtask](#a-task-with-no-subtask). Outside `backlog`, the new subtask needs at least one deliverable.
 
 Swamp selects the next subtask and records its status through the API.
 
@@ -621,7 +625,7 @@ The task and subtask operations return these errors.
 | `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks or its own deliverables |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |
 | `tasks.group_closed` | 409 | Subtask create in an ended task |
-| `tasks.own_work` | 409 | Subtask create in a [task with no subtask](#a-task-with-no-subtask) |
+| `tasks.own_work` | 409 | Subtask create in a started [task with no subtask](#a-task-with-no-subtask), or in one in `backlog` that holds deliverables |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started, when no [correction](#correct-the-deliverables-of-a-started-subtask) applies |
 | `tasks.reason_unexpected` | 422 | A `reason` on an update that is not a [correction after a failed check](#correct-the-deliverables-of-a-started-subtask) |

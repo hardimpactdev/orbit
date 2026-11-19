@@ -130,9 +130,8 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function update(UpdateTaskGroupRequest $request, Task $task, UpdateTaskGroupAction $action, UpdateTaskAction $childAction): JsonResponse
     {
-        $work = $request->work();
-        if ($work instanceof Task) {
-            $childAction->execute($task, $work, $request->childPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
+        if ($request->addressesWork()) {
+            $childAction->execute($task, $action->work($task), $request->childPayload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
 
             return response()->json(['data' => TaskGroupData::fromModel($task->refresh())->toArray(), 'meta' => $this->meta($request)]);
         }

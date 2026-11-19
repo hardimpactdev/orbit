@@ -10,6 +10,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskCheckProjection;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Domain\Tasks\TaskType;
 use App\Infrastructure\Processes\CommandResult;
@@ -207,17 +208,90 @@ it('corrects the deliverables of a task with no subtask in backlog by the task\'
         ->assertJsonPath('data.status', 'todo')->assertJsonPath('data.work.title', 'Add the notes')->assertJsonPath('data.work.brief', 'Write them.');
 });
 
-it('refuses a task that names both deliverables and subtasks, a todo task without deliverables, and a subtask added to a task with no subtask', function (): void {
+it('refuses both shapes in one create before it writes anything, and reads the shape from the body alone', function (array $shape): void {
+    $project = soloProject();
+
+    $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Add the note', 'brief' => 'Write it.', ...$shape])
+        ->assertUnprocessable()->assertJsonPath('error.details.subtasks.0', 'A task takes either subtasks or its own deliverables, not both.');
+    // A query parameter is no body field: the task takes no work from it.
+    $id = $this->postJson('/api/v1/tasks?deliverables=1', ['project_id' => $project->id, 'title' => 'Plain', 'brief' => 'Plan it.'])->assertCreated()->json('data.id');
+
+    expect(Task::topLevel()->pluck('id')->all())->toBe([$id])
+        ->and(Task::query()->count())->toBe(0);
+})->with([
+    'two subtasks and no deliverables' => [['subtasks' => [['title' => 'A', 'brief' => 'B'], ['title' => 'C', 'brief' => 'D']], 'deliverables' => []]],
+    'deliverables and a subtask' => [['deliverables' => soloDeliverables(), 'subtasks' => [['title' => 'A', 'brief' => 'B']]]],
+    'two empty lists' => [['deliverables' => [], 'subtasks' => []]],
+]);
+
+it('writes the task and its work together or not at all', function (): void {
+    $project = soloProject();
+    Task::creating(static function (Task $task): void {
+        if ($task->type === TaskType::Work) {
+            throw new RuntimeException('The work row was not written.');
+        }
+    });
+
+    $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Add the note', 'brief' => 'Write it.', 'status' => 'todo', 'deliverables' => soloDeliverables()])
+        ->assertServerError();
+
+    expect(Task::topLevel()->count())->toBe(0);
+});
+
+it('addresses the work only through the task: its row id is no task to read, change, delete or cancel', function (): void {
+    $project = soloProject();
+    $id = $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Add the note', 'brief' => 'Write it.', 'deliverables' => soloDeliverables()])
+        ->assertCreated()->json('data.id');
+    $work = Task::query()->where('parent_id', $id)->sole();
+
+    $this->getJson("/api/v1/tasks/{$work->id}")->assertNotFound();
+    $this->patchJson("/api/v1/tasks/{$work->id}", ['brief' => 'Other.'])->assertNotFound();
+    $this->deleteJson("/api/v1/tasks/{$work->id}")->assertNotFound();
+    $this->withHeader('Idempotency-Key', 'solo-cancel')->postJson("/api/v1/tasks/{$work->id}/cancel")->assertNotFound();
+    $this->postJson("/api/v1/tasks/{$work->id}/comments", ['body' => 'Hi.'])->assertNotFound();
+
+    expect($work->refresh()->only(['brief', 'status']))->toBe(['brief' => 'Write it.', 'status' => TaskStatus::Todo])
+        ->and($work->deliverables)->toBe(soloDeliverables());
+});
+
+it('lets a backlog task without subtasks take its own deliverables, and an empty work give way to subtasks', function (): void {
+    $project = soloProject();
+    $draft = $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Plan', 'brief' => 'Plan it.'])->assertCreated()->json('data.id');
+
+    $this->patchJson("/api/v1/tasks/{$draft}", ['deliverables' => soloDeliverables()])->assertOk()
+        ->assertJsonPath('data.work.deliverables.0.id', 'note')->assertJsonPath('data.work.title', 'Plan')->assertJsonPath('data.subtasks', []);
+
+    // A task whose last subtask was deleted in backlog takes its own deliverables too.
+    $split = $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Split', 'brief' => 'Split it.', 'subtasks' => [['title' => 'A', 'brief' => 'B']]])
+        ->assertCreated()->json('data.subtasks.0.id');
+    $parent = Task::query()->findOrFail($split)->parent_id;
+    $this->deleteJson("/api/v1/tasks/{$split}")->assertOk();
+    $this->patchJson("/api/v1/tasks/{$parent}", ['deliverables' => soloDeliverables()])->assertOk()->assertJsonPath('data.work.deliverables.1.id', 'tests');
+
+    // An empty work gives way to the first subtask; a work with deliverables is not dropped.
+    $empty = $this->postJson('/api/v1/tasks', ['project_id' => $project->id, 'title' => 'Empty', 'brief' => 'Empty.', 'deliverables' => []])->assertCreated()->json('data.id');
+    $this->postJson('/api/v1/tasks', ['parent_id' => $empty, 'title' => 'First', 'brief' => 'First part.'])->assertCreated();
+    $this->postJson('/api/v1/tasks', ['parent_id' => $draft, 'title' => 'More', 'brief' => 'More work.'])
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.own_work');
+    $this->patchJson("/api/v1/tasks/{$draft}", ['deliverables' => []])->assertOk();
+    $this->postJson('/api/v1/tasks', ['parent_id' => $draft, 'title' => 'More', 'brief' => 'More work.'])->assertCreated();
+
+    expect(Task::query()->where('parent_id', $empty)->pluck('title')->all())->toBe(['First'])
+        ->and(Task::query()->where('parent_id', $draft)->pluck('title')->all())->toBe(['More'])
+        // A task with subtasks takes no deliverables of its own.
+        ->and($this->patchJson("/api/v1/tasks/{$draft}", ['deliverables' => soloDeliverables()])->status())->toBe(422);
+});
+
+it('refuses a todo task without deliverables, and a subtask added to a started task with no subtask', function (): void {
     $project = soloProject();
     $base = ['project_id' => $project->id, 'title' => 'Add the note', 'brief' => 'Write it.'];
 
-    $this->postJson('/api/v1/tasks', [...$base, 'deliverables' => soloDeliverables(), 'subtasks' => [['title' => 'A', 'brief' => 'B']]])
-        ->assertUnprocessable()->assertJsonPath('error.details.subtasks.0', 'The subtasks field prohibits deliverables from being present.');
     $this->postJson('/api/v1/tasks', [...$base, 'status' => 'todo', 'deliverables' => []])
         ->assertUnprocessable()->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
-    $id = $this->postJson('/api/v1/tasks', [...$base, 'deliverables' => soloDeliverables()])->assertCreated()->json('data.id');
+    $id = $this->postJson('/api/v1/tasks', [...$base, 'status' => 'todo', 'deliverables' => soloDeliverables()])->assertCreated()->json('data.id');
     $this->postJson('/api/v1/tasks', ['parent_id' => $id, 'title' => 'More', 'brief' => 'More work.'])
-        ->assertConflict()->assertJsonPath('error.code', 'tasks.own_work');
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.own_work')
+        ->assertJsonPath('error.message', 'A started task with no subtask takes no subtask. Create a new task for the new outcome.');
 
     expect(Task::query()->where('parent_id', $id)->count())->toBe(1);
 });

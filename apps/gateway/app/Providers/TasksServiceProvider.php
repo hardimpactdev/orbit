@@ -113,9 +113,10 @@ final class TasksServiceProvider extends ExtensionServiceProvider
             TaskSettleCommand::class,
         ]);
 
-        // A canonical member selects either level. Internal Task queries keep their child scope.
+        // A canonical member selects either level. Internal Task queries keep their child scope. The work row of a task with no
+        // subtask is no member: the task's own id addresses its work (docs/reference/tasks.md#a-task-with-no-subtask).
         Route::bind('task', static function (string $value): Task {
-            $task = Task::withoutGlobalScope('subtask')->whereKey($value)->first();
+            $task = Task::withoutGlobalScope('subtask')->listedSubtasks()->whereKey($value)->first();
 
             if (! $task instanceof Task) {
                 throw (new ModelNotFoundException)->setModel(Task::class, [$value]);

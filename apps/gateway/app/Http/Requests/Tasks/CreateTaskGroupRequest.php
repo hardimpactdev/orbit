@@ -63,7 +63,7 @@ final class CreateTaskGroupRequest extends FormRequest
             ...TaskAgent::rules(),
             // A task with no subtask holds its own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
             ...array_filter((new CreateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables'), ARRAY_FILTER_USE_KEY),
-            'subtasks' => ['sometimes', 'array', 'max:50', 'prohibits:deliverables'],
+            'subtasks' => ['sometimes', 'array', 'max:50'],
             'subtasks.*.title' => ['required', 'string', 'max:160'],
             'subtasks.*.brief' => ['required', 'string', 'max:8000'],
             'subtasks.*.topology' => ['sometimes', 'array', 'list'],
@@ -110,6 +110,11 @@ final class CreateTaskGroupRequest extends FormRequest
 
     public function parentPayload(): CreateTaskGroupData
     {
+        // The body chooses the shape: subtasks, or the task's own deliverables (docs/reference/tasks.md#a-task-with-no-subtask).
+        $body = $this->validationData();
+        if (array_key_exists('deliverables', $body) && array_key_exists('subtasks', $body)) {
+            throw ValidationException::withMessages(['subtasks' => ['A task takes either subtasks or its own deliverables, not both.']]);
+        }
         $tasks = [];
         $validatedTasks = $this->validated('subtasks');
 
@@ -132,7 +137,7 @@ final class CreateTaskGroupRequest extends FormRequest
             brief: $this->string('brief')->toString(),
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             tasks: $tasks,
-            deliverables: $this->has('deliverables') ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
+            deliverables: array_key_exists('deliverables', $body) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
             preview: $this->boolean('preview'),
             currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),

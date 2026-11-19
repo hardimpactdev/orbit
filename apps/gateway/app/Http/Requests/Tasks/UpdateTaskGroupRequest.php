@@ -32,7 +32,7 @@ final class UpdateTaskGroupRequest extends FormRequest
     /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|In|ProhibitedIf|NotBlank>> */
     public function rules(): array
     {
-        if ($this->work() instanceof Task) {
+        if ($this->addressesWork()) {
             return array_filter((new UpdateTaskRequest)->rules(), static fn (string $field): bool => str_starts_with($field, 'deliverables') || $field === 'reason', ARRAY_FILTER_USE_KEY);
         }
         if ($this->route('task') instanceof Task && $this->route('task')->parent_id !== null) {
@@ -60,7 +60,7 @@ final class UpdateTaskGroupRequest extends FormRequest
     {
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), match (true) {
-                $this->work() instanceof Task => ['deliverables', 'reason'],
+                $this->addressesWork() => ['deliverables', 'reason'],
                 $this->route('task') instanceof Task && $this->route('task')->parent_id !== null => ['title', 'brief', 'position', 'deliverables', 'topology', 'status', 'reason'],
                 default => ['title', 'brief', 'status', 'preview', 'pr_mode', 'reason', ...TaskAgent::fields()],
             });
@@ -70,14 +70,16 @@ final class UpdateTaskGroupRequest extends FormRequest
     }
 
     /**
-     * The work row whose deliverables a request to a task with no subtask corrects: such a request names `deliverables`, and
-     * then only a `reason` (docs/reference/tasks.md#a-task-with-no-subtask).
+     * Whether the request sets the deliverables of a task's own work: it names `deliverables`, and then only a `reason`, on a task
+     * that has its work or no subtask (docs/reference/tasks.md#a-task-with-no-subtask).
      */
-    public function work(): ?Task
+    public function addressesWork(): bool
     {
         $task = $this->route('task');
+        $body = json_decode($this->getContent(), true);
 
-        return $task instanceof Task && $task->parent_id === null && $this->has('deliverables') ? $task->work()->first() : null;
+        return $task instanceof Task && $task->parent_id === null && is_array($body) && array_key_exists('deliverables', $body)
+            && ($task->work()->exists() || ! Task::query()->where('parent_id', $task->id)->exists());
     }
 
     public function parentPayload(): UpdateTaskGroupData

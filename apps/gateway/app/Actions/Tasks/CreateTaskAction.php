@@ -25,9 +25,16 @@ final readonly class CreateTaskAction
             throw TaskGroupGuard::groupClosed();
         }
 
-        // A task with no subtask holds its own work; an outcome found later is a new task (docs/reference/tasks.md#a-task-with-no-subtask).
-        if ($group->work()->exists()) {
-            throw new ResourceOperationException('tasks.own_work', 'A task with no subtask takes no subtask. Create a new task for the new outcome.', 409);
+        // A task with no subtask holds its own work; an outcome found later is a new task. In backlog, a work without
+        // deliverables gives way to the first subtask (docs/reference/tasks.md#a-task-with-no-subtask).
+        $work = $group->work()->first();
+        if ($work instanceof Task) {
+            if ($status !== TaskGroupStatus::Backlog || $work->deliverableList() !== []) {
+                throw new ResourceOperationException('tasks.own_work', $status === TaskGroupStatus::Backlog
+                    ? 'This task holds its own deliverables. Clear them before you split it into subtasks.'
+                    : 'A started task with no subtask takes no subtask. Create a new task for the new outcome.', 409);
+            }
+            $work->delete();
         }
 
         if ($data->deliverables === [] && $status !== TaskGroupStatus::Backlog) {

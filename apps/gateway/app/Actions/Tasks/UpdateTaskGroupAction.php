@@ -82,6 +82,31 @@ final readonly class UpdateTaskGroupAction
     }
 
     /**
+     * The work of a task with no subtask. A task in backlog with no subtask and no work opens its work here, with no
+     * deliverables yet (docs/reference/tasks.md#a-task-with-no-subtask).
+     */
+    public function work(Task $group): Task
+    {
+        $this->requireExtension->execute();
+
+        return DB::transaction(static function () use ($group): Task {
+            $locked = Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
+            $work = $locked->work()->first();
+            if ($work instanceof Task) {
+                return $work;
+            }
+            if ($locked->status !== TaskGroupStatus::Backlog) {
+                throw TaskGroupGuard::notInBacklog();
+            }
+            if (Task::query()->where('parent_id', $locked->id)->exists()) {
+                throw TaskGroupGuard::deliverablesLocked();
+            }
+
+            return CreateTaskGroupAction::openWork($locked, []);
+        });
+    }
+
+    /**
      * ADR 0133: a group moves to Todo only when every subtask has deliverables.
      *
      * @param  Collection<int, Task>  $tasks
