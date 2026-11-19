@@ -367,61 +367,61 @@
         },
         "php8.4-bcmath": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-bcmath_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "85caa604b49d0003b1b67f7cbe2fac95e145ed9ccf09663b1d0a55bc7b46b11b"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-bcmath_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "bba0aa296e747691d9f65e072c4694702a6eb308476babe2a0f2af7d3acb4ad7"
                 }
             }
         },
         "php8.4-cli": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-cli_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "cef098df23015742717b1f1f9cbd92eff7a1434cce5878fa687c2f92d143031d"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-cli_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "722013c84562e51fe59283b74d219303f204032909fa7478eadfd57a8f3ef565"
                 }
             }
         },
         "php8.4-common": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-common_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "26be71f5252d525a3433d8afca21f17a04e5072f9c1f65f86a49a3b1b393955e"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-common_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "21533a5dc4f5d273857875f7fe5b389e7e22c84ff2c3f1c73c6bcf34e0380c43"
                 }
             }
         },
         "php8.4-curl": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-curl_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "5a2a345af1c02ca68197eb607e57f521ddf92adeeefa0a98c5964ef8e131a0a0"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-curl_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "f1c47bfff9a11d747f89087deb7d775df8c5f2ea30fa0e21c662a0920094809e"
                 }
             }
         },
         "php8.4-fpm": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-fpm_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "8dd3f61d74c51ddfaca5cb2673f9aeca593d1e05c9409367260f09ac92afbe2c"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-fpm_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "138940f25377d38711d78c1a9e5ab768b0663d67788c2bcf13e22993f1287506"
                 }
             }
         },
         "php8.4-gd": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-gd_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "fa5c45b0476ba77012dcb946f3af3e166b49f08bf4c3567c16059d2eff870e25"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-gd_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "01a159e9370859ff345b9a14c3fc68f1accc4ac70c5476e02383cb7f36a660f3"
                 }
             }
         },
@@ -447,41 +447,41 @@
         },
         "php8.4-intl": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-intl_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "9de7962a7405e64736b092a38e53b799cf262c13a5f63b7339bd1837fe73077d"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-intl_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "8fc77e90cfc73a129a426b02e220cafabb44639aca80b1e7e56055c5b11c48f3"
                 }
             }
         },
         "php8.4-mbstring": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mbstring_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "839421c2c8385f3a8c67adf557ebb980cdb6500bb22fe1484c08230bd690f878"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mbstring_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "f16224b526c1551c3c6f81c371a80a2d5d90cf76a2db5768d1281c2108032817"
                 }
             }
         },
         "php8.4-mysql": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mysql_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "b3eec6232139a0120a296580a16d1910c27977652f7fc58dd88667eafc6cc243"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-mysql_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "fe1c3b93ccd61d3a282a49f878a1c7fd94d6e68916383eb78608eb7f45cae6f9"
                 }
             }
         },
         "php8.4-opcache": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-opcache_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "b9842890550da0f120237ee0fa9f47ca31ea1d6ebb0bc04a51ab422598608a52"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-opcache_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "966eefc4d4098c25f808e2c69dd6c1796c2c3f8ddf48c75297f4d265c7011e24"
                 }
             }
         },
@@ -507,21 +507,21 @@
         },
         "php8.4-pgsql": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-pgsql_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "fdd4d3b01c9cda41c489b78c6a3e4d6c28f7ec5edcda4aa5879ab1a1a3e76ec7"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-pgsql_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "f10250ae19deb5a41defdf3585b0997df4c51b1389a460684f79483ad30ca8fe"
                 }
             }
         },
         "php8.4-readline": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-readline_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "bb07532b3624f132f8096fc63babc1b7b2e018f24b8c1b331e7a50ce1862ac44"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-readline_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "6e859d7c4dff90cbbf32a323a39992a633e2e88625ffad641be8e011d14637d9"
                 }
             }
         },
@@ -537,31 +537,31 @@
         },
         "php8.4-sqlite3": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-sqlite3_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "20f19527a3f4e88e1e6dc8bcd645b21e252d66da222f1de56c6ebe9185c5b25d"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-sqlite3_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "a074dbf7ccc1141b629758ebe9b9d375e3236e7abe4d2ce8645eb6c7d2df1570"
                 }
             }
         },
         "php8.4-xml": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-xml_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "5e97aaaa278cc870ff152a7fd42f2b4e7517a2add76420c874eeb7aa1ad2f923"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-xml_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "2025788610bf90406f92ad829b5463ddb308ca7b5af928ec054c9285bffd7ba5"
                 }
             }
         },
         "php8.4-zip": {
             "source": "artifact",
-            "version": "8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9",
+            "version": "8.4.28-2+0~deb.sury.org.1+ubuntu26.04",
             "artifacts": {
                 "amd64": {
-                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-zip_8.4.27-1+0~20261021.57+ubuntu26.04~1.gbp7636b9_amd64.deb",
-                    "sha256": "0d89b51f9d28efd6e1d1c46a67d449d69ed04d77145c265ac27e75458589758b"
+                    "url": "https://packages.sury.org/php/pool/main/p/php8.4/php8.4-zip_8.4.28-2+0~deb.sury.org.1+ubuntu26.04_amd64.deb",
+                    "sha256": "63b023e65cd1103361fc1edabbf3cec590dfb13b7f01b9444fbe3cec1bfb350e"
                 }
             }
         },
