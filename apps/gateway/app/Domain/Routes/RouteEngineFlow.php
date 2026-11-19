@@ -96,11 +96,19 @@ final readonly class RouteEngineFlow implements EngineDefinition
         $failed = $run->failed();
         $data = match (true) {
             $failed !== null => ['status' => 'failed', 'error_code' => $failed->error_code,
-                'failure' => ['failed_step' => self::Labels[explode('-', $failed->name, 2)[0]].'-'.explode('-', $failed->name, 2)[1], 'stderr_recorded' => false]],
+                'failure' => ['failed_step' => self::chartStep($failed->name), 'stderr_recorded' => false]],
             $run->succeeded() => ['status' => 'succeeded', 'error_code' => null],
             default => ['status' => 'cancelled', 'error_code' => 'operation.cancelled', 'result' => []],
         };
         $this->projection->apply($operation, [...$data, ...$run->times()]);
+    }
+
+    /** A step's name as the chart's iteration, such as `site-3` → `Install cert, publish site-3`, for NativeFailedStep. */
+    public static function chartStep(string $name): string
+    {
+        [$kind, $index] = explode('-', $name, 2);
+
+        return (self::Labels[$kind] ?? throw new LogicException("Step [{$name}] has no chart label.")).'-'.$index;
     }
 
     /**
@@ -131,7 +139,10 @@ final readonly class RouteEngineFlow implements EngineDefinition
         $mine = static fn (string $list): array => array_values(array_filter(RouteExecutionProof::objects($plan[$list] ?? []),
             static fn (array $row): bool => ValidatedData::integer($row['node_id']) === $node));
         $nodes = ValidatedData::object($plan['nodes']);
-        $account = ValidatedData::string(ValidatedData::object($nodes[(string) $node] ?? throw new EngineUnsupported("Node {$node} has no connection."))['account']);
+        if (! is_array($nodes[(string) $node] ?? null)) {
+            throw new EngineUnsupported("Node {$node} has no connection.");
+        }
+        $account = ValidatedData::string(ValidatedData::object($nodes[(string) $node])['account']);
         $leaves = [];
         foreach (RouteExecutionProof::objects($plan['leaves']) as $index => $leaf) {
             if (ValidatedData::integer($leaf['node_id']) !== $node) {
@@ -197,6 +208,7 @@ final readonly class RouteEngineFlow implements EngineDefinition
             'deny' => ['/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:---', '--', ...$paths],
             'grant' => ['/usr/bin/setfacl', '-P', '-R', '-n', '-m', 'u:caddy:r-X', '--', ...$paths],
             'passage' => ['/usr/bin/setfacl', '-m', 'u:caddy:--x', '--', ...$paths],
+            default => throw new LogicException("Unknown access kind [{$kind}]."),
         };
     }
 

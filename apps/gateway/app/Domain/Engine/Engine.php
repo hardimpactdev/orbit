@@ -277,7 +277,7 @@ final readonly class Engine
             }
             try {
                 // Content goes to the Node's own content keys first; the signed order names only its SHA-256.
-                $input = $this->upload($step->node_id, $input);
+                $input = EngineContent::upload($this->bus, $step->node_id, $input);
             } catch (Throwable $exception) {
                 report($exception);
                 $unsent[] = $name;
@@ -311,28 +311,6 @@ final readonly class Engine
         }
 
         return $invalid !== [];
-    }
-
-    /**
-     * Puts each `{"blob": {"content": …}}` of a step's input into the Node's content keys and leaves `{"blob": {"sha256": …}}`
-     * in its place, so an order stays small and a secret travels only to the one Node that may read it.
-     *
-     * @param  array<array-key, mixed>  $input
-     * @return array<array-key, mixed>
-     */
-    private function upload(int $node, array $input): array
-    {
-        foreach ($input as $key => $value) {
-            if (! is_array($value)) {
-                continue;
-            }
-            $blob = $value['blob'] ?? null;
-            $input[$key] = is_array($blob) && is_string($blob['content'] ?? null) && count($value) === 1
-                ? ['blob' => $this->bus->putContent($node, $blob['content'])]
-                : $this->upload($node, $value);
-        }
-
-        return $input;
     }
 
     /** Runs one Gateway step outside any transaction, records its result like a receipt, and advances. */
