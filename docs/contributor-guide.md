@@ -313,14 +313,19 @@ Address the review findings. Reviewers check the fixes and repeat the affected c
 
 ## Work outside a task
 
-In an Orbit task, Orbit reviews each subtask and opens the pull request, so these steps do not apply to task agents. When you work outside a task, by hand or with an agent:
+In an Orbit task, Orbit reviews each subtask and opens the pull request, so these steps do not apply to task agents. They apply when you work outside a task, by hand or with an agent.
 
-1. Follow the order: architecture, documentation, implementation, passing end-to-end proof, one pull request, CI, the gate, and merge. Check the existing ADRs and propose a significant architecture change in the feature's pull request. For a command change, commit the spec (chart, page and cases) first on the feature branch ([stage 1](/reference/command-development-pipeline#1-prep)).
-2. Open no pull request, draft or ready, until the feature is built and proven. Keep it focused on the feature, including any harness changes it needs.
-3. Run `composer test` and `composer check` in each changed Composer project, and confirm that the tests covering the feature ran. Root `composer check` also runs checks across projects. For dependency updates and advisories, follow [Dependencies](#dependencies).
-4. Before you open or update a pull request, run one independent review in a fresh subagent with the diff and the [plug-in point checklist](/reference/extensions#add-a-plug-in-point). Fix its findings first, and state in the pull request body that this review ran.
-5. Merge needs green CI and the gate of stage 4. Queue the pull request through the [merge queue](/reference/implementation-loop#merge-queue) with `gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>`. Do not update a branch because `main` moved. A known correctness failure on `main` holds unrelated merges until a reviewed fix is verified on `main`.
-6. Preserve other work, and remove the machines and records you created.
+Follow the order: architecture, documentation, implementation, passing end-to-end proof, one pull request, CI, the gate, and merge. Check the existing ADRs. Propose a significant architecture change in the feature's pull request. For a command change, commit the spec (chart, page and cases) first on the feature branch ([stage 1](/reference/command-development-pipeline#1-prep)).
+
+Open no pull request, draft or ready, until the feature is built and proven. Keep the pull request focused on the feature, including any harness changes it needs.
+
+Run `composer test` and `composer check` in each changed Composer project. Confirm that the tests covering the feature ran. Root `composer check` also runs checks across projects. For dependency updates and advisories, follow [Dependencies](#dependencies).
+
+Before you open or update a pull request, run one independent review in a fresh subagent. Give it the diff and the [plug-in point checklist](/reference/extensions#add-a-plug-in-point). Fix its findings first. State in the pull request body that this review ran.
+
+Merge needs green CI and the gate of stage 4. Queue the pull request through the [merge queue](/reference/implementation-loop#merge-queue) with `gh pr merge <n> -R hardimpactdev/orbit --squash --auto --match-head-commit <reviewed head SHA>`. Do not update a branch because `main` moved. A known correctness failure on `main` holds unrelated merges until a reviewed fix is verified on `main`.
+
+Preserve other work. Remove the machines and records you created.
 
 ## Use an agent
 
