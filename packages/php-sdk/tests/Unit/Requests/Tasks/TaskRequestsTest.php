@@ -115,6 +115,13 @@ describe('task transport', function (): void {
             ->toBe('{"deliverables":[{"id":"done","type":"review","description":"Done."}]}');
     });
 
+    it('creates a task with no subtask with its own deliverables, and moves its work by work_status', function (): void {
+        expect(new CreateTaskRequest(1, 'Title', 'Brief', 'todo', deliverables: [['id' => 'done', 'type' => 'review', 'description' => 'Done.']])->body()->all())
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","deliverables":[{"id":"done","type":"review","description":"Done."}],"status":"todo"}')
+            ->and(new UpdateTaskRequest(13, workStatus: 'completed')->body()->all())->toBe('{"work_status":"completed"}')
+            ->and(new UpdateTaskRequest(13, status: 'running')->body()->all())->toBe('{"status":"running"}');
+    });
+
     it('sends the reason of a correction after a failed check with its deliverables', function (): void {
         expect(new UpdateTaskRequest(57, deliverables: [['id' => 'done', 'type' => 'review', 'description' => 'Done.']], reason: 'The ADR was renumbered.')->body()->all())
             ->toBe('{"deliverables":[{"id":"done","type":"review","description":"Done."}],"reason":"The ADR was renumbered."}');
@@ -257,6 +264,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'list' => ['task-list/default', new ListTasksRequest, TaskGroupsResponse::class],
         'empty list' => ['task-list/empty', new ListTasksRequest, TaskGroupsResponse::class],
         'create' => ['task-create/created', new CreateTaskRequest(1, 'Add the tasks CLI', 'Brief'), TaskGroupResponse::class],
+        'create with no subtask' => ['task-create/no-subtask', new CreateTaskRequest(1, 'Add the tasks CLI', 'Brief', deliverables: []), TaskGroupResponse::class],
         'show' => ['task-show/default', new ShowTaskRequest(1), TaskGroupResponse::class],
         'update' => ['task-update/updated', new UpdateTaskRequest(1, 'Add the tasks command family'), TaskGroupResponse::class],
         'complete' => ['task-complete/completed', new CompleteTaskGroupRequest(2), TaskGroupResponse::class],
@@ -339,6 +347,24 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($status->merges[0]->reference())->toBe('ORB-1')
             ->and($status->merges[0]->mergeStatus)->toBe('waiting')
             ->and($status->toArray()['merges'][0]['pr_branch'] ?? null)->toBe('cursor/login-throttle');
+    });
+
+    it('keeps the work of a task with no subtask apart from its subtasks', function (): void {
+        $task = task_fixture_send('task-create/no-subtask', new CreateTaskRequest(1, 'Add the tasks CLI', 'Brief', deliverables: []));
+        $group = task_fixture_send('task-show/default', new ShowTaskRequest(1));
+        assert($task instanceof TaskGroupResponse && $group instanceof TaskGroupResponse);
+
+        expect($task->subtasks)->toBe([])
+            ->and($task->work)->toBeInstanceOf(SubtaskResponse::class)
+            ->and($task->work?->id)->toBe(2)
+            ->and($task->work?->type)->toBe('work')
+            ->and($task->work?->title)->toBe($task->title)
+            ->and(array_column($task->work->deliverables ?? [], 'id'))->toBe(['sdk-test'])
+            ->and($task->toArray()['subtasks'])->toBe([])
+            ->and($task->toArray()['work'])->toMatchArray(['id' => 2, 'type' => 'work', 'parent_id' => 1])
+            ->and($task->toArray()['work'])->not->toHaveKey('request_id')
+            ->and($group->work)->toBeNull()
+            ->and($group->toArray())->not->toHaveKey('work');
     });
 
     it('keeps the Gateway fields of a group and its ordered subtasks', function (): void {

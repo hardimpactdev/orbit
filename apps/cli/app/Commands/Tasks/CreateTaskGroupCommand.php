@@ -28,7 +28,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {title? : Short name of the feature}
         {--project= : Numeric Project ID}
         {--parent= : Numeric parent Task ID}
-        {--deliverables= : JSON file with typed child deliverables}
+        {--deliverables= : JSON file with typed deliverables of a subtask, or of a task with no subtask}
         {--brief= : Goal and acceptance}
         {--status= : backlog (default) or todo}
         {--orchestration= : external (default; Swamp executes task groups)}
@@ -51,18 +51,14 @@ final class CreateTaskGroupCommand extends TaskCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $child = $this->option('parent') !== null;
-        $unsupported = $child
-            ? ['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe', 'implementer-provider', 'implementer-model', 'implementer-effort',
-                'reviewer-provider', 'reviewer-model', 'reviewer-effort', 'pr-mode', 'issue']
-            : ['deliverables'];
-        foreach ($unsupported as $option) {
-            if (! in_array($this->option($option), [null, false], true)) {
-                return $this->renderGatewayFailure('task.option_invalid', "--{$option} is only available when creating ".($child ? 'a parent task.' : 'a subtask.'));
-            }
-        }
-
         if ($this->option('parent') !== null) {
+            foreach (['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe', 'implementer-provider', 'implementer-model', 'implementer-effort',
+                'reviewer-provider', 'reviewer-model', 'reviewer-effort', 'pr-mode', 'issue'] as $option) {
+                if (! in_array($this->option($option), [null, false], true)) {
+                    return $this->renderGatewayFailure('task.option_invalid', "--{$option} is only available when creating a parent task.");
+                }
+            }
+
             return $this->createChild($repository, $connectors);
         }
 
@@ -92,6 +88,12 @@ final class CreateTaskGroupCommand extends TaskCommand
         $subtasks = $this->subtasks();
 
         if ($subtasks === false) {
+            return self::FAILURE;
+        }
+
+        $deliverables = $this->deliverablesFile();
+
+        if ($deliverables === false) {
             return self::FAILURE;
         }
 
@@ -142,6 +144,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 brief: $brief,
                 status: is_string($status) ? $status : null,
                 subtasks: $subtasks,
+                deliverables: $deliverables,
                 preview: $this->option('preview') === true ? true : null,
                 orchestration: is_string($orchestration) ? $orchestration : null,
                 currentRecipe: $this->option('current-recipe') === true ? true : null,

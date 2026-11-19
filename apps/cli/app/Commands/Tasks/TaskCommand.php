@@ -63,6 +63,13 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     /** @var list<string> */
     public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'waiting_for_review', 'completed', 'failed', 'cancelled'];
 
+    /**
+     * The subtask statuses, which the work of a task with no subtask takes; the Gateway decides each move (docs/reference/tasks.md#a-task-with-no-subtask).
+     *
+     * @var list<string>
+     */
+    public const array WORK_STATUSES = ['todo', 'reserved', 'running', 'reviewing', 'completed', 'failed', 'cancelled'];
+
     /** @var list<string> */
     public const array PLANNING_STATUSES = ['backlog', 'todo'];
 
@@ -363,33 +370,21 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             ]),
             'Implementer agent' => self::copyAgent($group->implementerAgent),
             'Reviewer agent' => self::copyAgent($group->reviewerAgent),
+            // A task with no subtask does its own work (docs/reference/tasks.md#a-task-with-no-subtask).
+            ...($group->work === null ? [] : [
+                'Work status' => $group->work->status,
+                'Implementer thread' => $group->work->implementerAgentThreadId,
+            ]),
             'Tokens' => self::tokens($group->tokens),
             'Line diff' => self::lineDiff($group->lineDiff, $group->linesAdded, $group->linesDeleted),
             'Duration' => self::duration($group->durationMs),
         ]));
         $this->writeText('Brief', $group->brief);
 
-        $rows = array_map(static fn (SubtaskResponse $task): array => [
-            $task->position,
-            $task->id,
-            $task->title,
-            $task->status,
-            count($task->deliverables),
-            self::tokens($task->tokens),
-            self::lineDiff($task->lineDiff, $task->linesAdded, $task->linesDeleted),
-            self::duration($task->durationMs),
-            self::askingKind($task->assistanceRequested, $task->assistanceKind),
-            self::assistanceSummary($task->assistanceRequested, $task->assistanceKind, $task->assistanceQuestion, $task->assistanceReason),
-        ], $group->subtasks);
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration', 'Kind', 'Assistance'],
-            $rows,
-            'No subtasks.',
-        ));
+        $group->work === null ? $this->writeSubtasks($group->subtasks) : $this->writeDeliverables($group->work->deliverables);
         $repros = [];
 
-        foreach ($group->subtasks as $task) {
+        foreach ($group->work === null ? $group->subtasks : [$group->work] as $task) {
             foreach ($task->deliverables as $deliverable) {
                 if (($deliverable['fails_on_base'] ?? false) === true && is_string($deliverable['id'] ?? null)) {
                     $repros[] = $deliverable['id'];
@@ -443,6 +438,36 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Duration' => self::duration($task->durationMs),
         ]));
         $this->writeText('Brief', $task->brief);
+        $this->writeDeliverables($task->deliverables);
+        $this->writeHumanMessage("Request ID: {$task->requestId}");
+
+        return self::SUCCESS;
+    }
+
+    /** @param list<SubtaskResponse> $subtasks */
+    private function writeSubtasks(array $subtasks): void
+    {
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration', 'Kind', 'Assistance'],
+            array_map(static fn (SubtaskResponse $task): array => [
+                $task->position,
+                $task->id,
+                $task->title,
+                $task->status,
+                count($task->deliverables),
+                self::tokens($task->tokens),
+                self::lineDiff($task->lineDiff, $task->linesAdded, $task->linesDeleted),
+                self::duration($task->durationMs),
+                self::askingKind($task->assistanceRequested, $task->assistanceKind),
+                self::assistanceSummary($task->assistanceRequested, $task->assistanceKind, $task->assistanceQuestion, $task->assistanceReason),
+            ], $subtasks),
+            'No subtasks.',
+        ));
+    }
+
+    /** @param list<array<string, string|bool>> $deliverables */
+    private function writeDeliverables(array $deliverables): void
+    {
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['Deliverable', 'Type', 'Requires', 'Description'],
             array_map(static fn (array $deliverable): array => [
@@ -450,12 +475,9 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                 is_string($deliverable['type'] ?? null) ? $deliverable['type'] : '',
                 self::requirement($deliverable),
                 is_string($deliverable['description'] ?? null) ? $deliverable['description'] : '',
-            ], $task->deliverables),
+            ], $deliverables),
             'No deliverables.',
         ));
-        $this->writeHumanMessage("Request ID: {$task->requestId}");
-
-        return self::SUCCESS;
     }
 
     /**
