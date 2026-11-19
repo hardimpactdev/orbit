@@ -119,8 +119,10 @@ The Gateway environment holds one nkey account seed, `ORBIT_NATS_SEED`. `orbit:e
 Every other connection goes to the auth callout. `nats-server` sends an authorization request to `$SYS.REQ.USER.AUTH`, and the consumer process answers it:
 
 1. It reads the connection's address from the request.
-2. It looks for the active Node with that WireGuard address. When there is none, it refuses the connection with `peer.identity_unknown`.
-3. Otherwise it answers with a user JWT that the issuer signs. The user is named `node-<id>`, lasts one hour and may use only that Node's subjects.
+2. It looks for the active Node with that WireGuard address.
+3. It answers with a user JWT that the issuer signs. The user is named `node-<id>`, lasts one hour and may use only that Node's subjects.
+
+An address with no active Node gets a refusal with `peer.identity_unknown`.
 
 WireGuard binds each address to one peer key, so a Node cannot connect with another Node's address. When the user expires, the server closes the connection, and the client reconnects and asks again. A removed Node therefore loses the bus within an hour, and at once when its WireGuard peer goes. Replacing the seed changes nothing on the Nodes.
 
