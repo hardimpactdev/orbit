@@ -673,6 +673,8 @@ A phase that runs should spend its time on drift, not on proving that nothing ch
 
 It then passes only the items that differ to the existing repair task. That task keeps its register, handlers and `changed_when`, so a repaired item still reports a change and triggers what follows it. A check that fails or prints an unexpected result repairs every item. The Gateway's [private DNS release files](/reference/private-dns#release-and-sockets) use this rule.
 
+The software phase uses it for package holds. One `dpkg --get-selections` read covers the holds of the file packages and the recipe packages. A package skips the hold module only when dpkg lists it on one line, by exactly its name, as `hold`. A missing hold, a name that dpkg lists with an architecture, and an unknown package still go to the module. So a repair still reports a change, check mode still only reports it, and an unknown package still fails. The installed versions are read and repaired as before.
+
 ### Role units at a converge
 
 Every converge writes the units that the Node's roles own, the `base` scope included. `NodeRoleUnits` picks them from the Node's role assignments:
