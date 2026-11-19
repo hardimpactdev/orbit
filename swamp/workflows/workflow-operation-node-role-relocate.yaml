@@ -47,7 +47,7 @@ jobs:
   - name: 'Apply the Ingress role'
     labels: {role: swamp}
     guard: '${{ !has(inputs.intent.ingress) || inputs.intent.ingress == null }}'
-    dependsOn: [{step: 'Probe the Process backends', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: 'Probe the Process backends', condition: {type: not, condition: {type: failed}}}]
     task:
       type: workflow
       workflowIdOrName: operation-node-role-add

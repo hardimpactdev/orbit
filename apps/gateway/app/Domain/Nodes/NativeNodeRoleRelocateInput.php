@@ -144,16 +144,14 @@ final readonly class NativeNodeRoleRelocateInput
         $intent = $native['intent'];
         $child = $dns = [];
         foreach (RouteExecutionProof::objects($intent['publications']) as $publication) {
-            if (ValidatedData::integer($publication['node_id']) === $source->id) {
-                continue;
-            }
             $was = ValidatedData::object($publication['before']);
             $will = ValidatedData::object($publication['after']);
+            // A source that is also a DNS Node switches its private DNS with the others; only its sites wait for its removal.
             if ($will['dns'] !== null) {
                 $dns[] = [...array_intersect_key($publication, array_flip(['node_id', 'connection', 'host_keys'])),
                     'before' => ['dns' => $was['dns']], 'after' => ['caddy' => null, 'dns' => $will['dns']]];
             }
-            if ($will['caddy'] !== null || $will['php'] !== null) {
+            if (ValidatedData::integer($publication['node_id']) !== $source->id && ($will['caddy'] !== null || $will['php'] !== null)) {
                 $child[] = [...$publication, 'before' => [...$was, 'dns' => null], 'after' => [...$will, 'dns' => null]];
             }
         }

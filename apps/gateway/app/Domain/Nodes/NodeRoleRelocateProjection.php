@@ -39,6 +39,9 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
 
     public const string DnsStep = 'Publish the role DNS';
 
+    /** Ingress steps that run before private DNS switches; the source still serves alone when one of them fails. */
+    public const array IngressPreparationSteps = ['Probe the Process backends', 'Apply the Ingress role', 'Publish the Caddy sites', 'Check the public certificates'];
+
     /** The role's secrets go to the vault as execution copies; the inputs carry only their names. */
     public function input(Operation $operation): array
     {
@@ -95,7 +98,8 @@ final readonly class NodeRoleRelocateProjection implements DirectOperationProjec
                 $followUps[] = "Metrics still scrapes the former sites. Run `orbit node:role:add {$intent['metrics_converge']} metrics --converge`.";
             }
             // An Ingress move that failed before private DNS switched never sent traffic to the target, and the source still serves.
-            $restored = ! $succeeded && $intent['role'] === RoleName::Ingress->value && ! $this->dnsSwitched($raw);
+            $restored = ! $succeeded && $intent['role'] === RoleName::Ingress->value && ! $this->dnsSwitched($raw)
+                && array_any(self::IngressPreparationSteps, static fn (string $step): bool => str_starts_with($failedStep, $step));
             $result = $succeeded
                 ? ['node_id' => $intent['target_node_id'], 'source_node_id' => $intent['source_node_id'], 'role' => $intent['role'], 'relocated' => true,
                     ...($followUps === [] ? [] : ['follow_up' => implode(' ', $followUps)])]

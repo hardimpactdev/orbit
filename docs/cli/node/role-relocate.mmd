@@ -33,6 +33,7 @@ sequenceDiagram
   %%> - the calling Node has an access grant to the Gateway Node
   %%> - the target is active, has recorded SSH management and holds no conflicting role (`node.role_conflict`); `ingress` never goes to the Gateway Node
   %%> - for `ingress`, the target is a member of the Cluster whose Ingress moves; the move never changes membership
+  %%> - for `ingress`, the target is not the Router and runs no target of a public Route (`validation.failed`, reason `target_is_router` or `target_serves_public_route`): its public site would replace the private hop before Let's Encrypt issues
   %%> - the role is relocatable, assigned and `active` (or `failed` or `provisioning` in a retry), and `--from` owns the move
   %%> - consent: `--force`, or the CLI prompt, asked only after these checks pass
   %%> - one add, converge, remove or relocate Operation per target Node (`operation.target_busy`)
@@ -58,7 +59,7 @@ sequenceDiagram
     SW->>N: Apply the Ingress role<br/>child operation-node-role-add
     %%> What it does:
     %%> - the `node:role:add --converge` intent without the Metrics fleet, private DNS or the source's Caddyfile: Caddy and the Orbit root, the target's Caddyfile with every public site (Let's Encrypt, `tls force_automate`), a separate Router's Caddyfile, and the Ingress rules while a public Route is live
-    %%> - the target's sites reach the Router over HTTPS with the system roots, which hold the Orbit root and the public roots, so the hop works while the source still answers with its Let's Encrypt certificate
+    %%> - the target's sites reach the Router over HTTPS with the system bundle, which holds the Orbit root and the public roots, so the hop works while the source still answers with its Let's Encrypt certificate
     %%> - public Routes stay public; the source keeps serving until its removal
   end
   opt role is websocket
@@ -97,7 +98,7 @@ sequenceDiagram
   end
   SW->>N: Publish the role DNS<br/>child route-dns-publish
   %%> What it does:
-  %%> - writes each DNS Node's records and catalog; for `ingress`, names only the Ingress serves now answer with the target
+  %%> - writes each DNS Node's records and catalog, the source's too when it is one; for `ingress`, names only the Ingress serves now answer with the target
   %%> - also withdraws a live answer from the snapshot's `retired` list, such as the Router LAN answer earlier releases gave a public Process name
   opt websocket or ingress moved
     SW->>SW: Let DNS answers expire<br/>child route-dns-grace
@@ -127,7 +128,7 @@ sequenceDiagram
     %%> Result:
     %%> - the role already belongs to the target and stays `active`; a demoted `gateway` role would lock the Gateway out of its own access checks
     %%> - the task fails with the step's own code, and the failed step stays on the Operation: `converge:STEP`, or `remove:Remove from the source` when the source removal failed
-    %%> - for `ingress`, a failure before `Publish the role DNS` gives the role back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`
+    %%> - for `ingress`, a failed probe, child, Caddy or certificate step, before `Publish the role DNS` ran, gives the role back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`
     %%> Who serves:
     %%> - after a target step failure the source still serves, because DNS moves after the target steps and the source keeps its sites; after a source removal failure the target serves
     %%> On the Nodes:

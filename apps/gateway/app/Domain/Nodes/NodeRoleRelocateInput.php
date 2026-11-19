@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Actions\Nodes\AssignRoleAction;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Support\ValidatedData;
 use InvalidArgumentException;
 
@@ -42,6 +44,7 @@ final readonly class NodeRoleRelocateInput
                 throw new NodeRoleValidationException('Role [ingress] relocates only to a member of its Cluster.', ['field' => 'node', 'role' => $role->value]);
             }
             $query->where('cluster_id', $target->cluster_id);
+            $this->guardIngressTarget($target);
         }
         $assignment = $query->first();
         if (! $assignment instanceof NodeRole) {
@@ -98,6 +101,25 @@ final readonly class NodeRoleRelocateInput
             return ValidatedData::integer(self::bound($operation)['target_node_id']);
         } catch (ResourceOperationException|InvalidArgumentException) {
             return null;
+        }
+    }
+
+    /**
+     * The target's Caddyfile changes when it takes the Ingress. A Router or a workload of a public Route then serves that
+     * Route's private hop from its public site, whose Let's Encrypt certificate exists only once public DNS names the
+     * target, so the hop would fail until then. Such a target needs a staged move; a dedicated Ingress Node does not.
+     */
+    private function guardIngressTarget(Node $target): void
+    {
+        $reason = match (true) {
+            NodeRole::query()->where('node_id', $target->id)->where('role', RoleName::Router)->exists() => 'target_is_router',
+            Route::query()->where('cluster_id', $target->cluster_id)->where('publication', RoutePublication::Public)
+                ->whereHas('targets.instance', static fn ($query) => $query->where('node_id', $target->id))->exists() => 'target_serves_public_route',
+            default => null,
+        };
+        if ($reason !== null) {
+            throw new NodeRoleValidationException('Role [ingress] relocates only to a Node that is not the Router and runs no target of a public Route.',
+                ['field' => 'node', 'role' => RoleName::Ingress->value, 'reason' => $reason]);
         }
     }
 }
