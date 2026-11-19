@@ -88,6 +88,13 @@ struct Pool {
     content: BlobRef,
 }
 
+/// Whether a pool file was written, so its running unit must reload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Written {
+    Changed,
+    Unchanged,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Leaf {
@@ -128,13 +135,14 @@ pub fn publish_site(system: &impl System, input: &serde_json::Value) -> Result<u
     let mut pools = Vec::new();
     for pool in &input.php {
         let content = pool.content.text(system)?.replace("__ORBIT_NODE_GROUP__", &account.gid.to_string()).replace("/__ORBIT_NODE_HOME__", &account.home);
-        pools.push((pool, site.file(&pool_path(pool), content.as_bytes(), root, root, 0o644)?));
+        let written = if site.file(&pool_path(pool), content.as_bytes(), root, root, 0o644)? { Written::Changed } else { Written::Unchanged };
+        pools.push((pool, written));
     }
     for (pool, _) in &pools {
         system.run(30, &pool_test(pool)).map_err(failed)?;
     }
-    for (pool, changed) in &pools {
-        site.php_unit(&pool_unit(pool), *changed)?;
+    for (pool, written) in &pools {
+        site.php_unit(&pool_unit(pool), *written)?;
     }
 
     let caddy = system.group("caddy").map_err(failed)?;
@@ -236,6 +244,7 @@ struct Site<'a, S: System> {
 }
 
 impl<S: System> Site<'_, S> {
+    #[expect(clippy::needless_pass_by_value, reason = "map_err hands each error over by value")]
     fn failed(detail: impl ToString) -> Failure {
         Failure::new("route.publish_failed", detail.to_string())
     }
@@ -264,7 +273,8 @@ impl<S: System> Site<'_, S> {
             None => lines.push(&wanted),
         }
         let metadata = fs::metadata(&real).map_err(Self::failed)?;
-        let content = lines.join("\n") + "\n";
+        let mut content = lines.join("\n");
+        content.push('\n');
         replace(&real, content.as_bytes(), metadata.uid(), metadata.gid(), metadata.mode() & 0o7777).map_err(Self::failed)?;
         self.changes += 1;
         Ok(())
@@ -276,7 +286,7 @@ impl<S: System> Site<'_, S> {
         let current = fs::symlink_metadata(&dest).ok();
         let points = current.as_ref().is_some_and(|meta| meta.file_type().is_symlink()) && fs::read_link(&dest).is_ok_and(|link| link == Path::new(target));
         if !points {
-            if current.as_ref().is_some_and(|meta| meta.is_dir()) {
+            if current.as_ref().is_some_and(fs::Metadata::is_dir) {
                 fs::remove_dir(&dest).map_err(Self::failed)?;
             }
             let parent = dest.parent().ok_or_else(|| Self::failed("no parent"))?;
@@ -318,7 +328,7 @@ impl<S: System> Site<'_, S> {
     }
 
     /// Enables the unit, starts a stopped one and reloads a running one whose pool changed. A reload keeps open requests.
-    fn php_unit(&mut self, unit: &str, changed: bool) -> Result<(), Failure> {
+    fn php_unit(&mut self, unit: &str, written: Written) -> Result<(), Failure> {
         let systemctl = |args: &[&str]| self.system.run(30, &[vec!["/usr/bin/systemctl".to_owned()], strings(args)].concat());
         if systemctl(&["is-enabled", "--quiet", unit]).is_err() {
             systemctl(&["enable", unit]).map_err(Self::failed)?;
@@ -327,7 +337,7 @@ impl<S: System> Site<'_, S> {
         if systemctl(&["is-active", "--quiet", unit]).is_err() {
             systemctl(&["start", unit]).map_err(Self::failed)?;
             self.changes += 1;
-        } else if changed {
+        } else if written == Written::Changed {
             systemctl(&["reload", unit]).map_err(Self::failed)?;
         }
         Ok(())

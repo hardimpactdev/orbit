@@ -265,7 +265,9 @@ impl orbit_executor_core::executor::Run for Runner {
                     .expect("power wake");
             }
             orbit_executor_core::action::Action::ProofNoop
-            | orbit_executor_core::action::Action::UfwEnsureRule => {
+            | orbit_executor_core::action::Action::UfwEnsureRule
+            | orbit_executor_core::action::Action::TlsEnsureCsr
+            | orbit_executor_core::action::Action::RoutePublishSite => {
                 panic!("power actions only")
             }
         }
