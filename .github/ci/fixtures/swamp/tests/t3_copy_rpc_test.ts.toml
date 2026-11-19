@@ -17,7 +17,7 @@ cases = [
   "Conn launch finds the first message in older local history without consulting a command receipt",
 ]
 file = "swamp/tests/t3_copy_rpc_test.ts"
-cost = 49
+cost = 57
 # Local Deno case times rounded up; not CI measurements. The never-ending-run case waits out the helper's 42 s deadline (40 s locally).
 inputs = [
   "swamp/ansible/t3_copy_rpc.mjs",
