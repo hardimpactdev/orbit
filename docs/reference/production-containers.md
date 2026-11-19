@@ -244,13 +244,20 @@ A release container has no host install folders. A Process command, a Process en
 | Host path | Container path |
 | --- | --- |
 | `/usr/bin/php` and `/usr/bin/php<version>` | The runtime folder's PHP of that version |
-| `/opt/orbit/vite-plus/bin/<tool>` | `/opt/orbit-runtime/current/bin/<tool>`, when the runtime ships the tool |
+| `/opt/orbit/vite-plus/bin/<tool>` | `/opt/orbit-runtime/current/bin/<tool>`, when the runtime ships the tool, except `chrome-headless-shell` |
 | `/opt/orbit/vite-plus/js_runtime/node/<version>/bin/node`, `npm` or `npx` | `/opt/orbit-runtime/current/bin/<tool>`, when `<version>` is the runtime folder's Node release in the recipe |
+| `/opt/orbit/chrome-headless-shell/<version>/chrome-headless-shell-linux64/chrome-headless-shell`, where `<version>` is digits and dots, or its `releases/<sha256>/...` form with the 64 lowercase hex digits | `/opt/orbit-runtime/current/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`, the runtime folder's headless Chrome, whatever `<version>` the host path names |
 | The Instance's checkout, or `/home/orbit-app-<project>/current` | `/srv/workspace/current` |
 
 Admission finds a host path anywhere in a value: as an argument, after `--option=` or `VAR=`, inside quotes, and after a shell operator such as `;`, `&&`, `||`, `|`, `(`, a backtick or `$(` in a shell command string.
 
-A path is mapped only when it is literal up to the next space, quote or shell operator. A path that a shell expansion, a glob or more of the same word continues, such as `/usr/bin/php${PHP_VERSION}`, `/usr/bin/php8.*` or `"/usr/bin/php"8.5`, refuses. Any other path under `/opt/orbit/`, `/home/orbit-app-<project>` or `/usr/bin/php`, and a Node path of another version, refuses the deploy with `deployment.host_path_unsupported`. The message names the Process and argument, or the environment key, and the path. For a Node path it also names both Node versions. Change the record to a container path or a command on `PATH`, then deploy again.
+A path is mapped only when it is literal up to the next space, quote or shell operator. A path that a shell expansion, a glob or more of the same word continues, such as `/usr/bin/php${PHP_VERSION}`, `/usr/bin/php8.*` or `"/usr/bin/php"8.5`, refuses. The runtime folder carries the same pinned headless Chrome as the agent folder of development containers. It comes with the browser libraries and fonts it needs. So a production container has a browser without an agent folder, and no Node installs a second one.
+
+A host Chrome path maps whatever its version: an app that names a browser needs a browser, not that build. An Instance environment value such as `OG_IMAGE_CHROME_PATH` keeps working as it is.
+
+Each preparation writes the linker and fontconfig files that development containers get: `/etc/ld.so.conf.d/zz-orbit-browser.conf` and `/etc/fonts/fonts.conf`. It then rebuilds the linker cache. Every release clones the preparation, so Chrome starts in it. The AppProd converge publishes the runtime version that holds Chrome, and the next deploy uses it.
+
+Any other path under `/opt/orbit/`, `/home/orbit-app-<project>` or `/usr/bin/php`, and a Node path of another version, refuses the deploy with `deployment.host_path_unsupported`. The message names the Process and argument, or the environment key, and the path. For a Node path it also names both Node versions. Change the record to a container path or a command on `PATH`, then deploy again.
 
 ## PHP runtime
 
