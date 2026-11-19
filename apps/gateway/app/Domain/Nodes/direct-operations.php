@@ -20,6 +20,7 @@ return ['node.add' => [
     'terminal_result' => ['job' => 'node', 'step' => 'Check the Node', 'native' => true],
     'projection' => NativeNodeEnrollmentProjection::class,
     'execution_copies' => [
+        ['vault' => 'orbit-control-inputs', 'key_pattern' => '^bootstrap-identity-node-[1-9][0-9]*$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^agent-secret-node-[1-9][0-9]*$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^node-role-operation-[1-9][0-9]*-[a-z-]+$'],
         ['vault' => 'orbit-control-inputs', 'key_pattern' => '^process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*$'],

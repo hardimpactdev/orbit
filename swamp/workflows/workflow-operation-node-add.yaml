@@ -25,7 +25,7 @@ inputs:
           vault: {type: string, enum: [orbit-control-inputs]}
           key:
             type: string
-            pattern: ^(agent-secret-node-[1-9][0-9]*|node-role-operation-[1-9][0-9]*-[a-z-]+|process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*)$
+            pattern: ^(bootstrap-identity-node-[1-9][0-9]*|agent-secret-node-[1-9][0-9]*|node-role-operation-[1-9][0-9]*-[a-z-]+|process-parent-operation-[1-9][0-9]*-node-[1-9][0-9]*-member-[1-9][0-9]*)$
         required:
         - vault
         - key

@@ -42,7 +42,7 @@ orbit node:add beast beast.example.com \
 orbit node:add beast --role=app-dev --role=database
 ```
 
-For macOS, use `node:add` with `--platform=macos` and set `--user` and `--orbit-user` to the same existing account. The machine must already join WireGuard and accept the Swamp control key. No role is required. A role request fails with `node.platform_unsupported` before SSH. This path also enrolls an existing roleless peer whose SSH identity is not pinned, and it can correct that peer's platform and architecture from the machine. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
+For macOS, use `node:add` with `--platform=macos` and set `--user` and `--orbit-user` to the same existing account. The machine must already join WireGuard and accept the Swamp control key, which enrollment uses, and the Gateway public key, which the Gateway uses later. Enrollment changes no account on a Mac, so it adds neither key. No role is required. A role request fails with `node.platform_unsupported` before SSH. This path also enrolls an existing roleless peer whose SSH identity is not pinned, and it can correct that peer's platform and architecture from the machine. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
 
 In a terminal, an omitted name is asked for as text, and so are the host and the fingerprint for a new Node or an existing Node with no pinned host key. A noninteractive or `--json` call that omits one is refused with `input.invalid` for the name or host, or `node.ssh_host_fingerprint_required` for the fingerprint, and sends no request.
 
