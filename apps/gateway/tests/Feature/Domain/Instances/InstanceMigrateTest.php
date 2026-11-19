@@ -35,6 +35,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
@@ -1314,7 +1315,8 @@ describe('while a move runs', function (): void {
         $markers->shouldNotReceive('markAwake', 'isCold');
         app()->instance(HibernationMarkerStore::class, $markers);
 
-        app(ActivateInstanceRuntimeAction::class)->execute($default);
+        expect(fn () => app(ActivateInstanceRuntimeAction::class)->execute($default))
+            ->toThrow(HibernationException::class, 'is moving into a container');
 
         expect(containerRefusal(fn () => app(StartInstanceDeployAction::class)->execute($default, 'test', null)))->toBe('instance.lifecycle_busy');
     });

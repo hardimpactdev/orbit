@@ -33,6 +33,7 @@
         <env name="ORBIT_AGENT_DELIVERY" value="tests/Fixtures/agent-delivery/manifest.json" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="ORBIT_VISIT_WAKE_WAIT_SECONDS" value="0.3" force="true"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite" force="true"/>

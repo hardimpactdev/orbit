@@ -1,85 +1,24 @@
 # Orbit CLI
 
-Laravel Zero 13 client for Orbit.
+Laravel Zero 13 client for Orbit. This file holds every CLI rule. Read no other instruction file before a change; the root `AGENTS.md` owns the workflow, checks and review.
 
-- Use PHP 8.5 with strict types.
+## Boundaries
+
 - Keep the CLI stateless except for explicit files under `$ORBIT_HOME`.
-- Use the [shared CLI design standard](../../docs/reference/cli-ux.md). Verify
-  terminal behavior with [PTY evidence](../../.agents/skills/verifying-cli-output/SKILL.md).
-- Send operational commands through `nckrtl/orbit-php-sdk`.
-- Do not execute remote infrastructure commands in the CLI.
-- Use Pest 5 with `describe()` and `it()`.
-- Use Pint for formatting and Larastan for static analysis.
+- A command that works on the Gateway validates explicit input, sends typed requests through `nckrtl/orbit-php-sdk` (`packages/php-sdk`) and renders human and JSON output. The Gateway owns policy: the CLI decides no access, placement or validation rule that the Gateway owns. Local commands, such as `gateway:use`, `gateway:remove`, `dns:resolve` and `profile` with an explicit URL, work without the Gateway.
+- Run no SSH, remote sudo, package manager, systemd or shell for a remote change. Privileged local changes stay in the visible `gateway:add`, `gateway:trust`, `dns:resolve` and `self-update` commands.
+- Add no database, web route, queue, scheduler or frontend setup.
+- Each command's page and chart under `docs/cli/<family>/` own its contract. Read them before you change the command.
 
-## Required Guidance Bootstrap
+## Output
 
-`.ai/rules/index.md` and every indexed project rule file are required repository state.
-If either is absent, the checkout or Boost bootstrap is incomplete.
+- Follow the [CLI design standard](../../docs/reference/cli-ux.md). Prove terminal behaviour with real PTY output ([verifying-cli-output](../../.agents/skills/verifying-cli-output/SKILL.md)).
+- Keep the Gateway's request ID in human and JSON errors. A JSON error envelope always has `error.request_id`, `null` when there is none.
+- Never echo secret-bearing input in an error or exception text. Only an explicit credential-delivery contract, such as Metrics credentials, renders its credential fields.
 
-If guidance is missing or incomplete:
+## Code and tests
 
-1. Restore only the affected tracked guidance path from the current branch. If
-   the branch does not contain it, replace the incomplete checkout. Do not
-   restore whole guidance trees or Composer manifests to repair one missing file.
-2. Run `composer install` when `vendor/` is absent or incomplete.
-3. Run `composer guidance:update` to refresh Boost-managed output.
-
-Do not reconstruct missing rules from memory. Do not silently continue without
-the project rule set.
-
-===
-
-<laravel-boost-guidelines>
-=== .ai/orbit rules ===
-
-# Orbit CLI Guidelines
-
-## Context
-
-- This repository is a Laravel Zero 13 client, not a web application.
-- Confirm installed package versions before using version-specific APIs.
-- Follow existing file structure and sibling conventions. Do not add a dependency or a new top-level directory without approval.
-
-## Skills
-
-- Activate the relevant skill from `.agents/skills` before work in that domain.
-- Every named skill must have a readable `SKILL.md`. Treat a missing skill as an incomplete Boost bootstrap and use the Required Guidance Bootstrap recovery steps.
-
-## Verification
-
-- During development, run the Pest 5 tests that cover the change with a file path or `--filter`. `composer test` runs the full suite, and CI runs checks across all projects.
-- Follow the root `AGENTS.md` check policy for task and non-task work. Pint, Larastan, and Rector are the configured PHP quality tools.
-
-=== boost rules ===
-
-# Laravel Boost
-
-## Project Rules
-
-- Open `.ai/rules/index.md`, read rules whose globs match the files in scope, and search `.ai/rules` for relevant terms before planning or editing. Required Guidance Bootstrap above owns missing-guidance recovery.
-- Store durable project decisions in a concise repository-owned rule file and keep its frontmatter globs in the index.
-
-## Boost Commands
-
-- Run `composer guidance:update` to refresh Boost-managed guidance, skills, and scoped rules without interactive package discovery.
-- The Boost MCP server is configured in `.codex/config.toml`. Use a Boost MCP tool only when the active client exposes that tool. Use repository commands and files when it does not.
-
-=== php rules ===
-
-# PHP
-
-- Always use curly braces for control structures, even for single-line bodies.
-- Use PHP 8 constructor property promotion: `public function __construct(public GitHub $github) { }`. Do not leave empty zero-parameter `__construct()` methods unless the constructor is private.
-- Use explicit return type declarations and type hints for all method parameters: `function isAccessible(User $user, ?string $path = null): bool`
-- Use TitleCase for Enum keys: `FavoritePerson`, `BestLake`, `Monthly`.
-- Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
-- Use array shape type definitions in PHPDoc blocks.
-
-=== pint/core rules ===
-
-# Laravel Pint Code Formatter
-
-- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
-- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
-
-</laravel-boost-guidelines>
+- Start every PHP file with `declare(strict_types=1)`.
+- From `apps/cli`, run the tests that cover the change: `vendor/bin/pest --compact tests/Feature/...Test.php`, or `--filter=<name>`. `composer test` runs the whole suite.
+- Fake the SDK transport for a remote command and assert the exact request type and payload. Invalid local input sends no request and changes no local file. A command may send a read-only lookup first, such as the Node list; when the lookup fails, it sends no mutation. Use temporary directories for configuration and trust-store tests, and credential-shaped sentinels where output could leak a secret.
+- `box.json` lays out the PHAR for `bin/orbit-build-cli-binary`; PHPacker stays in `phpacker/` so its Symfony 7 constraint stays out of the CLI lockfile.

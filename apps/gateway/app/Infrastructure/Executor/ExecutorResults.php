@@ -67,7 +67,7 @@ final readonly class ExecutorResults
             $this->log->warning('The executor reported a failed order.', ['node_id' => $nodeId, 'operation_id' => $reply->operation, 'code' => $reply->reason]);
         }
 
-        if ($route === 'ssh') {
+        if ($route !== 'websocket') {
             return;
         }
 
@@ -126,7 +126,20 @@ final readonly class ExecutorResults
         $line = $managed ? [...$line, 'delivery' => $route] : $line;
         $recorded = $owner->whereNull('executor_result')->update(['executor_result' => json_encode($line, JSON_THROW_ON_ERROR), 'executor_result_received_us' => (int) now()->format('Uu')]);
         if ($recorded === 1 && $managed) {
-            ExecutorFence::resolve($operation);
+            // A signed power Operation that ended under its fence completes through the on-time completion (ExecutorWake::complete).
+            // The journal's reader runs it itself; a late WebSocket receipt queues it. A Swamp recovery run settles through its projection.
+            if (! ExecutorWake::owns($operation) || isset($operation->state[ExecutorWake::Recovery])) {
+                ExecutorFence::resolve($operation);
+            } elseif ($route !== 'journal' && ExecutorWake::endedUnknown($operation)) {
+                try {
+                    Bus::dispatch((new CompleteExecutorWake($reply->operation))->afterCommit());
+                } catch (Throwable $exception) {
+                    // The reconcile pass completes it (ExecutorWake::recoverPendingCompletions).
+                    $this->log->warning('The late executor receipt could not be queued for completion.', [
+                        'operation_id' => $reply->operation, 'exception_type' => $exception::class,
+                    ]);
+                }
+            }
         }
 
         return $recorded === 1 && $managed && $route === 'websocket' && $operation->kind === InstanceWake::Kind

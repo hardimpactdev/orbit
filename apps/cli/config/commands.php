@@ -8,19 +8,6 @@ use Illuminate\Console\Scheduling\ScheduleFinishCommand;
 use Illuminate\Console\Scheduling\ScheduleListCommand;
 use Illuminate\Console\Scheduling\ScheduleRunCommand;
 use Illuminate\Foundation\Console\VendorPublishCommand;
-use Laravel\Boost\Console\AddSkillCommand;
-use Laravel\Boost\Console\InstallCommand as BoostInstallCommand;
-use Laravel\Boost\Console\ListSkillCommand;
-use Laravel\Boost\Console\RulesIndexCommand;
-use Laravel\Boost\Console\StartCommand as BoostStartCommand;
-use Laravel\Boost\Console\UpdateCommand;
-use Laravel\Mcp\Console\Commands\InspectorCommand;
-use Laravel\Mcp\Console\Commands\MakeAppResourceCommand;
-use Laravel\Mcp\Console\Commands\MakePromptCommand;
-use Laravel\Mcp\Console\Commands\MakeResourceCommand;
-use Laravel\Mcp\Console\Commands\MakeServerCommand;
-use Laravel\Mcp\Console\Commands\MakeToolCommand;
-use Laravel\Mcp\Console\Commands\StartCommand as McpStartCommand;
 use LaravelZero\Framework\Commands\BuildCommand;
 use LaravelZero\Framework\Commands\InstallCommand;
 use LaravelZero\Framework\Commands\MakeCommand;
@@ -93,19 +80,6 @@ return [
         HelpCommand::class,
         VendorPublishCommand::class,
         StubPublishCommand::class,
-        class_exists(AddSkillCommand::class) ? AddSkillCommand::class : null,
-        class_exists(BoostInstallCommand::class) ? BoostInstallCommand::class : null,
-        class_exists(ListSkillCommand::class) ? ListSkillCommand::class : null,
-        class_exists(RulesIndexCommand::class) ? RulesIndexCommand::class : null,
-        class_exists(BoostStartCommand::class) ? BoostStartCommand::class : null,
-        class_exists(UpdateCommand::class) ? UpdateCommand::class : null,
-        class_exists(InspectorCommand::class) ? InspectorCommand::class : null,
-        class_exists(MakeAppResourceCommand::class) ? MakeAppResourceCommand::class : null,
-        class_exists(MakePromptCommand::class) ? MakePromptCommand::class : null,
-        class_exists(MakeResourceCommand::class) ? MakeResourceCommand::class : null,
-        class_exists(MakeServerCommand::class) ? MakeServerCommand::class : null,
-        class_exists(MakeToolCommand::class) ? MakeToolCommand::class : null,
-        class_exists(McpStartCommand::class) ? McpStartCommand::class : null,
     ])),
 
     /*

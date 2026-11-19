@@ -5,7 +5,7 @@ CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, the project's pin test files (PIN_TESTS), and the whole SDK suite, which takes
 seconds, each with the per-test time limit that CI's job passes to Pest. The rest of the Gateway, CLI and docs suites
-is left to CI and named as skipped. Expensive policy and docs checks run when their inputs change; fixture budget
+is left to CI and named as skipped. Expensive docs checks run when their inputs change, and the policy tests when a change touches a file they read; fixture budget
 and capacity checks remain unconditional. CI's "CI policy" job still runs its full suite on every PR.
 The fixtures part runs the units of CI's plan that the change touches directly first, then the other planned units
 that fit the time left; it names the rest as deferred to CI. Every part gets the time left as its limit; a part the
@@ -73,16 +73,14 @@ PIN_TESTS = {
                      'tests/Feature/InstanceNodeServiceTargetsTest.php', 'tests/Feature/Http/CollectionAccessContractTest.php'),
     'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
 }
-# CI runs these on every PR; this local check runs them for tooling and docs inputs.
+# CI runs these on every PR; this local check runs them for a change to a file that one of them reads.
 CI_POLICY = [['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py'],
              ['python3', '-m', 'unittest', 'discover', '-s', 'tools/ci-runners', '-p', 'test_*.py']]
-# Policy tests also consume the fixture/proof registry, runner implementation and recipe/build inputs.
-# Keep their non-tooling inputs here; docs inputs come from the CI table below.
-CI_POLICY_INPUTS = ('swamp/**', 'apps/agent/**', 'apps/pi-server/**', 'apps/gateway/resources/ci-runner/**',
-                    'apps/gateway/resources/machine-software/**',
-                    'apps/gateway/app/Infrastructure/MachineSoftware/StaticPhpBuild.php',
-                    'apps/gateway/.env.example', 'apps/cli/tests/Fixtures/Console/command-consent.php',
-                    *(f'{project}/{file}' for project, files in PIN_TESTS.items() for file in files))
+# bin/, tools/ and .github/ select the policy tests whole. Outside them, the files and folders that the tests open in
+# a recorded run of the suite select them; tools/ci-policy-reads.txt says how that run was recorded.
+CI_POLICY_TREES = ('bin/', 'tools/', '.github/')
+CI_POLICY_READS = tuple(line for line in (ROOT / 'tools/ci-policy-reads.txt').read_text().splitlines()
+                        if line and not line.startswith('#'))
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
@@ -460,8 +458,29 @@ def fixtures(plan, deadline, table, paths):
     return Part('fixtures', 'passed' if passed else 'skipped', seconds, detail)
 
 
-def ci_policy(deadline):
-    return timed('ci-policy', CI_POLICY, deadline)
+def ci_policy(deadline, selected_by):
+    part = timed('ci-policy', CI_POLICY, deadline)
+    part.detail = '; '.join(filter(None, [selected_by, part.detail]))
+    return part
+
+
+def ci_policy_input(paths):
+    """Which changed path selects the policy tests, and why; None when none does."""
+    reads = units.selection.input_rules(CI_POLICY_READS)
+    for path in paths:
+        if path.startswith(CI_POLICY_TREES):
+            return f'selected by {path}; {", ".join(CI_POLICY_TREES)} select it whole'
+        if units.selection.matches(path, reads):
+            return f'selected by {path}, which a policy test reads'
+    return None
+
+
+def policy_paths(base, committed, paths):
+    """The changed paths with the old name of each renamed file: a test that reads the old name breaks too."""
+    if base is None:
+        return paths
+    renames = review['git'](ROOT, 'diff', '--name-only', '--no-renames', base, *(['HEAD'] if committed else [])).splitlines()
+    return sorted(set(paths) | set(renames))
 
 
 def ci_plan(base, head):
@@ -572,13 +591,7 @@ def main(argv=None):
     # input rules for the expensive checks, including inputs outside docs/ such as apps/docs and charts.
     input_jobs = review['ci_select'](paths)['jobs']
     tooling = any(path.startswith(('bin/', 'tools/', '.github/')) for path in paths)
-    # Policy also checks tracked presence of literal table inputs, including deleted files.
-    checks, _, _ = units.selection.check_table()
-    entries = (checks['all-checks'], checks['ignored'], *checks['check'].values(), *checks['roots'].values())
-    named_inputs = {pattern.removeprefix('!') for entry in entries for pattern in entry['inputs']
-                    if not set('*?') & set(pattern)}
-    policy_rules = units.selection.input_rules((*CI_POLICY_INPUTS, *named_inputs))
-    policy_inputs = tooling or input_jobs['docs'] or any(units.selection.matches(path, policy_rules) for path in paths)
+    policy_input = ci_policy_input(policy_paths(base, committed, paths))
     docs_inputs = tooling or input_jobs['docs'] or input_jobs['api-reference']
     if want('docs-impact'):
         common = Path(review['git'](ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
@@ -619,8 +632,8 @@ def main(argv=None):
         else:
             record(Part('swamp-shape', 'not selected', 0, 'the Swamp checks are not selected'))
     if want('ci-policy'):
-        record(ci_policy(deadline) if policy_inputs
-               else Part('ci-policy', 'not selected', 0, 'no policy input changed; CI runs the full policy suite'))
+        record(ci_policy(deadline, policy_input) if policy_input
+               else Part('ci-policy', 'not selected', 0, 'no changed path is read by a policy test; CI runs the full policy suite'))
     if want('fixture-population'):
         record(fixture_population(plan, deadline, table))
     if want('pest'):

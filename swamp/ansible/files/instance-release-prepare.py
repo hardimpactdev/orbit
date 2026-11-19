@@ -98,6 +98,20 @@ def refresh_image(machine, target, image, info):
     return refreshed
 
 
+def install_browser_files(machine, config):
+    """The runtime's headless Chrome finds its libraries and fonts as in a development container (InstanceImage::browser).
+    Every release clones this preparer, so its linker cache already lists the mounted runtime's libraries. A config that
+    an earlier converge wrote has no browser files, so the preparer installs none until the converge publishes them."""
+    files = config.get("browser_files", [])
+    if not files:
+        return
+    for item in files:
+        if not re.fullmatch(r"/etc/(?:ld[.]so[.]conf[.]d/zz-orbit-browser[.]conf|fonts/fonts[.]conf)", item["path"]):
+            raise ValueError("Unexpected browser file")
+        guest(machine, "sh", "-ec", 'install -d -m 0755 "${1%/*}" && cat >"$1" && chmod 0644 "$1"', "sh", item["path"], stdin=item["content"])
+    guest(machine, "ldconfig")
+
+
 def prepare(instance, php):
     target = f"instance-{instance}"
     machine = "prepare-" + target
@@ -168,9 +182,12 @@ def prepare(instance, php):
     # Apply the distro's pending updates only in the off-traffic preparer. Retained releases keep their packages.
     guest(machine, "env", "DEBIAN_FRONTEND=noninteractive", "sh", "-ec",
           'apt-get -qq -o Acquire::Retries=2 update && apt-get -qq -y -o Dpkg::Options::=--force-confold upgrade', timeout=1200)
+    install_browser_files(machine, config)
     # Default installation never enables the unit. Candidate readiness and the first verified switch own its service lifecycle.
     guest(machine, "sh", "-ec", 'cat >/etc/systemd/system/orbit-frankenphp.service && systemctl daemon-reload', stdin=UNIT.replace("@PHP@", php))
     guest(machine, "sh", "-ec", 'test -x /opt/orbit-runtime/current/php/"$1"/bin/frankenphp && install -d -o orbit -g orbit -m 0750 /srv/workspace /srv/shared', "sh", php)
+    # Both binaries read /etc/orbit/php/php.ini: the build's php.ini-production with the security settings, at every deploy.
+    guest(machine, "sh", "-ec", PHP_INI, "sh", php)
     upstream = directory / "upstream.caddy"
     if not upstream.exists():
         with upstream.open("x") as stream:
@@ -191,6 +208,14 @@ if ! id orbit >/dev/null 2>&1; then useradd -m -U -s /bin/bash orbit; fi
 apt-get -qq update
 apt-get -qq install --no-install-recommends -y ca-certificates curl git openssh-client python3 rsync unzip
 install -d -m0755 /etc/orbit
+"""
+# PHP's production settings less upload progress and the PHP header; later lines win (docs/reference/php-runtime.md#production-safe-settings).
+PHP_INI = """install -d -m0755 /etc/orbit/php
+{ cat /opt/orbit-runtime/current/php/"$1"/php.ini-production
+  printf '%s\\n' '' '; Orbit' 'zend.exception_ignore_args = 1' 'session.upload_progress.enabled = 0' 'display_errors = 0' \\
+    'display_startup_errors = 0' 'expose_php = 0'; } >/etc/orbit/php/php.ini.new
+chmod 0644 /etc/orbit/php/php.ini.new
+mv /etc/orbit/php/php.ini.new /etc/orbit/php/php.ini
 """
 UNIT = """[Unit]
 Description=Orbit production Instance web server

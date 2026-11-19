@@ -49,6 +49,7 @@ fn fixture() -> (tempfile::TempDir, Power, Fake) {
             .clone(),
         restore_bound: Duration::from_secs(2),
         web_port: 0,
+        ready_bound: Duration::from_millis(1500),
         readers: std::sync::Mutex::default(),
         reader_bound: Duration::from_secs(10),
         reader: wake::restore,
@@ -629,7 +630,7 @@ fn lifecycle_resume_does_not_need_the_old_app_and_leaves_the_marker() {
     power.sleep_with(&api, "2", "op1").expect("freeze");
     assert!(api.instance.lock().expect("instance").address.is_none());
     power
-        .wake_checked(&api, "2", WebProbe::Lifecycle)
+        .wake_checked(&api, "2", WebProbe::Lifecycle, None)
         .expect("resume without the app");
     assert_eq!(api.instance.lock().expect("instance").status, "running");
     assert!(power.markers.join("app-instance-2.asleep").exists());
@@ -1014,7 +1015,7 @@ fn an_unready_app_fails_the_wake_and_keeps_the_marker() {
 fn a_headless_wake_needs_no_web_unit_and_removes_the_marker() {
     let (_dir, power, api) = asleep(503);
     power
-        .wake_checked(&api, "2", WebProbe::NotConfigured)
+        .wake_checked(&api, "2", WebProbe::NotConfigured, None)
         .expect("headless wake");
     assert!(!marker(&power).exists());
     assert_eq!(swap_limits(&api), ["0", "0"]);
@@ -1406,5 +1407,98 @@ fn a_stalled_reader_ends_the_wake_partial_and_holds_back_the_next_sleep() {
                 .expect("sleep"),
             "frozen"
         );
+    });
+}
+
+/// An app that listens only `start` after the call, then reads each full request and answers 200 after `answer`.
+fn late_web(start: Duration, answer: Duration) -> u16 {
+    let probe = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+    let port = probe.local_addr().expect("address").port();
+    let listener = if start.is_zero() {
+        Some(probe)
+    } else {
+        drop(probe);
+        None
+    };
+    std::thread::spawn(move || {
+        let listener = listener.unwrap_or_else(|| {
+            std::thread::sleep(start);
+            std::net::TcpListener::bind(("127.0.0.1", port)).expect("late listener")
+        });
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut request = [0; 256];
+            let mut received = 0;
+            while received < request.len() && !request[..received].ends_with(b"\r\n\r\n") {
+                match std::io::Read::read(&mut stream, &mut request[received..]) {
+                    Ok(0) | Err(_) => break,
+                    Ok(bytes) => received += bytes,
+                }
+            }
+            std::thread::sleep(answer);
+            let _ = write!(stream, "HTTP/1.1 200 X\r\nContent-Length: 0\r\n\r\n");
+        }
+    });
+    port
+}
+
+#[test]
+fn a_slow_web_start_wakes_once_the_app_answers() {
+    let (_dir, mut power, api) = asleep(200);
+    // FrankenPHP comes up about 2 s after the thaw: the port refuses connections until then.
+    power.web_port = late_web(Duration::from_secs(2), Duration::ZERO);
+    let started = Instant::now();
+    power
+        .wake_checked(&api, "2", WebProbe::Required, Some(Duration::from_secs(10)))
+        .expect("a slow start wakes");
+    assert!(started.elapsed() >= Duration::from_secs(2));
+    assert!(!marker(&power).exists());
+}
+
+#[test]
+fn an_app_that_answers_slowly_wakes_within_the_bound() {
+    let (_dir, mut power, api) = asleep(200);
+    // A healthy app that takes about 3 s per answer: longer than one connect attempt's bound.
+    power.web_port = late_web(Duration::ZERO, Duration::from_secs(3));
+    let started = Instant::now();
+    power
+        .wake_checked(&api, "2", WebProbe::Required, Some(Duration::from_secs(10)))
+        .expect("a slow answer wakes");
+    let waited = started.elapsed();
+    assert!(waited >= Duration::from_secs(3) && waited < Duration::from_secs(5), "{waited:?}");
+    assert!(!marker(&power).exists());
+}
+
+#[test]
+fn an_app_that_never_answers_fails_the_wake_at_its_bound() {
+    let (_dir, power, api) = asleep(503);
+    let started = Instant::now();
+    assert_eq!(
+        power
+            .wake_checked(&api, "2", WebProbe::Required, Some(Duration::from_secs(2)))
+            .expect_err("unready")
+            .to_string(),
+        "instance.web_unready"
+    );
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_secs(2) && waited < Duration::from_secs(4),
+        "{waited:?}"
+    );
+    assert!(marker(&power).exists());
+}
+
+#[test]
+fn a_missing_address_is_read_again_until_the_bound() {
+    let (_dir, power, api) = asleep(200);
+    api.instance.lock().expect("instance").address = None;
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(500));
+            api.instance.lock().expect("instance").address = Some([127, 0, 0, 1].into());
+        });
+        power
+            .wake_checked(&api, "2", WebProbe::Required, Some(Duration::from_secs(5)))
+            .expect("the address appears within the bound");
     });
 }

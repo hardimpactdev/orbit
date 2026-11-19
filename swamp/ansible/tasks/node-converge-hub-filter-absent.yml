@@ -37,15 +37,16 @@
   changed_when: true
   failed_when: hub_filter_delete.rc != 0
 # The UFW route rules that the task VM hub kept for the range 10.44.0.128/25. Each comment starts with `orbit:task-vm-`; the Gateway
-# names none of them any more and their sources differ per rule, so they go by comment. Highest number first: a deletion renumbers
-# only the rules after it.
+# names none of them any more and their sources differ per rule, so they go by comment. Each goes by its own spec from `show added`,
+# never by number: two converges of hub peers may run this cleanup at once (NodeNetworkReservation), and a number read before the
+# other one's delete would then name a live rule. A rule the other run already deleted is a no-op ("non-existent").
 - name: Read the UFW rules
-  ansible.builtin.command: { argv: [ufw, status, numbered] }
+  ansible.builtin.command: { argv: [ufw, show, added] }
   register: hub_task_vm_rules
   changed_when: false
 - name: Delete the task VM route rules
-  ansible.builtin.command: { argv: [ufw, --force, delete, "{{ item }}"] }
-  loop: >-
-    {{ hub_task_vm_rules.stdout | regex_findall('(?m)^\[\s*(\d+)\].*#\s*orbit:task-vm-\S*\s*$')
-       | map('int') | sort(reverse=true) | list }}
-  changed_when: true
+  ansible.builtin.command:
+    cmd: "{{ item | regex_replace('^ufw (route )?', 'ufw --force \\1delete ') }}"
+  loop: "{{ hub_task_vm_rules.stdout_lines | select('match', \"^ufw .* comment 'orbit:task-vm-[^']*'$\") | list }}"
+  register: hub_task_vm_deleted
+  changed_when: hub_task_vm_deleted.stdout is not search('non-existent')

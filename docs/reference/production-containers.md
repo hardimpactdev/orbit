@@ -166,11 +166,11 @@ A rollback has no capacity check. No deploy runs beside it, so old runs in the p
 
 **Traffic.** Each request through any Route of the Instance, a Cluster Route included, writes the Instance's access log on the Node's Caddy. A request with `X-Orbit-Probe: 1`, such as readiness, does not count. An uptime check without that header keeps live awake.
 
-**The visitor.** A production visitor never gets the progress page. When a request meets the asleep marker, Caddy calls the activation endpoint, and the Gateway admits or joins the wake and answers at once. Then the Node's Caddy holds the request: it tries the live upstream again until the marker is gone, and proxies the request to live.
+**The visitor.** When a request meets the asleep marker, Caddy calls the activation endpoint, and the Gateway admits or joins the wake and answers at once. A development visit is held in the Gateway instead. Then the Node's Caddy holds the request: it tries the live upstream again until the marker is gone, and proxies the request to live.
 
 The targets are about 1.5 s for a warm wake with the prepared restore, and 2.4 s for a cold one, in which pages come back from swap one fault at a time. After 10 s, Caddy answers `503` with `Retry-After: 5` and a plain page that names the Instance.
 
-A failed wake is stored as in development. While it is stored, Caddy answers `503` with `Retry-After: 30` at once. The first request 30 s or more after the failure starts one new wake by itself; `instance:wake` retries at once. The hold takes no Gateway worker, but a wake needs the Gateway to admit it.
+The Gateway stores a failed wake of live. While it is stored, Caddy answers `503` with `Retry-After: 30` at once. The first request 30 s or more after the failure starts one new wake by itself; `instance:wake` retries at once. The hold takes no Gateway worker, but a wake needs the Gateway to admit it.
 
 **Schedules and workers.**
 
@@ -244,13 +244,20 @@ A release container has no host install folders. A Process command, a Process en
 | Host path | Container path |
 | --- | --- |
 | `/usr/bin/php` and `/usr/bin/php<version>` | The runtime folder's PHP of that version |
-| `/opt/orbit/vite-plus/bin/<tool>` | `/opt/orbit-runtime/current/bin/<tool>`, when the runtime ships the tool |
+| `/opt/orbit/vite-plus/bin/<tool>` | `/opt/orbit-runtime/current/bin/<tool>`, when the runtime ships the tool, except `chrome-headless-shell` |
 | `/opt/orbit/vite-plus/js_runtime/node/<version>/bin/node`, `npm` or `npx` | `/opt/orbit-runtime/current/bin/<tool>`, when `<version>` is the runtime folder's Node release in the recipe |
+| `/opt/orbit/chrome-headless-shell/<version>/chrome-headless-shell-linux64/chrome-headless-shell`, where `<version>` is digits and dots, or its `releases/<sha256>/...` form with the 64 lowercase hex digits | `/opt/orbit-runtime/current/chrome-headless-shell/chrome-headless-shell-linux64/chrome-headless-shell`, the runtime folder's headless Chrome, whatever `<version>` the host path names |
 | The Instance's checkout, or `/home/orbit-app-<project>/current` | `/srv/workspace/current` |
 
 Admission finds a host path anywhere in a value: as an argument, after `--option=` or `VAR=`, inside quotes, and after a shell operator such as `;`, `&&`, `||`, `|`, `(`, a backtick or `$(` in a shell command string.
 
-A path is mapped only when it is literal up to the next space, quote or shell operator. A path that a shell expansion, a glob or more of the same word continues, such as `/usr/bin/php${PHP_VERSION}`, `/usr/bin/php8.*` or `"/usr/bin/php"8.5`, refuses. Any other path under `/opt/orbit/`, `/home/orbit-app-<project>` or `/usr/bin/php`, and a Node path of another version, refuses the deploy with `deployment.host_path_unsupported`. The message names the Process and argument, or the environment key, and the path. For a Node path it also names both Node versions. Change the record to a container path or a command on `PATH`, then deploy again.
+A path is mapped only when it is literal up to the next space, quote or shell operator. A path that a shell expansion, a glob or more of the same word continues, such as `/usr/bin/php${PHP_VERSION}`, `/usr/bin/php8.*` or `"/usr/bin/php"8.5`, refuses. The runtime folder carries the same pinned headless Chrome as the agent folder of development containers. It comes with the browser libraries and fonts it needs. So a production container has a browser without an agent folder, and no Node installs a second one.
+
+A host Chrome path maps whatever its version: an app that names a browser needs a browser, not that build. An Instance environment value such as `OG_IMAGE_CHROME_PATH` keeps working as it is.
+
+Each preparation writes the linker and fontconfig files that development containers get: `/etc/ld.so.conf.d/zz-orbit-browser.conf` and `/etc/fonts/fonts.conf`. It then rebuilds the linker cache. Every release clones the preparation, so Chrome starts in it. The AppProd converge publishes the runtime version that holds Chrome, and the next deploy uses it.
+
+Any other path under `/opt/orbit/`, `/home/orbit-app-<project>` or `/usr/bin/php`, and a Node path of another version, refuses the deploy with `deployment.host_path_unsupported`. The message names the Process and argument, or the environment key, and the path. For a Node path it also names both Node versions. Change the record to a container path or a command on `PATH`, then deploy again.
 
 ## PHP runtime
 

@@ -1,6 +1,6 @@
 ---
 title: "orbit instance:sleep"
-description: "Freeze a development container Instance now, with its memory in swap. Its Route shows a wake page, and the next visit wakes it."
+description: "Freeze a development container Instance now, with its memory in swap. The next visit to its Route wakes it."
 covers:
   - apps/gateway/app/Domain/Instances/Power/**
   - apps/gateway/app/Http/Controllers/Api/InstancePowerController.php
@@ -13,7 +13,7 @@ covers:
 
 Put one development container Instance to sleep now. Orbit freezes the whole container and moves its memory to swap, so it holds almost no RAM. Its processes, disk, databases, Route, T3 threads and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
-With signed power enabled, the command and idle sweep use the same executor and record the same `instance.sleep` Operation. The Gateway chooses the engine at admission. Relay recovery keeps that Operation; it does not create a second sleep.
+With signed power enabled, the command and idle sweep use the same executor and record the same `instance.sleep` Operation. The Gateway chooses the engine at admission and sends the signed order to the Node once, over its WebSocket.
 
 Every development container sleeps the same way: a clone, its Project's default, and an Instance of a nested-fleet Project. What keeps an Instance awake is data, never its name: a keep-alive Process, a Node service, an open Operation, a task, the never-sleep list, or recent traffic.
 
@@ -32,7 +32,7 @@ orbit instance:sleep 42 --json
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit lets the container's memory go to swap and freezes the container (`incus pause`). While it is frozen, Orbit records which pages of each of its processes were resident, and then it reclaims all of its memory. The wake reads those pages back before the container resumes, so the app answers sooner ([Prepared restore](/reference/prepared-restore)). The record holds addresses only. It sends no request to the app and picks no process by name. The result's `prepared_restore` says whether a plan is `ready`, with its size and `prepare_seconds`, and how much memory stayed in RAM. A nested-fleet Instance gets no plan yet. In a nested-fleet Instance, swap opens for the inner fleet's containers too. When swap cannot take it, Orbit stops the container instead. The result says which: `sleep: frozen` or `sleep: stopped`. A nested-fleet Instance is never stopped: a stop would lose the inner fleet's Club key and its tunnel. Orbit resumes it instead, and the sleep fails with `instance.container_freeze_failed`. A visit to the Route, or [`instance:wake`](/cli/instance/wake), resumes or starts it again. The wake removes the marker as soon as the app answers, before it waits for T3.
+Orbit first writes the asleep marker on the Node. From then on, each request to the Route waits while the Instance wakes. Then Orbit lets the container's memory go to swap and freezes the container (`incus pause`). While it is frozen, Orbit records which pages of each of its processes were resident, and then it reclaims all of its memory. The wake reads those pages back before the container resumes, so the app answers sooner ([Prepared restore](/reference/prepared-restore)). The record holds addresses only. It sends no request to the app and picks no process by name. The result's `prepared_restore` says whether a plan is `ready`, with its size and `prepare_seconds`, and how much memory stayed in RAM. A nested-fleet Instance gets no plan yet. In a nested-fleet Instance, swap opens for the inner fleet's containers too. When swap cannot take it, Orbit stops the container instead. The result says which: `sleep: frozen` or `sleep: stopped`. A nested-fleet Instance is never stopped: a stop would lose the inner fleet's Club key and its tunnel. Orbit resumes it instead, and the sleep fails with `instance.container_freeze_failed`. A visit to the Route, or [`instance:wake`](/cli/instance/wake), resumes or starts it again. The wake removes the marker as soon as the app answers, before it waits for T3.
 
 Before Orbit admits the sleep of an Instance with a T3 server, the [Conn thread index](/reference/conn#thread-index) reads the container's T3 threads one last time, while its switch is on. It reads after the refusals, so a refused or repeated request does not wait, and it waits at most 3 seconds. A device then still lists the asleep Instance's threads. A failed read does not stop the sleep.
 
@@ -50,6 +50,8 @@ The command uses [signed power routing](/reference/executor#signed-power-deliver
 
 <div className="flow-at" data-chart="instance/sleep"></div>
 
+A sleep, the idle sleep included, never waits for or is refused by a role converge on its Node ([Operations](/reference/operations)).
+
 ## Errors
 
 | Code | Meaning |
@@ -66,4 +68,7 @@ The command uses [signed power routing](/reference/executor#signed-power-deliver
 | `instance.container_freeze_failed` | The container could not be frozen, the stop after a full swap failed, or swap could not take a nested-fleet Instance's memory. The marker is gone when the container still runs. |
 | `instance.container_sleep_incomplete` | The signed sleep failed after the Instance became unavailable. The executor keeps the marker and saved swap limits so it can wake the Instance. |
 | `executor.sign_failed` | The Gateway could not sign an order. Nothing was sent. |
-| `executor.result_unknown` | Recovery ended without an executor receipt. The Instance stays fenced until the Node's outcome is verified. |
+| `executor.publish_failed` | The Gateway could not send the signed order, and the Node's journal shows it never arrived. Nothing changed, and the Instance is free. |
+| `executor.not_accepted` | The Node's journal has no record of the signed order after it expired. The Node never acted, and the Instance is free. |
+| `executor.order_expired` | The signed order expired on the Node while it waited for another order on the same Instance. The Node never acted, and the Instance is free. |
+| `executor.result_unknown` | No result arrived within 6 seconds, and the Gateway could not read the Node's journal, or the journal cannot prove the order never arrived (an older executor, or an order older than 24 hours). The Operation ends `interrupted`. The Instance stays locked, and the Gateway reads the journal again every 10 seconds until it settles the Operation. |

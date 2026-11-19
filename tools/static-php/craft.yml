@@ -23,6 +23,9 @@ build-options:
   with-suggests: false
   with-config-file-path: "/etc/orbit/php"
   with-config-file-scan-dir: "/etc/orbit/php/conf.d"
+  # The security settings of docs/reference/php-runtime.md#production-safe-settings, compiled into the CLI (and `frankenphp
+  # php-cli`), so a CLI without an ini file is still safe. The FrankenPHP server reads them from the container's ini files.
+  with-hardcoded-ini: ["zend.exception_ignore_args=1", "session.upload_progress.enabled=0"]
   no-strip: false
   with-upx-pack: false
   with-frankenphp-app: ""
