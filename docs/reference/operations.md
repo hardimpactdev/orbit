@@ -578,6 +578,8 @@ The release records `route_withdrawn_at` on the removal. A retry of that removal
 
 `instance.register` and the Cluster Router writes hold the same Nodes for one step only. `tasks.provision`, `tasks.cancel` and `tasks.maintenance_finish` hold none: no Operation of the first starts, and the run of the other two publishes no Route. The run calls `operation:direct:route-hold` before its Route-publish step and `operation:direct:route-release` after it. The hold of such a step has a lease of 5 minutes, which the minute pass frees when it ends, and the terminal status of the Operation frees it too.
 
+`node.role_relocate` is no Route write, but it publishes Caddyfiles rendered at its admission. Admission holds every Node of the Cluster for the whole run, or refuses with `route.publication_held` when a Route write holds or waits for one of them; nothing waits. The terminal status of the move frees the Nodes.
+
 The hold is the `route_publication_holds` table, with one row per Node. A finished write frees its Nodes and queues `PromoteRouteWrites`, which moves the waiting writes that fit to `queued`, oldest first, and starts them. The minute pass of `ReconcileSwampOperations` frees the Nodes of a write that ended without a release. A waiting write has no deadline; its budget starts when it starts.
 
 A timed-out write keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. A timed-out `instance.restore` holds its Instance lock as well, so it keeps its Nodes until its run is proven ended or the 60-minute settlement pass frees the lock.
