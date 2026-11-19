@@ -25,6 +25,7 @@ use App\Domain\Nodes\NodeNetworkReservation;
 use App\Domain\Nodes\NodeRoleDirectProjection;
 use App\Domain\Nodes\NodeUpdatePolicy;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\NodeWorkAdmission;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -630,7 +631,7 @@ it('serializes automatic role admission with participating work in both admissio
         ->and(Operation::query()->count())->toBe(3);
     $scope->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
     expect($admit($participants)->status)->toBe(OperationStatus::Queued);
-})->with(['instance.deploy', 'tasks.copy_turn']);
+})->with(['instance.deploy', 'instance.destroy']);
 
 it('keeps the release pending on a deferred T3 receipt and schedules a new role Operation after the retry interval', function (): void {
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
@@ -712,6 +713,48 @@ it('queues a busy-refused release role converge ahead of new work, lets the hold
     $converge->update(['status' => OperationStatus::Succeeded, 'lock_key' => null, 'finished_at' => now()]);
     // Once admitted, the converge no longer holds new work back.
     expect($admit('instance.deploy', 100)->status)->toBe(OperationStatus::Queued);
+});
+
+it('admits a release role converge beside a running task copy turn, and keeps admitting task work while it runs', function (): void {
+    prepareReleaseTarget();
+    $task = fn (string $kind): Operation => app(OperationStore::class)->create($kind, 'task_group', 77, $this->node->id, [], 'test', null);
+    $turn = $task('tasks.copy_turn');
+    $release = releaseWithRow(['status' => 'pending']);
+
+    expect(app(ContinueReleaseFleetAction::class)->execute($release))->toBe(10);
+    $converge = Operation::query()->where('kind', 'node.converge')->sole();
+    expect($release->refresh()->phases['fleet']['nodes'][$this->node->id]['role_operation_id'])->toBe($converge->id)
+        ->and($turn->refresh()->status)->toBe(OperationStatus::Queued)
+        // A copy turn, check or cancel runs in its copy beside the converge.
+        ->and($task('tasks.check')->status)->toBe(OperationStatus::Queued);
+});
+
+it('bounds a queued role converge: removals pass the wait, and after the wait limit it is admitted beside its holders', function (): void {
+    prepareReleaseTarget();
+    $admit = fn (string $kind, int $instance): Operation => app(OperationStore::class)->create($kind, 'instance', $instance, $this->node->id, [], 'test', null);
+    $holder = $admit('instance.deploy', 99);
+    $release = releaseWithRow(['status' => 'pending']);
+    $fleet = app(ContinueReleaseFleetAction::class);
+
+    expect($fleet->execute($release))->toBe(15)
+        ->and($release->refresh()->phases['fleet']['nodes'][$this->node->id]['waiting_for'])->toBe([$holder->id])
+        ->and(fn () => $admit('instance.deploy', 100))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('operation.target_busy'))
+        // A destroy frees the Node, so the wait never refuses it; the destroy then holds the converge like any Instance work.
+        ->and($admit('instance.destroy', 101)->status)->toBe(OperationStatus::Queued);
+
+    // The pass retries every 15 s and renews the wait; the holder never ends, yet the wait ends at its limit.
+    $delays = [];
+    for ($waited = 15; $waited <= NodeWorkAdmission::WaitLimitSeconds; $waited += 15) {
+        $this->travel(15)->seconds();
+        $delays[] = $fleet->execute($release);
+    }
+
+    expect(array_pop($delays))->toBe(10)
+        ->and(array_unique($delays))->toBe([15]);
+    $row = $release->refresh()->phases['fleet']['nodes'][$this->node->id];
+    expect($row['role_operation_id'])->toBe(Operation::query()->where('kind', 'node.converge')->sole()->id)
+        ->and($row)->not->toHaveKey('waiting_for')
+        ->and($holder->refresh()->status)->toBe(OperationStatus::Queued);
 });
 
 it('marks the Node current once its role converge succeeds, even when Instance work moved the role digest on', function (): void {

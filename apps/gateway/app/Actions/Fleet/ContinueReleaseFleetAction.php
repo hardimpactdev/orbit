@@ -170,6 +170,8 @@ final readonly class ContinueReleaseFleetAction
                     } catch (ResourceOperationException $failure) {
                         if (in_array($failure->errorCode, ['operation.target_busy', 'fleet.rollout_busy'], true)) {
                             $row['status'] = 'pending';
+                            // The Operations a queued role converge waits for, so an operator sees what holds the Node.
+                            $row['waiting_for'] = ValidatedData::integerList($failure->details['operation_ids'] ?? []);
                             $this->save($release, $phase, 'pending');
 
                             return 15;
@@ -457,8 +459,9 @@ final readonly class ContinueReleaseFleetAction
         }
         $row['agent'] ??= 'unchanged';
         if ($changed !== []) {
-            // A busy refusal queues the converge ahead of new Instance and task work on the Node (NodeWorkAdmission).
+            // A busy refusal queues the converge ahead of new Instance work on the Node, for a bounded wait (NodeWorkAdmission).
             $row['role_operation_id'] = app(StartNodeConvergeAction::class)->execute($node, roles: array_column($changed, 'role'), release: true)->id;
+            unset($row['waiting_for']);
 
             return 10;
         }

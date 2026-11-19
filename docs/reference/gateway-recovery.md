@@ -728,7 +728,13 @@ The automatic converge can write the selected roles' software, files and service
 
 Public render inputs determine whether a release needs a role converge. Private material is resolved at admission. Per-Operation values such as the Instance bridge admission timestamp do not affect the release digest.
 
-Automatic role convergence and conflicting Instance, Conn, Process and task work exclude one another at admission on a shared Node. When open work refuses the automatic converge, the converge queues: new Instance and task work on that Node gets `operation.target_busy` until the converge is admitted, so it starts as soon as the current holders end. Only a holder's own continuation goes on: its child Operation, or an Operation whose input names the holder as its predecessor, such as the `instance.complete` that follows an `instance.create`. New work on a holder's target waits like any other new work.
+Automatic role convergence and conflicting Instance, Conn and Process work exclude one another at admission on a shared Node. Task work, such as a copy turn, a check, a publish, a sync or a cancel, runs inside its copy and neither waits for nor holds a role converge, as a hand `node:converge` runs beside it.
+
+When open Instance work refuses the automatic converge, the converge queues: new Instance, Conn and Process work on that Node gets `operation.target_busy` (HTTP 409, `An automatic role converge waits for this Node.`) until the converge is admitted, so it starts as soon as the current holders end. The Node's row lists those holders in `waiting_for`.
+
+A removal, `instance.destroy` or `instance.unregister`, frees the Node and is never refused by the wait. Only a holder's own continuation goes on besides: its child Operation, or an Operation whose input names the holder as its predecessor, such as the `instance.complete` that follows an `instance.create`. New work on a holder's target waits like any other new work.
+
+The wait is bounded. A converge that still waits five minutes after its first refusal is admitted beside its holders, and the wait ends. New work is then refused only while the converge runs. The wait also ends when the release pass stops renewing it for a minute.
 
 An Instance transfer holds both its source and its destination, together with its other recorded participants. A converge receipt lists the T3 restarts deferred for open turns or activity it could not read. The Node stays pending and retries.
 
