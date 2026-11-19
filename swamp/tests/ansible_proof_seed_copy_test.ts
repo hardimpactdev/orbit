@@ -23,7 +23,7 @@ const intent = (inner: string | null) => ({
  * As the Incus API does, the stub names an instance snapshot `<snapshot>` and a volume snapshot `<volume>/<snapshot>`. The volume holds
  * the instance's snapshots unless the test names its own. `snapshots` are the holder's, `source` the default's, both halves alike.
  */
-async function fixture(remotes: string[], snapshots: string[], volumeSnapshots = snapshots, source: string[] = []) {
+async function fixture(remotes: string[], snapshots: string[], volumeSnapshots = snapshots, source: string[] = [], hold = true) {
     const folder = await Deno.makeTempDir();
     await Deno.mkdir(`${folder}/bin`);
     await Deno.mkdir(`${folder}/servercerts`);
@@ -40,11 +40,19 @@ case "$1 $2" in
     *proof-seed-inner/*) cat '${folder}/volume-snapshots.json';; */instances/proof-seed/*) cat '${folder}/snapshots.json';;
     */volumes/custom/*) cat '${folder}/source-volume-snapshots.json';; *) cat '${folder}/source-snapshots.json';; esac;;
   "remote add") echo "$*" >> '${folder}/calls'; cp '${folder}/certificate-12.pem' '${folder}/servercerts/'"$3"'.crt';;
-  *) echo "$*" >> '${folder}/calls';;
+  *) echo "$*" >> '${folder}/calls'; echo "incus $1 $2" >> '${folder}/events'
+     # Each line of \`push-errors\` fails one push of the inner volume with that error.
+     if [ "$1 $2 $3" = "storage volume copy" ] && [ -s '${folder}/push-errors' ]; then
+       head -n 1 '${folder}/push-errors' >&2; sed -i 1d '${folder}/push-errors'; exit 1
+     fi;;
 esac
 exit 0
 `);
-    await Deno.chmod(`${folder}/bin/incus`, 0o755);
+    // The CI Node's runner hold script, systemd-run and systemctl log each call; the hold script is gone when \`hold` is false.
+    if (hold) await Deno.writeTextFile(`${folder}/bin/orbit-ci-runner-hold`, `#!/bin/sh\necho "hold $*" >> '${folder}/events'\n`);
+    await Deno.writeTextFile(`${folder}/bin/systemd-run`, `#!/bin/sh\necho "systemd-run $*" >> '${folder}/events'\n`);
+    await Deno.writeTextFile(`${folder}/bin/systemctl`, `#!/bin/sh\necho "systemctl $*" >> '${folder}/events'\n`);
+    for (const tool of [...(hold ? ["orbit-ci-runner-hold"] : []), "incus", "systemd-run", "systemctl"]) await Deno.chmod(`${folder}/bin/${tool}`, 0o755);
     return folder;
 }
 
@@ -59,15 +67,19 @@ async function run(folder: string, names: string[], seed: ReturnType<typeof inte
             ansible_python_interpreter: "{{ ansible_playbook_python }}",
             ...(unreachable ? { ansible_host: "127.0.0.1", ansible_port: 1, ansible_ssh_common_args: "-o ConnectTimeout=2 -o BatchMode=yes" } : {}) },
     }));
-    const text = JSON.stringify(plays).replaceAll("/root/.config/incus/servercerts", `${folder}/servercerts`);
+    const text = JSON.stringify(plays).replaceAll("/root/.config/incus/servercerts", `${folder}/servercerts`)
+        .replaceAll("/usr/local/libexec/orbit-ci-runner-hold", `${folder}/bin/orbit-ci-runner-hold`);
     await Deno.writeTextFile(`${folder}/play.yml`, text);
     await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify(seed));
+    // A task that the push delegates to the CI Node runs on this machine too.
+    await Deno.writeTextFile(`${folder}/hosts`, `${unreachable ? "gone" : "localhost"}\nseed_target ansible_connection=local\n`);
     const result = await new Deno.Command("ansible-playbook", {
-        args: ["-i", unreachable ? "gone," : "localhost,", ...(tags.length ? ["--tags", tags.join(",")] : []), `${folder}/play.yml`], stdout: "piped", stderr: "piped",
+        args: ["-i", `${folder}/hosts`, ...(tags.length ? ["--tags", tags.join(",")] : []), `${folder}/play.yml`], stdout: "piped", stderr: "piped",
         env: { PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ORBIT_RUN: folder, ORBIT_TARGET: String(target), ANSIBLE_LOCALHOST_WARNING: "False" },
     }).output();
     const calls = (() => { try { return Deno.readTextFileSync(`${folder}/calls`).trim().split("\n"); } catch { return []; } })();
-    return { code: result.code, calls, out: new TextDecoder().decode(result.stdout) };
+    const events = (() => { try { return Deno.readTextFileSync(`${folder}/events`).trim().split("\n"); } catch { return []; } })();
+    return { code: result.code, calls, events, out: new TextDecoder().decode(result.stdout) };
 }
 
 const nested = ["--project", "orbit-instances-nested", "--target-project", "orbit-instances-nested"].join(" ");
@@ -234,4 +246,59 @@ Deno.test("a copy to every Node behind the seed releases the default's base when
             ] : [], name);
         } finally { await Deno.remove(folder, { recursive: true }); }
     }
+});
+
+const pause = "systemd-run --quiet --unit orbit-proof-seed-pause --on-active 600 --timer-property AccuracySec=1s";
+
+Deno.test("the CI Node's idle runners pause before the first push and resume after the last, with a timer that bounds the pause", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], []);
+    try {
+        const { code, events } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"));
+        assertEquals(code, 0);
+        const holds = events.map((line) => line.replaceAll(`${folder}/bin/`, ""));
+        assertEquals(holds.filter((line) => !line.startsWith("incus query") && !line.startsWith("incus remote")), [
+            "systemctl stop orbit-proof-seed-pause.timer orbit-proof-seed-pause.service",
+            "systemctl reset-failed orbit-proof-seed-pause.timer orbit-proof-seed-pause.service",
+            `${pause} orbit-ci-runner-hold release proof-seed`,
+            "hold hold proof-seed 0",
+            "incus storage volume", "incus copy instance-41",
+            "hold release proof-seed",
+            "systemctl stop orbit-proof-seed-pause.timer",
+        ]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("a failed push still resumes the CI Node's runners and fails only its target", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], []);
+    try {
+        await Deno.writeTextFile(`${folder}/push-errors`, "Error: no space left on the target\n");
+        const { code, events } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"));
+        assertEquals(code !== 0, true);
+        assertEquals(events.slice(-2), ["hold release proof-seed", "systemctl stop orbit-proof-seed-pause.timer"]);
+        assertEquals(events.filter((line) => line === "incus storage volume").length, 1, "an error that is not the freeze is not tried again");
+        const outcome = JSON.parse(Deno.readTextFileSync(`${folder}/target-12.json`));
+        assertEquals([outcome.status, outcome.detail.includes("no space left")], ["failed", true]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("a push whose freeze meets the other target's push is tried again and passes", { ignore: !hasAnsible }, async () => {
+    // Incus zfs MigrateVolume: `fsfreeze --freeze` of a file system that another push froze a moment ago fails with EBUSY.
+    const folder = await fixture([], []);
+    try {
+        await Deno.writeTextFile(`${folder}/push-errors`, 'Error: Failed freezing filesystem "/var/lib/incus/storage-pools/x": exit status 1 (fsfreeze: freeze failed: Device or resource busy)\n');
+        const { code, calls } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"));
+        assertEquals(code, 0);
+        assertEquals(calls.filter((call) => call.startsWith("storage volume copy")).length, 2);
+        assertEquals((await Deno.stat(`${folder}/copied-12`)).isFile, true);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("a CI Node without the runner hold script receives without a pause", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], [], [], [], false);
+    try {
+        const { code, events } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"));
+        assertEquals(code, 0);
+        assertEquals(events.filter((line) => !line.startsWith("incus")), []);
+        assertEquals((await Deno.stat(`${folder}/copied-12`)).isFile, true);
+    } finally { await Deno.remove(folder, { recursive: true }); }
 });

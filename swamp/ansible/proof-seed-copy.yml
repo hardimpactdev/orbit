@@ -148,6 +148,10 @@
     <<: *phase
     project_args: [--project, "{{ seed_intent.project }}", --target-project, "{{ seed_intent.project }}"]
     remote: "{{ seed_target.remote }}"
+    seed_hold_script: /usr/local/libexec/orbit-ci-runner-hold
+    seed_pause_unit: orbit-proof-seed-pause
+    # An incremental push takes under a minute, a first full copy a few minutes; CI waits for a CI Node no longer than this.
+    seed_pause_seconds: 600
   tasks:
     - name: Push the seed
       block:
@@ -224,8 +228,31 @@
               {{ ['incus', 'storage', 'volume', 'snapshot', 'rename', remote ~ ':' ~ seed_intent.pool, seed_intent.holder_volume,
                   seed_base | regex_replace('^base-', 'seed-'), seed_base, '--project', seed_intent.project] }}
           changed_when: true
+        # While the CI Node receives, its idle runners stop, so no new CI job writes to its pool beside the receive; busy runners finish
+        # their job. It is the hold script of proof places with no place left to runners
+        # (docs/reference/node-provisioning.md#proof-places-on-a-ci-node). The timer releases the hold after `seed_pause_seconds` even
+        # when this run dies, so the runners never stay stopped longer. A Node without the script, or a pause that fails, receives without
+        # it: the pause only spares the receive the CI jobs' writes, and the target's result does not depend on it.
+        - name: Pause the CI Node's runners
+          ansible.builtin.command:
+            argv:
+              - sh
+              - -c
+              - >-
+                [ -x {{ seed_hold_script }} ] || exit 0;
+                systemctl stop {{ seed_pause_unit }}.timer {{ seed_pause_unit }}.service 2>/dev/null;
+                systemctl reset-failed {{ seed_pause_unit }}.timer {{ seed_pause_unit }}.service 2>/dev/null;
+                systemd-run --quiet --unit {{ seed_pause_unit }} --on-active {{ seed_pause_seconds }} --timer-property AccuracySec=1s
+                {{ seed_hold_script }} release {{ seed_intent.holder }} && exec {{ seed_hold_script }} hold {{ seed_intent.holder }} 0
+          changed_when: true
+          failed_when: false
+          ignore_unreachable: true
+          delegate_to: seed_target
         # An instance copy does not take its attached custom volumes, so the inner volume goes first, and the container's disk names it.
         # Each push stops after ProofSeeds::PushSeconds: a first full copy is a few GB over WireGuard; a refresh is small.
+        # The targets' copies run side by side. Each push of the mounted, block-backed inner volume first syncs it with a freeze and an
+        # immediate thaw (Incus zfs MigrateVolume), before it sends anything; a freeze while another push holds its own fails with
+        # `Device or resource busy`. Only that failure is tried again: the other push thaws within a moment.
         - name: Push the inner volume
           when: seed_intent.source.inner_volume is not none
           ansible.builtin.command:
@@ -233,6 +260,10 @@
               {{ ['timeout', '1200', 'incus', 'storage', 'volume', 'copy',
                   seed_intent.pool ~ '/' ~ seed_intent.source.inner_volume, remote ~ ':' ~ seed_intent.pool ~ '/' ~ seed_intent.holder_volume,
                   '--refresh', '--mode=push'] + project_args }}
+          register: seed_volume_push
+          until: seed_volume_push.rc == 0 or 'Failed freezing filesystem' not in seed_volume_push.stderr
+          retries: 5
+          delay: 2
           changed_when: true
         - name: Push the container
           ansible.builtin.command:
@@ -249,6 +280,23 @@
           become: false
           vars: *local
       rescue: *failed
+      # Also after a failed push. A failed release changes no target's result: the timer releases at its bound.
+      always:
+        - name: Resume the CI Node's runners
+          ansible.builtin.command:
+            argv:
+              - sh
+              - -c
+              - >-
+                [ -x {{ seed_hold_script }} ] || exit 0;
+                {{ seed_hold_script }} release {{ seed_intent.holder }};
+                status=$?;
+                systemctl stop {{ seed_pause_unit }}.timer 2>/dev/null;
+                exit $status
+          changed_when: true
+          failed_when: false
+          ignore_unreachable: true
+          delegate_to: seed_target
 
 - name: Check the holder on the CI Node
   hosts: seed_target
