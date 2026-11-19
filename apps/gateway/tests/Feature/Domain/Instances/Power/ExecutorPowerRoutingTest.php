@@ -277,7 +277,9 @@ it('signs a headless wake without relaxing a web Instance readiness check', func
         $wake->input = [...$wake->input, 'container' => ['web_config' => $web]];
         $wire = ExecutorPowerIntent::sign($wake)->wire;
         $payload = json_decode(base64_decode(explode('.', $wire, 2)[0], true), true, flags: JSON_THROW_ON_ERROR);
-        expect($payload['power_check'] ?? null)->toBe($web === null ? 'no_web' : null);
+        expect($payload['power_check'] ?? null)->toBe($web === null ? 'no_web' : null)
+            // A web wake carries its readiness bound to the executor; a headless one probes nothing.
+            ->and($payload['input'] ?? null)->toBe($web === null ? null : ['web' => ['ready_seconds' => 30]]);
     }
 });
 
@@ -790,6 +792,58 @@ it('R4: shows a wake that failed before its visit returned on that response', fu
     $visit = app(InstanceWake::class)->activate($instance, 'node');
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->error_code)->toBe('instance.web_unready');
     expect($visit)->toBeString()->toContain('instance.web_unready');
+});
+
+it('ends a failed wake on its visit, so the next visit admits a fresh wake that succeeds', function (): void {
+    $instance = managedPowerFixture();
+    $replies = [['status' => 'failed', 'code' => 'instance.web_unready'], ['status' => 'done']];
+    // The failed receipt arrives before its queued completion runs, as during a busy release.
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use (&$replies): void {
+        executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), array_shift($replies));
+    };
+
+    $visit = app(InstanceWake::class)->activate($instance, 'node');
+    $failed = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    expect($visit)->toContain('instance.web_unready')
+        ->and($failed->status)->toBe(OperationStatus::Failed)
+        ->and($failed->error_code)->toBe('instance.web_unready')
+        ->and($failed->lock_key)->toBeNull();
+
+    $reload = app(InstanceWake::class)->activate($instance, 'node');
+    $wakes = Operation::query()->where('kind', InstanceWake::Kind)->orderBy('id')->get();
+    expect($reload)->toBeNull()
+        ->and($wakes)->toHaveCount(2)
+        ->and($wakes->last()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('keeps a wake that handed its stopped container to a boot open on the visit and its reload', function (): void {
+    $instance = managedPowerFixture();
+    config(['orbit.executor.visit_wait_seconds' => 0.5]);
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event) use ($instance): void {
+        executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'failed', 'code' => 'instance.container_stopped',
+            'action' => 'wake', 'target' => (string) $instance->id]);
+    };
+
+    $visit = app(InstanceWake::class)->activate($instance, 'node');
+    $reload = app(InstanceWake::class)->activate($instance, 'node');
+
+    // The boot that the receipt hands to is the wake's own continuation: no visit reports it as failed or ends it.
+    expect([$visit, $reload])->toBe(['The Instance is still waking. Reload the page in a moment.', 'The Instance is still waking. Reload the page in a moment.'])
+        ->and(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->terminal())->toBeFalse();
+});
+
+it('ends a failed wake on its visit without relaying its notices there', function (): void {
+    $instance = managedPowerFixture();
+    $this->publisher->publishing = function (ExecutorOrderBroadcast $event): void {
+        executorWakeReply(Operation::query()->findOrFail((int) $event->order->operation), ['status' => 'failed', 'code' => 'instance.web_unready']);
+    };
+
+    expect(app(InstanceWake::class)->activate($instance, 'node'))->toBe('The wake failed (instance.web_unready). Reload the page to try again.');
+
+    // Notice delivery stays with the queued completion, so a notice or queue error never changes the visitor's answer.
+    $wake = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    expect($wake->status)->toBe(OperationStatus::Failed);
+    Queue::assertNotPushed(BroadcastOperationNotice::class);
 });
 
 it('R1: keeps a durable freeze when its bound recovery times out', function (): void {

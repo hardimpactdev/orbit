@@ -529,21 +529,6 @@ it('does not expose replaced database connection names', function (): void {
     ]);
 });
 
-it('keeps the hidden Boost MCP entrypoint available to coding agents', function (): void {
-    $commands = app(Kernel::class)->all();
-    $codexConfig = file_get_contents(base_path('.codex/config.toml'));
-
-    expect($commands)
-        ->toHaveKeys(['boost:mcp', 'mcp:start'])
-        ->and($commands['boost:mcp']->isHidden())
-        ->toBeTrue()
-        ->and($commands['mcp:start']->isHidden())
-        ->toBeTrue()
-        ->and($codexConfig)
-        ->toBeString()
-        ->toContain('args = ["orbit", "boost:mcp"]');
-});
-
 it('offers JSON output for every Orbit product command', function (): void {
     $commands = collect(app(Kernel::class)->all())
         ->reject(static fn (Command $command): bool => $command->isHidden());

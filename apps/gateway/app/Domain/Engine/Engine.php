@@ -168,7 +168,9 @@ final readonly class Engine
             // The first order's result comes, or came, with its own receipt.
             $status === 'refused' && $reason === 'replayed_nonce' => null,
             // The order waited longer than its expiry: the next transition sends a new one.
-            $status === 'refused' && $reason === 'expired' => $step->update(['status' => 'pending']),
+            // An order that expired before the executor took its lock never acted either, so it is sent again too.
+            $status === 'refused' && $reason === 'expired',
+            $status === 'failed' && ($line['code'] ?? null) === 'executor.order_expired' => $step->update(['status' => 'pending']),
             in_array($status, ['failed', 'partial', 'refused'], true) => $step->update(['status' => 'failed', 'done_ms' => self::nowMs(),
                 'error_code' => mb_strcut(self::text($line['code'] ?? null) ?: ($reason ?: 'executor.failed'), 0, 128)]),
             default => null,

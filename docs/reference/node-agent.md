@@ -296,7 +296,7 @@ Gateway bootstrap configures its own observer after its web service and private 
 
 ## Commands
 
-Gateway releases and desired fleet state use the pinned `cli-v0.10807.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
+Gateway releases and desired fleet state use the pinned `cli-v0.10839.0` delivery, the observer pass agent release that reports checkouts, `.env` stat and key names, packages and UFW. Its `orbit-agent contract` output is stored beside the pinned manifest in `apps/gateway/resources/agent`. The Gateway reads that contract at runtime. `bin/check-frozen-agent-commands` checks production Gateway and `swamp/` call sites and agent descriptors against it. The PHP job runs it with the published binary's digest check, and the Swamp shape gate runs it for `swamp/` changes. Missing commands must move to native Swamp code; changing the Rust registry does not change the pinned delivery until a reviewed commit moves the pin.
 
 The Gateway runs every Node action through one runner, `AgentCommandRunner`. The recorded Gateway serving Node uses local execution, including during role reconvergence. `orbit:bootstrap` records that identity, and with `--operator-ip` the roleless `operator` Node, from the Gateway's own code and runs no agent command; until it has, the Node whose Gateway role serves the site runs locally. Other Nodes use pinned SSH. It sends a command name and typed input, never program source.
 
@@ -474,7 +474,9 @@ The agent connects to the Gateway at `https://gateway.orbit` and to Reverb at `w
 4. It joins `presence-node.{id}`, sends its snapshot, and then publishes its events.
 5. It joins `presence-node-logs.{id}` the same way and fetches its [stream list](#stream-list).
 
-On `presence-node.{id}` the agent also takes the server event `executor-order` and passes it on to the [executor](/reference/executor#the-observer-pass-through). It does not parse, verify or sign the order: it writes the bytes unchanged to `/run/orbit-executor.sock` and sends each reply line back as the client event `client-executor-result` on the same channel. This one event is the exception that [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) makes to the frozen agent: it adds no command and no fact. Orders that arrive while the agent reconnects are lost. The connection to Reverb sets `TCP_NODELAY`, so a reply's second small frame does not wait for the ACK of the first.
+On `presence-node.{id}` the agent also takes the server event `executor-order` and passes it on to the [executor](/reference/executor#the-observer-pass-through). It does not parse, verify or sign the order: it writes the bytes unchanged to `/run/orbit-executor.sock` and sends each reply line back as the client event `client-executor-result` on the same channel. This one event is the exception that [ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) makes to the frozen agent: it adds no command and no fact.
+
+Orders that arrive while the agent reconnects are lost. The agent waits 10 seconds for an order's reply; a later reply, such as a wake whose app starts slowly, reaches the Gateway through its read of the Node's executor journal instead. The connection to Reverb sets `TCP_NODELAY`, so a reply's second small frame does not wait for the ACK of the first.
 
 When the `gateway` role moves, the Gateway's WireGuard address changes. Every agent then loses the Gateway until its configuration is rewritten. Run `orbit node:add <node>` or a role converge on each Node. The Reverb address needs no converge, because each realtime response carries it.
 
@@ -631,7 +633,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Delivery
 
-Every Gateway release uses the pinned `cli-v0.10807.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
+Every Gateway release uses the pinned `cli-v0.10839.0` agent delivery. CI builds no agent; an agent release carries it. The pinned manifest records the published source commit, platform digests and URLs; Gateway commits need no agent publication. Its shape is:
 
 ```json
 {

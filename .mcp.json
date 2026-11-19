@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "orbit-gateway-boost": {
+            "command": "php",
+            "args": ["apps/gateway/artisan", "boost:mcp"]
+        }
+    }
+}

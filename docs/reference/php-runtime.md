@@ -113,14 +113,36 @@ A development Instance in a container uses no pool: FrankenPHP serves it in its 
 
 ### Container PHP
 
-Container PHP has two settings, the same in every container. The container phase writes them to `/etc/orbit/php/conf.d/99-orbit-runtime.ini`, which the static PHP CLI and FrankenPHP both read. When the file changes in a running container, the phase restarts the container's running `orbit-*` units, because a running PHP read the settings at its start.
+Container PHP has four settings, the same in every container. The container phase writes them to `/etc/orbit/php/conf.d/99-orbit-runtime.ini`, which the static PHP CLI and FrankenPHP both read. When the file changes in a running container, the phase restarts the container's running `orbit-*` units, because a running PHP read the settings at its start.
 
 | Setting | Value | Why |
 | --- | --- | --- |
 | `memory_limit` | `1G` | It matches the CI test limit |
 | `auto_prepend_file` | `/opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php` | PHP loads [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge) before the app, so Conn shows a request's data without a package in the app |
+| `zend.exception_ignore_args` | `1` | [Production-safe settings](#production-safe-settings) |
+| `session.upload_progress.enabled` | `0` | [Production-safe settings](#production-safe-settings) |
 
 The bridge comes from the [runtime folder](/reference/development-containers#shared-folders), so one update on the Node reaches every container. It records web requests only: under the CLI it returns at once. FrankenPHP serves in classic mode, where each request gets a fresh PHP; the bridge stays off in FrankenPHP's worker mode. An app turns the bridge off with `collect.enabled: false` in a `php-data-bridge.json` beside its `composer.json`.
+
+#### Production-safe settings
+
+The static build has no `php.ini` of its own, so without one PHP runs on its built-in defaults: `zend.exception_ignore_args=0`, `session.upload_progress.enabled=1` and `display_errors=1`. With `fatal_error_backtraces=1`, PHP 8.5's default, the first two are the conditions of remote code execution flaws that PHP 8.5.13 fixes: CVE-2026-129474, CVE-2026-129182, CVE-2026-115560 and CVE-2026-126714 ([compute drivers](/reference/compute-drivers#install-the-php-build)). So no container PHP runs on those defaults:
+
+The build compiles `zend.exception_ignore_args=1` and `session.upload_progress.enabled=0` into the PHP CLI (`with-hardcoded-ini` in `tools/static-php/craft.yml`). `frankenphp php-cli` is that CLI too. A `-d` option still overrides them. The FrankenPHP server sets its own entries, so it reads the settings from a file.
+
+A development container reads both settings from `99-orbit-runtime.ini` above. It writes no `php.ini`.
+
+A production release container reads `/etc/orbit/php/php.ini`. The file is the build's `php.ini-production`, which the static archive ships beside `bin/`. Orbit's lines follow it and win:
+
+| Setting | Value |
+| --- | --- |
+| `zend.exception_ignore_args` | `1` |
+| `session.upload_progress.enabled` | `0` |
+| `display_errors` | `0` |
+| `display_startup_errors` | `0` |
+| `expose_php` | `0` |
+
+The release preparer writes the file at every deploy, before it builds the release, so each new release container has it. The CLI reads it too, because a release container has no `php-cli.ini`.
 
 #### PCOV in the CLI only
 

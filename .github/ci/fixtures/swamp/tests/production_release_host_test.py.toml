@@ -7,6 +7,7 @@ inputs = [
 ]
 cases = [
   "test_stock_image_refresh_can_only_replace_a_verified_unserved_preparer",
+  "test_release_php_ini_is_the_builds_production_ini_with_the_security_settings",
   "test_first_move_detects_deletion_and_backdated_overwrite_and_resets_aborted_copy",
   "test_public_and_private_routes_bind_to_the_same_approved_instance",
   "test_repreparation_discards_abandoned_sqlite_sidecars_before_installing_the_source",
