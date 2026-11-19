@@ -3,7 +3,7 @@ title: "Contributing to Orbit"
 sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
-  - "{.agents/skills/{reviewing-pull-requests/references/test-*.md,swamp/**,swamp-getting-started/**,swamp-source.json},tools/test_ci_swamp_skills.py}"
+  - "{.agents/skills/reviewing-pull-requests/references/test-*.md,.agents/swamp-upstream/**,tools/test_ci_swamp_skills.py}"
   - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
@@ -346,12 +346,13 @@ An independent reviewer can review the proposed ADRs and documentation before co
 
 ### Refresh the bundled Swamp skills
 
-The vendored `swamp` and `swamp-getting-started` skills follow `swampVersion` in `swamp/.swamp.yaml`. Their [source manifest](https://github.com/hardimpactdev/orbit/blob/main/.agents/skills/swamp-source.json) records the full upstream commit, import method and SHA-256 of each bundled file. Keep Orbit changes outside these two directories, including fixes for links that are also broken upstream.
+Swamp's upstream guidance lives in [`.agents/swamp-upstream`](https://github.com/hardimpactdev/orbit/blob/main/.agents/swamp-upstream/README.md), where no client loads it by itself: the managed block that `swamp repo upgrade` writes into `swamp/AGENTS.md`, kept in `managed-section.md`, and the `swamp` and `swamp-getting-started` skills, kept under `skills`. Both follow `swampVersion` in `swamp/.swamp.yaml`. The [source manifest](https://github.com/hardimpactdev/orbit/blob/main/.agents/swamp-upstream/swamp-source.json) records the full upstream commit, import method and SHA-256 of each skill file. Keep these files word for word, so that a refresh can be compared with them, including links that are broken upstream. Orbit's rules live in `swamp/AGENTS.md`, outside the block.
 
-The original import (`916ef2ac5e93f7caeb0041b6322c09b08ca28b9e`) ran `swamp repo upgrade --tool claude --tool codex`, then committed the installed user skills under `.agents/skills`. Upstream's `SkillAssets.copySkillsTo` copies the files listed in `BUNDLED_SKILLS` byte-for-byte from `.claude/skills`; it excludes eval fixtures. Refresh that same payload without upgrading unrelated repository metadata or user configuration:
+The original import (`916ef2ac5e93f7caeb0041b6322c09b08ca28b9e`) ran `swamp repo upgrade --tool claude --tool codex`, then committed the installed user skills. Upstream's `SkillAssets.copySkillsTo` copies the files listed in `BUNDLED_SKILLS` byte-for-byte from `.claude/skills`; it excludes eval fixtures. A refresh ends in the same layout:
 
 1. Clone `https://github.com/swamp-club/swamp.git` into `.amp/in/orb-backup/swamp-upstream` and check out the full commit matching the runtime pin. Verify its full SHA before continuing.
-2. From the Orbit root, run this Python code to replace both vendored directories and record hashes from upstream.
+2. From `swamp/`, run `swamp repo upgrade --tool claude --tool codex` with the pinned binary. It writes the managed block at the top of `swamp/AGENTS.md`.
+3. From the Orbit root, run this Python code. It moves the block to `.agents/swamp-upstream/managed-section.md`, replaces both skill folders from upstream and records their hashes.
 
 ```python
 import hashlib
@@ -365,11 +366,17 @@ upstream = Path('.amp/in/orb-backup/swamp-upstream')
 commit = subprocess.check_output(['git', '-C', str(upstream), 'rev-parse', 'HEAD'], text=True).strip()
 version = re.search(r'^swampVersion: (\S+)$', Path('swamp/.swamp.yaml').read_text(), re.M)[1]
 assert commit.startswith(version.split('-sha.')[1])
+home = Path('.agents/swamp-upstream')
+rules = Path('swamp/AGENTS.md')
+end = '<!-- END swamp managed section -->\n'
+before, block, after = re.split(r'(<!-- BEGIN swamp managed section - DO NOT EDIT -->\n.*?' + re.escape(end) + ')', rules.read_text(), flags=re.S)
+(home / 'managed-section.md').write_text(block)
+rules.write_text((before + after).lstrip('\n'))
 source = upstream / 'src/infrastructure/assets/skill_assets.ts'
 bundled = source.read_text().split('const BUNDLED_SKILLS:', 1)[1].split('\n];', 1)[0]
 paths = sorted(re.findall(r'relativePath:\s*"([^"]+)"', bundled))
 assert {path.split('/')[0] for path in paths} == {'swamp', 'swamp-getting-started'}
-skills = Path('.agents/skills')
+skills = home / 'skills'
 for name in ('swamp', 'swamp-getting-started'):
     shutil.rmtree(skills / name)
 hashes = {}
@@ -386,12 +393,13 @@ manifest = {
     'method': 'SkillAssets.copySkillsTo: BUNDLED_SKILLS from .claude/skills, byte-for-byte; see docs/contributor-guide.md#refresh-the-bundled-swamp-skills',
     'files': hashes,
 }
-(skills / 'swamp-source.json').write_text(json.dumps(manifest, indent=2) + '\n')
+(home / 'swamp-source.json').write_text(json.dumps(manifest, indent=2) + '\n')
 ```
 
-3. Review the upstream diff, including scripts and any MCP configuration, and confirm every imported file matches that commit. Run `python3 -m unittest discover -s tools -p test_ci_swamp_skills.py`.
+4. Run `git status`. Delete any other file the upgrade wrote into the repository, such as a skill folder under `.agents/skills` or `.claude/skills`, or a `.claude/rules/swamp.md`, and restore unrelated changes to repository metadata. `swamp/AGENTS.md` keeps only Orbit's rules.
+5. Review the upstream diff of `.agents/swamp-upstream`, including scripts and any MCP configuration, and confirm every imported file matches that commit. Run `python3 -m unittest discover -s tools -p test_ci_swamp_skills.py`.
 
-CI runs this read-only drift check in its existing CI policy suite, without a Swamp account, network access or an upstream checkout. It rejects content changes, missing or extra files, and a runtime pin that differs from the manifest. The manifest is a reviewed snapshot, not an independent upstream lookup. A runtime update requires a fresh import and manifest in the same change.
+CI runs this read-only drift check of the skill files in its existing CI policy suite, without a Swamp account, network access or an upstream checkout. It rejects content changes, missing or extra files, and a runtime pin that differs from the manifest. The manifest is a reviewed snapshot, not an independent upstream lookup. A runtime update requires a fresh import and manifest in the same change.
 
 ## Report a problem
 
