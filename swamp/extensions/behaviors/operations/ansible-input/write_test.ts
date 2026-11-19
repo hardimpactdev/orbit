@@ -74,6 +74,9 @@ async function cloneInput(nested = false) {
     })) as never[];
     const intent = { instance_id: 7, already_active: false, container, ssh_execution: { target: { user: account } } };
     await Deno.mkdir(folder, { mode: 0o700 });
+    // The fake Node's Incus API answers, as a live Incus that refuses a read does: the copy then takes the refusal as the result and
+    // never waits for the API. A runner without Incus would otherwise wait out the copy's 120 s bound.
+    await Deno.writeTextFile(folder + "/curl", "#!/bin/sh\nexit 0\n", { mode: 0o700 });
     // The run's private folder and the public part of its launch copy, as the Gateway frames them (CloneStage::payload).
     const outputs = { clone_private: `/tmp/orbit-clone-7-${id}`, stage_json: JSON.stringify(await stagePayload(container, account)) };
     return { folder, intent, outputs };
