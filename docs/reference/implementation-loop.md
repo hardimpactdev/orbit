@@ -14,7 +14,7 @@ covers:
 
 # Feature delivery
 
-A feature reaches main as one complete pull request with its code, tests, documentation, and any in-progress ADRs. The [contributor guide](/contributor-guide) describes the steps. Orbit builds its own features as [tasks](/reference/tasks): the first subtask writes the documentation, each subtask handoff runs the Project task check, and the task ends in a pull request. This page covers review evidence, CI, the local checks, and the main caches that make those checks fast. The merge is stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci).
+A feature reaches main as one complete pull request with its code, tests, documentation, and any in-progress ADRs. The [contributor guide](/contributor-guide) describes the steps. Orbit builds its own features as [tasks](/reference/tasks): the subtask that changes a behaviour changes its documentation, each subtask handoff runs the Project task check, and the task ends in a pull request. This page covers review evidence, CI, the local checks, and the main caches that make those checks fast. The merge is stage 4 of the [command development pipeline](/reference/command-development-pipeline#4-pr-and-ci).
 
 
 

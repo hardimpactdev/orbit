@@ -121,7 +121,7 @@ Every PR must pass the [docs-impact gate](/contributor-guide#2-write-the-documen
 
 Orbit's maintainers and Orbit's own agents do the following work. A person who contributes by hand does not run it:
 
-- Orbit Tasks and their docs subtasks. The rule that each Orbit group starts with a docs subtask applies only there.
+- Orbit Tasks and their briefs, subtasks and deliverables.
 - The Incus review. Orbit's reviewer reproduces your change on Incus, so you do not need Incus machines.
 - The agent skills in `.agents/skills`. They guide an agent through the same steps as this page.
 - Root `composer check`. It runs `bin/review-check`, the gate that Orbit Tasks run at each handoff. CI does not run the Project check for now. The root checks in step 5 still apply to you.
