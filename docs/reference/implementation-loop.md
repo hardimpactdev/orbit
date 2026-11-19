@@ -406,7 +406,7 @@ A slow check never gates. A unit that the ceiling or the deadline cut, and in wh
 
 The shard prints a warning for each cut unit. `Required checks` reads the times of every shard with `bin/ci-units cuts`, writes the cut units to its summary and posts them as one comment on the pull request. A unit that is named in every run hangs or is too slow: split it or make it faster.
 
-The check in a task copy keeps its own rule: there an `OVER BUDGET` unit fails the `fixtures` part.
+The check in a task copy follows the same rule: the `fixtures` part names a cut unit as `over budget, not run to the end (warning)` and does not fail on it. A unit that was cut after a failed assertion fails the part.
 
 A fixture’s metadata records its measured registrations in order. Population edits select only fixtures whose records differ between the merge base and PR head, including added or removed records for sources that still exist. Formatting alone selects no fixture bodies. The loader reads the old combined files only when comparing commits from before and after the move; the current checkout has one source for each record.
 
@@ -849,7 +849,7 @@ The units that did not join, or that the check's own time limit stopped, are def
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
 
-Only the check's own time limit stops a unit; such a unit is deferred to CI. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. Immediately after planning, the check validates fixture placement, including when `--only` excludes fixtures. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line and stops the check before its other parts. A named capacity gap remains reported by the planner and is not a placement failure.
+A unit that the check's own time limit stops is deferred to CI. A unit that the runner's limit cuts, with no failed assertion, is a warning: the part names it and does not fail. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. Immediately after planning, the check validates fixture placement, including when `--only` excludes fixtures. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line and stops the check before its other parts. A named capacity gap remains reported by the planner and is not a placement failure.
 
 Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for every task check, whatever the copy's CPU count, so PHPStan and Pest run in one process.
 
