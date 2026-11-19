@@ -147,6 +147,18 @@ impl Run for Families {
                     Outcome::Failed { code: failure.code.to_owned() }
                 }
             },
+            Action::TlsEnsureCsr => {
+                match orbit_executor_route::ensure_csr(&orbit_executor_route::NodeSystem::new(bus::BLOBS_PATH), order.input()) {
+                    Ok(stdout) => Outcome::Output { stdout },
+                    Err(failure) => route_failed(order, &failure),
+                }
+            }
+            Action::RoutePublishSite => {
+                match orbit_executor_route::publish_site(&orbit_executor_route::NodeSystem::new(bus::BLOBS_PATH), order.input()) {
+                    Ok(changes) => Outcome::Applied { changes },
+                    Err(failure) => route_failed(order, &failure),
+                }
+            }
         }
     }
 }
@@ -258,4 +270,10 @@ mod tests {
         assert_eq!(system_user(passwd, RELAY_USER), Some((990, 985)));
         assert_eq!(system_user(passwd, "orbit"), None);
     }
+}
+
+/// A failed route primitive: its code goes to the Gateway, its detail only to the log.
+fn route_failed(order: &VerifiedOrder, failure: &orbit_executor_route::Failure) -> Outcome {
+    log(&format!("{} {} failed: {} {}", order.action(), order.operation(), failure.code, failure.detail));
+    Outcome::Failed { code: failure.code.to_owned() }
 }

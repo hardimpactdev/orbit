@@ -1,0 +1,244 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fs;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+
+use crate::{ensure_csr, publish_site, Account, System};
+
+/// A scratch root, recorded commands, and the current user standing in for root and `caddy`.
+struct Fake {
+    root: tempfile::TempDir,
+    commands: RefCell<Vec<Vec<String>>>,
+    blobs: HashMap<String, Vec<u8>>,
+    failing: Vec<&'static str>,
+    inactive: bool,
+}
+
+impl Fake {
+    fn new() -> Self {
+        Self { root: tempfile::tempdir().expect("scratch root"), commands: RefCell::default(), blobs: HashMap::new(), failing: Vec::new(), inactive: false }
+    }
+
+    /// The current user and group: what a file the tests make gets.
+    fn me() -> (u32, u32) {
+        let own = tempfile::NamedTempFile::new().expect("own file");
+        let own = fs::metadata(own.path()).expect("own file metadata");
+        (own.uid(), own.gid())
+    }
+
+    fn reloads(&self, unit: &str) -> usize {
+        let wanted = ["/usr/bin/systemctl", "reload", unit];
+        self.commands.borrow().iter().filter(|argv| argv.iter().map(String::as_str).eq(wanted)).count()
+    }
+
+    fn blob(&mut self, content: &str) -> serde_json::Value {
+        let digest = format!("{:064x}", self.blobs.len() + 1);
+        self.blobs.insert(digest.clone(), content.as_bytes().to_vec());
+        json!({"blob": {"sha256": digest}})
+    }
+
+    fn write(&self, value: &str, content: &str) -> PathBuf {
+        let path = self.path(value);
+        fs::create_dir_all(path.parent().expect("parent")).expect("parents");
+        fs::write(&path, content).expect("write");
+        path
+    }
+
+    fn ran(&self, needle: &str) -> usize {
+        self.commands.borrow().iter().filter(|argv| argv.iter().any(|arg| arg == needle)).count()
+    }
+}
+
+impl System for Fake {
+    fn root(&self) -> &Path {
+        self.root.path()
+    }
+
+    fn run(&self, _seconds: u32, argv: &[String]) -> Result<String, String> {
+        self.commands.borrow_mut().push(argv.to_vec());
+        if self.failing.iter().any(|needle| argv.iter().any(|arg| arg == needle)) {
+            return Err("refused".to_owned());
+        }
+        match argv.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+            [_, "genpkey", .., partial] => {
+                fs::write(self.path(partial), "KEY").expect("key");
+                Ok(String::new())
+            }
+            ["/usr/bin/install", "-D", .., "-t", folder, _, _] => {
+                fs::create_dir_all(self.path(folder)).expect("account copy folder");
+                Ok(String::new())
+            }
+            [_, "req", ..] => Ok("-----BEGIN CERTIFICATE REQUEST-----\nCSR\n-----END CERTIFICATE REQUEST-----\n".to_owned()),
+            [_, "is-active", ..] if self.inactive => Err("inactive".to_owned()),
+            _ => Ok(String::new()),
+        }
+    }
+
+    fn account(&self, _name: &str) -> Result<Account, String> {
+        let (uid, gid) = Self::me();
+        Ok(Account { uid, gid, home: "/home/orbit".to_owned() })
+    }
+
+    fn group(&self, _name: &str) -> Result<u32, String> {
+        Ok(Self::me().1)
+    }
+
+    fn lchown(&self, _path: &Path, _uid: u32, _gid: Option<u32>) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn blob(&self, sha256: &str) -> Result<Vec<u8>, String> {
+        self.blobs.get(sha256).cloned().ok_or_else(|| "missing".to_owned())
+    }
+
+    fn superuser(&self) -> u32 {
+        Self::me().0
+    }
+}
+
+const DIRECTORY: &str = "/etc/caddy/orbit-certificates/app-instance-7/versions/0123456789abcdef";
+
+#[test]
+fn a_csr_makes_the_key_once_and_reuses_it() {
+    let fake = Fake::new();
+    fs::create_dir_all(fake.path(DIRECTORY)).expect("version folder");
+    let input = json!({"directory": DIRECTORY, "domain": "shop.orbit"});
+
+    let first = ensure_csr(&fake, &input).expect("first request");
+    let second = ensure_csr(&fake, &input).expect("repeat");
+
+    assert!(first.contains("BEGIN CERTIFICATE REQUEST"));
+    assert_eq!(first, second);
+    assert_eq!(fake.ran("genpkey"), 1, "a repeat keeps the key a signed certificate may already match");
+    assert_eq!(fs::read_to_string(fake.path(&format!("{DIRECTORY}/key.pem"))).expect("key"), "KEY");
+    assert!(!fake.path(&format!("{DIRECTORY}/key.pem.partial")).exists());
+    let request = fake.commands.borrow().iter().rfind(|argv| argv.contains(&"req".to_owned())).cloned().expect("a request");
+    assert!(request.ends_with(&["-subj".to_owned(), "/CN=Orbit".to_owned(), "-addext".to_owned(), "subjectAltName=DNS:shop.orbit".to_owned()]));
+}
+
+#[test]
+fn a_csr_refuses_a_folder_or_domain_outside_its_shape() {
+    let fake = Fake::new();
+    for input in [
+        json!({"directory": "/etc/passwd", "domain": "shop.orbit"}),
+        json!({"directory": DIRECTORY, "domain": "shop.orbit -addext x"}),
+        json!({"directory": DIRECTORY, "domain": "shop.orbit", "extra": true}),
+    ] {
+        assert_eq!(ensure_csr(&fake, &input).expect_err("refused").code, "route.input_invalid");
+    }
+    assert!(fake.commands.borrow().is_empty(), "nothing runs for a refused input");
+}
+
+fn site_input(fake: &mut Fake, caddyfile: &str) -> serde_json::Value {
+    json!({
+        "account": "orbit",
+        "acl": [
+            {"kind": "deny_defaults", "user": "orbit", "paths": ["/home/orbit/apps/shop"]},
+            {"kind": "passage", "user": null, "paths": ["/home/orbit", "/home/orbit/apps"]},
+            {"kind": "grant", "user": "orbit", "paths": ["/home/orbit/apps/shop/public", "/home/orbit/apps/shop/storage/app/public"],
+             "optional_paths": ["/home/orbit/apps/shop/storage/app/public"]},
+        ],
+        "url_lines": [{"path": "/home/orbit/apps/shop/.env", "url": "https://shop.orbit"}],
+        "php": [{"version": "8.4", "user": null, "content": fake.blob("[orbit]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/apps\n")}],
+        "leaves": [{"scope": "app-instance-7", "version": "0123456789abcdef", "certificate": fake.blob("-----BEGIN CERTIFICATE-----\nLEAF\n-----END CERTIFICATE-----\n")}],
+        "root_certificate": fake.blob("-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n"),
+        "caddy": fake.blob(caddyfile),
+    })
+}
+
+fn site_fake() -> Fake {
+    let fake = Fake::new();
+    fake.write("/home/orbit/apps/shop/.env", "APP_NAME=Shop\nAPP_URL=http://old\nDB=x\n");
+    fake.write("/home/orbit/apps/shop/public/index.php", "");
+    for dir in ["/etc/php/8.4/fpm/pool.d", DIRECTORY, "/usr/local/share/ca-certificates", "/etc/caddy"] {
+        fs::create_dir_all(fake.path(dir)).expect("folder");
+    }
+    fake
+}
+
+#[test]
+fn a_site_places_every_file_and_a_repeat_changes_nothing() {
+    let mut fake = site_fake();
+    let input = site_input(&mut fake, "shop.orbit {\n}\n");
+
+    let first = publish_site(&fake, &input).expect("first publication");
+    let second = publish_site(&fake, &input).expect("repeat");
+
+    assert!(first > 0);
+    assert_eq!(second, 0, "a repeat finds every file in place");
+    assert_eq!(fake.reloads("caddy"), 1, "Caddy reloads for the first publication only");
+    assert_eq!(fake.reloads("php8.4-fpm.service"), 1, "a running pool reloads only when its file changed");
+    let (_, gid) = Fake::me();
+    let pool = fs::read_to_string(fake.path("/etc/php/8.4/fpm/pool.d/orbit-scopes.conf")).expect("pool");
+    assert_eq!(pool, format!("[orbit]\ngroup = {gid}\nchdir = /home/orbit/apps\n"));
+    assert_eq!(fs::read_to_string(fake.path("/home/orbit/apps/shop/.env")).expect("env"), "APP_NAME=Shop\nAPP_URL=https://shop.orbit\nDB=x\n");
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), "shop.orbit {\n}\n");
+    assert_eq!(fs::read_link(fake.path("/etc/caddy/orbit-certificates/app-instance-7/current")).expect("link"), Path::new("versions/0123456789abcdef"));
+    assert_eq!(fs::metadata(fake.path("/etc/caddy/Caddyfile")).expect("live").mode() & 0o7777, 0o640);
+    assert_eq!(fake.ran("/usr/sbin/update-ca-certificates"), 1, "trust updates only when the root file changes");
+}
+
+#[test]
+fn access_commands_match_the_gateway_shapes_and_skip_a_missing_optional_path() {
+    let mut fake = site_fake();
+    let input = site_input(&mut fake, "shop.orbit {\n}\n");
+    publish_site(&fake, &input).expect("publication");
+
+    let commands = fake.commands.borrow();
+    let runuser = ["/usr/sbin/runuser", "-u", "orbit", "--", "/usr/bin/env", "-C", "/"];
+    let expected: [Vec<&str>; 3] = [
+        [&runuser[..], &["/usr/bin/find", "-P", "/home/orbit/apps/shop", "-type", "d", "-exec", "/usr/bin/setfacl", "-m", "d:u:caddy:---", "--", "{}", "+"]].concat(),
+        vec!["/usr/bin/setfacl", "-m", "u:caddy:--x", "--", "/home/orbit", "/home/orbit/apps"],
+        [&runuser[..], &["/usr/bin/setfacl", "-P", "-R", "-n", "-m", "u:caddy:r-X", "--", "/home/orbit/apps/shop/public"]].concat(),
+    ];
+    for (index, argv) in expected.iter().enumerate() {
+        assert_eq!(commands[index], argv.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(), "access command {index}");
+    }
+}
+
+#[test]
+fn a_failed_validation_keeps_the_live_caddyfile_and_reloads_nothing() {
+    let mut fake = site_fake();
+    fake.write("/etc/caddy/Caddyfile", "old {\n}\n");
+    fake.failing.push("validate");
+    let input = site_input(&mut fake, "broken {\n");
+
+    let failure = publish_site(&fake, &input).expect_err("validation fails");
+
+    assert_eq!(failure.code, "route.publish_failed");
+    assert_eq!(fs::read_to_string(fake.path("/etc/caddy/Caddyfile")).expect("live"), "old {\n}\n");
+    assert_eq!(fake.reloads("caddy"), 0);
+    let leftovers: Vec<_> = fs::read_dir(fake.path("/etc/caddy")).expect("caddy folder").filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(".orbit")).collect();
+    assert!(leftovers.is_empty(), "the candidate is removed");
+}
+
+#[test]
+fn a_stopped_php_unit_starts_and_a_missing_env_fails() {
+    let mut fake = site_fake();
+    fake.inactive = true;
+    let input = site_input(&mut fake, "shop.orbit {\n}\n");
+    publish_site(&fake, &input).expect("publication");
+    assert_eq!(fake.ran("start"), 1, "a task VM image keeps PHP-FPM off, so a stopped unit starts");
+
+    fs::remove_file(fake.path("/home/orbit/apps/shop/.env")).expect("remove env");
+    assert_eq!(publish_site(&fake, &input).expect_err("no .env").code, "route.publish_failed");
+}
+
+#[test]
+fn a_site_refuses_input_outside_its_shape() {
+    let mut fake = site_fake();
+    let mut input = site_input(&mut fake, "x\n");
+    input["acl"][0]["kind"] = json!("chmod");
+    assert_eq!(publish_site(&fake, &input).expect_err("unknown kind").code, "route.input_invalid");
+    let mut input = site_input(&mut fake, "x\n");
+    input["php"][0]["version"] = json!("8.4; rm");
+    assert_eq!(publish_site(&fake, &input).expect_err("bad version").code, "route.input_invalid");
+    let mut input = site_input(&mut fake, "x\n");
+    input["url_lines"][0]["path"] = json!("/etc/shadow");
+    assert_eq!(publish_site(&fake, &input).expect_err("not an .env").code, "route.input_invalid");
+    assert!(fake.commands.borrow().is_empty());
+}
