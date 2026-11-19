@@ -188,7 +188,7 @@ final readonly class ContainerDeployOutcome
             'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'recorded', 'no_key'], 'base' => ['retaken', 'kept'],
             'record' => ['present', 'missing', 'unreadable'], 'tools' => ['present', 'built', 'failed'],
             'tools_reason' => ['current', 'missing', 'names', 'package', 'venv', 'collections', 'cleanup', 'timeout', 'unreadable'],
-            'shrink' => ['ran', 'relinked', 'failed', 'skipped'], 'shrink_reason' => ['record', 'packages', 'current', 'unreadable'],
+            'shrink' => ['started', 'failed', 'skipped'], 'shrink_reason' => ['record', 'packages', 'shrunk', 'current', 'unreadable'],
             'swamp' => ['installed', 'pinned', 'skipped'], 'swamp_reason' => ['changed', 'unreadable', 'pinned', 'no_key']];
         $refresh = [];
         foreach ($words as $part => $allowed) {
