@@ -73,4 +73,6 @@
         name: orbit-executor.service
         enabled: true
         daemon_reload: "{{ executor_files is changed }}"
-        state: "{{ 'restarted' if executor_binary_changed or executor_files is changed or executor_bus_present is changed or executor_bus_absent is changed else 'started' }}"
+        state: >-
+          {{ 'restarted' if executor_binary_changed or executor_files is changed
+          or executor_bus_present is changed or executor_bus_absent is changed else 'started' }}

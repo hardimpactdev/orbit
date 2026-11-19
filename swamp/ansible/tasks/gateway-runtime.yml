@@ -39,4 +39,4 @@
   ansible.builtin.systemd: { name: logrotate.timer, state: started, enabled: true }
 - name: Install the machine bus's server
   when: rt.gateway.nats | default(None) != None
-  ansible.builtin.import_tasks: gateway-nats.yml
+  ansible.builtin.include_tasks: gateway-nats.yml

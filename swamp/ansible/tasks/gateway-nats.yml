@@ -7,7 +7,7 @@
 - name: Ensure the artifact cache
   ansible.builtin.file: { path: /var/cache/orbit, state: directory, owner: root, group: root, mode: "0755" }
 - name: Fetch the pinned nats-server release
-  ansible.builtin.import_tasks: artifact-fetch.yml
+  ansible.builtin.include_tasks: artifact-fetch.yml
   vars: { artifact: "{{ rt.gateway.nats }}" }
 - name: Install the nats-server binary
   ansible.builtin.unarchive:
