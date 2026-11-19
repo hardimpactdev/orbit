@@ -426,6 +426,13 @@
         that: container.clone.snapshot in (source_snapshots.stdout | from_json | map(attribute='name') | list)
         fail_msg: instance.default_seed_moved
         quiet: true
+    # A dir pool copies every file; no Incus layer keeps one. It refuses before the copy.
+    - name: Refuse a root pool that copies files
+      when: container_read.rc != 0
+      ansible.builtin.assert:
+        that: (root_pool_read.stdout | from_json).driver in ['zfs', 'btrfs']
+        fail_msg: instance.pool_driver_unsupported
+        quiet: true
     - name: Copy the snapshot
       when: container_read.rc != 0
       ansible.builtin.command:
