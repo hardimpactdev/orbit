@@ -1731,7 +1731,8 @@ The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
 - `daily`: merged and not merged tasks for each day of a `7d` or `30d` period. It is empty for `24h`.
-- `hourly`: `hour`, the ISO 8601 start of the hour, with merged and not merged tasks for each of the 24 hours of a `24h` period, oldest first. It is empty for `7d` and `30d`.
+- `hourly`: merged and not merged tasks for each hour of a `24h` period, oldest first. It is empty for `7d` and `30d`.
+- An `hourly` entry's `hour` is the ISO 8601 start of its hour.
 - `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery).
 - A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
 - A task's release is the last verified release that began before its `started_at`.
