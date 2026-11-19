@@ -4,7 +4,6 @@ sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
   - "{.agents/skills/{reviewing-pull-requests/references/test-*.md,swamp/**,swamp-getting-started/**,swamp-source.json},tools/test_ci_swamp_skills.py}"
-  - "{.claude/skills,{apps/*,packages/php-sdk}/CLAUDE.md}"
   - "{composer.json,vet.json,.gitattributes,.githooks/pre-push}"
   - bin/{bootstrap,gateway-app-key,test,pest-plain,review-check,docs-merge-check,build-api,docs-navigation,docs-flows,check-flows,dependency-audit}
   - "{apps/*,packages/php-sdk}/{composer,vet}.json"
