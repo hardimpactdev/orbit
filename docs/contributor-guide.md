@@ -313,7 +313,7 @@ Address the review findings. Reviewers check the fixes and repeat the affected c
 
 ## Use an agent
 
-The skills in the repository guide an agent through the work.
+The skills in the repository guide an agent through the work. They live in `.agents/skills`, where Codex finds them. `.claude/skills` is a relative symbolic link to `../.agents/skills`, so Claude Code finds the same skills. Each project folder's rules live in its `AGENTS.md`. A `CLAUDE.md` beside it links to `AGENTS.md`, so Claude Code loads the rules when it reads a file in that folder. Edit only the skill or the `AGENTS.md`; the links follow.
 
 | Task | Skill |
 | --- | --- |
