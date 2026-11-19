@@ -96,6 +96,8 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     $review = $this->withHeader('Idempotency-Key', 'solo-review')->postJson("/api/v1/tasks/{$id}/turn", ['role' => 'reviewer', 'prompt' => 'Review it.', 'check' => $world->check->id])
         ->assertStatus(202)->assertJsonPath('data.kind', 'tasks.copy_turn')->json('data.id');
     $review = Operation::query()->findOrFail($review);
+    // The work stays running while the reviewer reviews: work_review reads the turn, not the work's status.
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work.status', 'running')->assertJsonPath('data.work_review', 'reviewing');
     $prompt = $review->input['turn']['prompt'] ?? $review->input['prompt'];
     expect($review->input['subtask'])->toBe($work->id)->and($review->input['candidate'])->toBe(TaskDoneFixture::Commit)
         ->and($prompt)->toStartWith("You review an Orbit task in its task copy.\nThis is the first review of this task: check {$world->check->id}")
@@ -104,11 +106,14 @@ it('takes a task with no subtask by its own id from a passed handoff check throu
     $world->check->update(['pr_title' => TaskDoneFixture::Title, 'pr_body' => TaskDoneFixture::Body, 'pr_text_operation_id' => $review->id]);
     soloEnd($review);
     expect(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'not_approved');
 
     // The completion by the task's id is the approval: the work completes, the task stays open, and its work is done on C0.
     $this->patchJson("/api/v1/tasks/{$id}", ['work_status' => 'completed'])->assertOk()
         ->assertJsonPath('data.status', 'running')->assertJsonPath('data.work.status', 'completed')->assertJsonPath('data.subtasks', []);
     expect(app(TaskGroupDone::class)->check($group->refresh())?->id)->toBe($world->check->id);
+    $this->getJson("/api/v1/tasks/{$id}")->assertOk()->assertJsonPath('data.work_review', 'approved');
+    $this->getJson('/api/v1/tasks')->assertOk()->assertJsonMissingPath('data.0.work_review');
 
     // The release publishes C0, and the publish conflicts with main.
     $publish = $this->withHeader('Idempotency-Key', 'solo-publish')->postJson("/api/v1/tasks/{$id}/publish", ['check' => $world->check->id])->assertStatus(202)

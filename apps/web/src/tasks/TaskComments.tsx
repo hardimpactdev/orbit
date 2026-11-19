@@ -5,6 +5,7 @@ import {
     formatDurationMs,
     formatRelativeTime,
     taskCommentsQuery,
+    taskWorkCommentsQuery,
     taskCommentTypeLabel,
     type TaskCheck,
     type TaskComment,
@@ -197,19 +198,21 @@ function PullRequestProposal({ proposal }: { proposal: NonNullable<TaskComment["
 
 /**
  * The latest check and the task's comments and turn receipts, newest first, as stacked cards. A task
- * with no subtask passes its own ID and its work's check: its comments include its work's.
+ * with no subtask passes `work` and its work's check: its comments include its work's.
  */
 export function TaskComments({
     groupId,
     taskId,
     check,
+    work = false,
 }: {
     groupId: number;
     taskId: number;
     check: TaskCheck | null;
+    work?: boolean;
 }) {
     const query = useQuery({
-        ...taskCommentsQuery(groupId, taskId),
+        ...(work ? taskWorkCommentsQuery(groupId) : taskCommentsQuery(groupId, taskId)),
         refetchInterval: useTaskPoll(),
     });
     const now = useClock();

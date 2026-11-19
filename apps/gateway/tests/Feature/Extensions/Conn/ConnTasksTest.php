@@ -274,6 +274,7 @@ describe('conn:task:show', function (): void {
             ->and($task['subtasks'])->toBe([])
             ->and($task['work'])->toBe([
                 'status' => 'reviewing',
+                'review' => 'not_approved',
                 'deliverables' => [['id' => 'tests', 'type' => 'command', 'description' => 'The tests pass']],
                 'current_implementer_agent_id' => $implementer->id,
                 'check' => ['id' => $check->id, 'kind' => 'handoff', 'status' => 'passed', 'started_at' => '2026-11-17T11:59:00+00:00',
@@ -282,9 +283,30 @@ describe('conn:task:show', function (): void {
             ->and(array_map(static fn (array $agent): array => [$agent['id'], $agent['role'], $agent['subtask_ids'], $agent['current'], $agent['attempt']], $task['agents']))
             ->toBe([[$implementer->id, 'implementer', [], true, 1], [$reviewer->id, 'reviewer', [], true, 1]]);
 
+        // A reviewer turn runs while the work stays running: the review state reads the turn, not the work's status.
+        $work->update(['status' => TaskStatus::Running]);
+        $turn = Operation::query()->forceCreate(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id, 'status' => 'running',
+            'input' => ['thread_id' => $reviewer->id, 'subtask' => $work->id], 'state' => [], 'started_at' => now()]);
+        expect(panelCall($this->phone, 'tasks/'.$group->id)->json('data.work'))->toMatchArray(['status' => 'running', 'review' => 'reviewing']);
+        $turn->update(['status' => 'succeeded', 'finished_at' => now()]);
+        $work->update(['status' => TaskStatus::Completed]);
+        // A completion is no approval without a reviewer turn on the done check.
+        expect(panelCall($this->phone, 'tasks/'.$group->id)->json('data.work'))->toMatchArray(['status' => 'completed', 'review' => 'not_approved']);
+
+        $work->update(['status' => TaskStatus::Running]);
         TaskAssistance::apply($work->refresh(), AssistanceKind::Failure, null, 'The handoff check failed twice.');
         expect(panelCall($this->phone, 'tasks')->json('data.0.attention'))->toBe(['kind' => 'failure', 'question' => null, 'reason' => 'The handoff check failed twice.'])
             ->and(panelCall($this->phone, 'tasks/'.$work->id)->assertNotFound()->json('error.code'))->toBe('http.404');
+    });
+
+    it('shows a draft with no subtask and no deliverables as a task that does its own work, with no work yet', function (): void {
+        $draft = panelTask('Draft', attributes: ['status' => TaskGroupStatus::Backlog]);
+
+        $task = panelCall($this->phone, 'tasks/'.$draft->id)->assertOk()->json('data');
+
+        expect($task['execution'])->toBe(['implementer_mode' => 'task'])
+            ->and($task['subtasks'])->toBe([])
+            ->and($task)->not->toHaveKey('work');
     });
 
     it('keeps the panel of a task with subtasks free of the work fields', function (): void {

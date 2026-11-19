@@ -7,12 +7,14 @@ type LineChanges = { lines_added?: number | null; lines_deleted?: number | null 
 export type Task = Omit<Required<components["schemas"]["Task"]>, keyof LineChanges> & LineChanges;
 export type TaskGroup = Omit<
     Required<components["schemas"]["TaskGroup"]>,
-    "subtasks" | "work" | "project_code" | keyof LineChanges
+    "subtasks" | "work" | "work_review" | "project_code" | keyof LineChanges
 > &
     LineChanges & {
         subtasks: Task[];
         /** The work of a task with no subtask: its deliverables, latest check and implementer. Null for a task with subtasks. */
         work: Task | null;
+        /** Show only: where the work's review stands, from Orbit's records. A list leaves it out. */
+        work_review?: TaskWorkReview | null;
         project_code?: string;
     };
 /** One deliverable, as `task:create` takes it: a file change, a command that passes, or an item the reviewer confirms. */
@@ -24,7 +26,18 @@ export type TaskDeliverable = {
     change?: string;
     command?: string;
     directory?: string;
+    /** A command that must fail on the start commit and pass on the working tree, with the paths its check uses. */
+    fails_on_base?: boolean;
+    paths?: string[];
 };
+export type TaskWorkReview = "reviewing" | "approved" | "not_approved";
+
+export const taskWorkReviewLabels: Record<TaskWorkReview, string> = {
+    reviewing: "In review",
+    approved: "Approved",
+    not_approved: "Not approved",
+};
+
 export type TaskColumn = "Backlog" | "Todo" | "In progress" | "Done";
 export type TaskCheck = components["schemas"]["TaskCheck"];
 export type TaskComment = Required<components["schemas"]["TaskComment"]>;
@@ -252,6 +265,17 @@ export const taskAgentsQuery = (groupId: number) =>
     queryOptions({
         queryKey: ["tasks", String(groupId), "agents"],
         queryFn: () => get<AgentThread[]>(`/api/v1/tasks/${groupId}/agents`),
+        retry: false,
+    });
+
+/**
+ * Comments and turn receipts on a task with no subtask, newest first: the task's own and its work's. Its key names the work, so a
+ * comment event of either owner refetches it (realtime/apply.ts).
+ */
+export const taskWorkCommentsQuery = (groupId: number) =>
+    queryOptions({
+        queryKey: ["tasks", String(groupId), "work", "comments"],
+        queryFn: () => get<TaskComment[]>(`/api/v1/tasks/${groupId}/comments`),
         retry: false,
     });
 

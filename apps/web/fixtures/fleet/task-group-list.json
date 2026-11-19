@@ -76,7 +76,7 @@
                     "questions": 0,
                     "escalations": 0,
                     "brief": "Let a signed-in customer see their past orders, newest first, with each order's total and status.",
-                    "status": "reviewing",
+                    "status": "running",
                     "implementer_agent_thread_id": 42,
                     "tokens": 96400,
                     "line_diff": 58,
@@ -121,7 +121,8 @@
                             "description": "A customer with no orders sees a friendly empty state"
                         }
                     ]
-                }
+                },
+                "work_review": "reviewing"
             },
             {
                 "id": 12,

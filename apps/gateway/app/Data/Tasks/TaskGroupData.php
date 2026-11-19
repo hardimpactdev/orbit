@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskReviewMode;
+use App\Domain\Tasks\TaskWorkReview;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskType;
 use App\Models\Instance;
@@ -98,6 +99,11 @@ final class TaskGroupData extends Data
          * lists them in `subtasks` (docs/reference/tasks.md#a-task-with-no-subtask).
          */
         public ?TaskData $work = null,
+        /**
+         * Show only: where the review of a task with no subtask stands, `reviewing`, `approved` or `not_approved` (TaskWorkReview). Null
+         * for a task with subtasks and for an ended task (docs/reference/tasks.md#a-task-with-no-subtask).
+         */
+        public Lazy|string|null $workReview = null,
         /** When GitHub opened the group's pull request; null when Orbit has not read it (docs/reference/tasks.md#task-insights). */
         public ?string $prOpenedAt = null,
         /** When a production deploy first carried the merge commit; null until then (docs/reference/tasks.md#task-insights). */
@@ -107,7 +113,7 @@ final class TaskGroupData extends Data
     /** @return array<string, mixed> */
     public function toListArray(bool $compact = false): array
     {
-        $this->exclude('publication');
+        $this->exclude('publication', 'workReview');
         if ($compact) {
             return $this->toCompactArray();
         }
@@ -180,6 +186,7 @@ final class TaskGroupData extends Data
             prOpenedAt: $group->pr_opened_at?->toIso8601String(),
             deployedAt: $group->deployed_at?->toIso8601String(),
             publication: Lazy::create(static fn (): ?TaskPublicationData => TaskPublicationData::fromModel($group))->defaultIncluded(),
+            workReview: Lazy::create(static fn (): ?string => app(TaskWorkReview::class)->of($group))->defaultIncluded(),
 
             id: $group->id,
             parentId: null,

@@ -317,7 +317,7 @@ it("hides empty task lanes and shares the width as cards move between statuses",
     expect(document.querySelector(".kanban-board")).toBeNull();
 });
 
-it("hides empty subtask lanes, shares their width, and explains an empty board", async () => {
+it("hides empty subtask lanes, shares their width, and shows no subtask list for a draft without one", async () => {
     let task = group(1, "running");
     task.subtasks = [
         { ...task.subtasks[0]!, status: "running" },
@@ -341,8 +341,9 @@ it("hides empty subtask lanes, shares their width, and explains an empty board",
     expectFilledLanes(document.querySelector('[aria-label="Subtasks"] .kanban-board')!, ["Done"]);
     task = { ...task, subtasks: [] };
     await queryClient.invalidateQueries();
-    await expect.element(pane("Subtasks")).toMatchTextContent("No subtasks yet.");
-    expect(document.querySelector('[aria-label="Subtasks"] .kanban-board')).toBeNull();
+    // A draft with no subtask and no work yet shows no empty subtask list.
+    await expect.element(page.getByRole("region", { name: "Subtasks" })).not.toBeInTheDocument();
+    expect(document.querySelector('[aria-label="Deliverables"]')).toBeNull();
 });
 
 it("explains a disabled extension and can retry a failed request", async () => {
@@ -537,6 +538,15 @@ it("shows a task with no subtask with its deliverables, check, agents and review
                 command: "vendor/bin/pest",
                 directory: ".",
             },
+            {
+                id: "regression",
+                type: "command",
+                description: "The regression test fails before the fix",
+                command: "vendor/bin/pest tests/Feature/ExportTest.php",
+                directory: ".",
+                fails_on_base: true,
+                paths: ["tests/Feature/ExportTest.php"],
+            },
         ] as unknown as (typeof base.subtasks)[0]["deliverables"],
         check: {
             id: 3,
@@ -550,7 +560,13 @@ it("shows a task with no subtask with its deliverables, check, agents and review
             output: "Tests: 4 passed",
         },
     };
-    const task: TaskGroup = { ...base, subtasks: [], work };
+    // The work stays running while the reviewer reviews: the Review row reads work_review, not the work's status.
+    const task: TaskGroup = {
+        ...base,
+        subtasks: [],
+        work: { ...work, status: "running" },
+        work_review: "reviewing",
+    };
     const comments: string[] = [];
     const app = await openApp("/tasks", {
         wrapTransport: (inner) => (method, path, body) => {
@@ -593,8 +609,16 @@ it("shows a task with no subtask with its deliverables, check, agents and review
 
     await expect.element(pane("Deliverables")).toMatchTextContent("The feature tests pass");
     await expect.element(pane("Deliverables")).toMatchTextContent("vendor/bin/pest in .");
-    await expect.element(pane("Task")).toMatchTextContent("Work");
-    await expect.element(pane("Task")).toMatchTextContent("In review");
+    await expect.element(pane("Task")).toMatchTextContent("WorkRunning");
+    await expect.element(pane("Task")).toMatchTextContent("ReviewIn review");
+    await expect
+        .element(pane("Deliverables").getByRole("article", { name: "tests" }))
+        .not.toMatchTextContent("Must fail on the start commit");
+    await expect
+        .element(pane("Deliverables").getByRole("article", { name: "regression" }))
+        .toMatchTextContent(
+            "Must fail on the start commit and pass on the working tree; paths tests/Feature/ExportTest.php; vendor/bin/pest tests/Feature/ExportTest.php in .",
+        );
     await expect.element(pane("Comments")).toMatchTextContent("Passed");
     await expect.element(pane("Agents")).toMatchTextContent("Reviewer");
     await expect.element(pane("Agents")).toMatchTextContent("Implementer");

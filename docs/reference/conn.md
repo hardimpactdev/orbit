@@ -596,7 +596,7 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 | `workspace.conn_environment_id` | The T3 server of the workspace, only when the caller reaches it by the rule of the [thread index](#a-row): node access to the server's Node. Otherwise null. |
 | `pull_request` | `{number, url, state}`, or null. The watched pull request first; else the published `pr_url`, with its number read from the URL and `state` null. |
 | `subtask_counts` | `{total, todo, running, completed, failed, cancelled}`. `reserved` and `reviewing` count as `running`. A task with no subtask counts 0 in each. |
-| `work_status` | Only on a [task with no subtask](/reference/tasks#a-task-with-no-subtask): the raw status of its work, such as `running` or `reviewing`. A task with subtasks has no such field. |
+| `work_status` | Only on a [task with no subtask](/reference/tasks#a-task-with-no-subtask): the raw status of its work, such as `todo` or `running`. It is no review state; `work.review` is. A task with subtasks has none. |
 | `created_at`, `updated_at` | The task row's times. |
 | `last_activity_at` | When the task last did something: [Last activity](/reference/tasks#last-activity). |
 | `pr_opened_at` | When GitHub opened the task's pull request: [`pr_opened_at`](/reference/tasks#lifecycle-times). Null when Orbit has not read it. |
@@ -617,15 +617,21 @@ Conn shows the tasks of a Project or of one workspace, and opens one task with i
 | Field | Meaning |
 | --- | --- |
 | `brief` | The task's brief. |
-| `execution` | `{implementer_mode}`: `per_subtask` when each subtask has its own implementer thread, `task` for a task with no subtask, whose own work has the implementer thread. |
+| `execution` | `{implementer_mode}`: `per_subtask` when each subtask has its own implementer thread, `task` for a task without subtasks, whose own work has the implementer thread. A draft without subtasks or `work` is `task` too. |
 | `metrics` | `{duration_ms, tokens, lines_added, lines_deleted}` of the task. |
 | `subtasks` | In position order: `{id, position, title, brief, deliverables, status, attention, current_implementer_agent_id, metrics}`. |
 | `agents` | Every started agent thread of the task, oldest first. |
-| `work` | Only when `implementer_mode` is `task`: `{status, deliverables, current_implementer_agent_id, check}`. A task with subtasks has no such field. |
+| `work` | Only on a task that holds its own work: `{status, review, deliverables, current_implementer_agent_id, check}`. A task with subtasks has no such field. |
 
 A subtask's `deliverables` are `{id, type, description}`. Its `status` is the raw subtask status. Its `attention` has the same rule as the task's, for the subtask's own implementer thread and its own call for help. `current_implementer_agent_id` is the id of its current implementer in `agents`, or null. Its `metrics` are `{duration_ms, tokens, lines_added, lines_deleted}`.
 
-A task with no subtask has `subtasks: []` and shows its work in `work`. Its `status` is the work's raw status: `reviewing` while the reviewer reviews a passed handoff check, `completed` once the reviewer approved. Its `deliverables` and `current_implementer_agent_id` read as a subtask's. `check` is the work's latest check, `{id, kind, status, started_at, finished_at, exit_code, failed_step}`, or null before the first: `kind` is `baseline` or `handoff`, and `status` is `running`, `passed`, `failed`, `changed`, `lost` or `cancelled`. The work's ID is no route member, so `work` names none. The task's `metrics` cover its work.
+A task with no subtask has `subtasks: []` and shows its work in `work`. Its `status` is the work's raw status. It does not say whether the work is reviewed: a reviewer turn runs while the work stays `running`, and a completion without a reviewer turn on the done check is no approval. `review` says it, from Orbit's records:
+
+- `reviewing`: the newest turn of the task's reviewer thread has not ended.
+- `approved`: the work is done by [the done rule](/reference/tasks#when-the-work-is-done), also once its pull request is open.
+- `not_approved`: neither holds.
+
+`review` is null once the task ended; the task's `status` then says how. Its `deliverables` and `current_implementer_agent_id` read as a subtask's. `check` is the work's latest check, `{id, kind, status, started_at, finished_at, exit_code, failed_step}`, or null before the first: `kind` is `baseline` or `handoff`, and `status` is `running`, `passed`, `failed`, `changed`, `lost` or `cancelled`. The work's ID is no route member, so `work` names none. The task's `metrics` cover its work.
 
 Each agent:
 

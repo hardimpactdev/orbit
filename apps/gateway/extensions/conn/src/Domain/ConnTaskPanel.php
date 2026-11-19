@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
+use App\Domain\Tasks\TaskWorkReview;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -28,7 +29,7 @@ use Spatie\LaravelData\Optional;
  */
 final readonly class ConnTaskPanel
 {
-    public function __construct(private ConnServerAccess $access) {}
+    public function __construct(private ConnServerAccess $access, private TaskWorkReview $review) {}
 
     /**
      * The rows of one page of top-level tasks. Each relation a row shows is read once for the whole page.
@@ -61,13 +62,15 @@ final readonly class ConnTaskPanel
         $environment = $group->taskable_type === (new Instance)->getMorphClass() ? $environments->get($group->taskable_id) : null;
         $row = $this->row($group, $instances, $environments, $current, TaskGroupActivity::of([$group->id])[$group->id] ?? null);
         $work = self::work($group);
+        $subtasks = self::subtasks($group);
 
         return new ConnTaskDetailData(
             row: $row,
             brief: $group->brief,
-            execution: ['implementer_mode' => $work instanceof Task ? 'task' : 'per_subtask'],
+            // A task without subtasks does its own work: with its work row, or before its draft has one.
+            execution: ['implementer_mode' => $subtasks->isEmpty() ? 'task' : 'per_subtask'],
             metrics: ['duration_ms' => $group->duration_ms, 'tokens' => $group->tokens, 'lines_added' => $group->lines_added, 'lines_deleted' => $group->lines_deleted],
-            subtasks: array_values(self::subtasks($group)->map(static fn (Task $task): array => [
+            subtasks: array_values($subtasks->map(static fn (Task $task): array => [
                 'id' => $task->id,
                 'position' => $task->position,
                 'title' => $task->title,
@@ -82,6 +85,7 @@ final readonly class ConnTaskPanel
             agents: $this->agents($group, $threads, $environment, $work),
             work: $work instanceof Task ? [
                 'status' => $work->status->value,
+                'review' => $this->review->of($group),
                 'deliverables' => self::deliverables($work),
                 'current_implementer_agent_id' => $work->implementer_agent_thread_id,
                 'check' => ($check = $work->latestCheck) instanceof TaskCheck ? [

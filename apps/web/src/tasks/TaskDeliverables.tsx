@@ -7,8 +7,12 @@ const metaClassName = "text-[11px] font-medium uppercase tracking-[0.08em]";
 function deliverableDetail(deliverable: TaskDeliverable): string {
     if (deliverable.type === "file")
         return `${deliverable.path ?? ""}, ${deliverable.change ?? ""}`;
-    if (deliverable.type === "command")
-        return `${deliverable.command ?? ""} in ${deliverable.directory || "."}`;
+    if (deliverable.type === "command") {
+        const run = `${deliverable.command ?? ""} in ${deliverable.directory || "."}`;
+        return deliverable.fails_on_base
+            ? `Must fail on the start commit and pass on the working tree; paths ${(deliverable.paths ?? []).join(", ")}; ${run}`
+            : run;
+    }
     return "Confirmed by the reviewer";
 }
 

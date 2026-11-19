@@ -557,6 +557,8 @@ A create writes the task and its work, or its subtasks, in one transaction. The 
 
 Show and list return the task's work as `work`: the fields of a subtask, with its deliverables, latest check and implementer. `subtasks` is then empty, and a list with `parent_id` lists nothing. A task with subtasks has `work: null`.
 
+Show also returns `work_review`, where the review of the work stands, read from Orbit's records. It is `reviewing` while the newest turn of the reviewer thread has not ended. It is `approved` while the work is done by [the done rule](#when-the-work-is-done), also once its pull request is open, and `not_approved` otherwise. The work's `status` says none of this. `work_review` is null for a task with subtasks and once the task ended. A list leaves it out.
+
 The Gateway stores the work as one row under the task, of type `work`, with the task's title and brief. The row is the task's current subtask for the check, turn, status and review rules of this page. No read shows it as a subtask, and its ID in `work.id` is no route member: every route answers `404` for it. Address the work by the task's ID.
 
 ### List tasks
