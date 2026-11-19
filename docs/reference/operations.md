@@ -33,7 +33,7 @@ Native terminal projection reads Swamp history and any private result material o
 
 Removing a [Node service target record](/reference/processes-and-schedules#node-service-target-records) returns an already completed `instance.node_service_detach` Operation. This record-only operation works after a successful migration and performs no network, environment or runtime change. It still refuses an active lifecycle operation or an unfinished failed migration with a retained runtime.
 
-Automatic release role convergence reserves the Node against Instance and task Operations that participate on it. Admission refuses a conflict with `operation.target_busy`. A refused automatic converge queues ahead of new Instance and task work on the Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
+Automatic release convergence, the role converge and the full converge for changed host inputs, reserves the Node against Instance, Conn and Process Operations that participate on it. Task work (`tasks.*`) neither waits for nor holds it. Admission refuses a conflict with `operation.target_busy`, and `details.operation_ids` names the holders. A refused automatic converge queues ahead of new Instance, Conn and Process work on the Node. A removal (`instance.destroy` or `instance.unregister`) passes the queue. After 300 seconds the converge is admitted beside its holders, and their continuations still finish while it runs. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
 
 Containerized AppProd deployments and rollbacks capture their build and activation budgets on the Operation. A failed cutover can still return a verified serving commit. The Gateway records that observed selection before an operator retries.
 
