@@ -95,6 +95,7 @@ Hot is ready when all of these hold:
 - All build steps passed and hot carries the exact admitted commit and artifact digest.
 - `orbit-frankenphp.service` is active in hot.
 - The Instance's health path answers `200` three times in a row. It is `/up` for a Laravel app and `/` otherwise.
+- A Laravel app whose `storage` is a shared path has its [public storage link](#storage) into the shared volume.
 - Each request has 5 seconds, and all three have 60 seconds.
 - Hot's PHP loads neither PCOV nor PHP Data Bridge.
 
@@ -212,6 +213,8 @@ The storage volume holds what must outlive a release: the shared paths, `storage
 
 The first preparation on the app-prod Node provisions the per-Instance volume. Deploys and rollbacks keep it.
 
+A Laravel app whose `storage` is a shared path gets the link that `php artisan storage:link` makes on a host: preparation links `public/storage` to `../storage/app/public`, so `/storage/...` URLs serve the files in `/srv/shared/storage/app/public`. The Project needs no deploy step for it. A link that a build step already made stays. The [readiness check](#ready) refuses a candidate whose link is missing or points outside the shared volume, with `deployment.not_ready`.
+
 Build steps run in the preparation container while live serves. Both can reach the shared volume. A build must keep release-specific compiled views and caches off that volume. Run Laravel `optimize` and `view:cache` only at a phase and path that preserve live’s views. The [fixture proof](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#live-proof-on-a-fixture-production-project) checks shared-storage behavior across releases.
 
 ## Capacity
@@ -233,6 +236,18 @@ A Node without swap stops preparation after the clone instead of freezing it. Th
 Estimate each container’s need using its configured limit or the measured working set of the current release. Include the previous live’s working set while the handover drains it. During a migration include the serving checkout’s PHP-FPM pool and Processes.
 
 The automatic tick retries that failure at its [backoff](/reference/deployments#failures-of-automatic-deployments) times, but it does not count toward the three failures that block a commit: the cause is the Node, not the commit. A commit that waits 30 minutes raises the stalled-commit alert.
+
+## Host paths
+
+A release container has no host install folders. A Process command, a Process environment value and the rendered Instance environment can name a host path only where its container equivalent is exact. Admission maps these paths before the Node changes, and the units and `.env` that the release installs use the mapped value:
+
+| Host path | Container path |
+| --- | --- |
+| `/usr/bin/php` and `/usr/bin/php<version>` | The runtime folder's PHP of that version |
+| `/opt/orbit/vite-plus/bin/<tool>` and `/opt/orbit/vite-plus/js_runtime/node/<version>/bin/node`, `npm` or `npx` | `/opt/orbit-runtime/current/bin/<tool>`, when the runtime ships the tool |
+| The Instance's checkout, or `/home/orbit-app-<project>/current` | `/srv/workspace/current` |
+
+Any other path under `/opt/orbit/`, `/home/orbit-app-<project>` or `/usr/bin/php` refuses the deploy with `deployment.host_path_unsupported`. The message names the Process and argument, or the environment key, and the path. Change the record to a container path or a command on `PATH`, then deploy again.
 
 ## PHP runtime
 
@@ -256,7 +271,11 @@ Orbit checks the selected candidate directly and through Caddy while writes rema
 
 An interruption **before the migration commit** can return traffic to the host. Recovery restores the original checkout, route and workloads and checks the public response before releasing the legacy Schedule lock marker. An interruption **after the migration commit** recovers the new container forward. Repeating the migration copy or returning traffic to the old home would discard writes the new release may already have accepted.
 
-On the Node, run `sudo /usr/local/libexec/orbit-instance-release-phase recover <instance-id> <full-commit> <operation-id>` with the recorded release identity. Recovery uses the Instance journal and is safe to retry after the reported fault is fixed. The old home remains unserved. The next successful container deploy creates a retained rollback that uses the same shared volume.
+On the Node, run `sudo /usr/local/libexec/orbit-instance-release-phase recover <instance-id> <full-commit> <operation-id>` with the recorded release identity. Recovery uses the Instance journal and is safe to retry after the reported fault is fixed. The old home remains unserved.
+
+The failed Operation's receipt never reached the Gateway, so the Instance still has no confirmed release: rollback and Process controls answer `deployment.selection_unconfirmed`. Run `orbit instance:deploy <instance>` once more to confirm it. Admission selects the same commit as a first move. The Node finds that recovery completed this move: its journal holds the migration commit and the verified release, its inventory names this commit live with no old release, the live link selects it and the Schedule marker belongs to this Instance. It then adopts that release instead of moving again. The deploy builds nothing and copies no data. The handover checks the release through its Routes and runs the `after_activation` steps that the failed deploy did not reach. The receipt records live, old and artifact on the Gateway. Rollback, Process controls and later deploys then work as usual. Any other Node state refuses the deploy, as before.
+
+The next successful container deploy creates a retained rollback that uses the same shared volume.
 
 ## Failures
 
@@ -280,6 +299,7 @@ Production release operations report these errors.
 
 | Code | When |
 | --- | --- |
+| `deployment.host_path_unsupported` | A Process or environment value names a host-only path without an exact [container equivalent](#host-paths) |
 | `deployment.node_capacity` | The Node lacks the memory, swap or pool space for this deployment |
 | `deployment.not_ready` | Hot did not pass [readiness](#ready) |
 | `deployment.selection_invalid` | The Node's live link does not name the recorded live container, or a read-back differs |
