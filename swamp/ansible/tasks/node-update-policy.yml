@@ -2,7 +2,11 @@
 # The update policy the Gateway renders for every managed Linux Node (ADR 0253, docs/reference/node-provisioning.md#update-policy).
 # node.add and node.converge apply it from the same input: Ubuntu -security updates every day, never an automatic reboot, and
 # needrestart that leaves the protected units for the drained reboot of the fleet.reboot pass.
+- name: Find the update tools
+  ansible.builtin.import_tasks: apt-missing.yml
+  vars: { apt_wanted: "{{ update_policy.packages }}" }
 - name: Install the update tools
+  when: apt_missing | length > 0
   ansible.builtin.apt:
     name: "{{ update_policy.packages }}"
     state: present

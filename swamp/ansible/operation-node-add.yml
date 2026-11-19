@@ -26,7 +26,11 @@
     - name: Point apt at the package cache
       ansible.builtin.import_tasks: tasks/apt-proxy.yml
       vars: { apt_proxy: "{{ intent.apt_proxy | default(none) }}" }
+    - name: Find the base packages
+      ansible.builtin.import_tasks: tasks/apt-missing.yml
+      vars: { apt_wanted: "{{ intent.packages }}" }
     - name: Install the base packages
+      when: apt_missing | length > 0
       ansible.builtin.apt:
         name: "{{ intent.packages }}"
         state: present
