@@ -1,9 +1,11 @@
 """Keep the nested fleet's root disks small (docs/reference/development-containers.md#the-inner-machines-stay-small).
 
 The fleet refresh runs it as root in the Instance container: `python3 -I -c <this file> <mode> <record> <pools> <name>...`, where
-`pools` is the inner Incus's storage folder and the names are the three nested containers. `check` only reads; the refresh runs `run`
-in its `base` window, with the three containers stopped, their old `base` deleted and before the new one is taken, so the new `base`
-and the seed hold the small form.
+`pools` is the inner Incus's storage folder and the names are the three nested containers. `check` only reads. A due `run` never holds
+up the refresh: the refresh takes `base` of the running fleet, then starts `run` as the unit orbit-fleet-shrink in the Instance
+container, which runs on after the Operation while the three run. It records `base: false`; the next refresh finds the check `shrunk`,
+retakes `base` of the running fleet so it holds the small form, and runs `based`, which records that. Each refresh stops a shrink that
+still runs before it changes anything, so no shrink runs while a refresh holds `base`.
 
 Three parts, in this order:
 - Relink. Ubuntu's rust-coreutils ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in
@@ -23,20 +25,22 @@ Three parts, in this order:
   instance_shape_tools.py keeps in the container; without it the first two parts run. Its arguments are the three root disks, named
   by the outer side; a root disk that is a symlink fails the run, and duperemove's own walk follows no symlink.
 
-Every file it reads, links or removes in a root disk is found through `inside`: the nested container's root owns those files. `run`
-links and removes only while the three are stopped, so they cannot change a path between its check and its use. `check` runs while
-they still run: a nested root that swaps its dpkg status for a symlink in that gap can at most make the check hash another file
-(nothing leaves the digest) or time out as `unreadable`.
+The nested container's root owns the files of a root disk, and the containers run. So every file `run` links or removes is reached
+through folders it holds open, each opened from the one above with O_NOFOLLOW (`walk`): a folder swapped for a symlink fails the open,
+and the link and the rename happen inside the held folder. A file is linked only over one of the same bytes, owner and mode, so a
+reader finds the old file or the link, never a missing or partial one. The files it only reads (dpkg's status and md5sums) are found
+through `inside`: a nested root that swaps one for a symlink can at most make the step hash or list another file (nothing leaves the
+digest; each listed path is walked as above) or time out as `unreadable`. duperemove shares only blocks the kernel found equal, so a
+file never changes, and a seed taken while it runs holds whole files.
 
 It costs nothing when nothing changed: the record holds the sha256 of each machine's dpkg status, and `check` is due only when the
-record is missing or a status differs (a package was installed, removed or upgraded). `run` writes the record only when the dedupe ran
+record is missing or a status differs (a package was installed, removed or upgraded), or as `shrunk` when `base` predates the shrink. `run` writes the record only when the dedupe ran
 too (or the pool is no btrfs pool), so a run without duperemove is due again at the next refresh. A check that cannot read (`unreadable`) is not due.
 
 It never fails: its last line on standard output is one JSON object. `check`: {"due": true|false, "reason": "record"|"packages"|
-"current"|"unreadable"}. `run`: {"shrink": "ran"|"relinked"|"failed", "relinked": <files>, "dedupe": "ran"|"missing"|"not_btrfs"|"failed"}.
+"shrunk"|"current"|"unreadable"}. `based`: {"based": true|false}. `run`: {"shrink": "ran"|"relinked"|"failed", "relinked": <files>, "dedupe": "ran"|"missing"|"not_btrfs"|"failed"}.
 Everything its programs print goes to standard error.
 """
-import filecmp
 import hashlib
 import json
 import os
@@ -115,65 +119,167 @@ def md5sums(disk, package):
             return
 
 
+def walk(disk, relative):
+    """The open folder that holds `relative` inside `disk` and the last part's name, or None: every folder is opened from the one
+    above it with O_NOFOLLOW, so a running container that swaps a folder for a symlink can never lead a link or a removal out of
+    `disk`. The caller closes the folder."""
+    parts = PurePosixPath(relative).parts
+    if not parts or PurePosixPath(relative).is_absolute() or '..' in parts:
+        return None
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        folder = os.open(disk, flags)
+    except OSError:
+        return None
+    for part in parts[:-1]:
+        try:
+            below = os.open(part, flags, dir_fd=folder)
+        except (OSError, ValueError):
+            os.close(folder)
+            return None
+        os.close(folder)
+        folder = below
+    return folder, parts[-1]
+
+
+def regular(folder, name):
+    try:
+        return os.stat(name, dir_fd=folder, follow_symlinks=False)
+    except (OSError, ValueError):
+        return None
+
+
 def same_file(first, second):
-    a, b = first.lstat(), second.lstat()
-    return (stat.S_ISREG(a.st_mode) and stat.S_ISREG(b.st_mode) and a.st_dev == b.st_dev and a.st_size == b.st_size
-            and (a.st_mode, a.st_uid, a.st_gid) == (b.st_mode, b.st_uid, b.st_gid) and filecmp.cmp(first, second, shallow=False))
+    """Both (folder, name) are the same regular file by bytes, owner and mode, each read through a descriptor that followed no link."""
+    opened = []
+    try:
+        for folder, name in (first, second):
+            opened.append(os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=folder))
+        a, b = (os.fstat(each) for each in opened)
+        if not (stat.S_ISREG(a.st_mode) and stat.S_ISREG(b.st_mode) and a.st_dev == b.st_dev and a.st_size == b.st_size
+                and (a.st_mode, a.st_uid, a.st_gid) == (b.st_mode, b.st_uid, b.st_gid)):
+            return False
+        while True:
+            one, two = (os.read(each, 1 << 20) for each in opened)
+            if one != two:
+                return False
+            if not one:
+                return True
+    except OSError:
+        return False
+    finally:
+        for each in opened:
+            os.close(each)
 
 
 def relink(disk):
     """Link the files that a package ships as links of one file back to that file; the number of paths it replaced, and the number it
-    skipped because they are no regular file inside `disk`."""
+    skipped because they are no regular file inside `disk`. It runs while the containers run: each folder is held open (`walk`)."""
     replaced = skipped = 0
     for package, shipped in RELINK.items():
         digests = list(md5sums(disk, package))
-        first = inside(disk, shipped, stat.S_ISREG)
         digest = next((digest for digest, relative in digests if relative == shipped), None)
+        first = walk(disk, shipped)
         if digest is None or first is None:
             continue
-        for relative in [relative for each, relative in digests if each == digest and relative != shipped]:
-            path = inside(disk, relative, stat.S_ISREG)
-            if path is None:
-                skipped += 1
+        try:
+            first_stat = regular(*first)
+            if first_stat is None or not stat.S_ISREG(first_stat.st_mode):
                 continue
-            if path.lstat().st_ino == first.lstat().st_ino or not same_file(first, path):
-                continue
-            # Its folder is inside the disk (above); a leftover of an earlier run goes. A path that cannot be linked (a folder in the
-            # temporary's place, a name too long for the prefix) is skipped, never fatal.
-            temporary = path.with_name('.orbit-relink-' + path.name)
-            try:
-                if os.path.lexists(temporary):
-                    temporary.unlink()
-                os.link(first, temporary, follow_symlinks=False)
-                os.rename(temporary, path)
-            except OSError:
-                skipped += 1
-                continue
-            replaced += 1
+            for relative in [relative for each, relative in digests if each == digest and relative != shipped]:
+                path = walk(disk, relative)
+                if path is None:
+                    skipped += 1
+                    continue
+                folder, name = path
+                try:
+                    found = regular(folder, name)
+                    if found is None or not stat.S_ISREG(found.st_mode):
+                        skipped += 1
+                        continue
+                    if found.st_ino == first_stat.st_ino or not same_file(first, path):
+                        continue
+                    # A new link beside it, then a rename over it, both inside the held folders. A leftover of an earlier run goes. A
+                    # path that cannot be linked (a folder in the temporary's place, a name too long for the prefix) is skipped.
+                    temporary = '.orbit-relink-' + name
+                    try:
+                        if regular(folder, temporary) is not None:
+                            os.unlink(temporary, dir_fd=folder)
+                        os.link(first[1], temporary, src_dir_fd=first[0], dst_dir_fd=folder, follow_symlinks=False)
+                        os.rename(temporary, name, src_dir_fd=folder, dst_dir_fd=folder)
+                    except OSError:
+                        skipped += 1
+                        continue
+                    replaced += 1
+                finally:
+                    os.close(folder)
+        finally:
+            os.close(first[0])
     return replaced, skipped
 
 
 def empty_caches(disk):
     """Remove the package files in each cache folder of `disk`, following no symlink."""
     for cache in CACHES:
-        for folder in (inside(disk, cache, stat.S_ISDIR), inside(disk, f'{cache}/partial', stat.S_ISDIR)):
-            if folder is None:
+        for relative in (cache, f'{cache}/partial'):
+            path = walk(disk, relative)
+            if path is None:
                 continue
-            for path in folder.iterdir():
-                if path.name.endswith('.deb') and stat.S_ISREG(path.lstat().st_mode):
-                    path.unlink()
+            folder, name = path
+            try:
+                # The cache folder itself, opened with O_NOFOLLOW too: `walk` opened the folders above it.
+                held = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=folder)
+            except OSError:
+                os.close(folder)
+                continue
+            os.close(folder)
+            try:
+                for name in os.listdir(held):
+                    found = regular(held, name)
+                    if name.endswith('.deb') and found is not None and stat.S_ISREG(found.st_mode):
+                        os.unlink(name, dir_fd=held)
+            finally:
+                os.close(held)
+
+
+def write_record(record, recorded):
+    path = Path(record)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(path.name + '.tmp')
+    partial.write_text(json.dumps(recorded, sort_keys=True))
+    os.rename(partial, path)
 
 
 def check(record, pools, names):
     disks = {name: rootfs(pools, name) for name in names}
     recorded = read_record(record)
-    # A record of an older rule is no record of this one.
-    reason = 'record' if recorded is None or recorded.get('rule') != RULE else 'packages' if recorded != state(disks) else 'current'
+    # A record of an older rule is no record of this one. `base: false`: the shrink ran after the last `base`, which still holds the
+    # old blocks; a record without the key is one that a `base` of the stopped fleet took.
+    if recorded is None or recorded.get('rule') != RULE:
+        reason = 'record'
+    elif {key: value for key, value in recorded.items() if key != 'base'} != state(disks):
+        reason = 'packages'
+    else:
+        reason = 'shrunk' if recorded.get('base') is False else 'current'
     return {'due': reason != 'current', 'reason': reason}
+
+
+def based(record, pools, names):
+    """`base` of all three was retaken after a shrink: the record says so, when the disks are still as the shrink left them."""
+    disks = {name: rootfs(pools, name) for name in names}
+    recorded = read_record(record)
+    current = state(disks)
+    if recorded is None or {key: value for key, value in recorded.items() if key != 'base'} != current:
+        return {'based': False}
+    write_record(record, current)
+    return {'based': True}
 
 
 def run(record, pools, names):
     disks = {name: rootfs(pools, name) for name in names}
+    # The containers run: a package that changes during the run may change a file after its compare, so such a run records nothing
+    # and the next refresh starts it again.
+    before = state(disks)
     replaced = 0
     for name, (disk, _) in disks.items():
         relinked, skipped = relink(disk)
@@ -191,12 +297,8 @@ def run(record, pools, names):
         done = subprocess.run(['timeout', '570', 'duperemove', '-d', '-r', '-q', *[str(disk) for disk, _ in disks.values()]], stdout=sys.stderr,
                               check=False)
         dedupe = 'ran' if done.returncode == 0 else 'failed'
-    if dedupe in ('ran', 'not_btrfs'):
-        path = Path(record)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        partial = path.with_name(path.name + '.tmp')
-        partial.write_text(json.dumps(state(disks), sort_keys=True))
-        os.rename(partial, path)
+    if dedupe in ('ran', 'not_btrfs') and state(disks) == before:
+        write_record(record, {**before, 'base': False})
     return {'shrink': 'ran' if dedupe in ('ran', 'not_btrfs') else 'relinked' if dedupe == 'missing' else 'failed',
             'relinked': replaced, 'dedupe': dedupe}
 
@@ -204,11 +306,12 @@ def run(record, pools, names):
 def main():
     mode, record, pools, *names = sys.argv[1:]
     try:
-        result = check(record, pools, names) if mode == 'check' else run(record, pools, names)
+        result = {'check': check, 'run': run, 'based': based}[mode](record, pools, names)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(f'{type(error).__name__}: {error}', file=sys.stderr)
         # A check that cannot read is not due: the refresh keeps `base`, and a failed read never costs a dedupe at each refresh.
-        result = {'due': False, 'reason': 'unreadable'} if mode == 'check' else {'shrink': 'failed', 'relinked': 0, 'dedupe': 'failed'}
+        result = ({'due': False, 'reason': 'unreadable'} if mode == 'check' else {'based': False} if mode == 'based'
+                  else {'shrink': 'failed', 'relinked': 0, 'dedupe': 'failed'})
     print(json.dumps(result))
 
 

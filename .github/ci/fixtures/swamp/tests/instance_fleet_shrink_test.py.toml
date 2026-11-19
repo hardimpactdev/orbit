@@ -1,6 +1,8 @@
 order = 1481
 cases = [
   "test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing",
+  "test_a_base_retaken_after_a_package_changed_is_not_recorded_as_holding_the_shrink",
+  "test_a_record_of_a_stopped_base_without_the_base_key_is_current",
   "test_the_package_files_in_apt_archives_go_and_the_lock_stays",
   "test_the_cache_removal_follows_no_symlink_out_of_the_disk",
   "test_an_absolute_path_in_the_md5sums_never_reaches_a_file_outside_the_disk",
@@ -18,6 +20,7 @@ cases = [
   "test_without_duperemove_only_the_relink_runs_and_the_shrink_stays_due",
   "test_a_changed_package_makes_it_due_and_a_directory_pool_skips_the_dedupe",
   "test_a_failed_dedupe_fails_the_run_writes_no_record_and_stays_due",
+  "test_a_package_that_changes_during_the_run_writes_no_record",
   "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record",
 ]
 file = "swamp/tests/instance_fleet_shrink_test.py"

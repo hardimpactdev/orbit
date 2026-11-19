@@ -88,9 +88,26 @@ class FleetShrinkTest(unittest.TestCase):
             self.assertEqual([self.links(name, locale) for locale in LOCALES], [1, 1])
             self.assertEqual(sorted(path.name for path in (disk / 'usr/lib/cargo/bin/coreutils').iterdir()), ['cat', 'ls', 'yes'])
         self.assertEqual(self.duperemove_log.read_text().split(), ['-d', '-r', '-q', *[str(self.disk(name)) for name in NAMES]])
-        # Nothing changed since: the check is current and a forced run relinks nothing.
+        # The shrink ran after the last `base`: `base` is due once, and once retaken the check is current.
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'shrunk'})
+        self.assertEqual(self.shrink('based'), {'based': True})
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
+        # Nothing changed since: a forced run relinks nothing.
         self.assertEqual(self.shrink('run')['relinked'], 0)
+
+    def test_a_base_retaken_after_a_package_changed_is_not_recorded_as_holding_the_shrink(self):
+        self.shrink('run')
+        status = self.disk('nested-app-dev') / 'var/lib/dpkg/status'
+        status.write_text(status.read_text() + '\nPackage: btrfs-progs\nStatus: install ok installed\n')
+        self.assertEqual(self.shrink('based'), {'based': False})
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'packages'})
+
+    def test_a_record_of_a_stopped_base_without_the_base_key_is_current(self):
+        self.shrink('run')
+        recorded = json.loads(self.record.read_text())
+        del recorded['base']
+        self.record.write_text(json.dumps(recorded))
+        self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
 
     def test_the_package_files_in_apt_archives_go_and_the_lock_stays(self):
         self.shrink('run')
@@ -222,6 +239,7 @@ class FleetShrinkTest(unittest.TestCase):
         disk.rename(moved)
         disk.symlink_to(moved)
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'unreadable'})
+        self.assertEqual(self.shrink('based'), {'based': False})
         self.assertEqual(self.shrink('run'), {'shrink': 'failed', 'relinked': 0, 'dedupe': 'failed'})
         self.assertFalse(self.duperemove_log.exists())
         self.assertEqual((moved / 'usr/bin/coreutils').stat().st_nlink, 1)
@@ -246,6 +264,7 @@ class FleetShrinkTest(unittest.TestCase):
         self.record.write_text(json.dumps({**recorded, 'rule': '1'}))
         self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
         self.shrink('run')
+        self.shrink('based')
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
 
     def test_a_file_that_differs_from_the_shipped_one_is_never_replaced(self):
@@ -282,9 +301,17 @@ class FleetShrinkTest(unittest.TestCase):
         self.assertFalse(self.record.exists())
         self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
 
+    def test_a_package_that_changes_during_the_run_writes_no_record(self):
+        status = self.disk('nested-app-dev') / 'var/lib/dpkg/status'
+        self.stub('duperemove', f'echo "Package: htop" >> {status}\n')
+        self.assertEqual(self.shrink('run')['shrink'], 'ran')
+        self.assertFalse(self.record.exists())
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
+
     def test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record(self):
         self.stub('incus', 'exit 1\n')
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'unreadable'})
+        self.assertEqual(self.shrink('based'), {'based': False})
         self.assertEqual(self.shrink('run'), {'shrink': 'failed', 'relinked': 0, 'dedupe': 'failed'})
         self.assertFalse(self.record.exists())
 
