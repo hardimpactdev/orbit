@@ -53,7 +53,7 @@ sequenceDiagram
   opt role is ingress
     SW->>N: Apply the Ingress role<br/>child operation-node-role-add
     %%> What it does:
-    %%> - the `node:role:add --converge` intent without the Metrics fleet: Caddy and the Orbit root, the target's Caddyfile with every public site (Let's Encrypt, `tls force_automate`), the Ingress rules while a public Route is live, and private DNS for the WireGuard and LAN views
+    %%> - the `node:role:add --converge` intent without the Metrics fleet: Caddy and the Orbit root, the target's Caddyfile with every public site (Let's Encrypt, `tls force_automate`), the Ingress rules while a public Route is live, and private DNS, where names only the Ingress serves answer with the target
     %%> - public Routes stay public; the source keeps serving until its removal
   end
   opt role is websocket
@@ -91,7 +91,7 @@ sequenceDiagram
   %%> What it does:
   %%> - removes the role's runtime and publications from the source and forgets its settings there; for `gateway` it does not stop Caddy or PHP-FPM, so clients on the old address keep working
   %%> - for `metrics` it keeps the fleet exporters and the `metrics.orbit` name and certificate, which the moved role uses
-  %%> - for `ingress` it rebuilds the source's Caddyfile without the public sites and closes `orbit:ingress-http` and `orbit:ingress-https`; public DNS is the operator's, pointed at the target before the move
+  %%> - for `ingress` it rebuilds the source's Caddyfile without the public sites and closes `orbit:ingress-http` and `orbit:ingress-https`; public DNS is the operator's, pointed at the target when the run starts; the grace covers private DNS only
   SW->>N: Check the role<br/>Ansible phase: check
   %%> What it does:
   %%> - the one end check: Reverb answers, the ports, sites and DNS are in place on the target

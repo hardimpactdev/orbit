@@ -550,12 +550,20 @@ The run follows this order:
 1. Admission moves the assignment to the target. Every later build renders the target as the Cluster's Ingress.
 2. The target gets the Ingress role as `node:role:add --converge` gives it. It installs Caddy and the Orbit root and builds its Caddyfile with every public site (Let's Encrypt, `tls force_automate`).
 3. The target opens `orbit:ingress-http` and `orbit:ingress-https` while the Cluster has a live public Route.
-4. Private DNS answers with the target in the WireGuard and LAN views.
-5. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
-6. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
-7. When Ingress was the source's last role, public SSH reopens there.
+4. Private DNS is published again. A name that only the Ingress serves, such as a public Process hostname, now answers with the target.
+5. A public app Route keeps its Router answer, because its Router serves it privately.
+6. The run waits out the [withdrawal grace period](#withdrawal-grace-period).
+7. The source's Caddyfile is rebuilt without the public sites. Its two Ingress rules close.
+8. When Ingress was the source's last role, public SSH reopens there.
 
-Until step 6 both Nodes serve the public sites, so clients and public resolvers that still name the source keep working. A failure before step 6 leaves the source serving; run the same command with `--from=SOURCE` after you fix the cause. Public DNS is yours: point each public record at the target before the move, or at the latest when it starts. The target obtains its Let's Encrypt certificates once public DNS names it, as [Publish the public edge](#publish-the-public-edge) describes.
+Until step 7 both Nodes serve the public sites. The grace in step 6 covers private DNS only; it does not wait for public DNS. Public DNS is yours:
+
+- Lower the TTL of each public record well before the move, or front the hostnames with a proxy that switches its origin at once.
+- Point the records at the target at the start of the run. The target answers on ports 80 and 443 from step 3.
+- Let's Encrypt issues the target's certificates only for names that public DNS points at the target. [Publish the public edge](#publish-the-public-edge) describes issuance.
+- A client that still holds the source's public answer after step 7 fails until that answer expires.
+
+A failure before step 7 leaves the source's sites and rules in place, but the assignment already names the target. A later build of the source, such as a Route change, drops its public sites. Fix the cause and run the same command with `--from=SOURCE`.
 
 ## Change an existing Route
 
