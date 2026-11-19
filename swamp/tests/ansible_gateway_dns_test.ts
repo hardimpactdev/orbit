@@ -80,6 +80,8 @@ Deno.test({
             4,
             write,
         );
+        // The copy loops over the drifted files alone; an unchanged item would mean every file was copied again.
+        assertEquals(write.includes("ok: [localhost] => (item="), false, write);
         for (const path of result.drifted) {
             assertStringIncludes(write, `(item=${path})`);
         }

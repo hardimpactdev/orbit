@@ -58,7 +58,7 @@
     mode: "0644"
   loop: >-
     {{ private_dns_check.stdout | from_json | map('extract', private_dns.files) | list
-       if private_dns_check.rc == 0 and private_dns_check.stdout is regex('^\\[(\\d+(, \\d+)*)?\\]$')
+       if private_dns_check.rc == 0 and private_dns_check.stdout is regex('^\[(\d+(, \d+)*)?\]$')
        else private_dns.files }}
   loop_control: { label: "{{ item.path }}" }
   register: private_dns_files
