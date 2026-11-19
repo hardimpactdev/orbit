@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -260,6 +261,30 @@ class BootstrapTest(unittest.TestCase):
             source.chmod(0o644)
             with self.assertRaisesRegex(ValueError, "private file"):
                 environment.publish(projection, source)
+
+    def test_env_projection_carries_the_hosts_fleet_files_only_on_a_nested_fleet_host(self):
+        with tempfile.TemporaryDirectory() as root:
+            shared = Path(root)
+            source, projection = shared / "gateway.env", shared / ".view"
+            source.write_text("APP_ENV=production")
+            source.chmod(0o600)
+            marker, hosts = shared / "instance-fleet", shared / "environment"
+            hosts.write_text('PATH="/usr/bin"\nHTTPS_PROXY="http://10.253.0.1:3128"\n')
+            fleet = {"instance-fleet": marker, "instance-fleet-environment": hosts}
+            environment.publish(projection, source, fleet)
+            self.assertEqual([p.name for p in projection.iterdir()], ["gateway.env"])
+            marker.write_text("")
+            environment.publish(projection, source, fleet)
+            self.assertEqual(sorted(p.name for p in projection.iterdir()),
+                             ["gateway.env", "instance-fleet", "instance-fleet-environment"])
+            self.assertEqual((projection / "instance-fleet-environment").read_text(), hosts.read_text())
+            self.assertEqual(stat.S_IMODE((projection / "instance-fleet").stat().st_mode), 0o600)
+            hosts.write_text('HTTPS_PROXY="http://10.253.4.1:3128"\n')
+            environment.publish(projection, source, fleet)
+            self.assertEqual((projection / "instance-fleet-environment").read_text(), hosts.read_text())
+            marker.unlink()
+            environment.publish(projection, source, fleet)
+            self.assertEqual([p.name for p in projection.iterdir()], ["gateway.env"])
 
 
 if __name__ == "__main__":

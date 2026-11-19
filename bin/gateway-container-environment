@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Publish the current Gateway env inode to the private, read-only guest mount."""
+"""Publish the current Gateway env inode, and the host's nested-fleet files, to the private, read-only guest mount."""
 import fcntl
 import json
 import os
@@ -15,9 +15,33 @@ SHARED = Path("/home/orbit/shared")
 PROJECTION = SHARED / ".gateway-release-environment"
 INVENTORY = Path("/home/orbit/.orbit/gateway-containers.json")
 INCUS = ["incus", "--force-local", "--project", "orbit-releases"]
+# The fleet rules write these on a nested-fleet Gateway host only (InstanceFleetGateway). The guest reads its copies.
+FLEET = {"instance-fleet": Path("/etc/orbit/instance-fleet"), "instance-fleet-environment": Path("/etc/environment")}
 
 
-def publish(directory=PROJECTION, source=SHARED / "gateway.env"):
+def publish_fleet(fd, fleet):
+    nested = fleet["instance-fleet"].is_file()
+    for name, host in fleet.items():
+        if not nested:
+            try:
+                os.unlink(name, dir_fd=fd)
+            except FileNotFoundError:
+                pass
+            continue
+        staged = ".fleet-refresh-" + secrets.token_hex(12)
+        out = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+        try:
+            with os.fdopen(out, "wb") as copy:
+                copy.write(host.read_bytes())
+            os.replace(staged, name, src_dir_fd=fd, dst_dir_fd=fd)
+        finally:
+            try:
+                os.unlink(staged, dir_fd=fd)
+            except FileNotFoundError:
+                pass
+
+
+def publish(directory=PROJECTION, source=SHARED / "gateway.env", fleet=FLEET):
     directory.mkdir(mode=0o700, exist_ok=True)
     fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -35,6 +59,7 @@ def publish(directory=PROJECTION, source=SHARED / "gateway.env"):
             os.replace(name, "gateway.env", dst_dir_fd=fd)
         finally:
             name.unlink(missing_ok=True)
+        publish_fleet(fd, fleet)
     finally:
         os.close(fd)
 

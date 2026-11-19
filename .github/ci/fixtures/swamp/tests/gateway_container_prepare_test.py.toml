@@ -22,4 +22,5 @@ cases = [
   "test_offline_recovery_selects_the_journaled_live_or_host_program",
   "test_release_checkout_keeps_only_admitted_history_for_cold_fleet_cli_resolution",
   "test_env_projection_tracks_atomic_edits_without_exposing_the_bare_repo",
+  "test_env_projection_carries_the_hosts_fleet_files_only_on_a_nested_fleet_host",
 ]
