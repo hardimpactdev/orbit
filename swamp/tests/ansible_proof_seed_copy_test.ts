@@ -22,6 +22,8 @@ const intent = (inner: string | null) => ({
  * A folder with a stub incus: `remote list` answers from `remotes.json`, `query` from the snapshot lists, every other call is logged.
  * As the Incus API does, the stub names an instance snapshot `<snapshot>` and a volume snapshot `<volume>/<snapshot>`. The volume holds
  * the instance's snapshots unless the test names its own. `snapshots` are the holder's, `source` the default's, both halves alike.
+ * `remote add` rewrites `remotes.json` as Incus rewrites root's client configuration: it reads the file, waits a moment and writes it
+ * back with the new remote, with no lock of its own.
  */
 async function fixture(remotes: string[], snapshots: string[], volumeSnapshots = snapshots, source: string[] = []) {
     const folder = await Deno.makeTempDir();
@@ -32,15 +34,21 @@ async function fixture(remotes: string[], snapshots: string[], volumeSnapshots =
     await Deno.writeTextFile(`${folder}/volume-snapshots.json`, JSON.stringify(volumeSnapshots.map((name) => ({ name: `proof-seed-inner/${name}` }))));
     await Deno.writeTextFile(`${folder}/source-snapshots.json`, JSON.stringify(source.map((name) => ({ name }))));
     await Deno.writeTextFile(`${folder}/source-volume-snapshots.json`, JSON.stringify(source.map((name) => ({ name: `inner-41/${name}` }))));
-    await Deno.writeTextFile(`${folder}/certificate-12.pem`, certificate);
+    for (const node of [12, 13]) await Deno.writeTextFile(`${folder}/certificate-${node}.pem`, certificate);
     await Deno.writeTextFile(`${folder}/bin/incus`, `#!/bin/sh
 case "$1 $2" in
   "remote list") cat '${folder}/remotes.json';;
   "query --") case "$3" in
     *proof-seed-inner/*) cat '${folder}/volume-snapshots.json';; */instances/proof-seed/*) cat '${folder}/snapshots.json';;
     */volumes/custom/*) cat '${folder}/source-volume-snapshots.json';; *) cat '${folder}/source-snapshots.json';; esac;;
-  "remote add") echo "$*" >> '${folder}/calls'; cp '${folder}/certificate-12.pem' '${folder}/servercerts/'"$3"'.crt';;
-  *) echo "$*" >> '${folder}/calls';;
+  "remote add") echo "$*" >> '${folder}/calls'; cp '${folder}/certificate-12.pem' '${folder}/servercerts/'"$3"'.crt'
+     python3 -I -c 'import json, sys, time; remotes = json.load(open(sys.argv[1])); time.sleep(2); remotes[sys.argv[2]] = {}; json.dump(remotes, open(sys.argv[1], "w"))' \
+       '${folder}/remotes.json' "$3";;
+  *) echo "$*" >> '${folder}/calls'
+     # Each line of \`push-errors\` fails one push of the inner volume with that error.
+     if [ "$1 $2 $3" = "storage volume copy" ] && [ -s '${folder}/push-errors' ]; then
+       head -n 1 '${folder}/push-errors' >&2; sed -i 1d '${folder}/push-errors'; exit 1
+     fi;;
 esac
 exit 0
 `);
@@ -50,24 +58,28 @@ exit 0
 
 /**
  * Runs the named plays of the book on localhost, with the facts the first play gives each Node. An `unreachable` run addresses a
- * Node over SSH on a closed port of this machine instead.
+ * Node over SSH on a closed port of this machine instead. With several targets, their runs go side by side, as the workflow's do.
  */
-async function run(folder: string, names: string[], seed: ReturnType<typeof intent>, target = 12, unreachable = false, tags: string[] = []) {
-    const plays = (parse(Deno.readTextFileSync(book)) as Play[]).filter((play) => names.includes(play.name)).map((play) => ({
-        ...play, hosts: unreachable ? "gone" : "localhost", ...(unreachable ? {} : { connection: "local" }), become: false,
-        vars: { ...(play.vars as Record<string, unknown>), seed_intent: seed, seed_target: seed.targets.find((item) => item.node_id === target),
+async function run(folder: string, names: string[], seed: ReturnType<typeof intent>, target: number | number[] = 12, unreachable = false, tags: string[] = []) {
+    const targets = [target].flat();
+    for (const node of targets) {
+        const plays = (parse(Deno.readTextFileSync(book)) as Play[]).filter((play) => names.includes(play.name)).map((play) => ({
+            ...play, hosts: unreachable ? "gone" : "localhost", ...(unreachable ? {} : { connection: "local" }), become: false,
+            vars: { ...(play.vars as Record<string, unknown>), seed_intent: seed, seed_target: seed.targets.find((item) => item.node_id === node),
             ansible_python_interpreter: "{{ ansible_playbook_python }}",
-            ...(unreachable ? { ansible_host: "127.0.0.1", ansible_port: 1, ansible_ssh_common_args: "-o ConnectTimeout=2 -o BatchMode=yes" } : {}) },
-    }));
-    const text = JSON.stringify(plays).replaceAll("/root/.config/incus/servercerts", `${folder}/servercerts`);
-    await Deno.writeTextFile(`${folder}/play.yml`, text);
+                ...(unreachable ? { ansible_host: "127.0.0.1", ansible_port: 1, ansible_ssh_common_args: "-o ConnectTimeout=2 -o BatchMode=yes" } : {}) },
+        }));
+        const text = JSON.stringify(plays).replaceAll("/root/.config/incus/servercerts", `${folder}/servercerts`)
+            .replaceAll("/run/lock/", `${folder}/`);
+        await Deno.writeTextFile(`${folder}/play-${node}.yml`, text);
+    }
     await Deno.writeTextFile(`${folder}/intent.json`, JSON.stringify(seed));
-    const result = await new Deno.Command("ansible-playbook", {
-        args: ["-i", unreachable ? "gone," : "localhost,", ...(tags.length ? ["--tags", tags.join(",")] : []), `${folder}/play.yml`], stdout: "piped", stderr: "piped",
-        env: { PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ORBIT_RUN: folder, ORBIT_TARGET: String(target), ANSIBLE_LOCALHOST_WARNING: "False" },
-    }).output();
+    const results = await Promise.all(targets.map((node) => new Deno.Command("ansible-playbook", {
+        args: ["-i", unreachable ? "gone," : "localhost,", ...(tags.length ? ["--tags", tags.join(",")] : []), `${folder}/play-${node}.yml`], stdout: "piped", stderr: "piped",
+        env: { PATH: `${folder}/bin:${Deno.env.get("PATH")}`, ORBIT_RUN: folder, ORBIT_TARGET: String(node), ANSIBLE_LOCALHOST_WARNING: "False" },
+    }).output()));
     const calls = (() => { try { return Deno.readTextFileSync(`${folder}/calls`).trim().split("\n"); } catch { return []; } })();
-    return { code: result.code, calls, out: new TextDecoder().decode(result.stdout) };
+    return { code: Math.max(...results.map((result) => result.code)), calls, out: results.map((result) => new TextDecoder().decode(result.stdout)).join("\n") };
 }
 
 const nested = ["--project", "orbit-instances-nested", "--target-project", "orbit-instances-nested"].join(" ");
@@ -234,4 +246,39 @@ Deno.test("a copy to every Node behind the seed releases the default's base when
             ] : [], name);
         } finally { await Deno.remove(folder, { recursive: true }); }
     }
+});
+
+Deno.test("a failed push fails only its target and is not tried again", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], []);
+    try {
+        await Deno.writeTextFile(`${folder}/push-errors`, "Error: no space left on the target\n");
+        const { code, calls } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"));
+        assertEquals(code !== 0, true);
+        assertEquals(calls.filter((call) => call.startsWith("storage volume copy")).length, 1, "an error that is not the freeze is not tried again");
+        const outcome = JSON.parse(Deno.readTextFileSync(`${folder}/target-12.json`));
+        assertEquals([outcome.status, outcome.detail.includes("no space left")], ["failed", true]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("a push whose freeze meets the other target's push is tried again and passes", { ignore: !hasAnsible }, async () => {
+    // Incus zfs MigrateVolume: `fsfreeze --freeze` of a file system that another push froze a moment ago fails with EBUSY.
+    const folder = await fixture([], []);
+    try {
+        await Deno.writeTextFile(`${folder}/push-errors`, 'Error: Failed freezing filesystem "/var/lib/incus/storage-pools/x": exit status 1 (fsfreeze: freeze failed: Device or resource busy)\n');
+        const { code, calls } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"));
+        assertEquals(code, 0);
+        assertEquals(calls.filter((call) => call.startsWith("storage volume copy")).length, 2);
+        assertEquals((await Deno.stat(`${folder}/copied-12`)).isFile, true);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+Deno.test("two copies side by side to CI Nodes that root does not know yet both add their remote, and both stay", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], []);
+    try {
+        const { code, calls, out } = await run(folder, ["Push the seed from the default's Node"], intent("inner-41"), [12, 13]);
+        assertEquals(code, 0, out);
+        assertEquals(calls.filter((call) => call.startsWith("remote add")).length, 2);
+        assertEquals(Object.keys(JSON.parse(await Deno.readTextFile(`${folder}/remotes.json`))).sort(), ["proof-node-12", "proof-node-13"]);
+        for (const node of [12, 13]) assertEquals((await Deno.stat(`${folder}/copied-${node}`)).isFile, true);
+    } finally { await Deno.remove(folder, { recursive: true }); }
 });
