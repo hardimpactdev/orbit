@@ -524,7 +524,11 @@ Such a task takes, by its own ID, the calls that a subtask takes:
 
 `status` stays the task's own status, with its moves and its no-op repeat; `work_status` is the work's. A `work_status` on a task without work answers `422` with `validation.failed`, and so does one with `deliverables`.
 
-An `assistance_requested` comment on open work opens a [question](#questions) with the task's ID as `task_id` and the work's ID as `subtask_id`. Once the work ended, a comment goes to the task. A `resolution` goes where the request it answers is recorded, the work or the task, also after the work ended or the task took its own deliverables. A resolution clears the assistance request. It does not close the question: `task:question:close <question> --status=answered` does. An ended task takes no comment and answers `409` with `tasks.group_closed`.
+An `assistance_requested` comment on open work opens a [question](#questions) with the task's ID as `task_id` and the work's ID as `subtask_id`. Once the work ended, a comment goes to the task.
+
+A `resolution` goes where the request it answers is recorded, the work or the task, also after the work ended or the task took its own deliverables. When both hold a request, a task's own `direction` request apart from the work's goes first; one request recorded on both is resolved on the work, which clears both. A resolution clears only `direction` assistance on the task, as for a task with subtasks.
+
+A resolution clears the assistance request. It does not close the question: `task:question:close <question> --status=answered` does. An ended task takes no comment and answers `409` with `tasks.group_closed`.
 
 Its turn prompt holds the task's brief once and the task's deliverables, with no subtask part.
 

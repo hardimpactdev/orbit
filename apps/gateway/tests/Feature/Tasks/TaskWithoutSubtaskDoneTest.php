@@ -240,6 +240,22 @@ it('takes comments on the task\'s id where the request they answer is recorded, 
     $ask($ended->id, 'assistance_requested', 'Still there?')->assertConflict()->assertJsonPath('error.code', 'tasks.group_closed');
 });
 
+it('resolves the task\'s own request first when the work holds an earlier, independent one, and each in turn', function (): void {
+    $world = soloDoneWorld();
+    [$id, $work, $group] = [$world->group->id, $world->subtask, $world->group];
+    $post = fn (string $type, string $body) => $this->postJson("/api/v1/tasks/{$id}/comments", ['type' => $type, 'body' => $body, 'author' => 'owner'])->assertCreated();
+
+    $post('assistance_requested', 'Which delimiter?');
+    $this->patchJson("/api/v1/tasks/{$id}", ['work_status' => 'failed'])->assertOk();
+    $post('assistance_requested', 'Who owns follow-up?')->assertJsonPath('data.task_id', $id);
+    expect([$work->refresh()->assistance_question, $group->refresh()->assistance_question])->toBe(['Which delimiter?', 'Who owns follow-up?']);
+
+    $post('resolution', 'Alice owns follow-up.')->assertJsonPath('data.task_id', $id);
+    expect($group->refresh()->assistance_requested)->toBeFalse()->and($work->refresh()->assistance_requested)->toBeTrue();
+    $post('resolution', 'A comma.')->assertJsonPath('data.task_id', $work->id);
+    expect($work->refresh()->assistance_requested)->toBeFalse()->and($group->refresh()->assistance_requested)->toBeFalse();
+});
+
 it('keeps the history of a draft\'s work: a draft whose work has comments or questions takes no subtask', function (): void {
     $world = soloDoneWorld();
     $draft = soloDraft($world);
