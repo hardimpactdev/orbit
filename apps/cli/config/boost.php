@@ -12,26 +12,4 @@ return [
             ],
         ],
     ],
-    'rules' => [
-        'enabled' => true,
-        'scoped_guidelines' => true,
-    ],
-    'guidelines' => [
-        'exclude' => [
-            'deployments',
-            'foundation',
-            'laravel/core',
-            'pest/core',
-            'spatie/guidelines-skills/core',
-        ],
-    ],
-    'skills' => [
-        'exclude' => [
-            'infer-conventions',
-            'spatie-javascript',
-            'spatie-version-control',
-            'spatie-security',
-            'spatie-laravel-php',
-        ],
-    ],
 ];

@@ -42,7 +42,6 @@
         "pestphp/pest-plugin-laravel": "^5.0",
         "phpunit/phpunit": "^13.0",
         "rector/rector": "^2.3",
-        "spatie/guidelines-skills": "^1.1",
         "spaze/phpstan-disallowed-calls": "^4.14"
     },
     "autoload": {
@@ -63,8 +62,7 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/",
-            "Orbit\\PHPStan\\": "../../tools/phpstan/",
-            "Orbit\\Boost\\": "../../tools/boost/"
+            "Orbit\\PHPStan\\": "../../tools/phpstan/"
         },
         "exclude-from-classmap": [
             "/tests/"
@@ -85,7 +83,6 @@
             "@analyse"
         ],
         "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
-        "guidance:update": "@php artisan boost:update --no-discover --no-interaction",
         "rector": "vendor/bin/rector process --no-progress-bar",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never",
         "post-autoload-dump": [
