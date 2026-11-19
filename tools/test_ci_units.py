@@ -951,6 +951,28 @@ class ExecutionTest(unittest.TestCase):
 
             self.assertEqual(0, code(['swamp/pass.py', 'swamp/slow.py']))
             self.assertEqual([None, True], [r.get('cut') for r in json.loads((folder / 'times.json').read_text())])
+            # A run that is cancelled after a clean cut keeps that unit's mark, fails, and marks no unit that never started.
+            units.CANCELLED.set()
+            try:
+                self.assertEqual(1, code(['swamp/slow.py']))
+            finally:
+                units.CANCELLED.clear()
+            self.assertEqual([None], [r.get('cut') for r in json.loads((folder / 'times.json').read_text())])
+
+            # One unit is cut cleanly, then the run is cancelled while the next one runs.
+            def then_cancelled(step, *_args):
+                if step.name == 'swamp/slow.py':
+                    return {'unit': 'swamp/slow.py', 'status': 'OVER BUDGET', 'seconds': .5}
+                units.CANCELLED.set()
+                return {'unit': step.name, 'status': 'CANCELLED', 'seconds': .1}
+            try:
+                with patch.object(units, 'run_unit', side_effect=then_cancelled), \
+                        patch.object(units, 'unit_step', side_effect=lambda unit, *_: units.gate.Step('shape', unit, [])):
+                    self.assertEqual(1, code(['swamp/slow.py', 'swamp/pass.py']))
+            finally:
+                units.CANCELLED.clear()
+            self.assertEqual([('OVER BUDGET', True), ('CANCELLED', None)],
+                             [(r['status'], r.get('cut')) for r in json.loads((folder / 'times.json').read_text())])
             self.assertEqual(1, code(['swamp/pass.py', 'swamp/slow.py', 'swamp/failed.py']))
             # A unittest failure before the cut gates, whatever the unit printed: the recorder marks it at once.
             suite = '''import signal, sys, unittest

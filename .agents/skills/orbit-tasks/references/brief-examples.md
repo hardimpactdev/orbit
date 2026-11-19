@@ -1,6 +1,6 @@
 # Brief examples
 
-Worked examples for [Orbit Tasks](../SKILL.md). Each one is a real group from Project 78, rewritten in the brief shape. The Operation IDs, times and paths are real. Where the original left a choice open, the example fills in a value to show the form, and says so. A writer does not pick such a value: [writing rule 11](../SKILL.md#writing-rules) puts it to the owner as a marked question, and the owner's answer goes into the brief.
+Worked examples for [Orbit Tasks](../SKILL.md). Each one is a real group from Project 78, rewritten in the brief shape. The Operation IDs, times and paths are real. Where the original left a choice open, the example fills in a value to show the form, and says so. A writer does not pick such a value: [writing rule 10](../SKILL.md#writing-rules) puts it to the owner as a marked question, and the owner's answer goes into the brief.
 
 ## The two shapes
 
@@ -71,8 +71,7 @@ Title: **A sleeping Instance without a restore plan wakes fast, and the Operatio
 **Guardrails:**
 - Must hold: a wake never reports ready before the app answers. A visitor
   would get an error page.
-- Out of scope: a new design for prepared restore. Another bug you find:
-  report it in the handoff note and commit no fix. If it blocks the proof, ask.
+- Out of scope: a new design for prepared restore.
 
 **Open question:**
 - Where do the roughly 9 s in "Wake the container" go, outside the resume and
@@ -241,8 +240,7 @@ Conn Server API.
   `docs/reference/development-containers.md`.
 - Accepted limits: stock T3 targets keep the old path. State which parts
   remain and why.
-- Out of scope: grant support in stock T3. Another bug you find: report it and
-  commit no fix. If it blocks the proof, ask.
+- Out of scope: grant support in stock T3.
 
 **Proof:** In one task copy, against the Rust Conn server that the copy runs.
 - Must be real: the Gateway-issued grant, the Rust Conn server, the RPC calls
