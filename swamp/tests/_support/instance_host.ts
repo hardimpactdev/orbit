@@ -236,7 +236,9 @@ async function artifacts(folder: string, version: string) {
     const deb = `${folder}/artifacts/p11-kit-modules_0.26.2-2_amd64.deb`;
     if (!new Deno.Command("test", { args: ["-f", deb] }).outputSync().success) {
         const p11 = `${work}/p11-kit-modules`;
+        // dpkg-deb refuses a control directory outside 0755..0775, and the caller's umask must not decide it.
         Deno.mkdirSync(`${p11}/DEBIAN`, { recursive: true });
+        Deno.chmodSync(`${p11}/DEBIAN`, 0o755);
         Deno.writeTextFileSync(`${p11}/DEBIAN/control`, "Package: p11-kit-modules\nVersion: 0.26.2-2\nArchitecture: amd64\nMaintainer: fixture\nDescription: fixture\n");
         Deno.mkdirSync(`${p11}/usr/lib/x86_64-linux-gnu/pkcs11`, { recursive: true });
         Deno.writeTextFileSync(`${p11}/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so`, "trust module");
