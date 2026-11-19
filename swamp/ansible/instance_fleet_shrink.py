@@ -13,8 +13,8 @@ Three parts, in this order:
   package and the one file it ships with links. Only the files of that package that dpkg records with that file's digest are
   relinked, and only those that are byte for byte the same regular file with the same owner and mode: the files the package ships as
   links of that file. Other files of one digest, such as the package's empty locale files, are separate files in the package and stay.
-  Each is replaced atomically by a link to the file (a new link beside it, then a rename over it), so no reader ever finds the path
-  missing or partial. The paths come from the nested container's own dpkg files, so each must stay inside its root disk (`inside`):
+  Each is replaced atomically by a link to the file (a new link beside it, swapped with the path by renameat2 RENAME_EXCHANGE), so no
+  reader ever finds the path missing or partial. A swapped-out file that a package replaced after the compare is swapped back. The paths come from the nested container's own dpkg files, so each must stay inside its root disk (`inside`):
   an absolute path, a `..` part or a symlink anywhere below the disk is skipped. Each machine's count of skipped paths goes to
   standard error; the result counts only the paths it relinked.
 - Caches. The `.deb` files in each nested container's apt archives go (CACHES): apt keeps no new ones (the fleet file
@@ -27,7 +27,7 @@ Three parts, in this order:
 
 The nested container's root owns the files of a root disk, and the containers run. So every file `run` links or removes is reached
 through folders it holds open, each opened from the one above with O_NOFOLLOW (`walk`): a folder swapped for a symlink fails the open,
-and the link and the rename happen inside the held folder. A file is linked only over one of the same bytes, owner and mode, so a
+and the link and the swap happen inside the held folder. A file is linked only over one of the same bytes, owner and mode, so a
 reader finds the old file or the link, never a missing or partial one. The files it only reads (dpkg's status and md5sums) are found
 through `inside`: a nested root that swaps one for a symlink can at most make the step hash or list another file (nothing leaves the
 digest; each listed path is walked as above) or time out as `unreadable`. duperemove shares only blocks the kernel found equal, so a
@@ -41,6 +41,7 @@ It never fails: its last line on standard output is one JSON object. `check`: {"
 "shrunk"|"current"|"unreadable"}. `based`: {"based": true|false}. `run`: {"shrink": "ran"|"relinked"|"failed", "relinked": <files>, "dedupe": "ran"|"missing"|"not_btrfs"|"failed"}.
 Everything its programs print goes to standard error.
 """
+import ctypes
 import hashlib
 import json
 import os
@@ -149,6 +150,17 @@ def regular(folder, name):
         return None
 
 
+LIBC = ctypes.CDLL(None, use_errno=True)
+RENAME_EXCHANGE = 2
+
+
+def exchange(folder, one, two):
+    """Swap two names in one folder atomically (renameat2 RENAME_EXCHANGE)."""
+    if LIBC.renameat2(folder, os.fsencode(one), folder, os.fsencode(two), RENAME_EXCHANGE) != 0:
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number))
+
+
 def same_file(first, second):
     """Both (folder, name) are the same regular file by bytes, owner and mode, each read through a descriptor that followed no link."""
     opened = []
@@ -199,14 +211,28 @@ def relink(disk):
                         continue
                     if found.st_ino == first_stat.st_ino or not same_file(first, path):
                         continue
-                    # A new link beside it, then a rename over it, both inside the held folders. A leftover of an earlier run goes. A
-                    # path that cannot be linked (a folder in the temporary's place, a name too long for the prefix) is skipped.
+                    # A new link beside it, swapped with the path in one step, both inside the held folders. The containers run, so a
+                    # package may replace either file meanwhile: a link that is not the compared shipped file goes, and a swapped-out
+                    # file that is not the compared one is swapped back, so no newer file is ever lost. A leftover of an earlier run
+                    # goes. A path that cannot be linked (a folder in the temporary's place, a name too long for the prefix) is skipped.
                     temporary = '.orbit-relink-' + name
                     try:
                         if regular(folder, temporary) is not None:
                             os.unlink(temporary, dir_fd=folder)
                         os.link(first[1], temporary, src_dir_fd=first[0], dst_dir_fd=folder, follow_symlinks=False)
-                        os.rename(temporary, name, src_dir_fd=folder, dst_dir_fd=folder)
+                        linked = regular(folder, temporary)
+                        if linked is None or linked.st_ino != first_stat.st_ino:
+                            os.unlink(temporary, dir_fd=folder)
+                            skipped += 1
+                            continue
+                        exchange(folder, temporary, name)
+                        old = regular(folder, temporary)
+                        if old is None or (old.st_dev, old.st_ino) != (found.st_dev, found.st_ino):
+                            exchange(folder, temporary, name)
+                            os.unlink(temporary, dir_fd=folder)
+                            skipped += 1
+                            continue
+                        os.unlink(temporary, dir_fd=folder)
                     except OSError:
                         skipped += 1
                         continue

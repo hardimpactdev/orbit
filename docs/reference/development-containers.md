@@ -3350,14 +3350,15 @@ Each refresh first stops an `orbit-fleet-shrink` that still runs, before its fir
 
 The relink and the dedupe are safe on running root disks:
 
-- The relink replaces a file only by a link to an identical file. The rename is atomic, so a reader never finds a missing or partial path.
+- The relink replaces a file only by a link to an identical file. It swaps the two names in one atomic step. A reader never finds a missing or partial path.
+- A package may replace the file after the compare. Then the step swaps it back and skips it.
 - The step opens each folder on the way from the one above it. It follows no symlink and holds the folder open. So a swapped folder never leads it outside the root disk.
 - The kernel compares the bytes before `duperemove` shares them, so no file changes.
 - The step compares the dpkg status before and after the run. A package that changed in between leaves no record, so the shrink runs again.
 
 The seed stays consistent. A seed is a snapshot of the outer container and its inner volume, taken at one point in time. A seed taken while the shrink runs holds whole files, some relinked or shared and some not. Its `base` snapshots are those of the refresh before, which the shrink never touches. A seed copy (`instance.seed_copy`) pushes such a seed, so it never pushes a half-written `base`. Until the next refresh, `base` and the seed hold the old blocks: larger, but whole.
 
-The first part is the relink. Ubuntu's `rust-coreutils` ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in `/usr/lib/cargo/bin/coreutils/`. The step reads the package's dpkg digests. Each file with the digest of `/usr/bin/coreutils` is linked back to that file. It must also have the same bytes, owner and mode. Other files of one digest, such as the package's empty locale files, are separate files in the package, so they stay separate. Each link replaces its path atomically: a new link beside it, then a rename over it.
+The first part is the relink. Ubuntu's `rust-coreutils` ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in `/usr/lib/cargo/bin/coreutils/`. The step reads the package's dpkg digests. Each file with the digest of `/usr/bin/coreutils` is linked back to that file. It must also have the same bytes, owner and mode. Other files of one digest, such as the package's empty locale files, are separate files in the package, so they stay separate. Each link replaces its path atomically: a new link beside it, then one swap of the two names.
 
 The digests and paths come from the nested container's own dpkg files, which its root controls. So every path stays inside that container's root disk: an absolute path, a `..` part, or a symlink at any level below the root disk is skipped and never followed. A path that cannot be linked, such as a name too long for the temporary link, is skipped too; it never fails the step. This includes `/usr/bin/coreutils` and its folders, the dpkg files themselves and the cache folders.
 
