@@ -7,7 +7,6 @@ use App\Actions\Fleet\ContinueReleaseFleetAction;
 use App\Actions\Fleet\FleetRolloutPlanAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Data\Fleet\DesiredCliReleaseData;
-use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\CliReleaseUnavailableReason;
 use App\Domain\Fleet\DesiredFleetState;
@@ -982,7 +981,6 @@ it('fingerprints the Swamp helper tool pins from the selected software plan', fu
 })->with(['deno', 'unzip']);
 
 it('fingerprints the rendered Metrics plan without the private password or exporter apply intent', function (): void {
-    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('fixture-root-certificate');
     $node = Node::query()->findOrFail($this->nodes['db']);
     $metrics = $node->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $database = $node->roles()->where('role', RoleName::Database)->sole();

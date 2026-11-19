@@ -2024,7 +2024,7 @@ JSON reads and the browser stream return the same stored snapshot and use the sa
 
 ### Insights come from recorded times
 
-The insights are computed on each read from the task rows, their threads, comments, checks, and questions. There is no snapshot table to fill or repair, and a fixed definition applies to old and new tasks alike. A read selects only the columns it counts from. Whole task and thread rows carry briefs, summaries, and errors: twelve weeks of them outgrew the Gateway web runtime's 128 MB memory limit, and the read failed with `gateway.unhandled`.
+Each group's record is computed from the task rows, their threads, comments, checks, and questions, and the stored reports from the records alone ([Freshness](#freshness)). A record is always rebuilt whole from those rows, never patched, so a fixed definition applies to old and new tasks alike, and `task:insights-backfill` rewrites every record from the same rows. Building a record selects only the columns it counts from. Whole task and thread rows carry briefs, summaries, and errors: twelve weeks of them outgrew the Gateway web runtime's 128 MB memory limit, and the read failed with `gateway.unhandled`.
 
 A task stores its own lifecycle times. `updated_at` moves on any write, and the Activity log samples reads and keeps no record of a task whose state changed. Without the times, lead time would be a guess.
 

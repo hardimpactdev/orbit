@@ -11,6 +11,7 @@ use App\Models\Project;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
@@ -109,6 +110,7 @@ it('refuses every caller but the active Metrics Node', function (): void {
 });
 
 it('renders the task insights scrape job against the Gateway, trusting the Orbit root alone', function (): void {
+    insightMetricsNode('gateway', '10.44.0.1', false)->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
 
     $config = Yaml::parse(new PrometheusConfigRenderer()->render([['name' => 'app', 'address' => '10.44.0.8']]));
@@ -122,6 +124,19 @@ it('renders the task insights scrape job against the Gateway, trusting the Orbit
             'scheme' => 'https',
             'metrics_path' => '/api/v1/metrics/task-insights',
             'tls_config' => ['ca' => "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n", 'server_name' => 'gateway.orbit'],
-            'static_configs' => [['targets' => ['gateway.orbit:443']]],
+            'static_configs' => [['targets' => ['10.44.0.1:443']]],
         ]);
 });
+
+it('renders every other job and leaves the task insights job out when the Orbit root or the Gateway is unavailable', function (bool $gateway): void {
+    if ($gateway) {
+        insightMetricsNode('gateway', '10.44.0.1', false)->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    }
+    $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andThrow(new RuntimeException('Orbit public root CA is unavailable.'));
+    Log::spy();
+
+    $config = Yaml::parse(new PrometheusConfigRenderer()->render([['name' => 'app', 'address' => '10.44.0.8']]));
+
+    expect(array_column($config['scrape_configs'], 'job_name'))->toBe(['orbit-node-exporter', 'orbit-cadvisor']);
+    Log::shouldHaveReceived('warning')->once()->withArgs(static fn (string $message): bool => $message === 'metrics.task_insights_job_skipped');
+})->with(['root unreadable' => true, 'no Gateway' => false]);

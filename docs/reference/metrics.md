@@ -130,7 +130,9 @@ cAdvisor collects only CPU and memory. Its flags disable every other metric kind
 
 ## Task insights scrape
 
-Prometheus also scrapes the Gateway's [task insights exporter](/reference/tasks#prometheus-exporter), job `orbit-task-insights`, every 60 seconds; the stored reports change every five minutes. It connects to `https://gateway.orbit` over WireGuard, as the Nodes do, and trusts only the Orbit root certificate, which the rendered `prometheus.yml` carries inline. The Gateway admits only the active Metrics Node on that path and refuses any other WireGuard peer with `metrics.scraper_required` (HTTP 403). The Gateway site admits only the VPN subnet. A Metrics role takes the job when its Prometheus configuration is next rendered: by `metrics:enable`, an exporter change, or a Node role converge.
+Prometheus also scrapes the Gateway's [task insights exporter](/reference/tasks#prometheus-exporter), job `orbit-task-insights`, every 60 seconds; the stored reports change every five minutes. Like the Node agent, it connects to the active Gateway's WireGuard address on port 443 with `gateway.orbit` as the TLS name, and uses no DNS: the container's resolver may not route Orbit names. It trusts only the Orbit root certificate, which the rendered `prometheus.yml` carries inline.
+
+Without exactly one active Gateway with a WireGuard address, or when the Gateway cannot read the root certificate, the render logs `metrics.task_insights_job_skipped`, leaves this job out and renders every other job. The Gateway admits only the active Metrics Node on that path and refuses any other WireGuard peer with `metrics.scraper_required` (HTTP 403). The Gateway site admits only the VPN subnet. A Metrics role takes the job when its Prometheus configuration is next rendered: by `metrics:enable`, an exporter change, or a Node role converge.
 
 ## Swamp worker state
 
