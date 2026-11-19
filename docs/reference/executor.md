@@ -79,11 +79,11 @@ Every executor Node must run the build that the Gateway pins before `ORBIT_EXECU
 php artisan orbit:executor-parity [--json]
 ```
 
-For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`). It also reads the Node's [activation proxies](#activation-proxy) from Caddy's loaded config.
+For each active Linux Node whose roles enable an executor family, the check compares the SHA-256 that the converge pins with what the Node reports. It reads the Node over its pinned SSH account with one fixed, read-only command: the SHA-256 of `/usr/local/libexec/orbit-executor`, the SHA-256 of the service's running executable (`/proc/<MainPID>/exe`, read with `sudo -n`) and the state of `orbit-executor.service`. The same command lists the containers that Incus reports `FROZEN` (`sudo -n incus list --all-projects`). A Node where root finds no `incus` command, such as the `services` Node, has no containers, so none is frozen. It also reads the Node's [activation proxies](#activation-proxy) from Caddy's loaded config.
 
 A frozen container is fine when the Gateway records its Instance asleep, with a sleep that owns the freeze. A frozen container without such a record fails the Node with `instance.frozen_unrecorded`, and the check names each such Instance. A failed Python sleep can leave one: Incus holds the container frozen while the Gateway still records it running. No engine owns that freeze, so the settings alone would pick the engine for its wake ([Switching engines](#switching-engines)).
 
-It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active, no unrecorded freeze and only right activation proxies. A Node whose Incus list fails counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
+It exits 0 when it checked at least one such Node, and every one runs the pinned build, both on disk and in memory, with its service active, no unrecorded freeze and only right activation proxies. A Node whose installed Incus fails its list, or whose `sudo -n` fails, counts as `executor.node_unreachable`. Otherwise it exits 1. With no executor Node it says so. Otherwise it names each Node with its problem. With `--json`, stdout holds only the JSON: `ok` and one row per Node.
 
 | Problem | Meaning | Fix |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ It exits 0 when it checked at least one such Node, and every one runs the pinned
 | `executor.missing` | No binary at the path | `orbit node:converge <node> --full` |
 | `executor.inactive` | The service does not run | Read its journal, then converge the Node |
 | `executor.running_build_differs` | The file is the pinned build, but the service still runs another one: the binary changed without a restart | `systemctl restart orbit-executor` on the Node |
-| `executor.node_unreachable` | The SSH read failed | Repair the Node's access |
+| `executor.node_unreachable` | The SSH read failed, or Incus is installed but its list failed | Repair the Node's access or its Incus |
 | `executor.node_unmanaged` | The Node has no verified SSH management | Finish its enrollment |
 | `instance.frozen_unrecorded` | A container is frozen, but the Gateway does not record its Instance asleep | With the settings still off, `orbit instance:wake <id>` for each listed Instance, then check again |
 | `caddy.config_unreadable` | Caddy's admin API did not answer with its config, or the Node could not read it | Check `caddy.service` on the Node, then `orbit node:converge <node>` |
@@ -106,7 +106,13 @@ A visit to a sleeping Instance reaches the Gateway through its site's activation
 
 So the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
 
-The check reads every site on its own. A site is one top-level route of one Caddy server, named by its host, server and index, so a private clone's host on the bridge and on the WireGuard listener is two sites. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. It resolves that proxy's upstream host there to every address, with `getaddrinfo`. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
+The check reads every site on its own. A site is one top-level route of one Caddy server, named by its host, server and index, so a private clone's host on the bridge and on the WireGuard listener is two sites. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. Within the site, every route that carries the marker counts, at any depth and in config order. Caddy's compiled config nests the proxy:
+
+- The site's handler is a `subroute`. Several sibling routes inside it carry the same marker matcher. One holds only `vars`, and another holds the proxy.
+- `forward_auth` compiles to a `subroute` that wraps the `reverse_proxy`. The check steps into each `subroute` it reaches.
+- A site without Vite can sit one level deeper again: a route with no matcher, then a `subroute` whose inner route carries the marker and the proxy.
+
+The tests use production's own routes, read from beast's admin API, as fixtures. A marker route that reaches no handler but `vars` gives an empty proxy, so the handler fails. It resolves that proxy's upstream host there to every address, with `getaddrinfo`. For each one, the Gateway compares these fields with `DevelopmentCaddyConfigRenderer::activationTarget()`, the target that the route renderer draws for that Instance:
 
 | Field | Expected today |
 | --- | --- |
