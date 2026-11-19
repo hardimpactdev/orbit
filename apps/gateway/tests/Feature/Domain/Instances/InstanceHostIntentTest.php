@@ -340,6 +340,18 @@ describe('the container branch of the app-dev converge', function (): void {
             ->and($host->refresh()->instance_bridge)->toBe($bridge);
     });
 
+    it('gives an app-prod Node the runtime folder with its headless Chrome and the browser files of its preparation containers', function (): void {
+        $prod = instanceHostNode('prod-browser', '10.44.0.13', appDev: false);
+        $assignment = $prod->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+        app(InstanceHostIntent::class)->prepare($prod, [RoleName::AppProd->value]);
+
+        $releases = app(NativeNodeRoleRuntimeInput::class)->capture($prod->refresh(), $assignment, [], new Operation)['intent']['production_releases'];
+        expect($releases['browser_files'])->toBe(InstanceImage::browser())
+            ->and(array_column($releases['browser_files'], 'path'))->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf'])
+            ->and(array_column($releases['folder']['parts'], 'name'))->toContain('chrome-headless-shell')
+            ->and(array_column(InstanceImage::shared(), 'content', 'path'))->toMatchArray(array_column(InstanceImage::browser(), 'content', 'path'));
+    });
+
     it('makes a new app-dev Node with the instance_host opt-in and no runtime or bridge health a host, with its bridge and input rules', function (): void {
         $node = instanceHostNode('fresh', '10.44.0.21');
         NodeFact::query()->where('node_id', $node->id)->delete();
@@ -566,10 +578,10 @@ describe('the shared folders', function (): void {
 
         // `vp` is no program of its part: the folder links it from the Vite+ home. PHP Data Bridge has no program: PHP reads its files.
         // `bunx` is Bun itself, which acts as `bunx` by the name it runs under. The browser's Debian packages give no program either.
-        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg'])
+        expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg', 'chrome-headless-shell'])
             ->and($programs($plan['runtime'])['bunx'])->toBe($programs($plan['runtime'])['bun'])
             ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex', 'conn-server', 'chrome-headless-shell', 'agent-browser'])
-            ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'php/8.5' => 'tar'])
+            ->and(array_diff_key($archives, $browser))->toBe(['node' => 'tar', 'bun' => 'zip', 'deno' => 'zip', 'composer' => 'file', 'ripgrep' => 'tar', 'php-data-bridge' => 'tar', 'vite-plus' => 'tar', 'chrome-headless-shell' => 'zip', 'php/8.5' => 'tar'])
             ->and(array_unique(array_values($browser)))->toBe(['deb'])
             ->and(array_column($plan['agent']['parts'], 'archive', 'name'))->toBe(['t3' => 'tar', 'claude-code' => 'tar', 'codex' => 'tar', 'conn-server' => 'tar', 'chrome-headless-shell' => 'zip', 'agent-browser' => 'file'])
             ->and(array_column($plan['runtime']['parts'], 'bin', 'name')['php-data-bridge'])->toBe([]);

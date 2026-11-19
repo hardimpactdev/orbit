@@ -23,7 +23,8 @@ it('reads the two shared folders, a tool part with the tool\'s own pin', functio
     $parts = array_keys($recipe->instances->runtime);
 
     expect(array_values(array_filter($parts, static fn (string $name): bool => ! str_starts_with($name, 'browser-'))))
-        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'php-data-bridge', 'vite-plus'])
+        ->toBe(['node', 'bun', 'deno', 'composer', 'ripgrep', 'php-data-bridge', 'vite-plus', 'chrome-headless-shell'])
+        ->and($recipe->instances->runtime['chrome-headless-shell'])->toEqual($recipe->instances->agent['chrome-headless-shell'])
         ->and($recipe->instances->runtime['vite-plus']->artifact)->toBe($recipe->tools['vp-cli']->artifacts['amd64'])
         ->and($recipe->instances->runtime['vite-plus']->version)->toBe($recipe->tools['vp']->version)
         ->and($recipe->instances->runtime['vite-plus']->bin)->toBe(['vp' => 'vp'])

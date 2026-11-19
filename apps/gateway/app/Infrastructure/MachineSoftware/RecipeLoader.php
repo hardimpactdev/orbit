@@ -417,6 +417,11 @@ final readonly class RecipeLoader
             $folders[$folder] = $parts;
         }
 
+        // Production containers have no agent folder, so the runtime folder carries the same headless Chrome for their apps
+        // (docs/reference/production-containers.md#host-paths). Both copies are one pin and one cached download on a Node.
+        $this->require(isset($folders['runtime']['chrome-headless-shell']) && $folders['runtime']['chrome-headless-shell'] == ($folders['agent']['chrome-headless-shell'] ?? null),
+            'instances.runtime.chrome-headless-shell: expected the agent folder\'s headless Chrome pin.');
+
         return new InstanceFolders($folders['runtime'], $folders['agent'], $this->staticPhpBuilds($raw->php, $php), $vitePlus);
     }
 
