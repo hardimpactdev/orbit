@@ -737,6 +737,94 @@ class ProductionReleaseTest(unittest.TestCase):
                     self.r.park()
                 primitive.assert_called_once_with(action, 300)
 
+    def test_a_laravel_release_with_shared_storage_links_public_storage_and_the_candidate_check_needs_it(self):
+        workspace, shared = self.r.root / "workspace", self.r.root / "shared"
+        app = workspace / "current"
+        (app / "public").mkdir(parents=True)
+        (app / "artisan").write_text("")
+        (shared / "storage/app/public").mkdir(parents=True)
+        (shared / "storage/app/public/og.png").write_text("image")
+        (app / "storage").symlink_to(shared / "storage", target_is_directory=True)
+        plan = {"routes": [{"web_root": "public"}], "application_suffix": "", "shared_paths": ["storage"]}
+        with patch.object(guest, "WORK", workspace), patch.object(guest, "SHARED", shared):
+            with self.assertRaisesRegex(ValueError, "public storage link"):
+                guest.links(plan)
+            guest.link_public_storage(plan)
+            self.assertEqual(os.readlink(app / "public/storage"), "../storage/app/public")
+            self.assertEqual((app / "public/storage/og.png").read_text(), "image")
+            guest.links(plan)
+            (app / "public/storage").unlink()
+            (app / "public/storage").symlink_to(app / "elsewhere")
+            with self.assertRaisesRegex(ValueError, "public storage link"):
+                guest.links(plan)
+            # A release without shared storage, or without Laravel, has no link to keep.
+            (app / "artisan").unlink()
+            guest.links(plan)
+        self.r.state.update(routes=plan["routes"], shared_paths=["storage"], artifact="sha256:" + "a" * 64)
+        record = {"config": {"user.orbit.release.artifact": self.r.state["artifact"]}}
+        with patch.object(self.r, "identity", return_value=record), patch.object(self.r, "sql"), \
+                patch.object(self.r, "user", return_value=CompletedProcess([], 0, stdout=NEXT)), \
+                patch.object(self.r, "guest_action", side_effect=phase.Refusal("deployment.step_failed: guest links failed")), \
+                patch.object(self.r, "guest") as started, self.assertRaisesRegex(phase.Refusal, "deployment.not_ready: .*public storage"):
+            self.r.ready()
+        started.assert_not_called()
+
+    def recovered_first_move(self):
+        """The Node after `recover` completed a first move whose Operation 290 failed after the migration commit."""
+        self.r.state = {}
+        self.r.settled = {"operation": 290, "sha": NEXT, "migration_committed": True, "verified": True, "retired": True,
+                          "legacy": {"project_id": 7, "commit": NEXT}}
+        self.r.inventory = {"live": NEXT, "old": None}
+        self.r.link(NEXT)
+        marker = phase.BASE / "legacy-schedules/7/adopted"
+        marker.parent.mkdir(parents=True)
+        marker.write_text("21\n")
+        units = [{"name": "orbit-process-334-ssr.service", "desired": "running"}]
+        phase.save(self.r.record(NEXT), {"artifact": "sha256:" + "a" * 64, "units": units, "build_bytes": 9})
+        step = {"name": "warm", "phase": "after_activation", "command": "true", "timeout_seconds": 60}
+        return {**self.plan, "expected_live": None, "steps": [step],
+                "legacy": {"project_id": 7, "home": "/home/orbit-app-7", "commit": NEXT, "units": []}}
+
+    def test_a_deploy_after_forward_recovery_adopts_the_recovered_release_and_reports_it(self):
+        plan = self.recovered_first_move()
+        record = {"config": {"user.orbit.release.artifact": "sha256:" + "a" * 64, "user.orbit.release.commit": NEXT}}
+        with patch.object(self.r, "identity", return_value=record), patch.object(self.r, "legacy_commit") as moved, \
+                patch.object(self.r, "primitive") as primitive, patch.object(self.r, "reserve") as reserve, \
+                patch.object(self.r, "guest_action") as guest_action:
+            self.r.build(plan)
+            self.r.clone()
+            self.r.ready()
+            self.r.switch()
+            self.r.build(plan)  # A retried build step returns the same adoption.
+        for call in (moved, primitive, reserve, guest_action):
+            call.assert_not_called()
+        state = phase.read(self.r.operation_file)
+        self.assertTrue(state["adopted"] and state["switched"])
+        self.assertEqual((state["operation"], state["previous"], state["legacy"], state["artifact"]), (300, None, None, "sha256:" + "a" * 64))
+        self.assertEqual(state["units"], [{"name": "orbit-process-334-ssr.service", "desired": "running"}])
+        self.assertEqual([step["name"] for step in phase.read(self.r.private / "after.json")], ["warm"])
+        with self.assertRaisesRegex(phase.Refusal, "changed on retry"):
+            self.r.build({**plan, "steps": []})
+
+    def test_only_a_matching_forward_recovery_is_adopted(self):
+        for change in ({"inventory": {"live": NEXT, "old": OLD}}, {"settled": {"verified": False}},
+                       {"settled": {"sha": OLD}}, {"marker": "22\n"}):
+            with self.subTest(change=change):
+                self.tearDown_marker()
+                plan = self.recovered_first_move()
+                self.r.inventory.update(change.get("inventory", {}))
+                self.r.settled.update(change.get("settled", {}))
+                if "marker" in change:
+                    (phase.BASE / "legacy-schedules/7/adopted").write_text(change["marker"])
+                with patch.object(self.r, "legacy_commit", return_value=NEXT), \
+                        self.assertRaisesRegex(phase.Refusal, "legacy checkout differs"):
+                    self.r.build(plan)
+                self.assertFalse(self.r.operation_file.exists())
+
+    def tearDown_marker(self):
+        shutil.rmtree(phase.BASE / "legacy-schedules", ignore_errors=True)
+        self.r.operation_file.unlink(missing_ok=True)
+
     def test_untrusted_checkout_paths_cannot_traverse_the_persistent_volume(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

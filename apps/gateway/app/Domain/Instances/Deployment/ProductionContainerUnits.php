@@ -38,9 +38,17 @@ final readonly class ProductionContainerUnits
         $php = $instance->selected_php_version ?? $instance->project->php_version ?? '8.5';
         $argv = $commands->names(ValidatedData::stringList($config['command'] ?? []), $php, $name);
         $config['command'] = $commands->resolve($argv, $php, $name);
-        array_walk_recursive($config['command'], static function (string &$arg) use ($paths): void {
-            $arg = strtr($arg, $paths);
-        });
+        $hostPaths = app(ContainerHostPaths::class);
+        $label = "Process [{$process->id}:{$name}]";
+        $config['command'] = array_map(fn (string $arg): string => $hostPaths->map(strtr($arg, $paths), $instance, $php, $label.' argument ['.$arg.']'),
+            ValidatedData::stringList($config['command']));
+        if (is_array($config['environment'] ?? null)) {
+            foreach ($config['environment'] as $key => $value) {
+                if (is_string($value)) {
+                    $config['environment'][$key] = $hostPaths->map($value, $instance, $php, $label.' environment key ['.$key.']');
+                }
+            }
+        }
         $config['environment_file'] = $directory.'/.env';
         $process->runtime_config = $config;
         $process->working_directory = strtr($process->working_directory ?? $directory, $paths);

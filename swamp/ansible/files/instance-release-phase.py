@@ -136,6 +136,7 @@ class Release:
         self.node = read(CONFIG)
         self.ctl = runpy.run_path(str(LIB / "orbit-release-container"))
         self.state = {}
+        self.settled = {}
         self.inventory = {}
         self.operation_file = self.private / "operation.json"
 
@@ -345,8 +346,42 @@ class Release:
             raise Refusal("deployment.step_failed: invalid dependency input fingerprint")
         return {"scope": scope, "inputs": inputs}
 
+    def recovered_forward(self, plan, fingerprint):
+        """Confirm a first move that `recover` completed after its migration commit, without moving it again.
+
+        The failed Operation's receipt never reached the Gateway, so the Gateway still admits the move. When the Node's
+        settled journal, inventory, live link and Schedule marker all show this commit live with no old release, this
+        Operation adopts that release. The handover re-verifies it, runs the after steps and reports its receipt."""
+        settled, legacy = self.settled, plan["legacy"]
+        if not (settled.get("migration_committed") and settled.get("verified") and settled.get("sha") == self.sha
+                and (settled.get("legacy") or {}).get("project_id") == legacy["project_id"] and legacy["commit"] == self.sha
+                and plan["expected_live"] is None and self.inventory == {"live": self.sha, "old": None}):
+            return False
+        with legacy_schedule_lock(legacy["project_id"], shared=True) as marker:
+            if marker.is_symlink() or not marker.is_file() or marker.read_text() != f"{self.instance}\n":
+                return False
+        self.check_selection(self.sha)
+        metadata = read(self.record(self.sha))
+        if self.identity(self.sha)["config"][self.ctl["PREFIX"] + "artifact"] != metadata["artifact"]:
+            raise Refusal("deployment.selection_invalid: the recovered release differs from its record")
+        safe = {key: plan[key] for key in ("action", "routes", "health_path", "php_version", "application_suffix")}
+        save(self.private / "after.json", [step for step in plan["steps"] if step["phase"] == "after_activation"])
+        self.persist(**safe, operation=self.operation, sha=self.sha, plan_digest=fingerprint, previous=None, previous_old=None,
+                     legacy=None, shared_paths=plan["shared_paths"], units=metadata["units"], completed_steps=[], step_outcomes=[],
+                     artifact=metadata["artifact"], build_bytes=metadata.get("build_bytes", 0), adopted=True, built=True,
+                     cloned=True, ready=True, switch_started=True, switched=True)
+        return True
+
     def build(self, plan):
         self.parse_plan(plan)
+        bound = {key: value for key, value in plan.items() if key != "credential"}
+        fingerprint = hashlib.sha256(json.dumps(bound, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if self.state.get("adopted"):
+            if self.state.get("plan_digest") != fingerprint:
+                raise Refusal("deployment.selection_invalid: admitted release input changed on retry")
+            return
+        if plan.get("legacy") and not self.state and self.recovered_forward(plan, fingerprint):
+            return
         if legacy := plan.get("legacy"):
             with legacy_schedule_lock(legacy["project_id"], shared=True) as marker:
                 if marker.exists() or self.legacy_commit(legacy) != legacy["commit"]:
@@ -354,8 +389,6 @@ class Release:
         self.check_selection(plan["expected_live"])
         if self.inventory["live"] != plan["expected_live"]:
             raise Refusal("deployment.selection_invalid: admitted live differs from release inventory")
-        bound = {key: value for key, value in plan.items() if key != "credential"}
-        fingerprint = hashlib.sha256(json.dumps(bound, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         if self.state:
             if self.state.get("plan_digest") != fingerprint:
                 raise Refusal("deployment.selection_invalid: admitted release input changed on retry")
@@ -520,7 +553,7 @@ class Release:
             self.persist(executing=None, completed_steps=[*self.state["completed_steps"], key], step_outcomes=outcomes)
 
     def clone(self):
-        if self.state["action"] == "rollback":
+        if self.state["action"] == "rollback" or self.state.get("adopted"):
             return
         if not self.state.get("built"):
             raise Refusal("deployment.selection_invalid: preparation has no completed build")
@@ -577,6 +610,8 @@ class Release:
         raise Refusal("deployment.not_ready: timed out checking production Routes")
 
     def ready(self):
+        if self.state.get("adopted"):
+            return  # It already serves. The handover's public check verifies it again.
         info = self.identity(self.sha)
         if info["config"][self.ctl["PREFIX"] + "artifact"] != self.state["artifact"]:
             raise Refusal("deployment.selection_invalid: different sealed artifact")
@@ -584,6 +619,10 @@ class Release:
         head = self.user(self.name, "git", "--no-replace-objects", "rev-parse", "HEAD").stdout.strip()
         if head != self.sha:
             raise Refusal("deployment.selection_invalid: different revision in candidate")
+        try:
+            self.guest_action(self.name, "links", {key: self.state[key] for key in ("routes", "application_suffix", "shared_paths")})
+        except Refusal as error:
+            raise Refusal("deployment.not_ready: the candidate has no public storage link into the shared volume") from error
         self.guest(self.name, "systemctl", "start", "orbit-frankenphp.service")
         self.guest(self.name, "systemctl", "is-active", "--quiet", "orbit-frankenphp.service")
         self.user(self.name, "php", "-r", "exit(extension_loaded('pcov') || extension_loaded('php_data_bridge') ? 1 : 0);")
@@ -1089,7 +1128,7 @@ class Release:
                         return  # The new build refused before it acquired this settled target.
                     if phase != "build":
                         raise Refusal("deployment.selection_invalid: operation has no admitted build")
-                    self.state = {}
+                    self.settled, self.state = self.state, {}
                 else:
                     raise Refusal("deployment.selection_invalid: another release owns the Instance")
             if self.state and self.state["sha"] != self.sha:

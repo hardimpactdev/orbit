@@ -10,6 +10,7 @@ use App\Actions\Instances\StartInstanceRollbackAction;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\Instances\Deployment\AutomaticDeployFailure;
 use App\Domain\Instances\Deployment\ProductionContainerRelease;
+use App\Domain\Instances\Deployment\ProductionContainerUnits;
 use App\Domain\Instances\Deployment\SharedPaths;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentImportProjection;
 use App\Domain\Instances\Environment\NativeInstanceEnvironmentSync;
@@ -318,5 +319,65 @@ describe('production container deployments', function (): void {
         $operation = $deploy->execute($instance, 'operator', null);
         expect($operation->input['commit'])->toBe($serving)
             ->and($operation->input['production_release']['expected_live'])->toBeNull();
+    });
+
+    it('maps exact host paths in Process argv, Process environment and the rendered environment to the container', function (): void {
+        $instance = appProdReleasePlacement($this->prod, 'host-paths', str_repeat('c', 40));
+        $home = '/home/orbit-app-'.$instance->project_id;
+        Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $instance->id, 'name' => 'ssr', 'runtime' => 'systemd',
+            'working_directory' => $instance->checkout_path, 'desired_state' => 'running', 'restart_policy' => 'always', 'status' => 'active',
+            'runtime_config' => ['command' => ['/usr/bin/php8.5', 'artisan', 'inertia:start-ssr', '--runtime=/opt/orbit/vite-plus/js_runtime/node/24.22.1/bin/node',
+                '--bundle='.$home.'/current/bootstrap/ssr/ssr.mjs'], 'environment' => ['SSR_NODE' => '/opt/orbit/vite-plus/js_runtime/node/24.22.1/bin/node']]]);
+        InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'OG_IMAGE_NODE_BINARY', 'env_value' => '/opt/orbit/vite-plus/js_runtime/node/24.22.1/bin/node']);
+
+        $unit = app(ProductionContainerUnits::class)->forInstance($instance)['units'][0];
+        expect($unit['content'])->toContain('ExecStart="/opt/orbit-runtime/current/php/8.5/bin/php" "artisan" "inertia:start-ssr" "--runtime=/opt/orbit-runtime/current/bin/node" "--bundle=/srv/workspace/current/bootstrap/ssr/ssr.mjs"')
+            ->not->toContain('/opt/orbit/')->not->toContain($home)
+            ->and($unit['environment_file']['content'] ?? '')->not->toContain('/opt/orbit/');
+        $operation = app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+        expect(app(NativeInstanceEnvironmentSync::class)->admittedFiles($operation)['content'])
+            ->toContain('OG_IMAGE_NODE_BINARY="/opt/orbit-runtime/current/bin/node"')->not->toContain('/opt/orbit/');
+    });
+
+    it('refuses an unmappable host path before any change and names the Process argument or environment key', function (): void {
+        foreach (['process' => 'Process [', 'environment' => 'Environment key [OG_IMAGE_CHROME_PATH]'] as $where => $named) {
+            $instance = appProdReleasePlacement($this->prod, 'host-refusal-'.$where, str_repeat('c', 40));
+            if ($where === 'process') {
+                Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $instance->id, 'name' => 'og', 'runtime' => 'systemd',
+                    'working_directory' => $instance->checkout_path, 'desired_state' => 'running', 'restart_policy' => 'always', 'status' => 'active',
+                    'runtime_config' => ['command' => ['php', 'artisan', 'og:serve', '--chrome=/opt/orbit/chrome/chrome']]]);
+            } else {
+                InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'OG_IMAGE_CHROME_PATH', 'env_value' => '/opt/orbit/chrome/chrome']);
+            }
+            try {
+                app(StartInstanceDeployAction::class)->execute($instance, 'operator', null);
+                $this->fail('A host-only path was admitted.');
+            } catch (ResourceOperationException $error) {
+                expect($error->errorCode)->toBe('deployment.host_path_unsupported')
+                    ->and($error->getMessage())->toContain($named, '[/opt/orbit/chrome/chrome]');
+            }
+            expect(Operation::query()->where('target_id', $instance->id)->where('kind', 'instance.deploy')->exists())->toBeFalse()
+                ->and($instance->refresh()->production_release_started_at)->toBeNull();
+        }
+    });
+
+    it('confirms a first move that recovery completed forward, so rollback, Process update and deploy reopen', function (): void {
+        $sha = str_repeat('c', 40);
+        $instance = appProdReleasePlacement($this->prod, 'forward-recovery', $sha);
+        $deploy = app(StartInstanceDeployAction::class);
+        // The first move failed after its migration commit: the Node had not yet recorded the new live.
+        appProdReleaseReceipt($deploy->execute($instance, 'operator', null), ['live' => null, 'old' => null, 'artifact' => null], 'failed');
+        expect(fn () => app(StartInstanceRollbackAction::class)->execute($instance->refresh(), $sha, 'operator', null))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('deployment.selection_unconfirmed'));
+        // After `recover`, the next deploy adopts the recovered release on the Node and reports its receipt.
+        $confirm = $deploy->execute($instance->refresh(), 'operator', null);
+        expect($confirm->input['commit'])->toBe($sha)->and($confirm->input['production_release']['expected_live'])->toBeNull();
+        appProdReleaseReceipt($confirm);
+        expect($instance->refresh()->production_release)->toBe(['live' => $sha, 'old' => null, 'artifact' => 'sha256:'.str_repeat('4', 64)])
+            ->and(ProductionContainerRelease::target($instance)['release'])->toBe($sha);
+        expect(fn () => app(StartInstanceRollbackAction::class)->execute($instance, $sha, 'operator', null))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('rollback.release_not_retained'));
+        $next = $deploy->execute($instance, 'operator', null, str_repeat('d', 40));
+        expect($next->input['production_release'])->toMatchArray(['expected_live' => $sha, 'legacy_commit' => null]);
     });
 });

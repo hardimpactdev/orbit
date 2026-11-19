@@ -227,20 +227,47 @@ def checkout(plan):
         remove(local)
         local.parent.mkdir(parents=True, exist_ok=True)
         local.symlink_to(persistent, target_is_directory=True)
+    link_public_storage(plan)
     environment(plan)
     return fingerprint
 
 
-def environment(plan):
+def link_public_storage(plan):
+    """The host layout's `storage:link`: a Laravel release serves its public uploads from the shared volume."""
+    for application in public_storage(plan):
+        link = application / "public/storage"
+        if not link.exists() and not link.is_symlink():
+            (application / "storage/app/public").mkdir(parents=True, exist_ok=True)
+            link.symlink_to("../storage/app/public", target_is_directory=True)
+
+
+def applications(plan):
     root = WORK / "current"
-    suffix = relative(plan["application_suffix"].removeprefix("/"), empty=True)
-    directories = {suffix}
+    directories = {relative(plan["application_suffix"].removeprefix("/"), empty=True)}
     for route in plan["routes"]:
         web = relative(route["web_root"], empty=True)
         if web.name == "public":
             directories.add(web.parent)
-    for directory in directories:
-        application = beneath(root, directory)
+    return [beneath(root, directory) for directory in sorted(directories)]
+
+
+def public_storage(plan):
+    """Laravel application directories whose `storage` is a shared path, which serve `public/storage` from it."""
+    return [application for application in applications(plan)
+            if (application / "artisan").is_file() and (application / "public").is_dir()
+            and (application / "storage").is_symlink() and (application / "storage").resolve().is_relative_to(SHARED)]
+
+
+def links(plan):
+    for application in public_storage(plan):
+        link = application / "public/storage"
+        target = (application / "storage/app/public").resolve()
+        if not link.is_dir() or link.resolve() != target or not target.is_relative_to(SHARED):
+            raise ValueError("the release has no public storage link into the shared volume")
+
+
+def environment(plan):
+    for application in applications(plan):
         if not application.is_dir():
             raise ValueError("selected application directory is missing")
         file_bytes(application / ".env", plan["environment"])
@@ -288,6 +315,8 @@ def main(action):
         print(checkout(plan))
     elif action == "environment":
         environment(plan)
+    elif action == "links":
+        links(plan)
     else:
         raise ValueError("unknown build action")
 
