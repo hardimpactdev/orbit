@@ -41,8 +41,6 @@ final readonly class ReleaseNodeInputs
     private const array GatewayHostFiles = [
         'apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php',
         'swamp/ansible/tasks/gateway-runtime.yml',
-        'apps/gateway/app/Infrastructure/Engine/GatewayBus.php',
-        'swamp/ansible/tasks/gateway-nats.yml',
     ];
 
     /** The network phase reconciles the target and can import the hub separately before a peer. */
