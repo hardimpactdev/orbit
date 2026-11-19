@@ -3441,13 +3441,14 @@ The Gateway copies the seed with one Operation, `instance.seed_copy`. Its target
 A CI Node is ready when the Gateway records, from its last `ci-runner` converge, that the listener trusts the default's Node. A CI Node without that record is not a target. So no seed copy fails on it and no seed copy marks it tried. Its next `ci-runner` converge that passes makes it a target. When the default moves to another Node, the CI Nodes stay untargeted until the `ci-runner` role of each is converged again. The [seed copy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/seed-copy.mmd) has the steps. The Gateway admits a seed copy:
 
 - when the default records a new seed: after the [refresh after a release](#refresh-after-a-release), or after an `instance:deploy` of the default;
-- when a `ci-runner` add or converge of a CI Node passes, so a new CI Node does not wait for the next release;
+- when a `ci-runner` add or role converge of a CI Node passes, so a new CI Node does not wait for the next release;
+- when the roles phase of a `node:converge` of a CI Node passes, so a Node whose copy failed catches up after any passed converge;
 - at the end of a seed copy during which the default's seed moved: for every Node behind the new seed;
 - at the end of a seed copy at the same seed: for the Nodes that no seed copy has tried at that seed.
 
-One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add or converge admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
+One seed copy takes at most as many targets as its [run budget](/reference/operations) can hold, and it leaves the other Nodes behind the seed untried. So its end admits the next copy for them. A copy that a `ci-runner` add, a role converge or a `node:converge` admits always takes that Node: the Node may have failed a copy at this seed, so the end of another copy would not admit it.
 
-So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own `ci-runner` converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
+So a seed that moved during a copy reaches every Node. A Node that a seed copy has tried at the current seed is not tried again by the end of any copy: it waits for the next seed or for its own converge. The Gateway reads the tried Nodes from the targets of the recorded `instance.seed_copy` Operations of that seed. So a lasting failure, such as no free ID range, does not repeat with a new Operation each time.
 
 The automatic release tick advances the recorded fleet, default and seed phases. It resumes the existing Operations after a restart and verifies the default seed commit before it checks CI Node copies. An admission blocked by active work stays pending. A failed refresh Operation or temporary source-read failure retries after ten minutes, up to three attempts for the release commit.
 
@@ -3512,6 +3513,7 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 | Never blocks the release | The default's run has ended when the Gateway admits a seed copy. A failed copy changes neither the release nor the default |
 | No proof places on an old seed | While a Node's seed is not the default's current seed, the Node offers no proof places. So one proof never mixes the fleets of two seeds. Earlier copies keep running |
 | A failed target | The step fails with `instance.seed_copy_failed`, and the result names the failed command and its error output for that Node. The Node keeps its recorded seed |
+| An unreachable Node | The phase that could not reach the Node fails that target, and the result holds the SSH error. Later phases do nothing for the target |
 | One copy at a time | An open seed copy holds the default's [seed hold](#the-seed-hold). A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
 | No copy during a retake | While a deployment of the default holds the seed, the admission refuses with `instance.seed_held`; the deployment's end admits the copy again |
 | No listener yet | A CI Node whose converge has not added the listener and the trust fails its target. A `ci-runner` converge of the Node adds them, and its end admits the next copy |

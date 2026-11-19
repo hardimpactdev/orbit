@@ -67,6 +67,17 @@
   tasks:
     - name: Read the certificate
       block:
+        # Ansible does not rescue an unreachable host: the phase would end with no outcome, and the next phase would run and
+        # report its own, misleading error. So the reach is a task: an unreachable Node fails the phase with the SSH error.
+        - &reach
+          name: Reach the Node
+          ansible.builtin.ping:
+          register: seed_reach
+          ignore_unreachable: true
+        - &reached
+          name: Require the Node
+          ansible.builtin.fail: { msg: "The Node is unreachable: {{ seed_reach.msg | default('no detail') }}" }
+          when: seed_reach.unreachable | default(false)
         - name: Read the Incus listener
           ansible.builtin.command: { argv: [incus, config, get, core.https_address] }
           register: seed_listener
@@ -114,6 +125,8 @@
   tasks:
     - name: Push the seed
       block:
+        - *reach
+        - *reached
         - name: Read the remotes of root
           ansible.builtin.command: { argv: [incus, remote, list, --format, json] }
           register: seed_remotes
@@ -214,6 +227,8 @@
   tasks:
     - name: Check the holder
       block:
+        - *reach
+        - *reached
         - name: Read the holder's snapshots
           ansible.builtin.command:
             argv: [incus, query, "--", "/1.0/instances/{{ seed_intent.holder }}/snapshots?project={{ seed_intent.project }}&recursion=1"]
