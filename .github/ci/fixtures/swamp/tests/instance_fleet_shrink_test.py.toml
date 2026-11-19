@@ -1,8 +1,10 @@
 order = 1481
 cases = [
   "test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing",
+  "test_a_base_retaken_after_a_package_changed_is_not_recorded_as_holding_the_shrink",
+  "test_a_record_of_a_stopped_base_without_the_base_key_is_current",
   "test_the_package_files_in_apt_archives_go_and_the_lock_stays",
-  "test_the_cache_removal_follows_no_symlink_out_of_the_disk",
+  "test_each_nested_apt_cleans_its_own_archives_and_a_held_lock_keeps_them",
   "test_an_absolute_path_in_the_md5sums_never_reaches_a_file_outside_the_disk",
   "test_a_path_that_starts_with_two_slashes_is_absolute_too",
   "test_a_path_that_cannot_be_linked_is_skipped_and_the_others_are_linked",
@@ -18,10 +20,11 @@ cases = [
   "test_without_duperemove_only_the_relink_runs_and_the_shrink_stays_due",
   "test_a_changed_package_makes_it_due_and_a_directory_pool_skips_the_dedupe",
   "test_a_failed_dedupe_fails_the_run_writes_no_record_and_stays_due",
+  "test_a_package_that_changes_during_the_run_writes_no_record",
   "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record",
 ]
 file = "swamp/tests/instance_fleet_shrink_test.py"
-cost = 19
+cost = 22
 # The file it reads: the shrink of the nested root disks, run as shipped.
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -35,7 +38,7 @@ inputs = [
 "test_a_failed_dedupe_fails_the_run_writes_no_record_and_stays_due" = 1
 "test_the_package_files_in_apt_archives_go_and_the_lock_stays" = 1
 "test_a_record_of_an_older_rule_is_due_once" = 1
-"test_the_cache_removal_follows_no_symlink_out_of_the_disk" = 1
+"test_each_nested_apt_cleans_its_own_archives_and_a_held_lock_keeps_them" = 1
 "test_a_record_that_is_no_object_is_no_record" = 1
 "test_an_absolute_path_in_the_md5sums_never_reaches_a_file_outside_the_disk" = 1
 "test_a_dotdot_path_in_the_md5sums_never_reaches_a_file_outside_the_disk" = 1
@@ -46,3 +49,6 @@ inputs = [
 "test_a_path_that_starts_with_two_slashes_is_absolute_too" = 1
 "test_a_path_that_cannot_be_linked_is_skipped_and_the_others_are_linked" = 1
 "test_a_leftover_temporary_link_goes_and_its_path_is_linked" = 1
+"test_a_base_retaken_after_a_package_changed_is_not_recorded_as_holding_the_shrink" = 1
+"test_a_record_of_a_stopped_base_without_the_base_key_is_current" = 1
+"test_a_package_that_changes_during_the_run_writes_no_record" = 1

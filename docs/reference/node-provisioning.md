@@ -105,13 +105,13 @@ Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are r
 
 `node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and the Swamp control key. It checks no agent, account, package or runtime ownership on the Mac.
 
-Route withdrawal ships a Node module that reads, merges, tests and applies the Route files under a local file lock, and keeps the previous generation of each in `/var/lib/orbit/route-previous/`. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior.
+Route withdrawal ships a Node module that reads, merges, tests and applies the Route files under a local file lock, and keeps the previous generation of each in `/var/lib/orbit/route-previous/`. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior. When the module refuses, the playbook writes the refusal code and message to the run folder, and the destroy Operation records them as its failure's stderr and as `withdrawal_error_code` ([Instance removal](/reference/instance-removal)).
 
 ## Add a Node
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. An `app-dev` Node needs a TLD or an active Cluster TLD. A Node with Instances cannot be enrolled again, including for a TLD change.
 
-Admission records a provisioning Node and freezes its public resource plan. Bootstrap identity and the new observer secret enter the execution vault; the workflow receives only their key names. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
+Admission records a provisioning Node and freezes its public resource plan. The new observer secret enters the execution vault; the workflow receives only its key name. Every step logs in with Swamp's own SSH key. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
 
 | Stage | Work |
 | --- | --- |
@@ -175,8 +175,6 @@ After resolving the cause, repeat `orbit cluster:node:add <current-cluster-id> <
 ### Bootstrap identity
 
 A new Linux machine needs only root SSH access with the Swamp control key: authorize the public key in `ORBIT_SWAMP_SSH_PUBLIC_KEY` for root before `node:add`. The Gateway private key never leaves the Gateway; no execution copy of it goes to Swamp.
-
-An older Gateway release still sends a `bootstrap-identity-node-<id>` reference. The workflow schema and the vault grants accept it, and no step reads it, so that Gateway can enroll a Node until its next release.
 
 Enrollment creates the observer unit's environment group before starting it; a fresh machine does not already have that group. The initial host-key read ignores the worker's `known_hosts`; the next step must match the approved fingerprint before any machine change. Later SSH steps pin that approved key. Every enrollment step, the first host-key read included, logs in with that control key.
 
@@ -596,7 +594,7 @@ A clone's create also adds UFW rules under the comment prefix `orbit:instance-<i
 
 On Linux app-dev Nodes, Orbit manages `/etc/tmpfiles.d/orbit.conf`. At boot, systemd creates `/dev/shm/orbit/hibernation` with owner `root:caddy` and mode `0755`. Removing the app-dev role withdraws the file.
 
-A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. The automatic scope refuses changed host inputs, per Node: the Gateway runtime (`gateway-runtime.yml` and its rendered files) counts only for a Node with the `gateway` role, so a change to it holds only that Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
+A verified release can admit an internal role-only converge after agent delivery. It applies the selected roles and their declared software with the usual Node admission lock. When a Node's host inputs changed, the release pass runs the full Node converge instead. It decides this per Node. The Gateway runtime (`gateway-runtime.yml` and its rendered files) counts only for a Node with the `gateway` role, so a change to it converges only that Node. See [Fleet rollout](/reference/gateway-recovery#fleet-rollout).
 
 [Rollout base inventory](/reference/rollout-base-inventory) captures host metadata through the same pinned worker route and provides separate before-and-after evidence.
 
