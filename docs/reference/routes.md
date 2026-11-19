@@ -744,7 +744,7 @@ It takes each with util-linux `flock` and waits at most 30 seconds for both toge
 5. Once every test passed, it keeps the previous generation of each file it replaces in `/var/lib/orbit/route-previous/`, one copy each.
 6. It reloads PHP-FPM, renames the Caddy candidate, reloads Caddy and restarts dnsmasq.
 
-The compare in step 3 covers each Caddy site block, PHP scope, DNS record and catalog entry that is not the withdrawn Route's own, and the Caddy global options. On any difference the withdrawal refuses with `route.withdraw_foreign_change` and changes nothing. A withdrawal only removes sections. A captured state that would add or edit a section that stays is refused with `route.withdraw_foreign_change` too.
+The compare in step 3 covers each Caddy site block, PHP scope, DNS record and catalog entry that is not the withdrawn Route's own, and the Caddy global options. On any difference the withdrawal refuses with `route.withdraw_foreign_change` and changes nothing. The Route's own Caddy site groups are the groups its captured states remove, and any other group of a withdrawn scope that the Node holds: `<scope>`, `<scope>-dev`, `<scope>-bridge` and `<scope>-dev-bridge` of the same Caddy source. A withdrawal only removes sections. A captured state that would add or edit a section that stays is refused with `route.withdraw_foreign_change` too.
 
 The previous generations are `Caddyfile`, `php-<version>-orbit-scopes.conf`, `orbit-records.conf` and `catalog.json`. The folder is root only, mode `0700`. It sits outside `/etc/caddy`, `pool.d` and `/etc/dnsmasq.d`, so no service reads a copy.
 
@@ -752,7 +752,9 @@ A failed test puts every written file back before any reload, and keeps no copy.
 
 Some writers take no Node lock, such as the Gateway's whole-file Caddy builds. So right before it writes a file, and again right before it renames the Caddy candidate, the withdrawal checks that the file is still as it read it. A file that changed refuses with `route.live_changed` and every file is put back; run the removal again.
 
-A revision of the Route's own sections that matches no captured state still refuses with `caddy.owned_revision_conflict`, `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A PHP scope of the Route matches when its `group` names the account's primary group by name or by gid ([route child contracts](#route-child-contracts)). A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
+The withdrawal removes the Route's own Caddy site groups whatever their bytes, and counts a missing one as withdrawn. An older Orbit may have rendered them in another form, and a Node converge does not rewrite them. Global options that no step changes stay as the Node holds them, so a converge that rebuilt them does not refuse the withdrawal.
+
+A revision of the Route's own PHP scopes or DNS records that matches no captured state still refuses with `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A PHP scope of the Route matches when its `group` names the account's primary group by name or by gid ([route child contracts](#route-child-contracts)). A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing.
 
 The lock files are regular files owned by root that no group or other may write; a lock that is not refuses with `route.publish_lock_invalid`. The withdrawal sets each to mode `0600`, so only root can open it. They are never replaced or removed. Closing the descriptor releases a lock, including when the process dies. No SSH round trip occurs while a lock is held.
 
