@@ -27,7 +27,6 @@
         "pestphp/pest": "^5.3",
         "phpunit/phpunit": "^13.0",
         "rector/rector": "^2.3",
-        "spatie/guidelines-skills": "^1.1",
         "spaze/phpstan-disallowed-calls": "^4.14"
     },
     "autoload": {
@@ -61,7 +60,6 @@
             "@analyse"
         ],
         "format": "vendor/bin/pint --parallel --max-processes=$(../../bin/check-processes)",
-        "guidance:update": "@php orbit boost:update --no-discover --no-interaction",
         "rector": "vendor/bin/rector process --no-progress-bar",
         "test": "../../bin/pest-plain vendor/bin/pest --parallel --processes=$(../../bin/check-processes) --compact --colors=never"
     },

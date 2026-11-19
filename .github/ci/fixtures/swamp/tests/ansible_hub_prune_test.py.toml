@@ -12,10 +12,11 @@ cases = [
   "test_the_hub_converge_removes_the_filter",
   "test_the_task_vm_route_rules_go_and_every_other_rule_stays",
   "test_a_hub_without_task_vm_route_rules_changes_nothing",
+  "test_an_overlapping_cleanup_deletes_no_live_rule",
 ]
 file = "swamp/tests/ansible_hub_prune_test.py"
-# ESTIMATE: supervised local run 23.5s for the twelve cases; confirm the 48s allowance on hosted CI.
-cost = 48
+# ESTIMATE: supervised local run 48s for the thirteen cases; confirm the 64s allowance on hosted CI.
+cost = 64
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",

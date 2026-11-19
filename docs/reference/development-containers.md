@@ -120,7 +120,9 @@ The timer recovers missed Docker events and DNAT rules installed after a start e
 
 Lock acquisition makes one nonblocking attempt. An owned lock returns `instance.bridge_busy` immediately, without changing endpoint records, ACL rules or health. Retry the operation after the current writer finishes. Docker and NAT reads use the helper’s remaining budget: 30 seconds for refresh and 300 seconds for lifecycle work. Each Incus curl request keeps its five-second limit, with one request reserved for readback. A read timeout or curl exit 28 returns `instance.bridge_command_timeout` and releases the lock.
 
-Failure recording uses the held lock; a caller that cannot acquire it reports the error without waiting again. An unchanged run leaves active records and health unchanged and sends no Incus write request. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
+Failure recording uses the held lock; a caller that cannot acquire it reports the error without waiting again. An unchanged run leaves active records and health unchanged and sends no Incus write request.
+
+Each admission and host converge stamps a new admission time on the same endpoints. The helper reports a change only when what the bridge admits changed: an ACL rule added or removed, or an endpoint record, the bridge configuration or health that differs apart from its stamp. So a host converge with unchanged endpoints reports no change. A Docker re-address heals after the next successful refresh; a host converge also removes the obsolete resolved tuple.
 
 An empty Docker NAT snapshot changes no ACL or endpoint record. A failed NAT read also preserves them. These snapshots cannot judge publications during a Docker restart. Duplicate matching rows leave that publication unchanged, even when every row names the same target. A restart on the same address has no additional ACL outage: its allow is never withdrawn. Stale records and their rules remain until the separate removal design lands or an authoritative host convergence removes them.
 
@@ -689,7 +691,7 @@ Where each path writes the name:
 | Create of a default, a move | The container phase, right after the first start: the files, then the kernel hostname at once |
 | Clone and task copy | `/etc/machine-info` as a boot file before the first start; the rest in the private names pass right after it |
 | Start, wake, deployment | Only a stopped container: the start phase writes the files through the file API before it boots it. A running or frozen container gets nothing |
-| Node converge | The files, in running, stopped and frozen containers, through the file API. Nothing restarts and the kernel hostname stays |
+| Node converge | Its `check` tag every time, and its roles phase when it runs: the files that differ, in every running, stopped or frozen container. Nothing restarts |
 
 T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
 
@@ -2884,7 +2886,7 @@ A refresh with no change keeps the host and adds no time. The host is built only
 
 **Time bounds.** The first host build installs Incus, downloads the shared folders, and builds the stock image and the Instance image. On a task copy at 1,165,536 the converge took 325 s for the base packages and 428 s for the roles phase up to the stock image (2026-11-16). The images could not be built there. So the roles phase of a fleet Node's `app-dev` converge has 1,800 s, from `roles_seconds` in its intent.
 
-The converge workflow accepts only 900 to 1,800 for `roles_seconds` and refuses any other value before the playbook. The refresh waits up to 1,800 s for that converge while the record holds no `host` yet. That converge runs last, after the other Nodes' converges have ended: the hub's reservation refuses a converge with roles beside any other converge. Every other converge keeps 900 s for each phase and for the refresh's wait.
+The converge workflow accepts only 900 to 1,800 for `roles_seconds` and refuses any other value before the playbook. The refresh waits up to 1,800 s for that converge while the record holds no `host` yet. That converge runs after the nested Gateway's converge has ended, beside `nested-app-prod`'s: the hub's reservation refuses a converge of the hub with roles beside any other converge, and lets two peers pass each other. Every other converge keeps 900 s for each phase and for the refresh's wait.
 
 **Memory.** In an Instance fleet the nested containers get 4 GiB (`nested-gateway`), 5 GiB (`nested-app-dev`) and 2 GiB (`nested-app-prod`), 11 GiB of the Instance container's 12 GiB. Each gets the same size as swap: Incus writes `memory.swap.max` 0 for a container with `limits.memory` unless `limits.memory.swap` holds a byte size, and an Instance on `nested-app-dev` swaps only as far as each ancestor cgroup allows. These are owned fleet rules (`limits.memory` and `limits.memory.swap`), so the next refresh writes them with the fleet stopped, before it takes `base`; copies made from the new seed have them. On 2454, `nested-app-prod` used 124 MiB and `nested-gateway` 1.64 GiB. `nested-app-dev` with its Incus and no Instance used 178 MiB.
 
@@ -3189,9 +3191,13 @@ The cover test fails when the converge workflow calls such a method, or when an 
 
 The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). An unreadable digest makes that Node due and is not recorded, so the next refresh tries it again. A read failure that affects inputs common to all three makes all three due. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
 
-The due Nodes converge one at a time: the nested Gateway first, which holds the hub, then `nested-app-prod`, then `nested-app-dev`. A default converge has a network, so it holds the hub's reservation, and the nested Gateway refuses any second converge beside it ([node:converge](/cli/node/converge)). The seven Ansible plays still lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`).
+The nested Gateway converges first and alone. Its Node is the hub, and the nested Gateway refuses a converge of the hub with roles beside any other converge ([node:converge](/cli/node/converge)). It also runs the Swamp workers that run the other converges.
 
-The refresh admits the next Node only when the one before it has ended. A failed or refused converge stops the converges: the Nodes after it do not converge, and the error names the Node that failed. The run then restores the old seed.
+Then `nested-app-dev` and `nested-app-prod` converge side by side: two peers of the hub pass each other's reservation. The seven Ansible plays lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`), so the two never wait for each other there, and the shared Squid and apt do not hold them up either. Two default converges with every phase (`--full`) took 112 s and 78 s side by side, 114 s in all, in a copy on 19 November 2026.
+
+The refresh admits both app Nodes together and reads their two Operations in one call every 5 seconds until both have ended, so no run is still going when the refresh fails. A failed or refused converge fails the refresh after its group has ended, and the error names each Node that failed. A failed nested Gateway admits no app Node. A failed refresh records no digest, not even for a Node whose converge succeeded, so the next refresh converges them all again. The run then restores the old seed.
+
+curl's exit code is only the last transfer's, so each transfer writes its own exit code after its body. A read counts only when every transfer exited 0 with a JSON object; a dropped or cut response, the first one too, is read again and never parsed.
 
 A due converge still prepares inputs and runs its final checks, even when all its skippable phases match the record.
 

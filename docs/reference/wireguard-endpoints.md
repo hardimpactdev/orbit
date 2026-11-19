@@ -199,7 +199,9 @@ The converge's Ansible `network` phase reaches the hub over SSH as root:
 
 Step 3 also removes the [task VM hub filter](/reference/old-paths#the-task-vm-lifecycle) that the removed `task_vm.hub_converge` installed. It stops and disables `orbit-task-vms-hub.service` when its unit file exists, deletes the unit file and `/etc/orbit/task-vms/hub.nft`, and deletes the folder `/etc/orbit/task-vms` when it is then empty. It reloads systemd only when it deleted the unit file, and deletes the nft table `inet orbit_task_vms` only when `nft list table` finds it.
 
-It then reads `ufw status numbered` and deletes every rule whose comment starts with `orbit:task-vm-`, by number and highest number first. Those are the route rules from the range `10.44.0.128/25` that the task VM hub kept, such as `orbit:task-vm-control-ssh` and `orbit:task-vm-router-web-10-44-0-7-443`. It deletes no other rule, and reports a change only when it deleted one. A hub that never had the filter or those rules, or had them removed by an earlier converge, changes nothing.
+It then reads `ufw show added` and deletes every rule whose comment starts with `orbit:task-vm-` by that rule's spec, never by number. Those are the route rules from the range `10.44.0.128/25` that the task VM hub kept, such as `orbit:task-vm-control-ssh` and `orbit:task-vm-router-web-10-44-0-7-443`. It deletes no other rule, and reports a change only when it deleted one. A hub that never had the filter or those rules, or had them removed by an earlier converge, changes nothing.
+
+Two converges of different hub peers can run this cleanup at the same time. A number read before the other run's delete could name a live rule. A spec names only its own rule, and a rule that the other run already deleted is a no-op.
 
 The same hub tasks run when the target of `node:converge` is the hub itself and when the converge of another Node reconciles its hub first, so the converge of the vpn Node removes the filter.
 

@@ -24,6 +24,9 @@ Nothing restarts: every later process reads the files by itself.
   the file API, by instance_machine_name.py `render`, whose text the task passes and which runs on the Node. Nothing restarts and the
   kernel hostname stays: it takes the file at the container's next start, and T3 its label at its next start.
 
+`names` mode, a step of every Node converge's `check` tag: the presented machine name alone, as above, for each container that the
+Gateway names, so the roles digest leaves the name list out (converge_input.ts churnFreeRole).
+
 `t3` mode, its own step before the shared folders: each container with a T3 gets the root-owned drop-ins of its unit
 (InstanceContainer::t3DropIns) through the file API, uid 0, gid 0, only where the text differs, running, stopped or frozen. A running
 container with a new drop-in runs `systemctl daemon-reload` and joins the Node's restart list, `state`; `reload` names the whole list.
@@ -324,6 +327,34 @@ def converge(projects, files, trust_spec, browser, libraries, state, machine_nam
     return 0
 
 
+def names(projects, machine_names, code):
+    """`names` mode: only the presented machine name of each listed container that Incus holds in `projects`, each file written only
+    where its text differs. Every Node converge runs it, whether or not its roles phase runs, so a name that changed for a container that
+    stays (a renamed Project) reaches it, while an Instance that comes or goes moves no roles digest. A container that went or that
+    Incus does not list yet is no failure: its own create or removal owns it."""
+    summary = {"written": [], "gone": [], "failed": []}
+    presented = {(entry["project"], entry["container"]): entry for entry in machine_names}
+    rows = json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)
+    for row in sorted((row for row in rows if row.get("project") in projects), key=lambda row: (row["project"], row["name"])):
+        project, name, status = row["project"], row["name"], row["status"]
+        entry = presented.get((project, name))
+        if entry is None or status not in ("Running", "Stopped", "Frozen"):
+            continue
+        label = f"{project}/{name}"
+        try:
+            machine_name(project, name, status, label, entry, code, summary)
+        except IncusFailure as failure:
+            if confirmed_state(project, name) == "gone":
+                summary["gone"].append(label)
+            else:
+                summary["failed"].append(f"{label}: {failure}")
+    if summary["failed"]:
+        print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
+        return 1
+    print(json.dumps(summary))
+    return 0
+
+
 def t3_entry(entry, project, name, label, status, pending, state_file, summary):
     """One container's drop-ins in `status`. A container listed as running that Incus confirms has stopped or frozen since gets the
     work of that state; a confirmed-gone one is skipped."""
@@ -486,6 +517,8 @@ if __name__ == "__main__":
     spec = json.loads(sys.argv[1])
     if spec.get("mode") == "t3":
         sys.exit(t3_files(spec["t3_files"], spec["state"]))
+    if spec.get("mode") == "names":
+        sys.exit(names(spec["projects"], spec["machine_names"], spec["machine_name_code"]))
     if spec.get("mode") == "t3_restart":
         sys.exit(t3_restart(spec["targets"], spec["t3_files"], spec["state"]))
     sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["browser_trust"], spec["libraries"], spec["state"],

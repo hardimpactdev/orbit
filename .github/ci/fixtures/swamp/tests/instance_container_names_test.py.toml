@@ -1,0 +1,8 @@
+order = 1550
+cases = [
+  "test_a_coming_or_going_instance_writes_nothing_into_the_containers_that_stay",
+  "test_a_renamed_project_gives_its_running_container_the_new_name",
+  "test_the_check_tag_of_every_converge_writes_the_names",
+]
+file = "swamp/tests/instance_container_names_test.py"
+inputs = ["swamp/ansible/instance_container_files.py", "swamp/ansible/instance_machine_name.py", "swamp/ansible/operation-node-converge.yml", "swamp/ansible/tasks/instance-container-names.yml"]
