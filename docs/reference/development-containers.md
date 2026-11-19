@@ -338,7 +338,9 @@ The software that the app and the agents run lives once per Node, in two version
 | `/opt/orbit-agent/<version>/agent/{t3,conn-server,chrome-headless-shell,agent-browser,claude-code,codex}` | The releases | `root:2750`, mode 0750; everyone on an [Instance fleet Node](#instance-host-in-the-fleet) |
 | `/opt/orbit-agent/<version>/notes/<type>.md` | The [environment notes](#environment-notes) | Everyone |
 
-The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, the Chrome headless shell, agent-browser, Claude Code and Codex. The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge and the static PHP builds. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
+The folders live on the Node's root filesystem, at the same paths as in the containers. The recipe pins each part of a folder, in its `instances` object ([recipe schema](/reference/compute-drivers#recipe-schema)). The agent folder holds T3, the Conn Server, the Chrome headless shell, agent-browser, Claude Code and Codex.
+
+The runtime folder holds Composer, Node, Bun, Deno, Vite+, rg, PHP Data Bridge, the static PHP builds and the same pinned Chrome headless shell for [production containers](/reference/production-containers#host-paths), which have no agent folder. The recipe requires the two Chrome parts to be one pin, so a Node downloads it once. Node, Bun, Deno and Vite+ reuse the recipe's own pins.
 
 A folder's version is the first 12 hex digits of a digest of everything in it, the notes included, so any change is a new version. Each program in `bin` links to its path in its part.
 
