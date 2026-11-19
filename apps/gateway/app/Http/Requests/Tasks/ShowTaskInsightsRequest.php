@@ -13,7 +13,7 @@ final class ShowTaskInsightsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'period' => ['sometimes', 'string', 'in:'.implode(',', array_keys(TaskInsights::Periods))],
+            'period' => ['sometimes', 'string', 'in:'.TaskInsights::periodList()],
             'project_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }

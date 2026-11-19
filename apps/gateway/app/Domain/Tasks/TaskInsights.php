@@ -49,6 +49,22 @@ final class TaskInsights
     /** The periods a report covers, by their name in the API; the only list of them. */
     public const array Periods = ['7d' => 7, '30d' => 30];
 
+    /** The periods as one comma-separated rule list, which the OpenAPI generator also reads. */
+    public static function periodList(): string
+    {
+        return implode(',', array_keys(self::Periods));
+    }
+
+    /**
+     * The current code of a row's Project. A record keeps the Project's id, so a renamed Project aggregates under its new code.
+     *
+     * @param  array<int|string, mixed>  $codes  Project codes by id
+     */
+    public static function projectCode(array $codes, int $projectId): string
+    {
+        return ValidatedData::nullableString($codes[$projectId] ?? null) ?? '';
+    }
+
     /**
      * The report computed from the source tables. The endpoint reads it from `TaskInsightTotals` instead,
      * which aggregates the same rows from their [records](/reference/tasks#task-insights).
@@ -130,7 +146,7 @@ final class TaskInsights
             ->orderBy('id')->toBase()->get(self::GroupColumns)
             ->map(static fn (object $group): array => [
                 'id' => self::number($group->id), 'project_id' => self::number($group->project_id),
-                'project' => ValidatedData::nullableString($codes[self::number($group->project_id)] ?? null) ?? '',
+                'project' => self::projectCode($codes, self::number($group->project_id)),
                 'lines' => self::number($group->lines_added) + self::number($group->lines_deleted),
                 ...array_map(self::time(...), ['ready_at' => $group->ready_at, 'started_at' => $group->started_at, 'settled_at' => $group->settled_at,
                     'ended_at' => $group->ended_at, 'merged_at' => $group->merged_at, 'deployed_at' => $group->deployed_at, 'pr_opened_at' => $group->pr_opened_at]),

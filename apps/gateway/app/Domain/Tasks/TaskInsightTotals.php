@@ -74,21 +74,27 @@ final readonly class TaskInsightTotals
      */
     private function stale(CarbonImmutable $since): Builder
     {
-        $changedAfter = static fn (string $table, string $column) => static fn ($query) => $query->selectRaw('1')->from($table)
-            ->whereColumn("{$table}.{$column}", 'tasks.id')->whereColumn("{$table}.updated_at", '>', 'task_insight_records.recorded_at');
+        // At or after: timestamps have one-second resolution, so a write in the second of its record still counts as changed.
+        $changedAfter = static fn (string $table, string $column, string $owner = 'tasks.id') => static fn ($query) => $query->selectRaw('1')->from($table)
+            ->whereColumn("{$table}.{$column}", $owner)->whereColumn("{$table}.updated_at", '>=', 'task_insight_records.recorded_at');
 
         return Task::topLevel()->where('tasks.ended_at', '>=', $since)
             ->whereIn('tasks.status', array_map(static fn (TaskGroupStatus $status): string => $status->value, TaskGroupStatus::endedStatuses()))
             ->leftJoin('task_insight_records', 'task_insight_records.task_id', '=', 'tasks.id')
             ->where(static fn ($query) => $query->whereNull('task_insight_records.id')
-                ->orWhereColumn('tasks.updated_at', '>', 'task_insight_records.recorded_at')
+                ->orWhereColumn('tasks.updated_at', '>=', 'task_insight_records.recorded_at')
                 ->orWhereExists($changedAfter('agent_threads', 'task_group_id'))
                 ->orWhereExists($changedAfter('task_comments', 'task_group_id'))
                 ->orWhereExists($changedAfter('task_questions', 'task_id'))
                 ->orWhereExists(static fn ($query) => $query->selectRaw('1')->from('tasks as subtasks')
                     ->whereColumn('subtasks.parent_id', 'tasks.id')
-                    ->where(static fn ($query) => $query->whereColumn('subtasks.updated_at', '>', 'task_insight_records.recorded_at')
-                        ->orWhereExists($changedAfter('task_checks', 'task_id'))))
+                    ->where(static fn ($query) => $query->whereColumn('subtasks.updated_at', '>=', 'task_insight_records.recorded_at')
+                        ->orWhereExists($changedAfter('task_checks', 'task_id', 'subtasks.id'))))
+                // A release verified or changed after the record may be the group's release now.
+                ->orWhereExists(static fn ($query) => $query->selectRaw('1')->from('gateway_releases')
+                    ->where('gateway_releases.outcome', 'verified')->whereNotNull('gateway_releases.sha')
+                    ->whereColumn('gateway_releases.created_at', '<=', 'tasks.started_at')
+                    ->whereColumn('gateway_releases.updated_at', '>=', 'task_insight_records.recorded_at'))
             );
     }
 
@@ -96,12 +102,14 @@ final readonly class TaskInsightTotals
     private function rows(?int $projectId, CarbonImmutable $now): array
     {
         $rows = [];
+        $codes = Project::query()->pluck('code', 'id')->all();
         DB::table('task_insight_records')->where('ended_at', '>=', TaskInsights::trendStart($now)->format('Y-m-d H:i:s'))
             ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
             ->select(['id', 'facts'])->orderBy('id')
-            ->chunkById(500, static function ($chunk) use (&$rows): void {
+            ->chunkById(500, static function ($chunk) use (&$rows, $codes): void {
                 foreach ($chunk as $record) {
-                    $rows[] = TaskInsightRecorder::row((string) $record->facts);
+                    $row = TaskInsightRecorder::row((string) $record->facts);
+                    $rows[] = [...$row, 'project' => TaskInsights::projectCode($codes, $row['project_id'])];
                 }
             });
 

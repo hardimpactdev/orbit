@@ -17,6 +17,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInsights;
+use App\Domain\Tasks\TaskInsightTotals;
 use App\Jobs\Tasks\StampDeployedTasks;
 use App\Models\AgentThread;
 use App\Models\GatewayRelease;
@@ -28,6 +29,7 @@ use App\Models\Project;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
@@ -309,3 +311,29 @@ it('reads only the columns a report computes from, so twelve weeks of tasks fit 
     // A whole task or thread row carries briefs, summaries and errors; twelve weeks of them exhausted the 128M limit (gateway.unhandled).
     expect(array_values(array_filter($queries, static fn (string $sql): bool => str_contains($sql, '*') && ! str_contains($sql, 'count(*)'))))->toBe([]);
 });
+
+it('brings a stamped deploy into the next stored task insights report, from a production Instance or a verified Gateway release', function (string $path): void {
+    $sha = static fn (string $c): string => str_repeat($c, 40);
+    $instance = deployWorld([$sha('2'), $sha('3')]);
+    $group = mergedGroup($instance, 'Carried', $sha('2'), '2026-11-19 09:00:00');
+    DB::table('tasks')->where('id', $group->id)->update(['ready_at' => '2026-11-19 08:00:00']);
+    $this->travel(1)->minutes();
+    Artisan::call('task:insights-refresh');
+    $stored = static fn (): array => app(TaskInsightTotals::class)->read('7d', $instance->project_id, CarbonImmutable::now())['current'];
+    expect($stored()['delivery_time_ms'])->toBeNull();
+
+    $this->travel(1)->minutes();
+    if ($path === 'instance') {
+        stampAfter(deployRow($instance, $sha('3'), '2026-11-19 12:00:00', '2026-11-19 12:01:00'));
+    } else {
+        app()->call([releaseRun($sha('3'), 'succeeded'), 'handle']);
+    }
+    expect($group->refresh()->deployed_at)->not->toBeNull();
+    $this->travel(1)->minutes();
+    Artisan::call('task:insights-refresh');
+
+    $report = app(TaskInsights::class)->report(7, $instance->project_id, CarbonImmutable::now())->toArray()['current'];
+    expect($report['delivery_time_ms'])->not->toBeNull()
+        ->and($stored()['delivery_time_ms'])->toBe($report['delivery_time_ms'])
+        ->and($stored()['deploy_wait_ms'])->toBe($report['deploy_wait_ms']);
+})->with(['instance', 'gateway release']);

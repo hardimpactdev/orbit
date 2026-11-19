@@ -6,6 +6,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
+use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
@@ -23,6 +24,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -222,6 +224,8 @@ it('backfills every ended group once, and a second run rewrites the same records
 
 it('refreshes the stored totals of all Projects and each Project every five minutes, from the records only', function (): void {
     [$app, $web] = insightWorld();
+    // A record written in the second of its source rows counts as changed, so the clock moves past the fixture's second first.
+    test()->travel(1)->seconds();
     Artisan::call('task:insights-refresh');
     expect(DB::table('task_insight_totals')->count())->toBe(3 * count(TaskInsights::Periods));
 
@@ -243,19 +247,22 @@ it('answers the endpoint from the stored totals without a task query, and comput
     Artisan::call('task:insights-refresh');
     DB::table('task_insight_totals')->where('scope', 'project:'.$app->id)->delete();
     insightPeer();
+    // The fixture's own task change notices go out now, as at the end of the request that made them, not inside the read below.
+    app(TaskBroadcasts::class)->flush();
     $queries = [];
     DB::listen(static function ($query) use (&$queries): void {
         $queries[] = $query->sql;
     });
-    $source = static fn (): array => array_values(array_filter($queries, static fn (string $sql): bool => preg_match('/from "(tasks|agent_threads|task_comments|task_checks|task_questions|gateway_releases)"/', $sql) === 1));
+    // Takes the log as an argument: an arrow function would capture the empty log it was created with.
+    $source = static fn (array $queries): array => array_values(array_filter($queries, static fn (string $sql): bool => preg_match('/from "(tasks|agent_threads|task_comments|task_checks|task_questions|gateway_releases)"/', $sql) === 1));
 
     $first = $this->getJson('/api/v1/task-insights?period=7d&project_id='.$app->id)->assertOk()->json('data');
-    expect($source())->toBe([])->and(DB::table('task_insight_totals')->where('scope', 'project:'.$app->id)->count())->toBe(1)
+    expect($source($queries))->toBe([])->and(DB::table('task_insight_totals')->where('scope', 'project:'.$app->id)->count())->toBe(1)
         ->and($first)->toBe(json_decode((string) json_encode(app(TaskInsights::class)->report(7, $app->id, CarbonImmutable::now())->toArray()), true));
 
     $queries = [];
     expect($this->getJson('/api/v1/task-insights?period=7d&project_id='.$app->id)->assertOk()->json('data'))->toBe($first)
-        ->and($source())->toBe([])
+        ->and($source($queries))->toBe([])
         ->and(array_filter($queries, static fn (string $sql): bool => str_contains($sql, 'task_insight_records')))->toBe([]);
 });
 
@@ -298,3 +305,51 @@ it('stores one report per scope and period when another read stores the same mis
         ->and($report)->toBe(app(TaskInsights::class)->report(7, $projectId, CarbonImmutable::now())->toArray())
         ->and(DB::table('task_insight_totals')->where('scope', $key)->where('period', '7d')->count())->toBe(1);
 })->with(['all Projects' => null, 'one Project' => 'app']);
+
+it('aggregates every record of a renamed Project under its current code', function (): void {
+    [$app] = insightWorld();
+    Artisan::call('task:insights-refresh');
+    $app->forceFill(['code' => 'NEW'])->saveQuietly();
+    test()->travel(1)->minutes();
+    insightGroup($app, 0.01);
+    Artisan::call('task:insights-refresh');
+
+    foreach ([null, $app->id] as $projectId) {
+        $report = app(TaskInsights::class)->report(30, $projectId, CarbonImmutable::now())->toArray();
+        expect(app(TaskInsightTotals::class)->read('30d', $projectId, CarbonImmutable::now())['breakdowns']['project'])->toBe($report['breakdowns']['project']);
+    }
+    expect(array_column($report['breakdowns']['project'], 'label'))->toBe(['NEW']);
+});
+
+it('recovers on the refresh a write whose record rewrite failed, even in the second of its record', function (string $case): void {
+    [$app] = insightWorld();
+    $group = Task::topLevel()->where('project_id', $app->id)->orderByDesc('ended_at')->firstOrFail();
+    $subtask = $group->tasks()->orderBy('id')->firstOrFail();
+    if ($case === 'handoff') {
+        TaskCheck::query()->where('task_id', $subtask->id)->delete();
+    }
+    test()->travel(1)->seconds();
+    Artisan::call('task:insights-refresh');
+    // The record is written in the same second as the write below.
+    app(TaskInsightRecorder::class)->record($group->id);
+    $facts = static fn (): array => TaskInsightRecorder::row((string) DB::table('task_insight_records')->where('task_id', $group->id)->value('facts'));
+    $before = $facts();
+
+    // The write succeeds; its observer does not run, as when the record rewrite fails.
+    Model::withoutEvents(function () use ($case, $group, $subtask): void {
+        match ($case) {
+            'handoff' => TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1,
+                'process_started' => 'x', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('2', 40), 'head_after' => str_repeat('b', 40),
+                'tree_after' => str_repeat('4', 40), 'commit_sha' => str_repeat('b', 40), 'exit_code' => 0, 'output' => '', 'started_at' => now(), 'finished_at' => now()]),
+            'release' => new GatewayRelease()->forceFill(['sha' => str_repeat('f', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 0,
+                'created_at' => CarbonImmutable::parse((string) $group->started_at)->subMinute()])->save(),
+            'tokens' => AgentThread::query()->where('task_group_id', $group->id)->firstOrFail()->update(['tokens' => 5_000]),
+        };
+    });
+    Artisan::call('task:insights-refresh');
+
+    $key = ['handoff' => 'handoff_passed', 'release' => 'release', 'tokens' => 'tokens'][$case];
+    $source = app(TaskInsights::class)->rowsOf(Task::topLevel()->whereKey($group->id))[0];
+    expect($source[$key])->not->toBe($before[$key])
+        ->and($facts()[$key])->toBe($source[$key]);
+})->with(['handoff', 'release', 'tokens']);
