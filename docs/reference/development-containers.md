@@ -3514,7 +3514,7 @@ The copy runs after the release, and nothing in a release or a proof waits for i
 | No proof places on an old seed | While a Node's seed is not the default's current seed, the Node offers no proof places. So one proof never mixes the fleets of two seeds. Earlier copies keep running |
 | A failed target | The step fails with `instance.seed_copy_failed`, and the result names the failed command and its error output for that Node. The Node keeps its recorded seed |
 | An unreachable Node | The phase that could not reach the Node fails that target, and the result holds the SSH error. Later phases do nothing for the target |
-| A Node that goes away during the certificate phase | The phase leaves no certificate and no result. The copy phase fails the target as `The certificate phase ended without a result` and does nothing else for it |
+| A Node that goes away during the certificate or the copy phase | The phase leaves no product and no result. The next phase fails the target as `The certificate phase ended without a result`, or `The copy phase …`, and does nothing else for it. So a check never passes on a seed of the same name that an earlier copy left |
 | One copy at a time | An open seed copy holds the default's [seed hold](#the-seed-hold). A second admission refuses with `operation.target_busy`; the end of the open copy admits the next one |
 | No copy during a retake | While a deployment of the default holds the seed, the admission refuses with `instance.seed_held`; the deployment's end admits the copy again |
 | No listener yet | A CI Node whose converge has not added the listener and the trust fails its target. A `ci-runner` converge of the Node adds them, and its end admits the next copy |

@@ -125,21 +125,36 @@ Deno.test("an unreachable Node fails its phase with the SSH error, in each phase
     }
 });
 
-Deno.test("a target whose certificate phase left no result fails there, and the copy and the check do nothing for it", { ignore: !hasAnsible }, async () => {
-    // The Node went away in the middle of the certificate phase: no certificate and no outcome. Ansible rescues no unreachable host.
-    for (const phase of ["copy", "check"]) {
-        const folder = await fixture([], []);
+Deno.test("a target whose earlier phase left no result fails in that phase, and the later phases do nothing for it", { ignore: !hasAnsible }, async () => {
+    // The Node went away in the middle of a phase: no product and no outcome. Ansible rescues no unreachable host.
+    for (const [phase, lost, files] of [["copy", "certificate", []], ["check", "certificate", []], ["check", "copy", ["certificate-12.pem"]]] as [string, string, string[]][]) {
+        const folder = await fixture([], ["seed-abc"]);
         try {
             await Deno.remove(`${folder}/certificate-12.pem`);
+            for (const file of files) await Deno.writeTextFile(`${folder}/${file}`, certificate);
             const first = await run(folder, ["Pin the two Nodes and address them"], intent("inner-41"), 12, false, [phase]);
             assertEquals(first.code, 0, first.out);
-            assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/target-12.json`)), { status: "failed", failed_phase: "certificate",
-                detail: "The certificate phase ended without a result: the Node was unreachable, or the phase was cut" });
-            // The phase's own play gets no host, as for any target that failed earlier.
+            assertEquals(JSON.parse(await Deno.readTextFile(`${folder}/target-12.json`)), { status: "failed", failed_phase: lost,
+                detail: `The ${lost} phase ended without a result: the Node was unreachable, or the phase was cut` });
+            // The phase's own play gets no host, as for any target that failed earlier: a holder with the seed's name is not checked.
             assertEquals(first.out.includes("Pin the host keys of both Nodes"), false, first.out);
             assertEquals(first.calls, []);
         } finally { await Deno.remove(folder, { recursive: true }); }
     }
+});
+
+Deno.test("a finished copy leaves its mark, and a copy that fails leaves none", { ignore: !hasAnsible }, async () => {
+    const folder = await fixture([], []);
+    try {
+        assertEquals((await run(folder, ["Push the seed from the default's Node"], intent("inner-41"))).code, 0);
+        assertEquals((await Deno.stat(`${folder}/copied-12`)).isFile, true);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+    const other = await fixture(["proof-node-12"], []);
+    try {
+        await Deno.writeTextFile(`${other}/servercerts/proof-node-12.crt`, "another certificate\n");
+        assertEquals((await run(other, ["Push the seed from the default's Node"], intent("inner-41"))).code !== 0, true);
+        assertEquals(await Deno.stat(`${other}/copied-12`).then(() => true, () => false), false);
+    } finally { await Deno.remove(other, { recursive: true }); }
 });
 
 Deno.test("the check passes a holder with the admitted seed snapshot, and the report names every target", { ignore: !hasAnsible }, async () => {

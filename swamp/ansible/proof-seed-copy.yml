@@ -33,22 +33,31 @@
       ansible.builtin.meta: end_play
       when: seed_outcome.stat.exists and 'release' not in ansible_run_tags
     # A phase that loses its Node in the middle of a task ends without an outcome: Ansible runs no rescue for an unreachable host.
-    # The certificate phase leaves the certificate or an outcome. With neither, the target failed there, and the later phases must
-    # not run and report an error of their own.
-    - name: Look for the certificate of the first phase
-      ansible.builtin.stat: { path: "{{ run }}/certificate-{{ target.node_id }}.pem" }
-      register: seed_certificate
-      when: ansible_run_tags | intersect(['copy', 'check']) | length > 0
-    - name: Fail a target whose certificate phase ended without a result
+    # Each phase leaves its product in the run folder: the certificate phase the certificate, the copy phase the file `copied-<id>`.
+    # With neither product nor outcome, the target failed in that phase. The later phases must not run: a copy would report an
+    # error of its own, and a check could pass on a seed of the same name that an earlier copy left.
+    - name: Look for what the earlier phases left
+      ansible.builtin.stat: { path: "{{ run }}/{{ item.file }}" }
+      register: seed_products
+      when: item.before in ansible_run_tags
+      loop:
+        - { phase: certificate, file: "certificate-{{ target.node_id }}.pem", before: copy }
+        - { phase: certificate, file: "certificate-{{ target.node_id }}.pem", before: check }
+        - { phase: copy, file: "copied-{{ target.node_id }}", before: check }
+      loop_control: { label: "{{ item.file }}" }
+    - name: Name the first phase that left nothing
+      ansible.builtin.set_fact:
+        seed_lost: "{{ seed_products.results | selectattr('stat', 'defined') | rejectattr('stat.exists') | map(attribute='item.phase') | first | default('') }}"
+    - name: Fail a target whose earlier phase ended without a result
       ansible.builtin.copy:
-        content: "{{ {'status': 'failed', 'failed_phase': 'certificate',
-          'detail': 'The certificate phase ended without a result: the Node was unreachable, or the phase was cut'} | to_json }}"
+        content: "{{ {'status': 'failed', 'failed_phase': seed_lost,
+          'detail': 'The ' ~ seed_lost ~ ' phase ended without a result: the Node was unreachable, or the phase was cut'} | to_json }}"
         dest: "{{ run }}/target-{{ target.node_id }}.json"
         mode: "0600"
-      when: seed_certificate.stat is defined and not seed_certificate.stat.exists
+      when: seed_lost != ''
     - name: Skip that target
       ansible.builtin.meta: end_play
-      when: seed_certificate.stat is defined and not seed_certificate.stat.exists
+      when: seed_lost != ''
     - name: Pin the host keys of both Nodes
       ansible.builtin.known_hosts:
         path: "{{ run }}/known_hosts"
@@ -233,6 +242,12 @@
                  + (['--device', 'inner-pool,source=' ~ seed_intent.holder_volume] if seed_intent.source.inner_volume is not none else [])
                  + project_args }}
           changed_when: true
+        # The check trusts only a copy of this run that ran to its end.
+        - name: Record the finished copy
+          ansible.builtin.copy: { content: "", dest: "{{ run }}/copied-{{ seed_target.node_id }}", mode: "0600" }
+          delegate_to: localhost
+          become: false
+          vars: *local
       rescue: *failed
 
 - name: Check the holder on the CI Node

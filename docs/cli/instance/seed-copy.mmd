@@ -44,7 +44,7 @@ sequenceDiagram
     %%> On failure:
     %%> - no listener: this target fails; a `ci-runner` converge of the Node adds the listener and the trust
     %%> - the Node is unreachable: this target fails with the SSH error as its detail, in this phase and in each later one; the copy and the check do nothing for a target that failed
-    %%> - the Node goes away in the middle of this phase: the phase leaves no certificate and no result, so the copy step fails the target as `The certificate phase ended without a result` and does nothing else for it
+    %%> - the Node goes away in the middle of this phase: the phase leaves no certificate and no result, so the copy step fails the target as `The certificate phase ended without a result` and does nothing else for it; a copy that ends the same way leaves no `copied-ID` mark, so the check step fails the target as `The copy phase ended without a result` and checks no holder, which may hold a seed of the same name from an earlier copy
   end
   loop each CI Node, one at a time
     SW->>N: Copy the seed<br/>Ansible · tags copy
