@@ -1,6 +1,6 @@
 # Brief examples
 
-Worked examples for [Orbit Tasks](../SKILL.md). Each one is a real group from Project 78, rewritten in the brief shape. The Operation IDs, times and paths are real. Where the original left a choice open, the example picks a value to show the form, and says so.
+Worked examples for [Orbit Tasks](../SKILL.md). Each one is a real group from Project 78, rewritten in the brief shape. The Operation IDs, times and paths are real. Where the original left a choice open, the example fills in a value to show the form, and says so. A writer does not pick such a value: [writing rule 11](../SKILL.md#writing-rules) puts it to the owner as a marked question, and the owner's answer goes into the brief.
 
 ## The two shapes
 
@@ -92,6 +92,7 @@ it five times through the normal wake entry point.
 - Must be real: the sleep, the wake Operation and the app's first answer.
 - May be a stand-in: the test app.
 - If the nested fleet cannot take the slow path, say so and ask.
+- Subtask 1 owns the full proof.
 ```
 
 Subtask 1 of 1: **Find the lost time in the ordinary wake and remove it**
@@ -122,7 +123,7 @@ What to notice:
 - The brief names no fix. The original listed fix ideas: "job dispatch, marker or Caddy wait, a sleep or poll interval".
 - The limit has a clock: from the wake request to `ready_at`. The original said "about 1–2 s".
 - Outcome 4 says what must keep working.
-- The proof lists the cases that would pass by mistake.
+- The proof lists the cases that would pass by mistake, and names the subtask that owns it, also with one subtask.
 
 ## A change with a decided approach, one subtask
 
@@ -167,6 +168,7 @@ converge before and after the change.
 - Cases that would expose a wrong answer: the roles phase skipped because its
   digest did not change; apt lists refreshed within the last hour.
 - Must be real: both converge Operations and the age of the apt lists.
+- Subtask 1 owns the full proof.
 ```
 
 Subtask 1 of 1: **Skip the apt cache refresh for installed packages**
