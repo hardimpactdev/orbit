@@ -23,3 +23,9 @@ it('refuses a Sury pin built for another Ubuntu release', function (string $vers
     expect(fn () => new RecipeLoader()->decode(recipeWithToolVersion('libgd3', $version)))
         ->toThrow(InvalidArgumentException::class, "php.versions.8.5: [libgd3] version [{$version}] is not built for Ubuntu 26.04.");
 })->with(['2.3.3-17+debsuryorg24.04.1+php+2', '2.3.3-17+debsuryorg26.041+php+2', '2.3.3-14+0~20260731.21+ubuntu24.04~1.gbp938f32']);
+
+it('builds PHP 8.4 from the Sury 8.4.28 security release', function (): void {
+    $build = new RecipeLoader()->decode((string) file_get_contents(resource_path('machine-software/recipe.json')))->php('8.4');
+
+    expect($build->phpVersion)->toBe('8.4.28')->and($build->packages)->toContain('php8.4-cli', 'php8.4-fpm', 'php8.4-common');
+});
