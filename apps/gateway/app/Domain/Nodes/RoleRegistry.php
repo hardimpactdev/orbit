@@ -63,7 +63,8 @@ final readonly class RoleRegistry
                 singleton: false,
                 assignableDuringProvisioning: false,
                 mutable: true,
-                relocatable: false,
+                // One Ingress per Cluster: a relocation moves it to another member of the same Cluster.
+                relocatable: true,
                 conflicts: [RoleName::AppDev, RoleName::Database],
             ),
             RoleName::AppDev => new RoleDefinition(

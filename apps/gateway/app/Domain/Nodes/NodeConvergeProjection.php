@@ -112,7 +112,10 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
      * The roles phase of a converge with `ci-runner` writes or removes the seed listener's trust, writes the hold script and prepares the
      * Instance container branch, so its end records the listener by the one rule of {@see ProofSeeds::recordListener()}, and the script and
      * nested hosting by that of {@see ProofCopyHosts::recordConverge()}.
-     * It never opens the listener.
+     * It never opens the listener. A CI Node that is behind the default's seed catches up after any passed converge, so a passed roles
+     * phase admits a seed copy for it, as a `ci-runner` role converge does: a Node whose copy failed is not left to wait for the next
+     * seed (docs/reference/development-containers.md#the-seed-on-each-ci-node). The admission takes only a Node whose record still names
+     * the sender.
      *
      * @param  array<string, mixed>  $intent
      */
@@ -121,8 +124,12 @@ final readonly class NodeConvergeProjection implements DirectOperationProjection
         foreach (is_array($intent['roles'] ?? null) ? $intent['roles'] : [] as $role) {
             $role = ValidatedData::object($role);
             if (($role['role'] ?? null) === RoleName::CiRunner->value) {
-                ProofSeeds::recordListener(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []), $rolesPassed, opens: false);
-                ProofCopyHosts::recordConverge(ValidatedData::integer($operation->node_id), ValidatedData::object($role['runtime'] ?? []), $rolesPassed, sets: false);
+                $converged = ValidatedData::integer($operation->node_id);
+                ProofSeeds::recordListener($converged, ValidatedData::object($role['runtime'] ?? []), $rolesPassed, opens: false);
+                ProofCopyHosts::recordConverge($converged, ValidatedData::object($role['runtime'] ?? []), $rolesPassed, sets: false);
+                if ($rolesPassed) {
+                    DB::afterCommit(static fn (): ?Operation => app(ProofSeeds::class)->admit('node_converge', node: $converged));
+                }
             }
         }
     }

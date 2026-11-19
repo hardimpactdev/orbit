@@ -13,6 +13,9 @@ final readonly class DevelopmentCaddyConfigRenderer
 {
     public const string ORBIT_ROOT_CA_PATH = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt';
 
+    /** The system bundle that update-ca-certificates writes: the public roots and, on Orbit Nodes, the Orbit root. */
+    public const string SYSTEM_ROOTS_PATH = '/etc/ssl/certs/ca-certificates.crt';
+
     public function __construct(
         private string $gatewayOrigin = 'https://gateway.orbit',
     ) {}
@@ -231,10 +234,13 @@ final readonly class DevelopmentCaddyConfigRenderer
                 $site->proxyAddresses(),
                 static fn (string $address): bool => ! str_starts_with($address, 'unix/'),
             );
-            $trust = ! $site->upstreamSystemRoots && ($site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps)
+            // System roots come from the bundle file, which Caddy reads on each load; Go's own pool stays cached for the process,
+            // so it would miss an Orbit root that update-ca-certificates adds after Caddy started.
+            $roots = $site->upstreamSystemRoots ? self::SYSTEM_ROOTS_PATH : $root;
+            $trust = $site->publicListener || $site->preserveForwardedIdentity || $hasRemoteHttps
                 ? <<<CADDY
 
-                        tls_trusted_ca_certs {$root}
+                        tls_trusted_ca_certs {$roots}
                 CADDY
                 : '';
             $pool = count($site->proxyAddresses()) > 1
@@ -421,7 +427,7 @@ final readonly class DevelopmentCaddyConfigRenderer
         return ['dial' => "{$host}:{$port}", 'host' => $host, 'method' => 'GET', 'uri' => '/api/v1/runtime-activations/app-instance/'.$instanceId];
     }
 
-    /** A 2xx activation continues the original request; any other response is returned unchanged to the visitor. */
+    /** A 2xx activation continues the original request where the app handlers follow it; any other response, such as the Gateway's 307 after a wake, is returned unchanged to the visitor. */
     private function activation(int $instanceId, string $host, ?string $matcher = null): string
     {
         $uri = $this->activationTarget($instanceId)['uri'] ?? '';

@@ -57,9 +57,11 @@ final readonly class NativeRoutePublicationInput
     {
         $renderer = app(DevelopmentDnsConfigRenderer::class);
         $records = $renderer->render($pendingNode, $nodeOverrides, $clusterOverrides);
-        $catalog = json_encode(['requesters' => $renderer->registeredRequesters(),
-            ...$renderer->catalog($pendingNode, $nodeOverrides, $clusterOverrides)->toPublished()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+        $answers = $renderer->catalog($pendingNode, $nodeOverrides, $clusterOverrides);
+        $catalog = json_encode(['requesters' => $renderer->registeredRequesters(), ...$answers->toPublished()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
 
-        return ['node_id' => $node->id, 'records' => $records, 'catalog' => $catalog, 'digest' => hash('sha256', $catalog)];
+        // 'retired' is not published: the DNS merge withdraws a live answer that still holds one of these values.
+        return ['node_id' => $node->id, 'records' => $records, 'catalog' => $catalog, 'digest' => hash('sha256', $catalog),
+            'retired' => (object) $renderer->retired($answers, $nodeOverrides, $clusterOverrides)];
     }
 }

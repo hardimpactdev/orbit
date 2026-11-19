@@ -19,8 +19,8 @@ sequenceDiagram
   %%> - `orbit node:role:relocate NODE ROLE`
   %%> - syntax: `<node> <role> [--from=NODE] [--force] [--json]`
   %%> Input:
-  %%> - the target Node and the role: `gateway`, `websocket` or `metrics`
-  %%> - `--from` names the source; without it, the current holder is the source
+  %%> - the target Node and the role: `gateway`, `websocket`, `metrics` or `ingress`
+  %%> - `--from` names the source; without it, the current holder is the source (for `ingress`, the Ingress of the target's Cluster)
   %%> Who can call it:
   %%> - the `orbit` CLI and the MCP tool send the same request
   opt role is swamp
@@ -31,10 +31,15 @@ sequenceDiagram
   Note over GW: Validate, move the role
   %%> Requirements:
   %%> - the calling Node has an access grant to the Gateway Node
-  %%> - the target is active, has recorded SSH management and holds no conflicting role (`node.role_conflict`)
+  %%> - the target is active, has recorded SSH management and holds no conflicting role (`node.role_conflict`); `ingress` never goes to the Gateway Node
+  %%> - for `ingress`, the target is a member of the Cluster whose Ingress moves; the move never changes membership
+  %%> - for `ingress`, the target is not the Router and runs no target of a public Route (`validation.failed`, reason `target_is_router` or `target_serves_public_route`): its public site would replace the private hop before Let's Encrypt issues
+  %%> - for `ingress`, when the source runs a target of a public Route, the Router is the source too (`validation.failed`, reason `source_serves_public_route`): a separate Router would trust only the Orbit certificate while the source still answers with Let's Encrypt
   %%> - the role is relocatable, assigned and `active` (or `failed` or `provisioning` in a retry), and `--from` owns the move
   %%> - consent: `--force`, or the CLI prompt, asked only after these checks pass
   %%> - one add, converge, remove or relocate Operation per target Node (`operation.target_busy`)
+  %%> - for `ingress`, each live public Process Route as at its activation: the Process Node's recorded firewall admits the target (`route.upstream_firewall_mismatch`) and the Process publishes one listener on the address the target selects (`route.upstream_unresolved`), which is the listener the Route recorded (`route.upstream_listener_changed`)
+  %%> - for `ingress`, the Route publication hold on every Node of the Cluster is free (`route.publication_held`); the move keeps it until it ends, so a Route write started meanwhile waits and no captured Caddyfile goes stale
   %%> Builds:
   %%> - for `websocket`, the Reverb `APP_KEY` copied only when the target lacks one; for `metrics`, the role credentials the target lacks, without overwriting any; for `gateway`, the access grants to the `vpn` and `metrics` Nodes
   %%> Result:
@@ -48,6 +53,16 @@ sequenceDiagram
   %%> - the CLI follows the task with `operation:show`
   opt role is metrics
     SW->>N: Apply the Metrics role<br/>child operation-metrics-enable
+  end
+  opt role is ingress
+    SW->>N: Probe the Process backends<br/>ssh exec: curl --head
+    %%> What it does:
+    %%> - the activation probe from the target: an HTTP HEAD request to each public Process listener; any HTTP answer passes, a refused or timed-out connection fails the move
+    SW->>N: Apply the Ingress role<br/>child operation-node-role-add
+    %%> What it does:
+    %%> - the `node:role:add --converge` intent without the Metrics fleet, private DNS or the source's Caddyfile: Caddy and the Orbit root, the target's Caddyfile with every public site (Let's Encrypt, `tls force_automate`), a separate Router's Caddyfile, and the Ingress rules while a public Route is live
+    %%> - the target's sites reach the Router over HTTPS with the system bundle, which holds the Orbit root and the public roots, so the hop works while the source still answers with its Let's Encrypt certificate
+    %%> - public Routes stay public; the source keeps serving until its removal
   end
   opt role is websocket
     SW->>N: Build the Reverb release<br/>Ansible phase: release
@@ -74,8 +89,24 @@ sequenceDiagram
   SW->>N: Publish the Caddy sites<br/>child operation-route-caddy
   %%> Order:
   %%> - the target serves before anything leaves the source; the source's sites are not published again
+  opt role is ingress
+    SW->>N: Probe the Router hop<br/>ssh exec: curl --head https
+    %%> What it does:
+    %%> - for each public app Route, the target asks the Router address its site uses, over HTTPS with the system bundle; any HTTP answer passes, a refused connection or a bad certificate fails the move
+    SW->>N: Check public certs<br/>ssh exec: curl https
+    %%> What it does:
+    %%> - the target asks itself for every public name over HTTPS and verifies the certificate with the system roots
+    %%> Bounds:
+    %%> - curl's own retry: 20 tries, 15 s apart, at most 300 s; Let's Encrypt issues only once public DNS names the target
+    %%> - an answer of 500 or more after the last try fails the move (`Check the certificate answers`)
+    %%> Why:
+    %%> - private DNS switches and the source withdraws only after the target serves every public name
+  end
   SW->>N: Publish the role DNS<br/>child route-dns-publish
-  opt private DNS moved
+  %%> What it does:
+  %%> - writes each DNS Node's records and catalog, the source's too when it is one; for `ingress`, names only the Ingress serves now answer with the target
+  %%> - also withdraws a live answer from the snapshot's `retired` list, such as the Router LAN answer earlier releases gave a public Process name
+  opt websocket or ingress moved
     SW->>SW: Let DNS answers expire<br/>child route-dns-grace
     %%> Why:
     %%> - clients that still hold the old answer keep working until it expires
@@ -84,6 +115,7 @@ sequenceDiagram
   %%> What it does:
   %%> - removes the role's runtime and publications from the source and forgets its settings there; for `gateway` it does not stop Caddy or PHP-FPM, so clients on the old address keep working
   %%> - for `metrics` it keeps the fleet exporters and the `metrics.orbit` name and certificate, which the moved role uses
+  %%> - for `ingress` it rebuilds the source's Caddyfile without the public sites and closes `orbit:ingress-http` and `orbit:ingress-https`; public DNS is the operator's, pointed at the target when the run starts; the grace covers private DNS only
   SW->>N: Check the role<br/>Ansible phase: check
   %%> What it does:
   %%> - the one end check: Reverb answers, the ports, sites and DNS are in place on the target
@@ -95,15 +127,17 @@ sequenceDiagram
     %%> Result:
     %%> - the role is `active` on the target, and the task succeeds
     %%> Next:
-    %%> - relocation does not reconcile Metrics; `follow_up` names the `node:role:add METRICS-NODE metrics --converge` command when a Metrics role exists and `websocket` or `gateway` moved
+    %%> - relocation does not reconcile Metrics; `follow_up` names the `node:role:add METRICS-NODE metrics --converge` command when a Metrics role exists and `websocket`, `gateway` or `ingress` moved
   else a step fails
     SW--xGW: Run failed<br/>error_code, failed step
     Note over GW: Keep the role active
     %%> Result:
     %%> - the role already belongs to the target and stays `active`; a demoted `gateway` role would lock the Gateway out of its own access checks
     %%> - the task fails with the step's own code, and the failed step stays on the Operation: `converge:STEP`, or `remove:Remove from the source` when the source removal failed
+    %%> - for `ingress`, a failed probe, child, Caddy or certificate step, before `Publish the role DNS` ran, gives the role back to the source: the assignment names the source again and stays `active`, and the result has `source_kept: true`; a `--from` retry never does, because an earlier run may have switched private DNS
+    %%> - for `ingress`, a failed source removal keeps the target `active`, so it keeps its public sites; the result has `source_cleanup_failed: true`
     %%> Who serves:
-    %%> - after a target step failure the source still serves, because DNS moves after the target steps; after a source removal failure the target serves
+    %%> - after a target step failure the source still serves, because DNS moves after the target steps and the source keeps its sites; after a source removal failure the target serves
     %%> On the Nodes:
     %%> - finished steps stay; there is no rollback
     %%> Retry:
