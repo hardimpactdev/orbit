@@ -44,7 +44,7 @@ Each deliverable checks one expected outcome. The [tasks reference](../../../doc
 | A reference page that must change | `file` |
 | A real run, a timing, or a live proof | `review` that says what the receipt must show |
 
-Never use a `file` deliverable on a doc page as a stand-in for a real run. A deliverable may name a test file: the file is the check, not the design. An investigation result that a command can print is a `command` deliverable, so the handoff check records its output.
+Never use a `file` deliverable on a doc page as a stand-in for a real run. A deliverable may name a test file: the file is the check, not the design. An investigation result that a command can print also gets a `command` deliverable, so the handoff check records its output. That output is evidence for the `review` deliverable that [writing rule 14](#writing-rules) requires, and does not replace it.
 
 ### Documentation
 
@@ -75,9 +75,10 @@ A brief states the problem and the outcome the group must reach. The implementer
 The title states the outcome. Problem, Expected outcome and Guardrails are always there. Proof is there only when tests cannot show the outcome.
 
 ```markdown
-**Problem:** What is wrong or missing, and why it matters now.
-- A fact.
-  - A detail of that fact.
+**Problem:**
+- What is wrong or missing.
+  - A fact about it.
+- Why it matters now.
 
 **Expected outcome:**
 1. A rule that holds in every case.
@@ -85,14 +86,17 @@ The title states the outcome. Problem, Expected outcome and Guardrails are alway
 **Guardrails:**
 - Decided: a choice that is already made or proven.
 - Must hold: what must never break.
-- Accepted limits: what the reviewer must not block on, and why.
+- Accepted limits: what the reviewer must not block on.
+  - Why it does not block.
 - Out of scope: what the group must not touch.
 
 **Proof:**
-- The entry point and the starting state.
+- The entry point.
+- The starting state.
 - The final observation.
 - The cases that would expose a wrong answer.
-- What must be real, and what may be a stand-in.
+- What must be real.
+- What may be a stand-in.
 - The subtask that owns the full proof.
 ```
 

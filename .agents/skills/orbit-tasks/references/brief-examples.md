@@ -7,9 +7,10 @@ Worked examples for [Orbit Tasks](../SKILL.md). Each one is a real group from Pr
 Group brief. The title states the outcome.
 
 ```markdown
-**Problem:** What is wrong or missing, and why it matters now.
-- A fact.
-  - A detail of that fact.
+**Problem:**
+- What is wrong or missing.
+  - A fact about it.
+- Why it matters now.
 
 **Expected outcome:**
 1. ...
@@ -47,11 +48,12 @@ From group 5944. The limit in outcome 1 and the margin in outcome 2 are values c
 Title: **A sleeping Instance without a restore plan wakes fast, and the Operation accounts for the time**
 
 ```markdown
-**Problem:** Waking sleeping fixture 2120 took 9.3 s (Op 29036,
-22:42:14–22:42:25).
+**Problem:**
+- Waking sleeping fixture 2120 took 9.3 s (Op 29036, 22:42:14–22:42:25).
 - Wakes took about 1–3 s before.
 - Slow: Op 29036, Instance 2120.
-  - `restore_mode` `ordinary`, `prepared_restore` `skipped` / `no_plan`.
+  - `restore_mode` was `ordinary`.
+  - `prepared_restore` was `skipped` / `no_plan`.
   - It ran as a Swamp job.
   - The step "Wake the container" took 9.46 s (22:42:14.794–22:42:24.253).
   - `resume_seconds` was 0.017.
@@ -59,7 +61,8 @@ Title: **A sleeping Instance without a restore plan wakes fast, and the Operatio
   - About 9 s of the step is not accounted for.
   - `ready_at` was 22:42:22.67, 8 s after the step started.
 - Fast: Op 28970, Instance 1898, 21:55:58.
-  - `restore_mode` `prepared`, `prepared_restore` `complete`.
+  - `restore_mode` was `prepared`.
+  - `prepared_restore` was `complete`.
   - It ran inline with no Swamp steps.
   - Trigger 0.28 s.
   - Confirm 2.3 s.
@@ -91,8 +94,9 @@ Title: **A sleeping Instance without a restore plan wakes fast, and the Operatio
   - A visitor would get an error page.
 - Out of scope: a new design for prepared restore.
 
-**Proof:** In this copy's nested fleet, put a test Instance to sleep and wake
-it five times through the normal wake entry point.
+**Proof:**
+- In this copy's nested fleet, put a test Instance to sleep.
+- Wake it five times through the normal wake entry point.
 - Record for each wake:
   - the Operation ID;
   - `restore_mode`;
@@ -103,7 +107,10 @@ it five times through the normal wake entry point.
   - a prepared wake measured in place of an ordinary one;
   - time that moved to a step after `ready_at`;
   - ready reported before the app answers.
-- Must be real: the sleep, the wake Operation and the app's first answer.
+- Must be real:
+  - the sleep;
+  - the wake Operation;
+  - the app's first answer.
 - May be a stand-in: the test app.
 - If the nested fleet cannot take the slow path, say so and ask.
 - Ask about a cause only when it makes an expected outcome wrong.
@@ -148,9 +155,10 @@ From group 5971.
 Title: **Converge runs no apt cache refresh when the wanted packages are installed**
 
 ```markdown
-**Problem:** In the refresh of Instance 2454 after release 2162 (Op 29505),
-the roles phase spent most of its time in apt tasks with `update_cache: true`
-and `cache_valid_time: 3600`.
+**Problem:**
+- In the refresh of Instance 2454 after release 2162 (Op 29505), the roles
+  phase spent most of its time in apt tasks with `update_cache: true` and
+  `cache_valid_time: 3600`.
 - Nothing was installed.
 - nested-app-prod: 134 s in the Squid task.
   - Squid was installed already.
@@ -159,8 +167,9 @@ and `cache_valid_time: 3600`.
   - 24 s for `btrfs-progs` (`swamp/ansible/tasks/instance-fleet-node.yml`).
 - The apt lists in the nested base are hours old.
   - So each roles run does a full apt update through two Squids.
-- Since #4060 the Squid task reads the package state first and skips apt
-  (`swamp/ansible/tasks/instance-egress.yml`).
+- Since #4060 the Squid task (`swamp/ansible/tasks/instance-egress.yml`):
+  - reads the package state first;
+  - skips apt when the package is installed.
 - The `btrfs-progs` task still refreshes.
 - Other converge plays are not checked yet.
 
@@ -184,16 +193,22 @@ and `cache_valid_time: 3600`.
   - Package pins.
   - The update policy.
   - The proxy setup.
-  - Another bug you find: report it and commit no fix.
+  - Another bug you find:
+    - Report it.
+    - Commit no fix.
     - If it blocks the proof, ask.
 
-**Proof:** On a nested Node whose apt lists are older than one hour, run the
-converge before and after the change.
+**Proof:**
+- Use a nested Node whose apt lists are older than one hour.
+- Run the converge before the change.
+- Run the converge after the change.
 - Record the roles phase seconds from both Operation results.
 - Cases that would expose a wrong answer:
   - the roles phase skipped because its digest did not change;
   - apt lists refreshed within the last hour.
-- Must be real: both converge Operations and the age of the apt lists.
+- Must be real:
+  - both converge Operations;
+  - the age of the apt lists.
 - Subtask 1 owns the full proof.
 ```
 
@@ -230,8 +245,9 @@ From group 6017, as the owner corrected it. The paths and the generator are real
 Title: **The project guidance files hold only text that the repository maintains**
 
 ```markdown
-**Problem:** `composer guidance:update` in `apps/cli` and `apps/gateway` runs
-Laravel Boost.
+**Problem:**
+- `composer guidance:update` in `apps/cli` and `apps/gateway` runs Laravel
+  Boost.
 - Boost writes a `<laravel-boost-guidelines>` block into each project's
   `AGENTS.md` (`"guidelines": true` in `boost.json`).
 - Agents read that block on every turn.
@@ -241,7 +257,9 @@ Laravel Boost.
 1. `apps/cli/AGENTS.md` and `apps/gateway/AGENTS.md` hold no generated
    guideline block.
 2. Nothing in either project writes guideline text into an `AGENTS.md`.
-3. The skills that Boost installs and its MCP server work as before.
+3. What Boost provides besides the block works as before:
+   - the skills that Boost installs;
+   - its MCP server.
 
 **Guardrails:**
 - Decided: the result comes from the removal.
@@ -293,11 +311,12 @@ From group 5915. The line in angle brackets shows where a fact from another repo
 Title: **Task copies run their turns through the Conn orchestration RPC with a Gateway-issued grant**
 
 ```markdown
-**Problem:** Swamp drives a task copy's turns through the CLI today.
-- It parses CLI output.
-- It finds the thread by its title.
-- It opens short-lived CLI sessions.
-- It uses a WebSocket helper made for tasks.
+**Problem:**
+- Swamp drives a task copy's turns through the CLI today.
+  - It parses CLI output.
+  - It finds the thread by its title.
+  - It opens short-lived CLI sessions.
+  - It uses a WebSocket helper made for tasks.
 - The agreed replacement is one supported Conn Server API.
 - Orbit's contract is merged:
   - `docs/reference/development-containers.md`, "Task-copy RPC (target)" and
@@ -341,21 +360,26 @@ Title: **Task copies run their turns through the Conn orchestration RPC with a G
 
 **Guardrails:**
 - Decided: the two contracts named above.
-  - If Orbit's contract and Conn's shape differ, align both to one shape.
-  - Record that decision in `docs/reference/development-containers.md`.
+  - If Orbit's contract and Conn's shape differ:
+    - Align both to one shape.
+    - Record that decision in `docs/reference/development-containers.md`.
 - Accepted limits: stock T3 targets keep the old path.
   - State which parts remain and why.
 - Out of scope: grant support in stock T3.
 
-**Proof:** In one task copy, against the Rust Conn server that the copy runs.
+**Proof:**
+- Run it in one task copy, against the Rust Conn server that the copy runs.
 - Must be real:
   - the Gateway-issued grant;
   - the Rust Conn server;
   - the RPC calls;
   - the revocation.
 - May be a stand-in: a minimal prompt for the turn.
-- Keep receipts under `.orbit-artifacts/`: thread, run and command IDs with
-  timings.
+- Keep receipts under `.orbit-artifacts/`:
+  - thread IDs;
+  - run IDs;
+  - command IDs;
+  - the timing of each.
 - Subtask 3 owns the full proof.
 ```
 
