@@ -7,7 +7,7 @@ namespace App\Console\Commands;
 use App\Infrastructure\Engine\EngineBus;
 use Illuminate\Console\Command;
 
-/** Makes the machine bus's streams; idempotent. The gateway role converge runs it after it starts `nats-server` (ADR 0271). */
+/** Makes the machine bus's streams; idempotent. The consumer process makes them too when it starts; this command serves an operator (ADR 0271). */
 final class EngineSetupCommand extends Command
 {
     protected $signature = 'orbit:engine-setup';

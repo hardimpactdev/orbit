@@ -218,10 +218,15 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         if ($selector === null || ! $direct->usesNativeTerminal($operation)) {
             return $expire->execute($operation);
         }
-        // An engine Operation has no Swamp run to read (ADR 0271): the engine ends it, and only its run budget is enforced here.
+        // An engine Operation has no Swamp run to read (ADR 0271): the engine ends it. Here its run budget is enforced, and an
+        // Operation whose start or order was lost before its publish gets a nudge.
         if (Engine::owns($operation)) {
             $deadline = OperationRunBudgets::deadline($operation);
-            $this->expireAtDeadline($operation, $deadline !== null && ! $deadline->isFuture(), $expire);
+            $expired = $deadline !== null && ! $deadline->isFuture();
+            $this->expireAtDeadline($operation, $expired, $expire);
+            if (! $expired) {
+                app(Engine::class)->nudgeIfStalled($operation);
+            }
 
             return $operation->refresh();
         }

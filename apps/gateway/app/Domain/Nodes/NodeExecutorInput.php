@@ -34,14 +34,23 @@ final readonly class NodeExecutorInput
      */
     public const array RoleFamilies = [RoleName::AppDev->value => ['firewall', 'power', 'proof']];
 
+    /**
+     * The first agent delivery whose executor knows each newer family. An older executor refuses to start on an unknown family,
+     * so the converge enables a family only once the pinned delivery has it.
+     *
+     * @var array<string, string>
+     */
+    public const array FamilySince = ['firewall' => '0.16.0'];
+
     /** @return array<string,mixed>|null */
     public static function for(Node $node): ?array
     {
         $roles = array_values($node->roles()->get()->map(static fn (NodeRole $assignment): RoleName => $assignment->role)->all());
         $keys = config('orbit.executor.public_keys');
 
+        $delivery = app(AgentDelivery::class);
         $intent = self::intent((string) $node->id, $node->user, 'executor-'.AgentDelivery::key($node), $roles,
-            app(AgentDelivery::class)->artifacts(), is_array($keys) ? array_values(array_filter($keys, is_string(...))) : []);
+            $delivery->artifacts(), is_array($keys) ? array_values(array_filter($keys, is_string(...))) : [], $delivery->version());
 
         // The machine bus (ADR 0271): the credentials travel as the converge's private `executor_bus` copy; the intent says only whether
         // they exist. Without the engine's keys the file is removed, and the executor serves its socket alone.
@@ -52,15 +61,17 @@ final readonly class NodeExecutorInput
      * @param  list<RoleName>  $roles
      * @param  array<string, array{sha256: string, path?: string, url?: string}>  $artifacts
      * @param  list<string>  $keys
+     * @param  string  $version  The Cargo version of the pinned agent delivery.
      * @return array<string,mixed>|null
      */
-    public static function intent(string $nodeId, string $user, string $artifactKey, array $roles, array $artifacts, array $keys): ?array
+    public static function intent(string $nodeId, string $user, string $artifactKey, array $roles, array $artifacts, array $keys, string $version): ?array
     {
         $families = [];
         foreach ($roles as $role) {
             array_push($families, ...(self::RoleFamilies[$role->value] ?? []));
         }
-        $families = array_values(array_unique($families));
+        $families = array_values(array_filter(array_unique($families),
+            static fn (string $family): bool => version_compare($version, self::FamilySince[$family] ?? '0.0.0', '>=')));
         sort($families);
         if ($families === []) {
             return null;

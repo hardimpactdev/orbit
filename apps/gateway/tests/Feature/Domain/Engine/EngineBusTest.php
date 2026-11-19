@@ -50,3 +50,22 @@ it('replaces a connection that sat idle and no longer answers a ping', function 
     $this->travel(11)->seconds();
     expect($bus->client())->not->toBe($first)->and($made)->toHaveCount(2);
 });
+
+it('takes a receipt\'s Node from its subject and ignores the Node its body names', function (): void {
+    $payload = new Payload('{"node": 9, "line": {"operation": "5:ensure-0", "status": "applied"}}');
+    $payload->subject = 'orbit.receipts.3';
+
+    expect(EngineBus::receipt($payload))->toBe(['node' => 3, 'line' => ['operation' => '5:ensure-0', 'status' => 'applied']]);
+});
+
+it('terminates a message it cannot read, so it never comes back', function (): void {
+    $unreadable = new Payload('not json');
+    $unreadable->subject = 'orbit.receipts.3';
+    $elsewhere = new Payload('{"line": {}}');
+    $elsewhere->subject = 'orbit.receipts.x';
+    $handler = EngineBus::settle(static fn (Payload $payload) => EngineBus::receipt($payload));
+
+    expect($handler($unreadable))->toBe(EngineBus::Term)
+        ->and($handler($elsewhere))->toBe(EngineBus::Term);
+});
+

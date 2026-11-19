@@ -24,6 +24,9 @@ pub const BLOBS_PATH: &str = "/var/lib/orbit/executor/blobs";
 const PROGRESS_EVERY: Duration = Duration::from_secs(2);
 const RECONNECT_AFTER: Duration = Duration::from_secs(1);
 const CONSUMER_WAIT: Duration = Duration::from_secs(5);
+/// The capability report is refreshed this often; the Gateway's `NODES` bucket forgets a report after five minutes, so a
+/// stopped executor stops receiving kinds.
+const REPORT_EVERY: Duration = Duration::from_secs(60);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -86,9 +89,13 @@ async fn consume<R: Run + 'static>(
     executor: &Arc<Executor<R>>,
     log: Log,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let client = async_nats::ConnectOptions::with_credentials(&config.credentials)?.connect(config.url.as_str()).await?;
-    let context = jetstream::new(client.clone());
     let node = settings.node.as_str().to_owned();
+    // The Node's NATS user may subscribe only to its own inbox prefix, so it never sees another Node's replies.
+    let client = async_nats::ConnectOptions::with_credentials(&config.credentials)?
+        .custom_inbox_prefix(format!("_INBOX.node-{node}"))
+        .connect(config.url.as_str())
+        .await?;
+    let context = jetstream::new(client.clone());
     // The report comes first: the Gateway starts a kind on the state machine only for a Node that reported, and makes the
     // Node's consumer with its first order. Until then the consumer is missing, and the bus waits for it quietly.
     report_actions(&context, settings, &node).await?;
@@ -108,12 +115,43 @@ async fn consume<R: Run + 'static>(
     };
     let width = slots();
     log(&format!("nats bus joined as node-{node} with {width} slots"));
+    let reporter = tokio::spawn({
+        let (context, settings, node) = (context.clone(), Arc::clone(settings), node.clone());
+        async move {
+            let mut every = tokio::time::interval(REPORT_EVERY);
+            every.tick().await;
+            loop {
+                every.tick().await;
+                if let Err(error) = report_actions(&context, &settings, &node).await {
+                    log(&format!("capability report failed: {error}"));
+                }
+            }
+        }
+    });
+    let job = Job { client, context, node };
+    let result = pull(&consumer, &job, width, settings, executor, log).await;
+    reporter.abort();
+    result
+}
+
+/// Pulls orders while a slot is free: an order is taken only when it can start, so a busy Node never lets a pulled order
+/// wait past its acknowledgement wait.
+async fn pull<R: Run + 'static>(
+    consumer: &jetstream::consumer::PullConsumer,
+    job: &Job,
+    width: usize,
+    settings: &Arc<Settings>,
+    executor: &Arc<Executor<R>>,
+    log: Log,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let permits = Arc::new(tokio::sync::Semaphore::new(width));
-    let mut messages = consumer.stream().max_messages_per_batch(width).messages().await?;
-    while let Some(message) = messages.next().await {
-        let message = message?;
+    // One message per pull: at most one order waits in the client for a free slot.
+    let mut messages = consumer.stream().max_messages_per_batch(1).messages().await?;
+    loop {
         let permit = Arc::clone(&permits).acquire_owned().await?;
-        let job = Job { client: client.clone(), context: context.clone(), node: node.clone() };
+        let Some(message) = messages.next().await else { break };
+        let message = message?;
+        let job = job.clone();
         let (settings, executor) = (Arc::clone(settings), Arc::clone(executor));
         tokio::spawn(async move {
             job.handle(message, &settings, &executor, log).await;
@@ -147,6 +185,7 @@ async fn report_actions(
 }
 
 /// What one order needs from the bus.
+#[derive(Clone)]
 struct Job {
     client: async_nats::Client,
     context: jetstream::Context,
@@ -157,7 +196,14 @@ impl Job {
     async fn handle<R: Run + 'static>(&self, message: jetstream::Message, settings: &Arc<Settings>, executor: &Arc<Executor<R>>, log: Log) {
         let now = server::now_ms();
         let wire = message.payload.to_vec();
-        let (line, dedup) = match server::verify(&wire, settings, executor, now, log, "nats") {
+        // The check may ask Incus whether the target exists: it runs on a blocking thread.
+        let checked = tokio::task::spawn_blocking({
+            let (wire, settings, executor) = (wire.clone(), Arc::clone(settings), Arc::clone(executor));
+            move || server::verify(&wire, &settings, &executor, now, log, "nats")
+        })
+        .await
+        .unwrap_or_else(|_| Err(serde_json::json!({"status": "refused", "reason": "executor.panicked", "node_clock_ms": now})));
+        let (line, dedup) = match checked {
             Err(refused) => (with_unverified_identity(refused, &wire), format!("refused-{}", short_digest(&wire))),
             Ok(verified) => {
                 let dedup = verified.nonce().to_string();
@@ -168,7 +214,13 @@ impl Job {
                             "action": verified.action(), "target": verified.target(), "node_clock_ms": now});
                         (line, dedup)
                     }
-                    Ok(()) => (self.run(&message, executor, verified, now, log).await, dedup),
+                    Ok(()) => {
+                        let line = self.run(&message, executor, verified, now, log).await;
+                        // Only the order's own result uses the nonce as its message id. A refusal, such as the replay of a
+                        // redelivered order, must never take that id, or JetStream would drop the real result as a duplicate.
+                        let dedup = if line["status"] == "refused" { format!("refused-{dedup}") } else { dedup };
+                        (line, dedup)
+                    }
                 }
             }
         };
@@ -243,7 +295,11 @@ impl Job {
             if hex_digest(&reply.payload) != digest {
                 return Err("blob.hash_mismatch");
             }
-            store_blob(&path, &reply.payload).map_err(|_| "blob.cache_failed")?;
+            let payload = reply.payload.clone();
+            tokio::task::spawn_blocking(move || store_blob(&path, &payload))
+                .await
+                .map_err(|_| "blob.cache_failed")?
+                .map_err(|_| "blob.cache_failed")?;
         }
         Ok(())
     }

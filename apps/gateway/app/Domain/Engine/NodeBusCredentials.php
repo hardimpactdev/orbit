@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Engine;
 
 use App\Domain\Nodes\RoleName;
+use App\Infrastructure\Engine\GatewayBus;
 use App\Infrastructure\Engine\NatsCredentials;
 use App\Models\Node;
 
@@ -21,18 +22,32 @@ final readonly class NodeBusCredentials
     /** The settings file's content, or null when the Gateway has no engine keys or no WireGuard address. */
     public static function for(Node $node): ?string
     {
-        $account = config('orbit.engine.nats.account_seed');
+        if (! GatewayBus::enabled()) {
+            return null;
+        }
+        $account = (string) config('orbit.engine.nats.account_seed');
         $gateway = Node::query()->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::Gateway->value))->value('wireguard_ip');
-        if (! is_string($account) || $account === '' || ! is_string($gateway) || $gateway === '') {
+        if (! is_string($gateway) || $gateway === '') {
             return null;
         }
         $port = config('orbit.engine.nats.port');
         $name = 'node-'.$node->id;
         $seed = NatsCredentials::userSeed($account, $name);
-        $jwt = NatsCredentials::userJwt($account, NatsCredentials::publicKey($seed), $name, self::publish($node->id), ['_INBOX.>']);
+        $jwt = NatsCredentials::userJwt($account, NatsCredentials::publicKey($seed), $name, self::publish($node->id), self::subscribe($node->id));
 
         return json_encode(['url' => 'nats://'.$gateway.':'.(is_int($port) ? $port : 4222), 'credentials' => NatsCredentials::creds($jwt, $seed)],
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+    }
+
+    /**
+     * Only the Node's own inbox prefix: replies to its own requests and its order deliveries. Another Node's replies, such as its
+     * content, never reach it.
+     *
+     * @return list<string>
+     */
+    public static function subscribe(int $node): array
+    {
+        return ["_INBOX.node-{$node}.>"];
     }
 
     /**

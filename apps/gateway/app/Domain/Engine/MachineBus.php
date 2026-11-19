@@ -18,6 +18,12 @@ interface MachineBus
 
     public function scheduleDeadline(int $operation, string $step, int $sends, int $atMs): void;
 
+    /**
+     * Delivers an immediate deadline event to the engine, once per `$id`: a cancel, or the reconciler's nudge of an Operation
+     * whose start or order may have been lost.
+     */
+    public function nudge(int $operation, string $id): void;
+
     /** @return array{sha256: string} */
     public function putContent(int $node, string $content): array;
 

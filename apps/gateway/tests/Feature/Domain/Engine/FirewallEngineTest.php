@@ -35,6 +35,9 @@ final class FakeMachineBus implements MachineBus
     /** @var list<string> */
     public array $actions = ['ufw.ensure_rule'];
 
+    /** @var list<string> */
+    public array $nudges = [];
+
     public int $failNext = 0;
 
     public function publishOrder(int $node, SignedExecutorOrder $order): void
@@ -54,6 +57,11 @@ final class FakeMachineBus implements MachineBus
     public function scheduleDeadline(int $operation, string $step, int $sends, int $atMs): void
     {
         $this->deadlines[] = ['operation' => $operation, 'step' => $step, 'sends' => $sends, 'at' => $atMs];
+    }
+
+    public function nudge(int $operation, string $id): void
+    {
+        $this->nudges[] = "{$id}-{$operation}";
     }
 
     public function putContent(int $node, string $content): array
@@ -250,3 +258,71 @@ it('records a remove that found no line as already removed', function (): void {
     expect($remove->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($remove->result)->toBe(['backend' => 'absent', 'skipped' => 'firewall.rule_absent']);
 });
+
+it('keeps what happened on the Node when a cancel came after the step ended', function (): void {
+    $operation = ($this->allow)();
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $operation->forceFill(['cancel_requested_at' => now()])->save();
+    ($this->receipt)($operation, ['status' => 'applied', 'changes' => 1]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and(FirewallRule::query()->sole()->status)->toBe(LifecycleStatus::Active);
+});
+
+it('records the first result that a replayed order\'s refusal carries', function (): void {
+    $operation = ($this->allow)();
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    ($this->receipt)($operation, ['status' => 'refused', 'reason' => 'replayed_nonce', 'first' => ['status' => 'applied', 'changes' => 1]]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('records the end again when its projection failed the first time', function (): void {
+    $operation = ($this->allow)();
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    $rule = FirewallRule::query()->sole();
+    $attributes = $rule->getAttributes();
+    $rule->delete();
+
+    expect(fn () => ($this->receipt)($operation, ['status' => 'applied', 'changes' => 1]))->toThrow(Throwable::class);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+
+    FirewallRule::query()->insert($attributes);
+    app(Engine::class)->onEvent('orbit.engine.deadline', ['operation' => $operation->id, 'step' => 'ensure-0']);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('fails a step whose order cannot be made instead of trying it again', function (): void {
+    $operation = ($this->allow)();
+    $input = $operation->input;
+    $input['firewall']['rule']['port'] = null;
+    $operation->forceFill(['input' => $input])->save();
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+
+    expect($this->bus->orders)->toBe([])
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('engine.order_invalid');
+});
+
+it('nudges an Operation whose start was lost, and leaves one that waits on its own deadline', function (): void {
+    $operation = ($this->allow)();
+    app(Engine::class)->nudgeIfStalled($operation);
+    expect($this->bus->nudges)->toHaveCount(1);
+
+    app(Engine::class)->onEvent('orbit.engine.start', ['operation' => $operation->id]);
+    app(Engine::class)->nudgeIfStalled($operation);
+    expect($this->bus->nudges)->toHaveCount(1);
+
+    $this->travel(41)->seconds();
+    app(Engine::class)->nudgeIfStalled($operation);
+    expect($this->bus->nudges)->toHaveCount(2);
+});
+
+it('cancels through a nudge of its own, never the start event\'s message id', function (): void {
+    $operation = ($this->allow)();
+    app(Engine::class)->cancel($operation);
+
+    expect($this->bus->nudges)->toHaveCount(1)
+        ->and($this->bus->nudges[0])->toStartWith('cancel-');
+});
+

@@ -32,6 +32,8 @@ final class EngineBus implements MachineBus
 
     public const string Nak = '-NAK {"delay": 1000000000}';
 
+    public const string Term = '+TERM';
+
     /** Seconds a connection may sit unused before its next use checks it first. */
     private const int IdleCheckAfter = 10;
 
@@ -96,8 +98,10 @@ final class EngineBus implements MachineBus
         $this->stream('KV_CONTENT', [...$limits, 'subjects' => ['$KV.CONTENT.>'], 'retention' => 'limits', 'max_age' => 3600 * self::Second,
             'max_msgs_per_subject' => 1, 'max_msg_size' => 1024 * 1024, 'discard' => 'old', 'allow_direct' => true, 'allow_rollup_hdrs' => true]);
         // What each Node's executor reports when it joins: its primitives. Kept until the Node reports again.
+        // A report lasts five minutes: executors refresh it every minute, so a stopped executor stops receiving kinds. No rollup:
+        // a Node's rollup header would purge every Node's report.
         $this->stream('KV_NODES', [...$limits, 'subjects' => ['$KV.NODES.>'], 'retention' => 'limits', 'max_msgs_per_subject' => 1,
-            'discard' => 'old', 'allow_direct' => true, 'allow_rollup_hdrs' => true]);
+            'max_age' => 300 * self::Second, 'discard' => 'old', 'allow_direct' => true, 'allow_rollup_hdrs' => false]);
     }
 
     /** A Node's durable order consumer, made once per process. */
@@ -123,6 +127,12 @@ final class EngineBus implements MachineBus
     {
         $this->publish('ENGINE', 'orbit.engine.start', json_encode(['operation' => $operation], JSON_THROW_ON_ERROR),
             ['Nats-Msg-Id' => "start-{$operation}"]);
+    }
+
+    public function nudge(int $operation, string $id): void
+    {
+        $this->publish('ENGINE', 'orbit.engine.deadline', json_encode(['operation' => $operation], JSON_THROW_ON_ERROR),
+            ['Nats-Msg-Id' => "{$id}-{$operation}"]);
     }
 
     /** A deadline that JetStream delivers to the engine at `$atMs`; no Gateway process polls for it. */
@@ -182,7 +192,7 @@ final class EngineBus implements MachineBus
             'deliver_subject' => self::EventsDeliver, 'ack_policy' => 'explicit', 'ack_wait' => 30 * self::Second, 'max_deliver' => -1,
             'deliver_policy' => 'new']);
         $subscriber = self::connect();
-        $subscriber->subscribe(self::ReceiptsDeliver, self::settle(static fn (Payload $payload) => $receipt(self::decode($payload))));
+        $subscriber->subscribe(self::ReceiptsDeliver, self::settle(static fn (Payload $payload) => $receipt(self::receipt($payload))));
         $subscriber->subscribe(self::EventsDeliver, self::settle(static fn (Payload $payload) => $event((string) $payload->subject, self::decode($payload))));
         while (true) {
             $subscriber->process(1);
@@ -191,7 +201,8 @@ final class EngineBus implements MachineBus
 
     /**
      * A message handler that returns its verdict: the client sends the return value as the one reply on the message's
-     * acknowledgement subject. Work that throws is negatively acknowledged and comes back after a second.
+     * acknowledgement subject. Work that throws is negatively acknowledged and comes back after a second; a message that
+     * cannot be read is terminated, so it never comes back.
      *
      * @param  Closure(Payload): void  $work
      * @return Closure(Payload): string
@@ -201,6 +212,10 @@ final class EngineBus implements MachineBus
         return static function (Payload $payload) use ($work): string {
             try {
                 $work($payload);
+            } catch (MalformedMessage $exception) {
+                report($exception);
+
+                return self::Term; // It would fail the same way every time.
             } catch (Throwable $exception) {
                 report($exception);
 
@@ -211,10 +226,34 @@ final class EngineBus implements MachineBus
         };
     }
 
+    /**
+     * A receipt as the engine reads it. The Node is the one in the subject, `orbit.receipts.<node>`, which only that Node's NATS
+     * user may publish on; a `node` in the body is ignored, so no Node can answer for another.
+     *
+     * @return array{node: int, line: array<string, mixed>}
+     */
+    public static function receipt(Payload $payload): array
+    {
+        if (preg_match('/\Aorbit\.receipts\.([1-9][0-9]{0,9})\z/D', (string) $payload->subject, $match) !== 1) {
+            throw new MalformedMessage('engine.receipt_subject_invalid');
+        }
+        $line = self::decode($payload)['line'] ?? null;
+        if (! is_array($line)) {
+            throw new MalformedMessage('engine.receipt_invalid');
+        }
+
+        return ['node' => (int) $match[1], 'line' => ValidatedData::object($line)];
+    }
+
     /** @return array<string, mixed> */
     private static function decode(Payload $payload): array
     {
-        return ValidatedData::object(json_decode($payload->body, true, flags: JSON_THROW_ON_ERROR));
+        $value = json_decode($payload->body, true);
+        if (! is_array($value)) {
+            throw new MalformedMessage('engine.message_invalid');
+        }
+
+        return ValidatedData::object($value);
     }
 
     /** @param array<string, string> $headers */

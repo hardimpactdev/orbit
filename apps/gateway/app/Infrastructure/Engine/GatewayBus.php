@@ -41,7 +41,6 @@ final readonly class GatewayBus
             ."\n  {$systemKey}: ".NatsCredentials::accountJwt($operator, $system, 'SYS', false)."\n}\n";
     }
 
-    /** The server's unit. It names the configuration's digest, so a changed configuration restarts the server. */
     /** The Gateway runs the machine bus only once it holds all three keys (`orbit:engine-keys`). */
     public static function enabled(): bool
     {
@@ -55,6 +54,7 @@ final readonly class GatewayBus
         return true;
     }
 
+    /** The server's unit. It names the configuration's digest, so a changed configuration restarts the server. */
     public static function serverUnit(string $config): string
     {
         return "[Unit]\nDescription=NATS JetStream: the Orbit machine bus (ADR 0271)\nAfter=network-online.target\nWants=network-online.target\n"

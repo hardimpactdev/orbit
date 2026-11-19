@@ -22,6 +22,9 @@ use Throwable;
  */
 final readonly class Engine
 {
+    /** How long past its re-send time a sent step waits before the reconciler nudges it: its own deadline comes first. */
+    private const int NudgeGraceMs = 30_000;
+
     public function __construct(private MachineBus $bus, private EngineKinds $kinds, private OperationStore $operations) {}
 
     /**
@@ -86,10 +89,38 @@ final readonly class Engine
         $this->advance($operationId);
     }
 
-    /** Stops sending steps: the Operation ends as cancelled at its next transition. */
+    /**
+     * Stops sending steps: the next transition sees `cancel_requested_at` and ends the run. A bus that is down only delays that
+     * transition to the next receipt, deadline or nudge; the cancel itself is recorded already.
+     */
     public function cancel(Operation $operation): void
     {
-        $this->bus->publishStart($operation->id); // The next transition sees `cancel_requested_at` and ends the run.
+        try {
+            $this->bus->nudge($operation->id, 'cancel-'.self::nowMs());
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    /**
+     * The reconciler's recovery for a start or an order lost between a commit and its publish: an unfinished Operation with a
+     * pending step, or a sent step well past its re-send time, gets one deadline event per minute.
+     */
+    public function nudgeIfStalled(Operation $operation): void
+    {
+        $now = self::nowMs();
+        $stalled = OperationEngineStep::query()->where('operation_id', $operation->id)
+            ->where(static fn ($query) => $query->where('status', 'pending')
+                ->orWhere(static fn ($sent) => $sent->where('status', 'sent')->where('resend_at_ms', '<', $now - self::NudgeGraceMs)))
+            ->exists();
+        if (! $stalled) {
+            return;
+        }
+        try {
+            $this->bus->nudge($operation->id, 'nudge-'.intdiv($now, 60_000));
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     public static function owns(Operation $operation): bool
@@ -121,6 +152,12 @@ final readonly class Engine
         }
         $status = self::text($line['status'] ?? null);
         $reason = self::text($line['reason'] ?? null);
+        // A redelivered order's replay carries the first order's result once it exists: that result is the step's.
+        if ($status === 'refused' && $reason === 'replayed_nonce' && is_array($line['first'] ?? null)) {
+            self::record($step, ValidatedData::object($line['first']));
+
+            return;
+        }
         match (true) {
             in_array($status, ['done', 'applied', 'output'], true) => $step->update(['status' => 'done', 'done_ms' => self::nowMs(),
                 'output' => match ($status) {
@@ -149,9 +186,14 @@ final readonly class Engine
         $end = null;
         $operation = DB::transaction(function () use ($operationId, $deadline, &$sends, &$locals, &$end): ?Operation {
             $operation = Operation::query()->whereKey($operationId)->lockForUpdate()->first();
-            if ($operation === null || ! self::owns($operation) || $operation->status->terminal()
-                || (ValidatedData::object($operation->state['engine'] ?? [])['finished_ms'] ?? null) !== null) {
+            if ($operation === null || ! self::owns($operation) || $operation->status->terminal()) {
                 return null;
+            }
+            // The run ended but its projection did not record it: the event came back, so record it again.
+            if ((ValidatedData::object($operation->state['engine'] ?? [])['finished_ms'] ?? null) !== null) {
+                $end = 'recorded';
+
+                return $operation;
             }
             $now = self::nowMs();
             $steps = self::steps($operationId, lock: true);
@@ -171,10 +213,11 @@ final readonly class Engine
                 $step->node_id === 0 ? $locals[] = $step->name : $sends[] = $step->name;
             }
             $statuses = array_map(static fn (OperationEngineStep $step): string => $step->status, $steps);
+            // What happened on the Nodes comes first: a cancel that came after every step ended does not hide its result.
             $end = match (true) {
-                $operation->cancel_requested_at !== null => 'cancelled',
                 in_array('failed', $statuses, true) => 'failed',
                 array_all($statuses, static fn (string $status): bool => $status === 'done') => 'succeeded',
+                $operation->cancel_requested_at !== null => 'cancelled',
                 default => null,
             };
             $state = $operation->state ?? [];
@@ -191,7 +234,11 @@ final readonly class Engine
             return;
         }
         $definition = $this->kinds->definition($operation->kind);
-        $this->send($operation, $definition, $sends);
+        if ($this->send($operation, $definition, $sends)) {
+            $this->advance($operationId);
+
+            return;
+        }
         foreach ($locals as $name) {
             $this->runLocal($operation, $definition, $name);
         }
@@ -201,35 +248,52 @@ final readonly class Engine
     }
 
     /**
-     * Publishes each step's order and schedules its deadline. A publish that failed puts its step back to pending and throws,
-     * so the consumer negatively acknowledges the event and JetStream delivers it again.
+     * Schedules each step's deadline, then publishes its order. A step whose order cannot be made, such as an input the kind
+     * cannot build or an order over 4 KB, fails at once: sending it again would fail the same way. A publish that failed puts
+     * its step back to pending and throws, so the consumer negatively acknowledges the event and JetStream delivers it again.
+     * The deadline goes first, so a crash before the publish still brings the step back.
      *
      * @param  list<string>  $names
+     * @return bool Whether a step failed, so the Operation must advance to its end.
      */
-    private function send(Operation $operation, EngineDefinition $definition, array $names): void
+    private function send(Operation $operation, EngineDefinition $definition, array $names): bool
     {
         if ($names === []) {
-            return;
+            return false;
         }
         $run = $this->run($operation->id);
         $signer = ExecutorOrderSigner::fromConfig();
+        $invalid = [];
         $unsent = [];
         foreach ($names as $name) {
             $step = $run->steps[$name];
             try {
                 $order = $signer->signStep($operation, $step->node_id, $name, $step->action, $step->target, $definition->input($operation, $name, $run));
-                $this->bus->publishOrder($step->node_id, $order);
+            } catch (Throwable $exception) {
+                report($exception);
+                $invalid[] = $name;
+
+                continue;
+            }
+            try {
                 $this->bus->scheduleDeadline($operation->id, $name, $step->sends, (int) $step->resend_at_ms);
+                $this->bus->publishOrder($step->node_id, $order);
             } catch (Throwable $exception) {
                 report($exception);
                 $unsent[] = $name;
             }
+        }
+        if ($invalid !== []) {
+            OperationEngineStep::query()->where('operation_id', $operation->id)->whereIn('name', $invalid)->where('status', 'sent')
+                ->update(['status' => 'failed', 'done_ms' => self::nowMs(), 'error_code' => 'engine.order_invalid']);
         }
         if ($unsent !== []) {
             OperationEngineStep::query()->where('operation_id', $operation->id)->whereIn('name', $unsent)->where('status', 'sent')
                 ->update(['status' => 'pending']);
             throw new RuntimeException('engine.publish_failed: '.implode(',', $unsent));
         }
+
+        return $invalid !== [];
     }
 
     /** Runs one Gateway step outside any transaction, records its result like a receipt, and advances. */
