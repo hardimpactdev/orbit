@@ -351,7 +351,9 @@ Swamp's upstream guidance lives in [`.agents/swamp-upstream`](https://github.com
 The original import (`916ef2ac5e93f7caeb0041b6322c09b08ca28b9e`) ran `swamp repo upgrade --tool claude --tool codex`, then committed the installed user skills. Upstream's `SkillAssets.copySkillsTo` copies the files listed in `BUNDLED_SKILLS` byte-for-byte from `.claude/skills`; it excludes eval fixtures. A refresh ends in the same layout:
 
 1. Clone `https://github.com/swamp-club/swamp.git` into `.amp/in/orb-backup/swamp-upstream` and check out the full commit matching the runtime pin. Verify its full SHA before continuing.
-2. From the Orbit root, run the upgrade with the pinned binary in a disposable repository and user home. The upgrade installs both skills into the user's `~/.claude/skills` and `~/.agents/skills`, writes `.claude/settings.local.json` and prepends the managed block to `AGENTS.md`. Run in place, it would make the skills load again in every session.
+2. From the Orbit root, run the upgrade with the pinned binary in a disposable repository and user home.
+
+The upgrade installs both skills into `~/.claude/skills` and `~/.agents/skills` of the user who runs it. It also writes `.claude/settings.local.json` and prepends the managed block to `AGENTS.md`. Run in place, it would make the skills load again in every session.
 
 ```sh
 export SWAMP_SCRATCH="$(mktemp -d)"
