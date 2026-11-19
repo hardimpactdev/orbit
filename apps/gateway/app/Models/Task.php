@@ -143,6 +143,7 @@ use LogicException;
  * @property CarbonImmutable|null $ready_at
  * @property CarbonImmutable|null $ended_at
  * @property CarbonImmutable|null $merged_at
+ * @property CarbonImmutable|null $pr_opened_at
  * @property CarbonImmutable|null $deployed_at when a production deploy first carried the merge commit (docs/reference/tasks.md#task-insights)
  * @property-read Task $parent
  * @property-read Collection<int, Task> $children
@@ -195,6 +196,7 @@ final class Task extends Model
         'ready_at',
         'ended_at',
         'merged_at',
+        'pr_opened_at',
         'deployed_at',
     ];
 
@@ -310,6 +312,7 @@ final class Task extends Model
         'merge_reason',
         'merged_sha',
         'merged_at',
+        'pr_opened_at',
         'deployed_at',
         'preview',
         'current_recipe',
@@ -655,6 +658,7 @@ final class Task extends Model
             'ready_at' => 'immutable_datetime',
             'ended_at' => 'immutable_datetime',
             'merged_at' => 'immutable_datetime',
+            'pr_opened_at' => 'immutable_datetime',
             'deployed_at' => 'immutable_datetime',
             'deliverables' => 'array',
             'completion_attempt' => 'integer',
