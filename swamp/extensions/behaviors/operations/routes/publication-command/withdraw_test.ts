@@ -241,23 +241,19 @@ Deno.test("a pool file that empties is removed", async () => {
     ]]);
 });
 
-Deno.test("a live revision that matches no captured state is refused", async () => {
+Deno.test("an own site in a form no captured state has is withdrawn; a pool scope in another form is refused", async () => {
     const before = await section(config(block("gone", "a")), true);
     const after = await section(config(), false);
-    await assertRejects(
-        () =>
-            composeWithdrawal({
-                ...placement,
-                plan_path: planPath,
-                read: read({ caddy: config(block("gone", "edited")) }),
-                php: {},
-                caddy: { before, prepared: after, withdrawn: after, after },
-                dns: {},
-                cleanup: [],
-            }),
-        Error,
-        "caddy.owned_revision_conflict",
-    );
+    // An older Orbit, or a Node converge since the capture, wrote the Route's site group another way: it is still the Route's own.
+    await composeWithdrawal({
+        ...placement,
+        plan_path: planPath,
+        read: read({ caddy: config(block("gone", "edited")) }),
+        php: {},
+        caddy: { before, prepared: after, withdrawn: after, after },
+        dns: {},
+        cleanup: [],
+    });
     await assertRejects(
         () =>
             composeWithdrawal({
@@ -530,6 +526,7 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
         "input",
         "compose",
         "apply",
+        "failure",
         "cleanup",
     ]);
     assertEquals(
@@ -539,7 +536,7 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
     // Removals of different Routes on one Node run side by side: the plan, the Node transaction, the cleanup and the proof are named by
     // the withdrawn Route, so none waits on another Route's model lock, and two writes of one Route stay ordered. The input writer and the
     // phase result keep their fixed names (bin/source_test.ts).
-    for (const step of [...node, ...steps].filter((step) => ["compose", "apply", "cleanup", "forward"].includes(step.name))) {
+    for (const step of [...node, ...steps].filter((step) => ["compose", "apply", "failure", "cleanup", "forward", "refusal"].includes(step.name))) {
         assertEquals((step.task as { behaviorName: string }).behaviorName.includes("route_id"), true, step.name);
     }
     const destroy = await load("operation-instance-destroy");
