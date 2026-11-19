@@ -14,12 +14,12 @@ type Pool = { name: string; driver: string; config: Record<string, string>; used
 // The pool tasks only: the rest of the file installs Incus and writes to /etc.
 function poolTasks(): Task[] {
     const tasks = parse(Deno.readTextFileSync(file)) as Task[];
-    const first = tasks.findIndex((task) => task.name === "Read the Incus pools");
-    const last = tasks.findIndex((task) => task.name === "Create the btrfs pool on the Node's root");
-    return tasks.slice(first, last + 1);
+    const first = tasks.findIndex((task) => task.name === "Name the driver of the fleet Node's pool");
+    const last = tasks.findIndex((task) => task.name === "Create the pool on the Node's root");
+    return tasks.slice(first, last + 1).filter((task) => task.name !== "Install the btrfs tools on the fleet Node");
 }
 
-async function run(pools: Pool[], profiles: Record<string, unknown> = {}) {
+async function run(pools: Pool[], profiles: Record<string, unknown> = {}, instances: Record<string, string> = { pool: "orbit-instances", project: "orbit-instances" }) {
     const folder = await Deno.makeTempDir();
     try {
         await Deno.mkdir(`${folder}/bin`);
@@ -39,7 +39,7 @@ exit 0
         await Deno.writeTextFile(`${folder}/tasks.yml`, JSON.stringify(poolTasks()));
         await Deno.writeTextFile(`${folder}/play.yml`, JSON.stringify([{
             hosts: "localhost", connection: "local", gather_facts: false,
-            vars: { instances: { pool: "orbit-instances", project: "orbit-instances" } },
+            vars: { instances },
             tasks: [{ name: "The pool of the fleet Node", "ansible.builtin.include_tasks": `${folder}/tasks.yml` }],
         }]));
         const result = await new Deno.Command("ansible-playbook", {
@@ -104,4 +104,12 @@ Deno.test("a directory pool that holds an Instance or a volume refuses and stays
     assertEquals(code === 0, false);
     assertEquals(calls, []);
     assertStringIncludes(out, "instance.host_unavailable: the Incus pool orbit-instances uses the dir driver and holds /1.0/instances/instance-7");
+});
+
+Deno.test("the release pool of a nested proof Node keeps its directory driver and the containers it holds", { ignore: !hasAnsible }, async () => {
+    const releases = { name: "orbit-releases", driver: "dir", config: {}, used_by: ["/1.0/instances/release-1?project=orbit-production"] };
+    const held = await run([releases], {}, { pool: "orbit-releases", driver: "dir" });
+    assertEquals([held.code, held.calls], [0, []]);
+    const missing = await run([], {}, { pool: "orbit-releases", driver: "dir" });
+    assertEquals([missing.code, missing.calls], [0, ["storage create orbit-releases dir"]]);
 });

@@ -1,0 +1,26 @@
+name: Provide Valkey
+description: Install the Valkey server and client for the real database tests, from cached packages when the cache has them.
+# A mirror that times out failed the job. The packages the first install downloads are cached for this runner image,
+# and a later run installs them without a network. The job on main saves the cache, so pull requests and the merge
+# queue read it.
+runs:
+  using: composite
+  steps:
+    - name: Read the runner image version
+      id: image
+      shell: bash
+      run: echo "version=${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+    # One entry for each runner image, written once: by the first run on that image whose install downloaded the
+    # whole set. A run whose cached install fails uses the mirrors and leaves the entry alone. Raise the number at the
+    # end of the key to drop an entry.
+    - name: Cache the Valkey packages
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/orbit-ci-apt/valkey-server
+        key: ci-apt-valkey-server-${{ runner.os }}-${{ runner.arch }}-${{ steps.image.outputs.version }}-1
+    - name: Install and verify Valkey
+      shell: bash
+      run: |
+        ORBIT_CI_APT_ARCHIVES="$HOME/.cache/orbit-ci-apt/valkey-server" bin/ci-runner-prerequisites valkey-server
+        command -v valkey-server
+        command -v valkey-cli

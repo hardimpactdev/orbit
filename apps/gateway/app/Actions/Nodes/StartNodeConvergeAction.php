@@ -72,7 +72,7 @@ final readonly class StartNodeConvergeAction
                 }
                 $snapshot['release_inputs'] = [
                     'roles' => array_map(static fn (array $role): string => $role['digest'], $roleInputs),
-                    'host' => ! $release && ! $base && $roles === null ? $inputs->host() : null,
+                    'host' => ! $release && ! $base && $roles === null ? $inputs->host(node: $node) : null,
                 ];
                 $snapshot['intent'] = app(NodeConvergePhaseDigest::class)->stamp($snapshot['intent'], $recorded);
                 // Dispatch is deferred until this reservation transaction commits.

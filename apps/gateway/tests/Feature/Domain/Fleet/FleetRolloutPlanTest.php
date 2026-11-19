@@ -57,6 +57,7 @@ use App\Models\Route;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\InstancePool;
@@ -322,18 +323,188 @@ it('retains the minute retry after partial admission and admits CI callers when 
     expect($next->input['nodes'][0]['release']['url'])->toBe('https://example.test/orbit');
 });
 
-it('refuses host-wide input changes before starting a delivery or a role converge', function (): void {
+it('holds only the Node whose host inputs changed, before its delivery or role converge, and goes on to the next Node', function (): void {
     $release = GatewayRelease::query()->sole();
     $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
     Node::query()->findOrFail($this->nodes['dev'])->forceFill(['release_inputs' => ['host' => str_repeat('c', 64)]])->save();
 
     app(ContinueReleaseFleetAction::class)->execute($release);
 
+    // This fixture has no serving Gateway Node, so each later Node gets past its host check and stops at its delivery admission.
     $fleet = $release->refresh()->phases['fleet'];
     expect($fleet['status'])->toBe('failed')
         ->and($fleet['nodes'][$this->nodes['dev']]['error_code'])->toBe('fleet.host_inputs_changed')
-        ->and($fleet['nodes'][$this->nodes['db']]['status'])->toBe('pending')
+        ->and($fleet['nodes'][$this->nodes['dev']])->not->toHaveKey('agent')
+        ->and($fleet['nodes'][$this->nodes['db']]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($fleet['nodes'][$this->nodes['prod']]['error_code'])->toBe('fleet.rollout_not_ready')
         ->and(Operation::query()->count())->toBe(0);
+});
+
+/**
+ * Commits a previous release's host inputs, this tree's with one file changed, to the Git repository of the Gateway checkout,
+ * and records it as a verified release. No checkout of it exists: a container release keeps only Git objects of earlier commits.
+ */
+function previousReleaseCommit(string $changed): string
+{
+    $repository = dirname(config()->string('orbit.gateway_checkout'), 2);
+    copyRolloutHostTree($repository);
+    file_put_contents($repository.'/'.$changed, "\n# the previous release\n", FILE_APPEND);
+    $git = static fn (string ...$arguments) => Process::path($repository)->run(['git', '-c', 'user.name=test', '-c', 'user.email=test@example.test', ...$arguments])->throw();
+    $git('init', '-q');
+    $git('add', '-A');
+    $git('commit', '-q', '-m', 'previous release');
+    $commit = trim($git('rev-parse', 'HEAD')->output());
+    GatewayRelease::query()->create(['sha' => $commit, 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 0]);
+    // The legacy digest the Node approved, read before the files leave the working tree.
+    $approved = app(ReleaseNodeInputs::class)->legacyHost($repository);
+    foreach (['apps/gateway/resources', 'apps/gateway/app', 'swamp'] as $folder) {
+        File::deleteDirectory($repository.'/'.$folder);
+    }
+
+    return $approved;
+}
+
+it('recognizes a Node\'s approval of an earlier release from its Git commit, and still holds it when its own host inputs changed since', function (string $changed, bool $held): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $approved = previousReleaseCommit($changed);
+    $inputs = app(ReleaseNodeInputs::class);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    expect($approved)->not->toBe($inputs->legacyHost())
+        ->and(glob($this->base.'/releases/*', GLOB_ONLYDIR))->toBe([$this->base.'/releases/'.substr(RolloutCommit, 0, 12)]);
+    $dev->forceFill(['release_inputs' => ['host' => $approved]])->save();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    // Past the host check, the Node stops at its delivery admission: this fixture has no serving Gateway Node.
+    $row = $release->refresh()->phases['fleet']['nodes'][$dev->id];
+    expect($row['error_code'])->toBe($held ? 'fleet.host_inputs_changed' : 'fleet.rollout_not_ready')
+        ->and($row)->not->toHaveKey('host_baseline')
+        ->and($dev->refresh()->release_inputs['host'])->toBe($held ? $approved : $inputs->host(node: $dev));
+})->with([
+    'a Gateway-only change' => ['swamp/ansible/tasks/gateway-runtime.yml', false],
+    'a shared host input change' => ['swamp/ansible/tasks/node-kernel-policy.yml', true],
+]);
+
+it('records the current host inputs, with a visible reason, when the release tree a legacy approval names cannot be read', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    // A verified release whose commit the Gateway's repository does not hold, and an approval of a tree that is not this one.
+    GatewayRelease::query()->create(['sha' => str_repeat('c', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 0]);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    $dev->forceFill(['release_inputs' => ['host' => str_repeat('d', 64)]])->save();
+    $inputs = app(ReleaseNodeInputs::class);
+    Log::spy();
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    $row = $release->refresh()->phases['fleet']['nodes'][$dev->id];
+    expect($row['host_baseline'])->toBe('legacy_baseline_unreadable')
+        ->and($row['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($dev->refresh()->release_inputs['host'])->toBe($inputs->host(node: $dev));
+    Log::shouldHaveReceived('warning')->withArgs(static fn (string $message, array $context): bool => $context['node_id'] === $dev->id)->once();
+    // A per-Node digest is never a legacy approval: once recorded, a later change holds the Node as usual.
+    $dev->forceFill(['release_inputs' => ['host' => ReleaseNodeInputs::NodeScope.str_repeat('d', 64)]])->save();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'current', 'nodes' => []]]]);
+    app(ContinueReleaseFleetAction::class)->execute($release);
+    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.host_inputs_changed');
+});
+
+it('holds a Gateway Node whose own host inputs changed even when the approved release tree cannot be read, and lets the others go on', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $gateway->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned'])->saveQuietly();
+    app(GatewayServingHost::class)->remember($gateway);
+    // Every Node approved the previous release, whose Gateway runtime differs; the repository does not hold its commit.
+    $previous = $this->base.'/previous';
+    copyRolloutHostTree($previous);
+    file_put_contents($previous.'/swamp/ansible/tasks/gateway-runtime.yml', "\n# the previous release\n", FILE_APPEND);
+    $approved = app(ReleaseNodeInputs::class)->legacyHost($previous);
+    GatewayRelease::query()->create(['sha' => str_repeat('c', 40), 'trigger' => 'auto', 'outcome' => 'verified', 'phases' => [], 'duration_ms' => 0]);
+    foreach ([...array_values($this->nodes), $gateway->id] as $id) {
+        Node::query()->findOrFail($id)->forceFill(['release_inputs' => ['host' => $approved]])->saveQuietly();
+    }
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    $rows = $release->refresh()->phases['fleet']['nodes'];
+    expect($rows[$gateway->id]['error_code'] ?? null)->toBe('fleet.host_inputs_changed')
+        ->and($rows[$gateway->id])->not->toHaveKey('host_baseline')
+        ->and($gateway->refresh()->release_inputs['host'])->toBe($approved);
+    foreach ($this->nodes as $id) {
+        // The other Nodes go on past their host check; delivery admission refuses next, as this fixture publishes no agent.
+        expect($rows[$id]['host_baseline'])->toBe('legacy_baseline_unreadable')
+            ->and($rows[$id]['error_code'] ?? null)->not->toBe('fleet.host_inputs_changed');
+    }
+});
+
+it('schedules app-prod when any file its production release host reads changes, the staged files beside the Ansible tree included', function (): void {
+    $root = $this->base.'/tree';
+    $repository = dirname(base_path(), 2);
+    copyRolloutHostTree($root);
+    foreach (['swamp/ansible', 'swamp/scripts', 'swamp/extensions/behaviors/operations'] as $folder) {
+        File::copyDirectory($repository.'/'.$folder, $root.'/'.$folder);
+    }
+    $tasks = (string) file_get_contents($root.'/swamp/ansible/tasks/production-release-host.yml');
+    preg_match_all('~(?<![\w/.-])files/[\w.-]+~', $tasks, $files);
+    preg_match_all('~\{\{ playbook_dir \}\}/((?:module_utils|files)/[\w.-]+)~', $tasks, $modules);
+    $read = [...array_map(static fn (string $file): string => 'swamp/ansible/'.$file, [...$files[0], ...$modules[1]]),
+        'swamp/ansible/tasks/production-release-host.yml'];
+    // The role files a converge stages beside the Ansible tree (converge_input.ts) count in the app-prod digest too.
+    preg_match('~export const roleSiblings = \[(.*?)\] as const;~s', (string) file_get_contents($root.'/swamp/extensions/behaviors/operations/ansible-input/converge_input.ts'), $list);
+    preg_match_all('~"([^"]+)"~', $list[1], $siblings);
+    $siblings = array_map(static fn (string $file): string => 'swamp/'.$file, $siblings[1]);
+    expect($siblings)->toHaveCount(4)->and(array_slice(ReleaseNodeInputs::ProductionReleaseHostFiles, 0, 4))->toBe($siblings);
+    $read = [...$read, ...$siblings];
+    expect($read)->toContain('swamp/scripts/production-release-phase', 'swamp/ansible/files/instance-release-vp.ts');
+    $inputs = app(ReleaseNodeInputs::class);
+    $prod = Node::query()->findOrFail($this->nodes['prod']);
+    $before = $inputs->roles($prod, root: $root);
+
+    foreach (array_unique($read) as $file) {
+        $original = (string) file_get_contents($root.'/'.$file);
+        file_put_contents($root.'/'.$file, "\n# changed\n", FILE_APPEND);
+        expect($inputs->roles($prod, root: $root))->not->toBe($before, $file);
+        file_put_contents($root.'/'.$file, $original);
+    }
+});
+
+it('counts the Gateway runtime only as a host input of the Gateway Node', function (): void {
+    $root = $this->base.'/tree';
+    copyRolloutHostTree($root);
+    foreach (['apps/gateway/app/Domain/Nodes/GatewayRuntimeFiles.php', 'swamp/ansible/tasks/gateway-runtime.yml'] as $file) {
+        File::ensureDirectoryExists(dirname($root.'/'.$file));
+        File::copy(dirname(base_path(), 2).'/'.$file, $root.'/'.$file);
+    }
+    $inputs = app(ReleaseNodeInputs::class);
+    $gateway = SwampNodeFixture::ensure();
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    [$devHost, $gatewayHost] = [$inputs->host($root, $dev), $inputs->host($root, $gateway)];
+
+    file_put_contents($root.'/swamp/ansible/tasks/gateway-runtime.yml', "\n# changed\n", FILE_APPEND);
+
+    expect($inputs->host($root, $dev))->toBe($devHost)
+        ->and($inputs->host($root, $gateway))->not->toBe($gatewayHost);
+});
+
+it('keeps a Node\'s baseline recorded before host inputs were classified by Node, and records its own digest', function (): void {
+    $release = GatewayRelease::query()->sole();
+    $release->update(['phases' => [...$release->phases, 'fleet' => ['status' => 'pending', 'nodes' => []]]]);
+    $inputs = app(ReleaseNodeInputs::class);
+    foreach ($this->nodes as $id) {
+        Node::query()->findOrFail($id)->forceFill(['release_inputs' => ['host' => $inputs->legacyHost()]])->save();
+    }
+
+    app(ContinueReleaseFleetAction::class)->execute($release);
+
+    // Past the host check, each Node stops at its delivery admission: this fixture has no serving Gateway Node.
+    $dev = Node::query()->findOrFail($this->nodes['dev']);
+    expect($release->refresh()->phases['fleet']['nodes'][$dev->id]['error_code'])->toBe('fleet.rollout_not_ready')
+        ->and($dev->release_inputs['host'])->toBe($inputs->host(node: $dev))
+        ->and($dev->release_inputs['host'])->not->toBe($inputs->legacyHost());
 });
 
 function copyRolloutHostTree(string $path): void
@@ -500,7 +671,7 @@ it('admits every Node of a verified release at once at midday, then refreshes th
     $inputs = app(ReleaseNodeInputs::class);
     foreach (Node::query()->whereKey([...array_values($this->nodes), $gateway->id])->get() as $node) {
         $node->forceFill(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned', 'release_inputs' => [
-            'host' => $inputs->host(), 'agent' => $node->id === $this->nodes['dev'] ? $delivery->pin($node) : 'old-agent',
+            'host' => $inputs->host(node: $node), 'agent' => $node->id === $this->nodes['dev'] ? $delivery->pin($node) : 'old-agent',
             'roles' => array_map(fn (array $role): string => $role['digest'], $inputs->roles($node)),
         ]])->saveQuietly();
     }

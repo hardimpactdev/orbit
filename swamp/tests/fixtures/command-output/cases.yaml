@@ -1073,6 +1073,21 @@ contexts:
       rc: 1
       stdout_lines: []
   # `orbit:node-converge-digest --host app-dev --base ...`: the base digests and nested-app-dev's Instance host intent digest.
+  # The Instance host's code read (host_code.ts over the checkout's HEAD), as it printed in a task copy on 2026-11-19; a run that cannot
+  # fetch the resolver's YAML module fails; a read that prints no digest gives none.
+  fleet-host-code:
+    fleet_host_code_read:
+      rc: 0
+      stdout_lines: ['0c58c3b59b14ab7904343c6421913f63636474635145efc577e993b257114692']
+  fleet-host-code-failed:
+    fleet_host_code_read:
+      rc: 1
+      stdout_lines: []
+      stderr: "error: JSR package manifest for '@std/yaml' failed to load. Import 'https://jsr.io/@std/yaml/meta.json' failed."
+  fleet-host-code-malformed:
+    fleet_host_code_read:
+      rc: 0
+      stdout_lines: ['Download https://jsr.io/@std/yaml/1.0.12/mod.ts']
   fleet-intents-host:
     fleet_roles: [gateway, app-dev, app-prod]
     fleet_intents_read:
@@ -2240,6 +2255,21 @@ cases:
     app-dev: '2222222222222222222222222222222222222222222222222222222222222222'
     app-prod: '3333333333333333333333333333333333333333333333333333333333333333'
     host: '4444444444444444444444444444444444444444444444444444444444444444'
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due Instance host
+  field: vars.fleet_host_code
+  context: fleet-host-code
+  expected: 0c58c3b59b14ab7904343c6421913f63636474635145efc577e993b257114692
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due Instance host
+  field: vars.fleet_host_code
+  context: fleet-host-code-failed
+  expected: ''
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due Instance host
+  field: vars.fleet_host_code
+  context: fleet-host-code-malformed
+  expected: ''
 - file: tasks/instance-fleet-refresh.yml
   task: Name the due Instance host
   field: vars.fleet_host_read
