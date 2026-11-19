@@ -29,10 +29,17 @@
       when: caddy.rc != 0 or caddy.stdout is version(intent.caddy_package.minimum_version, '<')
       ansible.builtin.apt: { deb: "{{ intent.caddy_package.path }}" }
 - { name: Read installed packages, ansible.builtin.package_facts: !!null "" }
-- name: Install prerequisites
+- name: Name the prerequisites
   vars: { docker_ce: "{{ 'docker-ce' in ansible_facts.packages }}" }
+  ansible.builtin.set_fact:
+    role_packages: "{{ intent.packages | reject('equalto', 'docker.io' if docker_ce else '') | list }}"
+- name: Find the missing prerequisites
+  ansible.builtin.import_tasks: apt-missing.yml
+  vars: { apt_wanted: "{{ role_packages }}" }
+- name: Install prerequisites
+  when: apt_missing | length > 0
   ansible.builtin.apt:
-    name: "{{ intent.packages | reject('equalto', 'docker.io' if docker_ce else '') | list }}"
+    name: "{{ role_packages }}"
     update_cache: true
     cache_valid_time: 3600
   environment: { NEEDRESTART_MODE: l }

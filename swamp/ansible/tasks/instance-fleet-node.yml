@@ -32,8 +32,12 @@
 - name: Name the driver of the fleet Node's pool
   ansible.builtin.set_fact:
     fleet_node_driver: "{{ instances.driver | default('btrfs') }}"
-- name: Install the btrfs tools on the fleet Node
+- name: Find the btrfs tools on the fleet Node
   when: fleet_node_driver == 'btrfs'
+  ansible.builtin.import_tasks: apt-missing.yml
+  vars: { apt_wanted: [btrfs-progs] }
+- name: Install the btrfs tools on the fleet Node
+  when: fleet_node_driver == 'btrfs' and apt_missing | length > 0
   ansible.builtin.apt: { name: btrfs-progs, state: present, install_recommends: false, update_cache: true, cache_valid_time: 3600 }
 
 - name: Read the Incus pools

@@ -60,6 +60,8 @@ cases = [
   "a phase whose digest is unchanged reports unchanged with no work, and the result carries every digest",
   "each skippable phase is guarded by the unchanged list of the input preparation; input and check always run",
   "a changed plan or secret value moves the roles digest, and the Operation's own ID does not",
+  "a repeat with another Operation ID and freshly written secrets skips every phase; a moved pin or role moves only its phase",
+  "a phase's own intent fields and run folder entries are read by no other skippable phase",
   "the version a capture mints for a certificate leaf does not move a digest; the leaf's domain does",
   "the admission time of the Instance bridge does not move a digest; the bridge does",
   "a changed shipped Tool file that the Tool helper imports moves the tools digest",
