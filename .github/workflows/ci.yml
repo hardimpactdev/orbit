@@ -128,91 +128,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gateway-tests-php"
           echo 'memory_limit=1G' > "$RUNNER_TEMP/gateway-tests-php/memory.ini"
           echo "PHP_INI_SCAN_DIR=${PHP_INI_SCAN_DIR:-}:$RUNNER_TEMP/gateway-tests-php" >> "$GITHUB_ENV"
-      - name: Set the firewall dependency cache directory
-        run: echo "DENO_DIR=$RUNNER_TEMP/gateway-tests-deno" >> "$GITHUB_ENV"
-      - name: Cache Gateway test dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: apps/gateway/vendor
-          key: gateway-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/gateway/composer.json', 'apps/gateway/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
-      - name: Cache CLI test dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: apps/cli/vendor
-          key: cli-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.json', 'apps/cli/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
-      - name: Install Gateway and CLI dev dependencies
-        run: |
-          cp apps/gateway/.env.example apps/gateway/.env
-          composer install --working-dir=apps/gateway --no-interaction --prefer-dist --no-scripts
-          composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
+      - uses: ./.github/actions/gateway-test-dependencies
       - name: Build the test API contracts
         run: bin/build-api
-      - name: Cache pinned Deno download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/orbit-gateway-tests/deno
-          key: gateway-tests-deno-download-${{ runner.os }}-${{ runner.arch }}-2.9.8-${{ hashFiles('apps/gateway/resources/machine-software/recipe.json') }}
-      - name: Verify and extract the recipe Deno
-        run: |
-          python3 - <<'PYTHON'
-          import hashlib, json, os, subprocess, urllib.request, zipfile
-          from pathlib import Path
-          tool = json.loads(Path('apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['deno']
-          if tool['version'] != '2.9.8':
-              raise SystemExit('Update the Gateway test Deno pin with the recipe')
-          artifact = tool['artifacts']['amd64']
-          archive = Path.home() / '.cache/orbit-gateway-tests/deno/deno_2.9.8_linux_amd64.zip'
-          archive.parent.mkdir(parents=True, exist_ok=True)
-          if not archive.exists():
-              urllib.request.urlretrieve(artifact['url'], archive)
-          if hashlib.sha256(archive.read_bytes()).hexdigest() != artifact['sha256']:
-              raise SystemExit('Deno checksum mismatch')
-          destination = Path(os.environ['RUNNER_TEMP']) / 'gateway-tests-deno-bin'
-          with zipfile.ZipFile(archive) as release:
-              release.extract('deno', destination)
-          binary = destination / 'deno'
-          binary.chmod(0o755)
-          if subprocess.check_output([str(binary), '--version'], text=True).split()[:2] != ['deno', '2.9.8']:
-              raise SystemExit('Deno version mismatch')
-          with open(os.environ['GITHUB_PATH'], 'a') as output:
-              output.write(str(binary.parent) + '\n')
-          PYTHON
-      - name: Cache firewall Deno dependencies
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.DENO_DIR }}
-          key: gateway-tests-deno-${{ runner.os }}-${{ runner.arch }}-2.9.8-${{ hashFiles('swamp/deno.lock', 'swamp/extensions/behaviors/operations/firewall/**', 'swamp/extensions/behaviors/_lib/**') }}
-      - name: Warm firewall imports
-        working-directory: swamp
-        run: deno cache --no-lock extensions/behaviors/operations/firewall/firewall_test.ts
-      - name: Cache pinned Caddy download
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/orbit-gateway-tests/caddy
-          key: gateway-tests-caddy-${{ runner.os }}-${{ runner.arch }}-2.11.7-${{ hashFiles('apps/gateway/resources/machine-software/recipe.json') }}
-      - name: Verify and extract the recipe Caddy
-        run: |
-          python3 - <<'PYTHON'
-          import hashlib, json, os, subprocess, urllib.request
-          from pathlib import Path
-          tool = json.loads(Path('apps/gateway/resources/machine-software/recipe.json').read_text())['tools']['caddy']
-          if tool['version'] != '2.11.7':
-              raise SystemExit('Update the Gateway test Caddy pin with the recipe')
-          artifact = tool['artifacts']['amd64']
-          archive = Path.home() / '.cache/orbit-gateway-tests/caddy/caddy_2.11.7_linux_amd64.deb'
-          archive.parent.mkdir(parents=True, exist_ok=True)
-          if not archive.exists():
-              urllib.request.urlretrieve(artifact['url'], archive)
-          if hashlib.sha512(archive.read_bytes()).hexdigest() != artifact['sha512']:
-              raise SystemExit('Caddy checksum mismatch')
-          destination = Path(os.environ['RUNNER_TEMP']) / 'gateway-tests-caddy'
-          subprocess.run(['dpkg-deb', '-x', str(archive), str(destination)], check=True)
-          binary = destination / 'usr/bin/caddy'
-          if subprocess.check_output([str(binary), 'version'], text=True).split()[0] != 'v2.11.7':
-              raise SystemExit('Caddy version mismatch')
-          with open(os.environ['GITHUB_PATH'], 'a') as output:
-              output.write(str(binary.parent) + '\n')
-          PYTHON
       - name: Run one shard of the complete Gateway Pest suite
         working-directory: apps/gateway
         run: |
@@ -227,6 +145,23 @@ jobs:
           path: ${{ runner.temp }}/gateway-tests.xml
           if-no-files-found: error
           retention-days: 7
+
+  gateway-test-caches:
+    # A pull request reads the caches of its base branch. Main runs no tests, so this job saves them there:
+    # without it, every pull request's first run builds each cache again. It gates nothing.
+    name: Warm the Gateway test caches
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/php
+        with:
+          coverage: none
+      - uses: ./.github/actions/gateway-test-dependencies
 
   cli:
     name: CLI build

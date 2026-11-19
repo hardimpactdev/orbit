@@ -179,8 +179,8 @@ final readonly class InstanceContainer
     /**
      * Reserves the container's runtime row: the lowest free guest address of the Node's bridge (the bridge keeps the first usable
      * address and the image build the last) and the shared folder versions the Node installs now. A clone also gets the next free
-     * T3 port ({@see self::nextT3Port()}) and its Project's container server, and names the default it copies; the default gets
-     * neither. A server whose program the recipe does not pin is refused before any record.
+     * T3 port ({@see self::nextT3Port()}) and its container server, and names the default it copies; the default gets neither. A
+     * task copy's server is the Conn Server; every other clone's is its Project's choice. A server whose program the recipe does not pin is refused before any record.
      */
     public function reserve(Instance $instance, Node $node, ?Instance $source = null): InstanceRuntime
     {
@@ -212,9 +212,10 @@ final readonly class InstanceContainer
         }
         $port = null;
         $server = null;
-        // Every Instance but the default runs a server: a clone, and a checkout Instance that moved into a container.
+        // Every Instance but the default runs a server: a clone, and a checkout Instance that moved into a container. A task copy
+        // always runs the Conn Server; the Project's setting chooses it for every other one.
         if ($instance->name !== 'default') {
-            $server = $project->container_server;
+            $server = $instance->task_workspace_owner_id !== null ? ContainerServer::Conn : $project->container_server;
             $server->assertPinned($folders);
             $port = self::nextT3Port($node);
         }

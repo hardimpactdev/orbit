@@ -69,12 +69,15 @@ final readonly class ReleaseNodeInputs
         'swamp/ansible/transport-exit-codes.json',
     ];
 
-    /** The files beside the Ansible tree that production-release-host.yml reads; the Swamp converge stages the same list. */
-    private const string ProductionReleaseHostList = 'swamp/ansible/production-release-host-files.json';
-
-    /** production-release-host.yml and the files it installs from the Ansible tree. */
-    private const array ProductionReleaseHostFiles = [
-        'swamp/ansible/production-release-host-files.json',
+    /**
+     * production-release-host.yml, the files it installs from the Ansible tree, and the role files beside that tree which a converge
+     * stages: `roleSiblings` in swamp/extensions/behaviors/operations/ansible-input/converge_input.ts.
+     */
+    public const array ProductionReleaseHostFiles = [
+        'swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts',
+        'swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts',
+        'swamp/scripts/production-release-phase',
+        'swamp/scripts/release-container.py',
         'swamp/ansible/tasks/production-release-host.yml',
         'swamp/ansible/files/production-release-host.py',
         'swamp/ansible/files/instance-release-*',
@@ -231,7 +234,7 @@ final readonly class ReleaseNodeInputs
             $executor = isset(NodeExecutorInput::RoleFamilies[$role]) ? NodeExecutorInput::for($node) : null;
             $roleUnits = NodeRoleUnits::for($node, [$role]);
             $files = [
-                ...$this->roleFiles($assignment->role, $root),
+                ...$this->roleFiles($assignment->role),
                 ...($resources['php'] !== [] ? ['swamp/ansible/tasks/php.yml'] : []),
                 ...(in_array('vp', $software, true) ? ['swamp/ansible/tasks/node-converge-javascript.yml', 'swamp/ansible/tasks/javascript-version.yml'] : []),
                 ...(in_array('chrome-headless-shell', $software, true) ? ['swamp/ansible/tasks/node-converge-browser.yml'] : []),
@@ -280,12 +283,10 @@ final readonly class ReleaseNodeInputs
     }
 
     /** @return list<string> Files reached from the per-role branches of the converge play and its end checks. */
-    private function roleFiles(RoleName $role, string $root): array
+    private function roleFiles(RoleName $role): array
     {
         return match ($role) {
-            // The production release host and every file it installs, with the files beside the Ansible tree that a converge stages.
-            RoleName::AppProd => [...self::ProductionReleaseHostFiles, ...array_map(static fn (string $file): string => 'swamp/'.$file,
-                ValidatedData::stringList(json_decode((string) file_get_contents($root.'/'.self::ProductionReleaseHostList), true, flags: JSON_THROW_ON_ERROR)))],
+            RoleName::AppProd => self::ProductionReleaseHostFiles,
             RoleName::Swamp => ['swamp/ansible/tasks/node-converge-deno.yml', 'swamp/ansible/tasks/swamp-start-cache.yml',
                 'swamp/ansible/swamp-worker-renewal.yml', 'swamp/ansible/tasks/swamp-worker-*.yml'],
             RoleName::WebSocket => ['swamp/ansible/tasks/websocket.yml'],

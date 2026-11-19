@@ -371,9 +371,13 @@ it('schedules app-prod when any file its production release host reads changes, 
     preg_match_all('~(?<![\w/.-])files/[\w.-]+~', $tasks, $files);
     preg_match_all('~\{\{ playbook_dir \}\}/((?:module_utils|files)/[\w.-]+)~', $tasks, $modules);
     $read = [...array_map(static fn (string $file): string => 'swamp/ansible/'.$file, [...$files[0], ...$modules[1]]),
-        'swamp/ansible/tasks/production-release-host.yml',
-        ...array_map(static fn (string $file): string => 'swamp/'.$file,
-            json_decode((string) file_get_contents($root.'/swamp/ansible/production-release-host-files.json'), true, flags: JSON_THROW_ON_ERROR))];
+        'swamp/ansible/tasks/production-release-host.yml'];
+    // The role files a converge stages beside the Ansible tree (converge_input.ts) count in the app-prod digest too.
+    preg_match('~export const roleSiblings = \[(.*?)\] as const;~s', (string) file_get_contents($root.'/swamp/extensions/behaviors/operations/ansible-input/converge_input.ts'), $list);
+    preg_match_all('~"([^"]+)"~', $list[1], $siblings);
+    $siblings = array_map(static fn (string $file): string => 'swamp/'.$file, $siblings[1]);
+    expect($siblings)->toHaveCount(4)->and(array_slice(ReleaseNodeInputs::ProductionReleaseHostFiles, 0, 4))->toBe($siblings);
+    $read = [...$read, ...$siblings];
     expect($read)->toContain('swamp/scripts/production-release-phase', 'swamp/ansible/files/instance-release-vp.ts');
     $inputs = app(ReleaseNodeInputs::class);
     $prod = Node::query()->findOrFail($this->nodes['prod']);

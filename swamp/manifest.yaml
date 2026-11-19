@@ -45,7 +45,6 @@ additionalFiles:
   - ansible/files/instance-legacy-schedule.py
   - ansible/files/instance-control-environment.py
   - ansible/files/instance-release-vp.ts
-  - ansible/production-release-host-files.json
   - extensions/behaviors/operations/instance-deploy/vp_requirements.ts
   - extensions/behaviors/operations/instance-vp-command/requirements.ts
   - ansible/files/instance-release-guest.py

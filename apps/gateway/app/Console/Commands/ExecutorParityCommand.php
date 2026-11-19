@@ -1,0 +1,60 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use App\Infrastructure\Executor\ExecutorParity;
+use Illuminate\Console\Command;
+
+/**
+ * The check before the signed power flags go on (ADR 0266; docs/reference/executor.md#build-parity). It fails, and names each
+ * Node, while any executor Node runs another build than this Gateway pins, holds a frozen container whose Instance the Gateway
+ * does not record asleep, or loads an activation proxy that does not reach this Gateway as the route renderer draws it. The switch
+ * step runs it and changes no flag on a failure.
+ */
+final class ExecutorParityCommand extends Command
+{
+    #[\Override]
+    protected $signature = 'orbit:executor-parity {--json : Print the rows as JSON}';
+
+    #[\Override]
+    protected $description = 'Check that every app-dev Node runs the executor build this Gateway pins, holds no unrecorded freeze and proxies activations to this Gateway.';
+
+    public function handle(ExecutorParity $parity): int
+    {
+        $rows = $parity->check();
+        $differ = array_values(array_filter($rows, static fn (array $row): bool => $row['problem'] !== null));
+        $ok = $rows !== [] && $differ === [];
+        if ($this->option('json')) {
+            $this->line(json_encode(['ok' => $ok, 'nodes' => $rows], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+            return $ok ? self::SUCCESS : self::FAILURE;
+        }
+        $this->table(['Node', 'Name', 'Pinned', 'Installed', 'Running', 'Service', 'Frozen, unrecorded', 'Activation proxy', 'Problem'], array_map(static fn (array $row): array => [
+            $row['node_id'], $row['node'], substr((string) $row['expected'], 0, 16), substr((string) $row['reported'], 0, 16),
+            substr((string) $row['running'], 0, 16), $row['state'] ?? '', implode(', ', $row['frozen_unrecorded']), implode('; ', $row['activation_wrong']),
+            $row['problem'] ?? '',
+        ], $rows));
+        if ($rows === []) {
+            $this->error('Executor parity checked no executor Node. Keep ORBIT_EXECUTOR_WAKE_ENABLED and ORBIT_EXECUTOR_POWER_ENABLED off.');
+
+            return self::FAILURE;
+        }
+        if ($differ !== []) {
+            $this->error('Executor parity fails on '.implode(', ', array_map(static fn (array $row): string => "{$row['node']} (#{$row['node_id']}): {$row['problem']}"
+                .match ($row['problem']) {
+                    'instance.frozen_unrecorded' => ' (Instance '.implode(', ', $row['frozen_unrecorded']).')',
+                    'caddy.activation_proxy_wrong' => ' ('.implode('; ', $row['activation_wrong']).')',
+                    default => '',
+                }, $differ))
+                .'. Keep ORBIT_EXECUTOR_WAKE_ENABLED and ORBIT_EXECUTOR_POWER_ENABLED off.'
+                .(in_array('instance.frozen_unrecorded', array_column($differ, 'problem'), true) ? ' Wake each listed Instance with the flags off, then check again.' : ''));
+
+            return self::FAILURE;
+        }
+        $this->info('Every executor Node runs the pinned build and proxies activations to this Gateway.');
+
+        return self::SUCCESS;
+    }
+}

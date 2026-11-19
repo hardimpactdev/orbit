@@ -62,6 +62,7 @@ Deno.test("the Conn launch workflow stages private input only on the dispatch an
     }
 });
 
+const connServer = "/opt/orbit-agent/current/agent/bin/conn-server";
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const fakeIncus = '#!/usr/bin/env python3\n'
     + 'from pathlib import Path\n'
@@ -69,7 +70,7 @@ const fakeIncus = '#!/usr/bin/env python3\n'
     + 'root = Path(__file__).parent\n'
     + 'args = sys.argv[1:]\n'
     + 'assert args[:7] == ["--project", "orbit-instances", "exec", "--cwd", "/srv/workspace", "instance-17", "--"]\n'
-    + 'action = args[args.index("orbit-rpc") + 2:]\n'
+    + 'action = args[args.index("orbit-rpc") + 1:]\n'
     + '(root / "call.json").write_text(json.dumps(action))\n'
     + '(root / "stdin").write_bytes(sys.stdin.buffer.read())\n'
     + 'assert not (root / "launch.json").exists()\n'
@@ -78,7 +79,7 @@ const fakeIncus = '#!/usr/bin/env python3\n'
 Deno.test({ name: "the Conn Ansible phase preserves private stdin and refuses a repeat of the same send", ignore: !available, async fn() {
     const folder = await Deno.makeTempDir({ prefix: "conn-launch-phase-" });
     try {
-        const local = "---\n" + play.slice(play.indexOf("- name: Run the scoped T3 call")).replace(
+        const local = "---\n" + play.slice(play.indexOf("- name: Run the scoped call")).replace(
             "  hosts: conn_launch_node\n", "  hosts: localhost\n  connection: local\n",
         ).replace("  become: true\n", "  become: false\n");
         await Deno.writeTextFile(folder + "/local.yml", local);
@@ -93,12 +94,13 @@ Deno.test({ name: "the Conn Ansible phase preserves private stdin and refuses a 
         const payload = JSON.stringify({ request: { initialMessage: { text: "  private β {{ literal }}\n".repeat(6000) } } });
         for (const action of ["launch", "reconcile-launch"]) {
             await Deno.writeTextFile(folder + "/intent.json", JSON.stringify({
-                action, instance_id: 17, runtime: { project: "orbit-instances", name: "instance-17" },
+                action, instance_id: 17, runtime: { project: "orbit-instances", name: "instance-17", program: connServer },
             }));
             await Deno.writeTextFile(folder + "/launch.json", payload, { mode: 0o600 });
             const result = await run();
             assert(result.success, new TextDecoder().decode(result.stdout));
-            assertEquals(JSON.parse(await Deno.readTextFile(folder + "/call.json")), [action]);
+            // The call runs the runtime's recorded server program, here the Conn Server.
+            assertEquals(JSON.parse(await Deno.readTextFile(folder + "/call.json")), [connServer, action]);
             assert((await Deno.readTextFile(folder + "/stdin")) === payload);
             assert(!new TextDecoder().decode(result.stdout).includes("private β"));
             assert(!new TextDecoder().decode(result.stderr).includes("private β"));
@@ -109,6 +111,14 @@ Deno.test({ name: "the Conn Ansible phase preserves private stdin and refuses a 
                 await assertNoCall(folder + "/call.json");
             }
         }
+
+        // A child admitted before the Gateway passed the runtime's program has the older runtime shape: it runs T3.
+        await Deno.writeTextFile(folder + "/intent.json", JSON.stringify({
+            action: "inspect-launch", environment_id: "env-17", instance_id: 17, runtime: { project: "orbit-instances", name: "instance-17" },
+        }));
+        const older = await run();
+        assert(older.success, new TextDecoder().decode(older.stdout));
+        assertEquals(JSON.parse(await Deno.readTextFile(folder + "/call.json")), ["/opt/orbit-agent/current/agent/bin/t3", "inspect-launch", "env-17"]);
     } finally {
         await Deno.remove(folder, { recursive: true });
     }

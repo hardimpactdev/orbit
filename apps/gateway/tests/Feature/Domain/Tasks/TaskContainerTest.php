@@ -1667,18 +1667,37 @@ function copyCandidate(Task $group): TaskCheck
 }
 
 describe('a turn of a group that owns a copy', function (): void {
-    it('runs the turn\'s commands with the server its copy recorded: the Conn Server of a Project that chose it', function (): void {
+    it('runs a t3 Project\'s copy on the Conn Server through a completed implementer and reviewer turn, while its dev clone runs T3', function (): void {
+        Storage::fake('local');
         $source = copySource();
-        $source->project->update(['container_server' => ContainerServer::Conn]);
         $group = copyGroup($source->project);
         $copy = finishedCopy($group, startCopy($group));
-        // A later change of the Project's setting does not reach the copy.
-        $source->project->update(['container_server' => ContainerServer::T3]);
 
-        $turn = copyTurn($group);
+        $implementer = copyTurn($group);
+        $implemented = copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
+        $reviewer = copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]);
+        $reviewed = copyTurnEnded($reviewer, 'succeeded', copyTurnDone('mcp:2'));
+        // A clone of the same Project that is no task copy runs the Project's server.
+        $clone = containerCreate($source->project, Node::query()->findOrFail($source->node_id), 'feature');
 
-        expect($copy->runtime->container_server)->toBe(ContainerServer::Conn)
-            ->and($turn->input['turn']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server');
+        expect($source->project->refresh()->container_server)->toBe(ContainerServer::T3)
+            ->and($copy->runtime->container_server)->toBe(ContainerServer::Conn)
+            ->and([$implementer->input['turn']['t3'], $reviewer->input['turn']['t3']])->toBe(array_fill(0, 2, '/opt/orbit-agent/current/agent/bin/conn-server'))
+            ->and([$implementer->input['role'], $reviewer->input['role']])->toBe(['implementer', 'reviewer'])
+            ->and([$implemented->status, $reviewed->status])->toBe([OperationStatus::Succeeded, OperationStatus::Succeeded])
+            ->and([$implemented->result['state'], $reviewed->result['state']])->toBe(['done', 'done'])
+            ->and(AgentThread::query()->where('task_group_id', $group->id)->pluck('state')->all())->toBe([AgentThreadState::Done, AgentThreadState::Done])
+            ->and(InstanceRuntime::query()->where('instance_id', $clone->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
+    });
+
+    it('refuses a task copy before any record when the recipe pins no Conn Server', function (): void {
+        $source = copySource();
+        $group = copyGroup($source->project);
+        containerServerConnUnpinned();
+        $before = copyRows();
+
+        expect(copyRefusal(fn () => startCopy($group)))->toBe('project.container_server_unavailable 409')
+            ->and(copyRows())->toBe($before);
     });
 
     it('admits one tasks.copy_turn on the copy\'s Node with the composed prompt and the copy\'s model, and names no credential', function (): void {
@@ -1693,7 +1712,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($turn->node_id)->toBe($copy->node_id)
             ->and($turn->input['runtime'])->toBe(['project' => InstancePlacement::NestedProject, 'name' => $copy->runtime->container_name])
             ->and($turn->input['branch'])->toBe('task-'.$group->id)
-            ->and(Arr::except($turn->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
+            ->and(Arr::except($turn->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/conn-server', 'node' => '/opt/orbit-runtime/current/bin/node',
                 'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
                 // Capture sets the new thread's ID and marks it admitted: T3 does not hold it yet.
                 't3_thread_id' => $thread->external_id, 'admission' => 'admitted', 'answered' => [], 'answered_run' => null, 'seconds' => 3600,
@@ -1953,7 +1972,7 @@ describe('a turn of a group that owns a copy', function (): void {
         $named = copyTurn($group, ['thread' => (string) $first->input['thread_id']]);
 
         expect($next->input['thread_id'])->toBe($first->input['thread_id'])
-            ->and(Arr::except($next->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
+            ->and(Arr::except($next->input['turn'], ['prompt', 'message_id']))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/conn-server', 'node' => '/opt/orbit-runtime/current/bin/node',
                 'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'options' => [], 'candidate' => null, 'settle' => [],
                 // The CLI driver reported its own thread ID over the admitted one: its provenance is not proven.
                 't3_thread_id' => 'mcp:66105c2c', 'admission' => 'overwritten', 'answered' => [], 'answered_run' => null, 'seconds' => 3600, 'title' => $first->input['turn']['title']])

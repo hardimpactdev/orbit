@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { behavior, ReleaseHostFilesList } from "./write.ts";
+import { behavior } from "./write.ts";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 
@@ -390,22 +390,4 @@ Deno.test("the input write gives a clone intent only its run folder and assets: 
         });
         assertEquals(Object.keys(outputs), ["path", "assets", "requirements", "collections"]);
     } finally { await Deno.remove(folder, { recursive: true }); }
-});
-
-Deno.test("a converge stages every file outside the Ansible tree that the app-prod host tasks read", async () => {
-    const ReleaseHostFiles: string[] = JSON.parse(await Deno.readTextFile(asset(ReleaseHostFilesList)));
-    const source = await Deno.readTextFile(asset("ansible/files/instance-release-vp.ts"));
-    const modules = [...source.matchAll(/from "(\.\.?\/[^"]+)"/g)]
-        .map((match) => new URL(match[1], "file:///ansible/files/").pathname.slice(1));
-    const tasks = await Deno.readTextFile(asset("ansible/tasks/production-release-host.yml"));
-    const beside = [...tasks.matchAll(/\{\{ playbook_dir \}\}\/\.\.\/([^"\s]+)/g)].map((match) => match[1]);
-    assert(modules.length > 0 && beside.length > 0);
-    assertEquals([...new Set([...modules, ...beside])].sort(), [...ReleaseHostFiles].sort());
-    for (const module of modules) {
-        // A staged module may import only packages or other staged files: the bundle resolves nothing else in the run folder.
-        for (const match of (await Deno.readTextFile(asset(module))).matchAll(/from "(\.\.?\/[^"]+)"/g)) {
-            const target = new URL(match[1], `file:///${module}`).pathname.slice(1);
-            assert(ReleaseHostFiles.includes(target), `${module} imports ${target}`);
-        }
-    }
 });

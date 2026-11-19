@@ -20,7 +20,7 @@ An installed Conn device asks Orbit for a clone, then starts the first turn itse
 
 ## Decision
 
-Record an encrypted private request and a caller-scoped admission before returning `202`. The Gateway advances the parent from keyed native child records. Cancel and dispatch commit under the same parent lock. Swamp sends the frozen payload only after dispatch wins, to the pinned T3 incarnation. After an ambiguous reply, exact T3 message evidence proves acceptance; sending again requires both authoritative absence and a known safe replay window. Publication and application readiness are separate records of progress, not parts of the T3 acknowledgement.
+Record an encrypted private request and a caller-scoped admission before returning `202`. The Gateway advances the parent from keyed native child records. Cancel and dispatch commit under the same parent lock. Swamp sends the frozen payload only after dispatch wins, to the pinned T3 incarnation. The incarnation's witness is the probe session's row in stock T3's database. The Conn Server deletes revoked sessions, so on it the witness is an empty file that the inspection writes, named by the probe session, in the server's state folder; a restored older state lacks either. After an ambiguous reply, exact T3 message evidence proves acceptance; sending again requires both authoritative absence and a known safe replay window. Publication and application readiness are separate records of progress, not parts of the T3 acknowledgement.
 
 ## Rejected alternatives
 

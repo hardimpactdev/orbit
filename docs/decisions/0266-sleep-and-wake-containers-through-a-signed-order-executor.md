@@ -118,7 +118,7 @@ An explicit signed wake queues delivery and follows its Operation, like Conn. On
 - **A terminal wake result arrives.** Once the result is durable, the listener queues completion of the signed wake immediately. The worker projects the result and sends the Operation's notices without waiting for the sweep. The job that runs after 6 s still covers a missing result or a missed handoff.
 - **Still no result.** The Operation starts its Swamp run. Just before the fixed relay call, the machine phase asks the Gateway to sign a fresh order for that Operation. The action, Node and target come only from the committed admission, never from the request. The signer accepts only the authorized workflow identity, its bound run and an active, uncancelled Operation. Only the phase sees the order; it goes to relay stdin, never to run inputs, arguments or output. Swamp holds no signing key. The executor returns the stored result or acts once.
 
-Engine choice stays on the Operation after admission, including across a setting change. The signed engine is off by default. Before disabling it for handback, stop admitting signed sleeps, drain signed Operations, and wake Instances that still have a Rust sleep plan with the signed engine. Do not hand a frozen Rust plan to Python or a Python plan to Rust. A stopped container has no resumable memory; its ordinary lifecycle may boot it after the applicable guard and cleanup.
+Engine choice stays on the Operation after admission, including across a setting change. The signed engine is off by default. A frozen Instance wakes through the engine that froze it whatever the settings say (R3), so a recorded freeze needs no drain in either direction: turning the settings off is the whole rollback. A freeze with no recorded owner is woken with the settings off before the switch. Only before retiring the executor from a Node, wake the Instances that still have a Rust sleep plan. Do not hand a frozen Rust plan to Python or a Python plan to Rust. A stopped container has no resumable memory; its ordinary lifecycle may boot it after the applicable guard and cleanup.
 
 A start or deploy admitted to resume a signed freeze requires a matching executor receipt. An already-running container that needs no resume or discard can still take its usual lifecycle path without a receipt.
 
@@ -139,8 +139,17 @@ The visitor's request bound is part of the wake, not of the current settings: a 
 
 `ORBIT_EXECUTOR_WAKE_ENABLED` and `ORBIT_EXECUTOR_POWER_ENABLED` stay off until each item here is cleared. Open blockers from review: none.
 
-- Every app-dev Node runs the same executor build as the Gateway expects.
-- Every Instance already asleep wakes through the engine that froze it, or is drained before the switch.
+- **Cleared.** Every app-dev Node runs the same executor build as the Gateway expects: the pin moved to `cli-v0.10774.0`, the delivery built from #4032's commit, so the next Gateway release's fleet rollout installs that build on every `app-dev` Node. [`orbit:executor-parity`](/reference/executor#build-parity) compares each Node's executor SHA-256 with the pin and names every Node that differs. The switch runs it first and changes no flag while it fails.
+- **Cleared.** Every Instance already asleep wakes through the engine that froze it, so the switch needs no drain. R3 already records the owner on the freezing sleep, and every wake entry point reads it before the settings: `instance:wake` and its API, the visitor's activation, Conn, and a start or deploy that resumes. The idle sweep only sleeps, so its next sleep takes the new setting. A failed Python sleep can leave a container frozen with no recorded owner. `orbit:executor-parity` fails with `instance.frozen_unrecorded` and names each such Instance. So the switch runs the check, wakes each listed Instance with the settings still off, and changes the settings only once the check passes. Subtask 5911 proved both directions and the check on the nested fleet ([Switching engines](/reference/executor#switching-engines)).
+- **Cleared.** The activation proxy on every `app-dev` Node reaches this Gateway with the method the route renderer draws. The executor's Caddy guard checks only the first handler and its rewrite URI. So `orbit:executor-parity` also reads each Node's loaded Caddy config in the same read-only SSH call. It finds each site's activation proxy for each Instance by the asleep-marker route, as the guard does. It compares the rewrite URI, the upstream, the method, the `Host` header and the TLS server name with what `DevelopmentCaddyConfigRenderer` draws for that Instance. It also checks that the upstream resolves on the Node only to this Gateway's WireGuard address. Any difference fails with `caddy.activation_proxy_wrong`, which names the Node, the Instance, the site and the field. Subtask 5912 proved a pass, a wrong method, a wrong upstream, a removed rewrite and a broken second site or second listener on the nested fleet ([Activation proxy](/reference/executor#activation-proxy)).
+
+All three items are cleared. The switch goes in this order ([Switching engines](/reference/executor#switching-engines)):
+
+1. With both settings off, run `orbit:executor-parity`.
+2. Wake each Instance it lists, and fix every other problem it names.
+3. Run it again. When it passes, turn on `ORBIT_EXECUTOR_WAKE_ENABLED` and `ORBIT_EXECUTOR_POWER_ENABLED`.
+
+The rollback is one step: turn both settings off. Instances that the executor froze still wake through it.
 
 ### What this supersedes and changes
 

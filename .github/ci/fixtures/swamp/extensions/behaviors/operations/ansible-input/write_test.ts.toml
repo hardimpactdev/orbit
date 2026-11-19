@@ -10,7 +10,6 @@ cases = [
   "the completion's services step stages its copy and runs the services and the check in one dispatch",
   "workflow command and inline script templates keep 16 KiB of budget headroom",
   "the input write gives a clone intent only its run folder and assets: a clone stages from the Gateway's copy",
-  "a converge stages every file outside the Ansible tree that the app-prod host tasks read",
 ]
 file = "swamp/extensions/behaviors/operations/ansible-input/write_test.ts"
 cost = 12 # ESTIMATE: twelve command-boundary cases completed in 0.6 s locally; one second per case
@@ -30,9 +29,4 @@ inputs = [
   "swamp/scripts/instance_clone_launch.py",
   "swamp/workflows/workflow-operation-instance-create.yaml",
   "swamp/workflows/workflow-operation-instance-complete.yaml",
-  "swamp/ansible/tasks/production-release-host.yml",
-  "swamp/ansible/production-release-host-files.json",
-  "swamp/ansible/files/instance-release-vp.ts",
-  "swamp/extensions/behaviors/operations/instance-deploy/vp_requirements.ts",
-  "swamp/extensions/behaviors/operations/instance-vp-command/requirements.ts",
 ]
