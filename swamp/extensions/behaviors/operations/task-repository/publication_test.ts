@@ -23,6 +23,7 @@ Deno.test("publication maps a private PR reply to its admitted public repository
             `${directory}/pull.json`,
             JSON.stringify({
                 number: 12,
+                created_at: "2026-11-19T10:00:00Z",
                 html_url: "https://untrusted.invalid/pull/12",
                 private: "discarded",
             }),
@@ -49,6 +50,7 @@ Deno.test("publication maps a private PR reply to its admitted public repository
                             pull_request_number: 12,
                             pull_request_url:
                                 "https://github.com/acme/shop/pull/12",
+                            pull_request_created_at: "2026-11-19T10:00:00Z",
                         }),
                     },
                 }],

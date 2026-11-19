@@ -23,6 +23,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Jobs\Fleet\AdmitFleetRollout;
+use App\Jobs\Tasks\StampDeployedTasks;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -254,6 +255,15 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
                     Log::warning('Could not queue the fleet work after a verified Gateway release.', ['release' => GatewayReleaseCommit::id($sha)]);
                 }
             });
+        }
+        // A rollback puts an older release back and carries nothing new; only a release that shipped its repository's commit stamps.
+        $repository = $operation->input['repository'] ?? null;
+        if ($code === null && ! $reconcile && $record->trigger !== 'rollback' && is_string($repository)) {
+            $verifiedAt = now();
+            // After the record commits; a failed dispatch is reported and never fails the release.
+            DB::afterCommit(static fn () => rescue(static function () use ($repository, $sha, $verifiedAt): void {
+                dispatch(StampDeployedTasks::gatewayRelease($repository, $sha, $verifiedAt));
+            }));
         }
     }
 

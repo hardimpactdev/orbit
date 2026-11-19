@@ -1,20 +1,22 @@
 ---
-- name: Read the JavaScript tool versions
-  ansible.builtin.command: { argv: ["{{ item }}", --version] }
-  loop: [/usr/local/bin/node, /usr/local/bin/pnpm, /usr/local/bin/bun, /usr/local/bin/vp]
-  register: js_versions
-  changed_when: false
-  failed_when: false
-- name: Read the Vite+ runtime
-  ansible.builtin.stat: { path: "{{ vp_home }}/recipe/vp-runtime-{{ recipe.tools.vp.lock_sha256 }}/node_modules/vite-plus/package.json" }
-  register: vp_runtime
-- name: Find the JavaScript tools that miss their pin
+# One read of the JavaScript tool versions and the Vite+ runtime. A caller adds its own read-only commands
+# (`javascript_read_commands`) to the same call, or sets `javascript_read: false` to read only those.
+- name: Read the JavaScript tool versions and the Vite+ runtime
+  ansible.builtin.import_tasks: check-read.yml
   vars:
-    out: "{{ js_versions.results | map(attribute='stdout') | list }}"
+    check_read_paths: "{{ [vp_runtime_package] if javascript_read | default(true) else [] }}"
+    check_read_commands: >-
+      {{ javascript_read_commands | default({}) | combine({'node': ['/usr/local/bin/node', '--version'],
+      'pnpm': ['/usr/local/bin/pnpm', '--version'], 'bun': ['/usr/local/bin/bun', '--version'],
+      'vp': ['/usr/local/bin/vp', '--version']} if javascript_read | default(true) else {}) }}
+- name: Find the JavaScript tools that miss their pin
+  when: javascript_read | default(true)
+  vars:
+    out: "{{ check_read.commands }}"
   ansible.builtin.set_fact:
     js_current: >-
-      {{ out[0] | trim == 'v' ~ recipe.tools.node.version
-      and out[1] | trim == recipe.tools.pnpm.version
-      and out[2] | trim == recipe.tools.bun.version
-      and recipe.tools['vp-cli'].version in out[3]
-      and vp_runtime.stat.exists }}
+      {{ out.node.stdout | trim == 'v' ~ recipe.tools.node.version
+      and out.pnpm.stdout | trim == recipe.tools.pnpm.version
+      and out.bun.stdout | trim == recipe.tools.bun.version
+      and recipe.tools['vp-cli'].version in out.vp.stdout
+      and check_read.paths[vp_runtime_package].exists }}

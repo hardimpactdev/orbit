@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
@@ -18,14 +19,17 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInsights;
 use App\Jobs\Tasks\StampDeployedTasks;
 use App\Models\AgentThread;
+use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Node;
+use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
@@ -184,6 +188,84 @@ it('queues the stamp after a succeeded production deploy is recorded, and not af
         ? Queue::assertPushed(StampDeployedTasks::class, fn (StampDeployedTasks $job): bool => $job->deploymentId === $row->id)
         : Queue::assertNotPushed(StampDeployedTasks::class);
 })->with(['succeeded', 'failed']);
+
+/** Ends a `gateway.release` run of `$sha` with `$status`, as Swamp reports it, and returns the job it queued, if any. */
+function releaseRun(string $sha, string $status, string $trigger = 'deploy', ?string $repository = 'HardImpactDev/App'): ?StampDeployedTasks
+{
+    Queue::fake();
+    $home = sys_get_temp_dir().'/orbit-stamp-'.bin2hex(random_bytes(6));
+    mkdir($home, 0700);
+    config(['orbit.home' => $home]);
+    $record = GatewayRelease::query()->create(['requested' => $sha, 'trigger' => $trigger, 'outcome' => GatewayRelease::Running, 'force' => $trigger === 'rollback', 'phases' => [], 'duration_ms' => 0]);
+    $operation = Operation::query()->create(['kind' => 'gateway.release', 'target_type' => 'gateway_release', 'target_id' => $record->id, 'node_id' => null, 'status' => 'running',
+        'input' => ['sha' => $sha, 'id' => substr($sha, 0, 12), 'previous' => str_repeat('c', 12), 'retained' => $trigger === 'rollback', ...($repository === null ? [] : ['repository' => $repository])],
+        'triggered_by' => 'gateway-release', 'state' => ['swamp_run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'native_progress' => ['steps' => []]]]);
+    $record->update(['phases' => ['run' => ['operation_id' => $operation->id]]]);
+    new GatewayReleaseRunProjection()->apply($operation, ['run_id' => 'b3c9b6a2-0c1d-4f7e-9a51-2a1f3c4d5e6f', 'status' => $status,
+        'started_at' => '2026-11-19T11:50:00.000Z', 'finished_at' => '2026-11-19T12:00:00.000Z', 'result' => [],
+        ...($status === 'succeeded' ? [] : ['error_code' => 'operation.native_failed', 'failure' => ['failed_step' => 'Build the release', 'detail' => '']])]);
+    File::deleteDirectory($home);
+
+    return Queue::pushed(StampDeployedTasks::class)->first();
+}
+
+it('stamps the merged groups of the Gateway repository Project that a verified Gateway release carried, at its verify time', function (): void {
+    $sha = static fn (string $c): string => str_repeat($c, 40);
+    $reads = [];
+    $instance = deployWorld([$sha('2'), $sha('3'), $sha('4')], $reads);
+    $other = Project::query()->create(['name' => 'other', 'slug' => 'other', 'repository_url' => 'https://github.com/hardimpactdev/other.git', 'default_branch' => 'main', 'root' => 'public']);
+    $carried = mergedGroup($instance, 'Carried', $sha('2'), '2026-11-19 09:00:00');
+    $later = mergedGroup($instance, 'Merged after the release commit', $sha('4'), '2026-11-19 10:00:00');
+    $stamped = mergedGroup($instance, 'Already stamped', $sha('2'), '2026-11-19 09:10:00');
+    $stamped->update(['deployed_at' => '2026-11-19 09:20:00']);
+    $elsewhere = Task::topLevel()->create(['project_id' => $other->id, 'title' => 'Another Project', 'brief' => 'Brief', 'status' => TaskGroupStatus::Completed,
+        'ended_at' => '2026-11-19 09:00:00', 'merged_at' => '2026-11-19 09:00:00']);
+    DB::table('tasks')->where('id', $elsewhere->id)->update(['merged_sha' => $sha('2')]);
+    $this->travelTo(CarbonImmutable::parse('2026-11-19 12:34:56'));
+
+    $job = releaseRun($sha('3'), 'succeeded');
+    expect($job)->toBeInstanceOf(StampDeployedTasks::class)->and($job->deploymentId)->toBeNull();
+    app()->call([unserialize(serialize($job)), 'handle']);
+
+    $at = static fn (Task $group): ?string => $group->refresh()->deployed_at?->toDateTimeString();
+    expect($at($carried))->toBe('2026-11-19 12:34:56')
+        ->and($at($later))->toBeNull()
+        ->and($at($stamped))->toBe('2026-11-19 09:20:00')
+        ->and($at($elsewhere))->toBeNull()
+        ->and($reads)->toBe(['compare:2...3', 'compare:4...3']);
+});
+
+it('queues no stamp for a failed or rolled-back Gateway release', function (string $status, string $trigger): void {
+    deployWorld([]);
+
+    expect(releaseRun(str_repeat('3', 40), $status, $trigger))->toBeNull();
+})->with([['failed', 'deploy'], ['cancelled', 'auto'], ['succeeded', 'rollback']]);
+
+it('stamps nothing for a Gateway release whose repository is no single Project\'s', function (string $repository): void {
+    $sha = static fn (string $c): string => str_repeat($c, 40);
+    $reads = [];
+    $instance = deployWorld([$sha('2'), $sha('3')], $reads);
+    Project::query()->create(['name' => 'copy', 'slug' => 'copy', 'repository_url' => 'git@github.com:hardimpactdev/app-copy.git', 'default_branch' => 'main', 'root' => 'public']);
+    Project::query()->create(['name' => 'twin', 'slug' => 'twin', 'repository_url' => 'git@github.com:hardimpactdev/twin.git', 'default_branch' => 'main', 'root' => 'public']);
+    Project::query()->create(['name' => 'twin2', 'slug' => 'twin2', 'repository_url' => 'https://github.com/HardImpactDev/Twin', 'default_branch' => 'main', 'root' => 'public']);
+    $group = mergedGroup($instance, 'Merged', $sha('2'), '2026-11-19 09:00:00');
+
+    app()->call([StampDeployedTasks::gatewayRelease($repository, $sha('3'), CarbonImmutable::now()), 'handle']);
+
+    expect($group->refresh()->deployed_at)->toBeNull()->and($reads)->toBe([]);
+})->with(['hardimpactdev/none', 'hardimpactdev/twin']);
+
+it('runs a stamp queued before Gateway releases stamped, whose payload names only the deployment', function (): void {
+    $sha = static fn (string $c): string => str_repeat($c, 40);
+    $instance = deployWorld([$sha('2'), $sha('3')]);
+    $group = mergedGroup($instance, 'Merged', $sha('2'), '2026-11-19 09:00:00');
+    $deployment = deployRow($instance, $sha('3'), '2026-11-19 10:40:00', '2026-11-19 11:00:00');
+    $payload = 'O:'.strlen(StampDeployedTasks::class).':"'.StampDeployedTasks::class.'":1:{s:12:"deploymentId";i:'.$deployment->id.';}';
+
+    app()->call([unserialize($payload), 'handle']);
+
+    expect($group->refresh()->deployed_at?->toDateTimeString())->toBe('2026-11-19 11:00:00');
+});
 
 it('reports delivery time from ready to deploy and the deploy wait from merge to deploy, null while nothing deployed', function (): void {
     $instance = deployWorld([]);
