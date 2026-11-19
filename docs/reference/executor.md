@@ -110,6 +110,10 @@ Two renderings are live. Before #4020 the renderer drew `handle @orbit_asleep { 
 
 The first executor guard took the first non-`vars` handler. So it accepted only the newer shape and refused signed sleep Operation 29546 on production. Subtask 5980 loaded both renderers' output for a Vite and a plain site into the nested `app-dev` Node's Caddy 2.11.7. It read the admin API's config back: the first guard refused both older sites and the fixed guard accepted all four.
 
+Then it ran signed orders on a real Instance in that layout. Container default Instance 2 (`proofapp.nested-dev`) got its site rendered by the pre-#4020 renderer with Vite on and compiled by Caddy. Both settings were on. With the pinned executor, sleep Operation 211 failed with `instance.sleep_route_unready` over the WebSocket, as on production. With the branch executor, sleep 212 froze the container in 475 ms (`done`, `websocket`).
+
+A visit then woke it through Operation 213 (`done`, `websocket`, 56,065 pages read, none failed). In this older layout the waking visit gets an empty 200, because nothing follows the activation inside `handle @orbit_asleep`. The next request reaches the app. The newer layout continues the waking visit to the app.
+
 The guard does not check where the proxy goes, so the parity read also takes Caddy's loaded config from its admin API (`http://127.0.0.1:2019/config/`, read-only). On the Node, Python finds each Instance's activation proxy as the executor's guard does: by the asleep-marker matcher that the route renderer draws (`try_files /app-instance-<id>.asleep`), not by the rewrite.
 
 The check reads every site on its own. A site is one top-level route of one Caddy server, named by its host, server and index, so a private clone's host on the bridge and on the WireGuard listener is two sites. For each site and Instance it takes the first handler other than `vars` that a marked visit reaches. Within the site, every route that carries the marker counts, at any depth and in config order. Caddy's compiled config nests the proxy:
