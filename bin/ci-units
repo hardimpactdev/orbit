@@ -160,6 +160,10 @@ def configuration(path=TABLE):
     gaps = budget.get('capacity_gap')
     if not isinstance(gaps, list) or len(gaps) != len(set(gaps)) or any(file not in fixtures for file in gaps):
         raise ValueError('capacity_gap must list unique registered fixtures')
+    first = budget.get('capacity_gap_first', [])
+    if not isinstance(first, list) or len(first) != len(set(first)) or \
+            any(file not in gaps or fixtures[file].get('self_hosted') for file in first):
+        raise ValueError('capacity_gap_first must list unique hosted files of capacity_gap')
     for file, fixture in fixtures.items():
         for name, cost in units_for(fixture, budget):
             # Only a self-hosted gap may hold a unit above the lane; a hosted unit always fits it.
@@ -411,8 +415,10 @@ def plan(paths, budget, fixtures, defaults, inventory_changed=(), registry_chang
     reserved_names = {name for side in admitted.values() for name, _, _ in side}
     order = {file: index for index, file in enumerate(fixtures)}
     # Admission is by directness, then table order; a named capacity gap comes last, a hosted gap before a
-    # self-hosted one: a hosted gap fits a plan of its own. Size only decides packing.
-    for file in sorted(selected, key=lambda file: ((file in gaps) * (1 + pool(file)), tuple(-p for p in selected[file]), order[file])):
+    # self-hosted one: a hosted gap fits a plan of its own. A hosted gap named in capacity_gap_first keeps its place
+    # before the other hosted gaps, which keep their order by directness. Size only decides packing.
+    listed = lambda file: int(file in gaps and not pool(file) and file not in budget.get('capacity_gap_first', ()))
+    for file in sorted(selected, key=lambda file: ((file in gaps) * (1 + pool(file)), listed(file), tuple(-p for p in selected[file]), order[file])):
         fixture, side = fixtures[file], pool(file)
         candidates = [(name, cost, selected[file]) for name, cost in units_for(fixture, budget)]
         remaining = [row for row in candidates if row[0] not in reserved_names]
