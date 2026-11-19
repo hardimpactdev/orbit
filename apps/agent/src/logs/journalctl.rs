@@ -1004,9 +1004,11 @@ exec sleep 600
             tokio::time::sleep(Duration::from_millis(50)).await;
             observe(&mut empty_batches);
         }
-        // It comes once: a later observation at the real interval holds no second one.
-        tokio::time::sleep(Duration::from_millis(700)).await;
-        observe(&mut empty_batches);
+        // It comes once, and the unit is still followed: two later observations at the real interval hold no second one.
+        for _ in 0..2 {
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            observe(&mut empty_batches);
+        }
         assert_eq!(empty_batches, 1);
         stream.task.abort();
     }
