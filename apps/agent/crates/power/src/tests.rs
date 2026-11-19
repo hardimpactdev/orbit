@@ -264,7 +264,8 @@ impl orbit_executor_core::executor::Run for Runner {
                     .wake_with(self.api.as_ref(), order.target().as_str())
                     .expect("power wake");
             }
-            orbit_executor_core::action::Action::ProofNoop | orbit_executor_core::action::Action::UfwEnsureRule => {
+            orbit_executor_core::action::Action::ProofNoop
+            | orbit_executor_core::action::Action::UfwEnsureRule => {
                 panic!("power actions only")
             }
         }
@@ -551,6 +552,20 @@ fn caddy_guard_accepts_production_routes_and_refuses_their_broken_activation() {
         }
         assert!(!production_checks(&format!("{id}0"), route));
     }
+}
+
+#[test]
+fn caddy_guard_refuses_a_catch_all_ahead_of_the_activation_route() {
+    // Route 50 with its app proxy moved ahead of the activation route: Caddy sends the marked visit to the sleeping app.
+    let (id, route) = PRODUCTION_ROUTES[1];
+    let mut config: serde_json::Value = serde_json::from_str(route).expect("route 50");
+    let routes = config["handle"][0]["routes"]
+        .as_array_mut()
+        .expect("site routes");
+    let app = routes.pop().expect("app route");
+    assert!(app.get("match").is_none());
+    routes.insert(2, app);
+    assert!(!production_checks(id, &config.to_string()));
 }
 
 #[test]

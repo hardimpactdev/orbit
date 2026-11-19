@@ -749,7 +749,7 @@ fn first_answer<'a>(
                     .and_then(serde_json::Value::as_array)
                     .into_iter()
                     .flatten()
-                    .filter(|route| route.get("match").is_none() || marked(route, root, file))
+                    .filter(|route| reached(route, root, file))
                     .filter_map(|route| route.get("handle").and_then(serde_json::Value::as_array))
                     .flatten()
                     .collect();
@@ -784,7 +784,8 @@ fn marked(route: &serde_json::Value, root: &str, file: &str) -> bool {
         })
 }
 
-/// The handlers of every route with the exact marker matcher, in the order Caddy runs them.
+/// The handlers that a marked visit reaches, in the order Caddy runs them. In a route list that holds a marker route, every route
+/// without a matcher runs too, so a catch-all ahead of the activation route answers the visit and the guard refuses it.
 fn marker_handlers<'a>(
     config: &'a serde_json::Value,
     root: &str,
@@ -802,6 +803,17 @@ fn marker_handlers<'a>(
                 marker_handlers(value, root, file, handlers);
             }
         }
+        serde_json::Value::Array(routes)
+            if routes.iter().any(|route| marked(route, root, file)) =>
+        {
+            handlers.extend(
+                routes
+                    .iter()
+                    .filter(|route| reached(route, root, file))
+                    .filter_map(|route| route.get("handle").and_then(serde_json::Value::as_array))
+                    .flatten(),
+            );
+        }
         serde_json::Value::Array(values) => {
             for value in values {
                 marker_handlers(value, root, file, handlers);
@@ -809,6 +821,11 @@ fn marker_handlers<'a>(
         }
         _ => {}
     }
+}
+
+/// Whether a marked visit enters this route: it has no matcher or the exact marker matcher.
+fn reached(route: &serde_json::Value, root: &str, file: &str) -> bool {
+    route.get("match").is_none() || marked(route, root, file)
 }
 
 fn valid_id(id: &str) -> bool {
