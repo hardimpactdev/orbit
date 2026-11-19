@@ -31,9 +31,9 @@ Kinds with a definition today:
 | --- | --- | --- |
 | `firewall.allow`, `firewall.deny`, `firewall.remove` | `ensure-0` on the rule's Node | `ufw.ensure_rule` |
 
-An executor reports its primitives when it joins the bus: it writes `{actions, version}` to key `n<node>` of the `NODES` bucket. A Node with an older executor reports nothing, so its Operations stay on Swamp.
+An executor reports its primitives when it joins the bus, and again every minute: it writes `{actions, version}` to key `n<node>` of the `NODES` bucket. A report expires after five minutes, so a stopped executor stops receiving kinds. A Node with an older executor reports nothing, so its Operations stay on Swamp. When the Gateway cannot read the bucket, for example while `nats-server` restarts, the Operation also runs on Swamp.
 
-Today only `app-dev` Nodes enable the `firewall` family, because the converge installs the executor only where a role enables a family. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
+Today only `app-dev` Nodes enable the `firewall` family, because the converge installs the executor only where a role enables a family. The converge enables `firewall` only once the pinned agent delivery is 0.16.0 or newer: an older executor refuses to start on a family it does not know. Firewall changes on other Nodes stay on Swamp until the executor runs on every Node, as `orbit-agent execute serve` ([ADR 0271](/decisions/0271-run-operations-on-a-gateway-state-machine-over-nats) N7).
 
 ## Steps and transitions
 
@@ -44,9 +44,14 @@ Today only `app-dev` Nodes enable the `firewall` family, because the converge in
 - a sent step past its budget fails with `engine.step_budget_exceeded`;
 - the Operation fails as soon as one step failed;
 - the Operation succeeds once all steps are done;
-- the Operation ends as cancelled at the first transition after a cancel request.
+- the Operation ends as cancelled at the first transition after a cancel request, unless every step already ended: then the steps' real result counts.
 
-Orders are published after the transaction commits. A publish that fails puts its step back to pending and throws. The event is then negatively acknowledged, and JetStream delivers it again after a second.
+Orders are published after the transaction commits. For each step the engine first schedules its deadline, then publishes its order:
+
+- an order it cannot make, such as an input the kind cannot build or an order over 4 KB, fails its step with `engine.order_invalid`;
+- a publish that fails puts its step back to pending and throws, so the event is negatively acknowledged and comes back after a second.
+
+If the projection at the end throws, the event comes back too, and the engine runs the projection again.
 
 The engine mirrors its steps into `state.native_progress`, so `operation:show` shows them like a Swamp run's steps. At the end it calls the kind's own projection with the status, error code, failed step and times, as a Swamp run's end did.
 
@@ -54,7 +59,9 @@ The engine mirrors its steps into `state.native_progress`, so `operation:show` s
 
 Each step is one signed order. Its `operation` is `<id>:<step>`, so each step has its own journal record on the Node. Its `target` is the real resource the primitive changes. For `ufw.ensure_rule` that is the Node, so firewall changes on one Node run one at a time.
 
-An engine order expires 8 seconds after signing. The executor refuses an expiry more than 10 seconds ahead. A receipt with `refused` and `expired` puts the step back to pending, and the next transition sends a new order. A `replayed_nonce` receipt changes nothing: the first order's own receipt carries its result.
+An engine order expires 8 seconds after signing. The executor refuses an expiry more than 10 seconds ahead. A receipt with `refused` and `expired` puts the step back to pending, and the next transition sends a new order. A `replayed_nonce` receipt counts with the first order's result it carries; without one it changes nothing.
+
+The engine takes a receipt's Node from its subject, `orbit.receipts.<node>`, never from its body, and applies it only to a step on that Node. A receipt it cannot read is terminated, so it never comes back.
 
 A receipt with `applied` reports how many changes the primitive made. For a firewall kind, zero changes records the result as skipped with `firewall.rule_exists`.
 
@@ -62,11 +69,13 @@ A receipt with `applied` reports how many changes the primitive made. For a fire
 
 A deadline is a NATS message schedule, not a poller. After each send, the engine publishes to `orbit.engine.schedule.<id>.<step>.<sends>` with the headers `Nats-Schedule: @at <time>` and `Nats-Schedule-Target: orbit.engine.deadline`. JetStream delivers the deadline to the engine at that time. A deadline for a step that already moved on changes nothing.
 
-The firewall step re-sends after 10 seconds and fails after 120 seconds. The reconciler still ends an engine Operation whose whole budget ran out.
+The firewall step re-sends after 10 seconds and fails after 120 seconds. The reconciler ends an engine Operation whose whole budget ran out.
+
+A start or an order can be lost when the Gateway stops between a commit and its publish. The reconciler covers that: each minute it sends a nudge, an immediate deadline event, to an unfinished engine Operation with a pending step or a sent step more than 30 seconds past its re-send time.
 
 ### Cancel
 
-`operation:cancel` sets `cancel_requested_at` and publishes a start event. The next transition ends the Operation as cancelled and sends nothing more. An order already on its Node still runs to its end.
+`operation:cancel` sets `cancel_requested_at` and sends a nudge with its own message id. The next transition ends the Operation as cancelled and sends nothing more. An order already on its Node still runs to its end, and when every step has ended, their result counts instead. If the bus is down, the cancel waits for the next receipt, deadline or nudge.
 
 ## The machine bus
 
@@ -78,7 +87,7 @@ The firewall step re-sends after 10 seconds and fails after 120 seconds. The rec
 | `RECEIPTS` | `orbit.receipts.<node>` | work queue, 1 h | `gateway-receipts`, pushed to the engine |
 | `ENGINE` | `orbit.engine.>` | limits, 24 h, message schedules | `gateway-engine`: start and deadline events |
 | `KV_CONTENT` | `$KV.CONTENT.n<node>.<sha256>` | one per key, 1 h | direct get by the Node |
-| `KV_NODES` | `$KV.NODES.n<node>` | one per key | direct get by the Gateway |
+| `KV_NODES` | `$KV.NODES.n<node>` | one per key, 5 min, no rollup | direct get by the Gateway |
 
 The Gateway makes a Node's `node-<node>` consumer before its first order. Until then the executor waits for it.
 
@@ -86,7 +95,11 @@ Publishes wait for JetStream's acknowledgement. An order uses its nonce as `Nats
 
 ### The consumer process
 
-`orbit-gateway-engine.service` runs `orbit:engine-consume`. It applies receipts and engine events from two push consumers. Each handler returns its verdict, and the client sends it as the one reply: an acknowledgement, or a negative acknowledgement with a one-second delay when the handler threw.
+`orbit-gateway-engine.service` runs `orbit:engine-consume`. It applies receipts and engine events from two push consumers. Each handler returns its verdict, and the client sends it as the one reply:
+
+- an acknowledgement when the handler ended;
+- a negative acknowledgement with a one-second delay when the handler threw;
+- a termination for a message it cannot read.
 
 The PHP client answers the server's pings only while it reads. A request connection that sits unused in a long-running process can therefore be closed by the server. `EngineBus::client()` pings a connection that was unused for 10 seconds and replaces it when the ping fails.
 
@@ -111,7 +124,9 @@ A Node's user may publish only:
 - direct gets of its own content keys `n<id>.*`;
 - its own capability key `$KV.NODES.n<id>`.
 
-It may subscribe only to `_INBOX.>`. The order signature stays the boundary: a NATS server or another Node cannot forge an order.
+It may subscribe only to its own inbox prefix, `_INBOX.node-<id>.>`, so it never sees another Node's replies or content. The order signature stays the boundary: a NATS server or another Node cannot forge an order.
+
+A Node's user JWT has no expiry, and the account lists no revocations yet. A removed Node keeps its bus access until the account seed is replaced.
 
 ### Delivery to a Node
 
@@ -125,7 +140,14 @@ The Gateway role converge installs the bus when the Gateway holds the keys:
 - `GatewayRuntimeFiles` writes `/etc/nats/nats.conf`, `nats-server.service` and `orbit-gateway-engine.service`;
 - `NodeFirewallRuleCatalog` adds the rule `orbit:gateway-nats` for port 4222 on the `orbit` interface.
 
-To turn the engine on for a fleet, add the keys to the Gateway environment, converge the Gateway role and the Nodes, then list the kinds in `ORBIT_ENGINE_KINDS`.
+To turn the engine on for a fleet:
+
+1. Pin an agent delivery of 0.16.0 or newer.
+2. Add the keys from `orbit:engine-keys` to the Gateway environment.
+3. Converge the Gateway role, then the Nodes.
+4. List the kinds in `ORBIT_ENGINE_KINDS`.
+
+To turn it off, empty `ORBIT_ENGINE_KINDS` first. Removing the keys stops new bus files, but the converge does not stop the running units: stop and disable `orbit-gateway-engine.service` and `nats-server.service` by hand.
 
 ## Proof
 
@@ -134,7 +156,8 @@ The foundation was proven in a task copy's nested fleet:
 - `firewall:allow`, a repeat and `firewall:remove` on app-dev ran on the engine, and each ufw table matched;
 - an Operation took 0.55–0.67 seconds from request to result, against 2.8–3.7 seconds on Swamp; the step itself took 0.2–0.3 seconds, and a repeat 62 ms;
 - an executor stopped for 12 seconds: its first order expired and the engine re-sent it;
-- a `nats-server` restart: the executor and the Gateway reconnected and the next Operation succeeded;
+- a `nats-server` restart: the executor and the Gateway reconnected. The first Operation after it fell back to Swamp, because the capability read failed, and succeeded; the next ran on the engine;
+- a Node whose executor did not report `ufw.ensure_rule` ran its firewall Operations on Swamp, in 2.8–7.8 seconds each;
 - the consumer process stopped for 5 seconds: the start event waited in its durable consumer and ran on restart.
 
 The shared fixture `apps/agent/contract/fixtures/ufw-ensure-rule-input.json` keeps both sides in step. A Pest test checks that the Gateway signs that input for its intent, and a Rust test checks that the primitive reads and accepts it.
