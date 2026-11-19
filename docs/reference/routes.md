@@ -166,7 +166,7 @@ Each Node's `route-create-site` child is one Ansible phase, `site`, of `swamp/an
 
 The phase updates the system trust store only when it wrote a new Orbit root.
 
-With `route.create` in `ORBIT_ENGINE_KINDS`, the [Gateway engine](/reference/gateway-engine#routecreate) runs a Route that only needs the site steps instead of this workflow. It runs the same steps as typed executor actions: the Node's key and request, the Gateway's signature, one `route.publish_site` per Node and the Gateway's TLS probe. A Route that needs private DNS, the Ingress edge or a LAN rule runs this workflow. So does a Route whose Nodes have no executor with the `route` family.
+With `route.create` in `ORBIT_ENGINE_KINDS`, the [Gateway engine](/reference/gateway-engine#routecreate) runs a Route that needs only the site and private DNS steps instead of this workflow. It runs the same steps as typed executor actions: the Node's key and request, the Gateway's signature, one `route.publish_site` per Node, `dns.publish_records` on each VPN Node whose private DNS changes, and the Gateway's TLS probe. A Route that needs the Ingress edge or a LAN rule runs this workflow. So does a Route whose Nodes have no executor with the `route` family, or whose VPN Node has none with the `dns` family.
 
 The Gateway builds the Caddy access ACLs as five commands for one site: two that deny the checkout, one that opens passage above the served roots, and two that grant read on the roots. Each command names every path it covers, because each command is one Ansible task on the Node.
 
