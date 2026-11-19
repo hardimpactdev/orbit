@@ -75,7 +75,7 @@ The Gateway records each migrated Operation's steps and their state in its own t
 
 ### NATS
 
-One `nats-server` runs on the Gateway host, reachable only over WireGuard. Each Node has two NATS users: the executor's, which may read its own orders, publish its own receipts and read its own `CONTENT` keys, and the observer's, which may only publish its facts. The Gateway's user may do everything. The Node converge writes each Node's credentials. Streams use work-queue retention and a one-hour age limit, so nothing piles up.
+One `nats-server` runs on the Gateway host, reachable only over WireGuard. A Node holds no NATS credential. The server hands each Node connection to an auth callout in the Gateway, which applies the Gateway API's rule: the connection's WireGuard address must belong to an active Node. The callout answers with a short-lived user that may use only that Node's subjects: the executor may read its own orders, publish its own receipts and read its own `CONTENT` keys. The observer's facts will get their own scoped user the same way. The Gateway's user may do everything. A removed Node loses the bus without any key rotation. Streams use work-queue retention and a one-hour age limit, so nothing piles up.
 
 ### Primitives
 
@@ -113,7 +113,7 @@ A primitive is one variant of the executor's action enum, with a typed input, a 
 - An Operation of a migrated kind keeps its place across a Gateway, executor or `nats-server` restart.
 - One system holds a migrated kind, in PHP, with no YAML or expression layer.
 - The Gateway owns run inspection for migrated kinds: per-step timing, receipts and errors in the Operation's steps.
-- The Gateway host runs one more service, `nats-server`, and each Node gets NATS credentials.
+- The Gateway host runs one more service, `nats-server`. Nodes get no NATS credentials: the Gateway admits them by their WireGuard address.
 - A new kind of Node action is Rust code and an executor release. Mixed executor versions are handled by the capability check.
 - Swamp and the state machine run side by side until the last kind moves.
 - Secret output (such as a T3 session token) is in the receipt today. Sealing it to the Gateway's key is follow-up work before `instance:create` moves.

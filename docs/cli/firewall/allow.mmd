@@ -1,18 +1,16 @@
 sequenceDiagram
-  %% Target design: docs/cli/firewall/index.mdx; ADR 0244 and ADR 0245; Swamp shape.
-  %% Tightened: flow-tighten 2026-11-03, rule 22 (no script: one ufw argv per change over @swamp/ssh exec; a typed step plans positions).
+  %% Target design: docs/cli/firewall/index.mdx; ADR 0244 and ADR 0245 (rules, admission); ADR 0271 and docs/reference/gateway-engine.md (execution).
+  %% Engine flow: the kind runs on the Gateway state machine when ORBIT_ENGINE_KINDS lists it and the target Node's executor reported `ufw.ensure_rule`; otherwise it still runs the Swamp workflow operation-firewall-direct, which goes once every Node reports.
   %% status: draft
   %% command: firewall:allow
   %% kind: firewall.allow
   autonumber
   %% lane CLI icon=terminal pill=caller tone=gray
-  %% lane GW icon=gateway pill=intent tone=blue
-  %% lane SW icon=workflow pill=executes tone=green
+  %% lane GW icon=gateway pill=executes tone=blue
   %% lane N icon=server pill=target tone=amber
   participant CLI as CLI / MCP<br/>orbit · MCP tools
-  participant GW as Gateway<br/>Laravel API
-  participant SW as Swamp<br/>workflow execution
-  participant N as Target Node<br/>reached over ssh
+  participant GW as Gateway<br/>state machine
+  participant N as Target Node<br/>agent executor
   CLI->>GW: firewall:allow PORT<br/>--node=NODE
   %%> Command:
   %%> - `orbit firewall:allow PORT --node=NODE`
@@ -23,16 +21,15 @@ sequenceDiagram
   %%> - the port, source, protocol and label pass validation; admission refusals create no rule or Operation and change nothing on the Node
   %%> - no other firewall change holds the target (`operation.target_busy`); one lock per Node, including the protected-access skip
   alt repeats protected access
-    %% path: protected-port-skip
     Note over GW: Skipped — already applied<br/>firewall.rule_exists
     %%> What it does:
     %%> - the ports lie inside one protected port or range Orbit opens, and the source is one that entry admits
     %%> - a range extending beyond that entry or a source it does not admit takes the operator-rule path
     %%> Result:
-    %%> - records a succeeded Operation without an operator rule, Swamp run or Node contact; this branch uses recorded intent, not a UFW check
+    %%> - records a succeeded Operation without an operator rule, order or Node contact; this branch uses recorded intent, not a UFW check
     GW-->>CLI: 202 Accepted<br/>succeeded Operation
   else operator rule
-    %% path: operator-rule
+    Note over GW: Record step, start event<br/>ensure-0 · orbit.engine.start
     %%> Requirements:
     %%> - an opposite action for the same port, protocol and normalized source is refused (`firewall.rule_conflict`)
     %%> - a both-protocol rule beside a single-protocol rule on the same port and source is refused, for either action (`firewall.rule_overlap`)
@@ -40,17 +37,25 @@ sequenceDiagram
     %%> - different source scopes may overlap; narrower sources take precedence regardless of action
     %%> - a repeat reuses the identity record and checks the Node in a new Operation; a label-only repeat updates the recorded label without rewriting correct UFW comments
     %%> Result:
-    %%> - records the new or reused rule as provisioning and captures the full non-secret intent; nothing has happened on the Node yet
-    GW->>SW: Start run, full intent<br/>operation-firewall-direct
-    %%> Inputs:
-    %%> - the exact rule tuple and comment, target address and pinned SSH host keys
-    %%> - the shared SSH identity comes from the worker's swamp role; steps never call the Gateway
+    %%> - records the new or reused rule as provisioning, the full non-secret intent, and the engine step `ensure-0`
+    %%> - publishes the start event on JetStream; the state machine takes it from there; nothing has happened on the Node yet
     GW-->>CLI: 202 Accepted<br/>Operation ID
-    SW->>N: Read the rules<br/>ufw status · @swamp/ssh exec
+    GW->>N: Send the signed order<br/>ufw.ensure_rule · NATS
     %%> What it does:
-    %%> - reads numbered UFW rows to plan insert positions and detect drift on a repeat
+    %%> - signs one order for the target Node: operation `<id>:ensure-0`, target the Node itself, so its firewall changes run one at a time
+    %%> - publishes it to the Node's durable consumer on the ORDERS stream, over NATS on WireGuard
+    %%> Inputs:
+    %%> - `action`, `port`, `protocol`, `source`, `comment`, `ensure: present`, `retain`
+    %%> Deadline:
+    %%> - a JetStream schedule wakes the step after 10 s; with no receipt by then, a new order goes out; after 120 s the step fails with `engine.step_budget_exceeded`
+    %%> - an order older than its 8 s expiry is refused as `expired`, and the Gateway sends a new one
+    %%> Why the engine:
+    %%> - measured on the nested fleet: 0.55–0.67 s per Operation, against 2.8–3.7 s on Swamp; a repeat takes 62 ms on the Node
+    Note over N: Read the rules<br/>ufw status numbered
+    %%> What it does:
+    %%> - the executor checks the order's signature, then reads numbered UFW rows to plan insert positions and detect drift on a repeat
     %%> - inactive UFW fails with `firewall.backend_inactive` before mutation; never enables the firewall
-    Note over SW: Plan the changes
+    Note over N: Plan the changes
     %%> What it does:
     %%> - plans missing lines and moves misplaced lines; leaves identical, well-placed lines and their comments untouched
     %%> - only overlapping ports, protocols and source networks can make an existing line misplaced; unrelated managed trust does not force a move
@@ -58,43 +63,46 @@ sequenceDiagram
     %%> - places new operator lines above Orbit's broad managed rules and narrower sources above broader ones; each address family is ordered separately
     %%> - plans one allow per selected protocol and applicable address family; a port range stays a range
     %%> - numbered positions account for earlier planned changes
-    %%> Why native:
-    %%> - official cfgmgmt firewall cannot insert at a position or express a range; each mutation is one UFW argv over official SSH, with no copied script
+    %%> How:
+    %%> - the typed primitive `ufw.ensure_rule` in the executor (crate `firewall`, a port of the former Swamp planner)
     alt changes needed
-      %% path: changes-needed
-      SW->>N: Change the rules<br/>one ufw argv · @swamp/ssh exec
+      Note over N: Change the rules<br/>one ufw argv per change
       %%> What it does:
-      %%> - executes changes sequentially; a native guard skips entries requiring no work
-      %%> - moves a misplaced line by deleting and reinserting it; preserves unrelated rules
-      SW->>N: Read the result<br/>ufw status · @swamp/ssh exec
+      %%> - runs the planned ufw commands one at a time; moves a misplaced line by deleting and reinserting it; preserves unrelated rules
+      Note over N: Read the result<br/>ufw status numbered
       %%> What it does:
       %%> - collects the final rows for the one end-state check
     else already applied
-      %% path: already-applied
-      Note over SW: Skipped — already applied<br/>firewall.rule_exists
+      Note over N: Skipped — already applied<br/>firewall.rule_exists
       %%> Result:
       %%> - no mutation or second UFW read; the check uses the first read and must pass before a successful skip is reported
     end
-    Note over SW: Check the rules
+    Note over N: Check the rules
     %%> What it does:
-    %%> - a typed check compares every expected line and its narrow-first position; native assert requires the check to pass
-    %%> - the public result comes from the check, not a separate report step
+    %%> - compares every expected line and its narrow-first position
     %%> Failure:
     %%> - a missing or misplaced line fails with `firewall.verify_failed`
     alt rules present and ordered
-      %% path: succeeded
-      SW-->>GW: Run succeeded<br/>terminal result
+      N-->>GW: Receipt: applied<br/>changes N
       %%> Result:
-      %%> - the Gateway's shared reader marks the rule active and the Operation succeeded
+      %%> - the receipt goes to the RECEIPTS stream; the order is acknowledged only after JetStream stored it
+      %%> - the state machine marks the step done and calls the kind's projection: the rule becomes active and the Operation succeeds
+      %%> - `changes: 0` reports `Skipped — already applied (firewall.rule_exists)` in the successful result
     else read, apply or check fails
-      %% path: failed
-      SW--xGW: Run failed<br/>error_code · failed step
+      N--xGW: Receipt: failed<br/>error_code
       %%> Result:
-      %%> - the rule stays visible as failed and the Operation fails; the rule records the Operation's `error_code` and `failed_step` for `firewall:list`
-      %%> - a native step stopping before a public check result reports `operation.native_failed`
+      %%> - the rule stays visible as failed and the Operation fails with `failed_step: ensure-0`; the rule records the `error_code` for `firewall:list`
       %%> On the Node:
       %%> - previously added lines remain, and a line deleted for reordering may be absent; no rollback
       %%> Retry:
       %%> - repeat after fixing the cause; reuse the record, keep correct lines and repair missing or misplaced ones without duplicates
     end
+  end
+  loop every 2 s until terminal
+    CLI->>GW: operation:show OPERATION
+    %%> What it does:
+    %%> - asks for the Operation's status until it has ended; the steps list shows `ensure-0`
+    GW-->>CLI: status + result
+    %%> Returns:
+    %%> - the current status, and the result once the Operation has ended
   end
