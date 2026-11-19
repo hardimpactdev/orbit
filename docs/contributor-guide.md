@@ -360,10 +360,16 @@ export SWAMP_SCRATCH="$(mktemp -d)"
 mkdir "$SWAMP_SCRATCH/home" "$SWAMP_SCRATCH/repo"
 cp swamp/.swamp.yaml swamp/AGENTS.md "$SWAMP_SCRATCH/repo/"
 ln -s AGENTS.md "$SWAMP_SCRATCH/repo/CLAUDE.md"
-(cd "$SWAMP_SCRATCH/repo" && env HOME="$SWAMP_SCRATCH/home" XDG_CONFIG_HOME="$SWAMP_SCRATCH/home/.config" \
-  XDG_DATA_HOME="$SWAMP_SCRATCH/home/.local/share" XDG_CACHE_HOME="$SWAMP_SCRATCH/home/.cache" \
-  swamp repo upgrade --tool claude --tool codex)
+(
+  cd "$SWAMP_SCRATCH/repo"
+  export HOME="$SWAMP_SCRATCH/home" XDG_CONFIG_HOME="$SWAMP_SCRATCH/home/.config" \
+    XDG_DATA_HOME="$SWAMP_SCRATCH/home/.local/share" XDG_CACHE_HOME="$SWAMP_SCRATCH/home/.cache"
+  [ -n "${SWAMP_API_KEY:-}" ] || swamp auth login
+  swamp repo upgrade --tool claude --tool codex
+)
 ```
+
+The upgrade needs a Swamp account, and the disposable home holds no saved login. The subshell signs in with `swamp auth login` inside that home, so the credential is removed with it in step 4. Without a browser, export `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN` from a collective token before you run it; the subshell then skips the sign-in.
 
 3. From the same shell, run this Python code. It copies the block to `.agents/swamp-upstream/managed-section.md`, replaces both skill folders from upstream and records their hashes.
 
