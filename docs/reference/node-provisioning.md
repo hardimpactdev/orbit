@@ -111,7 +111,7 @@ Route withdrawal ships a Node module that reads, merges, tests and applies the R
 
 A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. An `app-dev` Node needs a TLD or an active Cluster TLD. A Node with Instances cannot be enrolled again, including for a TLD change.
 
-Admission records a provisioning Node and freezes its public resource plan. Bootstrap identity and the new observer secret enter the execution vault; the workflow receives only their key names. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
+Admission records a provisioning Node and freezes its public resource plan. The new observer secret enters the execution vault; the workflow receives only its key name. Every step logs in with Swamp's own SSH key. One `operation-node-add` run executes on the Swamp workers on 209. It creates no child Operations and calls no agent command.
 
 | Stage | Work |
 | --- | --- |
