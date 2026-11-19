@@ -924,13 +924,14 @@ class ExecutionTest(unittest.TestCase):
         broken = row('swamp/broken.py', 'OVER BUDGET', ('fails first', 'FAILED'), ('then hangs', 'CENSORED'))
         failed = row('swamp/failed.ts', 'FAILED', ('wrong', 'FAILED'))
         passed = row('swamp/pass.ts', 'passed', ('fine', 'passed'))
-        self.assertEqual(units.cut_units([cut, queued, broken, failed, passed]), [cut, queued])
-        report = units.cut_report([cut, queued, broken, failed, passed])
+        printed = {**row('swamp/printed.py', 'OVER BUDGET', ('fails first', 'NOT RUN')), 'failed_before_cut': True}
+        self.assertEqual(units.cut_units([cut, queued, broken, printed, failed, passed]), [cut, queued])
+        report = units.cut_report([cut, queued])
         self.assertIn('**Over budget, not run to the end: 2 fixture units.** They do not fail Required checks.', report)
         self.assertIn('| `swamp/slow.ts#1/2` | cut at 180 s | 180.1 | 96 | a slow case |', report)
         self.assertIn('| `swamp/queued.ts` | not started |', report)
         self.assertNotIn('broken', report)
-        self.assertEqual('', units.cut_report([failed, passed]))
+        self.assertEqual('', units.cut_report([]))
         # The shard's result: a cut alone passes; a failed unit beside it fails.
         with tempfile.TemporaryDirectory() as scratch:
             folder = Path(scratch)
@@ -938,17 +939,39 @@ class ExecutionTest(unittest.TestCase):
             steps = {name: units.gate.Step('shape', name, [sys.executable, '-c', code]) for name, code in script.items()}
             budget = {**BUDGET, 'shard_workers': 3, 'unit_ceiling_seconds': .5}
 
+            (folder / 'bin').mkdir()
+            (folder / 'bin/deno').write_text(f'#!/bin/sh\nexec {sys.executable} "$@"\n')
+            (folder / 'bin/deno').chmod(0o755)
+            environment = {**os.environ, 'PATH': f"{folder / 'bin'}{os.pathsep}{os.environ['PATH']}"}
+
             def code(names):
-                with patch.object(units, 'prepare', return_value=(os.environ.copy(), Path('/collections'))), \
+                with patch.object(units, 'prepare', return_value=(environment, Path('/collections'))), \
                         patch.object(units, 'fixture_steps', return_value=steps), contextlib.redirect_stdout(io.StringIO()):
                     return units.run(names, budget, {name: fixture(name) for name in names}, folder / 'times.json')
 
             self.assertEqual(0, code(['swamp/pass.py', 'swamp/slow.py']))
+            self.assertEqual([None, True], [r.get('cut') for r in json.loads((folder / 'times.json').read_text())])
             self.assertEqual(1, code(['swamp/pass.py', 'swamp/slow.py', 'swamp/failed.py']))
+            # A failure printed before the cut gates: unittest's progress line, and Deno's failed case or step.
+            hang = 'import sys, signal; sys.stderr.write({!r}); sys.stderr.flush(); signal.pause()'
+            for name, tool, text, gates in (('swamp/py-fail.py', 'python3', '.F', True), ('swamp/py-error.py', 'python3', 'E', True),
+                                            ('swamp/py-fine.py', 'python3', '..s\nother output', False),
+                                            ('swamp/step.ts', 'deno', 'outer ...\n  first step ... FAILED (3ms)\n', True),
+                                            ('swamp/fine.ts', 'deno', 'outer ...\n  first step ... ok (3ms)\n', False)):
+                with self.subTest(name=name):
+                    # The runner reads the tool from the step's first word; a stand-in `deno` runs the same script.
+                    steps[name] = units.gate.Step('shape', name, [tool, '-c', hang.format(text)])
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        result = units.run_unit(steps[name], environment, .5)
+                    self.assertEqual(('OVER BUDGET', gates), (result['status'], result.get('failed_before_cut', False)))
+                    self.assertEqual(not gates, result in units.cut_units([result]))
+                    if tool == 'python3':
+                        self.assertEqual(int(gates), code([name]))
             # The report command reads the times of every shard and prints nothing without a cut.
             (folder / 'times.json').unlink()
             (folder / 'shard').mkdir()
-            for present, rows in ((True, [cut, passed]), (False, [passed])):
+            # Only rows that a run marked as cut are reported: the rows of a failed tool setup carry no mark.
+            for present, rows in ((True, [{**cut, 'cut': True}, passed]), (False, [cut, queued, passed])):
                 (folder / 'shard/ci-unit-times.json').write_text(json.dumps(rows))
                 output = subprocess.run([sys.executable, str(ROOT / 'bin/ci-units'), 'cuts', '--times', str(folder)],
                                         capture_output=True, text=True, check=True).stdout
