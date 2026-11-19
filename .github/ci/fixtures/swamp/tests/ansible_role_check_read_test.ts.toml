@@ -7,7 +7,7 @@ cases = [
   "a file that must be absent fails the check at that file",
   "a folder in place of a file fails the check at that file",
   "a changed folder mode fails the check at that folder",
-  "a file in place of a public path"s folder fails at that path, beside a private file",
+  "a file in place of a public path's folder fails at that path, beside a private file",
   "a changed private file fails the check without printing it",
   "an apply on an empty CI host creates the project, network and ACL, then sets and checks them",
   "an apply on a healthy CI host changes nothing",
