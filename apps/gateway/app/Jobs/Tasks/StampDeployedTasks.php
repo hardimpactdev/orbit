@@ -20,15 +20,18 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Stamps `deployed_at` on the merged task groups that a succeeded production deploy carried ([Task insights](/reference/tasks#task-insights)).
- * It runs after the deploy's record committed, so it never fails or slows the deploy. A group counts as carried when GitHub
- * answers that its merge commit is the deployed commit or an ancestor of it. The candidates are the Project's merged groups
- * without a stamp that merged since the Instance's previous succeeded deploy started; one that the previous deploy already
- * carried gets that deploy's finish time. A first deploy stamps nothing, because the records cannot tell which merges an
- * earlier deploy carried. A failed GitHub read leaves the group unstamped; a stamp is never overwritten.
+ * It runs after the deploy's record committed, so it never fails or slows the deploy. Each such deploy compares every merged group
+ * of the Project without a stamp, merged in the last 30 days, oldest first, up to 200. A group counts as carried when GitHub answers
+ * that its merge commit is the deployed commit or an ancestor of it, and gets this deploy's finish time. A failed GitHub read leaves
+ * the group for the next deploy; a stamp is never overwritten.
  */
 final class StampDeployedTasks implements ShouldQueue
 {
     use Queueable;
+
+    private const int Days = 30;
+
+    private const int Limit = 200;
 
     public function __construct(public int $deploymentId)
     {
@@ -42,32 +45,24 @@ final class StampDeployedTasks implements ShouldQueue
             return;
         }
         $repository = GitHubRepository::fromOrigin($deployment->instance->project->repository_url ?? '');
-        $previous = InstanceDeployment::query()->where('instance_id', $deployment->instance_id)->where('kind', 'deploy')
-            ->where('status', 'succeeded')->where('id', '<', $deployment->id)->latest('id')->first();
-        if ($repository === null || $previous === null) {
+        if ($repository === null) {
             return;
         }
         $candidates = Task::topLevel()->where('project_id', $deployment->instance->project_id)
             ->whereNotNull('merged_at')->whereNull('deployed_at')
-            ->where('merged_at', '>=', $previous->started_at)->where('merged_at', '<=', $deployment->finished_at)
-            ->orderBy('id')->get(['id', 'pr_url', 'watched_pr_url', 'merged_sha', 'merged_at']);
+            ->where('merged_at', '>=', $deployment->finished_at?->copy()->subDays(self::Days))->where('merged_at', '<=', $deployment->finished_at)
+            ->orderBy('merged_at')->orderBy('id')->limit(self::Limit)->get(['id', 'pr_url', 'watched_pr_url', 'merged_sha']);
         foreach ($candidates as $group) {
             try {
                 $sha = $this->mergeCommit($github, $access, $repository, $group);
-                $carrier = match (true) {
-                    $sha === null => null,
-                    self::stamps($previous) && $group->merged_at <= $previous->finished_at
-                        && $this->contains($github, $access, $repository, $sha, (string) $previous->commit) => $previous,
-                    $this->contains($github, $access, $repository, $sha, (string) $deployment->commit) => $deployment,
-                    default => null,
-                };
+                $carried = $sha !== null && $this->contains($github, $access, $repository, $sha, (string) $deployment->commit);
             } catch (GitHubApiException $exception) {
                 Log::warning('Could not read whether a deploy carried a task group.', ['task_group_id' => $group->id, 'deployment_id' => $deployment->id, 'error' => $exception->getMessage()]);
 
                 continue;
             }
-            if ($carrier !== null) {
-                Task::topLevel()->whereKey($group->id)->whereNull('deployed_at')->toBase()->update(['deployed_at' => $carrier->finished_at]);
+            if ($carried) {
+                Task::topLevel()->whereKey($group->id)->whereNull('deployed_at')->toBase()->update(['deployed_at' => $deployment->finished_at]);
             }
         }
     }
@@ -79,13 +74,16 @@ final class StampDeployedTasks implements ShouldQueue
             && is_string($deployment->commit) && GitCommitSha::isValid($deployment->commit) && $deployment->instance->placedOnAppProd();
     }
 
-    /** The merge step's recorded commit, or else the merge commit GitHub reports for the group's merged pull request. */
+    /**
+     * The merge commit of the pull request that set the group's `merged_at`: the watched one when there is one (TaskSettle), else
+     * the merge step's recorded commit, else the published pull request's.
+     */
     private function mergeCommit(GitHubApi $github, RepositoryPullRequestAccess $access, GitHubRepository $repository, Task $group): ?string
     {
-        if (is_string($group->merged_sha) && GitCommitSha::isValid($group->merged_sha)) {
+        if ($group->watched_pr_url === null && is_string($group->merged_sha) && GitCommitSha::isValid($group->merged_sha)) {
             return $group->merged_sha;
         }
-        $url = $group->pr_url ?? $group->watched_pr_url;
+        $url = $group->watched_pr_url ?? $group->pr_url;
         $number = is_string($url) ? $repository->pullRequestNumber($url) : null;
         if ($number === null) {
             return null;

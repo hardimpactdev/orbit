@@ -1719,9 +1719,9 @@ A replaced implementer thread is one whose subtask has a newer implementer threa
 
 ### Deploy times
 
-When a production deploy of a Project succeeds, the Gateway records it first. Then a job on the `tasks` queue stamps `deployed_at` with the deploy's finish time on each merged task of that Project that has none yet, when GitHub answers that the task's merge commit is the deployed commit or an ancestor of it. The merge commit is `merged_sha`, or else the merge commit of the task's merged pull request. A failed job or GitHub read never fails the deploy; the task keeps a null `deployed_at`.
+When a production deploy of a Project succeeds, the Gateway records it first. Then a job on the `tasks` queue compares each merged task of that Project that has no `deployed_at`, merged in the 30 days before the deploy finished, oldest first and at most 200. When GitHub answers that the task's merge commit is the deployed commit or an ancestor of it, the job stamps `deployed_at` with the deploy's finish time. A failed job or GitHub read never fails the deploy; the task stays null, and the next production deploy compares it again.
 
-Only tasks merged since the Instance's previous succeeded deploy started are compared. A task that that previous deploy already carried gets its finish time. A first deploy of an Instance, a rollback, and a deploy of a development Instance stamp nothing, so a task merged before the records can tell which deploy carried it stays null rather than getting a later deploy's time. A stamp is never moved.
+The merge commit comes from the pull request that set `merged_at`: the watched pull request when the task has one, as [settling](#settling) reads it. Otherwise it is `merged_sha`, and else the merge commit of the published pull request. A rollback and a deploy of a development Instance stamp nothing. A stamp is never moved, so a task keeps the first deploy that carried it.
 
 ### Trend and breakdown
 
