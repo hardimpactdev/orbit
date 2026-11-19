@@ -49,7 +49,7 @@ class NodeAddTest(unittest.TestCase):
             folder = Path(directory)
             build(folder)
             hosts = json.loads((folder / 'inventory.yml').read_text())['all']['hosts']
-            self.assertEqual(hosts['node-bootstrap']['ansible_ssh_private_key_file'], str(folder / 'bootstrap-identity'))
+            self.assertEqual(hosts['node-bootstrap']['ansible_ssh_private_key_file'], hosts['node-control']['ansible_ssh_private_key_file'])
             self.assertEqual(hosts['node-control']['ansible_ssh_private_key_file'], '/swamp/identity')
             self.assertEqual((hosts['node-control']['ansible_host'], hosts['node-control']['ansible_port'], hosts['node-control']['ansible_user']), ('198.51.100.7', 2222, 'ubuntu'))
             self.assertEqual((hosts['node-managed']['ansible_host'], hosts['node-managed']['ansible_user']), ('10.44.0.9', 'orbit'))

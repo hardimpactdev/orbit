@@ -66,7 +66,7 @@ sequenceDiagram
   %%> - writes the admitted intent to a private run folder on the Swamp Node and ships the playbook; macOS runs no Ansible phase
   SW->>SW: Write the private input<br/>0600 files from the vault
   %%> Secrets:
-  %%> - the bootstrap key and the Node agent secret go to private files in the run folder; the cleanup step removes them, also after a failure
+  %%> - the Node agent secret goes to a private file in the run folder; the cleanup step removes them, also after a failure
   SW->>SW: Write the playbook input<br/>inventory · pinned host keys
   %%> What it does:
   %%> - builds the inventory and `known_hosts` from the intent and the observed host key; nothing is scanned and host key checking stays on

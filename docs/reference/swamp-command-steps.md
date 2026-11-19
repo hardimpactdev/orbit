@@ -75,7 +75,7 @@ Map each named variable with one whole native expression under `task.inputs.env`
 inputs:
   run: '/usr/bin/python3 "${{ steps.assets.outputs.probe_script }}"'
   env:
-    ORBIT_BOOTSTRAP_IDENTITY: '${{ vault.get(inputs.execution_secrets.bootstrap_identity.vault, inputs.execution_secrets.bootstrap_identity.key) }}'
+    ORBIT_AGENT_SECRET: '${{ vault.get(inputs.execution_secrets.agent_secret.vault, inputs.execution_secrets.agent_secret.key) }}'
 ```
 
 Choose the key from the intent, never by testing `execution_secrets`. Swamp refuses as a whole an expression that calls `vault.get` and holds a container comparison anywhere in it (`secret_operation_unsupported`). Any `in` counts, such as `"name" in inputs.execution_secrets` or `"workspace" in inputs.intent`, and so does `==` or `!=` unless one side is a scalar literal, such as `null`, `"x"` or `-1`: `inputs.intent.a == inputs.intent.b` is refused. Test a key with `has()`, which is not a container comparison. Swamp evaluates a skipped step's inputs too, so a reference to an absent key falls back to a key every run has.
