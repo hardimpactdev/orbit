@@ -849,7 +849,9 @@ The units that did not join, or that the check's own time limit stopped, are def
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`.
 
-A unit that the check's own time limit stops is deferred to CI. A unit that the runner's limit cuts, with no failed assertion, is a warning: the part names it and does not fail. A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. Immediately after planning, the check validates fixture placement, including when `--only` excludes fixtures. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line and stops the check before its other parts. A named capacity gap remains reported by the planner and is not a placement failure.
+A unit that the check's own time limit stops is deferred to CI. A unit that the runner's limit cuts, with no failed assertion, is a warning: the part names it and does not fail.
+
+A unit that did not run for another reason, such as a failed tool setup, fails the `fixtures` part, with the end of the output. Immediately after planning, the check validates fixture placement, including when `--only` excludes fixtures. A capacity row of the CI plan, which `bin/ci-units` marks "Required checks will fail", is a failed `fixture-capacity` line and stops the check before its other parts. A named capacity gap remains reported by the planner and is not a placement failure.
 
 Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for every task check, whatever the copy's CPU count, so PHPStan and Pest run in one process.
 
