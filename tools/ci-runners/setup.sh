@@ -381,13 +381,13 @@ wait_idle() {
 }
 
 # A runner made before the role's pool keeps its old pool through a root device that ci-runner.host pinned. Incus moves
-# a root only while the instance is stopped. The move never touches the guest: for a running runner it removes the
-# routing labels on GitHub, so no new job comes, waits until GitHub reports it idle, marks it, stops it, moves the root,
+# a root only while the instance is stopped. The move never touches the guest: for a running runner it marks it first,
+# removes the routing labels on GitHub, so no new job comes, waits until GitHub reports it idle, stops it, moves the root,
 # drops the pin, starts it and restores the labels. A failure after a change restores what changed: labels, running
-# state and pin. An interrupted move leaves the mark; a rerun finishes it and starts the runner. A runner that was stopped
-# before stays stopped. Exit 75 means busy or unreadable: try again later. The registration moves with the root.
+# state and pin. The mark goes only after both the start and the labels succeeded; a rerun with the mark finishes them.
+# A runner that was stopped before stays stopped. Exit 75 means busy or unreadable: try again later. The registration moves with the root.
 move() {
-  local name=$1 state pool pinned status marked id= drained= stopped= waited
+  local name=$1 state pool pinned status marked id= waited
   state=$(runner_state "$name") || { echo "$name: cannot read the runner; try again later" >&2; return 75; }
   read -r pool pinned status marked <<<"$state"
   pool_ready || return 1
@@ -395,47 +395,40 @@ move() {
   if { [ "$pool" != "$POOL" ] && [ "$status" = Running ]; } || [ "$marked" = True ]; then
     id=$(runner_id "$name") || { echo "$name: cannot find its GitHub runner; try again later" >&2; return 75; }
   fi
-  undo() {
-    [ -z "$stopped" ] || start_runner "$name" || echo "$name: start it by hand" >&2
-    [ -z "$stopped" ] || incus config unset "$name" user.orbit.ci-move-running --project "$PROJECT" || true
-    [ -z "$drained" ] || route "$id" || echo "$name: restore its labels ${ROUTING[*]} by hand" >&2
+  # Starts the runner and routes it again, then clears the mark. The mark stays until both succeeded, so a rerun
+  # finishes them.
+  finish() {
+    start_runner "$name" || { echo "$name: cannot start it; run move again" >&2; return 1; }
+    route "$id" || { echo "$name: cannot restore its labels ${ROUTING[*]}; run move again" >&2; return 1; }
+    incus config unset "$name" user.orbit.ci-move-running --project "$PROJECT"
   }
   if [ "$pool" != "$POOL" ]; then
     if [ "$status" = Running ]; then
-      drained=1
-      drain "$id" || { undo; echo "$name: cannot remove its routing labels; try again later" >&2; return 75; }
+      # The mark comes before any change: it says the runner ran and may be drained. If it cannot be written, nothing
+      # has changed.
+      incus config set "$name" user.orbit.ci-move-running=true --project "$PROJECT" || return 1
+      marked=True
+      drain "$id" || { finish; echo "$name: cannot remove its routing labels; try again later" >&2; return 75; }
       waited=0
       wait_idle "$id" || waited=$?
-      [ "$waited" = 0 ] || { undo; echo "$name: still busy or unreadable on GitHub; try again later" >&2; return 75; }
-      # The mark comes before the stop; if it cannot be written, nothing but the labels has changed.
-      incus config set "$name" user.orbit.ci-move-running=true --project "$PROJECT" || { undo; return 1; }
-      stopped=1
-      incus stop "$name" --project "$PROJECT" || { undo; return 1; }
-    elif [ "$marked" = True ]; then
-      # A rerun after an interruption: this command had drained and stopped it.
-      drained=1 stopped=1
+      [ "$waited" = 0 ] || { finish; echo "$name: still busy or unreadable on GitHub; try again later" >&2; return 75; }
+      incus stop "$name" --project "$PROJECT" || { finish; return 1; }
     fi
     if ! incus move "$name" --project "$PROJECT" --storage "$POOL"; then
-      undo
+      [ "$marked" = False ] || finish
       echo "$name: the move failed; it stays on $pool" >&2
       return 1
     fi
-    state=$(runner_state "$name") || { undo; return 1; }
+    state=$(runner_state "$name") || { [ "$marked" = False ] || finish; return 1; }
     read -r pool pinned status marked <<<"$state"
-    [ "$pool" = "$POOL" ] || { undo; echo "$name: still on $pool" >&2; return 1; }
-  elif [ "$marked" = True ]; then
-    drained=1 stopped=1
+    [ "$pool" = "$POOL" ] || { [ "$marked" = False ] || finish; echo "$name: still on $pool" >&2; return 1; }
   fi
   # The project's default profile gives the same root on the pool.
   if [ "$pinned" = True ]; then
-    incus config device remove "$name" root --project "$PROJECT" >/dev/null || { undo; return 1; }
+    incus config device remove "$name" root --project "$PROJECT" >/dev/null || { [ "$marked" = False ] || finish; return 1; }
   fi
-  if [ -n "$stopped" ]; then
-    start_runner "$name" || { undo; return 1; }
-    incus config unset "$name" user.orbit.ci-move-running --project "$PROJECT" || { route "$id" || true; return 1; }
-  fi
-  if [ -n "$drained" ]; then
-    route "$id" || { echo "$name: restore its labels ${ROUTING[*]} by hand" >&2; return 1; }
+  if [ "$marked" = True ]; then
+    finish || return 1
   fi
   echo "$name: on $POOL"
 }

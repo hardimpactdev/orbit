@@ -21,6 +21,8 @@ def save():
 def fail(name):
     if name in state['fail']:
         sys.exit(1)
+    if name in state.get('once', []):
+        state['once'].remove(name); save(); sys.exit(1)
 if tool == 'gh':
     if '--paginate' in args:
         fail('find')
@@ -101,9 +103,9 @@ class MoveTest(unittest.TestCase):
     def tearDown(self):
         self.directory.cleanup()
 
-    def given(self, pool=POOL, fail=(), runners=None, hub=None):
+    def given(self, pool=POOL, fail=(), runners=None, hub=None, once=()):
         self.state.write_text(json.dumps({
-            'pool': pool, 'fail': list(fail),
+            'pool': pool, 'fail': list(fail), 'once': list(once),
             'runners': runners or {'ci-shark-1': runner()},
             'github': {str(r['id']): r for r in (hub or [github()])}}))
 
@@ -129,9 +131,9 @@ class MoveTest(unittest.TestCase):
         at = lambda prefix: next(i for i, row in enumerate(rows) if row.startswith(prefix))
         busy = [i for i, row in enumerate(rows) if row.endswith('--jq .busy')]
         self.assertEqual(len(busy), 4)  # busy, busy, idle, idle again
+        self.assertLess(at('incus config set'), at('gh api -X PUT'))
         self.assertLess(at('gh api -X PUT'), busy[0])
-        self.assertLess(busy[-1], at('incus config set'))
-        self.assertLess(at('incus config set'), at('incus stop'))
+        self.assertLess(busy[-1], at('incus stop'))
         self.assertLess(at('incus stop'), at('incus move'))
         self.assertLess(at('incus start'), max(i for i, row in enumerate(rows) if row.startswith('gh api -X PUT')))
 
@@ -157,7 +159,7 @@ class MoveTest(unittest.TestCase):
         self.assertEqual(result.returncode, 75)
         self.assertEqual(moved, runner())
         self.assertEqual(hub['labels'], ROUTED)
-        self.assertFalse(any(row.startswith(('incus stop', 'incus config set')) for row in self.rows()))
+        self.assertFalse(any(row.startswith('incus stop') for row in self.rows()))
 
     def test_reads_only_the_named_runner_and_not_one_whose_name_extends_it(self):
         self.given(runners={'ci-shark-1': runner(), 'ci-shark-10': runner()},
@@ -194,10 +196,51 @@ class MoveTest(unittest.TestCase):
                 if fail != 'unpin':
                     self.assertEqual(moved['pool'], 'default')
 
-    def test_a_failed_mark_stops_nothing(self):
+    def test_a_failed_mark_changes_nothing(self):
         self.given(fail=['mark'])
-        self.move()
-        self.assertFalse(any(row.startswith('incus stop') for row in self.rows()))
+        result, moved, hub = self.move()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(moved, runner())
+        self.assertFalse(any(row.startswith(('incus stop', 'gh api -X PUT')) for row in self.rows()))
+
+    def test_the_mark_stays_until_the_start_and_the_routing_both_succeed_and_a_healthy_retry_finishes_them(self):
+        for once in ('route', 'start'):
+            with self.subTest(once=once):
+                self.given(once=[once])
+                result, moved, hub = self.move()
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(moved['config'], MARK)
+                self.assertEqual(moved['pool'], 'orbit-ci')
+                result, moved, hub = self.move()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(moved, runner(pool='orbit-ci', pinned=False))
+                self.assertEqual(hub['labels'], ROUTED)
+
+    def test_a_failed_restore_on_the_undo_path_keeps_the_mark_and_a_retry_finishes_the_move(self):
+        self.given(fail=['move'], once=['route'])
+        result, moved, hub = self.move()
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(moved['config'], MARK)
+        self.assertEqual(moved['status'], 'Running')
+        self.assertEqual(hub['labels'], [])
+        state = json.loads(self.state.read_text())
+        state['fail'] = []
+        self.state.write_text(json.dumps(state))
+        result, moved, hub = self.move()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(moved, runner(pool='orbit-ci', pinned=False))
+        self.assertEqual(hub['labels'], ROUTED)
+
+    def test_a_runner_stopped_before_stays_stopped_through_failures_and_retries(self):
+        for once in ('move', 'unpin', 'start', 'route'):
+            with self.subTest(once=once):
+                self.given(runners={'ci-shark-1': runner(status='Stopped')}, once=[once])
+                self.move()
+                result, moved, hub = self.move()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(moved, runner(pool='orbit-ci', pinned=False, status='Stopped'))
+                self.assertEqual(hub['labels'], ROUTED)
+                self.assertFalse(any(row.startswith(('gh', 'incus start')) for row in self.rows()))
 
     def test_a_failed_move_then_a_retry_ends_running_and_routed(self):
         self.given(fail=['move'])
