@@ -52,9 +52,10 @@ final readonly class ExecutorParity
 
     /**
      * Finds each Instance's activation proxy the way the executor's Caddy guard does: by the route renderer's asleep-marker matcher
-     * (`file` with `try_files /app-instance-<id>.asleep`), not by the rewrite. For each Instance it prints one JSON line: the first
-     * handler other than `vars` that a marked visit reaches, without its response routes, with `instance` and `resolved`, every
-     * address its upstreams' hosts resolve to on the Node (null when one does not resolve).
+     * (`file` with `try_files /app-instance-<id>.asleep`), not by the rewrite. A site is one top-level route of a Caddy server,
+     * named by its host matcher. For each site and Instance it prints one JSON line: the first handler other than `vars` that a
+     * marked visit to that site reaches, without its response routes, with `site`, `instance` and `resolved`, every address its
+     * upstreams' hosts resolve to on the Node (null when one does not resolve).
      */
     private const string Proxies = <<<'PY'
         import json, re, socket, sys
@@ -67,20 +68,25 @@ final readonly class ExecutorParity
                     if found:
                         return int(found.group(1))
             return None
-        def walk(value):
+        def walk(site, value):
             if isinstance(value, dict):
                 instance = marker(value)
                 if instance is not None:
-                    handlers.setdefault(instance, []).extend(value.get("handle") or [])
+                    handlers.setdefault((site, instance), []).extend(value.get("handle") or [])
                 for child in value.values():
-                    walk(child)
+                    walk(site, child)
             elif isinstance(value, list):
                 for child in value:
-                    walk(child)
-        walk(json.load(sys.stdin))
-        for instance, found in sorted(handlers.items()):
+                    walk(site, child)
+        servers = ((json.load(sys.stdin).get("apps") or {}).get("http") or {}).get("servers") or {}
+        for server, config in sorted(servers.items()):
+            for index, route in enumerate(config.get("routes") or []):
+                hosts = [host for matcher in route.get("match") or [] for host in matcher.get("host") or []]
+                walk(",".join(hosts) or f"{server} route {index}", route)
+        for (site, instance), found in sorted(handlers.items()):
             handler = next((h for h in found if isinstance(h, dict) and h.get("handler") != "vars"), None) or {}
             proxy = {key: handler[key] for key in handler if key != "handle_response"}
+            proxy["site"] = site
             proxy["instance"] = instance
             addresses = set()
             for upstream in proxy.get("upstreams") or []:
@@ -162,7 +168,7 @@ final readonly class ExecutorParity
 
     /**
      * Each loaded activation proxy that differs from what the route renderer draws for its Instance, its rewrite included, or
-     * whose upstream resolves to any address but this Gateway's WireGuard address, as `Instance <id>: <field> <loaded value>`.
+     * whose upstream resolves to any address but this Gateway's WireGuard address, as `Instance <id> at <site>: <field> <loaded value>`.
      *
      * @param  list<array<mixed>>  $proxies
      * @return list<string>
@@ -172,6 +178,7 @@ final readonly class ExecutorParity
         $wrong = [];
         foreach ($proxies as $proxy) {
             $instance = $proxy['instance'] ?? null;
+            $site = is_string($proxy['site'] ?? null) ? $proxy['site'] : '?';
             $target = is_int($instance) ? $this->routes->activationTarget($instance) : null;
             if ($target === null) {
                 continue;
@@ -189,7 +196,7 @@ final readonly class ExecutorParity
                 'TLS server name' => $target['host'], 'resolves to' => [$gateway]];
             foreach ($want as $field => $value) {
                 if ($loaded[$field] !== $value) {
-                    $wrong[] = "Instance {$instance}: {$field} ".json_encode($loaded[$field], JSON_UNESCAPED_SLASHES);
+                    $wrong[] = "Instance {$instance} at {$site}: {$field} ".json_encode($loaded[$field], JSON_UNESCAPED_SLASHES);
                 }
             }
         }
