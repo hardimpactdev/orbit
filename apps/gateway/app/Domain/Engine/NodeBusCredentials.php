@@ -25,7 +25,7 @@ final readonly class NodeBusCredentials
         if (! GatewayBus::enabled()) {
             return null;
         }
-        $account = (string) config('orbit.engine.nats.account_seed');
+        $account = GatewayBus::seed('account_seed');
         $gateway = Node::query()->whereHas('roles', static fn ($roles) => $roles->where('role', RoleName::Gateway->value))->value('wireguard_ip');
         if (! is_string($gateway) || $gateway === '') {
             return null;

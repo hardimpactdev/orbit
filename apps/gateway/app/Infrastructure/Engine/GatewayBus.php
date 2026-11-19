@@ -26,9 +26,7 @@ final readonly class GatewayBus
         if (! self::enabled()) {
             return null;
         }
-        $operator = (string) config('orbit.engine.nats.operator_seed');
-        $account = (string) config('orbit.engine.nats.account_seed');
-        $system = (string) config('orbit.engine.nats.system_seed');
+        [$operator, $account, $system] = [self::seed('operator_seed'), self::seed('account_seed'), self::seed('system_seed')];
         $port = config('orbit.engine.nats.port');
         $accountKey = NatsCredentials::publicKey($account);
         $systemKey = NatsCredentials::publicKey($system);
@@ -44,14 +42,15 @@ final readonly class GatewayBus
     /** The Gateway runs the machine bus only once it holds all three keys (`orbit:engine-keys`). */
     public static function enabled(): bool
     {
-        foreach (['operator_seed', 'account_seed', 'system_seed'] as $key) {
-            $seed = config("orbit.engine.nats.{$key}");
-            if (! is_string($seed) || $seed === '') {
-                return false;
-            }
-        }
+        return self::seed('operator_seed') !== '' && self::seed('account_seed') !== '' && self::seed('system_seed') !== '';
+    }
 
-        return true;
+    /** One of the three seeds, or '' when it is not set. */
+    public static function seed(string $key): string
+    {
+        $seed = config("orbit.engine.nats.{$key}");
+
+        return is_string($seed) ? $seed : '';
     }
 
     /** The server's unit. It names the configuration's digest, so a changed configuration restarts the server. */
